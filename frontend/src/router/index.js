@@ -21,8 +21,8 @@ const router = createRouter({
         { path: 'users', component: UsersView, meta: { permission: 'system:user:manage' } },
         { path: 'roles', component: RolesView, meta: { permission: 'system:role:manage' } },
         { path: 'menus', component: MenusView, meta: { permission: 'system:menu:manage' } },
-        { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view' } }
-        ,{ path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list' } }
+        { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view' } },
+        { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list' } }
       ]
     }
   ]
