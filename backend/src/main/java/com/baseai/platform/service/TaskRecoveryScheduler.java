@@ -6,12 +6,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import com.baseai.platform.job.JobRuntimeRegistry;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
 
 import java.sql.Timestamp;
 import java.time.Instant;
 
 @Component
-public class TaskRecoveryScheduler {
+public class TaskRecoveryScheduler implements ApplicationRunner {
     private final JdbcTemplate jdbcTemplate;
     private final long timeoutSeconds;
     private final JobRuntimeRegistry runtimeRegistry;
@@ -40,4 +42,7 @@ public class TaskRecoveryScheduler {
             WHERE status IN ('RUNNING','CANCEL_REQUESTED') AND heartbeat_at < ?
             """, Timestamp.from(Instant.now()), cutoff);
     }
+
+    /** 应用启动后立即恢复上次异常退出遗留的任务。 */
+    @Override public void run(ApplicationArguments arguments) { recoverStaleJobs(); }
 }

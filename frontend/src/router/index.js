@@ -11,6 +11,14 @@ import TasksView from '../views/TasksView.vue'
 import ApiTriggerView from '../views/ApiTriggerView.vue'
 import DepartmentsView from '../views/DepartmentsView.vue'
 import PositionsView from '../views/PositionsView.vue'
+import DictionariesView from '../views/DictionariesView.vue'
+import SettingsView from '../views/SettingsView.vue'
+import OnlineUsersView from '../views/OnlineUsersView.vue'
+import OperationLogsView from '../views/OperationLogsView.vue'
+import LoginLogsView from '../views/LoginLogsView.vue'
+import ModelProvidersView from '../views/ModelProvidersView.vue'
+import ModelsView from '../views/ModelsView.vue'
+import ModelRoutesView from '../views/ModelRoutesView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -25,6 +33,14 @@ const router = createRouter({
         { path: 'menus', component: MenusView, meta: { permission: 'system:menu:list' } },
         { path: 'departments', component: DepartmentsView, meta: { permission: 'system:department:list' } },
         { path: 'positions', component: PositionsView, meta: { permission: 'system:position:list' } },
+        { path: 'dictionaries', component: DictionariesView, meta: { permission: 'system:dictionary:list' } },
+        { path: 'settings', component: SettingsView, meta: { permission: 'system:setting:list' } },
+        { path: 'online-users', component: OnlineUsersView, meta: { permission: 'system:session:list' } },
+        { path: 'operation-logs', component: OperationLogsView, meta: { permission: 'system:audit:operation:list' } },
+        { path: 'login-logs', component: LoginLogsView, meta: { permission: 'system:audit:login:list' } },
+        { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'model:provider:list' } },
+        { path: 'models', component: ModelsView, meta: { permission: 'model:model:list' } },
+        { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view' } },
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list' } }
       ]

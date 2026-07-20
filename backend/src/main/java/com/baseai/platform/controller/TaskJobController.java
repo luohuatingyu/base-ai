@@ -39,6 +39,7 @@ public class TaskJobController {
 
     @GetMapping("/task-types") public List<String> taskTypes() { return service.taskTypes(); }
     @GetMapping("/trigger-entries") public List<String> triggerEntries() { return service.triggerEntries(); }
+    @GetMapping("/metadata") public List<com.baseai.platform.job.TaskTypeRegistry.Metadata> metadata() { return service.taskMetadata(); }
 
     @GetMapping("/{jobId}")
     public Map<String, Object> get(@PathVariable String jobId) {

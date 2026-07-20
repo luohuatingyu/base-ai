@@ -12,7 +12,13 @@ http.interceptors.request.use((config) => {
 })
 
 http.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.data && typeof response.data.success === 'boolean' && 'data' in response.data) {
+      response.api = response.data
+      response.data = response.data.data
+    }
+    return response
+  },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem(tokenKey)

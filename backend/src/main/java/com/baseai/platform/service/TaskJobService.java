@@ -4,6 +4,7 @@ import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.job.JobRuntimeRegistry;
 import com.baseai.platform.job.JobSnapshot;
+import com.baseai.platform.job.TaskTypeRegistry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -19,13 +20,16 @@ public class TaskJobService {
     private final JobRuntimeRegistry runtimeRegistry;
     private final RestClient workerClient;
     private final String instanceId;
+    private final TaskTypeRegistry taskTypeRegistry;
 
     public TaskJobService(@Qualifier("systemJdbcTemplate") JdbcTemplate jdbcTemplate, JobRuntimeRegistry runtimeRegistry,
-                          @Qualifier("pythonWorkerRestClient") RestClient workerClient, PlatformProperties properties) {
+                          @Qualifier("pythonWorkerRestClient") RestClient workerClient, PlatformProperties properties,
+                          TaskTypeRegistry taskTypeRegistry) {
         this.jdbcTemplate = jdbcTemplate;
         this.runtimeRegistry = runtimeRegistry;
         this.workerClient = workerClient;
         this.instanceId = properties.getPythonWorker().getJavaInstanceId();
+        this.taskTypeRegistry = taskTypeRegistry;
     }
 
     /** 为前端长耗时请求预留任务编号。 */
@@ -41,6 +45,7 @@ public class TaskJobService {
     /** 绑定调用方预留编号，或创建新的运行任务。 */
     public String bindOrCreate(String reservedJobId, Long ownerUserId, String taskType, String triggerEntry,
                                String requestMethod, String requestPath, JobSnapshot snapshot) {
+        taskTypeRegistry.register(taskType, triggerEntry);
         if (hasText(reservedJobId)) {
             int updated = jdbcTemplate.update("""
                 UPDATE task_job SET task_type=?, trigger_entry=?, status='RUNNING', request_method=?, request_path=?,
@@ -136,6 +141,7 @@ public class TaskJobService {
     public List<Map<String, Object>> running(Long userId, boolean admin) { return jobs(userId, admin, null, null, null).stream().filter(row -> List.of("RUNNING", "CANCEL_REQUESTED").contains(String.valueOf(row.get("status")))).toList(); }
     public List<String> taskTypes() { return jdbcTemplate.queryForList("SELECT DISTINCT task_type FROM task_job WHERE task_type IS NOT NULL ORDER BY task_type", String.class); }
     public List<String> triggerEntries() { return jdbcTemplate.queryForList("SELECT DISTINCT trigger_entry FROM task_job WHERE trigger_entry IS NOT NULL ORDER BY trigger_entry", String.class); }
+    public List<TaskTypeRegistry.Metadata> taskMetadata() { return taskTypeRegistry.all(); }
 
     /** 查询指定任务的统一 Java/Python 日志。 */
     public List<Map<String, Object>> logs(String jobId, Long userId, boolean admin) {
