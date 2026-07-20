@@ -1,0 +1,105 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9.9-eclipse-temurin-17}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre}
+    image: base-ai-backend:latest
+    restart: unless-stopped
+    environment:
+      MYSQL_URL: ${MYSQL_URL:?Set MYSQL_URL}
+      MYSQL_USERNAME: ${MYSQL_USERNAME:?Set MYSQL_USERNAME}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      POSTGRES_URL: ${POSTGRES_URL:?Set POSTGRES_URL}
+      POSTGRES_USERNAME: ${POSTGRES_USERNAME:?Set POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-10}
+      REDIS_HOST: ${REDIS_HOST:?Set REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_TIMEOUT: ${REDIS_TIMEOUT:-5s}
+      APP_TOKEN_SECRET: ${APP_TOKEN_SECRET:?Set APP_TOKEN_SECRET}
+      APP_TOKEN_EXPIRE_MINUTES: ${APP_TOKEN_EXPIRE_MINUTES:-720}
+      APP_SEED_ADMIN_USERNAME: ${APP_SEED_ADMIN_USERNAME:-admin}
+      APP_SEED_ADMIN_PASSWORD: ${APP_SEED_ADMIN_PASSWORD:?Set APP_SEED_ADMIN_PASSWORD}
+      PYTHON_WORKER_URL: ${PYTHON_WORKER_URL:-http://python-worker:8000}
+      PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
+      JAVA_INSTANCE_ID: ${JAVA_INSTANCE_ID:-java-backend-1}
+      JOB_LOG_PERSIST_LEVEL: ${JOB_LOG_PERSIST_LEVEL:-INFO}
+      JOB_LOG_QUEUE_CAPACITY: ${JOB_LOG_QUEUE_CAPACITY:-10000}
+      JOB_LOG_BATCH_SIZE: ${JOB_LOG_BATCH_SIZE:-100}
+      JOB_LOG_FLUSH_INTERVAL_MS: ${JOB_LOG_FLUSH_INTERVAL_MS:-500}
+      JOB_LOG_RETENTION_DAYS: ${JOB_LOG_RETENTION_DAYS:-7}
+    depends_on:
+      python-worker:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/open/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    stop_signal: SIGTERM
+    stop_grace_period: 20s
+    networks:
+      - base-ai
+
+  python-worker:
+    build:
+      context: ./python-worker
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+    image: base-ai-python-worker:latest
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8080
+      PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
+      PYTHON_WORKER_INSTANCE_ID: ${PYTHON_WORKER_INSTANCE_ID:-python-worker-1}
+      LLM_BASE_URL: ${LLM_BASE_URL:?Set LLM_BASE_URL}
+      LLM_API_KEYS: ${LLM_API_KEYS:?Set LLM_API_KEYS}
+      LLM_MODEL: ${LLM_MODEL:?Set LLM_MODEL}
+      LLM_CONCURRENCY: ${LLM_CONCURRENCY:-4}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+      LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-false}
+      JOB_LOG_PERSIST_LEVEL: ${JOB_LOG_PERSIST_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    stop_signal: SIGTERM
+    stop_grace_period: 20s
+    networks:
+      - base-ai
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine}
+    image: base-ai-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_URL: ${FRONTEND_BACKEND_URL:-http://backend:8080}
+      PORT: 80
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - base-ai
+
+networks:
+  base-ai:
+    driver: bridge

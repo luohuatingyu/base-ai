@@ -149,6 +149,8 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
@@ -216,3 +218,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Java / Maven
+**/target/
+**/.mvn/wrapper/apache-maven-*/
+
+# Node / Vite
+**/node_modules/
+**/dist/
+**/.vite/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
