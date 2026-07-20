@@ -45,7 +45,7 @@ public class AuthService {
     /** 查询当前用户及其角色、权限和菜单。 */
     @Transactional(readOnly = true)
     public CurrentUser currentUser() {
-        UserAccount user = userRepository.findAuthenticatedById(AuthContext.require().id())
+        UserAccount user = userRepository.findById(AuthContext.require().id())
             .orElseThrow(() -> BusinessException.unauthorized("登录用户不存在"));
         return toCurrentUser(user);
     }

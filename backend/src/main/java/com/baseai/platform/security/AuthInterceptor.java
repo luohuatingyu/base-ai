@@ -30,7 +30,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) return true;
         AuthContext.clear();
         TokenClaims claims = tokenService.parseToken(resolveToken(request));
-        UserAccount user = userRepository.findAuthenticatedById(claims.userId())
+        UserAccount user = userRepository.findById(claims.userId())
             .orElseThrow(() -> BusinessException.unauthorized("登录用户不存在"));
         if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("账号已停用");
         AuthUser authUser = toAuthUser(user);

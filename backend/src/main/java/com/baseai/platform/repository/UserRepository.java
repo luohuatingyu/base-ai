@@ -11,8 +11,9 @@ public interface UserRepository extends JpaRepository<UserAccount, Long> {
     boolean existsByUsername(String username);
     @EntityGraph(attributePaths = {"roles", "roles.menus"})
     Optional<UserAccount> findByUsername(String username);
+    @Override
     @EntityGraph(attributePaths = {"roles", "roles.menus"})
-    Optional<UserAccount> findAuthenticatedById(Long id);
+    Optional<UserAccount> findById(Long id);
     @Override @EntityGraph(attributePaths = "roles")
     List<UserAccount> findAll();
 }
