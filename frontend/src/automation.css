@@ -1,0 +1,46 @@
+.filter-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.filter-row > .el-input {
+  max-width: 280px;
+}
+
+.filter-row > .el-select {
+  max-width: 220px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.detail-value {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+}
+
+.response-body {
+  max-height: 480px;
+  margin-top: 18px;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 12px;
+  color: #d8e2f2;
+  background: #111827;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .filter-row {
+    flex-wrap: wrap;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
