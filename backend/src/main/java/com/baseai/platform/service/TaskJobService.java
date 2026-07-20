@@ -1,5 +1,6 @@
 package com.baseai.platform.service;
 
+import com.baseai.platform.common.BusinessException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -44,7 +45,13 @@ public class TaskJobService {
     }
 
     /** 查询指定任务的统一 Java/Python 日志。 */
-    public List<Map<String, Object>> logs(String jobId) {
+    public List<Map<String, Object>> logs(String jobId, Long userId, boolean admin) {
+        List<Map<String, Object>> jobs = jdbcTemplate.queryForList(
+            "SELECT owner_user_id FROM task_job WHERE job_id=?", jobId
+        );
+        if (jobs.isEmpty()) throw BusinessException.notFound("任务不存在");
+        long ownerUserId = ((Number) jobs.get(0).get("owner_user_id")).longValue();
+        if (!admin && ownerUserId != userId) throw BusinessException.forbidden("无权查看该任务日志");
         return jdbcTemplate.queryForList("SELECT id, job_id, python_job_id, source, level, logger_name, message, thread_name, throwable, logged_at FROM task_job_log WHERE job_id=? ORDER BY id", jobId);
     }
 }

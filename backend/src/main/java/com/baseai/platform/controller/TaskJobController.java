@@ -25,5 +25,8 @@ public class TaskJobController {
 
     /** 查询指定任务的跨服务日志。 */
     @GetMapping("/{jobId}/logs")
-    public List<Map<String, Object>> logs(@PathVariable String jobId) { return service.logs(jobId); }
+    public List<Map<String, Object>> logs(@PathVariable String jobId) {
+        AuthUser user = AuthContext.require();
+        return service.logs(jobId, user.id(), user.roles().contains("ADMIN"));
+    }
 }
