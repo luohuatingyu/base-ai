@@ -1,8 +1,11 @@
 import { defineStore } from 'pinia'
 import http from '../api/http'
+import { appConfig } from '../config'
+
+const tokenKey = `${appConfig.code}-token`
 
 export const useAuthStore = defineStore('auth', {
-  state: () => ({ token: localStorage.getItem('base-ai-token') || '', user: null }),
+  state: () => ({ token: localStorage.getItem(tokenKey) || '', user: null }),
   getters: {
     isLoggedIn: (state) => Boolean(state.token),
     isAdmin: (state) => state.user?.roles?.includes('ADMIN') || false
@@ -13,7 +16,7 @@ export const useAuthStore = defineStore('auth', {
       const { data } = await http.post('/auth/login', { username, password })
       this.token = data.token
       this.user = data.user
-      localStorage.setItem('base-ai-token', data.token)
+      localStorage.setItem(tokenKey, data.token)
     },
     /** 从后端刷新当前用户权限。 */
     async fetchMe() {
@@ -25,7 +28,7 @@ export const useAuthStore = defineStore('auth', {
       try { await http.post('/auth/logout') } finally {
         this.token = ''
         this.user = null
-        localStorage.removeItem('base-ai-token')
+        localStorage.removeItem(tokenKey)
       }
     },
     /** 判断当前用户是否拥有页面权限。 */
