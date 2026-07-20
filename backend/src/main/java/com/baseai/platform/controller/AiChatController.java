@@ -1,12 +1,10 @@
 package com.baseai.platform.controller;
 
-import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.job.JobType;
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.service.AiChatClient;
-import com.baseai.platform.service.TaskJobService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,31 +15,20 @@ import java.util.List;
 public class AiChatController {
     private static final Logger log = LoggerFactory.getLogger(AiChatController.class);
     private final AiChatClient client;
-    private final TaskJobService taskJobService;
 
-    public AiChatController(AiChatClient client, TaskJobService taskJobService) {
+    public AiChatController(AiChatClient client) {
         this.client = client;
-        this.taskJobService = taskJobService;
     }
 
     /** 建立任务上下文并代理一次通用模型对话。 */
     @PostMapping
+    @JobType(value = "AI 对话", triggerEntry = "MANUAL", captureRequest = false)
     public ChatResponse chat(@RequestBody ChatRequest request) {
-        String jobId = taskJobService.start(AuthContext.require().id(), "AI_CHAT", "/api/ai/chat");
-        MDC.put("jobId", jobId);
-        try {
-            log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());
-            AiChatClient.ChatResult result = client.chat(request.messages(), request.temperature());
-            taskJobService.success(jobId);
-            log.info("event=ai_chat_succeeded model={} total_tokens={}", result.model(), result.totalTokens());
-            return new ChatResponse(jobId, result.content(), result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
-        } catch (RuntimeException exception) {
-            taskJobService.failed(jobId, exception.getMessage());
-            log.error("event=ai_chat_failed", exception);
-            throw exception;
-        } finally {
-            MDC.remove("jobId");
-        }
+        log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());
+        AiChatClient.ChatResult result = client.chat(request.messages(), request.temperature());
+        log.info("event=ai_chat_succeeded model={} total_tokens={}", result.model(), result.totalTokens());
+        return new ChatResponse(com.baseai.platform.job.JobContextHolder.currentJobId().orElse(""), result.content(),
+            result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
     }
 
     public record ChatRequest(List<AiChatClient.Message> messages, Double temperature) {}

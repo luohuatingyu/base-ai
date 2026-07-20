@@ -1,0 +1,10 @@
+app:
+  job-tracking:
+    excluded-methods:
+      - GET
+      - OPTIONS
+    excluded-paths:
+      - /api/auth/**
+      - /api/open/**
+      - /api/internal/**
+      - /api/system/tasks/**

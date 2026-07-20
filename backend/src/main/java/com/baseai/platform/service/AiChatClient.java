@@ -1,6 +1,7 @@
 package com.baseai.platform.service;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.job.JobContextHolder;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -16,10 +17,12 @@ public class AiChatClient {
 
     /** 调用 Python Worker 的通用 OpenAI-compatible 对话接口。 */
     public ChatResult chat(List<Message> messages, Double temperature) {
+        JobContextHolder.checkpoint();
         try {
             ChatResult result = restClient.post().uri("/llm/chat")
                 .body(new ChatRequest(messages, temperature == null ? 0D : temperature)).retrieve().body(ChatResult.class);
             if (result == null) throw new BusinessException("模型服务返回空响应");
+            JobContextHolder.checkpoint();
             return result;
         } catch (RestClientException exception) {
             throw new BusinessException(502, "模型服务调用失败");

@@ -10,6 +10,7 @@ public class PlatformProperties {
     private Seed seed = new Seed();
     private PythonWorker pythonWorker = new PythonWorker();
     private JobLog jobLog = new JobLog();
+    private JobTracking jobTracking = new JobTracking();
 
     public DatabaseProperties getSystemDatabase() { return systemDatabase; }
     public void setSystemDatabase(DatabaseProperties systemDatabase) { this.systemDatabase = systemDatabase; }
@@ -23,6 +24,8 @@ public class PlatformProperties {
     public void setPythonWorker(PythonWorker pythonWorker) { this.pythonWorker = pythonWorker; }
     public JobLog getJobLog() { return jobLog; }
     public void setJobLog(JobLog jobLog) { this.jobLog = jobLog; }
+    public JobTracking getJobTracking() { return jobTracking; }
+    public void setJobTracking(JobTracking jobTracking) { this.jobTracking = jobTracking; }
 
     public static class Token {
         private String secret;
@@ -70,5 +73,16 @@ public class PlatformProperties {
         public void setPersistLevel(String persistLevel) { this.persistLevel = persistLevel; }
         public int getRetentionDays() { return retentionDays; }
         public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+    }
+
+    public static class JobTracking {
+        private java.util.List<String> excludedMethods = java.util.List.of("GET", "OPTIONS");
+        private java.util.List<String> excludedPaths = java.util.List.of(
+            "/api/auth/**", "/api/open/**", "/api/internal/**", "/api/system/tasks/**"
+        );
+        public java.util.List<String> getExcludedMethods() { return excludedMethods; }
+        public void setExcludedMethods(java.util.List<String> excludedMethods) { this.excludedMethods = excludedMethods; }
+        public java.util.List<String> getExcludedPaths() { return excludedPaths; }
+        public void setExcludedPaths(java.util.List<String> excludedPaths) { this.excludedPaths = excludedPaths; }
     }
 }

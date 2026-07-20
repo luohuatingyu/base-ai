@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: base-ai-backend
+  config:
+    import: optional:file:${JOB_TRACKING_EXCLUSIONS_FILE:/app/config/job-tracking-exclusions.yml}
   jpa:
     hibernate:
       ddl-auto: update
@@ -54,3 +56,10 @@ app:
     flush-interval-ms: ${JOB_LOG_FLUSH_INTERVAL_MS:500}
     persist-level: ${JOB_LOG_PERSIST_LEVEL:INFO}
     retention-days: ${JOB_LOG_RETENTION_DAYS:7}
+  job-tracking:
+    excluded-methods: GET,OPTIONS
+    excluded-paths:
+      - /api/auth/**
+      - /api/open/**
+      - /api/internal/**
+      - /api/system/tasks/**

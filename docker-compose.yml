@@ -32,6 +32,9 @@ services:
       JOB_LOG_BATCH_SIZE: ${JOB_LOG_BATCH_SIZE:-100}
       JOB_LOG_FLUSH_INTERVAL_MS: ${JOB_LOG_FLUSH_INTERVAL_MS:-500}
       JOB_LOG_RETENTION_DAYS: ${JOB_LOG_RETENTION_DAYS:-7}
+      JOB_TRACKING_EXCLUSIONS_FILE: /app/config/job-tracking-exclusions.yml
+    volumes:
+      - ./job-tracking-exclusions.yml:/app/config/job-tracking-exclusions.yml:ro
     depends_on:
       python-worker:
         condition: service_healthy
