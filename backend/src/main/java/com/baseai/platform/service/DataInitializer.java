@@ -44,6 +44,13 @@ public class DataInitializer implements ApplicationRunner {
             menu("角色管理", "system:role:manage", 30),
             menu("菜单管理", "system:menu:manage", 40),
             menu("任务日志", "system:task:view", 50)
+            ,menu("任务调度管理", "system:task:manage", 51)
+            ,menu("接口触发查询", "automation:api-trigger:list", 60)
+            ,menu("接口触发新增", "automation:api-trigger:create", 61)
+            ,menu("接口触发更新", "automation:api-trigger:update", 62)
+            ,menu("接口触发删除", "automation:api-trigger:delete", 63)
+            ,menu("接口触发执行", "automation:api-trigger:trigger", 64)
+            ,menu("接口触发日志", "automation:api-trigger:logs", 65)
         );
         Role adminRole = roleRepository.findByCode("ADMIN").orElseGet(() -> {
             Role role = new Role();
@@ -80,6 +87,7 @@ public class DataInitializer implements ApplicationRunner {
         String tokenSecret = properties.getToken().getSecret();
         String internalToken = properties.getPythonWorker().getInternalToken();
         String adminPassword = properties.getSeed().getAdminPassword();
+        String encryptionKey = properties.getConfigEncryptionKey();
         if (tokenSecret == null || tokenSecret.length() < 32 || tokenSecret.contains("replace-with")) {
             throw new IllegalStateException("APP_TOKEN_SECRET 必须设置为至少 32 位随机字符串");
         }
@@ -88,6 +96,13 @@ public class DataInitializer implements ApplicationRunner {
         }
         if (adminPassword == null || adminPassword.length() < 10 || adminPassword.contains("replace")) {
             throw new IllegalStateException("APP_SEED_ADMIN_PASSWORD 必须设置为安全密码");
+        }
+        try {
+            if (encryptionKey == null || java.util.Base64.getDecoder().decode(encryptionKey).length != 32) {
+                throw new IllegalStateException("APP_CONFIG_ENCRYPTION_KEY 必须是 Base64 编码的 32 字节密钥");
+            }
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException("APP_CONFIG_ENCRYPTION_KEY 必须是有效 Base64", exception);
         }
     }
 }

@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "app")
 public class PlatformProperties {
+    private String configEncryptionKey;
     private DatabaseProperties systemDatabase = new DatabaseProperties();
     private DatabaseProperties businessDatabase = new DatabaseProperties();
     private Token token = new Token();
@@ -11,6 +12,10 @@ public class PlatformProperties {
     private PythonWorker pythonWorker = new PythonWorker();
     private JobLog jobLog = new JobLog();
     private JobTracking jobTracking = new JobTracking();
+    private ApiTrigger apiTrigger = new ApiTrigger();
+
+    public String getConfigEncryptionKey() { return configEncryptionKey; }
+    public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
 
     public DatabaseProperties getSystemDatabase() { return systemDatabase; }
     public void setSystemDatabase(DatabaseProperties systemDatabase) { this.systemDatabase = systemDatabase; }
@@ -26,6 +31,8 @@ public class PlatformProperties {
     public void setJobLog(JobLog jobLog) { this.jobLog = jobLog; }
     public JobTracking getJobTracking() { return jobTracking; }
     public void setJobTracking(JobTracking jobTracking) { this.jobTracking = jobTracking; }
+    public ApiTrigger getApiTrigger() { return apiTrigger; }
+    public void setApiTrigger(ApiTrigger apiTrigger) { this.apiTrigger = apiTrigger; }
 
     public static class Token {
         private String secret;
@@ -84,5 +91,23 @@ public class PlatformProperties {
         public void setExcludedMethods(java.util.List<String> excludedMethods) { this.excludedMethods = excludedMethods; }
         public java.util.List<String> getExcludedPaths() { return excludedPaths; }
         public void setExcludedPaths(java.util.List<String> excludedPaths) { this.excludedPaths = excludedPaths; }
+    }
+
+    public static class ApiTrigger {
+        private java.util.List<String> allowedHosts = java.util.List.of();
+        private boolean allowPrivateNetwork;
+        private int schedulerPoolSize = 4;
+        private int lockSeconds = 300;
+        private int resultMaxLength = 2000;
+        public java.util.List<String> getAllowedHosts() { return allowedHosts; }
+        public void setAllowedHosts(java.util.List<String> allowedHosts) { this.allowedHosts = allowedHosts; }
+        public boolean isAllowPrivateNetwork() { return allowPrivateNetwork; }
+        public void setAllowPrivateNetwork(boolean allowPrivateNetwork) { this.allowPrivateNetwork = allowPrivateNetwork; }
+        public int getSchedulerPoolSize() { return schedulerPoolSize; }
+        public void setSchedulerPoolSize(int schedulerPoolSize) { this.schedulerPoolSize = schedulerPoolSize; }
+        public int getLockSeconds() { return lockSeconds; }
+        public void setLockSeconds(int lockSeconds) { this.lockSeconds = lockSeconds; }
+        public int getResultMaxLength() { return resultMaxLength; }
+        public void setResultMaxLength(int resultMaxLength) { this.resultMaxLength = resultMaxLength; }
     }
 }
