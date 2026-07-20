@@ -63,6 +63,7 @@ app:
     persist-level: ${JOB_LOG_PERSIST_LEVEL:INFO}
     retention-days: ${JOB_LOG_RETENTION_DAYS:7}
   job-tracking:
+    heartbeat-timeout-seconds: ${JOB_HEARTBEAT_TIMEOUT_SECONDS:120}
     excluded-methods: GET,OPTIONS
     excluded-paths:
       - /api/auth/**

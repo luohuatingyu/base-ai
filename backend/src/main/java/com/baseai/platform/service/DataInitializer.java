@@ -57,15 +57,17 @@ public class DataInitializer implements ApplicationRunner {
         adminRole.setEnabled(true);
         roleRepository.save(adminRole);
         String username = properties.getSeed().getAdminUsername();
-        if (!userRepository.existsByUsername(username)) {
-            UserAccount admin = new UserAccount();
-            admin.setUsername(username);
-            admin.setDisplayName("系统管理员");
-            admin.setPasswordHash(passwordEncoder.encode(properties.getSeed().getAdminPassword()));
-            admin.setDepartment(rootDepartment);
-            admin.setRoles(new LinkedHashSet<>(List.of(adminRole)));
-            userRepository.save(admin);
-        }
+        UserAccount admin = userRepository.findByUsername(username).orElseGet(() -> {
+            UserAccount user = new UserAccount();
+            user.setUsername(username);
+            user.setDisplayName("系统管理员");
+            user.setPasswordHash(passwordEncoder.encode(properties.getSeed().getAdminPassword()));
+            return user;
+        });
+        if (admin.getDepartment() == null) admin.setDepartment(rootDepartment);
+        admin.getRoles().add(adminRole);
+        admin.setEnabled(true);
+        userRepository.save(admin);
     }
 
     /** 初始化完整系统菜单、按钮权限和兼容权限。 */

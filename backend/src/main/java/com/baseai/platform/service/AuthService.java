@@ -8,6 +8,7 @@ import com.baseai.platform.repository.UserRepository;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.TokenClaims;
 import com.baseai.platform.security.TokenService;
+import com.baseai.platform.security.SessionService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,25 +22,38 @@ public class AuthService {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final TokenService tokenService;
+    private final SessionService sessionService;
+    private final LoginAuditService loginAuditService;
 
-    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, TokenService tokenService) {
+    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, TokenService tokenService,
+                       SessionService sessionService, LoginAuditService loginAuditService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
+        this.sessionService = sessionService;
+        this.loginAuditService = loginAuditService;
     }
 
     /** 校验账号密码并签发登录令牌。 */
-    @Transactional(readOnly = true)
-    public LoginResult login(String username, String password) {
-        UserAccount user = userRepository.findByUsername(requireText(username, "请输入账号"))
-            .orElseThrow(() -> BusinessException.unauthorized("账号或密码错误"));
-        if (!passwordEncoder.matches(requireText(password, "请输入密码"), user.getPasswordHash())) {
-            throw BusinessException.unauthorized("账号或密码错误");
+    @Transactional
+    public LoginResult login(String username, String password, LoginMetadata metadata) {
+        String normalized = username == null ? "" : username.trim();
+        try {
+            UserAccount user = userRepository.findByUsername(requireText(username, "请输入账号"))
+                .orElseThrow(() -> BusinessException.unauthorized("账号或密码错误"));
+            if (!passwordEncoder.matches(requireText(password, "请输入密码"), user.getPasswordHash())) {
+                throw BusinessException.unauthorized("账号或密码错误");
+            }
+            if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("账号已停用");
+            String token = tokenService.createToken(user.getId(), user.getUsername());
+            TokenClaims claims = tokenService.parseToken(token);
+            sessionService.register(claims, metadata.ipAddress(), metadata.userAgent());
+            loginAuditService.save(user.getUsername(), metadata, true, "登录成功");
+            return new LoginResult(token, claims.expiresAt(), toCurrentUser(user));
+        } catch (RuntimeException exception) {
+            loginAuditService.save(normalized, metadata, false, exception.getMessage());
+            throw exception;
         }
-        if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("账号已停用");
-        String token = tokenService.createToken(user.getId(), user.getUsername());
-        TokenClaims claims = tokenService.parseToken(token);
-        return new LoginResult(token, claims.expiresAt(), toCurrentUser(user));
     }
 
     /** 查询当前用户及其角色、权限和菜单。 */
@@ -52,7 +66,9 @@ public class AuthService {
 
     /** 将当前令牌写入 Redis 撤销缓存。 */
     public void logout(String token) {
-        tokenService.revoke(token);
+        TokenClaims claims = tokenService.parseToken(token);
+        tokenService.revokeTokenId(claims.tokenId(), claims.expiresAt());
+        sessionService.remove(claims);
     }
 
     /** 将用户实体转换为前端需要的权限快照。 */
@@ -76,6 +92,7 @@ public class AuthService {
     }
 
     public record LoginResult(String token, Instant expiresAt, CurrentUser user) {}
+    public record LoginMetadata(String ipAddress, String userAgent) {}
     public record CurrentUser(Long id, String username, String displayName, Long departmentId, List<String> roles, List<String> permissions, List<MenuItem> menus) {}
     public record MenuItem(Long id, Long parentId, String name, String type, String path, String component, String icon,
                            String permission, Integer sortOrder, Boolean visible) {}

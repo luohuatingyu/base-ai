@@ -71,8 +71,13 @@ public class TokenService {
     /** 将当前令牌加入 Redis 撤销缓存直到自然过期。 */
     public void revoke(String token) {
         TokenClaims claims = parseToken(token);
-        Duration ttl = Duration.between(Instant.now(), claims.expiresAt());
-        if (!ttl.isNegative() && !ttl.isZero()) redisTemplate.opsForValue().set(revokedKey(claims.tokenId()), "1", ttl);
+        revokeTokenId(claims.tokenId(), claims.expiresAt());
+    }
+
+    /** 按 Token 编号写入撤销状态，供管理员强制下线使用。 */
+    public void revokeTokenId(String tokenId, Instant expiresAt) {
+        Duration ttl = Duration.between(Instant.now(), expiresAt);
+        if (!ttl.isNegative() && !ttl.isZero()) redisTemplate.opsForValue().set(revokedKey(tokenId), "1", ttl);
     }
 
     /** 使用可配置品牌编码隔离不同平台的 Redis Token 状态。 */

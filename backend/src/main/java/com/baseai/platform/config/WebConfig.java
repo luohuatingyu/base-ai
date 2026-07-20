@@ -16,7 +16,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor).addPathPatterns("/api/**")
-            .excludePathPatterns("/api/auth/login", "/api/open/**", "/api/internal/job-logs");
+            .excludePathPatterns("/api/auth/login", "/api/open/**", "/api/internal/**");
     }
 
     /** 允许本地开发跨域，生产由前端服务执行同源代理。 */

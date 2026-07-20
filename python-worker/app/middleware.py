@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import uuid
 
@@ -7,14 +8,17 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
 from app.context import RequestContext, reset_context, set_context
+from app.job_runtime import JavaJobReporter, JobRuntimeRegistry, stop_heartbeat
 
 
 class InternalAuthMiddleware(BaseHTTPMiddleware):
     """统一校验 Java 内部令牌并建立跨服务日志上下文。"""
 
-    def __init__(self, app, settings: Settings):
+    def __init__(self, app, settings: Settings, registry: JobRuntimeRegistry | None = None, reporter: JavaJobReporter | None = None):
         super().__init__(app)
         self.settings = settings
+        self.registry = registry or JobRuntimeRegistry()
+        self.reporter = reporter or JavaJobReporter(settings)
 
     async def dispatch(self, request: Request, call_next):
         """放行健康检查，其余接口仅允许持有共享令牌的内部调用。"""
@@ -25,12 +29,31 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=401, content={"detail": "内部令牌无效"})
         request_id = request.headers.get("X-Request-Id") or uuid.uuid4().hex
         parent_job_id = request.headers.get("X-Parent-Job-Id", "")
-        python_job_id = uuid.uuid4().hex
+        python_job_id = request.headers.get("X-Python-Job-Id") or uuid.uuid4().hex
         context_token = set_context(RequestContext(request_id, parent_job_id, python_job_id))
+        tracked = request.url.path.startswith("/llm/")
+        heartbeat_task = None
         try:
+            if tracked:
+                await self.registry.register(python_job_id, asyncio.current_task())
+                await self.reporter.report(python_job_id, "RUNNING")
+                heartbeat_task = asyncio.create_task(self.reporter.heartbeat(python_job_id))
             response = await call_next(request)
+            if tracked:
+                await self.reporter.report(python_job_id, "SUCCESS" if response.status_code < 400 else "FAILED")
             response.headers["X-Request-Id"] = request_id
             response.headers["X-Python-Job-Id"] = python_job_id
             return response
+        except asyncio.CancelledError:
+            if tracked:
+                await self.reporter.report(python_job_id, "CANCELLED", "任务已取消")
+            raise
+        except Exception as exception:
+            if tracked:
+                await self.reporter.report(python_job_id, "FAILED", str(exception))
+            raise
         finally:
+            await stop_heartbeat(heartbeat_task)
+            if tracked:
+                await self.registry.remove(python_job_id)
             reset_context(context_token)

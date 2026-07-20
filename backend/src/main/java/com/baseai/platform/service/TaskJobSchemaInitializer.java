@@ -28,6 +28,14 @@ public class TaskJobSchemaInitializer implements ApplicationRunner {
             Map.entry("java_instance_id", "VARCHAR(100)"),
             Map.entry("cancellation_reason", "VARCHAR(500)"),
             Map.entry("cancel_requested_at", "TIMESTAMP(6) NULL")
+            ,Map.entry("python_job_count", "INT NOT NULL DEFAULT 0")
+            ,Map.entry("heartbeat_at", "TIMESTAMP(6) NULL")
+            ,Map.entry("version", "BIGINT NOT NULL DEFAULT 0")
+            ,Map.entry("finished_reason", "VARCHAR(100)")
+            ,Map.entry("force_terminated_by", "BIGINT")
+            ,Map.entry("force_terminated_at", "TIMESTAMP(6) NULL")
+            ,Map.entry("force_terminate_reason", "VARCHAR(500)")
+            ,Map.entry("created_at", "TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)")
         );
         columns.forEach((name, type) -> {
             Integer count = jdbcTemplate.queryForObject("""
@@ -36,5 +44,17 @@ public class TaskJobSchemaInitializer implements ApplicationRunner {
                 """, Integer.class, name);
             if (count != null && count == 0) jdbcTemplate.execute("ALTER TABLE task_job ADD COLUMN " + name + " " + type);
         });
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS task_job_python (
+                python_job_id VARCHAR(64) PRIMARY KEY, parent_job_id VARCHAR(32) NOT NULL,
+                worker_endpoint VARCHAR(255) NOT NULL, worker_instance_id VARCHAR(100), status VARCHAR(24) NOT NULL,
+                heartbeat_at TIMESTAMP(6) NULL, error_message VARCHAR(1000), finished_reason VARCHAR(100),
+                cancel_requested_at TIMESTAMP(6) NULL, force_terminated_by BIGINT, force_terminated_at TIMESTAMP(6) NULL,
+                force_terminate_reason VARCHAR(500), created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+                started_at TIMESTAMP(6) NULL, finished_at TIMESTAMP(6) NULL,
+                INDEX idx_task_job_python_parent (parent_job_id, created_at),
+                INDEX idx_task_job_python_status (status, heartbeat_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """);
     }
 }

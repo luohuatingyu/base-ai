@@ -18,10 +18,12 @@ import java.util.stream.Collectors;
 public class AuthInterceptor implements HandlerInterceptor {
     private final TokenService tokenService;
     private final UserRepository userRepository;
+    private final SessionService sessionService;
 
-    public AuthInterceptor(TokenService tokenService, UserRepository userRepository) {
+    public AuthInterceptor(TokenService tokenService, UserRepository userRepository, SessionService sessionService) {
         this.tokenService = tokenService;
         this.userRepository = userRepository;
+        this.sessionService = sessionService;
     }
 
     /** 在控制器执行前完成登录态和 RBAC 权限校验。 */
@@ -35,6 +37,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("账号已停用");
         AuthUser authUser = toAuthUser(user);
         AuthContext.set(authUser);
+        sessionService.touch(claims);
         RequiredPermission required = resolvePermission(handler);
         if (required != null && !authUser.hasPermission(required.value())) throw BusinessException.forbidden("没有操作权限");
         return true;

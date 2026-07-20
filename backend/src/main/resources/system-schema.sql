@@ -9,13 +9,41 @@ CREATE TABLE IF NOT EXISTS task_job (
     request_params_json MEDIUMTEXT,
     request_headers_json MEDIUMTEXT,
     java_instance_id VARCHAR(100),
+    python_job_count INT NOT NULL DEFAULT 0,
     error_message VARCHAR(1000),
     cancellation_reason VARCHAR(500),
     cancel_requested_at TIMESTAMP(6) NULL,
+    heartbeat_at TIMESTAMP(6) NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    finished_reason VARCHAR(100),
+    force_terminated_by BIGINT,
+    force_terminated_at TIMESTAMP(6) NULL,
+    force_terminate_reason VARCHAR(500),
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     started_at TIMESTAMP(6) NOT NULL,
     finished_at TIMESTAMP(6) NULL,
     INDEX idx_task_job_owner_started (owner_user_id, started_at),
     INDEX idx_task_job_status_started (status, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS task_job_python (
+    python_job_id VARCHAR(64) PRIMARY KEY,
+    parent_job_id VARCHAR(32) NOT NULL,
+    worker_endpoint VARCHAR(255) NOT NULL,
+    worker_instance_id VARCHAR(100),
+    status VARCHAR(24) NOT NULL,
+    heartbeat_at TIMESTAMP(6) NULL,
+    error_message VARCHAR(1000),
+    finished_reason VARCHAR(100),
+    cancel_requested_at TIMESTAMP(6) NULL,
+    force_terminated_by BIGINT,
+    force_terminated_at TIMESTAMP(6) NULL,
+    force_terminate_reason VARCHAR(500),
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    started_at TIMESTAMP(6) NULL,
+    finished_at TIMESTAMP(6) NULL,
+    INDEX idx_task_job_python_parent (parent_job_id, created_at),
+    INDEX idx_task_job_python_status (status, heartbeat_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS task_job_log (
