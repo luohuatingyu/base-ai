@@ -6,7 +6,7 @@ WORKDIR /workspace
 COPY pom.xml ./
 RUN mvn -B -ntp dependency:go-offline
 COPY src ./src
-RUN mvn -B -ntp -DskipTests package
+RUN mvn -B -ntp package
 
 FROM ${JRE_IMAGE}
 WORKDIR /app

@@ -73,6 +73,32 @@ Java 负责用户权限、任务状态和父任务日志上下文；Python Worke
 - Python 使用 ContextVar 注入 `requestId`、`jobId`、`pythonJobId`，并异步批量回传 Java。
 - 日志保留天数、队列容量和持久化级别均由统一环境变量维护。
 
+## 任务调度与 AOP
+
+- 默认对未排除的 `RestController` 写操作建立系统任务。
+- `@JobType` 用于声明任务名称、触发入口和定时任务所有者参数。
+- `@JobIgnored` 用于排除登录、健康检查、任务查询和内部日志接口。
+- AOP 自动维护任务开始、成功、失败、取消和强制终止状态。
+- 请求参数与请求头保存前会递归屏蔽密码、Token、Cookie、Authorization 和 API Key。
+- 前端可预留 `X-Job-Id`，后端绑定后通过响应头返回同一任务编号。
+- `job-tracking-exclusions.yml` 统一维护不需要建立任务的 HTTP 方法和路径。
+
+## 自动化接口触发
+
+接口触发配置和执行记录存放在 PostgreSQL 业务库。首次部署需使用具有 DDL 权限的账号执行：
+
+```bash
+psql "$POSTGRES_DSN" -f database/postgresql/api-trigger.sql
+```
+
+支持 HTTP 方法、请求头、查询参数、请求体、Cron、超时、前置认证、手动执行和临时测试。正式执行会同时创建 MySQL 系统任务。
+
+- `APP_CONFIG_ENCRYPTION_KEY` 使用 AES-GCM 加密请求头、请求体和认证请求体。
+- `API_TRIGGER_ALLOWED_HOSTS` 是必填目标域名白名单，支持 `*.example.com`。
+- `API_TRIGGER_ALLOW_PRIVATE_NETWORK=false` 默认阻止本机、链路本地及私有网络地址。
+- Redis 分布式锁避免多后端实例重复执行同一 Cron。
+- 执行摘要会截断并屏蔽常见 Token、密码和 Authorization 内容。
+
 ## 环境变量
 
 仓库只提供 `.env.example`，**不会提供或提交 `.env`**。生产环境建议把真实变量文件保存在仓库外，例如：
@@ -92,7 +118,9 @@ sudo editor /etc/base-ai/base-ai.env
 - PostgreSQL 业务库：`POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`。
 - Redis 缓存：`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`。
 - 平台安全：`APP_TOKEN_SECRET`、`APP_SEED_ADMIN_PASSWORD`、`PYTHON_WORKER_INTERNAL_TOKEN`。
+- 配置加密：`APP_CONFIG_ENCRYPTION_KEY`，可通过 `openssl rand -base64 32` 生成。
 - 模型调用：`LLM_BASE_URL`、`LLM_API_KEYS`、`LLM_MODEL`、`LLM_CONCURRENCY`。
+- 接口触发：`API_TRIGGER_ALLOWED_HOSTS`、`API_TRIGGER_ALLOW_PRIVATE_NETWORK`、`API_TRIGGER_LOCK_SECONDS`。
 - 日志：`JOB_LOG_PERSIST_LEVEL`、`JOB_LOG_RETENTION_DAYS`、`JOB_LOG_QUEUE_CAPACITY`。
 
 ## Docker 启动

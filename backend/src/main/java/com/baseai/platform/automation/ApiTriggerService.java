@@ -282,6 +282,12 @@ public class ApiTriggerService {
     private boolean hasBody(String method, String body) { return !Set.of("GET", "DELETE").contains(method) && body != null && !body.isBlank(); }
     private String text(String value) { return value == null ? "" : value.trim(); }
     private String defaultText(String value, String defaultValue) { return value == null || value.isBlank() ? defaultValue : value.trim(); }
-    private String summary(String value) { String text = value == null ? "" : value; return text.substring(0, Math.min(resultMaxLength, text.length())); }
+    /** 截断执行结果并屏蔽常见凭证字段和 Bearer Token。 */
+    private String summary(String value) {
+        String text = value == null ? "" : value;
+        text = text.replaceAll("(?i)(\\\"?(?:token|password|secret|authorization|cookie|api[_-]?key)\\\"?\\s*[:=]\\s*\\\")([^\\\"]*)(\\\")", "$1***$3");
+        text = text.replaceAll("(?i)Bearer\\s+[A-Za-z0-9._~+/=-]+", "Bearer ***");
+        return text.substring(0, Math.min(resultMaxLength, text.length()));
+    }
     private LocalDateTime local(java.sql.Timestamp value) { return value == null ? null : value.toLocalDateTime(); }
 }
