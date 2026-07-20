@@ -8,11 +8,31 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=100000)
 
 
+class LlmCandidate(BaseModel):
+    """Java 模型中心下发的单个候选模型配置。"""
+
+    providerCode: str
+    baseUrl: str
+    apiKeys: list[str] = Field(min_length=1)
+    model: str
+    concurrencyLimit: int = Field(default=4, ge=1, le=1000)
+    concurrencyLevel: str = Field(default="PROVIDER", pattern="^(PROVIDER|API_KEY)$")
+    timeoutSeconds: int = Field(default=60, ge=1, le=600)
+
+
 class ChatRequest(BaseModel):
     """通用模型对话请求。"""
 
     messages: list[ChatMessage] = Field(min_length=1, max_length=100)
     temperature: float = Field(default=0, ge=0, le=2)
+    candidates: list[LlmCandidate] = Field(default_factory=list, max_length=20)
+    enableThinking: bool = False
+
+
+class LlmTestRequest(BaseModel):
+    """模型连接测试请求。"""
+
+    candidate: LlmCandidate
 
 
 class ChatResponse(BaseModel):

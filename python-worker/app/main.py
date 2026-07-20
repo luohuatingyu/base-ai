@@ -7,7 +7,7 @@ from app.config import load_settings, validate_settings
 from app.llm import LlmClient
 from app.logging_config import setup_logging
 from app.middleware import InternalAuthMiddleware
-from app.models import ChatRequest, ChatResponse
+from app.models import ChatRequest, ChatResponse, LlmTestRequest
 from app.job_runtime import JavaJobReporter, JobRuntimeRegistry
 
 settings = load_settings()
@@ -32,7 +32,13 @@ def health():
 async def chat(request: ChatRequest):
     """执行受内部认证保护的通用模型调用。"""
     logger.info("event=worker_chat_started message_count=%d", len(request.messages))
-    return await llm_client.chat(request.messages, request.temperature)
+    return await llm_client.chat(request.messages, request.temperature, request.candidates, request.enableThinking)
+
+
+@app.post("/llm/test")
+async def test_llm(request: LlmTestRequest):
+    """测试模型中心下发的单个候选配置。"""
+    return await llm_client.test(request.candidate)
 
 
 @app.post("/jobs/{python_job_id}/cancel")
