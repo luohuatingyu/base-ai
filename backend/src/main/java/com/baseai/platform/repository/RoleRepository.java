@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.Optional;
 
 public interface RoleRepository extends JpaRepository<Role, Long> {
-    @EntityGraph(attributePaths = "menus")
+    @EntityGraph(attributePaths = {"menus", "customDepartments"})
     Optional<Role> findByCode(String code);
-    @Override @EntityGraph(attributePaths = "menus")
+    @Override @EntityGraph(attributePaths = {"menus", "customDepartments"})
     List<Role> findAll();
 }

@@ -9,11 +9,11 @@ import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<UserAccount, Long> {
     boolean existsByUsername(String username);
-    @EntityGraph(attributePaths = {"roles", "roles.menus"})
+    @EntityGraph(attributePaths = {"roles", "roles.menus", "department", "positions"})
     Optional<UserAccount> findByUsername(String username);
     @Override
-    @EntityGraph(attributePaths = {"roles", "roles.menus"})
+    @EntityGraph(attributePaths = {"roles", "roles.menus", "department", "positions"})
     Optional<UserAccount> findById(Long id);
-    @Override @EntityGraph(attributePaths = "roles")
+    @Override @EntityGraph(attributePaths = {"roles", "department", "positions"})
     List<UserAccount> findAll();
 }

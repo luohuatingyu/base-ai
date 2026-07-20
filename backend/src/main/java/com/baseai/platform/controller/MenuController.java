@@ -8,11 +8,11 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/system/menus")
-@RequiredPermission("system:menu:manage")
 public class MenuController {
     private final PlatformAdminService service;
     public MenuController(PlatformAdminService service) { this.service = service; }
-    @GetMapping public List<PlatformAdminService.MenuView> list() { return service.menus(); }
-    @PostMapping public PlatformAdminService.MenuView create(@RequestBody PlatformAdminService.MenuCommand command) { return service.createMenu(command); }
-    @PutMapping("/{id}") public PlatformAdminService.MenuView update(@PathVariable Long id, @RequestBody PlatformAdminService.MenuCommand command) { return service.updateMenu(id, command); }
+    @GetMapping @RequiredPermission("system:menu:list") public List<PlatformAdminService.MenuView> list() { return service.menus(); }
+    @PostMapping @RequiredPermission("system:menu:create") public PlatformAdminService.MenuView create(@RequestBody PlatformAdminService.MenuCommand command) { return service.createMenu(command); }
+    @PutMapping("/{id}") @RequiredPermission("system:menu:update") public PlatformAdminService.MenuView update(@PathVariable Long id, @RequestBody PlatformAdminService.MenuCommand command) { return service.updateMenu(id, command); }
+    @DeleteMapping("/{id}") @RequiredPermission("system:menu:delete") public void delete(@PathVariable Long id) { service.deleteMenu(id); }
 }

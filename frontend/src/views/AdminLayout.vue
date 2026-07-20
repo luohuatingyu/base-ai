@@ -4,12 +4,7 @@
       <div class="logo"><span>{{ appConfig.shortName }}</span><strong>{{ appConfig.nameEn }}</strong></div>
       <el-menu router :default-active="$route.path" class="nav">
         <el-menu-item index="/dashboard">工作台</el-menu-item>
-        <el-menu-item v-if="auth.hasPermission('ai:chat:invoke')" index="/ai-chat">AI 对话</el-menu-item>
-        <el-menu-item v-if="auth.hasPermission('system:user:manage')" index="/users">用户管理</el-menu-item>
-        <el-menu-item v-if="auth.hasPermission('system:role:manage')" index="/roles">角色管理</el-menu-item>
-        <el-menu-item v-if="auth.hasPermission('system:menu:manage')" index="/menus">权限菜单</el-menu-item>
-        <el-menu-item v-if="auth.hasPermission('system:task:view')" index="/tasks">任务调度</el-menu-item>
-        <el-menu-item v-if="auth.hasPermission('automation:api-trigger:list')" index="/automation/api-triggers">接口触发</el-menu-item>
+        <MenuNode v-for="item in menuTree" :key="item.id" :item="item" />
       </el-menu>
     </el-aside>
     <el-container>
@@ -30,12 +25,14 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { appConfig } from '../config'
+import MenuNode from '../components/MenuNode.vue'
+import { buildTree } from '../utils/tree'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
-const titles = { '/dashboard': '工作台', '/ai-chat': 'AI 对话', '/users': '用户管理', '/roles': '角色管理', '/menus': '权限菜单', '/tasks': '任务调度', '/automation/api-triggers': '接口触发' }
-const title = computed(() => titles[route.path] || appConfig.nameEn)
+const menuTree = computed(() => buildTree((auth.user?.menus || []).filter(item => item.visible !== false && item.type !== 'BUTTON')))
+const title = computed(() => auth.user?.menus?.find(item => item.path === route.path)?.name || (route.path === '/dashboard' ? '工作台' : appConfig.nameEn))
 
 /** 处理用户菜单命令。 */
 async function handleCommand(command) {

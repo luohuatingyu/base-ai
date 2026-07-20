@@ -1,170 +1,320 @@
 package com.baseai.platform.service;
 
 import com.baseai.platform.common.BusinessException;
-import com.baseai.platform.domain.Menu;
-import com.baseai.platform.domain.Role;
-import com.baseai.platform.domain.UserAccount;
-import com.baseai.platform.repository.MenuRepository;
-import com.baseai.platform.repository.RoleRepository;
-import com.baseai.platform.repository.UserRepository;
+import com.baseai.platform.domain.*;
+import com.baseai.platform.repository.*;
+import com.baseai.platform.security.AuthContext;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.function.Function;
 
 @Service
 public class PlatformAdminService {
+    private static final Set<String> MENU_TYPES = Set.of("CATALOG", "MENU", "BUTTON");
+    private static final Set<String> DATA_SCOPES = Set.of("ALL", "DEPARTMENT", "DEPARTMENT_AND_CHILDREN", "SELF", "CUSTOM");
+
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final MenuRepository menuRepository;
+    private final DepartmentRepository departmentRepository;
+    private final PositionRepository positionRepository;
     private final BCryptPasswordEncoder passwordEncoder;
 
-    public PlatformAdminService(UserRepository userRepository, RoleRepository roleRepository,
-                                MenuRepository menuRepository, BCryptPasswordEncoder passwordEncoder) {
+    public PlatformAdminService(UserRepository userRepository, RoleRepository roleRepository, MenuRepository menuRepository,
+                                DepartmentRepository departmentRepository, PositionRepository positionRepository,
+                                BCryptPasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.menuRepository = menuRepository;
+        this.departmentRepository = departmentRepository;
+        this.positionRepository = positionRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
-    /** 查询全部平台用户。 */
+    /** 分页查询用户并支持关键字和状态筛选。 */
     @Transactional(readOnly = true)
-    public List<UserView> users() {
-        return userRepository.findAll().stream().map(this::toUserView).toList();
+    public PageResult<UserView> users(String keyword, Boolean enabled, int page, int size) {
+        return page(userRepository.findAll().stream()
+            .filter(user -> blank(keyword) || contains(user.getUsername(), keyword) || contains(user.getDisplayName(), keyword))
+            .filter(user -> enabled == null || enabled.equals(user.getEnabled()))
+            .sorted(Comparator.comparing(UserAccount::getId)).map(this::toUserView).toList(), page, size);
     }
 
-    /** 创建用户并绑定角色。 */
+    /** 创建用户并绑定部门、岗位和角色。 */
     @Transactional
     public UserView createUser(UserCommand command) {
-        String username = require(command.username(), "账号不能为空");
-        if (userRepository.existsByUsername(username)) throw new BusinessException("账号已存在");
+        String username = require(command.username(), "请输入用户名");
+        if (userRepository.existsByUsername(username)) throw new BusinessException("用户名已存在");
         UserAccount user = new UserAccount();
         user.setUsername(username);
-        user.setDisplayName(require(command.displayName(), "显示名称不能为空"));
-        user.setPasswordHash(passwordEncoder.encode(require(command.password(), "密码不能为空")));
-        user.setEnabled(command.enabled() == null || command.enabled());
-        user.setRoles(loadRoles(command.roleIds()));
+        applyUser(user, command, true);
         return toUserView(userRepository.save(user));
     }
 
-    /** 更新用户资料、状态、角色及可选密码。 */
+    /** 更新用户资料及权限关系。 */
     @Transactional
     public UserView updateUser(Long id, UserCommand command) {
         UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("用户不存在"));
-        user.setDisplayName(require(command.displayName(), "显示名称不能为空"));
-        user.setEnabled(command.enabled() == null || command.enabled());
-        user.setRoles(loadRoles(command.roleIds()));
-        if (command.password() != null && !command.password().isBlank()) user.setPasswordHash(passwordEncoder.encode(command.password()));
-        return toUserView(user);
+        if (!user.getUsername().equals(command.username()) && userRepository.existsByUsername(require(command.username(), "请输入用户名"))) {
+            throw new BusinessException("用户名已存在");
+        }
+        user.setUsername(require(command.username(), "请输入用户名"));
+        applyUser(user, command, false);
+        return toUserView(userRepository.save(user));
     }
 
-    /** 查询全部角色及其权限菜单。 */
+    /** 删除非当前登录用户。 */
+    @Transactional
+    public void deleteUser(Long id) {
+        if (Objects.equals(AuthContext.require().id(), id)) throw new BusinessException("不能删除当前登录用户");
+        UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("用户不存在"));
+        user.getRoles().clear();
+        user.getPositions().clear();
+        userRepository.delete(user);
+    }
+
+    /** 查询全部角色及菜单和自定义部门范围。 */
     @Transactional(readOnly = true)
     public List<RoleView> roles() {
-        return roleRepository.findAll().stream().map(this::toRoleView).toList();
+        return roleRepository.findAll().stream().sorted(Comparator.comparing(Role::getId)).map(this::toRoleView).toList();
     }
 
-    /** 创建平台角色并绑定菜单权限。 */
+    /** 创建角色并配置数据权限。 */
     @Transactional
     public RoleView createRole(RoleCommand command) {
-        String code = require(command.code(), "角色编码不能为空").toUpperCase();
+        String code = require(command.code(), "请输入角色编码").toUpperCase(Locale.ROOT);
         if (roleRepository.findByCode(code).isPresent()) throw new BusinessException("角色编码已存在");
         Role role = new Role();
         role.setCode(code);
-        role.setName(require(command.name(), "角色名称不能为空"));
-        role.setEnabled(command.enabled() == null || command.enabled());
-        role.setMenus(loadMenus(command.menuIds()));
+        applyRole(role, command);
         return toRoleView(roleRepository.save(role));
     }
 
-    /** 更新角色名称、状态和权限菜单。 */
+    /** 更新角色菜单与数据权限。 */
     @Transactional
     public RoleView updateRole(Long id, RoleCommand command) {
         Role role = roleRepository.findById(id).orElseThrow(() -> BusinessException.notFound("角色不存在"));
-        role.setName(require(command.name(), "角色名称不能为空"));
-        role.setEnabled(command.enabled() == null || command.enabled());
-        role.setMenus(loadMenus(command.menuIds()));
-        return toRoleView(role);
+        if (!role.getCode().equalsIgnoreCase(command.code()) && roleRepository.findByCode(require(command.code(), "请输入角色编码").toUpperCase(Locale.ROOT)).isPresent()) {
+            throw new BusinessException("角色编码已存在");
+        }
+        role.setCode(require(command.code(), "请输入角色编码").toUpperCase(Locale.ROOT));
+        applyRole(role, command);
+        return toRoleView(roleRepository.save(role));
     }
 
-    /** 查询全部菜单权限定义。 */
+    /** 删除未绑定用户的非内置角色。 */
+    @Transactional
+    public void deleteRole(Long id) {
+        Role role = roleRepository.findById(id).orElseThrow(() -> BusinessException.notFound("角色不存在"));
+        if ("ADMIN".equals(role.getCode())) throw new BusinessException("不能删除内置管理员角色");
+        boolean used = userRepository.findAll().stream().anyMatch(user -> user.getRoles().stream().anyMatch(item -> item.getId().equals(id)));
+        if (used) throw new BusinessException("角色已被用户使用，不能删除");
+        role.getMenus().clear();
+        role.getCustomDepartments().clear();
+        roleRepository.delete(role);
+    }
+
+    /** 查询完整菜单树数据。 */
     @Transactional(readOnly = true)
     public List<MenuView> menus() {
-        return menuRepository.findAll().stream().map(this::toMenuView).toList();
+        return menuRepository.findAll().stream().sorted(menuComparator()).map(this::toMenuView).toList();
     }
 
-    /** 创建新的权限菜单。 */
+    /** 创建目录、菜单或按钮权限节点。 */
     @Transactional
     public MenuView createMenu(MenuCommand command) {
-        String permission = require(command.permission(), "权限编码不能为空");
-        if (menuRepository.findByPermission(permission).isPresent()) throw new BusinessException("权限编码已存在");
         Menu menu = new Menu();
         applyMenu(menu, command);
         return toMenuView(menuRepository.save(menu));
     }
 
-    /** 更新权限菜单展示信息和状态。 */
+    /** 更新菜单节点并阻止循环父子关系。 */
     @Transactional
     public MenuView updateMenu(Long id, MenuCommand command) {
         Menu menu = menuRepository.findById(id).orElseThrow(() -> BusinessException.notFound("菜单不存在"));
+        if (Objects.equals(id, command.parentId())) throw new BusinessException("菜单不能选择自身作为父级");
         applyMenu(menu, command);
-        return toMenuView(menu);
+        return toMenuView(menuRepository.save(menu));
     }
 
-    /** 应用菜单命令字段。 */
+    /** 删除未被角色使用且没有下级节点的菜单。 */
+    @Transactional
+    public void deleteMenu(Long id) {
+        Menu menu = menuRepository.findById(id).orElseThrow(() -> BusinessException.notFound("菜单不存在"));
+        if (menuRepository.findAll().stream().anyMatch(item -> id.equals(item.getParentId()))) throw new BusinessException("请先删除下级菜单");
+        if (roleRepository.findAll().stream().anyMatch(role -> role.getMenus().stream().anyMatch(item -> item.getId().equals(id)))) {
+            throw new BusinessException("菜单已被角色使用，不能删除");
+        }
+        menuRepository.delete(menu);
+    }
+
+    /** 查询部门树数据。 */
+    public List<DepartmentView> departments() {
+        return departmentRepository.findAll().stream().sorted(Comparator.comparing(Department::getSortOrder).thenComparing(Department::getId))
+            .map(this::toDepartmentView).toList();
+    }
+
+    /** 创建部门节点。 */
+    @Transactional
+    public DepartmentView createDepartment(DepartmentCommand command) {
+        if (departmentRepository.findByCode(require(command.code(), "请输入部门编码")).isPresent()) throw new BusinessException("部门编码已存在");
+        Department department = new Department();
+        applyDepartment(department, command);
+        return toDepartmentView(departmentRepository.save(department));
+    }
+
+    /** 更新部门节点。 */
+    @Transactional
+    public DepartmentView updateDepartment(Long id, DepartmentCommand command) {
+        Department department = departmentRepository.findById(id).orElseThrow(() -> BusinessException.notFound("部门不存在"));
+        if (Objects.equals(id, command.parentId())) throw new BusinessException("部门不能选择自身作为上级");
+        applyDepartment(department, command);
+        return toDepartmentView(departmentRepository.save(department));
+    }
+
+    /** 删除无下级且未被用户引用的部门。 */
+    @Transactional
+    public void deleteDepartment(Long id) {
+        if (departmentRepository.existsByParentId(id)) throw new BusinessException("请先删除下级部门");
+        if (userRepository.findAll().stream().anyMatch(user -> user.getDepartment() != null && id.equals(user.getDepartment().getId()))) {
+            throw new BusinessException("部门已被用户使用，不能删除");
+        }
+        departmentRepository.deleteById(id);
+    }
+
+    /** 查询岗位列表。 */
+    public List<PositionView> positions() {
+        return positionRepository.findAll().stream().sorted(Comparator.comparing(Position::getSortOrder).thenComparing(Position::getId))
+            .map(this::toPositionView).toList();
+    }
+
+    /** 创建岗位。 */
+    @Transactional
+    public PositionView createPosition(PositionCommand command) {
+        if (positionRepository.findByCode(require(command.code(), "请输入岗位编码")).isPresent()) throw new BusinessException("岗位编码已存在");
+        Position position = new Position();
+        applyPosition(position, command);
+        return toPositionView(positionRepository.save(position));
+    }
+
+    /** 更新岗位。 */
+    @Transactional
+    public PositionView updatePosition(Long id, PositionCommand command) {
+        Position position = positionRepository.findById(id).orElseThrow(() -> BusinessException.notFound("岗位不存在"));
+        applyPosition(position, command);
+        return toPositionView(positionRepository.save(position));
+    }
+
+    /** 删除未被用户引用的岗位。 */
+    @Transactional
+    public void deletePosition(Long id) {
+        if (userRepository.findAll().stream().anyMatch(user -> user.getPositions().stream().anyMatch(item -> item.getId().equals(id)))) {
+            throw new BusinessException("岗位已被用户使用，不能删除");
+        }
+        positionRepository.deleteById(id);
+    }
+
+    /** 应用用户表单字段和关系。 */
+    private void applyUser(UserAccount user, UserCommand command, boolean creating) {
+        user.setDisplayName(require(command.displayName(), "请输入显示名称"));
+        user.setEnabled(command.enabled() == null || command.enabled());
+        if (creating || !blank(command.password())) user.setPasswordHash(passwordEncoder.encode(require(command.password(), "请输入密码")));
+        user.setRoles(load(command.roleIds(), roleRepository::findAllById));
+        user.setPositions(load(command.positionIds(), positionRepository::findAllById));
+        user.setDepartment(command.departmentId() == null ? null : departmentRepository.findById(command.departmentId())
+            .orElseThrow(() -> BusinessException.notFound("部门不存在")));
+    }
+
+    /** 应用角色基础信息、菜单和数据范围。 */
+    private void applyRole(Role role, RoleCommand command) {
+        role.setName(require(command.name(), "请输入角色名称"));
+        role.setDescription(trim(command.description()));
+        role.setEnabled(command.enabled() == null || command.enabled());
+        String dataScope = blank(command.dataScope()) ? "ALL" : command.dataScope().toUpperCase(Locale.ROOT);
+        if (!DATA_SCOPES.contains(dataScope)) throw new BusinessException("数据权限范围不正确");
+        role.setDataScope(dataScope);
+        role.setMenus(load(command.menuIds(), menuRepository::findAllById));
+        role.setCustomDepartments("CUSTOM".equals(dataScope) ? load(command.departmentIds(), departmentRepository::findAllById) : new LinkedHashSet<>());
+    }
+
+    /** 校验并应用菜单配置。 */
     private void applyMenu(Menu menu, MenuCommand command) {
-        menu.setName(require(command.name(), "菜单名称不能为空"));
-        menu.setPermission(require(command.permission(), "权限编码不能为空"));
+        String type = blank(command.type()) ? "MENU" : command.type().toUpperCase(Locale.ROOT);
+        if (!MENU_TYPES.contains(type)) throw new BusinessException("菜单类型不正确");
+        String permission = trim(command.permission());
+        menuRepository.findByPermission(permission).filter(existing -> !existing.getId().equals(menu.getId()))
+            .ifPresent(existing -> { throw new BusinessException("权限编码已存在"); });
+        if (command.parentId() != null && menuRepository.findById(command.parentId()).isEmpty()) throw BusinessException.notFound("父级菜单不存在");
+        menu.setParentId(command.parentId());
+        menu.setName(require(command.name(), "请输入菜单名称"));
+        menu.setType(type);
+        menu.setPath(trim(command.path()));
+        menu.setComponent(trim(command.component()));
+        menu.setIcon(trim(command.icon()));
+        menu.setPermission(permission);
         menu.setSortOrder(command.sortOrder() == null ? 0 : command.sortOrder());
+        menu.setVisible(command.visible() == null || command.visible());
         menu.setEnabled(command.enabled() == null || command.enabled());
     }
 
-    /** 按编号加载角色集合。 */
-    private Set<Role> loadRoles(List<Long> ids) {
-        if (ids == null || ids.isEmpty()) return new LinkedHashSet<>();
-        List<Role> roles = roleRepository.findAllById(ids);
-        if (roles.size() != new LinkedHashSet<>(ids).size()) throw new BusinessException("包含不存在的角色");
-        return new LinkedHashSet<>(roles);
+    /** 应用部门字段。 */
+    private void applyDepartment(Department department, DepartmentCommand command) {
+        department.setParentId(command.parentId());
+        department.setCode(require(command.code(), "请输入部门编码"));
+        department.setName(require(command.name(), "请输入部门名称"));
+        department.setSortOrder(command.sortOrder() == null ? 0 : command.sortOrder());
+        department.setEnabled(command.enabled() == null || command.enabled());
     }
 
-    /** 按编号加载菜单集合。 */
-    private Set<Menu> loadMenus(List<Long> ids) {
-        if (ids == null || ids.isEmpty()) return new LinkedHashSet<>();
-        List<Menu> menus = menuRepository.findAllById(ids);
-        if (menus.size() != new LinkedHashSet<>(ids).size()) throw new BusinessException("包含不存在的菜单");
-        return new LinkedHashSet<>(menus);
+    /** 应用岗位字段。 */
+    private void applyPosition(Position position, PositionCommand command) {
+        position.setCode(require(command.code(), "请输入岗位编码"));
+        position.setName(require(command.name(), "请输入岗位名称"));
+        position.setSortOrder(command.sortOrder() == null ? 0 : command.sortOrder());
+        position.setEnabled(command.enabled() == null || command.enabled());
     }
 
-    /** 转换用户响应。 */
     private UserView toUserView(UserAccount user) {
         return new UserView(user.getId(), user.getUsername(), user.getDisplayName(), user.getEnabled(),
-            user.getRoles().stream().map(Role::getId).sorted().toList());
+            user.getDepartment() == null ? null : user.getDepartment().getId(),
+            user.getRoles().stream().map(Role::getId).sorted().toList(), user.getPositions().stream().map(Position::getId).sorted().toList());
     }
-
-    /** 转换角色响应。 */
     private RoleView toRoleView(Role role) {
-        return new RoleView(role.getId(), role.getCode(), role.getName(), role.getEnabled(),
-            role.getMenus().stream().map(Menu::getId).sorted().toList());
+        return new RoleView(role.getId(), role.getCode(), role.getName(), role.getDescription(), role.getDataScope(), role.getEnabled(),
+            role.getMenus().stream().map(Menu::getId).sorted().toList(), role.getCustomDepartments().stream().map(Department::getId).sorted().toList());
     }
-
-    /** 转换菜单响应。 */
     private MenuView toMenuView(Menu menu) {
-        return new MenuView(menu.getId(), menu.getName(), menu.getPermission(), menu.getSortOrder(), menu.getEnabled());
+        return new MenuView(menu.getId(), menu.getParentId(), menu.getName(), menu.getType(), menu.getPath(), menu.getComponent(), menu.getIcon(),
+            menu.getPermission(), menu.getSortOrder(), menu.getVisible(), menu.getEnabled());
     }
+    private DepartmentView toDepartmentView(Department item) { return new DepartmentView(item.getId(), item.getParentId(), item.getCode(), item.getName(), item.getSortOrder(), item.getEnabled()); }
+    private PositionView toPositionView(Position item) { return new PositionView(item.getId(), item.getCode(), item.getName(), item.getSortOrder(), item.getEnabled()); }
 
-    /** 校验必要文本字段。 */
-    private String require(String value, String message) {
-        if (value == null || value.isBlank()) throw new BusinessException(message);
-        return value.trim();
+    /** 将查询结果切分为稳定分页结构。 */
+    private <T> PageResult<T> page(List<T> rows, int page, int size) {
+        int safePage = Math.max(1, page), safeSize = Math.min(200, Math.max(1, size));
+        int from = Math.min(rows.size(), (safePage - 1) * safeSize), to = Math.min(rows.size(), from + safeSize);
+        return new PageResult<>(rows.subList(from, to), rows.size(), safePage, safeSize);
     }
+    private Comparator<Menu> menuComparator() { return Comparator.comparing(Menu::getSortOrder).thenComparing(Menu::getId); }
+    private <T> LinkedHashSet<T> load(List<Long> ids, Function<Iterable<Long>, List<T>> loader) { return new LinkedHashSet<>(loader.apply(ids == null ? List.of() : ids)); }
+    private boolean contains(String value, String keyword) { return value != null && value.toLowerCase(Locale.ROOT).contains(keyword.trim().toLowerCase(Locale.ROOT)); }
+    private boolean blank(String value) { return value == null || value.isBlank(); }
+    private String trim(String value) { return blank(value) ? null : value.trim(); }
+    private String require(String value, String message) { if (blank(value)) throw new BusinessException(message); return value.trim(); }
 
-    public record UserCommand(String username, String displayName, String password, Boolean enabled, List<Long> roleIds) {}
-    public record UserView(Long id, String username, String displayName, Boolean enabled, List<Long> roleIds) {}
-    public record RoleCommand(String code, String name, Boolean enabled, List<Long> menuIds) {}
-    public record RoleView(Long id, String code, String name, Boolean enabled, List<Long> menuIds) {}
-    public record MenuCommand(String name, String permission, Integer sortOrder, Boolean enabled) {}
-    public record MenuView(Long id, String name, String permission, Integer sortOrder, Boolean enabled) {}
+    public record PageResult<T>(List<T> items, long total, int page, int size) {}
+    public record UserCommand(String username, String displayName, String password, Boolean enabled, Long departmentId, List<Long> roleIds, List<Long> positionIds) {}
+    public record UserView(Long id, String username, String displayName, Boolean enabled, Long departmentId, List<Long> roleIds, List<Long> positionIds) {}
+    public record RoleCommand(String code, String name, String description, String dataScope, Boolean enabled, List<Long> menuIds, List<Long> departmentIds) {}
+    public record RoleView(Long id, String code, String name, String description, String dataScope, Boolean enabled, List<Long> menuIds, List<Long> departmentIds) {}
+    public record MenuCommand(Long parentId, String name, String type, String path, String component, String icon, String permission, Integer sortOrder, Boolean visible, Boolean enabled) {}
+    public record MenuView(Long id, Long parentId, String name, String type, String path, String component, String icon, String permission, Integer sortOrder, Boolean visible, Boolean enabled) {}
+    public record DepartmentCommand(Long parentId, String code, String name, Integer sortOrder, Boolean enabled) {}
+    public record DepartmentView(Long id, Long parentId, String code, String name, Integer sortOrder, Boolean enabled) {}
+    public record PositionCommand(String code, String name, Integer sortOrder, Boolean enabled) {}
+    public record PositionView(Long id, String code, String name, Integer sortOrder, Boolean enabled) {}
 }

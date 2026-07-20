@@ -1,20 +1,21 @@
 <template>
   <div class="panel">
-    <div class="section-head"><div><h2>用户管理</h2><p>账号数据仅存储在 MySQL 系统库。</p></div><el-button type="primary" @click="open()">新增用户</el-button></div>
-    <el-table :data="rows"><el-table-column prop="username" label="账号"/><el-table-column prop="displayName" label="名称"/><el-table-column label="状态"><template #default="s"><el-tag :type="s.row.enabled?'success':'info'">{{ s.row.enabled?'启用':'停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="100"><template #default="s"><el-button link type="primary" @click="open(s.row)">编辑</el-button></template></el-table-column></el-table>
-    <el-dialog v-model="visible" :title="form.id?'编辑用户':'新增用户'" width="520px"><el-form label-width="90px"><el-form-item label="账号"><el-input v-model="form.username" :disabled="Boolean(form.id)"/></el-form-item><el-form-item label="显示名称"><el-input v-model="form.displayName"/></el-form-item><el-form-item label="密码"><el-input v-model="form.password" type="password" show-password/></el-form-item><el-form-item label="角色"><el-select v-model="form.roleIds" multiple><el-option v-for="role in roles" :key="role.id" :label="role.name" :value="role.id"/></el-select></el-form-item><el-form-item label="启用"><el-switch v-model="form.enabled"/></el-form-item></el-form><template #footer><el-button @click="visible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template></el-dialog>
+    <div class="section-head"><div><h2>用户管理</h2><p>维护账号、部门、岗位和角色。</p></div><el-button v-if="auth.hasPermission('system:user:create')" type="primary" @click="open()">新增用户</el-button></div>
+    <el-form inline><el-form-item><el-input v-model="query.keyword" placeholder="账号或名称" clearable @keyup.enter="load"/></el-form-item><el-form-item><el-select v-model="query.enabled" clearable placeholder="全部状态" style="width:130px"><el-option label="启用" :value="true"/><el-option label="停用" :value="false"/></el-select></el-form-item><el-button @click="load">查询</el-button></el-form>
+    <el-table :data="rows"><el-table-column prop="username" label="账号"/><el-table-column prop="displayName" label="名称"/><el-table-column label="部门"><template #default="s">{{ departmentName(s.row.departmentId) }}</template></el-table-column><el-table-column label="状态"><template #default="s"><el-tag :type="s.row.enabled?'success':'info'">{{ s.row.enabled?'启用':'停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="150"><template #default="s"><el-button v-if="auth.hasPermission('system:user:update')" link type="primary" @click="open(s.row)">编辑</el-button><el-button v-if="auth.hasPermission('system:user:delete')" link type="danger" @click="remove(s.row)">删除</el-button></template></el-table-column></el-table>
+    <el-pagination v-model:current-page="query.page" :page-size="query.size" :total="total" layout="total, prev, pager, next" @current-change="load"/>
+    <el-dialog v-model="visible" :title="form.id?'编辑用户':'新增用户'" width="580px"><el-form label-width="90px"><el-form-item label="账号"><el-input v-model="form.username"/></el-form-item><el-form-item label="显示名称"><el-input v-model="form.displayName"/></el-form-item><el-form-item label="密码"><el-input v-model="form.password" type="password" show-password :placeholder="form.id?'留空则不修改':''"/></el-form-item><el-form-item label="部门"><el-select v-model="form.departmentId" clearable><el-option v-for="item in departments" :key="item.id" :label="item.name" :value="item.id"/></el-select></el-form-item><el-form-item label="岗位"><el-select v-model="form.positionIds" multiple><el-option v-for="item in positions" :key="item.id" :label="item.name" :value="item.id"/></el-select></el-form-item><el-form-item label="角色"><el-select v-model="form.roleIds" multiple><el-option v-for="role in roles" :key="role.id" :label="role.name" :value="role.id"/></el-select></el-form-item><el-form-item label="启用"><el-switch v-model="form.enabled"/></el-form-item></el-form><template #footer><el-button @click="visible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template></el-dialog>
   </div>
 </template>
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import http from '../api/http'
-const rows=ref([]), roles=ref([]), visible=ref(false)
-const form=reactive({id:null,username:'',displayName:'',password:'',enabled:true,roleIds:[]})
-async function load(){ [rows.value,roles.value]=await Promise.all([http.get('/system/users').then(r=>r.data),http.get('/system/roles').then(r=>r.data)]) }
-/** 打开用户编辑窗口。 */
-function open(row){ Object.assign(form,row?{...row,password:''}:{id:null,username:'',displayName:'',password:'',enabled:true,roleIds:[]}); visible.value=true }
-/** 保存用户并刷新列表。 */
-async function save(){ try{ form.id?await http.put(`/system/users/${form.id}`,form):await http.post('/system/users',form); visible.value=false; await load(); ElMessage.success('保存成功') }catch(e){ElMessage.error(e.response?.data?.message||'保存失败')} }
-onMounted(load)
+import { onMounted, reactive, ref } from 'vue'; import { ElMessage, ElMessageBox } from 'element-plus'; import http from '../api/http'; import { useAuthStore } from '../stores/auth'
+const auth=useAuthStore(),rows=ref([]),roles=ref([]),departments=ref([]),positions=ref([]),total=ref(0),visible=ref(false)
+const query=reactive({keyword:'',enabled:null,page:1,size:20}); const form=reactive({id:null,username:'',displayName:'',password:'',enabled:true,departmentId:null,roleIds:[],positionIds:[]})
+async function load(){const response=await http.get('/system/users',{params:query});rows.value=response.data.items;total.value=response.data.total}
+async function loadOptions(){[roles.value,departments.value,positions.value]=await Promise.all(['/system/roles','/system/departments','/system/positions'].map(url=>http.get(url).then(r=>r.data)))}
+/** 打开用户编辑窗口。 */ function open(row){Object.assign(form,row?{...row,password:'',roleIds:[...row.roleIds],positionIds:[...row.positionIds]}:{id:null,username:'',displayName:'',password:'',enabled:true,departmentId:null,roleIds:[],positionIds:[]});visible.value=true}
+/** 保存用户并刷新列表。 */ async function save(){try{form.id?await http.put(`/system/users/${form.id}`,form):await http.post('/system/users',form);visible.value=false;await load();ElMessage.success('保存成功')}catch(e){ElMessage.error(e.response?.data?.message||'保存失败')}}
+/** 删除用户前进行二次确认。 */ async function remove(row){await ElMessageBox.confirm(`确认删除用户「${row.username}」？`,'删除确认',{type:'warning'});await http.delete(`/system/users/${row.id}`);await load();ElMessage.success('删除成功')}
+function departmentName(id){return departments.value.find(item=>item.id===id)?.name||'-'}
+onMounted(async()=>{await loadOptions();await load()})
 </script>

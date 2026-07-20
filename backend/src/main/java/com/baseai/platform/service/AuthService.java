@@ -62,9 +62,11 @@ public class AuthService {
         List<MenuItem> menus = user.getRoles().stream().filter(role -> Boolean.TRUE.equals(role.getEnabled()))
             .flatMap(role -> role.getMenus().stream()).filter(menu -> Boolean.TRUE.equals(menu.getEnabled()))
             .distinct().sorted(Comparator.comparing(Menu::getSortOrder).thenComparing(Menu::getId))
-            .map(menu -> new MenuItem(menu.getId(), menu.getName(), menu.getPermission())).toList();
-        List<String> permissions = menus.stream().map(MenuItem::permission).distinct().toList();
-        return new CurrentUser(user.getId(), user.getUsername(), user.getDisplayName(), roles, permissions, menus);
+            .map(menu -> new MenuItem(menu.getId(), menu.getParentId(), menu.getName(), menu.getType(), menu.getPath(), menu.getComponent(),
+                menu.getIcon(), menu.getPermission(), menu.getSortOrder(), menu.getVisible())).toList();
+        List<String> permissions = menus.stream().map(MenuItem::permission).filter(java.util.Objects::nonNull).distinct().toList();
+        return new CurrentUser(user.getId(), user.getUsername(), user.getDisplayName(),
+            user.getDepartment() == null ? null : user.getDepartment().getId(), roles, permissions, menus);
     }
 
     /** 校验必要文本字段。 */
@@ -74,6 +76,7 @@ public class AuthService {
     }
 
     public record LoginResult(String token, Instant expiresAt, CurrentUser user) {}
-    public record CurrentUser(Long id, String username, String displayName, List<String> roles, List<String> permissions, List<MenuItem> menus) {}
-    public record MenuItem(Long id, String name, String permission) {}
+    public record CurrentUser(Long id, String username, String displayName, Long departmentId, List<String> roles, List<String> permissions, List<MenuItem> menus) {}
+    public record MenuItem(Long id, Long parentId, String name, String type, String path, String component, String icon,
+                           String permission, Integer sortOrder, Boolean visible) {}
 }

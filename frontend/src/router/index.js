@@ -9,6 +9,8 @@ import RolesView from '../views/RolesView.vue'
 import MenusView from '../views/MenusView.vue'
 import TasksView from '../views/TasksView.vue'
 import ApiTriggerView from '../views/ApiTriggerView.vue'
+import DepartmentsView from '../views/DepartmentsView.vue'
+import PositionsView from '../views/PositionsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -18,9 +20,11 @@ const router = createRouter({
       path: '/', component: AdminLayout, redirect: '/dashboard', children: [
         { path: 'dashboard', component: DashboardView },
         { path: 'ai-chat', component: AiChatView, meta: { permission: 'ai:chat:invoke' } },
-        { path: 'users', component: UsersView, meta: { permission: 'system:user:manage' } },
-        { path: 'roles', component: RolesView, meta: { permission: 'system:role:manage' } },
-        { path: 'menus', component: MenusView, meta: { permission: 'system:menu:manage' } },
+        { path: 'users', component: UsersView, meta: { permission: 'system:user:list' } },
+        { path: 'roles', component: RolesView, meta: { permission: 'system:role:list' } },
+        { path: 'menus', component: MenusView, meta: { permission: 'system:menu:list' } },
+        { path: 'departments', component: DepartmentsView, meta: { permission: 'system:department:list' } },
+        { path: 'positions', component: PositionsView, meta: { permission: 'system:position:list' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view' } },
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list' } }
       ]
