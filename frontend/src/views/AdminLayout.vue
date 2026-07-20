@@ -8,7 +8,8 @@
         <el-menu-item v-if="auth.hasPermission('system:user:manage')" index="/users">用户管理</el-menu-item>
         <el-menu-item v-if="auth.hasPermission('system:role:manage')" index="/roles">角色管理</el-menu-item>
         <el-menu-item v-if="auth.hasPermission('system:menu:manage')" index="/menus">权限菜单</el-menu-item>
-        <el-menu-item v-if="auth.hasPermission('system:task:view')" index="/tasks">任务日志</el-menu-item>
+        <el-menu-item v-if="auth.hasPermission('system:task:view')" index="/tasks">任务调度</el-menu-item>
+        <el-menu-item v-if="auth.hasPermission('automation:api-trigger:list')" index="/automation/api-triggers">接口触发</el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -32,7 +33,7 @@ import { useAuthStore } from '../stores/auth'
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
-const titles = { '/dashboard': '工作台', '/ai-chat': 'AI 对话', '/users': '用户管理', '/roles': '角色管理', '/menus': '权限菜单', '/tasks': '任务日志' }
+const titles = { '/dashboard': '工作台', '/ai-chat': 'AI 对话', '/users': '用户管理', '/roles': '角色管理', '/menus': '权限菜单', '/tasks': '任务调度', '/automation/api-triggers': '接口触发' }
 const title = computed(() => titles[route.path] || 'Base AI')
 
 /** 处理用户菜单命令。 */

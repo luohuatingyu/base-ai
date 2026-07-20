@@ -8,6 +8,7 @@ import UsersView from '../views/UsersView.vue'
 import RolesView from '../views/RolesView.vue'
 import MenusView from '../views/MenusView.vue'
 import TasksView from '../views/TasksView.vue'
+import ApiTriggerView from '../views/ApiTriggerView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -21,6 +22,7 @@ const router = createRouter({
         { path: 'roles', component: RolesView, meta: { permission: 'system:role:manage' } },
         { path: 'menus', component: MenusView, meta: { permission: 'system:menu:manage' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view' } }
+        ,{ path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list' } }
       ]
     }
   ]
