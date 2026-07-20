@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 public class BaseAiApplication {
 
-    /** 启动基础 AI 平台后端。 */
+    /** 启动 AI 平台后端。 */
     public static void main(String[] args) {
         SpringApplication.run(BaseAiApplication.class, args);
     }

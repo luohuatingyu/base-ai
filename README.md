@@ -1,6 +1,6 @@
-# Base AI Platform
+# AI Platform
 
-Base AI 是一个可直接扩展业务模块的基础平台，提供 Vue 管理端、Spring Boot 系统服务和 Python LLM Worker。
+AI平台是一个可直接扩展业务模块的平台，提供 Vue 管理端、Spring Boot 系统服务和 Python LLM Worker。
 
 ## 技术架构
 
@@ -29,7 +29,7 @@ PostgreSQL 专门承载后续业务模块的数据，不保存系统用户、权
 @Qualifier("businessJdbcTemplate") JdbcTemplate businessJdbcTemplate
 ```
 
-本基础平台不创建具体业务表；业务模块应使用独立迁移脚本维护 PostgreSQL Schema。
+AI平台不创建具体业务表；业务模块应使用独立迁移脚本维护 PostgreSQL Schema。
 
 ### Redis 缓存数据库
 
@@ -114,6 +114,7 @@ sudo editor /etc/base-ai/base-ai.env
 
 环境变量分为：
 
+- 平台品牌：`APP_BRAND_CODE`、`APP_BRAND_NAME_EN`、`APP_BRAND_NAME_ZH`、`APP_BRAND_SHORT_NAME`，默认展示为 `AI Platform` 和 `AI平台`。
 - MySQL 系统库：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
 - PostgreSQL 业务库：`POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`。
 - Redis 缓存：`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`。
