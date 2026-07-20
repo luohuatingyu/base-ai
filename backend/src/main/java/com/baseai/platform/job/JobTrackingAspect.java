@@ -81,6 +81,10 @@ public class JobTrackingAspect {
             taskJobService.completeCancellation(jobId);
             throw exception;
         } catch (Throwable throwable) {
+            if (runtime.token().isCancelled() || Thread.currentThread().isInterrupted()) {
+                taskJobService.completeCancellation(jobId);
+                throw new JobCancelledException(jobId);
+            }
             taskJobService.markFailed(jobId, throwable.getMessage());
             throw throwable;
         } finally {
