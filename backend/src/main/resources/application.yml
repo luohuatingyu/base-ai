@@ -1,0 +1,56 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: base-ai-backend
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:5s}
+      repositories:
+        enabled: false
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:system-schema.sql
+
+app:
+  system-database:
+    url: ${MYSQL_URL}
+    username: ${MYSQL_USERNAME}
+    password: ${MYSQL_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    maximum-pool-size: 20
+  business-database:
+    url: ${POSTGRES_URL}
+    username: ${POSTGRES_USERNAME}
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    maximum-pool-size: ${POSTGRES_POOL_SIZE:10}
+  token:
+    secret: ${APP_TOKEN_SECRET}
+    expire-minutes: ${APP_TOKEN_EXPIRE_MINUTES:720}
+  seed:
+    admin-username: ${APP_SEED_ADMIN_USERNAME:admin}
+    admin-password: ${APP_SEED_ADMIN_PASSWORD}
+  python-worker:
+    url: ${PYTHON_WORKER_URL:http://python-worker:8000}
+    internal-token: ${PYTHON_WORKER_INTERNAL_TOKEN}
+    java-instance-id: ${JAVA_INSTANCE_ID:java-backend-1}
+  job-log:
+    queue-capacity: ${JOB_LOG_QUEUE_CAPACITY:10000}
+    batch-size: ${JOB_LOG_BATCH_SIZE:100}
+    flush-interval-ms: ${JOB_LOG_FLUSH_INTERVAL_MS:500}
+    persist-level: ${JOB_LOG_PERSIST_LEVEL:INFO}
+    retention-days: ${JOB_LOG_RETENTION_DAYS:7}

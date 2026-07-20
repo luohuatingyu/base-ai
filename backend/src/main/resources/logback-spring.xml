@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <springProperty scope="context" name="queueCapacity" source="app.job-log.queue-capacity" defaultValue="10000"/>
+    <springProperty scope="context" name="persistLevel" source="app.job-log.persist-level" defaultValue="INFO"/>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | %logger{36} | rid=%replace(%X{requestId}){'^$','-'} | jobId=%replace(%X{jobId}){'^$','-'} | %msg%n</pattern>
+        </encoder>
+    </appender>
+    <appender name="JOB_DB" class="com.baseai.platform.logging.JobLogDbAppender">
+        <capacity>${queueCapacity}</capacity>
+        <persistLevel>${persistLevel}</persistLevel>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="JOB_DB"/>
+    </root>
+</configuration>
