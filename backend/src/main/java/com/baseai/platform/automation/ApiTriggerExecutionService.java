@@ -16,17 +16,19 @@ public class ApiTriggerExecutionService {
     private final ApiTriggerTrackedExecutionService trackedExecutionService;
     private final StringRedisTemplate redisTemplate;
     private final int lockSeconds;
+    private final String brandCode;
 
     public ApiTriggerExecutionService(ApiTriggerTrackedExecutionService trackedExecutionService,
                                       StringRedisTemplate redisTemplate, PlatformProperties properties) {
         this.trackedExecutionService = trackedExecutionService;
         this.redisTemplate = redisTemplate;
         this.lockSeconds = properties.getApiTrigger().getLockSeconds();
+        this.brandCode = properties.getBrand().getCode();
     }
 
     /** 通过 Redis 锁保证多实例环境同一 Cron 只执行一次。 */
     public void executeScheduled(Long configId, Long ownerUserId) {
-        String key = "base-ai:api-trigger:lock:" + configId;
+        String key = brandCode + ":api-trigger:lock:" + configId;
         String token = UUID.randomUUID().toString();
         if (!Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(key, token, Duration.ofSeconds(lockSeconds)))) return;
         try { trackedExecutionService.execute(configId, ownerUserId); }

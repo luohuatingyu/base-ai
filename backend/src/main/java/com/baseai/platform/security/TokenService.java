@@ -21,7 +21,6 @@ import java.util.UUID;
 @Service
 public class TokenService {
     private static final String HMAC_ALGORITHM = "HmacSHA256";
-    private static final String REVOKED_PREFIX = "base-ai:auth:revoked:";
     private final PlatformProperties properties;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
@@ -58,7 +57,7 @@ public class TokenService {
             Instant expiresAt = Instant.ofEpochSecond(((Number) payload.get("exp")).longValue());
             String tokenId = String.valueOf(payload.get("jti"));
             if (!expiresAt.isAfter(Instant.now())) throw BusinessException.unauthorized("登录已过期");
-            if (Boolean.TRUE.equals(redisTemplate.hasKey(REVOKED_PREFIX + tokenId))) {
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(revokedKey(tokenId)))) {
                 throw BusinessException.unauthorized("登录状态已退出");
             }
             return new TokenClaims(((Number) payload.get("userId")).longValue(), String.valueOf(payload.get("username")), tokenId, expiresAt);
@@ -73,7 +72,12 @@ public class TokenService {
     public void revoke(String token) {
         TokenClaims claims = parseToken(token);
         Duration ttl = Duration.between(Instant.now(), claims.expiresAt());
-        if (!ttl.isNegative() && !ttl.isZero()) redisTemplate.opsForValue().set(REVOKED_PREFIX + claims.tokenId(), "1", ttl);
+        if (!ttl.isNegative() && !ttl.isZero()) redisTemplate.opsForValue().set(revokedKey(claims.tokenId()), "1", ttl);
+    }
+
+    /** 使用可配置品牌编码隔离不同平台的 Redis Token 状态。 */
+    private String revokedKey(String tokenId) {
+        return properties.getBrand().getCode() + ":auth:revoked:" + tokenId;
     }
 
     /** 将 JSON 内容编码为 URL 安全 Base64。 */

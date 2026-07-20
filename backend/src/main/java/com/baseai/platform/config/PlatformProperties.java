@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "app")
 public class PlatformProperties {
+    private Brand brand = new Brand();
     private String configEncryptionKey;
     private DatabaseProperties systemDatabase = new DatabaseProperties();
     private DatabaseProperties businessDatabase = new DatabaseProperties();
@@ -16,6 +17,8 @@ public class PlatformProperties {
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }
     public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
+    public Brand getBrand() { return brand; }
+    public void setBrand(Brand brand) { this.brand = brand; }
 
     public DatabaseProperties getSystemDatabase() { return systemDatabase; }
     public void setSystemDatabase(DatabaseProperties systemDatabase) { this.systemDatabase = systemDatabase; }
@@ -41,6 +44,21 @@ public class PlatformProperties {
         public void setSecret(String secret) { this.secret = secret; }
         public long getExpireMinutes() { return expireMinutes; }
         public void setExpireMinutes(long expireMinutes) { this.expireMinutes = expireMinutes; }
+    }
+
+    public static class Brand {
+        private String code = "ai-platform";
+        private String nameEn = "AI Platform";
+        private String nameZh = "AI平台";
+        private String shortName = "AI";
+        public String getCode() { return code; }
+        public void setCode(String code) { this.code = code; }
+        public String getNameEn() { return nameEn; }
+        public void setNameEn(String nameEn) { this.nameEn = nameEn; }
+        public String getNameZh() { return nameZh; }
+        public void setNameZh(String nameZh) { this.nameZh = nameZh; }
+        public String getShortName() { return shortName; }
+        public void setShortName(String shortName) { this.shortName = shortName; }
     }
 
     public static class Seed {

@@ -1,1 +1,1 @@
-"""Base AI Python Worker。"""
+"""AI Platform Python Worker。"""

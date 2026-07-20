@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import FastAPI
 
@@ -14,7 +15,7 @@ log_shipper = setup_logging(settings)
 logger = logging.getLogger(__name__)
 llm_client = LlmClient(settings)
 
-app = FastAPI(title="Base AI Worker", version="0.0.1")
+app = FastAPI(title=f"{os.getenv('APP_BRAND_NAME_EN', 'AI Platform')} Worker", version="0.0.1")
 app.add_middleware(InternalAuthMiddleware, settings=settings)
 
 
