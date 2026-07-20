@@ -1,7 +1,7 @@
 <template>
   <el-container class="shell">
     <el-aside width="236px" class="sidebar">
-      <div class="logo"><span>BA</span><strong>Base AI</strong></div>
+      <div class="logo"><span>{{ appConfig.shortName }}</span><strong>{{ appConfig.nameEn }}</strong></div>
       <el-menu router :default-active="$route.path" class="nav">
         <el-menu-item index="/dashboard">工作台</el-menu-item>
         <el-menu-item v-if="auth.hasPermission('ai:chat:invoke')" index="/ai-chat">AI 对话</el-menu-item>
@@ -14,7 +14,7 @@
     </el-aside>
     <el-container>
       <el-header class="topbar">
-        <div><strong>{{ title }}</strong><small>基础平台</small></div>
+        <div><strong>{{ title }}</strong><small>{{ appConfig.nameZh }}</small></div>
         <el-dropdown @command="handleCommand">
           <span class="user-chip">{{ auth.user?.displayName || auth.user?.username }}</span>
           <template #dropdown><el-dropdown-menu><el-dropdown-item command="logout">退出登录</el-dropdown-item></el-dropdown-menu></template>
@@ -29,12 +29,13 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { appConfig } from '../config'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const titles = { '/dashboard': '工作台', '/ai-chat': 'AI 对话', '/users': '用户管理', '/roles': '角色管理', '/menus': '权限菜单', '/tasks': '任务调度', '/automation/api-triggers': '接口触发' }
-const title = computed(() => titles[route.path] || 'Base AI')
+const title = computed(() => titles[route.path] || appConfig.nameEn)
 
 /** 处理用户菜单命令。 */
 async function handleCommand(command) {

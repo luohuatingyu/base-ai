@@ -1,9 +1,9 @@
 <template>
   <div class="login-page">
     <el-card class="login-card">
-      <div class="brand-mark">BA</div>
-      <h1>Base AI Platform</h1>
-      <p>统一模型能力与系统管理平台</p>
+      <div class="brand-mark">{{ appConfig.shortName }}</div>
+      <h1>{{ appConfig.nameEn }}</h1>
+      <p>{{ appConfig.nameZh }} · 统一模型能力与系统管理平台</p>
       <el-form @submit.prevent="submit">
         <el-form-item><el-input v-model="form.username" size="large" placeholder="账号" /></el-form-item>
         <el-form-item><el-input v-model="form.password" size="large" type="password" show-password placeholder="密码" /></el-form-item>
@@ -18,6 +18,7 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import { appConfig } from '../config'
 
 const form = reactive({ username: '', password: '' })
 const loading = ref(false)

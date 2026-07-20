@@ -1,7 +1,7 @@
 <template>
   <div>
     <section class="hero panel">
-      <div><span class="eyebrow">PLATFORM READY</span><h2>模型能力，统一接入。</h2><p>系统数据存储于 MySQL，业务数据归属 PostgreSQL，Redis 提供缓存与令牌撤销能力。</p></div>
+      <div><span class="eyebrow">AI PLATFORM READY</span><h2>模型能力，统一接入。</h2><p>系统数据存储于 MySQL，业务数据归属 PostgreSQL，Redis 提供缓存与令牌撤销能力。</p></div>
       <div class="orbit">AI</div>
     </section>
     <div class="metric-grid">
