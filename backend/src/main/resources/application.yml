@@ -28,6 +28,9 @@ spring:
       schema-locations: classpath:system-schema.sql
 
 app:
+  logging:
+    root-level: ${LOG_LEVEL:INFO}
+    console-queue-capacity: ${LOG_CONSOLE_QUEUE_CAPACITY:8192}
   brand:
     code: ${APP_BRAND_CODE:ai-platform}
     name-en: ${APP_BRAND_NAME_EN:AI Platform}

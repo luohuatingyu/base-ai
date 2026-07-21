@@ -2,22 +2,23 @@
 <configuration>
     <springProperty scope="context" name="queueCapacity" source="app.job-log.queue-capacity" defaultValue="10000"/>
     <springProperty scope="context" name="persistLevel" source="app.job-log.persist-level" defaultValue="INFO"/>
+    <springProperty scope="context" name="rootLevel" source="app.logging.root-level" defaultValue="INFO"/>
+    <springProperty scope="context" name="consoleQueueCapacity" source="app.logging.console-queue-capacity" defaultValue="8192"/>
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | %logger{36} | rid=%replace(%X{requestId}){'^$','-'} | jobId=%replace(%X{jobId}){'^$','-'} | %msg%n</pattern>
-        </encoder>
+        <encoder class="ch.qos.logback.classic.encoder.JsonEncoder"/>
     </appender>
     <appender name="CONSOLE_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
-        <queueSize>2048</queueSize>
+        <queueSize>${consoleQueueCapacity}</queueSize>
         <discardingThreshold>0</discardingThreshold>
-        <neverBlock>true</neverBlock>
+        <neverBlock>false</neverBlock>
+        <maxFlushTime>5000</maxFlushTime>
         <appender-ref ref="CONSOLE"/>
     </appender>
     <appender name="JOB_DB" class="com.baseai.platform.logging.JobLogDbAppender">
         <capacity>${queueCapacity}</capacity>
         <persistLevel>${persistLevel}</persistLevel>
     </appender>
-    <root level="INFO">
+    <root level="${rootLevel}">
         <appender-ref ref="CONSOLE_ASYNC"/>
         <appender-ref ref="JOB_DB"/>
     </root>
