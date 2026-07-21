@@ -1,6 +1,5 @@
 package com.baseai.platform.logging;
 
-import com.baseai.platform.domain.LoginLog;
 import com.baseai.platform.domain.OperationLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
