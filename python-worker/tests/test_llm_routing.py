@@ -11,7 +11,7 @@ from app.models import ChatMessage, LlmCandidate
 def test_llm_client_fails_over_to_next_candidate():
     """验证首个候选失败后自动切换到下一模型。"""
     async def scenario():
-        settings = Settings("http://backend", "x" * 32, "worker", "", (), 10, False, "INFO")
+        settings = Settings("http://backend", "x" * 32, "worker", "", "", (), {}, 10, False, "INFO")
         client = LlmClient(settings)
 
         async def handler(request: httpx.Request):
@@ -38,15 +38,37 @@ def test_llm_client_fails_over_to_next_candidate():
 
 def test_llm_client_builds_candidate_from_yaml_pool():
     """验证 Worker 仅使用 YAML 组池生成默认文本模型候选。"""
-    settings = Settings("http://backend", "x" * 32, "worker", "/config/ai-group-pools.yml", ({
+    settings = Settings("http://backend", "x" * 32, "worker", "/config/ai-group-pools.yml", "", ({
         "pool_id": "qianwen",
         "base_url": "https://example.com/v1",
         "api_keys": ("key-1", "key-2"),
-        "model": "qwen-plus",
+        "models": {"text_model": {"middle": "qwen-plus"}},
         "concurrency": 3,
         "concurrency_level": "API_KEY",
-    },), 10, False, "INFO")
+    },), {}, 10, False, "INFO")
     candidate = LlmClient(settings)._fallback_candidates()[0]
     assert candidate.providerCode == "qianwen"
     assert candidate.model == "qwen-plus"
     assert candidate.concurrencyLevel == "API_KEY"
+
+
+def test_llm_client_selects_model_by_business_feature():
+    """验证业务功能配置决定模型等级。"""
+    settings = Settings("http://backend", "x" * 32, "worker", "", "", ({
+        "pool_id": "qianwen",
+        "base_url": "https://example.com/v1",
+        "api_keys": ("key-1",),
+        "models": {"text_model": {"middle": "qwen-plus", "high": "qwen-max"}},
+        "concurrency": 2,
+        "concurrency_level": "PROVIDER",
+    },), {"quote_text": {
+        "model_type": "text_model",
+        "capability_level": "high",
+        "enable_thinking": True,
+    }}, 10, False, "INFO")
+    client = LlmClient(settings)
+    feature = client._feature_config("quote_text")
+    candidate = client._fallback_candidates(feature)[0]
+    assert candidate.model == "qwen-max"
+    assert feature["enable_thinking"] is True
+    asyncio.run(client.close())

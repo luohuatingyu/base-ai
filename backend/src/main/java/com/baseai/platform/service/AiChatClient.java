@@ -29,7 +29,8 @@ public class AiChatClient {
         try {
             ChatResult result = restClient.post().uri("/llm/chat")
                 .header("X-Python-Job-Id", pythonJobId)
-                .body(new ChatRequest(messages, temperature == null ? 0D : temperature, List.of(), false)).retrieve().body(ChatResult.class);
+                .body(new ChatRequest(featureCode == null || featureCode.isBlank() ? "chat" : featureCode,
+                    messages, temperature == null ? 0D : temperature, List.of(), null)).retrieve().body(ChatResult.class);
             if (result == null) throw new BusinessException("模型服务返回空响应");
             taskJobService.updatePython(pythonJobId, "SUCCESS", null, null);
             JobContextHolder.checkpoint();
@@ -41,6 +42,7 @@ public class AiChatClient {
     }
 
     public record Message(String role, String content) {}
-    public record ChatRequest(List<Message> messages, double temperature, List<LlmManagementService.WorkerCandidate> candidates, Boolean enableThinking) {}
+    public record ChatRequest(String featureCode, List<Message> messages, double temperature,
+                              List<LlmManagementService.WorkerCandidate> candidates, Boolean enableThinking) {}
     public record ChatResult(String content, String model, int inputTokens, int outputTokens, int totalTokens) {}
 }

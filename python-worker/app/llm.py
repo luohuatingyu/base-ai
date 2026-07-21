@@ -23,16 +23,19 @@ class LlmClient:
         self._lock = asyncio.Lock()
 
     async def chat(self, messages: list[ChatMessage], temperature: float,
-                   candidates: list[LlmCandidate] | None = None, enable_thinking: bool = False) -> ChatResponse:
+                   candidates: list[LlmCandidate] | None = None, enable_thinking: bool | None = None,
+                   feature_code: str = "chat") -> ChatResponse:
         """依次尝试候选模型和 API Key，首个成功结果立即返回。"""
-        configured = candidates or self._fallback_candidates()
+        feature = self._feature_config(feature_code)
+        configured = candidates or self._fallback_candidates(feature)
+        thinking = feature["enable_thinking"] if enable_thinking is None else enable_thinking
         if not configured:
             raise RuntimeError("未配置可用的模型能力路由")
         failures: list[str] = []
         for candidate in configured:
             for api_key in await self._ordered_keys(candidate):
                 try:
-                    return await self._invoke(candidate, api_key, messages, temperature, enable_thinking)
+                    return await self._invoke(candidate, api_key, messages, temperature, thinking)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exception:
@@ -94,17 +97,29 @@ class LlmClient:
         async with self._lock:
             return self._semaphores.setdefault(key, asyncio.Semaphore(candidate.concurrencyLimit))
 
-    def _fallback_candidates(self) -> list[LlmCandidate]:
-        """从 YAML 组池生成文本中等能力模型候选。"""
+    def _fallback_candidates(self, feature: dict | None = None) -> list[LlmCandidate]:
+        """按业务功能配置从 YAML 组池生成模型候选。"""
+        selected = feature or self._feature_config("chat")
         candidates = []
         for pool in self.settings.ai_group_pools:
+            model = pool["models"].get(selected["model_type"], {}).get(selected["capability_level"])
+            if not model:
+                continue
             candidates.append(LlmCandidate(
                 providerCode=pool["pool_id"], baseUrl=pool["base_url"], apiKeys=list(pool["api_keys"]),
-                model=pool["model"], concurrencyLimit=pool["concurrency"],
+                model=model, concurrencyLimit=pool["concurrency"],
                 concurrencyLevel=pool["concurrency_level"],
                 timeoutSeconds=max(1, int(self.settings.llm_timeout_seconds)),
             ))
         return candidates
+
+    def _feature_config(self, feature_code: str) -> dict:
+        """读取业务功能配置，未知功能回退到文本中等能力模型。"""
+        return self.settings.ai_features.get(feature_code, {
+            "model_type": "text_model",
+            "capability_level": "middle",
+            "enable_thinking": False,
+        })
 
     def _log_success(self, model, messages, content, input_tokens, output_tokens, total_tokens, started_at) -> None:
         """记录模型耗时和 Token，默认不记录完整内容。"""

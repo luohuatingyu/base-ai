@@ -1,0 +1,13 @@
+features:
+  fill_sn:
+    model_type: text_model
+    capability_level: middle
+    enable_thinking: false
+  quote_text:
+    model_type: text_model
+    capability_level: middle
+    enable_thinking: false
+  logistics_text:
+    model_type: text_model
+    capability_level: middle
+    enable_thinking: false

@@ -9,5 +9,18 @@ def test_load_settings_reads_yaml_group_pools(monkeypatch, tmp_path):
     monkeypatch.setenv("AI_GROUP_POOLS_FILE", str(config_path))
     settings = load_settings()
     assert len(settings.ai_group_pools) == 1
-    assert settings.ai_group_pools[0]["model"] == "qwen-plus"
+    assert settings.ai_group_pools[0]["models"]["text_model"]["middle"] == "qwen-plus"
     assert settings.ai_group_pools[0]["concurrency"] == 3
+
+
+def test_load_settings_reads_yaml_features(monkeypatch, tmp_path):
+    """验证业务模型配置从独立 YAML 文件加载。"""
+    config_path = tmp_path / "ai-features.yml"
+    config_path.write_text("features:\n  fill_sn:\n    model_type: text_model\n    capability_level: high\n    enable_thinking: true\n", encoding="utf-8")
+    monkeypatch.setenv("AI_FEATURES_FILE", str(config_path))
+    settings = load_settings()
+    assert settings.ai_features["fill_sn"] == {
+        "model_type": "text_model",
+        "capability_level": "high",
+        "enable_thinking": True,
+    }

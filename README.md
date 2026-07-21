@@ -75,7 +75,7 @@ Java 负责用户权限、任务状态和父任务日志上下文；Python Worke
 
 默认 `LLM_LOG_CONTENT=false`，任务日志只保存模型、耗时、Token 数及响应摘要，不记录完整提示词和模型响应。
 
-模型调用始终读取容器内 `/app/config/ai-group-pools.yml`。仓库提供 `ai-group-pools.example.yml` 作为结构示例，真实配置和 API Key 必须保存在仓库外。当前通用对话按组池顺序使用各供应商的 `text_model.middle`，失败后自动切换下一组池。
+模型调用始终读取容器内 `/app/config/ai-group-pools.yml` 和 `/app/config/ai-features.yml`。仓库提供 `ai-group-pools.example.yml` 作为组池结构示例，并提供可直接使用的 `ai-features.yml` 默认业务配置；真实模型地址和 API Key 必须保存在仓库外。
 
 YAML 支持：
 
@@ -83,6 +83,7 @@ YAML 支持：
 - 供应商级或 API Key 级并发限制。
 - 文本/视觉模型与低、中、高能力等级。
 - 组池顺序和 API Key 故障切换。
+- 按 `featureCode` 选择模型类型、能力等级和思考模式；未知功能默认使用 `text_model.middle` 并关闭思考模式。
 
 ## 统一日志
 
@@ -139,11 +140,20 @@ sudo editor /etc/base-ai/base-ai.env
 
 ```bash
 sudo cp ai-group-pools.example.yml /etc/base-ai/ai-group-pools.yml
+sudo cp ai-features.yml /etc/base-ai/ai-features.yml
 sudo chmod 600 /etc/base-ai/ai-group-pools.yml
+sudo chmod 644 /etc/base-ai/ai-features.yml
 sudo editor /etc/base-ai/ai-group-pools.yml
 ```
 
-将真实模型地址和 API Key 写入该 YAML，并在环境文件中设置 `AI_GROUP_POOLS_FILE=/etc/base-ai/ai-group-pools.yml`。
+将真实模型地址和 API Key 写入组池 YAML，并在环境文件中设置：
+
+```dotenv
+AI_GROUP_POOLS_FILE=/etc/base-ai/ai-group-pools.yml
+AI_FEATURES_FILE=/etc/base-ai/ai-features.yml
+```
+
+两份 YAML 必须位于同一配置目录；可按业务需要扩展 `ai-features.yml` 中的功能编码。
 
 环境变量分为：
 
@@ -153,7 +163,7 @@ sudo editor /etc/base-ai/ai-group-pools.yml
 - Redis 缓存：`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`。
 - 平台安全：`APP_TOKEN_SECRET`、`APP_SEED_ADMIN_PASSWORD`、`PYTHON_WORKER_INTERNAL_TOKEN`。
 - 配置加密：`APP_CONFIG_ENCRYPTION_KEY`，可通过 `openssl rand -base64 32` 生成。
-- 模型文件挂载：`AI_GROUP_POOLS_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
+- 模型文件挂载：`AI_GROUP_POOLS_FILE`、`AI_FEATURES_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
 - 接口触发：`API_TRIGGER_ALLOWED_HOSTS`、`API_TRIGGER_ALLOW_PRIVATE_NETWORK`、`API_TRIGGER_LOCK_SECONDS`。
 - 日志：`JOB_LOG_PERSIST_LEVEL`、`JOB_LOG_RETENTION_DAYS`、`JOB_LOG_QUEUE_CAPACITY`。
 - 任务治理：`JOB_HEARTBEAT_TIMEOUT_SECONDS`。
@@ -184,6 +194,7 @@ frontend/        Vue 管理端与同源 API 代理
 python-worker/   FastAPI LLM Worker
 .env.example     唯一环境变量模板
 ai-group-pools.example.yml  LLM YAML 配置模板
+ai-features.yml  默认业务模型配置
 docker-compose.yml
 ```
 

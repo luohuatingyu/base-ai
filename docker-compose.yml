@@ -76,11 +76,13 @@ services:
       PYTHON_WORKER_INSTANCE_ID: ${PYTHON_WORKER_INSTANCE_ID:-python-worker-1}
       APP_BRAND_NAME_EN: ${APP_BRAND_NAME_EN:-AI Platform}
       AI_GROUP_POOLS_FILE: /app/config/ai-group-pools.yml
+      AI_FEATURES_FILE: /app/config/ai-features.yml
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
       LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-false}
       JOB_LOG_PERSIST_LEVEL: ${JOB_LOG_PERSIST_LEVEL:-INFO}
     volumes:
       - ${AI_GROUP_POOLS_FILE:?Set AI_GROUP_POOLS_FILE}:/app/config/ai-group-pools.yml:ro
+      - ${AI_FEATURES_FILE:-./ai-features.yml}:/app/config/ai-features.yml:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s
