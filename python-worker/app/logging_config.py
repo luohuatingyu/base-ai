@@ -1,6 +1,7 @@
 import logging
 import queue
 import threading
+import time
 import traceback
 from datetime import datetime, timezone
 
@@ -36,6 +37,8 @@ class JavaLogShipHandler(logging.Handler):
         self.items: queue.Queue[dict | None] = queue.Queue(maxsize=capacity)
         self._dropped_count = 0
         self._dropped_lock = threading.Lock()
+        self._last_drop_warning_at = 0.0
+        self._last_drop_error: str | None = None
         self.worker = threading.Thread(target=self._run, name="java-log-shipper", daemon=True)
         self.worker.start()
 
@@ -97,23 +100,30 @@ class JavaLogShipHandler(logging.Handler):
                 json={"logs": batch},
             ).raise_for_status()
         except Exception as exception:
-            self._record_drop(len(batch))
-            logging.getLogger(__name__).warning(
-                "event=java_log_ship_failed batch_size=%d error=%s", len(batch), exception
-            )
+            self._record_drop(len(batch), str(exception))
 
-    def _record_drop(self, count: int = 1) -> None:
+    def _record_drop(self, count: int = 1, error: str | None = None) -> None:
         """线程安全累计无法回传的日志数量。"""
         with self._dropped_lock:
             self._dropped_count += count
+            if error:
+                self._last_drop_error = error
 
     def _report_drops(self) -> None:
-        """在后台线程输出并清零日志丢弃统计。"""
+        """在后台线程限频输出并清零日志丢弃统计。"""
+        current_time = time.monotonic()
         with self._dropped_lock:
+            if current_time - self._last_drop_warning_at < 30:
+                return
             dropped = self._dropped_count
+            error = self._last_drop_error
             self._dropped_count = 0
+            self._last_drop_error = None
+            self._last_drop_warning_at = current_time
         if dropped:
-            logging.getLogger(__name__).warning("event=python_job_log_dropped count=%d", dropped)
+            logging.getLogger(__name__).warning(
+                "event=python_job_log_dropped count=%d error=%s", dropped, error or "queue_full"
+            )
 
 
 def setup_logging(settings: Settings) -> JavaLogShipHandler:
