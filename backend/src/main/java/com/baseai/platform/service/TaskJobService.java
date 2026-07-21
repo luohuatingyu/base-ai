@@ -22,7 +22,7 @@ public class TaskJobService {
     private final String instanceId;
     private final TaskTypeRegistry taskTypeRegistry;
 
-    public TaskJobService(@Qualifier("systemJdbcTemplate") JdbcTemplate jdbcTemplate, JobRuntimeRegistry runtimeRegistry,
+    public TaskJobService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, JobRuntimeRegistry runtimeRegistry,
                           @Qualifier("pythonWorkerRestClient") RestClient workerClient, PlatformProperties properties,
                           TaskTypeRegistry taskTypeRegistry) {
         this.jdbcTemplate = jdbcTemplate;

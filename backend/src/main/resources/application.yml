@@ -34,13 +34,13 @@ app:
     name-zh: ${APP_BRAND_NAME_ZH:AI平台}
     short-name: ${APP_BRAND_SHORT_NAME:AI}
   config-encryption-key: ${APP_CONFIG_ENCRYPTION_KEY}
-  system-database:
+  mysql-database:
     url: ${MYSQL_URL}
     username: ${MYSQL_USERNAME}
     password: ${MYSQL_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     maximum-pool-size: 20
-  business-database:
+  postgresql-database:
     url: ${POSTGRES_URL}
     username: ${POSTGRES_USERNAME}
     password: ${POSTGRES_PASSWORD}

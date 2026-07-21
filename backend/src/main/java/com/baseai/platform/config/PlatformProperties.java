@@ -6,8 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class PlatformProperties {
     private Brand brand = new Brand();
     private String configEncryptionKey;
-    private DatabaseProperties systemDatabase = new DatabaseProperties();
-    private DatabaseProperties businessDatabase = new DatabaseProperties();
+    private DatabaseProperties mysqlDatabase = new DatabaseProperties();
+    private DatabaseProperties postgresqlDatabase = new DatabaseProperties();
     private Token token = new Token();
     private Seed seed = new Seed();
     private PythonWorker pythonWorker = new PythonWorker();
@@ -20,10 +20,10 @@ public class PlatformProperties {
     public Brand getBrand() { return brand; }
     public void setBrand(Brand brand) { this.brand = brand; }
 
-    public DatabaseProperties getSystemDatabase() { return systemDatabase; }
-    public void setSystemDatabase(DatabaseProperties systemDatabase) { this.systemDatabase = systemDatabase; }
-    public DatabaseProperties getBusinessDatabase() { return businessDatabase; }
-    public void setBusinessDatabase(DatabaseProperties businessDatabase) { this.businessDatabase = businessDatabase; }
+    public DatabaseProperties getMysqlDatabase() { return mysqlDatabase; }
+    public void setMysqlDatabase(DatabaseProperties mysqlDatabase) { this.mysqlDatabase = mysqlDatabase; }
+    public DatabaseProperties getPostgresqlDatabase() { return postgresqlDatabase; }
+    public void setPostgresqlDatabase(DatabaseProperties postgresqlDatabase) { this.postgresqlDatabase = postgresqlDatabase; }
     public Token getToken() { return token; }
     public void setToken(Token token) { this.token = token; }
     public Seed getSeed() { return seed; }

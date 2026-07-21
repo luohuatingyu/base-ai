@@ -17,7 +17,7 @@ public class JobLogFlusher {
     private final JdbcTemplate jdbcTemplate;
     private final PlatformProperties properties;
 
-    public JobLogFlusher(@Qualifier("systemJdbcTemplate") JdbcTemplate jdbcTemplate, PlatformProperties properties) {
+    public JobLogFlusher(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
     }

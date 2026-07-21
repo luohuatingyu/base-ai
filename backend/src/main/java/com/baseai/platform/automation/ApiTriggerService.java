@@ -35,7 +35,7 @@ public class ApiTriggerService {
     private final ApiTriggerUrlPolicy urlPolicy;
     private final int resultMaxLength;
 
-    public ApiTriggerService(@Qualifier("businessJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+    public ApiTriggerService(@Qualifier("postgresqlJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                              ConfigCryptoService cryptoService, ApiTriggerUrlPolicy urlPolicy, PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;

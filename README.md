@@ -26,7 +26,7 @@ JPA 实体默认绑定 MySQL。任务与日志表通过 `backend/src/main/resour
 PostgreSQL 专门承载后续业务模块的数据，不保存系统用户、权限和任务日志。Java 业务模块通过以下 Bean 访问：
 
 ```java
-@Qualifier("businessJdbcTemplate") JdbcTemplate businessJdbcTemplate
+@Qualifier("postgresqlJdbcTemplate") JdbcTemplate postgresqlJdbcTemplate
 ```
 
 AI平台不创建具体业务表；业务模块应使用独立迁移脚本维护 PostgreSQL Schema。

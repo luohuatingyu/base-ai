@@ -18,7 +18,7 @@ public class TaskRecoveryScheduler implements ApplicationRunner {
     private final long timeoutSeconds;
     private final JobRuntimeRegistry runtimeRegistry;
 
-    public TaskRecoveryScheduler(@Qualifier("systemJdbcTemplate") JdbcTemplate jdbcTemplate,
+    public TaskRecoveryScheduler(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate,
                                  @Value("${app.job-tracking.heartbeat-timeout-seconds:120}") long timeoutSeconds,
                                  JobRuntimeRegistry runtimeRegistry) {
         this.jdbcTemplate = jdbcTemplate;

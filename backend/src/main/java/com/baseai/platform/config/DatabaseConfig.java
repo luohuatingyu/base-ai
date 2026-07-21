@@ -15,27 +15,27 @@ import javax.sql.DataSource;
 public class DatabaseConfig {
 
     /** 创建承载系统表、权限和日志的 MySQL 主数据源。 */
-    @Bean
+    @Bean("mysqlDataSource")
     @Primary
-    public DataSource dataSource(PlatformProperties properties) {
-        return createDataSource("system-mysql", properties.getSystemDatabase());
+    public DataSource mysqlDataSource(PlatformProperties properties) {
+        return createDataSource("mysql", properties.getMysqlDatabase());
     }
 
-    /** 暴露系统库 JDBC 入口供任务和日志批量操作使用。 */
-    @Bean("systemJdbcTemplate")
-    public JdbcTemplate systemJdbcTemplate(DataSource dataSource) {
+    /** 按数据库类型暴露 MySQL JDBC 入口。 */
+    @Bean("mysqlJdbcTemplate")
+    public JdbcTemplate mysqlJdbcTemplate(@Qualifier("mysqlDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
 
     /** 创建从属业务 PostgreSQL 数据源，业务模块不得访问系统库。 */
-    @Bean("businessDataSource")
-    public DataSource businessDataSource(PlatformProperties properties) {
-        return createDataSource("business-postgres", properties.getBusinessDatabase());
+    @Bean("postgresqlDataSource")
+    public DataSource postgresqlDataSource(PlatformProperties properties) {
+        return createDataSource("postgresql", properties.getPostgresqlDatabase());
     }
 
-    /** 暴露 PostgreSQL 业务库 JDBC 入口供后续业务模块使用。 */
-    @Bean("businessJdbcTemplate")
-    public JdbcTemplate businessJdbcTemplate(@Qualifier("businessDataSource") DataSource dataSource) {
+    /** 按数据库类型暴露 PostgreSQL JDBC 入口。 */
+    @Bean("postgresqlJdbcTemplate")
+    public JdbcTemplate postgresqlJdbcTemplate(@Qualifier("postgresqlDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
 

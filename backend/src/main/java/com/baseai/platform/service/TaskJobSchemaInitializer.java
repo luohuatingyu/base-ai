@@ -15,7 +15,7 @@ import java.util.Map;
 public class TaskJobSchemaInitializer implements ApplicationRunner {
     private final JdbcTemplate jdbcTemplate;
 
-    public TaskJobSchemaInitializer(@Qualifier("systemJdbcTemplate") JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; }
+    public TaskJobSchemaInitializer(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; }
 
     /** 为已存在的系统任务表补齐 AOP 调度字段。 */
     @Override
