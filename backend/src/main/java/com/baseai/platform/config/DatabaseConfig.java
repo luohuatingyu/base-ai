@@ -33,9 +33,10 @@ public class DatabaseConfig {
         HikariDataSource dataSource = createDataSource("mysql-audit", properties.getMysqlDatabase());
         dataSource.setMaximumPoolSize(2);
         dataSource.setMinimumIdle(0);
-        dataSource.setConnectionTimeout(1000);
+        dataSource.setConnectionTimeout(3000);
         dataSource.setValidationTimeout(1000);
         dataSource.setInitializationFailTimeout(-1);
+        dataSource.addDataSourceProperty("connectTimeout", 10000);
         return dataSource;
     }
 
