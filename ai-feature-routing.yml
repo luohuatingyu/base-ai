@@ -1,0 +1,4 @@
+features:
+  model:
+    capability_level: middle
+    enable_thinking: false
