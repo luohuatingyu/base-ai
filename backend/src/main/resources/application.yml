@@ -56,11 +56,6 @@ app:
     url: ${PYTHON_WORKER_URL:http://python-worker:8000}
     internal-token: ${PYTHON_WORKER_INTERNAL_TOKEN}
     java-instance-id: ${JAVA_INSTANCE_ID:java-backend-1}
-  llm-bootstrap:
-    base-url: ${LLM_BASE_URL:}
-    api-keys: ${LLM_API_KEYS:}
-    model: ${LLM_MODEL:}
-    concurrency: ${LLM_CONCURRENCY:4}
   job-log:
     queue-capacity: ${JOB_LOG_QUEUE_CAPACITY:10000}
     batch-size: ${JOB_LOG_BATCH_SIZE:100}

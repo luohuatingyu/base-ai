@@ -9,7 +9,7 @@ from app.middleware import InternalAuthMiddleware
 
 def test_internal_token_is_required():
     """验证非健康接口必须携带内部令牌。"""
-    settings = Settings("http://backend", "x" * 32, "worker", "", (), "", 1, 10, False, "INFO")
+    settings = Settings("http://backend", "x" * 32, "worker", "", (), 10, False, "INFO")
     app = FastAPI()
     app.add_middleware(InternalAuthMiddleware, settings=settings)
 

@@ -151,6 +151,7 @@ activemq-data/
 .env
 .env.*
 !.env.example
+ai-group-pools.yml
 .envrc
 .venv
 env/

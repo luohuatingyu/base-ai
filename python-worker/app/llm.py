@@ -95,13 +95,16 @@ class LlmClient:
             return self._semaphores.setdefault(key, asyncio.Semaphore(candidate.concurrencyLimit))
 
     def _fallback_candidates(self) -> list[LlmCandidate]:
-        """数据库尚未初始化时兼容原有环境变量模型配置。"""
-        if not self.settings.llm_base_url or not self.settings.llm_model or not self.settings.llm_api_keys:
-            return []
-        return [LlmCandidate(providerCode="environment", baseUrl=self.settings.llm_base_url,
-            apiKeys=list(self.settings.llm_api_keys), model=self.settings.llm_model,
-            concurrencyLimit=self.settings.llm_concurrency, concurrencyLevel="PROVIDER",
-            timeoutSeconds=max(1, int(self.settings.llm_timeout_seconds)))]
+        """从 YAML 组池生成文本中等能力模型候选。"""
+        candidates = []
+        for pool in self.settings.ai_group_pools:
+            candidates.append(LlmCandidate(
+                providerCode=pool["pool_id"], baseUrl=pool["base_url"], apiKeys=list(pool["api_keys"]),
+                model=pool["model"], concurrencyLimit=pool["concurrency"],
+                concurrencyLevel=pool["concurrency_level"],
+                timeoutSeconds=max(1, int(self.settings.llm_timeout_seconds)),
+            ))
+        return candidates
 
     def _log_success(self, model, messages, content, input_tokens, output_tokens, total_tokens, started_at) -> None:
         """记录模型耗时和 Token，默认不记录完整内容。"""

@@ -75,13 +75,14 @@ Java 负责用户权限、任务状态和父任务日志上下文；Python Worke
 
 默认 `LLM_LOG_CONTENT=false`，任务日志只保存模型、耗时、Token 数及响应摘要，不记录完整提示词和模型响应。
 
-首次启动时，`LLM_BASE_URL`、`LLM_API_KEYS`、`LLM_MODEL` 会作为默认供应商、模型和 `chat` 能力路由写入 MySQL。后续可在模型中心维护：
+模型调用始终读取容器内 `/app/config/ai-group-pools.yml`。仓库提供 `ai-group-pools.example.yml` 作为结构示例，真实配置和 API Key 必须保存在仓库外。当前通用对话按组池顺序使用各供应商的 `text_model.middle`，失败后自动切换下一组池。
+
+YAML 支持：
 
 - 多供应商和多个 API Key。
 - 供应商级或 API Key 级并发限制。
 - 文本/视觉模型与低、中、高能力等级。
-- 功能编码到候选模型列表的顺序路由。
-- 候选模型和 API Key 故障切换、连接测试及思考模式。
+- 组池顺序和 API Key 故障切换。
 
 ## 统一日志
 
@@ -132,7 +133,17 @@ sudo chmod 600 /etc/base-ai/base-ai.env
 sudo editor /etc/base-ai/base-ai.env
 ```
 
-必须替换所有密码、内部令牌、模型地址和 API Key。不要把 `/etc/base-ai/base-ai.env` 复制回仓库。
+必须替换所有密码和内部令牌。不要把 `/etc/base-ai/base-ai.env` 复制回仓库。
+
+另行创建外部 LLM YAML：
+
+```bash
+sudo cp ai-group-pools.example.yml /etc/base-ai/ai-group-pools.yml
+sudo chmod 600 /etc/base-ai/ai-group-pools.yml
+sudo editor /etc/base-ai/ai-group-pools.yml
+```
+
+将真实模型地址和 API Key 写入该 YAML，并在环境文件中设置 `AI_GROUP_POOLS_FILE=/etc/base-ai/ai-group-pools.yml`。
 
 环境变量分为：
 
@@ -142,7 +153,7 @@ sudo editor /etc/base-ai/base-ai.env
 - Redis 缓存：`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`。
 - 平台安全：`APP_TOKEN_SECRET`、`APP_SEED_ADMIN_PASSWORD`、`PYTHON_WORKER_INTERNAL_TOKEN`。
 - 配置加密：`APP_CONFIG_ENCRYPTION_KEY`，可通过 `openssl rand -base64 32` 生成。
-- 模型调用：`LLM_BASE_URL`、`LLM_API_KEYS`、`LLM_MODEL`、`LLM_CONCURRENCY`。
+- 模型文件挂载：`AI_GROUP_POOLS_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
 - 接口触发：`API_TRIGGER_ALLOWED_HOSTS`、`API_TRIGGER_ALLOW_PRIVATE_NETWORK`、`API_TRIGGER_LOCK_SECONDS`。
 - 日志：`JOB_LOG_PERSIST_LEVEL`、`JOB_LOG_RETENTION_DAYS`、`JOB_LOG_QUEUE_CAPACITY`。
 - 任务治理：`JOB_HEARTBEAT_TIMEOUT_SECONDS`。
@@ -172,6 +183,7 @@ backend/         Spring Boot 系统服务
 frontend/        Vue 管理端与同源 API 代理
 python-worker/   FastAPI LLM Worker
 .env.example     唯一环境变量模板
+ai-group-pools.example.yml  LLM YAML 配置模板
 docker-compose.yml
 ```
 
@@ -180,5 +192,5 @@ docker-compose.yml
 - `APP_TOKEN_SECRET` 至少使用 32 位随机字符串。
 - `PYTHON_WORKER_INTERNAL_TOKEN` 至少使用 24 位随机字符串。
 - 首次启动管理员密码不得使用示例值。
-- LLM Key 只能通过外部环境变量注入，不得写入 YAML、源码或 Git 历史。
+- LLM Key 只能写入仓库外部的 `ai-group-pools.yml`，不得写入源码或 Git 历史。
 - PostgreSQL 业务账号和 MySQL 系统账号应分别授权，不得共用数据库超级用户。

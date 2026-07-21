@@ -14,13 +14,10 @@ import java.util.UUID;
 public class AiChatClient {
     private final RestClient restClient;
     private final TaskJobService taskJobService;
-    private final LlmManagementService llmManagementService;
 
-    public AiChatClient(@Qualifier("pythonWorkerRestClient") RestClient restClient, TaskJobService taskJobService,
-                        LlmManagementService llmManagementService) {
+    public AiChatClient(@Qualifier("pythonWorkerRestClient") RestClient restClient, TaskJobService taskJobService) {
         this.restClient = restClient;
         this.taskJobService = taskJobService;
-        this.llmManagementService = llmManagementService;
     }
 
     /** 调用 Python Worker 的通用 OpenAI-compatible 对话接口。 */
@@ -29,11 +26,10 @@ public class AiChatClient {
         String parentJobId = JobContextHolder.currentJobId().orElse(null);
         String pythonJobId = UUID.randomUUID().toString().replace("-", "");
         taskJobService.registerPython(parentJobId, pythonJobId, "/llm/chat");
-        LlmManagementService.WorkerRoute route = llmManagementService.resolve(featureCode == null || featureCode.isBlank() ? "chat" : featureCode);
         try {
             ChatResult result = restClient.post().uri("/llm/chat")
                 .header("X-Python-Job-Id", pythonJobId)
-                .body(new ChatRequest(messages, temperature == null ? 0D : temperature, route.candidates(), route.enableThinking())).retrieve().body(ChatResult.class);
+                .body(new ChatRequest(messages, temperature == null ? 0D : temperature, List.of(), false)).retrieve().body(ChatResult.class);
             if (result == null) throw new BusinessException("模型服务返回空响应");
             taskJobService.updatePython(pythonJobId, "SUCCESS", null, null);
             JobContextHolder.checkpoint();

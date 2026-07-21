@@ -1,0 +1,17 @@
+group_pools:
+  qianwen:
+    base_url: https://example.com/compatible-mode/v1
+    api_keys:
+      - replace-with-api-key-1
+      - replace-with-api-key-2
+    text_model:
+      low: replace-with-low-model
+      middle: replace-with-middle-model
+      high: replace-with-high-model
+    vision_model:
+      low: replace-with-low-vision-model
+      middle: replace-with-middle-vision-model
+      high: replace-with-high-vision-model
+    concurrency: 4
+    concurrency_level: api-key
+    concurrency_mode: qps

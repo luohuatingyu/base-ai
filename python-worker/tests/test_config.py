@@ -1,11 +1,13 @@
 from app.config import load_settings
 
 
-def test_load_settings_reads_unified_environment(monkeypatch):
-    """验证统一环境变量可生成模型配置。"""
+def test_load_settings_reads_yaml_group_pools(monkeypatch, tmp_path):
+    """验证模型组池从 YAML 文件加载。"""
     monkeypatch.setenv("PYTHON_WORKER_INTERNAL_TOKEN", "a" * 32)
-    monkeypatch.setenv("LLM_API_KEYS", "key-1,key-2")
-    monkeypatch.setenv("LLM_CONCURRENCY", "3")
+    config_path = tmp_path / "ai-group-pools.yml"
+    config_path.write_text("group_pools:\n  qianwen:\n    base_url: https://example.com/v1\n    api_keys: [key-1, key-2]\n    text_model:\n      middle: qwen-plus\n    concurrency: 3\n", encoding="utf-8")
+    monkeypatch.setenv("AI_GROUP_POOLS_FILE", str(config_path))
     settings = load_settings()
-    assert settings.llm_api_keys == ("key-1", "key-2")
-    assert settings.llm_concurrency == 3
+    assert len(settings.ai_group_pools) == 1
+    assert settings.ai_group_pools[0]["model"] == "qwen-plus"
+    assert settings.ai_group_pools[0]["concurrency"] == 3
