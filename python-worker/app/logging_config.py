@@ -34,6 +34,8 @@ class JavaLogShipHandler(logging.Handler):
         self.settings = settings
         self.batch_size = batch_size
         self.items: queue.Queue[dict | None] = queue.Queue(maxsize=capacity)
+        self._dropped_count = 0
+        self._dropped_lock = threading.Lock()
         self.worker = threading.Thread(target=self._run, name="java-log-shipper", daemon=True)
         self.worker.start()
 
@@ -55,7 +57,7 @@ class JavaLogShipHandler(logging.Handler):
         try:
             self.items.put_nowait(item)
         except queue.Full:
-            return
+            self._record_drop()
 
     def close(self) -> None:
         """通知后台线程完成剩余日志发送。"""
@@ -80,9 +82,11 @@ class JavaLogShipHandler(logging.Handler):
                         break
                     if next_item is None:
                         self._send(client, batch)
+                        self._report_drops()
                         return
                     batch.append(next_item)
                 self._send(client, batch)
+                self._report_drops()
 
     def _send(self, client: httpx.Client, batch: list[dict]) -> None:
         """发送单个日志批次，失败时丢弃以避免阻塞业务。"""
@@ -92,8 +96,24 @@ class JavaLogShipHandler(logging.Handler):
                 headers={"X-Internal-Token": self.settings.internal_token},
                 json={"logs": batch},
             ).raise_for_status()
-        except Exception:
-            return
+        except Exception as exception:
+            self._record_drop(len(batch))
+            logging.getLogger(__name__).warning(
+                "event=java_log_ship_failed batch_size=%d error=%s", len(batch), exception
+            )
+
+    def _record_drop(self, count: int = 1) -> None:
+        """线程安全累计无法回传的日志数量。"""
+        with self._dropped_lock:
+            self._dropped_count += count
+
+    def _report_drops(self) -> None:
+        """在后台线程输出并清零日志丢弃统计。"""
+        with self._dropped_lock:
+            dropped = self._dropped_count
+            self._dropped_count = 0
+        if dropped:
+            logging.getLogger(__name__).warning("event=python_job_log_dropped count=%d", dropped)
 
 
 def setup_logging(settings: Settings) -> JavaLogShipHandler:
