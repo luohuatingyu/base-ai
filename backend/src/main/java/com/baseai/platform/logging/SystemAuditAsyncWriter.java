@@ -28,7 +28,7 @@ public class SystemAuditAsyncWriter {
             jdbcTemplate.update("""
                 INSERT INTO sys_login_log(username, ip_address, user_agent, success, message, login_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-                """, username, ipAddress, userAgent, success, Timestamp.from(Instant.now()));
+                """, username, ipAddress, userAgent, success, message, Timestamp.from(Instant.now()));
         } catch (RuntimeException exception) {
             log.error("event=login_audit_persist_failed username={} success={}", username, success, exception);
         }
