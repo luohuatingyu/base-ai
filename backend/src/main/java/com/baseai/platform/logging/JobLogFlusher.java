@@ -17,8 +17,12 @@ import java.util.List;
 @Component
 public class JobLogFlusher {
     private static final Logger log = LoggerFactory.getLogger(JobLogFlusher.class);
+    private static final long WARNING_INTERVAL_MS = 30_000;
     private final JdbcTemplate jdbcTemplate;
     private final PlatformProperties properties;
+    private long unreportedDropped;
+    private long lastDropWarningAt;
+    private long lastFlushFailureWarningAt;
 
     public JobLogFlusher(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
@@ -30,8 +34,13 @@ public class JobLogFlusher {
     public void flush() {
         List<JobLogRecord> records = new ArrayList<>(properties.getJobLog().getBatchSize());
         JobLogQueue.drainTo(records, properties.getJobLog().getBatchSize());
-        long dropped = JobLogQueue.drainDroppedCount();
-        if (dropped > 0) log.warn("event=job_log_dropped count={}", dropped);
+        unreportedDropped += JobLogQueue.drainDroppedCount();
+        long currentTime = System.currentTimeMillis();
+        if (unreportedDropped > 0 && currentTime - lastDropWarningAt >= WARNING_INTERVAL_MS) {
+            log.warn("event=job_log_dropped count={}", unreportedDropped);
+            unreportedDropped = 0;
+            lastDropWarningAt = currentTime;
+        }
         if (records.isEmpty()) return;
         try {
             jdbcTemplate.batchUpdate("""
@@ -50,7 +59,10 @@ public class JobLogFlusher {
             });
         } catch (RuntimeException exception) {
             int requeued = JobLogQueue.requeue(records);
-            log.error("event=job_log_flush_failed batch_size={} requeued={}", records.size(), requeued, exception);
+            if (currentTime - lastFlushFailureWarningAt >= WARNING_INTERVAL_MS) {
+                log.error("event=job_log_flush_failed batch_size={} requeued={}", records.size(), requeued, exception);
+                lastFlushFailureWarningAt = currentTime;
+            }
         }
     }
 
