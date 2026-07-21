@@ -136,6 +136,8 @@ sudo editor /etc/base-ai/base-ai.env
 
 必须替换所有密码和内部令牌。不要把 `/etc/base-ai/base-ai.env` 复制回仓库。
 
+`COMPOSE_PROJECT_NAME` 是 Docker Compose 资源的统一命名前缀，默认示例值为 `base-ai`。修改该值会同步调整 Compose 项目名、应用镜像名称和网络名称。
+
 另行创建外部 LLM YAML：
 
 ```bash
@@ -171,6 +173,8 @@ AI_FEATURES_FILE=/etc/base-ai/ai-features.yml
 ## Docker 启动
 
 Docker Compose 不创建 MySQL、PostgreSQL 或 Redis。启动前需要保证三个外部服务可以从容器网络访问。
+
+启动前必须在环境变量文件中设置 `COMPOSE_PROJECT_NAME`，已有部署升级时也需要补充该配置项。
 
 ```bash
 docker compose --env-file /etc/base-ai/base-ai.env config
