@@ -2,7 +2,6 @@ package com.baseai.platform.logging;
 
 import com.baseai.platform.domain.OperationLog;
 import com.baseai.platform.job.JobRequestSnapshotSanitizer;
-import com.baseai.platform.repository.OperationLogRepository;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,11 +20,11 @@ import java.util.Set;
 @Component
 public class OperationAuditAspect {
     private static final Set<String> MUTATING = Set.of("POST", "PUT", "PATCH", "DELETE");
-    private final OperationLogRepository repository;
+    private final SystemAuditAsyncWriter writer;
     private final JobRequestSnapshotSanitizer sanitizer;
 
-    public OperationAuditAspect(OperationLogRepository repository, JobRequestSnapshotSanitizer sanitizer) {
-        this.repository = repository;
+    public OperationAuditAspect(SystemAuditAsyncWriter writer, JobRequestSnapshotSanitizer sanitizer) {
+        this.writer = writer;
         this.sanitizer = sanitizer;
     }
 
@@ -67,8 +66,11 @@ public class OperationAuditAspect {
             log.setSuccess(failure == null);
             log.setErrorMessage(failure == null ? null : limit(failure.getMessage(), 1000));
             log.setOperatedAt(Instant.now());
-            repository.save(log);
-        } catch (Exception ignored) { }
+            writer.writeOperation(log);
+        } catch (Exception exception) {
+            org.slf4j.LoggerFactory.getLogger(OperationAuditAspect.class)
+                .warn("event=operation_audit_enqueue_failed method={} path={}", request.getMethod(), request.getRequestURI(), exception);
+        }
     }
 
     private String clientIp(HttpServletRequest request) { String forwarded = request.getHeader("X-Forwarded-For"); return forwarded == null ? request.getRemoteAddr() : forwarded.split(",")[0].trim(); }

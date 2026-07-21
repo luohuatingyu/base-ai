@@ -1,29 +1,23 @@
 package com.baseai.platform.service;
 
-import com.baseai.platform.domain.LoginLog;
-import com.baseai.platform.repository.LoginLogRepository;
+import com.baseai.platform.logging.SystemAuditAsyncWriter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Instant;
 
 @Service
 public class LoginAuditService {
-    private final LoginLogRepository repository;
+    private static final Logger log = LoggerFactory.getLogger(LoginAuditService.class);
+    private final SystemAuditAsyncWriter writer;
 
-    public LoginAuditService(LoginLogRepository repository) { this.repository = repository; }
+    public LoginAuditService(SystemAuditAsyncWriter writer) { this.writer = writer; }
 
-    /** 使用独立事务保存登录日志，避免认证失败回滚审计记录。 */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /** 非阻塞投递登录日志，日志线程池满载时不影响认证结果。 */
     public void save(String username, AuthService.LoginMetadata metadata, boolean success, String message) {
-        LoginLog log = new LoginLog();
-        log.setUsername(username);
-        log.setIpAddress(metadata.ipAddress());
-        log.setUserAgent(metadata.userAgent());
-        log.setSuccess(success);
-        log.setMessage(message);
-        log.setLoginAt(Instant.now());
-        repository.save(log);
+        try {
+            writer.writeLogin(username, metadata.ipAddress(), metadata.userAgent(), success, message);
+        } catch (RuntimeException exception) {
+            log.warn("event=login_audit_enqueue_failed username={} success={}", username, success, exception);
+        }
     }
 }
