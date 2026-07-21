@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS task_job (
     force_terminated_at TIMESTAMP(6) NULL,
     force_terminate_reason VARCHAR(500),
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    started_at TIMESTAMP(6) NOT NULL,
+    started_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     finished_at TIMESTAMP(6) NULL,
     INDEX idx_task_job_owner_started (owner_user_id, started_at),
     INDEX idx_task_job_status_started (status, started_at)
