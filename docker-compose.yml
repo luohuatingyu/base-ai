@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${CONTAINER_LOG_MAX_SIZE:-20m}
+    max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+
 services:
   backend:
     build:
@@ -7,6 +13,7 @@ services:
         JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre}
     image: base-ai-backend:latest
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MYSQL_URL: ${MYSQL_URL:?Set MYSQL_URL}
       MYSQL_USERNAME: ${MYSQL_USERNAME:?Set MYSQL_USERNAME}
@@ -37,6 +44,8 @@ services:
       JOB_LOG_BATCH_SIZE: ${JOB_LOG_BATCH_SIZE:-100}
       JOB_LOG_FLUSH_INTERVAL_MS: ${JOB_LOG_FLUSH_INTERVAL_MS:-500}
       JOB_LOG_RETENTION_DAYS: ${JOB_LOG_RETENTION_DAYS:-7}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_CONSOLE_QUEUE_CAPACITY: ${LOG_CONSOLE_QUEUE_CAPACITY:-8192}
       JOB_HEARTBEAT_TIMEOUT_SECONDS: ${JOB_HEARTBEAT_TIMEOUT_SECONDS:-120}
       JOB_TRACKING_EXCLUSIONS_FILE: /app/config/job-tracking-exclusions.yml
       API_TRIGGER_ALLOWED_HOSTS: ${API_TRIGGER_ALLOWED_HOSTS:?Set API_TRIGGER_ALLOWED_HOSTS}
@@ -70,6 +79,7 @@ services:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
     image: base-ai-python-worker:latest
     restart: unless-stopped
+    logging: *default-logging
     environment:
       BACKEND_URL: http://backend:8080
       PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
@@ -78,8 +88,9 @@ services:
       AI_GROUP_POOLS_FILE: /app/config/ai-group-pools.yml
       AI_FEATURES_FILE: /app/config/ai-features.yml
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
-      LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-false}
+      LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-true}
       JOB_LOG_PERSIST_LEVEL: ${JOB_LOG_PERSIST_LEVEL:-INFO}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ${AI_GROUP_POOLS_FILE:?Set AI_GROUP_POOLS_FILE}:/app/config/ai-group-pools.yml:ro
       - ${AI_FEATURES_FILE:-./ai-features.yml}:/app/config/ai-features.yml:ro
@@ -100,6 +111,7 @@ services:
         NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine}
     image: base-ai-frontend:latest
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_healthy
