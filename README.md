@@ -158,7 +158,7 @@ AI_FEATURE_ROUTING_FILE=/etc/base-ai/ai-feature-routing.yml
 JOB_TRACKING_EXCLUSIONS_FILE=/etc/base-ai/job-tracking-exclusions.yml
 ```
 
-三份运行时 YAML 均可通过外部环境文件指定宿主机路径；未设置非敏感配置路径时，Docker Compose 回退到仓库内默认文件。具体模型类型和能力等级分别通过请求的 `model_type` 与通用配置选择。
+三份运行时 YAML 均可通过外部环境文件指定宿主机路径；未设置对应路径时，Docker Compose 分别回退到仓库内的 `ai-model-pools.yml`、`ai-feature-routing.yml` 和 `job-tracking-exclusions.yml`。具体模型类型和能力等级分别通过请求的 `model_type` 与通用配置选择。
 
 环境变量分为：
 

@@ -94,7 +94,7 @@ services:
       JOB_LOG_PERSIST_LEVEL: ${JOB_LOG_PERSIST_LEVEL:-INFO}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ${AI_MODEL_POOLS_FILE:?Set AI_MODEL_POOLS_FILE}:/app/config/ai-model-pools.yml:ro
+      - ${AI_MODEL_POOLS_FILE:-./ai-model-pools.yml}:/app/config/ai-model-pools.yml:ro
       - ${AI_FEATURE_ROUTING_FILE:-./ai-feature-routing.yml}:/app/config/ai-feature-routing.yml:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
