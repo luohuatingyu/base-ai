@@ -3,7 +3,6 @@ package com.baseai.platform.config;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpHeaders;
 import org.springframework.web.client.RestClient;
 
 @Configuration
@@ -13,17 +12,15 @@ public class PythonWorkerRestClientConfig {
     @Bean("pythonWorkerRestClient")
     public RestClient pythonWorkerRestClient(PlatformProperties properties) {
         return RestClient.builder().baseUrl(properties.getPythonWorker().getUrl())
-            .requestInterceptor((request, body, execution) -> {
-                HttpHeaders headers = request.getHeaders();
-                headers.set("X-Internal-Token", properties.getPythonWorker().getInternalToken());
-                putIfPresent(headers, "X-Request-Id", MDC.get("requestId"));
-                putIfPresent(headers, "X-Parent-Job-Id", MDC.get("jobId"));
-                return execution.execute(request, body);
+            .defaultHeader("X-Internal-Token", properties.getPythonWorker().getInternalToken())
+            .defaultRequest(request -> {
+                putIfPresent(request, "X-Request-Id", MDC.get("requestId"));
+                putIfPresent(request, "X-Parent-Job-Id", MDC.get("jobId"));
             }).build();
     }
 
     /** 非空上下文才写入跨服务请求头。 */
-    private void putIfPresent(HttpHeaders headers, String name, String value) {
-        if (value != null && !value.isBlank()) headers.set(name, value);
+    private void putIfPresent(RestClient.RequestHeadersSpec<?> request, String name, String value) {
+        if (value != null && !value.isBlank()) request.header(name, value);
     }
 }

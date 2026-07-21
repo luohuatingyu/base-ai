@@ -5,6 +5,7 @@ import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.domain.*;
 import com.baseai.platform.repository.*;
 import org.springframework.stereotype.Service;
+import org.springframework.http.MediaType;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
@@ -54,7 +55,7 @@ public class LlmManagementService {
     }
 
     /** 调用 Worker 验证单个模型连接。 */
-    public Map<String,Object> testModel(Long modelId){WorkerCandidate candidate=candidate(modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("模型不存在")));if(candidate==null)throw new BusinessException("模型供应商不可用");Map<?,?> result=workerClient.post().uri("/llm/test").body(Map.of("candidate",candidate)).retrieve().body(Map.class);if(result==null)throw new BusinessException("Worker 返回空测试结果");Map<String,Object> response=new LinkedHashMap<>();result.forEach((key,value)->response.put(String.valueOf(key),value));return response;}
+    public Map<String,Object> testModel(Long modelId){WorkerCandidate candidate=candidate(modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("模型不存在")));if(candidate==null)throw new BusinessException("模型供应商不可用");Map<?,?> result=workerClient.post().uri("/llm/test").contentType(MediaType.APPLICATION_JSON).body(Map.of("candidate",candidate)).retrieve().body(Map.class);if(result==null)throw new BusinessException("Worker 返回空测试结果");Map<String,Object> response=new LinkedHashMap<>();result.forEach((key,value)->response.put(String.valueOf(key),value));return response;}
 
     private LlmProvider saveProvider(LlmProvider provider,ProviderCommand command){provider.setCode(require(command.code(),"请输入供应商编码"));provider.setName(require(command.name(),"请输入供应商名称"));provider.setBaseUrl(require(command.baseUrl(),"请输入服务地址").replaceAll("/+$",""));if(provider.getId()==null||!blank(command.apiKeys()))provider.setApiKeysEncrypted(cryptoService.encrypt(require(command.apiKeys(),"请输入 API Key")));provider.setConcurrencyLimit(positive(command.concurrencyLimit(),4));provider.setConcurrencyLevel(blank(command.concurrencyLevel())?"PROVIDER":command.concurrencyLevel().toUpperCase(Locale.ROOT));provider.setTimeoutSeconds(positive(command.timeoutSeconds(),60));provider.setEnabled(command.enabled()==null||command.enabled());return providerRepository.save(provider);}
     private LlmModel saveModel(LlmModel model,ModelCommand command){if(providerRepository.findById(command.providerId()).isEmpty())throw BusinessException.notFound("供应商不存在");model.setCode(require(command.code(),"请输入模型编码"));model.setName(require(command.name(),"请输入模型名称"));model.setProviderId(command.providerId());model.setModelName(require(command.modelName(),"请输入模型标识"));model.setModelType(blank(command.modelType())?"TEXT":command.modelType().toUpperCase(Locale.ROOT));model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT));model.setEnabled(command.enabled()==null||command.enabled());return modelRepository.save(model);}

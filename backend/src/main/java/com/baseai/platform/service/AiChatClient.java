@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.job.JobContextHolder;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -30,6 +31,7 @@ public class AiChatClient {
         try {
             ChatResult result = restClient.post().uri("/llm/chat")
                 .header("X-Python-Job-Id", pythonJobId)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(new ChatRequest(modelType == null || modelType.isBlank() ? "text_model" : modelType,
                     messages, temperature == null ? 0D : temperature, List.of(), null)).retrieve().body(ChatResult.class);
             if (result == null) throw new BusinessException("模型服务返回空响应");
