@@ -23,6 +23,7 @@ public class JobLogFlusher {
     private long unreportedDropped;
     private long lastDropWarningAt;
     private long lastFlushFailureWarningAt;
+    private String logLevelColumn;
 
     public JobLogFlusher(@Qualifier("auditJdbcTemplate") JdbcTemplate jdbcTemplate, PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
@@ -43,10 +44,9 @@ public class JobLogFlusher {
         }
         if (records.isEmpty()) return;
         try {
-            jdbcTemplate.batchUpdate("""
-                INSERT INTO task_job_log(job_id, python_job_id, source, level, logger_name, message, thread_name, throwable, logged_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, records, records.size(), (statement, record) -> {
+            String sql = "INSERT INTO task_job_log(job_id, python_job_id, source, " + resolveLogLevelColumn()
+                + ", logger_name, message, thread_name, throwable, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.batchUpdate(sql, records, records.size(), (statement, record) -> {
                 statement.setString(1, record.jobId());
                 statement.setString(2, record.pythonJobId());
                 statement.setString(3, record.source());
@@ -64,6 +64,17 @@ public class JobLogFlusher {
                 lastFlushFailureWarningAt = currentTime;
             }
         }
+    }
+
+    /** 兼容历史任务日志表使用的 log_level 列名。 */
+    private String resolveLogLevelColumn() {
+        if (logLevelColumn != null) return logLevelColumn;
+        Integer legacyColumnCount = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = 'task_job_log' AND column_name = 'log_level'
+            """, Integer.class);
+        logLevelColumn = legacyColumnCount != null && legacyColumnCount > 0 ? "log_level" : "level";
+        return logLevelColumn;
     }
 
     /** 每天清理超过保留周期的任务日志。 */

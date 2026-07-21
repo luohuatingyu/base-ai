@@ -21,6 +21,8 @@ public class Role {
     private String dataScope = "ALL";
     @Column(nullable = false)
     private Boolean enabled = true;
+    @Column(nullable = false)
+    private Integer sortOrder = 0;
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "sys_role_menu", joinColumns = @JoinColumn(name = "role_id"), inverseJoinColumns = @JoinColumn(name = "menu_id"))
     private Set<Menu> menus = new LinkedHashSet<>();
@@ -58,6 +60,8 @@ public class Role {
     public void setDataScope(String dataScope) { this.dataScope = dataScope; }
     public Boolean getEnabled() { return enabled; }
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
+    public Integer getSortOrder() { return sortOrder; }
+    public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
     public Set<Menu> getMenus() { return menus; }
     public void setMenus(Set<Menu> menus) { this.menus = menus; }
     public Set<Department> getCustomDepartments() { return customDepartments; }
