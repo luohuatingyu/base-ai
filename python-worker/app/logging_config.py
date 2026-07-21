@@ -185,4 +185,8 @@ def setup_logging(settings: Settings) -> JavaLogShipHandler:
     shipper.addFilter(context_filter)
     root.addHandler(console)
     root.addHandler(shipper)
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        framework_logger = logging.getLogger(logger_name)
+        framework_logger.handlers.clear()
+        framework_logger.propagate = True
     return shipper

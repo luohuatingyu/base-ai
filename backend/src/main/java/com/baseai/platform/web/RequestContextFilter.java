@@ -13,7 +13,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.UUID;
 
-@Component
+@Component("baseAiRequestContextFilter")
 public class RequestContextFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(RequestContextFilter.class);
     private static final int MAX_REQUEST_ID_LENGTH = 64;

@@ -69,10 +69,9 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
             await stop_heartbeat(heartbeat_task)
             if tracked:
                 await self.registry.remove(python_job_id)
-            logger.info(
-                "event=worker_http_request method=%s path=%s status=%d duration_ms=%.2f",
-                request.method, request.url.path, status_code, (time.perf_counter() - started_at) * 1000,
-            )
+            request_logger = logger.debug if request.url.path == "/health" else logger.info
+            request_logger("event=worker_http_request method=%s path=%s status=%d duration_ms=%.2f",
+                           request.method, request.url.path, status_code, (time.perf_counter() - started_at) * 1000)
             reset_context(context_token)
 
     def _identifier(self, value: str | None, fallback: str) -> str:
