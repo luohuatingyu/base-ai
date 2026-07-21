@@ -58,12 +58,12 @@ def test_llm_client_selects_model_by_business_feature():
         "pool_id": "qianwen",
         "base_url": "https://example.com/v1",
         "api_keys": ("key-1",),
-        "models": {"text_model": {"middle": "qwen-plus", "high": "qwen-max"}},
+        "models": {"reasoning_model": {"premium": "qwen-max"}},
         "concurrency": 2,
         "concurrency_level": "PROVIDER",
     },), {"quote_text": {
-        "model_type": "text_model",
-        "capability_level": "high",
+        "model_type": "reasoning_model",
+        "capability_level": "premium",
         "enable_thinking": True,
     }}, 10, False, "INFO")
     client = LlmClient(settings)

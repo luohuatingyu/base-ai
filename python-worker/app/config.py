@@ -4,6 +4,10 @@ from pathlib import Path
 
 import yaml
 
+POOL_RESERVED_FIELDS = {
+    "base_url", "api_key", "api_keys", "concurrency", "concurrency_level", "concurrency_mode", "timeout_seconds",
+}
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -59,15 +63,18 @@ def _load_group_pools(path: str) -> list[dict]:
             continue
         base_url = str(raw_pool.get("base_url", "")).strip().rstrip("/")
         api_keys = tuple(str(key).strip() for key in raw_pool.get("api_keys", ()) if str(key).strip())
-        models = {
-            model_type: {
-                level: str(model_name).strip()
-                for level, model_name in raw_pool.get(model_type, {}).items()
-                if str(model_name).strip()
+        models = {}
+        for model_type, raw_models in raw_pool.items():
+            normalized_type = str(model_type).strip()
+            if model_type in POOL_RESERVED_FIELDS or not normalized_type or not isinstance(raw_models, dict):
+                continue
+            normalized_models = {
+                str(level).strip(): str(model_name).strip()
+                for level, model_name in raw_models.items()
+                if str(level).strip() and str(model_name).strip()
             }
-            for model_type in ("text_model", "vision_model")
-            if isinstance(raw_pool.get(model_type), dict)
-        }
+            if normalized_models:
+                models[normalized_type] = normalized_models
         if not base_url or not api_keys or not models:
             continue
         pools.append({
@@ -92,8 +99,8 @@ def _load_features(path: str) -> dict[str, dict]:
         if not isinstance(raw_feature, dict):
             continue
         features[str(feature_code).strip()] = {
-            "model_type": _choice(raw_feature.get("model_type"), {"text_model", "vision_model"}, "text_model"),
-            "capability_level": _choice(raw_feature.get("capability_level"), {"low", "middle", "high"}, "middle"),
+            "model_type": _non_empty(raw_feature.get("model_type"), "text_model"),
+            "capability_level": _non_empty(raw_feature.get("capability_level"), "middle"),
             "enable_thinking": _boolean(str(raw_feature.get("enable_thinking", "false"))),
         }
     return features
@@ -112,10 +119,10 @@ def _load_yaml(path: str) -> dict:
     return config if isinstance(config, dict) else {}
 
 
-def _choice(value, allowed: set[str], default: str) -> str:
-    """校验枚举配置，非法值回退默认值。"""
+def _non_empty(value, default: str) -> str:
+    """读取可扩展字符串配置，空值回退默认值。"""
     normalized = str(value or "").strip()
-    return normalized if normalized in allowed else default
+    return normalized or default
 
 
 def _positive_int(value, default: int) -> int:

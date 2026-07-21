@@ -12,6 +12,8 @@ group_pools:
       low: replace-with-low-vision-model
       middle: replace-with-middle-vision-model
       high: replace-with-high-vision-model
+    custom_model:
+      custom_level: replace-with-custom-model
     concurrency: 4
     concurrency_level: api-key
     concurrency_mode: qps

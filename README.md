@@ -81,7 +81,7 @@ YAML 支持：
 
 - 多供应商和多个 API Key。
 - 供应商级或 API Key 级并发限制。
-- 文本/视觉模型与低、中、高能力等级。
+- 任意业务模型类型和能力等级，例如 `text_model.middle`、`audio_model.realtime` 或 `reasoning_model.premium`。
 - 组池顺序和 API Key 故障切换。
 - 按 `featureCode` 选择模型类型、能力等级和思考模式；未知功能默认使用 `text_model.middle` 并关闭思考模式。
 
