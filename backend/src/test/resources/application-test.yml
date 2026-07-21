@@ -1,0 +1,80 @@
+spring:
+  application:
+    name: base-ai-backend-test
+
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+    open-in-view: false
+
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-h2.sql
+      data-locations: classpath:data-test.sql
+      encoding: UTF-8
+      continue-on-error: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 5s
+      repositories:
+        enabled: false
+
+  h2:
+    console:
+      enabled: false
+
+app:
+  logging:
+    root-level: INFO
+    console-queue-capacity: 8192
+  brand:
+    code: test-platform
+    name-en: Test Platform
+    name-zh: 测试平台
+    short-name: TEST
+  config-encryption-key: test-encryption-key-32-chars!!
+  token:
+    secret: test-secret-key-for-jwt-signing-must-be-long-enough-48-chars
+    expire-minutes: 720
+  seed:
+    admin-username: admin
+    admin-password: test-password
+  python-worker:
+    url: http://localhost:8000
+    internal-token: test-internal-token
+    java-instance-id: test-instance
+  job-log:
+    queue-capacity: 1000
+    batch-size: 50
+    flush-interval-ms: 100
+    persist-level: DEBUG
+    retention-days: 1
+  job-tracking:
+    heartbeat-timeout-seconds: 60
+    excluded-methods: GET,OPTIONS
+    excluded-paths:
+      - /api/auth/**
+      - /api/open/**
+  api-trigger:
+    allowed-hosts:
+    allow-private-network: true
+    scheduler-pool-size: 2
+    lock-seconds: 60
+    result-max-length: 1000
