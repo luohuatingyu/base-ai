@@ -75,15 +75,16 @@ Java 负责用户权限、任务状态和父任务日志上下文；Python Worke
 
 默认 `LLM_LOG_CONTENT=false`，任务日志只保存模型、耗时、Token 数及响应摘要，不记录完整提示词和模型响应。
 
-模型调用始终读取容器内 `/app/config/ai-group-pools.yml` 和 `/app/config/ai-features.yml`。仓库提供 `ai-group-pools.example.yml` 作为组池结构示例，并提供可直接使用的 `ai-features.yml` 默认业务配置；真实模型地址和 API Key 必须保存在仓库外。
+模型调用始终读取容器内 `/app/config/ai-model-pools.yml` 和 `/app/config/ai-feature-routing.yml`。仓库提供 `ai-model-pools.example.yml` 作为模型池结构示例，并提供可直接使用的 `ai-feature-routing.yml` 通用模型路由配置；真实模型地址和 API Key 必须保存在仓库外。
 
 YAML 支持：
 
 - 多供应商和多个 API Key。
 - 供应商级或 API Key 级并发限制。
-- 任意业务模型类型和能力等级，例如 `text_model.middle`、`audio_model.realtime` 或 `reasoning_model.premium`。
+- `ai-feature-routing.yml` 只配置通用模型的能力等级和思考模式。
+- 每次请求通过 `model_type` 选择具体模型类型，例如 `text_model`、`audio_model` 或 `reasoning_model`。
 - 组池顺序和 API Key 故障切换。
-- 按 `featureCode` 选择模型类型、能力等级和思考模式；未知功能默认使用 `text_model.middle` 并关闭思考模式。
+- `model_type` 为空时默认使用 `text_model`；通用配置缺失时默认使用 `middle` 能力等级并关闭思考模式。
 
 ## 统一日志
 
@@ -138,24 +139,26 @@ sudo editor /etc/base-ai/base-ai.env
 
 `COMPOSE_PROJECT_NAME` 是 Docker Compose 资源的统一命名前缀，默认示例值为 `base-ai`。修改该值会同步调整 Compose 项目名、应用镜像名称和网络名称。
 
-另行创建外部 LLM YAML：
+另行创建外部运行时 YAML：
 
 ```bash
-sudo cp ai-group-pools.example.yml /etc/base-ai/ai-group-pools.yml
-sudo cp ai-features.yml /etc/base-ai/ai-features.yml
-sudo chmod 600 /etc/base-ai/ai-group-pools.yml
-sudo chmod 644 /etc/base-ai/ai-features.yml
-sudo editor /etc/base-ai/ai-group-pools.yml
+sudo cp ai-model-pools.example.yml /etc/base-ai/ai-model-pools.yml
+sudo cp ai-feature-routing.yml /etc/base-ai/ai-feature-routing.yml
+sudo cp job-tracking-exclusions.yml /etc/base-ai/job-tracking-exclusions.yml
+sudo chmod 600 /etc/base-ai/ai-model-pools.yml
+sudo chmod 644 /etc/base-ai/ai-feature-routing.yml /etc/base-ai/job-tracking-exclusions.yml
+sudo editor /etc/base-ai/ai-model-pools.yml
 ```
 
 将真实模型地址和 API Key 写入组池 YAML，并在环境文件中设置：
 
 ```dotenv
-AI_GROUP_POOLS_FILE=/etc/base-ai/ai-group-pools.yml
-AI_FEATURES_FILE=/etc/base-ai/ai-features.yml
+AI_MODEL_POOLS_FILE=/etc/base-ai/ai-model-pools.yml
+AI_FEATURE_ROUTING_FILE=/etc/base-ai/ai-feature-routing.yml
+JOB_TRACKING_EXCLUSIONS_FILE=/etc/base-ai/job-tracking-exclusions.yml
 ```
 
-两份 YAML 必须位于同一配置目录；可按业务需要扩展 `ai-features.yml` 中的功能编码。
+三份运行时 YAML 均可通过外部环境文件指定宿主机路径；未设置非敏感配置路径时，Docker Compose 回退到仓库内默认文件。具体模型类型和能力等级分别通过请求的 `model_type` 与通用配置选择。
 
 环境变量分为：
 
@@ -165,7 +168,7 @@ AI_FEATURES_FILE=/etc/base-ai/ai-features.yml
 - Redis 缓存：`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`。
 - 平台安全：`APP_TOKEN_SECRET`、`APP_SEED_ADMIN_PASSWORD`、`PYTHON_WORKER_INTERNAL_TOKEN`。
 - 配置加密：`APP_CONFIG_ENCRYPTION_KEY`，可通过 `openssl rand -base64 32` 生成。
-- 模型文件挂载：`AI_GROUP_POOLS_FILE`、`AI_FEATURES_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
+- YAML 文件挂载：`AI_MODEL_POOLS_FILE`、`AI_FEATURE_ROUTING_FILE`、`JOB_TRACKING_EXCLUSIONS_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
 - 接口触发：`API_TRIGGER_ALLOWED_HOSTS`、`API_TRIGGER_ALLOW_PRIVATE_NETWORK`、`API_TRIGGER_LOCK_SECONDS`。
 - 日志：`JOB_LOG_PERSIST_LEVEL`、`JOB_LOG_RETENTION_DAYS`、`JOB_LOG_QUEUE_CAPACITY`。
 - 任务治理：`JOB_HEARTBEAT_TIMEOUT_SECONDS`。
@@ -197,8 +200,9 @@ backend/         Spring Boot 系统服务
 frontend/        Vue 管理端与同源 API 代理
 python-worker/   FastAPI LLM Worker
 .env.example     唯一环境变量模板
-ai-group-pools.example.yml  LLM YAML 配置模板
-ai-features.yml  默认业务模型配置
+ai-model-pools.example.yml  LLM 模型池配置模板
+ai-feature-routing.yml  默认业务模型路由配置
+job-tracking-exclusions.yml  默认任务跟踪排除配置
 docker-compose.yml
 ```
 
@@ -207,5 +211,5 @@ docker-compose.yml
 - `APP_TOKEN_SECRET` 至少使用 32 位随机字符串。
 - `PYTHON_WORKER_INTERNAL_TOKEN` 至少使用 24 位随机字符串。
 - 首次启动管理员密码不得使用示例值。
-- LLM Key 只能写入仓库外部的 `ai-group-pools.yml`，不得写入源码或 Git 历史。
+- LLM Key 只能写入仓库外部的 `ai-model-pools.yml`，不得写入源码或 Git 历史。
 - PostgreSQL 业务账号和 MySQL 系统账号应分别授权，不得共用数据库超级用户。

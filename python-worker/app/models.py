@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
     """通用模型对话请求。"""
 
     featureCode: str = "chat"
+    model_type: str = "text_model"
     messages: list[ChatMessage] = Field(min_length=1, max_length=100)
     temperature: float = Field(default=0, ge=0, le=2)
     candidates: list[LlmCandidate] = Field(default_factory=list, max_length=20)

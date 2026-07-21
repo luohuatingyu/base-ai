@@ -56,7 +56,7 @@ services:
       API_TRIGGER_LOCK_SECONDS: ${API_TRIGGER_LOCK_SECONDS:-300}
       API_TRIGGER_RESULT_MAX_LENGTH: ${API_TRIGGER_RESULT_MAX_LENGTH:-2000}
     volumes:
-      - ./job-tracking-exclusions.yml:/app/config/job-tracking-exclusions.yml:ro
+      - ${JOB_TRACKING_EXCLUSIONS_FILE:-./job-tracking-exclusions.yml}:/app/config/job-tracking-exclusions.yml:ro
     depends_on:
       python-worker:
         condition: service_healthy
@@ -87,15 +87,15 @@ services:
       PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
       PYTHON_WORKER_INSTANCE_ID: ${PYTHON_WORKER_INSTANCE_ID:-python-worker-1}
       APP_BRAND_NAME_EN: ${APP_BRAND_NAME_EN:-AI Platform}
-      AI_GROUP_POOLS_FILE: /app/config/ai-group-pools.yml
-      AI_FEATURES_FILE: /app/config/ai-features.yml
+      AI_MODEL_POOLS_FILE: /app/config/ai-model-pools.yml
+      AI_FEATURE_ROUTING_FILE: /app/config/ai-feature-routing.yml
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
       LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-true}
       JOB_LOG_PERSIST_LEVEL: ${JOB_LOG_PERSIST_LEVEL:-INFO}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ${AI_GROUP_POOLS_FILE:?Set AI_GROUP_POOLS_FILE}:/app/config/ai-group-pools.yml:ro
-      - ${AI_FEATURES_FILE:-./ai-features.yml}:/app/config/ai-features.yml:ro
+      - ${AI_MODEL_POOLS_FILE:?Set AI_MODEL_POOLS_FILE}:/app/config/ai-model-pools.yml:ro
+      - ${AI_FEATURE_ROUTING_FILE:-./ai-feature-routing.yml}:/app/config/ai-feature-routing.yml:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s

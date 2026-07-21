@@ -16,8 +16,8 @@ class Settings:
     backend_url: str
     internal_token: str
     instance_id: str
-    ai_group_pools_file: str
-    ai_features_file: str
+    ai_model_pools_file: str
+    ai_feature_routing_file: str
     ai_group_pools: tuple[dict, ...]
     ai_features: dict[str, dict]
     llm_timeout_seconds: float
@@ -28,16 +28,16 @@ class Settings:
 
 def load_settings() -> Settings:
     """从环境变量、模型组池和业务模型 YAML 构建不可变配置。"""
-    group_pools_file = os.getenv("AI_GROUP_POOLS_FILE", "/app/config/ai-group-pools.yml").strip()
-    features_file = os.getenv("AI_FEATURES_FILE", "/app/config/ai-features.yml").strip()
+    model_pools_file = os.getenv("AI_MODEL_POOLS_FILE", "/app/config/ai-model-pools.yml").strip()
+    feature_routing_file = os.getenv("AI_FEATURE_ROUTING_FILE", "/app/config/ai-feature-routing.yml").strip()
     return Settings(
         backend_url=os.getenv("BACKEND_URL", "http://backend:8080").rstrip("/"),
         internal_token=os.getenv("PYTHON_WORKER_INTERNAL_TOKEN", "").strip(),
         instance_id=os.getenv("PYTHON_WORKER_INSTANCE_ID", "python-worker-1").strip(),
-        ai_group_pools_file=group_pools_file,
-        ai_features_file=features_file,
-        ai_group_pools=tuple(_load_group_pools(group_pools_file)),
-        ai_features=_load_features(features_file),
+        ai_model_pools_file=model_pools_file,
+        ai_feature_routing_file=feature_routing_file,
+        ai_group_pools=tuple(_load_group_pools(model_pools_file)),
+        ai_features=_load_features(feature_routing_file),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
         llm_log_content=_boolean(os.getenv("LLM_LOG_CONTENT", "true")),
         persist_level=os.getenv("JOB_LOG_PERSIST_LEVEL", "INFO").upper(),
@@ -99,7 +99,6 @@ def _load_features(path: str) -> dict[str, dict]:
         if not isinstance(raw_feature, dict):
             continue
         features[str(feature_code).strip()] = {
-            "model_type": _non_empty(raw_feature.get("model_type"), "text_model"),
             "capability_level": _non_empty(raw_feature.get("capability_level"), "middle"),
             "enable_thinking": _boolean(str(raw_feature.get("enable_thinking", "false"))),
         }

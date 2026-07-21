@@ -38,7 +38,7 @@ def test_llm_client_fails_over_to_next_candidate():
 
 def test_llm_client_builds_candidate_from_yaml_pool():
     """验证 Worker 仅使用 YAML 组池生成默认文本模型候选。"""
-    settings = Settings("http://backend", "x" * 32, "worker", "/config/ai-group-pools.yml", "", ({
+    settings = Settings("http://backend", "x" * 32, "worker", "/config/ai-model-pools.yml", "", ({
         "pool_id": "qianwen",
         "base_url": "https://example.com/v1",
         "api_keys": ("key-1", "key-2"),
@@ -61,13 +61,12 @@ def test_llm_client_selects_model_by_business_feature():
         "models": {"reasoning_model": {"premium": "qwen-max"}},
         "concurrency": 2,
         "concurrency_level": "PROVIDER",
-    },), {"quote_text": {
-        "model_type": "reasoning_model",
+    },), {"model": {
         "capability_level": "premium",
         "enable_thinking": True,
     }}, 10, False, "INFO")
     client = LlmClient(settings)
-    feature = client._feature_config("quote_text")
+    feature = client._feature_config("reasoning_model")
     candidate = client._fallback_candidates(feature)[0]
     assert candidate.model == "qwen-max"
     assert feature["enable_thinking"] is True

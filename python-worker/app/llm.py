@@ -25,9 +25,9 @@ class LlmClient:
 
     async def chat(self, messages: list[ChatMessage], temperature: float,
                    candidates: list[LlmCandidate] | None = None, enable_thinking: bool | None = None,
-                   feature_code: str = "chat") -> ChatResponse:
+                   model_type: str = "text_model") -> ChatResponse:
         """依次尝试候选模型和 API Key，首个成功结果立即返回。"""
-        feature = self._feature_config(feature_code)
+        feature = self._feature_config(model_type)
         configured = candidates or self._fallback_candidates(feature)
         thinking = feature["enable_thinking"] if enable_thinking is None else enable_thinking
         if not configured:
@@ -101,7 +101,7 @@ class LlmClient:
 
     def _fallback_candidates(self, feature: dict | None = None) -> list[LlmCandidate]:
         """按业务功能配置从 YAML 组池生成模型候选。"""
-        selected = feature or self._feature_config("chat")
+        selected = feature or self._feature_config("text_model")
         candidates = []
         for pool in self.settings.ai_group_pools:
             model = pool["models"].get(selected["model_type"], {}).get(selected["capability_level"])
@@ -115,13 +115,14 @@ class LlmClient:
             ))
         return candidates
 
-    def _feature_config(self, feature_code: str) -> dict:
-        """读取业务功能配置，未知功能回退到文本中等能力模型。"""
-        return self.settings.ai_features.get(feature_code, {
-            "model_type": "text_model",
-            "capability_level": "middle",
-            "enable_thinking": False,
-        })
+    def _feature_config(self, model_type: str) -> dict:
+        """合并通用业务配置和请求指定的动态模型类型。"""
+        configured = self.settings.ai_features.get("model", {})
+        return {
+            "model_type": str(model_type or "").strip() or "text_model",
+            "capability_level": configured.get("capability_level", "middle"),
+            "enable_thinking": configured.get("enable_thinking", False),
+        }
 
     def _log_success(self, model, messages, content, input_tokens, output_tokens, total_tokens, started_at) -> None:
         """记录模型耗时和 Token，默认不记录完整内容。"""

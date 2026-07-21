@@ -33,7 +33,7 @@ async def chat(request: ChatRequest):
     """执行受内部认证保护的通用模型调用。"""
     logger.info("event=worker_chat_started message_count=%d", len(request.messages))
     return await llm_client.chat(request.messages, request.temperature, request.candidates,
-                                 request.enableThinking, request.featureCode)
+                                 request.enableThinking, request.model_type)
 
 
 @app.post("/llm/test")
