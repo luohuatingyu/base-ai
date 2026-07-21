@@ -11,7 +11,7 @@ public class SystemSetting {
     @Column(nullable = false, length = 120) private String configKey;
     @Column(nullable = false, length = 120) private String name;
     @Column(columnDefinition = "MEDIUMTEXT") private String configValue;
-    @Column(nullable = false) private Boolean sensitive = false;
+    @Column(name = "`sensitive`", nullable = false) private Boolean sensitive = false;
     @Column(nullable = false) private Boolean enabled = true;
     @Column(nullable = false) private Instant updatedAt;
     @PrePersist @PreUpdate public void updateTime() { updatedAt = Instant.now(); }

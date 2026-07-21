@@ -2,6 +2,7 @@ package com.baseai.platform.domain;
 
 import jakarta.persistence.*;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -26,6 +27,24 @@ public class Role {
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "sys_role_department", joinColumns = @JoinColumn(name = "role_id"), inverseJoinColumns = @JoinColumn(name = "department_id"))
     private Set<Department> customDepartments = new LinkedHashSet<>();
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+    @Column(nullable = false)
+    private Instant updatedAt;
+
+    /** 创建角色前初始化审计时间。 */
+    @PrePersist
+    public void initializeAuditTime() {
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    /** 更新角色前刷新修改时间。 */
+    @PreUpdate
+    public void refreshAuditTime() {
+        updatedAt = Instant.now();
+    }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -43,4 +62,6 @@ public class Role {
     public void setMenus(Set<Menu> menus) { this.menus = menus; }
     public Set<Department> getCustomDepartments() { return customDepartments; }
     public void setCustomDepartments(Set<Department> customDepartments) { this.customDepartments = customDepartments; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
 }

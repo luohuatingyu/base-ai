@@ -2,6 +2,7 @@ package com.baseai.platform.domain;
 
 import jakarta.persistence.*;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -27,6 +28,24 @@ public class UserAccount {
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "sys_user_position", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "position_id"))
     private Set<Position> positions = new LinkedHashSet<>();
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+    @Column(nullable = false)
+    private Instant updatedAt;
+
+    /** 创建用户前初始化审计时间。 */
+    @PrePersist
+    public void initializeAuditTime() {
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    /** 更新用户前刷新修改时间。 */
+    @PreUpdate
+    public void refreshAuditTime() {
+        updatedAt = Instant.now();
+    }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -44,4 +63,6 @@ public class UserAccount {
     public void setRoles(Set<Role> roles) { this.roles = roles; }
     public Set<Position> getPositions() { return positions; }
     public void setPositions(Set<Position> positions) { this.positions = positions; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
 }
