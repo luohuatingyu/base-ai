@@ -1,5 +1,7 @@
+import json
 import logging
 import queue
+import re
 import threading
 import time
 import traceback
@@ -10,10 +12,42 @@ import httpx
 from app.config import Settings
 from app.context import current_context
 
-LOG_FORMAT = (
-    "%(asctime)s | %(levelname)-7s | %(name)s | rid=%(request_id)s | "
-    "jobId=%(job_id)s | pythonJobId=%(python_job_id)s | %(message)s"
+MAX_LOG_VALUE_LENGTH = 4000
+SHIP_MAX_ATTEMPTS = 5
+SHIP_RETRY_BASE_SECONDS = 0.25
+SENSITIVE_PATTERNS = (
+    re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+"),
+    re.compile(r"(?i)((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,;]+"),
 )
+
+
+def sanitize_log_text(value: object, max_length: int = MAX_LOG_VALUE_LENGTH) -> str:
+    """脱敏并截断可能包含凭据或超长内容的日志文本。"""
+    text = str(value)
+    for pattern in SENSITIVE_PATTERNS:
+        text = pattern.sub(r"\1***", text)
+    if len(text) <= max_length:
+        return text
+    return f"{text[:max_length]}...[truncated:{len(text) - max_length}]"
+
+
+class JsonLogFormatter(logging.Formatter):
+    """将控制台日志编码为便于采集的单行 JSON。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "thread": record.threadName,
+            "requestId": getattr(record, "request_id", "-"),
+            "jobId": getattr(record, "job_id", "-"),
+            "pythonJobId": getattr(record, "python_job_id", "-"),
+            "message": sanitize_log_text(record.getMessage()),
+        }
+        if record.exc_info:
+            payload["throwable"] = sanitize_log_text("".join(traceback.format_exception(*record.exc_info)), 16000)
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 class ContextFilter(logging.Filter):
@@ -31,7 +65,7 @@ class JavaLogShipHandler(logging.Handler):
     """通过有界队列和后台线程批量回传任务日志。"""
 
     def __init__(self, settings: Settings, capacity: int = 5000, batch_size: int = 100):
-        super().__init__(logging._nameToLevel.get(settings.persist_level, logging.INFO))
+        super().__init__(logging.getLevelNamesMapping().get(settings.persist_level, logging.INFO))
         self.settings = settings
         self.batch_size = batch_size
         self.items: queue.Queue[dict | None] = queue.Queue(maxsize=capacity)
@@ -65,8 +99,14 @@ class JavaLogShipHandler(logging.Handler):
     def close(self) -> None:
         """通知后台线程完成剩余日志发送。"""
         try:
-            self.items.put(None, timeout=1)
-            self.worker.join(timeout=5)
+            try:
+                self.items.put(None, timeout=5)
+            except queue.Full:
+                self._record_drop(self.items.qsize(), "shutdown_queue_timeout")
+            self.worker.join(timeout=20)
+            if self.worker.is_alive():
+                self._record_drop(self.items.qsize(), "shutdown_flush_timeout")
+            self._report_drops(force=True)
         finally:
             super().close()
 
@@ -92,28 +132,34 @@ class JavaLogShipHandler(logging.Handler):
                 self._report_drops()
 
     def _send(self, client: httpx.Client, batch: list[dict]) -> None:
-        """发送单个日志批次，失败时丢弃以避免阻塞业务。"""
-        try:
-            client.post(
-                f"{self.settings.backend_url}/api/internal/job-logs",
-                headers={"X-Internal-Token": self.settings.internal_token},
-                json={"logs": batch},
-            ).raise_for_status()
-        except Exception as exception:
-            self._record_drop(len(batch), str(exception))
+        """最多重试五次发送日志批次，最终失败时记录丢弃数量。"""
+        last_error = "unknown"
+        for attempt in range(1, SHIP_MAX_ATTEMPTS + 1):
+            try:
+                client.post(
+                    f"{self.settings.backend_url}/api/internal/job-logs",
+                    headers={"X-Internal-Token": self.settings.internal_token},
+                    json={"logs": batch},
+                ).raise_for_status()
+                return
+            except Exception as exception:
+                last_error = sanitize_log_text(exception, 1000)
+                if attempt < SHIP_MAX_ATTEMPTS:
+                    time.sleep(SHIP_RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+        self._record_drop(len(batch), f"attempts={SHIP_MAX_ATTEMPTS} error={last_error}")
 
     def _record_drop(self, count: int = 1, error: str | None = None) -> None:
         """线程安全累计无法回传的日志数量。"""
         with self._dropped_lock:
             self._dropped_count += count
             if error:
-                self._last_drop_error = error
+                self._last_drop_error = sanitize_log_text(error, 1000)
 
-    def _report_drops(self) -> None:
+    def _report_drops(self, force: bool = False) -> None:
         """在后台线程限频输出并清零日志丢弃统计。"""
         current_time = time.monotonic()
         with self._dropped_lock:
-            if current_time - self._last_drop_warning_at < 30:
+            if not force and current_time - self._last_drop_warning_at < 30:
                 return
             dropped = self._dropped_count
             error = self._last_drop_error
@@ -129,11 +175,11 @@ class JavaLogShipHandler(logging.Handler):
 def setup_logging(settings: Settings) -> JavaLogShipHandler:
     """初始化控制台与 Java 日志回传处理器。"""
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
+    root.setLevel(logging.getLevelNamesMapping().get(settings.log_level, logging.INFO))
     root.handlers.clear()
     context_filter = ContextFilter()
     console = logging.StreamHandler()
-    console.setFormatter(logging.Formatter(LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
+    console.setFormatter(JsonLogFormatter())
     console.addFilter(context_filter)
     shipper = JavaLogShipHandler(settings)
     shipper.addFilter(context_filter)

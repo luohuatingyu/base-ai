@@ -57,7 +57,7 @@ class JavaJobReporter:
                 },
             )
         except Exception as exception:
-            logger.warning("event=python_job_report_failed job_id=%s error=%s", python_job_id, exception)
+            logger.warning("event=python_job_report_failed job_id=%s error=%s", python_job_id, exception, exc_info=True)
 
     async def heartbeat(self, python_job_id: str) -> None:
         """任务运行期间每十五秒发送一次心跳。"""

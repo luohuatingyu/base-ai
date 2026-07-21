@@ -7,6 +7,7 @@ from collections import defaultdict
 import httpx
 
 from app.config import Settings
+from app.logging_config import sanitize_log_text
 from app.models import ChatMessage, ChatResponse, LlmCandidate
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,8 @@ class LlmClient:
                     raise
                 except Exception as exception:
                     failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
-                    logger.warning("event=llm_candidate_failed provider=%s model=%s error=%s", candidate.providerCode, candidate.model, exception)
+                    logger.warning("event=llm_candidate_failed provider=%s model=%s error=%s",
+                                   candidate.providerCode, candidate.model, sanitize_log_text(exception, 1000), exc_info=True)
         raise RuntimeError("全部候选模型调用失败: " + "; ".join(failures[-10:]))
 
     async def test(self, candidate: LlmCandidate) -> dict:
@@ -126,7 +128,12 @@ class LlmClient:
         logger.info("event=llm_call_succeeded model=%s input_tokens=%d output_tokens=%d total_tokens=%d duration_ms=%.2f",
                     model, input_tokens, output_tokens, total_tokens, self._elapsed(started_at))
         if self.settings.llm_log_content:
-            logger.info("event=llm_content messages=%s response=%s", [item.model_dump() for item in messages], content)
+            safe_messages = [
+                {"role": item.role, "content": sanitize_log_text(item.content, 1000)}
+                for item in messages[-20:]
+            ]
+            logger.info("event=llm_content messages=%s response=%s",
+                        safe_messages, sanitize_log_text(content, 4000))
         else:
             logger.info("event=llm_content_redacted response_sha256=%s", hashlib.sha256(content.encode()).hexdigest()[:16])
 

@@ -19,6 +19,7 @@ class Settings:
     llm_timeout_seconds: float
     llm_log_content: bool
     persist_level: str
+    log_level: str = "INFO"
 
 
 def load_settings() -> Settings:
@@ -34,8 +35,9 @@ def load_settings() -> Settings:
         ai_group_pools=tuple(_load_group_pools(group_pools_file)),
         ai_features=_load_features(features_file),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
-        llm_log_content=_boolean(os.getenv("LLM_LOG_CONTENT", "false")),
+        llm_log_content=_boolean(os.getenv("LLM_LOG_CONTENT", "true")),
         persist_level=os.getenv("JOB_LOG_PERSIST_LEVEL", "INFO").upper(),
+        log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
     )
 
 
