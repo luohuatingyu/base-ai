@@ -7,12 +7,18 @@
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} | %-5level | %logger{36} | rid=%replace(%X{requestId}){'^$','-'} | jobId=%replace(%X{jobId}){'^$','-'} | %msg%n</pattern>
         </encoder>
     </appender>
+    <appender name="CONSOLE_ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>2048</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>true</neverBlock>
+        <appender-ref ref="CONSOLE"/>
+    </appender>
     <appender name="JOB_DB" class="com.baseai.platform.logging.JobLogDbAppender">
         <capacity>${queueCapacity}</capacity>
         <persistLevel>${persistLevel}</persistLevel>
     </appender>
     <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="CONSOLE_ASYNC"/>
         <appender-ref ref="JOB_DB"/>
     </root>
 </configuration>
