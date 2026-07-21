@@ -24,7 +24,7 @@ public class JobLogFlusher {
     private long lastDropWarningAt;
     private long lastFlushFailureWarningAt;
 
-    public JobLogFlusher(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, PlatformProperties properties) {
+    public JobLogFlusher(@Qualifier("auditJdbcTemplate") JdbcTemplate jdbcTemplate, PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
     }

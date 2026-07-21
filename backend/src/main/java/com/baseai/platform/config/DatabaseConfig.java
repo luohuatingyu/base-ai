@@ -27,6 +27,24 @@ public class DatabaseConfig {
         return new JdbcTemplate(dataSource);
     }
 
+    /** 创建与权限主链路隔离的 MySQL 日志连接池。 */
+    @Bean("auditDataSource")
+    public DataSource auditDataSource(PlatformProperties properties) {
+        HikariDataSource dataSource = createDataSource("mysql-audit", properties.getMysqlDatabase());
+        dataSource.setMaximumPoolSize(2);
+        dataSource.setMinimumIdle(0);
+        dataSource.setConnectionTimeout(1000);
+        dataSource.setValidationTimeout(1000);
+        dataSource.setInitializationFailTimeout(-1);
+        return dataSource;
+    }
+
+    /** 暴露独立日志 JDBC 入口，避免占用权限业务连接。 */
+    @Bean("auditJdbcTemplate")
+    public JdbcTemplate auditJdbcTemplate(@Qualifier("auditDataSource") DataSource dataSource) {
+        return new JdbcTemplate(dataSource);
+    }
+
     /** 创建从属业务 PostgreSQL 数据源，业务模块不得访问系统库。 */
     @Bean("postgresqlDataSource")
     public DataSource postgresqlDataSource(PlatformProperties properties) {
