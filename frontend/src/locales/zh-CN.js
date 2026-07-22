@@ -11,7 +11,8 @@ export default {
     logout: '退出登录',
     operations: '智能运营',
     collapse: '收起侧边栏',
-    expand: '展开侧边栏'
+    expand: '展开侧边栏',
+    items: { ai: 'AI 能力', aiChat: 'AI 对话', system: '系统管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', automation: '自动化', apiTriggers: '接口触发' }
   },
   common: {
     confirm: '确认',
@@ -31,7 +32,65 @@ export default {
     success: '操作成功',
     failed: '操作失败',
     yes: '是',
-    no: '否'
+    no: '否',
+    enabled: '启用',
+    disabled: '停用',
+    close: '关闭',
+    successSaved: '保存成功',
+    successDeleted: '删除成功',
+    saveFailed: '保存失败',
+    deleteConfirm: '删除确认',
+    confirmDelete: '确认删除「{name}」？',
+    confirmTerminate: '确认下线用户「{name}」当前会话？',
+    time: '时间',
+    user: '用户',
+    account: '账号',
+    name: '名称',
+    code: '编码',
+    description: '说明',
+    type: '类型',
+    sort: '排序',
+    status: '状态',
+    result: '结果',
+    operation: '操作',
+    method: '方法',
+    interface: '接口',
+    client: '客户端',
+    ip: 'IP',
+    error: '错误',
+    loadingFailed: '加载失败'
+  },
+  login: {
+    description: '统一模型能力与系统管理平台',
+    username: '账号',
+    password: '密码',
+    submit: '登录',
+    loginFailed: '登录失败'
+  },
+  dashboard: {
+    eyebrow: 'AI PLATFORM READY',
+    title: '模型能力，统一接入。',
+    description: '系统数据存储于 MySQL，业务数据归属 PostgreSQL，Redis 提供缓存与令牌撤销能力。',
+    systemPermissions: '系统权限与任务日志',
+    businessDatabase: '从属业务数据库',
+    cacheTokens: '缓存与令牌状态',
+    worker: 'OpenAI-compatible 调用'
+  },
+  language: { zhCN: '简体中文', enUS: 'English' },
+  chat: {
+    title: '通用 AI 对话',
+    description: '请求经 Java 权限和任务层转发至 Python Worker。',
+    user: '你', assistant: 'AI', empty: '输入问题开始对话',
+    placeholder: '请输入问题，Ctrl/Cmd + Enter 发送', traceId: 'Trace ID', send: '发送',
+    callFailed: '模型调用失败'
+  },
+  logs: {
+    loginTitle: '登录日志', loginDescription: '记录登录成功与失败事件。',
+    operationTitle: '操作日志', operationDescription: '系统写操作的脱敏审计记录。',
+    success: '成功', failed: '失败', message: '说明', duration: '耗时(ms)',
+    method: '方法', interface: '接口', error: '错误',
+    onlineTitle: '在线用户', onlineDescription: '查看 Redis 会话并执行强制下线。',
+    loginTime: '登录时间', lastActive: '最后活跃', forceLogout: '强制下线'
   },
   tasks: {
     title: '任务调度',
@@ -44,6 +103,8 @@ export default {
     createdAt: '创建时间',
     finishedAt: '结束时间',
     startedAt: '开始时间',
+    heartbeatAt: '心跳时间',
+    failureReason: '失败原因',
     completedAt: '完成时间',
     updatedAt: '更新时间',
     errorMessage: '错误信息',
@@ -62,6 +123,7 @@ export default {
     cancelReason_default: '用户请求取消',
     cancelRequested: '已发送取消请求',
     forceTerminateConfirm: '强制终止可能导致外部请求仍在处理中，是否继续？',
+    forceTerminateReason: '管理员强制终止',
     forceTerminateTitle: '强制终止',
     taskTerminated: '任务已终止',
     loadFailed: '加载任务列表失败',
@@ -91,6 +153,17 @@ export default {
       time: '时间'
     }
   },
+  departments: { title: '部门管理', description: '部门树用于用户归属和数据权限。', add: '新增部门', addChild: '新增下级', edit: '编辑部门', parent: '上级' },
+  positions: { title: '岗位管理', description: '维护用户岗位信息。', add: '新增岗位', edit: '编辑岗位' },
+  users: { title: '用户管理', description: '维护账号、部门、岗位和角色。', add: '新增用户', edit: '编辑用户', keyword: '账号或名称', allStatus: '全部状态', displayName: '显示名称', password: '密码', keepPassword: '留空则不修改', department: '部门', position: '岗位', role: '角色', confirmDelete: '确认删除用户「{name}」？' },
+  roles: { title: '角色管理', description: '配置菜单权限和数据可见范围。', add: '新增角色', edit: '编辑角色', scope: '数据范围', permissions: '权限', customDepartments: '指定部门', allData: '全部数据', department: '本部门', departmentChildren: '本部门及下级', self: '仅本人' },
+  menus: { title: '菜单管理', description: '维护目录、页面路由和按钮权限。', add: '新增菜单', edit: '编辑菜单', parent: '上级', catalog: '目录', menu: '菜单', button: '按钮', route: '路由', component: '组件', icon: '图标', permission: '权限编码', visible: '显示' },
+  dictionaries: { title: '字典管理', description: '统一维护系统枚举与展示标签。', addType: '新增类型', addData: '新增数据', selectType: '请选择字典类型', type: '字典类型', data: '字典数据', label: '标签', value: '值' },
+  settings: { title: '系统参数', description: '敏感参数加密保存并以脱敏内容展示。', add: '新增参数', edit: '编辑参数', group: '分组', key: '参数键', value: '参数值', sensitive: '敏感', keepValue: '留空保留原值' },
+  providers: { title: '模型供应商', description: 'API Key 加密保存，列表仅显示脱敏值。', add: '新增供应商', edit: '编辑供应商', baseUrl: '服务地址', concurrencyLevel: '并发维度', concurrency: '并发数', timeout: '超时秒数', provider: '供应商', apiKeys: 'API Keys', keepKeys: '留空保留原密钥；多个密钥用逗号或换行分隔', multipleKeys: '多个密钥用逗号或换行分隔' },
+  models: { title: '模型配置', description: '维护供应商下的模型标识和能力等级。', add: '新增模型', edit: '编辑模型', provider: '供应商', identifier: '模型标识', modelType: '模型类型', capability: '能力', text: '文本', vision: '视觉', low: '低', middle: '中', high: '高', test: '测试', connected: '连接成功，耗时 {duration}ms' },
+  routes: { title: '能力路由', description: '候选模型按顺序执行故障切换。', add: '新增路由', edit: '编辑路由', featureCode: '功能编码', candidates: '候选模型', thinking: '思考模式', example: '例如 chat' },
+  apiTrigger: { title: '接口触发', description: '配置保存于 PostgreSQL，正式执行同步进入 MySQL 任务调度。', add: '新增配置', nameOrDescription: '名称或描述', enabledStatus: '启用状态', manualOnly: '仅手动', latestResult: '最近结果', execute: '执行', logs: '日志', disable: '停用', void: '作废', edit: '编辑接口触发', addTrigger: '新增接口触发', basic: '基础配置', business: '业务接口', auth: '令牌获取', authEnabled: '前置认证', authHelp: '启用后显示“令牌获取”页，调用业务接口前先获取 Token。', cronPlaceholder: '留空仅手动执行', httpMethod: 'HTTP 方法', timeoutSeconds: '超时秒数', targetUrl: '目标 URL', headers: '请求头 JSON', queryParams: '查询参数 JSON', requestBody: '请求体', authMethod: '认证方法', authType: '认证类型', authUrl: '认证 URL', authBody: '认证请求体', tokenPath: 'Token 路径', tokenHeader: 'Token 请求头', tokenPrefix: 'Token 前缀', progress: '查进度', traceReturned: '目标接口返回的 Trace ID', traceHelp: '临时测试或正式执行返回 traceId 后自动显示，无需手工输入。', refreshProgress: '刷新进度与日志', noTrace: '目标接口响应中尚未识别到 Trace ID', pythonTask: 'Python 子任务', workerEndpoint: 'Worker 接口', unifiedLogs: '统一链路日志', entries: '{count} 条', noLogs: '暂无链路日志', level: '级别', source: '来源', logger: '记录器', content: '内容', temporaryTest: '临时测试', result: '调用结果', http: 'HTTP', duration: '耗时', executionLogs: '执行日志', trigger: '触发', summary: '结果摘要', save: '保存', testFailed: '测试失败', executeFailed: '执行失败', progressFailed: '任务进度与日志查询失败', disableConfirm: '确认停用 {name}？', voidConfirm: '作废后不再显示 {name}，是否继续？', voidTitle: '作废配置' },
   pagination: {
     total: '共 {total} 条',
     pageSize: '每页',

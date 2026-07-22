@@ -456,7 +456,7 @@ async function forceTrace(traceId) {
     await ElMessageBox.confirm(t('tasks.forceTerminateConfirm'), t('tasks.forceTerminateTitle'), {
       type: 'warning'
     })
-    await http.post(`/system/tasks/${traceId}/force-terminate`, { reason: '管理员强制终止' })
+    await http.post(`/system/tasks/${traceId}/force-terminate`, { reason: t('tasks.forceTerminateReason') })
     ElMessage.success(t('tasks.taskTerminated'))
     load()
   } catch (error) {

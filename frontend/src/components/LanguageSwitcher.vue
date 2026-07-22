@@ -6,10 +6,10 @@
     <template #dropdown>
       <el-dropdown-menu>
         <el-dropdown-item command="zh-CN" :class="{ 'is-active': currentLocale === 'zh-CN' }">
-          <span class="flag">🇨🇳</span> 简体中文
+          <span class="flag">🇨🇳</span> {{ t('language.zhCN') }}
         </el-dropdown-item>
         <el-dropdown-item command="en-US" :class="{ 'is-active': currentLocale === 'en-US' }">
-          <span class="flag">🇺🇸</span> English
+          <span class="flag">🇺🇸</span> {{ t('language.enUS') }}
         </el-dropdown-item>
       </el-dropdown-menu>
     </template>
@@ -21,7 +21,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Operation } from '@element-plus/icons-vue'
 
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 
 const currentLocale = computed(() => locale.value)
 

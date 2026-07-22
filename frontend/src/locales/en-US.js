@@ -11,7 +11,8 @@ export default {
     logout: 'Logout',
     operations: 'Intelligent Operations',
     collapse: 'Collapse Sidebar',
-    expand: 'Expand Sidebar'
+    expand: 'Expand Sidebar',
+    items: { ai: 'AI Capabilities', aiChat: 'AI Chat', system: 'System Management', users: 'Users', roles: 'Roles', menus: 'Menus', departments: 'Departments', positions: 'Positions', dictionaries: 'Dictionaries', settings: 'System Settings', onlineUsers: 'Online Users', operationLogs: 'Operation Logs', loginLogs: 'Login Logs', tasks: 'Task Scheduling', models: 'Model Management', providers: 'Model Providers', modelConfig: 'Model Configuration', routes: 'Capability Routes', automation: 'Automation', apiTriggers: 'API Triggers' }
   },
   common: {
     confirm: 'Confirm',
@@ -31,7 +32,40 @@ export default {
     success: 'Success',
     failed: 'Failed',
     yes: 'Yes',
-    no: 'No'
+    no: 'No',
+    enabled: 'Enabled', disabled: 'Disabled', close: 'Close',
+    successSaved: 'Saved successfully', successDeleted: 'Deleted successfully',
+    saveFailed: 'Failed to save', deleteConfirm: 'Delete Confirmation',
+    confirmDelete: 'Delete “{name}”?', confirmTerminate: 'Force logout the current session of “{name}”?',
+    time: 'Time', user: 'User', account: 'Account', name: 'Name', code: 'Code',
+    description: 'Description', type: 'Type', sort: 'Sort', status: 'Status',
+    result: 'Result', operation: 'Actions', method: 'Method', interface: 'Endpoint',
+    client: 'Client', ip: 'IP', error: 'Error', loadingFailed: 'Failed to load'
+  },
+  login: {
+    description: 'Unified Model Capability and System Management Platform',
+    username: 'Username', password: 'Password', submit: 'Sign In', loginFailed: 'Login failed'
+  },
+  dashboard: {
+    eyebrow: 'AI PLATFORM READY', title: 'Unified access to model capabilities.',
+    description: 'System data is stored in MySQL, business data belongs to PostgreSQL, and Redis provides caching and token revocation.',
+    systemPermissions: 'System permissions and task logs', businessDatabase: 'Business database',
+    cacheTokens: 'Cache and token state', worker: 'OpenAI-compatible calls'
+  },
+  language: { zhCN: '简体中文', enUS: 'English' },
+  chat: {
+    title: 'General AI Chat', description: 'Requests are routed through Java authorization and task layers to the Python Worker.',
+    user: 'You', assistant: 'AI', empty: 'Enter a question to start chatting',
+    placeholder: 'Enter a question, then press Ctrl/Cmd + Enter to send', traceId: 'Trace ID', send: 'Send',
+    callFailed: 'Model call failed'
+  },
+  logs: {
+    loginTitle: 'Login Logs', loginDescription: 'Records successful and failed login events.',
+    operationTitle: 'Operation Logs', operationDescription: 'Desensitized audit records of system write operations.',
+    success: 'Success', failed: 'Failed', message: 'Message', duration: 'Duration (ms)',
+    method: 'Method', interface: 'Endpoint', error: 'Error',
+    onlineTitle: 'Online Users', onlineDescription: 'View Redis sessions and force users offline.',
+    loginTime: 'Login Time', lastActive: 'Last Active', forceLogout: 'Force Logout'
   },
   tasks: {
     title: 'Task Scheduling',
@@ -44,6 +78,8 @@ export default {
     createdAt: 'Created At',
     finishedAt: 'Finished At',
     startedAt: 'Started At',
+    heartbeatAt: 'Heartbeat At',
+    failureReason: 'Failure Reason',
     completedAt: 'Completed At',
     updatedAt: 'Updated At',
     errorMessage: 'Error Message',
@@ -62,6 +98,7 @@ export default {
     cancelReason_default: 'User requested cancellation',
     cancelRequested: 'Cancel request sent',
     forceTerminateConfirm: 'Force termination may leave external requests still processing, continue?',
+    forceTerminateReason: 'Force terminated by administrator',
     forceTerminateTitle: 'Force Terminate',
     taskTerminated: 'Task terminated',
     loadFailed: 'Failed to load task list',
@@ -91,6 +128,17 @@ export default {
       time: 'Time'
     }
   },
+  departments: { title: 'Departments', description: 'The department tree defines user ownership and data scope.', add: 'Add Department', addChild: 'Add Child', edit: 'Edit Department', parent: 'Parent' },
+  positions: { title: 'Positions', description: 'Maintain user position information.', add: 'Add Position', edit: 'Edit Position' },
+  users: { title: 'Users', description: 'Maintain accounts, departments, positions and roles.', add: 'Add User', edit: 'Edit User', keyword: 'Account or name', allStatus: 'All statuses', displayName: 'Display name', password: 'Password', keepPassword: 'Leave blank to keep unchanged', department: 'Department', position: 'Position', role: 'Role', confirmDelete: 'Delete user “{name}”?' },
+  roles: { title: 'Roles', description: 'Configure menu permissions and data visibility.', add: 'Add Role', edit: 'Edit Role', scope: 'Data Scope', permissions: 'Permissions', customDepartments: 'Selected Departments', allData: 'All data', department: 'This department', departmentChildren: 'This department and children', self: 'Self only' },
+  menus: { title: 'Menus', description: 'Maintain catalogs, page routes and button permissions.', add: 'Add Menu', edit: 'Edit Menu', parent: 'Parent', catalog: 'Catalog', menu: 'Menu', button: 'Button', route: 'Route', component: 'Component', icon: 'Icon', permission: 'Permission Code', visible: 'Visible' },
+  dictionaries: { title: 'Dictionaries', description: 'Maintain system enums and display labels.', addType: 'Add Type', addData: 'Add Data', selectType: 'Select a dictionary type', type: 'Dictionary Type', data: 'Dictionary Data', label: 'Label', value: 'Value' },
+  settings: { title: 'System Settings', description: 'Sensitive parameters are encrypted and displayed in masked form.', add: 'Add Parameter', edit: 'Edit Parameter', group: 'Group', key: 'Parameter Key', value: 'Parameter Value', sensitive: 'Sensitive', keepValue: 'Leave blank to keep the original value' },
+  providers: { title: 'Model Providers', description: 'API keys are encrypted and only masked values are listed.', add: 'Add Provider', edit: 'Edit Provider', baseUrl: 'Service URL', concurrencyLevel: 'Concurrency Scope', concurrency: 'Concurrency', timeout: 'Timeout (seconds)', provider: 'Provider', apiKeys: 'API Keys', keepKeys: 'Leave blank to keep keys; separate multiple keys with commas or new lines', multipleKeys: 'Separate multiple keys with commas or new lines' },
+  models: { title: 'Model Configuration', description: 'Maintain model identifiers and capability levels by provider.', add: 'Add Model', edit: 'Edit Model', provider: 'Provider', identifier: 'Model Identifier', modelType: 'Model Type', capability: 'Capability', text: 'Text', vision: 'Vision', low: 'Low', middle: 'Medium', high: 'High', test: 'Test', connected: 'Connected successfully, took {duration}ms' },
+  routes: { title: 'Capability Routes', description: 'Candidate models fail over in sequence.', add: 'Add Route', edit: 'Edit Route', featureCode: 'Feature Code', candidates: 'Candidate Models', thinking: 'Thinking Mode', example: 'e.g. chat' },
+  apiTrigger: { title: 'API Triggers', description: 'Configurations are stored in PostgreSQL; formal execution enters MySQL task scheduling.', add: 'Add Configuration', nameOrDescription: 'Name or description', enabledStatus: 'Enabled status', manualOnly: 'Manual only', latestResult: 'Latest result', execute: 'Execute', logs: 'Logs', disable: 'Disable', void: 'Void', edit: 'Edit API Trigger', addTrigger: 'Add API Trigger', basic: 'Basic Configuration', business: 'Business API', auth: 'Token Acquisition', authEnabled: 'Pre-authentication', authHelp: 'The Token Acquisition tab appears after enabling this; a token is fetched before calling the business API.', cronPlaceholder: 'Leave blank for manual execution only', httpMethod: 'HTTP Method', timeoutSeconds: 'Timeout (seconds)', targetUrl: 'Target URL', headers: 'Request Headers JSON', queryParams: 'Query Parameters JSON', requestBody: 'Request Body', authMethod: 'Authentication Method', authType: 'Authentication Type', authUrl: 'Authentication URL', authBody: 'Authentication Request Body', tokenPath: 'Token Path', tokenHeader: 'Token Header', tokenPrefix: 'Token Prefix', progress: 'Progress', traceReturned: 'Trace ID returned by target API', traceHelp: 'The trace ID is shown automatically after a temporary or formal execution; no manual input is needed.', refreshProgress: 'Refresh progress and logs', noTrace: 'No Trace ID found in the target API response', pythonTask: 'Python Subtask', workerEndpoint: 'Worker Endpoint', unifiedLogs: 'Unified Trace Logs', entries: '{count} entries', noLogs: 'No trace logs', level: 'Level', source: 'Source', logger: 'Logger', content: 'Content', temporaryTest: 'Temporary Test', result: 'Call Result', http: 'HTTP', duration: 'Duration', executionLogs: 'Execution Logs', trigger: 'Trigger', summary: 'Result Summary', save: 'Save', testFailed: 'Test failed', executeFailed: 'Execution failed', progressFailed: 'Failed to query task progress and logs', disableConfirm: 'Disable {name}?', voidConfirm: 'Voiding will hide {name}. Continue?', voidTitle: 'Void Configuration' },
   pagination: {
     total: 'Total {total}',
     pageSize: 'Per Page',

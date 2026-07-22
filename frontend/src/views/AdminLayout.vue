@@ -24,7 +24,7 @@
       <el-header class="topbar">
         <div class="topbar-title">
           <el-button class="nav-trigger" text @click="mobileNavigationOpen = true"><el-icon><Menu /></el-icon></el-button>
-          <div><strong>{{ title }}</strong><small v-if="route.meta.desc">{{ route.meta.desc }}</small></div>
+          <div><strong>{{ title }}</strong><small v-if="route.meta.desc">{{ t(route.meta.desc) }}</small></div>
         </div>
         <div class="topbar-actions">
           <LanguageSwitcher />
@@ -73,7 +73,8 @@ const sidebarCollapsed = ref(false)
 const navigablePaths = computed(() => getNavigablePaths(router.getRoutes()))
 const dashboardAvailable = computed(() => navigablePaths.value.has('/dashboard'))
 const menuTree = computed(() => buildAccessibleNavigation(auth.user?.menus, navigablePaths.value, permission => auth.hasPermission(permission)))
-const title = computed(() => findNavigationItem(menuTree.value, route.path)?.name || (route.path === '/dashboard' ? t('nav.dashboard') : appConfig.nameEn))
+const menuKeyMap = { '/ai': 'nav.items.ai', '/ai-chat': 'nav.items.aiChat', '/system': 'nav.items.system', '/users': 'nav.items.users', '/roles': 'nav.items.roles', '/menus': 'nav.items.menus', '/departments': 'nav.items.departments', '/positions': 'nav.items.positions', '/dictionaries': 'nav.items.dictionaries', '/settings': 'nav.items.settings', '/online-users': 'nav.items.onlineUsers', '/operation-logs': 'nav.items.operationLogs', '/login-logs': 'nav.items.loginLogs', '/tasks': 'nav.items.tasks', '/models': 'nav.items.models', '/model-providers': 'nav.items.providers', '/model-routes': 'nav.items.routes', '/automation': 'nav.items.automation', '/automation/api-triggers': 'nav.items.apiTriggers' }
+const title = computed(() => { const item = findNavigationItem(menuTree.value, route.path); return menuKeyMap[route.path] ? t(menuKeyMap[route.path]) : item?.name || (route.path === '/dashboard' ? t('nav.dashboard') : appConfig.nameEn) })
 
 /** 从已裁剪的导航树中查找当前页面，避免显示无效菜单名称。 */
 function findNavigationItem(items, path) {

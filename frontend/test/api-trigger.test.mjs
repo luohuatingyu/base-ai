@@ -81,10 +81,10 @@ test('任务详情或日志查询失败时向调用方传播异常', async () =>
 })
 
 test('新增和编辑弹窗按四类 tab 分隔字段且进度页没有手工输入框', () => {
-  const basic = tabSection('label="基础配置" name="basic"', 'label="业务接口" name="business"')
-  const business = tabSection('label="业务接口" name="business"', 'label="令牌获取" name="auth"')
-  const auth = tabSection('label="令牌获取" name="auth"', 'label="查进度" name="progress"')
-  const progress = tabSection('label="查进度" name="progress"', '</el-tabs>')
+  const basic = tabSection('name="basic"', 'name="business"')
+  const business = tabSection('name="business"', 'name="auth"')
+  const auth = tabSection('name="auth"', 'name="progress"')
+  const progress = tabSection('name="progress"', '</el-tabs>')
 
   for (const field of ['form.name', 'form.enabled', 'form.description', 'form.cronExpression', 'form.authEnabled']) {
     assert.match(basic, new RegExp(field.replace('.', '\\.')))
@@ -96,8 +96,8 @@ test('新增和编辑弹窗按四类 tab 分隔字段且进度页没有手工输
     assert.match(auth, new RegExp(field.replace('.', '\\.')))
   }
 
-  assert.match(viewSource, /v-if="form\.authEnabled" label="令牌获取" name="auth"/)
-  assert.match(viewSource, /v-if="auth\.hasPermission\('system:task:view'\)" label="查进度" name="progress"/)
+  assert.match(viewSource, /v-if="form\.authEnabled" :label="t\('apiTrigger\.auth'\)" name="auth"/)
+  assert.match(viewSource, /v-if="auth\.hasPermission\('system:task:view'\)" :label="t\('apiTrigger\.progress'\)" name="progress"/)
   assert.match(viewSource, /const activeTab\s*=\s*ref\('basic'\)/)
   assert.match(progress, /\{\{ progressTraceId \}\}/)
   assert.doesNotMatch(progress, /v-model="progressTraceId"/)
