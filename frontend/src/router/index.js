@@ -26,23 +26,23 @@ const router = createRouter({
     { path: '/login', component: LoginView, meta: { public: true } },
     {
       path: '/', component: AdminLayout, redirect: '/dashboard', children: [
-        { path: 'dashboard', component: DashboardView },
-        { path: 'ai-chat', component: AiChatView, meta: { permission: 'ai:chat:invoke' } },
-        { path: 'users', component: UsersView, meta: { permission: 'system:user:list' } },
-        { path: 'roles', component: RolesView, meta: { permission: 'system:role:list' } },
-        { path: 'menus', component: MenusView, meta: { permission: 'system:menu:list' } },
-        { path: 'departments', component: DepartmentsView, meta: { permission: 'system:department:list' } },
-        { path: 'positions', component: PositionsView, meta: { permission: 'system:position:list' } },
-        { path: 'dictionaries', component: DictionariesView, meta: { permission: 'system:dictionary:list' } },
-        { path: 'settings', component: SettingsView, meta: { permission: 'system:setting:list' } },
-        { path: 'online-users', component: OnlineUsersView, meta: { permission: 'system:session:list' } },
-        { path: 'operation-logs', component: OperationLogsView, meta: { permission: 'system:audit:operation:list' } },
-        { path: 'login-logs', component: LoginLogsView, meta: { permission: 'system:audit:login:list' } },
-        { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'model:provider:list' } },
-        { path: 'models', component: ModelsView, meta: { permission: 'model:model:list' } },
-        { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list' } },
-        { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view' } },
-        { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list' } }
+        { path: 'dashboard', component: DashboardView, meta: { navigable: true } },
+        { path: 'ai-chat', component: AiChatView, meta: { permission: 'ai:chat:invoke', navigable: true } },
+        { path: 'users', component: UsersView, meta: { permission: 'system:user:list', navigable: true } },
+        { path: 'roles', component: RolesView, meta: { permission: 'system:role:list', navigable: true } },
+        { path: 'menus', component: MenusView, meta: { permission: 'system:menu:list', navigable: true } },
+        { path: 'departments', component: DepartmentsView, meta: { permission: 'system:department:list', navigable: true } },
+        { path: 'positions', component: PositionsView, meta: { permission: 'system:position:list', navigable: true } },
+        { path: 'dictionaries', component: DictionariesView, meta: { permission: 'system:dictionary:list', navigable: true } },
+        { path: 'settings', component: SettingsView, meta: { permission: 'system:setting:list', navigable: true } },
+        { path: 'online-users', component: OnlineUsersView, meta: { permission: 'system:session:list', navigable: true } },
+        { path: 'operation-logs', component: OperationLogsView, meta: { permission: 'system:audit:operation:list', navigable: true } },
+        { path: 'login-logs', component: LoginLogsView, meta: { permission: 'system:audit:login:list', navigable: true } },
+        { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'model:provider:list', navigable: true } },
+        { path: 'models', component: ModelsView, meta: { permission: 'model:model:list', navigable: true } },
+        { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list', navigable: true } },
+        { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view', navigable: true } },
+        { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true } }
       ]
     }
   ]
