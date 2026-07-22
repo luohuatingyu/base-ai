@@ -113,19 +113,74 @@ public class TaskTraceService {
     }
 
     /** 查询当前用户可见的任务列表并支持组合过滤。 */
-    public List<Map<String, Object>> traces(Long userId, boolean admin, String status, String taskType, String triggerEntry) {
+    public Map<String, Object> traces(Long userId, boolean admin, String status, String taskType, String triggerEntry,
+                                       String logKeyword, Boolean onlyWithLogs, String startTime, String endTime,
+                                       Integer page, Integer pageSize) {
         StringBuilder sql = new StringBuilder("""
-            SELECT trace_id, owner_user_id, task_type, trigger_entry, status, request_path, request_method,
-                python_trace_count, error_message, cancellation_reason, heartbeat_at, started_at, finished_at, finished_reason
-            FROM task_trace WHERE 1=1
+            SELECT DISTINCT t.trace_id, t.owner_user_id, t.task_type, t.trigger_entry, t.status, t.request_path, t.request_method,
+                t.python_trace_count, t.error_message, t.cancellation_reason, t.heartbeat_at, t.started_at, t.finished_at,
+                t.finished_reason, t.created_at
+            FROM task_trace t
             """);
+
+        // 如果需要过滤日志关键字或仅显示有日志，需要关联日志表
+        if ((hasText(logKeyword)) || (onlyWithLogs != null && onlyWithLogs)) {
+            sql.append(" LEFT JOIN task_trace_log l ON t.trace_id = l.trace_id ");
+        }
+
+        sql.append(" WHERE 1=1 ");
         ArrayList<Object> args = new ArrayList<>();
-        if (!admin) { sql.append(" AND owner_user_id=?"); args.add(userId); }
-        if (hasText(status)) { sql.append(" AND status=?"); args.add(status.trim().toUpperCase(Locale.ROOT)); }
-        if (hasText(taskType)) { sql.append(" AND task_type=?"); args.add(taskType.trim()); }
-        if (hasText(triggerEntry)) { sql.append(" AND trigger_entry=?"); args.add(triggerEntry.trim()); }
-        sql.append(" ORDER BY started_at DESC LIMIT 500");
-        return jdbcTemplate.queryForList(sql.toString(), args.toArray());
+
+        if (!admin) { sql.append(" AND t.owner_user_id=?"); args.add(userId); }
+        if (hasText(status)) { sql.append(" AND t.status=?"); args.add(status.trim().toUpperCase(Locale.ROOT)); }
+        if (hasText(taskType)) { sql.append(" AND t.task_type=?"); args.add(taskType.trim()); }
+        if (hasText(triggerEntry)) { sql.append(" AND t.trigger_entry=?"); args.add(triggerEntry.trim()); }
+
+        // 日志关键字过滤
+        if (hasText(logKeyword)) {
+            sql.append(" AND l.message LIKE ?");
+            args.add("%" + logKeyword.trim() + "%");
+        }
+
+        // 仅显示有日志
+        if (onlyWithLogs != null && onlyWithLogs) {
+            sql.append(" AND EXISTS (SELECT 1 FROM task_trace_log WHERE trace_id = t.trace_id)");
+        }
+
+        // 时间范围过滤（按创建时间）
+        if (hasText(startTime)) {
+            sql.append(" AND t.created_at >= ?");
+            args.add(Timestamp.valueOf(startTime.trim().replace('T', ' ')));
+        }
+        if (hasText(endTime)) {
+            sql.append(" AND t.created_at <= ?");
+            args.add(Timestamp.valueOf(endTime.trim().replace('T', ' ')));
+        }
+
+        // 先获取总数
+        String countSql = "SELECT COUNT(DISTINCT t.trace_id) FROM (" + sql.toString() + ") AS temp";
+        Integer total = jdbcTemplate.queryForObject(countSql, Integer.class, args.toArray());
+
+        // 添加排序和分页
+        sql.append(" ORDER BY t.created_at DESC");
+
+        int currentPage = page != null && page > 0 ? page : 1;
+        int size = pageSize != null && pageSize > 0 ? Math.min(pageSize, 100) : 20;
+        int offset = (currentPage - 1) * size;
+
+        sql.append(" LIMIT ? OFFSET ?");
+        args.add(size);
+        args.add(offset);
+
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(sql.toString(), args.toArray());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("records", records);
+        result.put("total", total != null ? total : 0);
+        result.put("page", currentPage);
+        result.put("pageSize", size);
+
+        return result;
     }
 
     /** 查询单个任务详情并附带 Python 子任务。 */
@@ -138,7 +193,13 @@ public class TaskTraceService {
         return result;
     }
 
-    public List<Map<String, Object>> running(Long userId, boolean admin) { return traces(userId, admin, null, null, null).stream().filter(row -> List.of("RUNNING", "CANCEL_REQUESTED").contains(String.valueOf(row.get("status")))).toList(); }
+    public List<Map<String, Object>> running(Long userId, boolean admin) {
+        Map<String, Object> result = traces(userId, admin, null, null, null, null, null, null, null, 1, 500);
+        List<Map<String, Object>> records = (List<Map<String, Object>>) result.get("records");
+        return records.stream()
+                .filter(row -> List.of("RUNNING", "CANCEL_REQUESTED").contains(String.valueOf(row.get("status"))))
+                .toList();
+    }
     public List<String> taskTypes() { return jdbcTemplate.queryForList("SELECT DISTINCT task_type FROM task_trace WHERE task_type IS NOT NULL ORDER BY task_type", String.class); }
     public List<String> triggerEntries() { return jdbcTemplate.queryForList("SELECT DISTINCT trigger_entry FROM task_trace WHERE trigger_entry IS NOT NULL ORDER BY trigger_entry", String.class); }
     public List<TaskTypeRegistry.Metadata> taskMetadata() { return taskTypeRegistry.all(); }

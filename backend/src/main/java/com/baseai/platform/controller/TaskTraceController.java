@@ -24,11 +24,18 @@ public class TaskTraceController {
 
     /** 按条件查询当前用户可见任务。 */
     @GetMapping
-    public List<Map<String, Object>> traces(@RequestParam(required = false) String status,
-                                          @RequestParam(required = false) String taskType,
-                                          @RequestParam(required = false) String triggerEntry) {
+    public Map<String, Object> traces(@RequestParam(required = false) String status,
+                                       @RequestParam(required = false) String taskType,
+                                       @RequestParam(required = false) String triggerEntry,
+                                       @RequestParam(required = false) String logKeyword,
+                                       @RequestParam(required = false) Boolean onlyWithLogs,
+                                       @RequestParam(required = false) String startTime,
+                                       @RequestParam(required = false) String endTime,
+                                       @RequestParam(required = false, defaultValue = "1") Integer page,
+                                       @RequestParam(required = false, defaultValue = "20") Integer pageSize) {
         AuthUser user = AuthContext.require();
-        return service.traces(user.id(), isAdmin(user), status, taskType, triggerEntry);
+        return service.traces(user.id(), isAdmin(user), status, taskType, triggerEntry,
+                             logKeyword, onlyWithLogs, startTime, endTime, page, pageSize);
     }
 
     @GetMapping("/running")
