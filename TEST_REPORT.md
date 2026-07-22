@@ -1,44 +1,48 @@
-# Trace 全量改名测试报告
+# Trace 与平台配置测试报告
 
 ## 📋 Git 基准点
 
-- Commit: 7eefcab
-- 提交说明: Trace naming migration
+- Commit: 078b9fc
+- 提交说明: Rename platform configuration semantics
 - 测试日期: 2026-07-22
 - 分支: master
 
 ## 🎯 本次变更范围
 
-- 将全局追踪标识、运行时上下文、日志链路、接口路径、配置项和数据库字段统一命名为 Trace。
-- 将排除配置文件更名为 `trace-tracking-exclusions.yml`。
-- 新版本仅识别 Trace 数据库结构；历史数据结构需由运维人员在数据库可连接后按无损方案完成一次性调整。
+- 追踪标识、运行时上下文、日志链路、接口路径、配置项和数据库字段统一采用 Trace 命名。
+- 平台配置统一采用 `APP_PLATFORM_*` 环境变量与 `app.platform` 配置结构。
+- 新增 `/api/open/platform`，并保留既有公开路径作为兼容别名；两者返回相同的平台配置。
+- 排除配置文件使用 `trace-tracking-exclusions.yml`。
 
 ## 📊 测试执行结果
 
 | 测试范围 | 执行命令 | 结果 |
 | --- | --- | --- |
-| 后端完整测试 | `docker run --rm -v "$PWD:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 15 通过，0 失败，0 错误，0 跳过 |
+| 后端完整测试 | `docker run --rm -v "$PWD:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 16 通过，0 失败，0 错误，0 跳过 |
 | Python Worker 测试 | `docker run --rm -v "$PWD:/app" -w /app base-ai-python-worker:latest python -m pytest tests -q` | 3 通过 |
-| 前端追踪接口测试 | `node --test test/api-trigger.test.mjs` | 13 通过 |
-| 前端完整回归测试 | `node --test test/*.test.mjs`（隔离工作树） | 22 通过 |
+| 前端完整回归 | `node --test test/*.test.mjs`（隔离工作树） | 22 通过 |
 | 前端构建 | `npm run build`（隔离工作树） | 通过 |
-| 静态命名扫描 | 大小写不敏感的遗留命名扫描 | 无匹配 |
+| Compose 配置校验 | `docker compose config --quiet` | 通过 |
+| 静态命名扫描 | 旧环境变量前缀与旧平台配置访问器扫描 | 无匹配 |
 | 差异格式检查 | `git diff --check` | 通过 |
 
-## 🔄 服务重建验证
+## 🔄 运行时验证
 
-- 已执行 `docker compose up --build -d`；前端与后端镜像构建成功，后端镜像构建阶段的 15 个测试全部通过。
-- 官方 Python 基础镜像元数据拉取受 Docker Hub 网络超时影响。随后使用本地 Python 3.12 基础镜像执行 `PYTHON_IMAGE=base-ai-python-worker:latest docker compose up --build -d`，三个服务镜像均已重新构建。
-- Python Worker 容器健康检查通过。后端容器因远端 MySQL 连接被拒绝而无法健康启动，前端因此未能启动。
+- 先执行 `docker compose up --build -d`；该命令仅因 Docker Hub 拉取 Python 基础镜像元数据返回 EOF 而中断。
+- 使用本地 Python 3.12 Worker 镜像作为构建基座后，完成镜像构建并强制重建后端、前端容器。
+- 后端、前端、Python Worker 均为 healthy。
+- 后端开放健康接口返回 `UP`；前端运行时配置正确输出平台配置。
+- 新平台公开接口和兼容别名均返回一致的平台配置。
+- 远端 MySQL、PostgreSQL 均已连接成功；MySQL 已初始化平台基础数据与 Trace 表结构。
 
 ## ⚠️ 已知问题与限制
 
-- 远端 MySQL 和 PostgreSQL 当前不可连接，无法执行已确认的手工无损数据库结构调整，也无法完成依赖真实数据库的端到端验证。
-- 当前工作树存在三个用户原有的前端布局改动；完整前端回归在隔离工作树中执行，以避免将无关改动纳入本次验证。
-- Docker Hub 网络超时为环境网络问题，不影响已经使用本地 Python 3.12 镜像完成的应用镜像重建。
+- Docker Hub 的 Python 基础镜像元数据请求偶发 EOF；使用已有本地 Python 3.12 镜像可完成等价的应用镜像重建。
+- 前端构建保留既有的脚本引用和大包体积警告，但构建成功。
+- 当前工作树保留三项用户原有的前端布局暂存改动；本次前端全量测试在隔离工作树中执行，未将其纳入提交。
 
-## 📝 后续建议
+## 📝 下次测试建议
 
-1. 恢复远端数据库网络连通性后，先备份并核对行数，再执行一次性无损 Trace 结构调整。
-2. 数据库调整完成后，重新启动 Compose 服务并验证后端健康检查、Trace 查询接口和日志写入。
-3. 下次业务代码变更前，以本报告的 Git 基准点检查是否需要重新执行完整测试。
+1. 在 Docker Hub 网络稳定时再次执行标准全量 Compose 重建。
+2. 对真实业务请求执行一次 Trace 创建、查询与日志写入端到端回归。
+3. 下次业务代码变更前，以本报告的 Git 基准点判断是否需要重新执行完整测试。
