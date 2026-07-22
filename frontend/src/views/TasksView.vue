@@ -10,6 +10,7 @@
 
     <!-- 筛选器 -->
     <div class="filter-section">
+      <!-- 第一行：任务状态、任务类型、触发入口、仅显示有日志开关、按钮 -->
       <div class="filter-row">
         <el-select v-model="query.status" clearable placeholder="任务状态" class="filter-item-select">
           <el-option v-for="item in statuses" :key="item" :label="item" :value="item"/>
@@ -20,6 +21,30 @@
         <el-select v-model="query.triggerEntry" clearable placeholder="触发入口" class="filter-item-select">
           <el-option v-for="item in triggerEntries" :key="item" :label="item" :value="item"/>
         </el-select>
+        <el-switch
+          v-model="query.onlyWithLogs"
+          active-text="仅显示有日志"
+          class="filter-switch"
+        />
+        <div class="filter-actions">
+          <el-button type="primary" @click="load" :loading="loading">查询</el-button>
+          <el-button @click="reset">重置</el-button>
+        </div>
+      </div>
+      <!-- 第二行：关键字和时间 -->
+      <div class="filter-row">
+        <el-input
+          v-model="query.logKeyword"
+          clearable
+          placeholder="日志关键字"
+          :disabled="!query.taskType"
+          class="filter-item-keyword"
+          @keyup.enter="load"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
         <el-date-picker
           v-model="dateRange"
           type="datetimerange"
@@ -29,30 +54,6 @@
           value-format="YYYY-MM-DD HH:mm:ss"
           class="filter-item-date"
         />
-        <el-input
-          v-model="query.logKeyword"
-          clearable
-          placeholder="日志关键字"
-          :disabled="!query.taskType"
-          class="filter-item-input"
-          @keyup.enter="load"
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-        </el-input>
-      </div>
-      <div class="filter-row filter-row-actions">
-        <el-switch
-          v-model="query.onlyWithLogs"
-          active-text="仅显示有日志"
-          inactive-text="显示全部"
-          class="filter-switch"
-        />
-        <div class="filter-actions">
-          <el-button type="primary" @click="load" :loading="loading">查询</el-button>
-          <el-button @click="reset">重置</el-button>
-        </div>
       </div>
     </div>
 
@@ -223,10 +224,19 @@ async function load() {
   try {
     const params = {
       page: pagination.page,
-      pageSize: pagination.pageSize,
-      ...Object.fromEntries(Object.entries(query).filter(([, v]) => v !== '' && v !== false))
+      pageSize: pagination.pageSize
     }
 
+    // 添加筛选参数
+    if (query.status) params.status = query.status
+    if (query.taskType) params.taskType = query.taskType
+    if (query.triggerEntry) params.triggerEntry = query.triggerEntry
+    if (query.logKeyword) params.logKeyword = query.logKeyword
+
+    // onlyWithLogs 需要显式传递，包括 false 值
+    params.onlyWithLogs = query.onlyWithLogs
+
+    // 添加时间范围参数
     if (dateRange.value && dateRange.value.length === 2) {
       params.startTime = dateRange.value[0]
       params.endTime = dateRange.value[1]
@@ -244,6 +254,7 @@ async function load() {
     triggerEntries.value = entries.data
   } catch (error) {
     ElMessage.error('加载任务列表失败')
+    console.error('加载任务列表错误:', error)
   } finally {
     loading.value = false
   }
@@ -482,41 +493,37 @@ onUnmounted(stopLogRefresh)
 .filter-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
 .filter-row + .filter-row {
-  margin-top: 12px;
-}
-
-.filter-row-actions {
-  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 .filter-item-select {
-  width: 160px;
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.filter-item-keyword {
+  width: 260px;
   flex-shrink: 0;
 }
 
 .filter-item-date {
-  width: 380px;
-  flex-shrink: 0;
-}
-
-.filter-item-input {
-  width: 220px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 380px;
 }
 
 .filter-switch {
   flex-shrink: 0;
-  margin-right: auto;
 }
 
 .filter-actions {
   display: flex;
   gap: 8px;
+  margin-left: auto;
   flex-shrink: 0;
 }
 
@@ -645,23 +652,24 @@ onUnmounted(stopLogRefresh)
     padding: 12px;
   }
 
-  .filter-item-select,
-  .filter-item-date,
-  .filter-item-input {
-    width: 100%;
+  .filter-row {
+    gap: 12px;
   }
 
-  .filter-row-actions {
-    justify-content: flex-start;
+  .filter-item-select,
+  .filter-item-keyword,
+  .filter-item-date {
+    width: 100%;
+    min-width: 100%;
   }
 
   .filter-switch {
     width: 100%;
-    margin-right: 0;
   }
 
   .filter-actions {
     width: 100%;
+    margin-left: 0;
   }
 
   .filter-actions .el-button {
