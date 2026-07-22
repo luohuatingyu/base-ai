@@ -1,1 +1,316 @@
-:root{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;color:#172033;background:#f3f6fb;font-synthesis:none}*{box-sizing:border-box}body{margin:0}.shell{min-height:100vh}.sidebar{background:#10182b;color:#fff;padding:22px 14px}.logo{display:flex;align-items:center;gap:12px;padding:4px 12px 24px;font-size:20px}.logo span,.brand-mark{display:grid;place-items:center;width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#4d7cff,#9c6cff);color:#fff;font-weight:800;box-shadow:0 10px 26px #4d7cff55}.nav{border:0!important;background:transparent!important}.nav .el-menu-item{color:#aebbd3;border-radius:10px;margin:5px 0}.nav .el-menu-item:hover,.nav .el-menu-item.is-active{color:#fff;background:#263451}.topbar{height:72px;display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid #e8edf5;padding:0 28px}.topbar div{display:flex;flex-direction:column}.topbar small{color:#8b96a9;margin-top:3px}.user-chip{padding:9px 14px;border-radius:20px;background:#eef3ff;color:#375dc7;cursor:pointer}.main{padding:26px}.panel{background:#fff;border:1px solid #e7ecf4;border-radius:18px;padding:24px;box-shadow:0 12px 36px rgba(29,51,84,.06)}.hero{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(125deg,#14213d,#284f9e);color:#fff;min-height:250px;overflow:hidden}.hero h2{font-size:38px;margin:12px 0}.hero p{max-width:650px;color:#ccd8ef;line-height:1.8}.eyebrow{font-size:12px;letter-spacing:2px;color:#82a8ff}.orbit{width:160px;height:160px;display:grid;place-items:center;border-radius:50%;font-size:50px;font-weight:900;background:radial-gradient(circle at 35% 30%,#a98cff,#4c72ff 55%,#1a2d62);box-shadow:0 0 80px #6b7dff88}.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:20px}.metric{padding:22px;background:#fff;border:1px solid #e7ecf4;border-radius:16px}.metric b{display:block;font-size:20px;margin-bottom:8px}.metric span,.section-head p{color:#7a879b}.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}.section-head h2{margin:0 0 6px}.section-head p{margin:0}.login-page{min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 20% 20%,#e3e9ff,transparent 32%),linear-gradient(135deg,#f7f9fc,#eef2fa)}.login-card{width:420px;padding:24px;border-radius:22px!important}.login-card h1{margin-bottom:8px}.login-card p{color:#8290a6;margin-bottom:28px}.full{width:100%}.messages{min-height:360px;max-height:520px;overflow:auto;padding:14px 4px}.message{max-width:78%;margin:12px 0}.message small{color:#8a96a8}.message div{margin-top:5px;padding:14px 16px;border-radius:14px;white-space:pre-wrap;line-height:1.65;background:#f1f4f9}.message.user{margin-left:auto}.message.user div{background:#315fd4;color:#fff}.chat-actions{display:flex;align-items:center;justify-content:space-between;color:#8b96a9;margin-top:14px}.el-select{width:100%}.log-line{display:grid;grid-template-columns:170px 60px 70px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #edf0f5;font-size:13px}.log-line span,.log-line em{color:#8995a7;font-style:normal}.log-line code{white-space:pre-wrap}.log-line .ERROR{color:#d9485f}.log-line .WARN{color:#d89221}@media(max-width:900px){.sidebar{display:none}.metric-grid{grid-template-columns:1fr 1fr}.main{padding:14px}.hero{padding:24px}.orbit{display:none}.login-card{width:calc(100vw - 28px)}}
+/* 全局设计令牌：统一后台与登录页的颜色、间距、层级和组件圆角。 */
+:root {
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1f2937;
+  background: #f5f7fb;
+  font-synthesis: none;
+  --app-primary: #356ae6;
+  --app-primary-dark: #2858c9;
+  --app-text: #1f2937;
+  --app-muted: #748198;
+  --app-border: #e5eaf2;
+  --app-surface: #ffffff;
+  --app-canvas: #f5f7fb;
+  --app-radius: 12px;
+  --app-shadow: 0 8px 24px rgba(31, 53, 91, 0.06);
+  --el-color-primary: var(--app-primary);
+  --el-color-primary-light-3: #7397ed;
+  --el-color-primary-light-5: #9bb5f3;
+  --el-color-primary-light-7: #c3d3f8;
+  --el-color-primary-light-8: #d7e2fb;
+  --el-color-primary-light-9: #ebf0fd;
+  --el-border-radius-base: 8px;
+  --el-border-color: var(--app-border);
+  --el-text-color-primary: var(--app-text);
+  --el-text-color-regular: #56637a;
+  --el-text-color-secondary: var(--app-muted);
+  --el-bg-color-page: var(--app-canvas);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { min-width: 320px; min-height: 100%; }
+
+body { margin: 0; background: var(--app-canvas); }
+
+/* 主框架：固定导航视觉层级，保证内容区在小屏上可横向处理表格。 */
+.shell { min-height: 100vh; background: var(--app-canvas); }
+
+.sidebar {
+  background: #15223d;
+  color: #fff;
+  padding: 20px 12px;
+  box-shadow: 4px 0 18px rgba(15, 30, 57, 0.08);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 0 12px 20px;
+  font-size: 18px;
+  letter-spacing: 0.2px;
+}
+
+.logo span,
+.brand-mark {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #4c7dff, #8b6ef6);
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 8px 20px rgba(76, 125, 255, 0.34);
+}
+
+.nav { border: 0 !important; background: transparent !important; }
+
+.nav .el-menu-item,
+.nav .el-sub-menu__title {
+  height: 44px;
+  margin: 4px 0;
+  border-radius: 8px;
+  color: #b9c5d8;
+  line-height: 44px;
+}
+
+.nav .el-menu-item:hover,
+.nav .el-menu-item.is-active,
+.nav .el-sub-menu__title:hover {
+  color: #fff;
+  background: #273858;
+}
+
+.nav .el-menu-item.is-active { font-weight: 600; }
+
+.nav .el-sub-menu .el-menu { background: transparent; }
+
+.nav .el-sub-menu .el-menu-item { min-width: auto; padding-left: 44px !important; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 68px;
+  padding: 0 28px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.topbar div { display: flex; flex-direction: column; gap: 3px; }
+
+.topbar strong { font-size: 16px; line-height: 1.35; }
+
+.topbar small { color: var(--app-muted); }
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid #d8e4ff;
+  border-radius: 18px;
+  color: #315fcb;
+  background: #f0f5ff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.main { padding: 24px 28px 32px; overflow: hidden; }
+
+/* 通用内容容器：列表、表单、对话页共用一致的卡片边界和留白。 */
+.panel {
+  overflow: hidden;
+  padding: 24px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow);
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.section-head h2 { margin: 0 0 7px; color: var(--app-text); font-size: 20px; line-height: 1.35; }
+
+.section-head p { margin: 0; color: var(--app-muted); font-size: 13px; line-height: 1.65; }
+
+.section-head > .el-button { flex: 0 0 auto; }
+
+/* Element Plus 覆盖：统一表格、表单和操作控件的密度与视觉反馈。 */
+.el-button { min-height: 32px; font-weight: 500; }
+
+.el-button--primary { box-shadow: 0 4px 10px rgba(53, 106, 230, 0.18); }
+
+.el-button.is-link { min-height: auto; padding: 4px 6px; box-shadow: none; }
+
+.el-form-item { margin-bottom: 20px; }
+
+.el-form-item:last-child { margin-bottom: 0; }
+
+.el-input-number { width: 100%; }
+
+.el-table {
+  --el-table-border-color: var(--app-border);
+  --el-table-header-bg-color: #f8faff;
+  --el-table-row-hover-bg-color: #f4f7ff;
+  overflow: hidden;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+}
+
+.el-table th.el-table__cell { height: 46px; color: #536179; font-size: 13px; font-weight: 600; }
+
+.el-table td.el-table__cell { height: 52px; color: #39465b; }
+
+.el-table .cell { line-height: 1.5; }
+
+.el-pagination { justify-content: flex-end; margin-top: 20px; }
+
+.el-dialog { border-radius: 14px; }
+
+.el-dialog__header { margin-right: 0; padding: 20px 24px 16px; border-bottom: 1px solid var(--app-border); }
+
+.el-dialog__body { padding: 24px; }
+
+.el-dialog__footer { padding: 16px 24px 20px; border-top: 1px solid var(--app-border); }
+
+.el-drawer__header { margin-bottom: 0; padding: 20px 24px; border-bottom: 1px solid var(--app-border); }
+
+.el-drawer__body { padding: 20px 24px; }
+
+/* 工作台：突出首屏信息，并与后台卡片使用同一圆角体系。 */
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 238px;
+  overflow: hidden;
+  border: 0;
+  color: #fff;
+  background: linear-gradient(125deg, #15254a, #315fbc);
+}
+
+.hero h2 { margin: 10px 0; color: #fff; font-size: clamp(28px, 3vw, 38px); line-height: 1.25; }
+
+.hero p { max-width: 650px; color: #d4dff5; line-height: 1.8; }
+
+.eyebrow { color: #a9c3ff; font-size: 12px; font-weight: 600; letter-spacing: 1.7px; }
+
+.orbit {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #b29bff, #527bff 55%, #263f8f);
+  box-shadow: 0 0 68px rgba(130, 148, 255, 0.5);
+  font-size: 46px;
+  font-weight: 900;
+}
+
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
+
+.metric {
+  padding: 20px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow);
+}
+
+.metric b { display: block; margin-bottom: 8px; color: var(--app-text); font-size: 18px; }
+
+.metric span { color: var(--app-muted); font-size: 13px; line-height: 1.5; }
+
+/* 登录页和对话页保留独立场景特征，同时复用全局色板。 */
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at 15% 12%, #dce6ff 0, transparent 30%), radial-gradient(circle at 85% 88%, #e8e0ff 0, transparent 28%), #f5f7fb;
+}
+
+.login-card { width: min(420px, 100%); padding: 28px !important; border: 1px solid var(--app-border); border-radius: 18px !important; box-shadow: 0 18px 46px rgba(32, 59, 105, 0.12) !important; }
+
+.login-card .brand-mark { margin-bottom: 22px; }
+
+.login-card h1 { margin: 0 0 8px; color: var(--app-text); }
+
+.login-card p { margin: 0 0 28px; color: var(--app-muted); line-height: 1.65; }
+
+.full { width: 100%; }
+
+.chat-panel { max-width: 1280px; }
+
+.messages { min-height: 360px; max-height: 520px; overflow: auto; padding: 4px; }
+
+.message { max-width: 78%; margin: 14px 0; }
+
+.message small { color: var(--app-muted); }
+
+.message div { margin-top: 6px; padding: 13px 15px; border-radius: 12px; background: #f2f5fa; color: #39465b; line-height: 1.65; white-space: pre-wrap; }
+
+.message.user { margin-left: auto; }
+
+.message.user div { color: #fff; background: var(--app-primary); }
+
+.chat-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; color: var(--app-muted); }
+
+.el-select { width: 100%; }
+
+.log-line { display: grid; grid-template-columns: 170px 60px 70px minmax(0, 1fr); gap: 10px; padding: 11px 0; border-bottom: 1px solid #edf1f6; font-size: 13px; }
+
+.log-line span, .log-line em { color: var(--app-muted); font-style: normal; }
+
+.log-line code { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.log-line .ERROR { color: #d9485f; }
+
+.log-line .WARN { color: #c78317; }
+
+/* 响应式规则：优先保证操作区、查询区和数据表在窄屏下可读可用。 */
+@media (max-width: 1100px) {
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .topbar { height: 62px; padding: 0 16px; }
+  .main { padding: 16px; }
+  .panel { padding: 18px; border-radius: 10px; }
+  .hero { min-height: auto; padding: 24px 20px; }
+  .orbit { display: none; }
+  .section-head { align-items: flex-start; flex-wrap: wrap; margin-bottom: 18px; }
+  .section-head h2 { font-size: 18px; }
+  .el-table { overflow-x: auto; }
+  .log-line { grid-template-columns: 130px 52px minmax(0, 1fr); }
+  .log-line em { display: none; }
+}
+
+@media (max-width: 600px) {
+  .topbar small { display: none; }
+  .main { padding: 12px; }
+  .panel { padding: 16px; }
+  .metric-grid { grid-template-columns: 1fr; gap: 12px; }
+  .section-head > .el-button { width: 100%; }
+  .el-dialog { width: calc(100% - 24px) !important; margin: 6vh auto !important; }
+  .el-dialog__header, .el-dialog__body, .el-dialog__footer { padding-left: 18px; padding-right: 18px; }
+  .chat-actions { align-items: flex-start; flex-direction: column; }
+  .chat-actions .el-button { width: 100%; }
+  .message { max-width: 90%; }
+  .log-line { grid-template-columns: 1fr 52px; }
+  .log-line span { grid-column: 1 / -1; }
+}
