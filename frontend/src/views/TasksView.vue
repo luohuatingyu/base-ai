@@ -11,13 +11,13 @@
     <!-- 筛选器 -->
     <div class="filter-section">
       <div class="filter-row">
-        <el-select v-model="query.status" clearable placeholder="任务状态" class="filter-item">
+        <el-select v-model="query.status" clearable placeholder="任务状态" class="filter-item-select">
           <el-option v-for="item in statuses" :key="item" :label="item" :value="item"/>
         </el-select>
-        <el-select v-model="query.taskType" clearable filterable placeholder="任务类型" class="filter-item">
+        <el-select v-model="query.taskType" clearable filterable placeholder="任务类型" class="filter-item-select">
           <el-option v-for="item in taskTypes" :key="item" :label="item" :value="item"/>
         </el-select>
-        <el-select v-model="query.triggerEntry" clearable placeholder="触发入口" class="filter-item">
+        <el-select v-model="query.triggerEntry" clearable placeholder="触发入口" class="filter-item-select">
           <el-option v-for="item in triggerEntries" :key="item" :label="item" :value="item"/>
         </el-select>
         <el-date-picker
@@ -27,21 +27,22 @@
           start-placeholder="开始时间"
           end-placeholder="结束时间"
           value-format="YYYY-MM-DD HH:mm:ss"
-          class="filter-item date-range"
+          class="filter-item-date"
         />
-      </div>
-      <div class="filter-row">
         <el-input
           v-model="query.logKeyword"
           clearable
-          placeholder="日志关键字过滤（需先选择任务类型）"
+          placeholder="日志关键字"
           :disabled="!query.taskType"
-          class="filter-item keyword-input"
+          class="filter-item-input"
+          @keyup.enter="load"
         >
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
+      </div>
+      <div class="filter-row filter-row-actions">
         <el-switch
           v-model="query.onlyWithLogs"
           active-text="仅显示有日志"
@@ -49,7 +50,7 @@
           class="filter-switch"
         />
         <div class="filter-actions">
-          <el-button type="primary" @click="load">查询</el-button>
+          <el-button type="primary" @click="load" :loading="loading">查询</el-button>
           <el-button @click="reset">重置</el-button>
         </div>
       </div>
@@ -134,19 +135,20 @@
           start-placeholder="开始时间"
           end-placeholder="结束时间"
           value-format="YYYY-MM-DD HH:mm:ss"
-          class="log-filter-item"
+          class="log-filter-item log-filter-date"
         />
         <el-input
           v-model="logFilter.keyword"
           clearable
           placeholder="关键字搜索"
-          class="log-filter-item"
+          class="log-filter-item log-filter-input"
+          @keyup.enter="filterLogs"
         >
           <template #prefix>
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
-        <el-button type="primary" @click="filterLogs">筛选</el-button>
+        <el-button type="primary" @click="filterLogs" :loading="logLoading">筛选</el-button>
         <el-button @click="resetLogFilter">重置</el-button>
       </div>
 
@@ -351,23 +353,48 @@ function stopLogRefresh() {
 }
 
 /** 过滤日志 */
-function filterLogs() {
-  loadLogs()
+async function filterLogs() {
+  logLoading.value = true
+  try {
+    await loadLogs()
+  } catch (error) {
+    ElMessage.error('筛选日志失败')
+  } finally {
+    logLoading.value = false
+  }
 }
 
 /** 重置日志过滤器 */
-function resetLogFilter() {
+async function resetLogFilter() {
   Object.assign(logFilter, {
     systemType: '',
     timeRange: [],
     keyword: ''
   })
-  loadLogs()
+  logLoading.value = true
+  try {
+    await loadLogs()
+  } catch (error) {
+    ElMessage.error('重置日志筛选失败')
+  } finally {
+    logLoading.value = false
+  }
 }
 
-/** 计算过滤后的日志 */
+/** 计算过滤后的日志 - 前端本地过滤作为备选 */
 const filteredLogs = computed(() => {
-  return logs.value
+  let result = logs.value
+
+  // 如果后端不支持过滤，在前端进行本地过滤
+  if (logFilter.keyword && result.length > 0) {
+    const keyword = logFilter.keyword.toLowerCase()
+    result = result.filter(log =>
+      log.message?.toLowerCase().includes(keyword) ||
+      log.source?.toLowerCase().includes(keyword)
+    )
+  }
+
+  return result
 })
 
 /** 格式化字段标签 */
@@ -446,7 +473,7 @@ onUnmounted(stopLogRefresh)
 <style scoped>
 .filter-section {
   margin-bottom: 20px;
-  padding: 16px;
+  padding: 18px;
   background: #f8faff;
   border: 1px solid var(--app-border);
   border-radius: 10px;
@@ -463,26 +490,34 @@ onUnmounted(stopLogRefresh)
   margin-top: 12px;
 }
 
-.filter-item {
-  min-width: 180px;
+.filter-row-actions {
+  justify-content: flex-end;
 }
 
-.date-range {
-  min-width: 360px;
+.filter-item-select {
+  width: 160px;
+  flex-shrink: 0;
 }
 
-.keyword-input {
-  flex: 1;
-  min-width: 280px;
+.filter-item-date {
+  width: 380px;
+  flex-shrink: 0;
+}
+
+.filter-item-input {
+  width: 220px;
+  flex-shrink: 0;
 }
 
 .filter-switch {
-  margin-left: auto;
+  flex-shrink: 0;
+  margin-right: auto;
 }
 
 .filter-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .tasks-table {
@@ -532,7 +567,18 @@ onUnmounted(stopLogRefresh)
 }
 
 .log-filter-item {
-  min-width: 160px;
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.log-filter-date {
+  width: 360px;
+  flex-shrink: 0;
+}
+
+.log-filter-input {
+  width: 200px;
+  flex-shrink: 0;
 }
 
 .log-timeline {
@@ -599,15 +645,19 @@ onUnmounted(stopLogRefresh)
     padding: 12px;
   }
 
-  .filter-item,
-  .date-range,
-  .keyword-input {
-    min-width: 100%;
+  .filter-item-select,
+  .filter-item-date,
+  .filter-item-input {
+    width: 100%;
+  }
+
+  .filter-row-actions {
+    justify-content: flex-start;
   }
 
   .filter-switch {
-    margin-left: 0;
     width: 100%;
+    margin-right: 0;
   }
 
   .filter-actions {
@@ -622,8 +672,10 @@ onUnmounted(stopLogRefresh)
     padding: 12px;
   }
 
-  .log-filter-item {
-    min-width: 100%;
+  .log-filter-item,
+  .log-filter-date,
+  .log-filter-input {
+    width: 100%;
   }
 
   .log-meta {
