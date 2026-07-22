@@ -1,46 +1,76 @@
-.filter-row {
+/* 列表查询区：接口触发、任务调度和用户管理共用紧凑且可换行的操作布局。 */
+.filter-row,
+.panel > .el-form--inline {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 20px;
+  padding: 14px;
+  border: 1px solid #e8edf5;
+  border-radius: 10px;
+  background: #f8faff;
 }
 
-.filter-row > .el-input {
-  max-width: 280px;
-}
+.filter-row > .el-input { flex: 0 1 280px; max-width: 280px; }
 
-.filter-row > .el-select {
-  max-width: 220px;
-}
+.filter-row > .el-select { flex: 0 1 220px; max-width: 220px; }
 
+.panel > .el-form--inline .el-form-item { margin: 0; }
+
+.panel > .el-form--inline .el-button { margin-left: 0; }
+
+/* 弹窗双列表单：保持字段对齐，并在小屏自动切换为单列。 */
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
 }
 
+.form-grid .el-form-item { min-width: 0; }
+
+/* 结构化详情和响应内容：与全局面板层级一致，并避免长文本撑破容器。 */
 .detail-value {
   margin: 0;
-  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #39465b;
   font-family: inherit;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .response-body {
   max-height: 480px;
-  margin-top: 18px;
+  margin: 18px 0 0;
   overflow: auto;
   padding: 16px;
-  border-radius: 12px;
-  color: #d8e2f2;
-  background: #111827;
+  border: 1px solid #263553;
+  border-radius: 10px;
+  color: #dce7fa;
+  background: #182338;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 @media (max-width: 900px) {
-  .filter-row {
-    flex-wrap: wrap;
-  }
+  .filter-row,
+  .panel > .el-form--inline { align-items: stretch; }
 
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
+  .filter-row > .el-input,
+  .filter-row > .el-select { flex-basis: 220px; }
+
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  .filter-row,
+  .panel > .el-form--inline { gap: 10px; padding: 12px; }
+
+  .filter-row > .el-input,
+  .filter-row > .el-select,
+  .filter-row > .el-button,
+  .panel > .el-form--inline .el-form-item,
+  .panel > .el-form--inline .el-button { width: 100%; max-width: none; }
 }
