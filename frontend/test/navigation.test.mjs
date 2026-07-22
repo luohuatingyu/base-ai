@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildAccessibleNavigation } from '../src/utils/navigation.js'
+import { buildAccessibleNavigation, getNavigablePaths } from '../src/utils/navigation.js'
 
 /** 创建测试菜单，减少各场景的重复字段。 */
 function menu(id, parentId, name, type, path, permission, visible = true, sortOrder = id) {
@@ -37,4 +37,15 @@ test('父目录缺失或无权限时提升有效页面，避免丢失可访问�
   const navigation = buildAccessibleNavigation(menus, ['/reports', '/orphan'], permission => granted.has(permission))
 
   assert.deepEqual(navigation.map(item => item.name), ['报表中心', '孤立页面'])
+})
+
+test('只将显式标记且绑定页面组件的路由加入导航白名单', () => {
+  const routes = [
+    { path: '/users', meta: { navigable: true }, components: { default: {} } },
+    { path: '/unfinished', meta: { navigable: true }, components: {} },
+    { path: '/hidden', meta: {}, components: { default: {} } },
+    { path: '/login', meta: { public: true }, components: { default: {} } }
+  ]
+
+  assert.deepEqual([...getNavigablePaths(routes)], ['/users'])
 })
