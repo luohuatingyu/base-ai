@@ -37,6 +37,9 @@ body { margin: 0; background: var(--app-canvas); }
 .shell { min-height: 100vh; background: var(--app-canvas); }
 
 .sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   background: #15223d;
   color: #fff;
   padding: 20px 12px;
@@ -52,6 +55,8 @@ body { margin: 0; background: var(--app-canvas); }
   font-size: 18px;
   letter-spacing: 0.2px;
 }
+
+.logo strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .logo span,
 .brand-mark {
@@ -69,6 +74,8 @@ body { margin: 0; background: var(--app-canvas); }
 
 .nav { border: 0 !important; background: transparent !important; }
 
+.nav-scroll { min-height: 0; flex: 1; }
+
 .nav .el-menu-item,
 .nav .el-sub-menu__title {
   height: 44px;
@@ -76,6 +83,7 @@ body { margin: 0; background: var(--app-canvas); }
   border-radius: 8px;
   color: #b9c5d8;
   line-height: 44px;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .nav .el-menu-item:hover,
@@ -85,11 +93,17 @@ body { margin: 0; background: var(--app-canvas); }
   background: #273858;
 }
 
-.nav .el-menu-item.is-active { font-weight: 600; }
+.nav .el-menu-item:hover,
+.nav .el-sub-menu__title:hover { transform: translateX(2px); }
+
+.nav .el-menu-item.is-active { font-weight: 600; box-shadow: inset 3px 0 0 #8eafff; }
+
+.nav .el-menu-item .el-icon,
+.nav .el-sub-menu__title .el-icon { margin-right: 10px; color: inherit; font-size: 16px; }
 
 .nav .el-sub-menu .el-menu { background: transparent; }
 
-.nav .el-sub-menu .el-menu-item { min-width: auto; padding-left: 44px !important; }
+.nav .el-sub-menu .el-menu-item { min-width: auto; padding-left: 46px !important; }
 
 .topbar {
   display: flex;
@@ -101,11 +115,20 @@ body { margin: 0; background: var(--app-canvas); }
   border-bottom: 1px solid var(--app-border);
 }
 
-.topbar div { display: flex; flex-direction: column; gap: 3px; }
+.topbar-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.topbar-title > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 
 .topbar strong { font-size: 16px; line-height: 1.35; }
 
 .topbar small { color: var(--app-muted); }
+
+.nav-trigger { display: none; margin: 0; padding: 6px; color: #4c5c75; font-size: 20px; }
+
+/* 移动端抽屉沿用桌面侧边栏配色，保持导航层级和交互一致。 */
+.mobile-nav-drawer .el-drawer__body { display: flex; flex-direction: column; padding: 20px 12px; background: #15223d; color: #fff; }
+
+.mobile-nav-drawer .logo { flex: 0 0 auto; }
 
 .user-chip {
   display: inline-flex;
@@ -289,6 +312,7 @@ body { margin: 0; background: var(--app-canvas); }
 @media (max-width: 900px) {
   .sidebar { display: none; }
   .topbar { height: 62px; padding: 0 16px; }
+  .nav-trigger { display: inline-flex; }
   .main { padding: 16px; }
   .panel { padding: 18px; border-radius: 10px; }
   .hero { min-height: auto; padding: 24px 20px; }
