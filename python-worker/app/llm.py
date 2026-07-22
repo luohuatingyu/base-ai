@@ -129,12 +129,30 @@ class LlmClient:
         logger.info("event=llm_call_succeeded model=%s input_tokens=%d output_tokens=%d total_tokens=%d duration_ms=%.2f",
                     model, input_tokens, output_tokens, total_tokens, self._elapsed(started_at))
         if self.settings.llm_log_content:
-            safe_messages = [
-                {"role": item.role, "content": sanitize_log_text(item.content, 1000)}
-                for item in messages[-20:]
-            ]
-            logger.info("event=llm_content messages=%s response=%s",
-                        safe_messages, sanitize_log_text(content, 4000))
+            # 分离系统提示词、用户提示词和助手消息
+            system_messages = [msg for msg in messages if msg.role == "system"]
+            user_messages = [msg for msg in messages if msg.role == "user"]
+            assistant_messages = [msg for msg in messages if msg.role == "assistant"]
+
+            # 记录系统提示词（即使为空也记录）
+            if system_messages:
+                system_content = "\n\n".join([msg.content for msg in system_messages])
+                logger.info("event=llm_system_prompt content=%s", sanitize_log_text(system_content, 4000))
+            else:
+                logger.info("event=llm_system_prompt content=")
+
+            # 记录用户提示词
+            if user_messages:
+                user_content = "\n\n".join([msg.content for msg in user_messages])
+                logger.info("event=llm_user_prompt content=%s", sanitize_log_text(user_content, 4000))
+
+            # 记录之前的助手消息（对话历史）
+            if assistant_messages:
+                for idx, msg in enumerate(assistant_messages[-5:]):  # 最多记录最近5条
+                    logger.info("event=llm_assistant_history index=%d content=%s", idx, sanitize_log_text(msg.content, 2000))
+
+            # 记录模型响应
+            logger.info("event=llm_model_response content=%s", sanitize_log_text(content, 4000))
         else:
             logger.info("event=llm_content_redacted response_sha256=%s", hashlib.sha256(content.encode()).hexdigest()[:16])
 

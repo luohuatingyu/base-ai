@@ -2,33 +2,33 @@
   <div class="panel">
     <div class="section-head">
       <div>
-        <h2>任务调度</h2>
-        <p>AOP 统一跟踪控制器、定时任务和跨服务日志。</p>
+        <h2>{{ t('tasks.title') }}</h2>
+        <p>{{ t('tasks.description') }}</p>
       </div>
-      <el-button @click="load">刷新</el-button>
+      <el-button @click="load">{{ t('common.refresh') }}</el-button>
     </div>
 
     <!-- 筛选器 -->
     <div class="filter-section">
       <!-- 第一行：任务状态、任务类型、触发入口、仅显示有日志开关、按钮 -->
       <div class="filter-row">
-        <el-select v-model="query.status" clearable placeholder="任务状态" class="filter-item-select">
-          <el-option v-for="item in statuses" :key="item" :label="item" :value="item"/>
+        <el-select v-model="query.status" clearable :placeholder="t('tasks.taskStatus')" class="filter-item-select">
+          <el-option v-for="item in statuses" :key="item" :label="t(`tasks.statuses.${item}`)" :value="item"/>
         </el-select>
-        <el-select v-model="query.taskType" clearable filterable placeholder="任务类型" class="filter-item-select">
+        <el-select v-model="query.taskType" clearable filterable :placeholder="t('tasks.taskType')" class="filter-item-select">
           <el-option v-for="item in taskTypes" :key="item" :label="item" :value="item"/>
         </el-select>
-        <el-select v-model="query.triggerEntry" clearable placeholder="触发入口" class="filter-item-select">
+        <el-select v-model="query.triggerEntry" clearable :placeholder="t('tasks.triggerEntry')" class="filter-item-select">
           <el-option v-for="item in triggerEntries" :key="item" :label="item" :value="item"/>
         </el-select>
         <el-switch
           v-model="query.onlyWithLogs"
-          active-text="仅显示有日志"
+          :active-text="t('tasks.onlyWithLogs')"
           class="filter-switch"
         />
         <div class="filter-actions">
-          <el-button type="primary" @click="load" :loading="loading">查询</el-button>
-          <el-button @click="reset">重置</el-button>
+          <el-button type="primary" @click="load" :loading="loading">{{ t('common.query') }}</el-button>
+          <el-button @click="reset">{{ t('common.reset') }}</el-button>
         </div>
       </div>
       <!-- 第二行：关键字和时间 -->
@@ -36,7 +36,7 @@
         <el-input
           v-model="query.logKeyword"
           clearable
-          placeholder="日志关键字"
+          :placeholder="t('tasks.logKeyword')"
           :disabled="!query.taskType"
           class="filter-item-keyword"
           @keyup.enter="load"
@@ -48,9 +48,9 @@
         <el-date-picker
           v-model="dateRange"
           type="datetimerange"
-          range-separator="至"
-          start-placeholder="开始时间"
-          end-placeholder="结束时间"
+          range-separator="~"
+          :start-placeholder="t('tasks.startTime')"
+          :end-placeholder="t('tasks.endTime')"
           value-format="YYYY-MM-DD HH:mm:ss"
           class="filter-item-date"
         />
@@ -59,28 +59,28 @@
 
     <!-- 数据表格 -->
     <el-table :data="rows" v-loading="loading" class="tasks-table">
-      <el-table-column prop="trace_id" label="Trace ID" min-width="280">
+      <el-table-column prop="trace_id" :label="t('tasks.traceId')" min-width="280">
         <template #default="scope">
           <el-text class="trace-id" truncated>{{ scope.row.trace_id }}</el-text>
         </template>
       </el-table-column>
-      <el-table-column prop="task_type" label="任务类型" min-width="150"/>
-      <el-table-column prop="trigger_entry" label="入口" width="110"/>
-      <el-table-column label="状态" width="145">
+      <el-table-column prop="task_type" :label="t('tasks.taskType')" min-width="150"/>
+      <el-table-column prop="trigger_entry" :label="t('tasks.entry')" width="110"/>
+      <el-table-column :label="t('tasks.status')" width="145">
         <template #default="s">
           <el-tag :type="statusType(s.row.status)" effect="light">
-            {{ s.row.status }}
+            {{ t(`tasks.statuses.${s.row.status}`) }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" min-width="180"/>
-      <el-table-column prop="started_at" label="开始时间" min-width="180"/>
-      <el-table-column label="操作" width="250" fixed="right">
+      <el-table-column prop="created_at" :label="t('tasks.createdAt')" min-width="180"/>
+      <el-table-column prop="finished_at" :label="t('tasks.finishedAt')" min-width="180"/>
+      <el-table-column :label="t('common.actions')" width="250" fixed="right">
         <template #default="s">
-          <el-button link type="primary" @click="showDetail(s.row)">详情</el-button>
-          <el-button link type="primary" @click="showLogs(s.row.trace_id)">日志</el-button>
-          <el-button v-if="manageable(s.row)" link type="warning" @click="cancelTrace(s.row.trace_id)">取消</el-button>
-          <el-button v-if="auth.isAdmin && manageable(s.row)" link type="danger" @click="forceTrace(s.row.trace_id)">强制终止</el-button>
+          <el-button link type="primary" @click="showDetail(s.row)">{{ t('common.detail') }}</el-button>
+          <el-button link type="primary" @click="showLogs(s.row.trace_id)">{{ t('tasks.logs') }}</el-button>
+          <el-button v-if="manageable(s.row)" link type="warning" @click="cancelTrace(s.row.trace_id)">{{ t('tasks.cancel') }}</el-button>
+          <el-button v-if="auth.isAdmin && manageable(s.row)" link type="danger" @click="forceTrace(s.row.trace_id)">{{ t('tasks.forceTerminate') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -99,7 +99,7 @@
     <!-- 任务详情对话框 -->
     <el-dialog
       v-model="detailVisible"
-      title="任务详情"
+      :title="t('tasks.detail')"
       width="680px"
       class="detail-dialog"
     >
@@ -119,29 +119,29 @@
     <!-- 日志抽屉 -->
     <el-drawer
       v-model="logVisible"
-      title="链路日志"
+      :title="t('tasks.log.title')"
       size="72%"
       class="log-drawer"
     >
       <!-- 日志过滤器 -->
       <div class="log-filters">
-        <el-select v-model="logFilter.systemType" clearable placeholder="系统类型" class="log-filter-item">
+        <el-select v-model="logFilter.systemType" clearable :placeholder="t('tasks.log.systemType')" class="log-filter-item">
           <el-option label="Python" value="python"/>
           <el-option label="Java" value="java"/>
         </el-select>
         <el-date-picker
           v-model="logFilter.timeRange"
           type="datetimerange"
-          range-separator="至"
-          start-placeholder="开始时间"
-          end-placeholder="结束时间"
+          range-separator="~"
+          :start-placeholder="t('tasks.startTime')"
+          :end-placeholder="t('tasks.endTime')"
           value-format="YYYY-MM-DD HH:mm:ss"
           class="log-filter-item log-filter-date"
         />
         <el-input
           v-model="logFilter.keyword"
           clearable
-          placeholder="关键字搜索"
+          :placeholder="t('tasks.log.keyword')"
           class="log-filter-item log-filter-input"
           @keyup.enter="filterLogs"
         >
@@ -149,8 +149,8 @@
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
-        <el-button type="primary" @click="filterLogs" :loading="logLoading">筛选</el-button>
-        <el-button @click="resetLogFilter">重置</el-button>
+        <el-button type="primary" @click="filterLogs" :loading="logLoading">{{ t('tasks.log.filter') }}</el-button>
+        <el-button @click="resetLogFilter">{{ t('tasks.log.reset') }}</el-button>
       </div>
 
       <!-- 日志时间线 -->
@@ -167,19 +167,21 @@
             <code>{{ item.message }}</code>
           </div>
         </div>
-        <el-empty v-if="!filteredLogs.length" description="暂无日志"/>
+        <el-empty v-if="!filteredLogs.length" :description="t('tasks.log.noLogs')"/>
       </div>
     </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, computed, onUnmounted } from 'vue'
+import { onMounted, reactive, ref, computed, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
 const logs = ref([])
@@ -253,7 +255,7 @@ async function load() {
     taskTypes.value = types.data
     triggerEntries.value = entries.data
   } catch (error) {
-    ElMessage.error('加载任务列表失败')
+    ElMessage.error(t('tasks.loadFailed'))
     console.error('加载任务列表错误:', error)
   } finally {
     loading.value = false
@@ -303,7 +305,7 @@ async function showDetail(row) {
     detail.value = response.data
     detailVisible.value = true
   } catch (error) {
-    ElMessage.error('加载任务详情失败')
+    ElMessage.error(t('tasks.loadDetailFailed'))
   }
 }
 
@@ -318,7 +320,7 @@ async function showLogs(traceId) {
     // 启动自动刷新
     startLogRefresh()
   } catch (error) {
-    ElMessage.error('加载日志失败')
+    ElMessage.error(t('tasks.loadLogsFailed'))
   } finally {
     logLoading.value = false
   }
@@ -369,7 +371,7 @@ async function filterLogs() {
   try {
     await loadLogs()
   } catch (error) {
-    ElMessage.error('筛选日志失败')
+    ElMessage.error(t('tasks.filterFailed'))
   } finally {
     logLoading.value = false
   }
@@ -386,7 +388,7 @@ async function resetLogFilter() {
   try {
     await loadLogs()
   } catch (error) {
-    ElMessage.error('重置日志筛选失败')
+    ElMessage.error(t('tasks.resetFilterFailed'))
   } finally {
     logLoading.value = false
   }
@@ -411,16 +413,16 @@ const filteredLogs = computed(() => {
 /** 格式化字段标签 */
 function formatLabel(key) {
   const labelMap = {
-    trace_id: 'Trace ID',
-    task_type: '任务类型',
-    trigger_entry: '触发入口',
-    status: '状态',
-    started_at: '开始时间',
-    completed_at: '完成时间',
-    created_at: '创建时间',
-    updated_at: '更新时间',
-    error_message: '错误信息',
-    cancel_reason: '取消原因'
+    trace_id: t('tasks.traceId'),
+    task_type: t('tasks.taskType'),
+    trigger_entry: t('tasks.triggerEntry'),
+    status: t('tasks.status'),
+    started_at: t('tasks.startedAt'),
+    completed_at: t('tasks.completedAt'),
+    created_at: t('tasks.createdAt'),
+    updated_at: t('tasks.updatedAt'),
+    error_message: t('tasks.errorMessage'),
+    cancel_reason: t('tasks.cancelReason')
   }
   return labelMap[key] || key
 }
@@ -435,15 +437,15 @@ function formatValue(value) {
 /** 请求协作取消任务 */
 async function cancelTrace(traceId) {
   try {
-    const { value } = await ElMessageBox.prompt('请输入取消原因', '取消任务', {
-      inputValue: '用户请求取消'
+    const { value } = await ElMessageBox.prompt(t('tasks.cancelReason_input'), t('tasks.cancelTask'), {
+      inputValue: t('tasks.cancelReason_default')
     })
     await http.post(`/system/tasks/${traceId}/cancel`, { reason: value })
-    ElMessage.success('已发送取消请求')
+    ElMessage.success(t('tasks.cancelRequested'))
     load()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('取消任务失败')
+      ElMessage.error(t('tasks.cancelFailed'))
     }
   }
 }
@@ -451,15 +453,15 @@ async function cancelTrace(traceId) {
 /** 管理员强制中断任务 */
 async function forceTrace(traceId) {
   try {
-    await ElMessageBox.confirm('强制终止可能导致外部请求仍在处理中，是否继续？', '强制终止', {
+    await ElMessageBox.confirm(t('tasks.forceTerminateConfirm'), t('tasks.forceTerminateTitle'), {
       type: 'warning'
     })
     await http.post(`/system/tasks/${traceId}/force-terminate`, { reason: '管理员强制终止' })
-    ElMessage.success('任务已终止')
+    ElMessage.success(t('tasks.taskTerminated'))
     load()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('强制终止失败')
+      ElMessage.error(t('tasks.forceTerminateFailed'))
     }
   }
 }
@@ -474,7 +476,6 @@ const stopLogRefreshOnClose = () => {
 }
 
 // 使用 watch 监听 logVisible 变化
-import { watch } from 'vue'
 watch(logVisible, stopLogRefreshOnClose)
 
 onMounted(load)

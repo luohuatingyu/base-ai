@@ -6,6 +6,10 @@ spring:
     name: base-ai-backend
   config:
     import: optional:file:${TRACE_TRACKING_EXCLUSIONS_FILE:/app/config/trace-tracking-exclusions.yml}
+  messages:
+    basename: messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
   jpa:
     hibernate:
       ddl-auto: update
