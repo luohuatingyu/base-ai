@@ -36,3 +36,10 @@ export function buildAccessibleNavigation(menus, availablePaths, hasPermission) 
 
   return sortNodes(roots).flatMap(prune)
 }
+
+/** 从路由记录提取可展示导航的真实页面路径。 */
+export function getNavigablePaths(routes) {
+  return new Set((routes || [])
+    .filter(route => route.meta?.navigable === true && route.components?.default)
+    .map(route => route.path))
+}
