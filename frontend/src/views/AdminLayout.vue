@@ -51,15 +51,13 @@ import { HomeFilled, Menu } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { appConfig } from '../config'
 import MenuNode from '../components/MenuNode.vue'
-import { buildAccessibleNavigation } from '../utils/navigation'
+import { buildAccessibleNavigation, getNavigablePaths } from '../utils/navigation'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const mobileNavigationOpen = ref(false)
-const navigablePaths = computed(() => new Set(router.getRoutes()
-  .filter(item => item.meta.navigable === true && item.components?.default)
-  .map(item => item.path)))
+const navigablePaths = computed(() => getNavigablePaths(router.getRoutes()))
 const dashboardAvailable = computed(() => navigablePaths.value.has('/dashboard'))
 const menuTree = computed(() => buildAccessibleNavigation(auth.user?.menus, navigablePaths.value, permission => auth.hasPermission(permission)))
 const title = computed(() => findNavigationItem(menuTree.value, route.path)?.name || (route.path === '/dashboard' ? '工作台' : appConfig.nameEn))
