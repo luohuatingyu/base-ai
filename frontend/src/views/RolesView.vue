@@ -5,7 +5,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';import { ElMessage,ElMessageBox } from 'element-plus';import http from '../api/http';import { useAuthStore } from '../stores/auth'
 const auth=useAuthStore(),allRoles=ref([]),menus=ref([]),departments=ref([]),visible=ref(false);const scopes=[{value:'ALL',label:'全部数据'},{value:'DEPARTMENT',label:'本部门'},{value:'DEPARTMENT_AND_CHILDREN',label:'本部门及下级'},{value:'SELF',label:'仅本人'},{value:'CUSTOM',label:'指定部门'}];const form=reactive({id:null,code:'',name:'',description:'',dataScope:'ALL',enabled:true,menuIds:[],departmentIds:[]})
-const query=reactive({page:1,size:10});const total=computed(()=>allRoles.value.length);const rows=computed(()=>allRoles.value.slice((query.page-1)*query.size,query.page*query.size))
+const query=reactive({page:1,size:5});const total=computed(()=>allRoles.value.length);const rows=computed(()=>allRoles.value.slice((query.page-1)*query.size,query.page*query.size))
 async function load(){[allRoles.value,menus.value,departments.value]=await Promise.all(['/system/roles','/system/menus','/system/departments'].map(url=>http.get(url).then(r=>r.data)))}
 /** 打开角色编辑窗口。 */ function open(row){Object.assign(form,row?{...row,menuIds:[...row.menuIds],departmentIds:[...row.departmentIds]}:{id:null,code:'',name:'',description:'',dataScope:'ALL',enabled:true,menuIds:[],departmentIds:[]});visible.value=true}
 /** 保存角色权限。 */ async function save(){try{form.id?await http.put(`/system/roles/${form.id}`,form):await http.post('/system/roles',form);visible.value=false;await load();ElMessage.success('保存成功')}catch(e){ElMessage.error(e.response?.data?.message||'保存失败')}}

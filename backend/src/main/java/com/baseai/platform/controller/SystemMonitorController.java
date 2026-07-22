@@ -33,18 +33,20 @@ public class SystemMonitorController {
     @DeleteMapping("/online-users/{userId}") @RequiredPermission("system:session:terminate")
     public void terminateUser(@PathVariable Long userId) { sessionService.terminateUser(userId); }
 
+    /** 按时间倒序分页查询操作日志。 */
     @GetMapping("/operation-logs") @RequiredPermission("system:audit:operation:list")
     public PlatformAdminService.PageResult<OperationLog> operationLogs(
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "5") int size) {
         int safeSize = Math.min(100, Math.max(1, size));
         var paged = operationLogRepository.findAll(PageRequest.of(page - 1, safeSize, Sort.by(Sort.Direction.DESC, "operatedAt")));
         return new PlatformAdminService.PageResult<>(paged.getContent(), paged.getTotalElements(), page, safeSize);
     }
+    /** 按时间倒序分页查询登录日志。 */
     @GetMapping("/login-logs") @RequiredPermission("system:audit:login:list")
     public PlatformAdminService.PageResult<LoginLog> loginLogs(
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "5") int size) {
         int safeSize = Math.min(100, Math.max(1, size));
         var paged = loginLogRepository.findAll(PageRequest.of(page - 1, safeSize, Sort.by(Sort.Direction.DESC, "loginAt")));
         return new PlatformAdminService.PageResult<>(paged.getContent(), paged.getTotalElements(), page, safeSize);
