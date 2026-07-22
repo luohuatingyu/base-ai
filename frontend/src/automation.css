@@ -41,9 +41,13 @@
 .trigger-tabs { min-height: 350px; }
 
 .form-help {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
   margin-left: 12px;
   color: var(--app-muted);
   font-size: 12px;
+  line-height: 20px;
 }
 
 .progress-panel {
@@ -161,7 +165,7 @@
   .panel > .el-form--inline .el-form-item,
   .panel > .el-form--inline .el-button { width: 100%; max-width: none; flex: 1 1 100%; }
 
-  .form-help { display: block; flex-basis: 100%; margin: 8px 0 0; }
+  .form-help { display: flex; flex-basis: 100%; min-height: 0; margin: 8px 0 0; }
 
   .progress-toolbar > div { width: 100%; }
   .progress-toolbar .el-button { width: 100%; }

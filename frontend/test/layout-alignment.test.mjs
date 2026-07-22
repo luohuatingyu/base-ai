@@ -39,6 +39,17 @@ test('表格、分页和表单内容遵守统一的对齐与溢出规则', () =>
   assertDeclarations(globalStyles, '.el-drawer', [/max-width:\s*100vw/])
 })
 
+test('表单标签、输入控件和开关文案使用一致的垂直节奏', () => {
+  assertDeclarations(globalStyles, '.el-form-item', [/align-items:\s*flex-start/])
+  assertDeclarations(globalStyles, '.el-form-item__label', [/min-height:\s*32px/, /align-items:\s*center/, /line-height:\s*20px/])
+  assertDeclarations(globalStyles, '.el-form-item__content', [/min-height:\s*32px/, /align-items:\s*center/, /line-height:\s*20px/])
+  assertDeclarations(globalStyles, '.el-switch__label', [/display:\s*inline-flex/, /align-items:\s*center/, /height:\s*32px/])
+  assertDeclarations(globalStyles, '.el-switch__label *', [/line-height:\s*20px/])
+  assertDeclarations(globalStyles, '.el-form > .el-form-item:last-child', [/margin-bottom:\s*0/])
+  assert.doesNotMatch(globalStyles, /(?:^|\n)\.el-form-item:last-child\s*\{/)
+  assertDeclarations(automationStyles, '.form-help', [/display:\s*inline-flex/, /align-items:\s*center/, /min-height:\s*32px/])
+})
+
 test('平板断点将字典双栏切换为单列并保持查询区可收缩', () => {
   assert.match(globalStyles, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.panel\s*>\s*\.el-row\s*>\s*\.el-col\s*\{[^}]*max-width:\s*100%[^}]*flex:\s*0\s+0\s+100%/)
   assert.match(globalStyles, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.panel\s*>\s*\.el-row\s*>\s*\.el-col\s*\+\s*\.el-col\s*\{[^}]*margin-top:/)
