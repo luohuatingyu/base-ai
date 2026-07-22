@@ -390,7 +390,7 @@ H2测试配置**已完整准备**，包括：
 
 ### Git提交信息
 ```
-Commit: 3fbf792ac95a83f9606c60e25f691f942be9df7c
+Commit: 3fbf792860b7529a2645dd3a00ea8079c053f8a3
 Message: Assert worker HTTP protocol
 Date: 2026-07-22
 Branch: master
