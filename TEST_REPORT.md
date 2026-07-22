@@ -390,14 +390,14 @@ H2测试配置**已完整准备**，包括：
 
 ### Git提交信息
 ```
-Commit: f5957d00fd5cb95ada6c0daf58db39ee79ceeef8
-Message: Optimize pagination component size and update documentation
+Commit: a435e7a2a7e664c0c16aec650bc34dbb8d85db94
+Message: Use five-item system pagination
 Date: 2026-07-22
 Branch: master
 ```
 
 ### 测试覆盖的代码范围
-本测试报告基于上述提交进行测试和验证，最新测试覆盖 SystemMonitorController 日志接口分页功能变更。
+本测试报告基于上述提交进行测试和验证，最新测试覆盖系统管理前端分页默认值及 SystemMonitorController 日志接口分页默认值变更。
 
 ### 本次变更测试结果（2026-07-22）
 
@@ -695,3 +695,67 @@ Branch: master
 **维护团队**: 开发团队  
 **配置位置**: backend/src/test/resources/  
 **测试基准**: commit f5957d0
+
+---
+
+## ✅ 最新验收结果：系统管理默认每页 5 条（2026-07-22）
+
+### Git 基准点
+
+```text
+Commit: a435e7a2a7e664c0c16aec650bc34dbb8d85db94
+Message: Use five-item system pagination
+Date: 2026-07-22
+Branch: master
+```
+
+### 变更范围
+
+- 用户、角色、岗位、字典类型、字典数据、在线用户、操作日志和登录日志默认每页显示或请求 5 条。
+- 操作日志与登录日志接口省略 `size` 参数时默认使用 5；显式参数和 1～100 边界限制保持不变。
+- 未修改 Domain、Repository、Service、权限规则、数据结构、依赖或数据库。
+
+### 测试执行结果
+
+- 总测试用例：27 个
+- 通过：27 个（100%）
+- 失败：0 个
+- 错误：0 个
+- 跳过：0 个
+- 前端生产构建：成功
+- 服务健康检查：前端、后端、Python Worker 均为 healthy；前后端健康接口均返回 `UP`
+
+### 关键模块测试
+
+- 前端分页配置及既有前端回归：17/17 通过
+- Controller 层：8/8 通过，覆盖两个日志接口的默认值、显式值、最小值、最大值及仓储分页参数
+- Service 层：2/2 通过，既有 AI 对话客户端回归无异常
+- Domain 层：本次未修改，无新增专项测试
+- Repository 层：本次未修改；Controller 测试验证了传入 Repository 的页码和页大小
+
+### 实际执行命令
+
+```bash
+(cd frontend && node --test test/system-pagination.test.mjs)
+(cd backend && docker run --rm -v "$PWD:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=SystemMonitorControllerTest test)
+(cd frontend && node --test test/*.test.mjs && npm run build)
+(cd backend && docker run --rm -v "$PWD:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B)
+docker compose up --build -d
+docker compose up -d --no-build
+```
+
+### 已知问题与限制
+
+- 宿主环境未安装 `mvn`，因此 Maven 测试使用项目指定的 Maven 3.9.9 / Eclipse Temurin 17 容器执行。
+- `docker compose up --build -d` 连续两次在读取未改动的 `python:3.12-slim` 基础镜像元数据时遇到 Docker Hub 认证端点超时；本次前端和后端镜像均已成功构建，随后使用本地 Python Worker 镜像启动，三个服务最终均健康。
+- 前端构建存在既有的运行时脚本打包提示和大包体积警告，不影响构建成功。
+
+### 重测触发条件
+
+- 修改系统管理分页状态、日志分页 Controller、分页返回结构或分页参数限制时必须重新执行本节测试。
+- 修改其他后端业务代码时必须执行完整后端测试并更新本报告基准点。
+
+### 下次测试建议
+
+- Docker Hub 网络恢复后再次执行 `docker compose up --build -d`，验证 Python Worker 也可从基础镜像完整重建。
+- 增加带登录权限的浏览器端到端测试，验证系统管理各页面首次展示 5 条及翻页交互。
