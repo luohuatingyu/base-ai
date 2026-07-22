@@ -12,11 +12,13 @@
   background: #f8faff;
 }
 
-.filter-row > .el-input { flex: 0 1 280px; max-width: 280px; }
+.filter-row > .el-input { flex: 0 1 280px; min-width: 0; max-width: 280px; }
 
-.filter-row > .el-select { flex: 0 1 220px; max-width: 220px; }
+.filter-row > .el-select { flex: 0 1 220px; min-width: 0; max-width: 220px; }
 
-.panel > .el-form--inline .el-form-item { margin: 0; }
+.panel > .el-form--inline .el-form-item { flex: 0 1 280px; min-width: 0; margin: 0; }
+
+.panel > .el-form--inline .el-form-item__content { width: 100%; }
 
 .panel > .el-form--inline .el-button { margin-left: 0; }
 
@@ -63,11 +65,14 @@
 
 .progress-toolbar > div {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
   min-width: 0;
 }
+
+.progress-toolbar > .el-button { flex: 0 0 auto; }
 
 .progress-toolbar span { color: #39465b; font-weight: 600; }
 
@@ -154,9 +159,10 @@
   .filter-row > .el-select,
   .filter-row > .el-button,
   .panel > .el-form--inline .el-form-item,
-  .panel > .el-form--inline .el-button { width: 100%; max-width: none; }
+  .panel > .el-form--inline .el-button { width: 100%; max-width: none; flex: 1 1 100%; }
 
-  .form-help { display: block; margin: 8px 0 0; }
+  .form-help { display: block; flex-basis: 100%; margin: 8px 0 0; }
 
+  .progress-toolbar > div { width: 100%; }
   .progress-toolbar .el-button { width: 100%; }
 }
