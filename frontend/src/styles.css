@@ -33,22 +33,59 @@ html, body, #app { min-width: 320px; min-height: 100%; }
 
 body { margin: 0; background: var(--app-canvas); }
 
-/* 主框架：固定导航视觉层级，保证内容区在小屏上可横向处理表格。 */
-.shell { min-height: 100vh; background: var(--app-canvas); }
+/* 主框架：侧边栏固定，内容区独立滚动，侧边栏宽度变化时平滑过渡。 */
+.shell { height: 100vh; overflow: hidden; background: var(--app-canvas); display: flex; }
 
-.shell > .el-container { min-width: 0; }
+.body-container { flex: 1; min-width: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  flex-shrink: 0;
   position: relative;
   overflow: hidden;
   background: linear-gradient(180deg, #111d34 0%, #15294a 100%);
   color: #fff;
   padding: 18px 14px;
   box-shadow: 8px 0 30px rgba(15, 30, 57, 0.12);
+  transition: width 0.26s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* 折叠态：仅保留图标，文字与辅助说明隐藏。 */
+.sidebar--collapsed { padding: 18px 10px; align-items: center; }
+.sidebar--collapsed .sidebar-brand { display: flex; justify-content: center; padding-bottom: 16px; }
+.sidebar--collapsed .sidebar-brand::before { content: none; }
+.sidebar--collapsed .nav-caption { display: none; }
+.sidebar--collapsed .sidebar-footer { display: none; }
+.sidebar--collapsed .nav .el-menu-item,
+.sidebar--collapsed .nav .el-sub-menu__title { padding: 0 !important; justify-content: center; border-radius: 10px; }
+.sidebar--collapsed .nav .el-menu-item .el-icon,
+.sidebar--collapsed .nav .el-sub-menu__title .el-icon { margin-right: 0; }
+.sidebar--collapsed .nav-scroll { width: 100%; }
+.sidebar--collapsed .collapse-trigger { margin-top: 8px; }
+
+/* 收起触发器按钮 */
+.collapse-trigger {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 34px;
+  margin-top: 4px;
+  padding: 0;
+  border: 1px solid rgba(169, 195, 247, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #8098c5;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  flex-shrink: 0;
+}
+.collapse-trigger:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
 
 .sidebar::before {
   position: absolute;
@@ -183,7 +220,7 @@ body { margin: 0; background: var(--app-canvas); }
   white-space: nowrap;
 }
 
-.main { width: 100%; min-width: 0; padding: 24px 28px 32px; overflow: auto; }
+.main { flex: 1; min-width: 0; padding: 24px 28px 32px; overflow-y: auto; }
 
 /* 通用内容容器：列表、表单、对话页共用一致的卡片边界和留白。 */
 .panel {
@@ -199,21 +236,17 @@ body { margin: 0; background: var(--app-canvas); }
 
 .section-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-end;
   gap: 16px;
-  margin-bottom: 22px;
+  margin-bottom: 20px;
 }
 
-.section-head > div { min-width: 0; }
+/* 顶部已展示页面名称，内容区不重复标题与说明文字。 */
+.section-head > div { display: none; }
+.section-head:not(:has(> .el-button)) { display: none; }
 
 .section-head > strong { min-width: 0; overflow-wrap: anywhere; line-height: 32px; }
-
-.section-head h2 { margin: 0 0 7px; color: var(--app-text); font-size: 20px; line-height: 1.35; }
-
-.section-head p { margin: 0; color: var(--app-muted); font-size: 13px; line-height: 1.65; }
-
-.section-head > .el-button { flex: 0 0 auto; }
 
 /* Element Plus 覆盖：统一表格、表单和操作控件的密度与视觉反馈。 */
 .el-button { min-height: 32px; font-weight: 500; }

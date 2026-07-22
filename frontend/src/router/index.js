@@ -26,23 +26,23 @@ const router = createRouter({
     { path: '/login', component: LoginView, meta: { public: true } },
     {
       path: '/', component: AdminLayout, redirect: '/dashboard', children: [
-        { path: 'dashboard', component: DashboardView, meta: { navigable: true } },
-        { path: 'ai-chat', component: AiChatView, meta: { permission: 'ai:chat:invoke', navigable: true } },
-        { path: 'users', component: UsersView, meta: { permission: 'system:user:list', navigable: true } },
-        { path: 'roles', component: RolesView, meta: { permission: 'system:role:list', navigable: true } },
-        { path: 'menus', component: MenusView, meta: { permission: 'system:menu:list', navigable: true } },
-        { path: 'departments', component: DepartmentsView, meta: { permission: 'system:department:list', navigable: true } },
-        { path: 'positions', component: PositionsView, meta: { permission: 'system:position:list', navigable: true } },
-        { path: 'dictionaries', component: DictionariesView, meta: { permission: 'system:dictionary:list', navigable: true } },
-        { path: 'settings', component: SettingsView, meta: { permission: 'system:setting:list', navigable: true } },
-        { path: 'online-users', component: OnlineUsersView, meta: { permission: 'system:session:list', navigable: true } },
-        { path: 'operation-logs', component: OperationLogsView, meta: { permission: 'system:audit:operation:list', navigable: true } },
-        { path: 'login-logs', component: LoginLogsView, meta: { permission: 'system:audit:login:list', navigable: true } },
-        { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'model:provider:list', navigable: true } },
-        { path: 'models', component: ModelsView, meta: { permission: 'model:model:list', navigable: true } },
-        { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list', navigable: true } },
-        { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view', navigable: true } },
-        { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true } }
+        { path: 'dashboard', component: DashboardView, meta: { navigable: true, desc: '系统概览，快速了解各组件运行状态' } },
+        { path: 'ai-chat', component: AiChatView, meta: { permission: 'ai:chat:invoke', navigable: true, desc: '通用 AI 对话，请求经权限和任务层转发至 Python Worker' } },
+        { path: 'users', component: UsersView, meta: { permission: 'system:user:list', navigable: true, desc: '维护账号、部门、岗位和角色' } },
+        { path: 'roles', component: RolesView, meta: { permission: 'system:role:list', navigable: true, desc: '配置菜单权限和数据可见范围' } },
+        { path: 'menus', component: MenusView, meta: { permission: 'system:menu:list', navigable: true, desc: '维护目录、页面路由和按钮权限' } },
+        { path: 'departments', component: DepartmentsView, meta: { permission: 'system:department:list', navigable: true, desc: '部门树用于用户归属和数据权限' } },
+        { path: 'positions', component: PositionsView, meta: { permission: 'system:position:list', navigable: true, desc: '维护用户岗位信息' } },
+        { path: 'dictionaries', component: DictionariesView, meta: { permission: 'system:dictionary:list', navigable: true, desc: '统一维护系统枚举与展示标签' } },
+        { path: 'settings', component: SettingsView, meta: { permission: 'system:setting:list', navigable: true, desc: '敏感参数加密保存并以脱敏内容展示' } },
+        { path: 'online-users', component: OnlineUsersView, meta: { permission: 'system:session:list', navigable: true, desc: '查看 Redis 会话并执行强制下线' } },
+        { path: 'operation-logs', component: OperationLogsView, meta: { permission: 'system:audit:operation:list', navigable: true, desc: '系统写操作的脱敏审计记录' } },
+        { path: 'login-logs', component: LoginLogsView, meta: { permission: 'system:audit:login:list', navigable: true, desc: '记录登录成功与失败事件' } },
+        { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'model:provider:list', navigable: true, desc: 'API Key 加密保存，列表仅显示脱敏值' } },
+        { path: 'models', component: ModelsView, meta: { permission: 'model:model:list', navigable: true, desc: '维护供应商下的模型标识和能力等级' } },
+        { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list', navigable: true, desc: '候选模型按顺序执行故障切换' } },
+        { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view', navigable: true, desc: 'AOP 统一跟踪控制器、定时任务和跨服务调用日志' } },
+        { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: '配置 HTTP 触发器，执行同步进入任务调度' } }
       ]
     }
   ]
