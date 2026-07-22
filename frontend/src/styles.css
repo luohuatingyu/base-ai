@@ -36,6 +36,9 @@ body { margin: 0; background: var(--app-canvas); }
 /* 主框架：侧边栏固定，内容区独立滚动，侧边栏宽度变化时平滑过渡。 */
 .shell { height: 100vh; overflow: hidden; background: var(--app-canvas); display: flex; }
 
+/* Element Plus 容器作为主框架直接子节点时允许内容区域收缩，避免窄视口溢出。 */
+.shell > .el-container { min-width: 0; }
+
 .body-container { flex: 1; min-width: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 
 .sidebar {
@@ -220,7 +223,7 @@ body { margin: 0; background: var(--app-canvas); }
   white-space: nowrap;
 }
 
-.main { flex: 1; min-width: 0; padding: 24px 28px 32px; overflow-y: auto; }
+.main { flex: 1; min-width: 0; padding: 24px 28px 32px; overflow: auto; }
 
 /* 通用内容容器：列表、表单、对话页共用一致的卡片边界和留白。 */
 .panel {
@@ -243,7 +246,7 @@ body { margin: 0; background: var(--app-canvas); }
 }
 
 /* 顶部已展示页面名称，内容区不重复标题与说明文字。 */
-.section-head > div { display: none; }
+.section-head > div { display: none; min-width: 0; }
 .section-head:not(:has(> .el-button)) { display: none; }
 
 .section-head > strong { min-width: 0; overflow-wrap: anywhere; line-height: 32px; }
