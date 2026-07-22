@@ -6,11 +6,11 @@ import { fileURLToPath } from 'url'
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist')
 const port = Number(process.env.PORT || 80)
 const backend = new URL(process.env.BACKEND_URL || 'http://backend:8080')
-const brandConfig = {
-  code: process.env.APP_BRAND_CODE || 'ai-platform',
-  nameEn: process.env.APP_BRAND_NAME_EN || 'AI Platform',
-  nameZh: process.env.APP_BRAND_NAME_ZH || 'AI平台',
-  shortName: process.env.APP_BRAND_SHORT_NAME || 'AI'
+const platformConfig = {
+  code: process.env.APP_PLATFORM_CODE || 'ai-platform',
+  nameEn: process.env.APP_PLATFORM_NAME_EN || 'AI Platform',
+  nameZh: process.env.APP_PLATFORM_NAME_ZH || 'AI平台',
+  shortName: process.env.APP_PLATFORM_SHORT_NAME || 'AI'
 }
 const contentTypes = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -50,7 +50,7 @@ function serve(request, response) {
 http.createServer((request, response) => {
   if (request.url === '/runtime-config.js') {
     response.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store' })
-    return response.end(`window.__APP_CONFIG__=${JSON.stringify(brandConfig)};`)
+    return response.end(`window.__APP_CONFIG__=${JSON.stringify(platformConfig)};`)
   }
   if (request.url === '/health') {
     response.writeHead(200, { 'content-type': 'application/json' })

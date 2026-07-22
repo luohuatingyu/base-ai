@@ -18,7 +18,7 @@ llm_client = LlmClient(settings)
 trace_registry = TraceRuntimeRegistry()
 trace_reporter = JavaTraceReporter(settings)
 
-app = FastAPI(title=f"{os.getenv('APP_BRAND_NAME_EN', 'AI Platform')} Worker", version="0.0.1")
+app = FastAPI(title=f"{os.getenv('APP_PLATFORM_NAME_EN', 'AI Platform')} Worker", version="0.0.1")
 app.add_middleware(InternalAuthMiddleware, settings=settings, registry=trace_registry, reporter=trace_reporter)
 
 

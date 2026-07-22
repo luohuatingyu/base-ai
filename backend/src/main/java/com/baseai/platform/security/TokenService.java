@@ -80,9 +80,9 @@ public class TokenService {
         if (!ttl.isNegative() && !ttl.isZero()) redisTemplate.opsForValue().set(revokedKey(tokenId), "1", ttl);
     }
 
-    /** 使用可配置品牌编码隔离不同平台的 Redis Token 状态。 */
+    /** 使用可配置平台编码隔离不同平台的 Redis Token 状态。 */
     private String revokedKey(String tokenId) {
-        return properties.getBrand().getCode() + ":auth:revoked:" + tokenId;
+        return properties.getPlatform().getCode() + ":auth:revoked:" + tokenId;
     }
 
     /** 将 JSON 内容编码为 URL 安全 Base64。 */

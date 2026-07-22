@@ -29,7 +29,7 @@ public class SystemConfigurationService {
         this.dataRepository = dataRepository;
         this.cryptoService = cryptoService;
         this.redisTemplate = redisTemplate;
-        this.cachePrefix = properties.getBrand().getCode() + ":setting:";
+        this.cachePrefix = properties.getPlatform().getCode() + ":setting:";
     }
 
     /** 查询全部系统参数并屏蔽敏感值。 */

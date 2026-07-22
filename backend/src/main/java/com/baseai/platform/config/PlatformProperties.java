@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "app")
 public class PlatformProperties {
-    private Brand brand = new Brand();
+    private Platform platform = new Platform();
     private String configEncryptionKey;
     private DatabaseProperties mysqlDatabase = new DatabaseProperties();
     private DatabaseProperties postgresqlDatabase = new DatabaseProperties();
@@ -17,8 +17,8 @@ public class PlatformProperties {
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }
     public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
-    public Brand getBrand() { return brand; }
-    public void setBrand(Brand brand) { this.brand = brand; }
+    public Platform getPlatform() { return platform; }
+    public void setPlatform(Platform platform) { this.platform = platform; }
 
     public DatabaseProperties getMysqlDatabase() { return mysqlDatabase; }
     public void setMysqlDatabase(DatabaseProperties mysqlDatabase) { this.mysqlDatabase = mysqlDatabase; }
@@ -46,7 +46,7 @@ public class PlatformProperties {
         public void setExpireMinutes(long expireMinutes) { this.expireMinutes = expireMinutes; }
     }
 
-    public static class Brand {
+    public static class Platform {
         private String code = "ai-platform";
         private String nameEn = "AI Platform";
         private String nameZh = "AI平台";

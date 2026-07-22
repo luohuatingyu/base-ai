@@ -44,7 +44,7 @@ app:
   logging:
     root-level: INFO
     console-queue-capacity: 8192
-  brand:
+  platform:
     code: test-platform
     name-en: Test Platform
     name-zh: 测试平台

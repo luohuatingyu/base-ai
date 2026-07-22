@@ -19,7 +19,7 @@ public class SessionService {
     public SessionService(StringRedisTemplate redisTemplate, TokenService tokenService, PlatformProperties properties) {
         this.redisTemplate = redisTemplate;
         this.tokenService = tokenService;
-        this.prefix = properties.getBrand().getCode() + ":auth:";
+        this.prefix = properties.getPlatform().getCode() + ":auth:";
     }
 
     /** 注册登录会话并建立用户到 Token 的索引。 */

@@ -31,11 +31,11 @@ app:
   logging:
     root-level: ${LOG_LEVEL:INFO}
     console-queue-capacity: ${LOG_CONSOLE_QUEUE_CAPACITY:8192}
-  brand:
-    code: ${APP_BRAND_CODE:ai-platform}
-    name-en: ${APP_BRAND_NAME_EN:AI Platform}
-    name-zh: ${APP_BRAND_NAME_ZH:AI平台}
-    short-name: ${APP_BRAND_SHORT_NAME:AI}
+  platform:
+    code: ${APP_PLATFORM_CODE:ai-platform}
+    name-en: ${APP_PLATFORM_NAME_EN:AI Platform}
+    name-zh: ${APP_PLATFORM_NAME_ZH:AI平台}
+    short-name: ${APP_PLATFORM_SHORT_NAME:AI}
   config-encryption-key: ${APP_CONFIG_ENCRYPTION_KEY}
   mysql-database:
     url: ${MYSQL_URL}
