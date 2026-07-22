@@ -390,8 +390,8 @@ H2测试配置**已完整准备**，包括：
 
 ### Git提交信息
 ```
-Commit: cafb286c7b8cf06f0d0bdb017c9e29496092652f
-Message: Test managed chat model routing
+Commit: 3fbf792ac95a83f9606c60e25f691f942be9df7c
+Message: Assert worker HTTP protocol
 Date: 2026-07-22
 Branch: master
 ```
@@ -411,7 +411,7 @@ Branch: master
 - 跳过：0个
 
 **关键模块测试**：
-- Worker 客户端协议与内部令牌：1/1 通过
+- Worker 客户端协议（HTTP/1.1）与内部令牌：1/1 通过
 - Service 层模型管理候选选择：2/2 场景通过
 - Controller 层功能编码传递：由对话客户端请求体断言覆盖
 
@@ -442,7 +442,7 @@ Branch: master
 
 ### 验收标志
 - **测试报告生成时间**: 2026-07-22
-- **基准Commit**: cafb286
+- **基准Commit**: 3fbf792
 - **下次测试**: 当上述代码范围发生变更时
 
 ---
@@ -451,4 +451,4 @@ Branch: master
 **项目状态**: ✅ 完成  
 **维护团队**: 开发团队  
 **配置位置**: backend/src/test/resources/  
-**测试基准**: commit cafb286
+**测试基准**: commit 3fbf792
