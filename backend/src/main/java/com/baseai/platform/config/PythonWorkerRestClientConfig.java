@@ -8,6 +8,7 @@ import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
 
+/** Python Worker REST 客户端配置，统一设置地址并传播追踪上下文。 */
 @Configuration
 public class PythonWorkerRestClientConfig {
 

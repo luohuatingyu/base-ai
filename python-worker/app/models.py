@@ -1,3 +1,5 @@
+"""Worker 请求、响应和追踪数据模型定义。"""
+
 from pydantic import BaseModel, Field
 
 

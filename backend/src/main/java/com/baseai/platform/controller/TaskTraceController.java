@@ -10,6 +10,12 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 任务追踪查询和控制接口。
+ *
+ * <p>所有查询都以当前登录用户为数据范围，管理员可查看或操作全量任务；
+ * 任务状态更新由 {@link TaskTraceService} 负责保证一致性。</p>
+ */
 @TraceIgnored
 @RestController
 @RequestMapping("/api/system/tasks")
@@ -38,26 +44,36 @@ public class TaskTraceController {
                              logKeyword, onlyWithLogs, startTime, endTime, page, pageSize);
     }
 
+    /** 查询当前正在运行的任务。 */
     @GetMapping("/running")
     public List<Map<String, Object>> running() {
         AuthUser user = AuthContext.require();
         return service.running(user.id(), isAdmin(user));
     }
 
+    /** 查询已注册的任务类型。 */
     @GetMapping("/task-types") public List<String> taskTypes() { return service.taskTypes(); }
+    /** 查询已注册的触发入口。 */
     @GetMapping("/trigger-entries") public List<String> triggerEntries() { return service.triggerEntries(); }
+    /** 查询任务类型和触发入口的元数据。 */
     @GetMapping("/metadata") public List<com.baseai.platform.trace.TaskTypeRegistry.Metadata> metadata() { return service.taskMetadata(); }
 
+    /** 查询指定任务详情，并执行数据范围校验。 */
     @GetMapping("/{traceId}")
     public Map<String, Object> get(@PathVariable String traceId) {
         AuthUser user = AuthContext.require();
         return service.get(traceId, user.id(), isAdmin(user));
     }
 
+    /** 查询指定任务的 Java/Python 日志。 */
     @GetMapping("/{traceId}/logs")
-    public List<Map<String, Object>> logs(@PathVariable String traceId) {
+    public List<Map<String, Object>> logs(@PathVariable String traceId,
+                                           @RequestParam(required = false) String systemType,
+                                           @RequestParam(required = false) String startTime,
+                                           @RequestParam(required = false) String endTime,
+                                           @RequestParam(required = false) String keyword) {
         AuthUser user = AuthContext.require();
-        return service.logs(traceId, user.id(), isAdmin(user));
+        return service.logs(traceId, user.id(), isAdmin(user), systemType, startTime, endTime, keyword);
     }
 
     /** 请求取消本人任务，管理员可取消任意任务。 */

@@ -1,3 +1,5 @@
+"""请求上下文工具，保存当前请求的 Trace 标识和可取消状态。"""
+
 import contextvars
 from dataclasses import dataclass
 

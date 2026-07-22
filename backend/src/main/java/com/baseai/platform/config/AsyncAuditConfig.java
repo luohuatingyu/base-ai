@@ -7,6 +7,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.ThreadPoolExecutor;
 
+/** 异步审计日志线程池配置，避免日志写入阻塞业务请求线程。 */
 @Configuration
 @EnableAsync
 public class AsyncAuditConfig {

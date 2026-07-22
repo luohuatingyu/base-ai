@@ -1,3 +1,4 @@
+<!-- API 触发器页面：维护外部 API 配置、执行记录和测试操作。 -->
 <template>
   <div class="panel">
     <div class="section-head"><div><h2>接口触发</h2><p>配置保存于 PostgreSQL，正式执行同步进入 MySQL 任务调度。</p></div><el-button v-if="auth.hasPermission('automation:api-trigger:create')" type="primary" @click="open()">新增配置</el-button></div>

@@ -1,3 +1,5 @@
+"""FastAPI 应用入口，定义 Worker 的健康检查、模型调用和追踪端点。"""
+
 import logging
 import os
 

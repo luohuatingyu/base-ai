@@ -10,3 +10,4 @@ async function load(){rows.value=(await http.get('/system/menus')).data}
 /** 删除菜单节点。 */ async function remove(row){await ElMessageBox.confirm(`确认删除菜单「${row.name}」？`,'删除确认',{type:'warning'});await http.delete(`/system/menus/${row.id}`);await load();ElMessage.success('删除成功')}
 onMounted(load)
 </script>
+<!-- 菜单管理页面：维护目录、页面路由和按钮权限。 -->

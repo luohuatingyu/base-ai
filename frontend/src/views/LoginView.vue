@@ -1,3 +1,4 @@
+<!-- 登录页面：收集账号密码并建立平台会话。 -->
 <template>
   <div class="login-page">
     <el-card class="login-card">

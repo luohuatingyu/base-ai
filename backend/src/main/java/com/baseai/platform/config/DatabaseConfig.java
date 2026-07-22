@@ -10,6 +10,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
 
+/**
+ * 数据库访问组件配置。
+ *
+ * <p>根据平台配置创建不同用途的数据源和 JDBC 模板，并通过限定名称隔离访问边界。</p>
+ */
 @Configuration
 @EnableConfigurationProperties(PlatformProperties.class)
 public class DatabaseConfig {

@@ -10,6 +10,12 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * AI 对话接口控制器。
+ *
+ * <p>负责接收前端对话请求，并委托 {@link AiChatClient} 调用模型服务；
+ * 请求会由追踪切面自动纳入任务生命周期管理。</p>
+ */
 @RestController
 @RequestMapping("/api/ai/chat")
 @RequiredPermission("ai:chat:invoke")
@@ -32,7 +38,9 @@ public class AiChatController {
             result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
     }
 
+    /** AI 对话请求参数，字段名称与前端接口协议保持一致。 */
     public record ChatRequest(@JsonProperty("model_type") String modelType, String featureCode,
                               List<AiChatClient.Message> messages, Double temperature) {}
+    /** AI 对话响应，包含追踪标识、模型结果和 Token 统计。 */
     public record ChatResponse(String traceId, String content, String model, int inputTokens, int outputTokens, int totalTokens) {}
 }

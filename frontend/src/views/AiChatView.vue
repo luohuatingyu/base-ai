@@ -1,3 +1,4 @@
+<!-- AI 对话页面：提交请求并展示模型响应、Trace 标识和 Token 统计。 -->
 <template>
   <div class="panel chat-panel">
     <div class="section-head"><div><h2>通用 AI 对话</h2><p>请求经 Java 权限和任务层转发至 Python Worker。</p></div><el-tag type="success">OpenAI Compatible</el-tag></div>

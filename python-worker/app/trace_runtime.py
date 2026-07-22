@@ -1,3 +1,5 @@
+"""Worker 任务运行时注册表，负责任务状态、心跳和取消信号管理。"""
+
 import asyncio
 import contextlib
 import logging

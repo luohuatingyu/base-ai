@@ -12,3 +12,4 @@ async function load(){[allRoles.value,menus.value,departments.value]=await Promi
 /** 删除未使用角色。 */ async function remove(row){await ElMessageBox.confirm(`确认删除角色「${row.name}」？`,'删除确认',{type:'warning'});await http.delete(`/system/roles/${row.id}`);await load();ElMessage.success('删除成功')}
 onMounted(load)
 </script>
+<!-- 角色管理页面：配置菜单权限和数据范围。 -->

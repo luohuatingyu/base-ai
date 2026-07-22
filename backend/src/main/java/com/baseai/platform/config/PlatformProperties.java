@@ -2,17 +2,32 @@ package com.baseai.platform.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * 平台运行配置属性。
+ *
+ * <p>将 {@code app} 配置树绑定为类型安全的 Java 对象，供数据库、认证、Worker、
+ * 日志和 API 触发器等组件共享。</p>
+ */
 @ConfigurationProperties(prefix = "app")
 public class PlatformProperties {
+    /** 对外展示的平台基础信息。 */
     private Platform platform = new Platform();
     private String configEncryptionKey;
+    /** MySQL 主数据源配置。 */
     private DatabaseProperties mysqlDatabase = new DatabaseProperties();
+    /** PostgreSQL 业务数据源配置。 */
     private DatabaseProperties postgresqlDatabase = new DatabaseProperties();
+    /** 认证令牌配置。 */
     private Token token = new Token();
+    /** 初始化种子数据配置。 */
     private Seed seed = new Seed();
+    /** Python Worker 连接配置。 */
     private PythonWorker pythonWorker = new PythonWorker();
+    /** 追踪日志落库配置。 */
     private TraceLog traceLog = new TraceLog();
+    /** 追踪切面配置。 */
     private TraceTracking traceTracking = new TraceTracking();
+    /** API 触发器配置。 */
     private ApiTrigger apiTrigger = new ApiTrigger();
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }

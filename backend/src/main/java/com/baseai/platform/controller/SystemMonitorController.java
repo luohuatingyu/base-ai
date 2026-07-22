@@ -13,6 +13,11 @@ import org.springframework.web.bind.annotation.*;
 import com.baseai.platform.service.PlatformAdminService;
 import java.util.List;
 
+/**
+ * 系统会话和审计日志查询接口。
+ *
+ * <p>接口统一限制分页大小，避免一次请求读取过多日志或会话数据。</p>
+ */
 @RestController
 @RequestMapping("/api/system")
 public class SystemMonitorController {
@@ -26,10 +31,13 @@ public class SystemMonitorController {
         this.loginLogRepository = loginLogRepository;
     }
 
+    /** 查询当前在线会话。 */
     @GetMapping("/online-sessions") @RequiredPermission("system:session:list")
     public List<SessionService.OnlineSession> sessions() { return sessionService.sessions(); }
+    /** 按令牌撤销单个在线会话。 */
     @DeleteMapping("/online-sessions/{tokenId}") @RequiredPermission("system:session:terminate")
     public void terminate(@PathVariable String tokenId) { sessionService.terminate(tokenId); }
+    /** 撤销指定用户的全部在线会话。 */
     @DeleteMapping("/online-users/{userId}") @RequiredPermission("system:session:terminate")
     public void terminateUser(@PathVariable Long userId) { sessionService.terminateUser(userId); }
 

@@ -1,3 +1,5 @@
+"""日志配置模块，负责结构化输出和敏感信息脱敏。"""
+
 import json
 import logging
 import queue

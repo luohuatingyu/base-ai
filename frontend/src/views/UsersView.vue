@@ -1,3 +1,4 @@
+<!-- 用户管理页面：维护账号、组织关系、岗位和角色。 -->
 <template>
   <div class="panel">
     <div class="section-head"><div><h2>用户管理</h2><p>维护账号、部门、岗位和角色。</p></div><el-button v-if="auth.hasPermission('system:user:create')" type="primary" @click="open()">新增用户</el-button></div>

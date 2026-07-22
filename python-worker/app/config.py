@@ -1,3 +1,5 @@
+"""Worker 配置加载模块，集中读取环境变量并提供类型化配置对象。"""
+
 import os
 from dataclasses import dataclass
 from pathlib import Path

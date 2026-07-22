@@ -1,3 +1,5 @@
+"""FastAPI 中间件，处理请求标识、内部认证和异常追踪。"""
+
 import asyncio
 import hmac
 import logging

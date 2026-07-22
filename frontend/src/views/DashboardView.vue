@@ -1,3 +1,4 @@
+<!-- 仪表盘页面：展示平台运行概览和常用入口。 -->
 <template>
   <div>
     <section class="hero panel">
