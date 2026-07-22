@@ -10,7 +10,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'; import { ElMessage, ElMessageBox } from 'element-plus'; import http from '../api/http'; import { useAuthStore } from '../stores/auth'
 const auth=useAuthStore(),rows=ref([]),roles=ref([]),departments=ref([]),positions=ref([]),total=ref(0),visible=ref(false)
-const query=reactive({keyword:'',enabled:null,page:1,size:20}); const form=reactive({id:null,username:'',displayName:'',password:'',enabled:true,departmentId:null,roleIds:[],positionIds:[]})
+const query=reactive({keyword:'',enabled:null,page:1,size:10}); const form=reactive({id:null,username:'',displayName:'',password:'',enabled:true,departmentId:null,roleIds:[],positionIds:[]})
 async function load(){const response=await http.get('/system/users',{params:query});rows.value=response.data.items;total.value=response.data.total}
 async function loadOptions(){[roles.value,departments.value,positions.value]=await Promise.all(['/system/roles','/system/departments','/system/positions'].map(url=>http.get(url).then(r=>r.data)))}
 /** 打开用户编辑窗口。 */ function open(row){Object.assign(form,row?{...row,password:'',roleIds:[...row.roleIds],positionIds:[...row.positionIds]}:{id:null,username:'',displayName:'',password:'',enabled:true,departmentId:null,roleIds:[],positionIds:[]});visible.value=true}

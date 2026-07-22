@@ -10,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
 
+import com.baseai.platform.service.PlatformAdminService;
 import java.util.List;
 
 @RestController
@@ -33,11 +34,19 @@ public class SystemMonitorController {
     public void terminateUser(@PathVariable Long userId) { sessionService.terminateUser(userId); }
 
     @GetMapping("/operation-logs") @RequiredPermission("system:audit:operation:list")
-    public List<OperationLog> operationLogs(@RequestParam(defaultValue = "200") int size) {
-        return operationLogRepository.findAll(PageRequest.of(0, Math.min(500, Math.max(1, size)), Sort.by(Sort.Direction.DESC, "operatedAt"))).getContent();
+    public PlatformAdminService.PageResult<OperationLog> operationLogs(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        int safeSize = Math.min(100, Math.max(1, size));
+        var paged = operationLogRepository.findAll(PageRequest.of(page - 1, safeSize, Sort.by(Sort.Direction.DESC, "operatedAt")));
+        return new PlatformAdminService.PageResult<>(paged.getContent(), paged.getTotalElements(), page, safeSize);
     }
     @GetMapping("/login-logs") @RequiredPermission("system:audit:login:list")
-    public List<LoginLog> loginLogs(@RequestParam(defaultValue = "200") int size) {
-        return loginLogRepository.findAll(PageRequest.of(0, Math.min(500, Math.max(1, size)), Sort.by(Sort.Direction.DESC, "loginAt"))).getContent();
+    public PlatformAdminService.PageResult<LoginLog> loginLogs(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        int safeSize = Math.min(100, Math.max(1, size));
+        var paged = loginLogRepository.findAll(PageRequest.of(page - 1, safeSize, Sort.by(Sort.Direction.DESC, "loginAt")));
+        return new PlatformAdminService.PageResult<>(paged.getContent(), paged.getTotalElements(), page, safeSize);
     }
 }
