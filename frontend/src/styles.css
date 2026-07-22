@@ -40,23 +40,40 @@ body { margin: 0; background: var(--app-canvas); }
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #15223d;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #111d34 0%, #15294a 100%);
   color: #fff;
-  padding: 20px 12px;
-  box-shadow: 4px 0 18px rgba(15, 30, 57, 0.08);
+  padding: 18px 14px;
+  box-shadow: 8px 0 30px rgba(15, 30, 57, 0.12);
 }
+
+.sidebar::before {
+  position: absolute;
+  top: -100px;
+  right: -85px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(91, 132, 255, 0.28), transparent 68%);
+  content: '';
+  pointer-events: none;
+}
+
+.sidebar-brand { position: relative; z-index: 1; padding: 8px 8px 22px; border-bottom: 1px solid rgba(199, 215, 246, 0.14); }
 
 .logo {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 58px;
-  padding: 0 12px 20px;
+  min-height: 44px;
   font-size: 18px;
   letter-spacing: 0.2px;
 }
 
 .logo strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar-brand p { margin: 10px 0 0 50px; color: #8fa6d1; font-size: 10px; font-weight: 600; letter-spacing: 1.4px; }
 
 .logo span,
 .brand-mark {
@@ -72,38 +89,51 @@ body { margin: 0; background: var(--app-canvas); }
   box-shadow: 0 8px 20px rgba(76, 125, 255, 0.34);
 }
 
-.nav { border: 0 !important; background: transparent !important; }
+.nav-caption { position: relative; z-index: 1; margin: 18px 10px 8px; color: #8098c5; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; }
 
-.nav-scroll { min-height: 0; flex: 1; }
+.nav { position: relative; z-index: 1; border: 0 !important; background: transparent !important; }
+
+.nav-scroll { position: relative; z-index: 1; min-height: 0; flex: 1; }
 
 .nav .el-menu-item,
 .nav .el-sub-menu__title {
-  height: 44px;
-  margin: 4px 0;
-  border-radius: 8px;
-  color: #b9c5d8;
-  line-height: 44px;
-  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  height: 48px;
+  margin: 5px 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #b9c9e4;
+  line-height: 48px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .nav .el-menu-item:hover,
-.nav .el-menu-item.is-active,
 .nav .el-sub-menu__title:hover {
   color: #fff;
-  background: #273858;
+  background: rgba(91, 128, 196, 0.18);
+  border-color: rgba(157, 185, 247, 0.12);
 }
 
 .nav .el-menu-item:hover,
 .nav .el-sub-menu__title:hover { transform: translateX(2px); }
 
-.nav .el-menu-item.is-active { font-weight: 600; box-shadow: inset 3px 0 0 #8eafff; }
+.nav .el-menu-item.is-active { color: #fff; background: linear-gradient(100deg, #3d70e7, #547fff); border-color: rgba(183, 204, 255, 0.46); box-shadow: 0 8px 18px rgba(51, 101, 220, 0.34); font-weight: 700; }
+
+.nav > .el-sub-menu > .el-sub-menu__title { color: #e1e9fb; font-weight: 600; }
+
+.nav .el-sub-menu.is-active > .el-sub-menu__title { color: #fff; }
 
 .nav .el-menu-item .el-icon,
 .nav .el-sub-menu__title .el-icon { margin-right: 10px; color: inherit; font-size: 16px; }
 
 .nav .el-sub-menu .el-menu { background: transparent; }
 
-.nav .el-sub-menu .el-menu-item { min-width: auto; padding-left: 46px !important; }
+.nav .el-sub-menu .el-menu-item { min-width: auto; padding-left: 48px !important; }
+
+.sidebar-footer { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 4px; margin: 14px 4px 0; padding: 14px; border: 1px solid rgba(169, 195, 247, 0.14); border-radius: 12px; background: rgba(11, 27, 54, 0.34); color: #c9d9f6; font-size: 12px; }
+
+.sidebar-footer span::before { display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: #52d6a4; box-shadow: 0 0 0 4px rgba(82, 214, 164, 0.12); content: ''; }
+
+.sidebar-footer small { color: #8098c5; font-size: 11px; }
 
 .topbar {
   display: flex;
@@ -126,9 +156,9 @@ body { margin: 0; background: var(--app-canvas); }
 .nav-trigger { display: none; margin: 0; padding: 6px; color: #4c5c75; font-size: 20px; }
 
 /* 移动端抽屉沿用桌面侧边栏配色，保持导航层级和交互一致。 */
-.mobile-nav-drawer .el-drawer__body { display: flex; flex-direction: column; padding: 20px 12px; background: #15223d; color: #fff; }
+.mobile-nav-drawer .el-drawer__body { display: flex; flex-direction: column; padding: 18px 14px; background: linear-gradient(180deg, #111d34 0%, #15294a 100%); color: #fff; }
 
-.mobile-nav-drawer .logo { flex: 0 0 auto; }
+.mobile-nav-drawer .sidebar-brand { flex: 0 0 auto; }
 
 .user-chip {
   display: inline-flex;
