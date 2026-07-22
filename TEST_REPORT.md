@@ -390,14 +390,14 @@ H2测试配置**已完整准备**，包括：
 
 ### Git提交信息
 ```
-Commit: 3fbf792860b7529a2645dd3a00ea8079c053f8a3
-Message: Assert worker HTTP protocol
+Commit: f5957d00fd5cb95ada6c0daf58db39ee79ceeef8
+Message: Optimize pagination component size and update documentation
 Date: 2026-07-22
 Branch: master
 ```
 
 ### 测试覆盖的代码范围
-本测试报告基于上述提交进行测试和验证，覆盖 Java 到 Python Worker 的 HTTP/1.1 通信、AI 对话功能编码传递、模型管理候选优先级，以及默认模型池回退行为。
+本测试报告基于上述提交进行测试和验证，最新测试覆盖 SystemMonitorController 日志接口分页功能变更。
 
 ### 本次变更测试结果（2026-07-22）
 
