@@ -228,7 +228,11 @@ body { margin: 0; background: var(--app-canvas); }
 
 .el-table .cell { line-height: 1.5; }
 
-.el-pagination { justify-content: flex-end; margin-top: 20px; }
+.el-pagination { justify-content: flex-end; margin-top: 16px; padding: 0; }
+
+.el-pagination .el-pager li { min-width: 28px; height: 28px; line-height: 28px; font-size: 13px; }
+
+.el-pagination button { padding: 0 8px; height: 28px; min-width: 28px; }
 
 .el-dialog { border-radius: 14px; }
 
