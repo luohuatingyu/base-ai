@@ -29,6 +29,86 @@
 
 .form-grid .el-form-item { min-width: 0; }
 
+/* 接口触发弹窗：tab 分区控制表单长度，进度页在同一上下文展示任务与日志。 */
+.api-trigger-dialog .el-dialog__body {
+  max-height: calc(92vh - 132px);
+  overflow-y: auto;
+  padding-top: 8px;
+}
+
+.trigger-tabs { min-height: 350px; }
+
+.form-help {
+  margin-left: 12px;
+  color: var(--app-muted);
+  font-size: 12px;
+}
+
+.progress-panel {
+  min-height: 330px;
+  padding-top: 4px;
+}
+
+.progress-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #e1e8f4;
+  border-radius: 10px;
+  background: #f8faff;
+}
+
+.progress-toolbar > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.progress-toolbar span { color: #39465b; font-weight: 600; }
+
+.progress-toolbar small { color: var(--app-muted); line-height: 1.5; }
+
+.job-id-chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 4px 9px;
+  border-radius: 6px;
+  color: #2858c9;
+  background: #eaf0ff;
+}
+
+.progress-details { margin-top: 4px; }
+
+.progress-section { margin-top: 20px; }
+
+.progress-section h4 {
+  margin: 0 0 10px;
+  color: var(--app-text);
+  font-size: 14px;
+}
+
+.progress-section h4 span { color: var(--app-muted); font-size: 12px; font-weight: 400; }
+
+.task-log-message {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.task-log-throwable {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: #c43f4f;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 /* 结构化详情和响应内容：与全局面板层级一致，并避免长文本撑破容器。 */
 .detail-value {
   margin: 0;
@@ -62,6 +142,8 @@
   .filter-row > .el-select { flex-basis: 220px; }
 
   .form-grid { grid-template-columns: 1fr; }
+
+  .progress-toolbar { align-items: stretch; flex-direction: column; }
 }
 
 @media (max-width: 600px) {
@@ -73,4 +155,8 @@
   .filter-row > .el-button,
   .panel > .el-form--inline .el-form-item,
   .panel > .el-form--inline .el-button { width: 100%; max-width: none; }
+
+  .form-help { display: block; margin: 8px 0 0; }
+
+  .progress-toolbar .el-button { width: 100%; }
 }
