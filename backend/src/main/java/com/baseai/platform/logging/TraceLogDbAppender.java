@@ -7,7 +7,7 @@ import ch.qos.logback.core.AppenderBase;
 
 import java.time.Instant;
 
-public class JobLogDbAppender extends AppenderBase<ILoggingEvent> {
+public class TraceLogDbAppender extends AppenderBase<ILoggingEvent> {
     private int capacity = 10000;
     private String persistLevel = "INFO";
     private Level threshold = Level.INFO;
@@ -15,18 +15,18 @@ public class JobLogDbAppender extends AppenderBase<ILoggingEvent> {
     /** 初始化日志队列和持久化级别。 */
     @Override
     public void start() {
-        JobLogQueue.configure(capacity);
+        TraceLogQueue.configure(capacity);
         threshold = Level.toLevel(persistLevel, Level.INFO);
         super.start();
     }
 
-    /** 将带任务编号的日志非阻塞写入统一队列。 */
+    /** 将带链路编号的日志非阻塞写入统一队列。 */
     @Override
     protected void append(ILoggingEvent event) {
-        String jobId = event.getMDCPropertyMap().get("jobId");
-        if (jobId == null || jobId.isBlank() || !event.getLevel().isGreaterOrEqual(threshold)) return;
+        String traceId = event.getMDCPropertyMap().get("traceId");
+        if (traceId == null || traceId.isBlank() || !event.getLevel().isGreaterOrEqual(threshold)) return;
         String throwable = event.getThrowableProxy() == null ? null : ThrowableProxyUtil.asString(event.getThrowableProxy());
-        JobLogQueue.offer(new JobLogRecord(jobId, null, "JAVA", event.getLevel().levelStr,
+        TraceLogQueue.offer(new TraceLogRecord(traceId, null, "JAVA", event.getLevel().levelStr,
             event.getLoggerName(), event.getFormattedMessage(), event.getThreadName(), throwable,
             Instant.ofEpochMilli(event.getTimeStamp())));
     }

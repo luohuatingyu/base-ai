@@ -22,7 +22,7 @@ public final class ApiTriggerModels {
     ) {}
 
     public record ExecutionResult(int httpStatus, long durationMs, String responseBody) {}
-    public record LogView(Long id, Long configId, String jobId, String triggerType, String status,
+    public record LogView(Long id, Long configId, String traceId, String triggerType, String status,
                           Integer httpStatus, Long durationMs, String responseSummary,
                           String errorMessage, LocalDateTime triggeredAt) {}
 }

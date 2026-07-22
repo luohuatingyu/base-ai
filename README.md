@@ -88,22 +88,23 @@ YAML 支持：
 
 ## 统一日志
 
-- Java 请求自动生成或传播 `X-Request-Id`。
-- AI 调用创建 MySQL 系统任务并写入 MDC `jobId`。
-- Java Logback 将带 `jobId` 的日志异步批量写入 MySQL。
-- Java 调用 Worker 时传播 `X-Request-Id`、`X-Parent-Job-Id` 和内部令牌。
-- Python 使用 ContextVar 注入 `requestId`、`jobId`、`pythonJobId`，并异步批量回传 Java。
+- Java 请求自动生成或传播 `X-Request-Id`，用于标识单次 HTTP 请求。
+- AI 调用创建 MySQL 系统任务并写入 MDC `traceId`。
+- Java Logback 将带 `traceId` 的日志异步批量写入 MySQL。
+- Java 调用 Worker 时传播 `X-Request-Id`、`X-Parent-Trace-Id`、`X-Python-Trace-Id` 和内部令牌。
+- Python 使用 ContextVar 注入 `requestId`、`traceId`、`pythonTraceId`，并异步批量回传 Java。
+- `traceId` 关联跨 Java、Python Worker 和数据库的完整任务链路，与 `requestId` 相互独立。
 - 日志保留天数、队列容量和持久化级别均由统一环境变量维护。
 
 ## 任务调度与 AOP
 
 - 默认对未排除的 `RestController` 写操作建立系统任务。
-- `@JobType` 用于声明任务名称、触发入口和定时任务所有者参数。
-- `@JobIgnored` 用于排除登录、健康检查、任务查询和内部日志接口。
+- `@TraceType` 用于声明任务名称、触发入口和定时任务所有者参数。
+- `@TraceIgnored` 用于排除登录、健康检查、任务查询和内部日志接口。
 - AOP 自动维护任务开始、成功、失败、取消和强制终止状态。
 - 请求参数与请求头保存前会递归屏蔽密码、Token、Cookie、Authorization 和 API Key。
-- 前端可预留 `X-Job-Id`，后端绑定后通过响应头返回同一任务编号。
-- `job-tracking-exclusions.yml` 统一维护不需要建立任务的 HTTP 方法和路径。
+- 前端可预留 `X-Trace-Id`，后端绑定后通过响应头返回同一 Trace ID。
+- `trace-tracking-exclusions.yml` 统一维护不需要建立任务的 HTTP 方法和路径。
 - Python 子任务独立记录 Worker 实例、状态、心跳和完成原因。
 - 父任务取消会传播到对应 Python 异步任务，强制终止不会杀死共享 Worker 进程。
 - 定时巡检和应用启动恢复会将心跳超时的遗留任务标记为失败。
@@ -144,9 +145,9 @@ sudo editor /etc/base-ai/base-ai.env
 ```bash
 sudo cp ai-model-pools.example.yml /etc/base-ai/ai-model-pools.yml
 sudo cp ai-feature-routing.yml /etc/base-ai/ai-feature-routing.yml
-sudo cp job-tracking-exclusions.yml /etc/base-ai/job-tracking-exclusions.yml
+sudo cp trace-tracking-exclusions.yml /etc/base-ai/trace-tracking-exclusions.yml
 sudo chmod 600 /etc/base-ai/ai-model-pools.yml
-sudo chmod 644 /etc/base-ai/ai-feature-routing.yml /etc/base-ai/job-tracking-exclusions.yml
+sudo chmod 644 /etc/base-ai/ai-feature-routing.yml /etc/base-ai/trace-tracking-exclusions.yml
 sudo editor /etc/base-ai/ai-model-pools.yml
 ```
 
@@ -155,10 +156,10 @@ sudo editor /etc/base-ai/ai-model-pools.yml
 ```dotenv
 AI_MODEL_POOLS_FILE=/etc/base-ai/ai-model-pools.yml
 AI_FEATURE_ROUTING_FILE=/etc/base-ai/ai-feature-routing.yml
-JOB_TRACKING_EXCLUSIONS_FILE=/etc/base-ai/job-tracking-exclusions.yml
+TRACE_TRACKING_EXCLUSIONS_FILE=/etc/base-ai/trace-tracking-exclusions.yml
 ```
 
-三份运行时 YAML 均可通过外部环境文件指定宿主机路径；未设置对应路径时，Docker Compose 分别回退到仓库内的 `ai-model-pools.yml`、`ai-feature-routing.yml` 和 `job-tracking-exclusions.yml`。具体模型类型和能力等级分别通过请求的 `model_type` 与通用配置选择。
+三份运行时 YAML 均可通过外部环境文件指定宿主机路径；未设置对应路径时，Docker Compose 分别回退到仓库内的 `ai-model-pools.yml`、`ai-feature-routing.yml` 和 `trace-tracking-exclusions.yml`。具体模型类型和能力等级分别通过请求的 `model_type` 与通用配置选择。
 
 环境变量分为：
 
@@ -168,10 +169,12 @@ JOB_TRACKING_EXCLUSIONS_FILE=/etc/base-ai/job-tracking-exclusions.yml
 - Redis 缓存：`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`。
 - 平台安全：`APP_TOKEN_SECRET`、`APP_SEED_ADMIN_PASSWORD`、`PYTHON_WORKER_INTERNAL_TOKEN`。
 - 配置加密：`APP_CONFIG_ENCRYPTION_KEY`，可通过 `openssl rand -base64 32` 生成。
-- YAML 文件挂载：`AI_MODEL_POOLS_FILE`、`AI_FEATURE_ROUTING_FILE`、`JOB_TRACKING_EXCLUSIONS_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
+- YAML 文件挂载：`AI_MODEL_POOLS_FILE`、`AI_FEATURE_ROUTING_FILE`、`TRACE_TRACKING_EXCLUSIONS_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
 - 接口触发：`API_TRIGGER_ALLOWED_HOSTS`、`API_TRIGGER_ALLOW_PRIVATE_NETWORK`、`API_TRIGGER_LOCK_SECONDS`。
-- 日志：`JOB_LOG_PERSIST_LEVEL`、`JOB_LOG_RETENTION_DAYS`、`JOB_LOG_QUEUE_CAPACITY`。
-- 任务治理：`JOB_HEARTBEAT_TIMEOUT_SECONDS`。
+- 日志：`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_LOG_QUEUE_CAPACITY`。
+- 任务治理：`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
+
+升级已有部署时，必须先备份 MySQL 系统任务与链路日志表以及 PostgreSQL 接口触发执行日志，并将外部环境文件中的相关配置统一更新为 `TRACE_*`。新版本只识别 Trace Schema；启动前需由运维人员完成一次性数据库结构调整并核对数据行数，再启动应用。
 
 ## Docker 启动
 
@@ -202,7 +205,7 @@ python-worker/   FastAPI LLM Worker
 .env.example     唯一环境变量模板
 ai-model-pools.example.yml  LLM 模型池配置模板
 ai-feature-routing.yml  默认业务模型路由配置
-job-tracking-exclusions.yml  默认任务跟踪排除配置
+trace-tracking-exclusions.yml  默认任务跟踪排除配置
 docker-compose.yml
 ```
 

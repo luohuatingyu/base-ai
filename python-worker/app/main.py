@@ -8,18 +8,18 @@ from app.llm import LlmClient
 from app.logging_config import setup_logging
 from app.middleware import InternalAuthMiddleware
 from app.models import ChatRequest, ChatResponse, LlmTestRequest
-from app.job_runtime import JavaJobReporter, JobRuntimeRegistry
+from app.trace_runtime import JavaTraceReporter, TraceRuntimeRegistry
 
 settings = load_settings()
 validate_settings(settings)
 log_shipper = setup_logging(settings)
 logger = logging.getLogger(__name__)
 llm_client = LlmClient(settings)
-job_registry = JobRuntimeRegistry()
-job_reporter = JavaJobReporter(settings)
+trace_registry = TraceRuntimeRegistry()
+trace_reporter = JavaTraceReporter(settings)
 
 app = FastAPI(title=f"{os.getenv('APP_BRAND_NAME_EN', 'AI Platform')} Worker", version="0.0.1")
-app.add_middleware(InternalAuthMiddleware, settings=settings, registry=job_registry, reporter=job_reporter)
+app.add_middleware(InternalAuthMiddleware, settings=settings, registry=trace_registry, reporter=trace_reporter)
 
 
 @app.get("/health")
@@ -42,15 +42,15 @@ async def test_llm(request: LlmTestRequest):
     return await llm_client.test(request.candidate)
 
 
-@app.post("/jobs/{python_job_id}/cancel")
-async def cancel_job(python_job_id: str):
+@app.post("/traces/{python_trace_id}/cancel")
+async def cancel_trace(python_trace_id: str):
     """取消单个异步子任务，不影响 Worker 内其他任务。"""
-    return {"cancelled": await job_registry.cancel(python_job_id)}
+    return {"cancelled": await trace_registry.cancel(python_trace_id)}
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用退出时释放模型连接和日志线程。"""
     await llm_client.close()
-    await job_reporter.close()
+    await trace_reporter.close()
     log_shipper.close()

@@ -5,7 +5,7 @@ spring:
   application:
     name: base-ai-backend
   config:
-    import: optional:file:${JOB_TRACKING_EXCLUSIONS_FILE:/app/config/job-tracking-exclusions.yml}
+    import: optional:file:${TRACE_TRACKING_EXCLUSIONS_FILE:/app/config/trace-tracking-exclusions.yml}
   jpa:
     hibernate:
       ddl-auto: update
@@ -59,14 +59,14 @@ app:
     url: ${PYTHON_WORKER_URL:http://python-worker:8000}
     internal-token: ${PYTHON_WORKER_INTERNAL_TOKEN}
     java-instance-id: ${JAVA_INSTANCE_ID:java-backend-1}
-  job-log:
-    queue-capacity: ${JOB_LOG_QUEUE_CAPACITY:10000}
-    batch-size: ${JOB_LOG_BATCH_SIZE:100}
-    flush-interval-ms: ${JOB_LOG_FLUSH_INTERVAL_MS:500}
-    persist-level: ${JOB_LOG_PERSIST_LEVEL:INFO}
-    retention-days: ${JOB_LOG_RETENTION_DAYS:7}
-  job-tracking:
-    heartbeat-timeout-seconds: ${JOB_HEARTBEAT_TIMEOUT_SECONDS:120}
+  trace-log:
+    queue-capacity: ${TRACE_LOG_QUEUE_CAPACITY:10000}
+    batch-size: ${TRACE_LOG_BATCH_SIZE:100}
+    flush-interval-ms: ${TRACE_LOG_FLUSH_INTERVAL_MS:500}
+    persist-level: ${TRACE_LOG_PERSIST_LEVEL:INFO}
+    retention-days: ${TRACE_LOG_RETENTION_DAYS:7}
+  trace-tracking:
+    heartbeat-timeout-seconds: ${TRACE_HEARTBEAT_TIMEOUT_SECONDS:120}
     excluded-methods: GET,OPTIONS
     excluded-paths:
       - /api/auth/**

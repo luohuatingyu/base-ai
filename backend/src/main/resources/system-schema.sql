@@ -1,5 +1,5 @@
-CREATE TABLE IF NOT EXISTS task_job (
-    job_id VARCHAR(32) PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS task_trace (
+    trace_id VARCHAR(32) PRIMARY KEY,
     owner_user_id BIGINT NOT NULL,
     task_type VARCHAR(64) NOT NULL,
     trigger_entry VARCHAR(64),
@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS task_job (
     request_params_json MEDIUMTEXT,
     request_headers_json MEDIUMTEXT,
     java_instance_id VARCHAR(100),
-    python_job_count INT NOT NULL DEFAULT 0,
+    python_trace_count INT NOT NULL DEFAULT 0,
     error_message VARCHAR(1000),
     cancellation_reason VARCHAR(500),
     cancel_requested_at TIMESTAMP(6) NULL,
@@ -22,13 +22,13 @@ CREATE TABLE IF NOT EXISTS task_job (
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     started_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     finished_at TIMESTAMP(6) NULL,
-    INDEX idx_task_job_owner_started (owner_user_id, started_at),
-    INDEX idx_task_job_status_started (status, started_at)
+    INDEX idx_task_trace_owner_started (owner_user_id, started_at),
+    INDEX idx_task_trace_status_started (status, started_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS task_job_python (
-    python_job_id VARCHAR(64) PRIMARY KEY,
-    parent_job_id VARCHAR(32) NOT NULL,
+CREATE TABLE IF NOT EXISTS task_trace_python (
+    python_trace_id VARCHAR(64) PRIMARY KEY,
+    parent_trace_id VARCHAR(32) NOT NULL,
     worker_endpoint VARCHAR(255) NOT NULL,
     worker_instance_id VARCHAR(100),
     status VARCHAR(24) NOT NULL,
@@ -42,14 +42,14 @@ CREATE TABLE IF NOT EXISTS task_job_python (
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     started_at TIMESTAMP(6) NULL,
     finished_at TIMESTAMP(6) NULL,
-    INDEX idx_task_job_python_parent (parent_job_id, created_at),
-    INDEX idx_task_job_python_status (status, heartbeat_at)
+    INDEX idx_task_trace_python_parent (parent_trace_id, created_at),
+    INDEX idx_task_trace_python_status (status, heartbeat_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS task_job_log (
+CREATE TABLE IF NOT EXISTS trace_log (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    job_id VARCHAR(32) NOT NULL,
-    python_job_id VARCHAR(64),
+    trace_id VARCHAR(32) NOT NULL,
+    python_trace_id VARCHAR(64),
     source VARCHAR(16) NOT NULL,
     level VARCHAR(16) NOT NULL,
     logger_name VARCHAR(255) NOT NULL,
@@ -57,6 +57,6 @@ CREATE TABLE IF NOT EXISTS task_job_log (
     thread_name VARCHAR(255),
     throwable MEDIUMTEXT,
     logged_at TIMESTAMP(6) NOT NULL,
-    INDEX idx_task_job_log_job_id_id (job_id, id),
-    INDEX idx_task_job_log_logged_at (logged_at)
+    INDEX idx_trace_log_trace_id_id (trace_id, id),
+    INDEX idx_trace_log_logged_at (logged_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

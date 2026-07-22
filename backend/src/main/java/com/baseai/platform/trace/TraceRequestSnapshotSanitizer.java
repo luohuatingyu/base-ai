@@ -1,4 +1,4 @@
-package com.baseai.platform.job;
+package com.baseai.platform.trace;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,14 +12,14 @@ import java.util.Locale;
 import java.util.Set;
 
 @Component
-public class JobRequestSnapshotSanitizer {
+public class TraceRequestSnapshotSanitizer {
     private static final Set<String> SENSITIVE = Set.of("password", "secret", "token", "authorization", "cookie", "api-key", "apikey");
     private final ObjectMapper objectMapper;
 
-    public JobRequestSnapshotSanitizer(ObjectMapper objectMapper) { this.objectMapper = objectMapper; }
+    public TraceRequestSnapshotSanitizer(ObjectMapper objectMapper) { this.objectMapper = objectMapper; }
 
     /** 序列化方法参数和请求头，并递归屏蔽敏感字段。 */
-    public JobSnapshot sanitize(HttpServletRequest request, String[] names, Object[] values) {
+    public TraceSnapshot sanitize(HttpServletRequest request, String[] names, Object[] values) {
         ObjectNode params = objectMapper.createObjectNode();
         for (int index = 0; index < values.length; index++) {
             String name = names != null && index < names.length ? names[index] : "arg" + index;
@@ -32,7 +32,7 @@ public class JobRequestSnapshotSanitizer {
             String name = headerNames.nextElement();
             headers.put(name, isSensitive(name) ? "***" : limit(request.getHeader(name)));
         }
-        return new JobSnapshot(write(params), write(headers));
+        return new TraceSnapshot(write(params), write(headers));
     }
 
     /** 递归处理对象和数组中的敏感字段。 */

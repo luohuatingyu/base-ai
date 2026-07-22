@@ -1,4 +1,4 @@
-package com.baseai.platform.job;
+package com.baseai.platform.trace;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface JobType {
+public @interface TraceType {
     String value();
     String triggerEntry() default "API";
     String ownerIdParameter() default "";

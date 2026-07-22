@@ -11,8 +11,8 @@ public class PlatformProperties {
     private Token token = new Token();
     private Seed seed = new Seed();
     private PythonWorker pythonWorker = new PythonWorker();
-    private JobLog jobLog = new JobLog();
-    private JobTracking jobTracking = new JobTracking();
+    private TraceLog traceLog = new TraceLog();
+    private TraceTracking traceTracking = new TraceTracking();
     private ApiTrigger apiTrigger = new ApiTrigger();
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }
@@ -30,10 +30,10 @@ public class PlatformProperties {
     public void setSeed(Seed seed) { this.seed = seed; }
     public PythonWorker getPythonWorker() { return pythonWorker; }
     public void setPythonWorker(PythonWorker pythonWorker) { this.pythonWorker = pythonWorker; }
-    public JobLog getJobLog() { return jobLog; }
-    public void setJobLog(JobLog jobLog) { this.jobLog = jobLog; }
-    public JobTracking getJobTracking() { return jobTracking; }
-    public void setJobTracking(JobTracking jobTracking) { this.jobTracking = jobTracking; }
+    public TraceLog getTraceLog() { return traceLog; }
+    public void setTraceLog(TraceLog traceLog) { this.traceLog = traceLog; }
+    public TraceTracking getTraceTracking() { return traceTracking; }
+    public void setTraceTracking(TraceTracking traceTracking) { this.traceTracking = traceTracking; }
     public ApiTrigger getApiTrigger() { return apiTrigger; }
     public void setApiTrigger(ApiTrigger apiTrigger) { this.apiTrigger = apiTrigger; }
 
@@ -82,7 +82,7 @@ public class PlatformProperties {
         public void setJavaInstanceId(String javaInstanceId) { this.javaInstanceId = javaInstanceId; }
     }
 
-    public static class JobLog {
+    public static class TraceLog {
         private int queueCapacity = 10000;
         private int batchSize = 100;
         private long flushIntervalMs = 500;
@@ -100,7 +100,7 @@ public class PlatformProperties {
         public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
     }
 
-    public static class JobTracking {
+    public static class TraceTracking {
         private java.util.List<String> excludedMethods = java.util.List.of("GET", "OPTIONS");
         private java.util.List<String> excludedPaths = java.util.List.of(
             "/api/auth/**", "/api/open/**", "/api/internal/**", "/api/system/tasks/**"

@@ -1,17 +1,17 @@
-package com.baseai.platform.job;
+package com.baseai.platform.trace;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class JobCancellationToken {
-    private final String jobId;
+public final class TraceCancellationToken {
+    private final String traceId;
     private final AtomicBoolean cancelled = new AtomicBoolean();
 
-    public JobCancellationToken(String jobId) { this.jobId = jobId; }
+    public TraceCancellationToken(String traceId) { this.traceId = traceId; }
     public void cancel() { cancelled.set(true); }
     public boolean isCancelled() { return cancelled.get(); }
 
     /** 在业务边界检查取消和线程中断状态。 */
     public void checkpoint() {
-        if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new JobCancelledException(jobId);
+        if (cancelled.get() || Thread.currentThread().isInterrupted()) throw new TraceCancelledException(traceId);
     }
 }

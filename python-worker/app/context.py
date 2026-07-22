@@ -7,8 +7,8 @@ class RequestContext:
     """保存跨服务请求和任务标识。"""
 
     request_id: str
-    parent_job_id: str
-    python_job_id: str
+    parent_trace_id: str
+    python_trace_id: str
 
 
 _current_context: contextvars.ContextVar[RequestContext | None] = contextvars.ContextVar(

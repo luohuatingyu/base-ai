@@ -82,7 +82,7 @@
 
 .progress-toolbar small { color: var(--app-muted); line-height: 1.5; }
 
-.job-id-chip {
+.trace-id-chip {
   max-width: 100%;
   overflow-wrap: anywhere;
   padding: 4px 9px;

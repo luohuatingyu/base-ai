@@ -1,7 +1,7 @@
 package com.baseai.platform.logging;
 
 import com.baseai.platform.domain.OperationLog;
-import com.baseai.platform.job.JobRequestSnapshotSanitizer;
+import com.baseai.platform.trace.TraceRequestSnapshotSanitizer;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,9 +21,9 @@ import java.util.Set;
 public class OperationAuditAspect {
     private static final Set<String> MUTATING = Set.of("POST", "PUT", "PATCH", "DELETE");
     private final SystemAuditAsyncWriter writer;
-    private final JobRequestSnapshotSanitizer sanitizer;
+    private final TraceRequestSnapshotSanitizer sanitizer;
 
-    public OperationAuditAspect(SystemAuditAsyncWriter writer, JobRequestSnapshotSanitizer sanitizer) {
+    public OperationAuditAspect(SystemAuditAsyncWriter writer, TraceRequestSnapshotSanitizer sanitizer) {
         this.writer = writer;
         this.sanitizer = sanitizer;
     }

@@ -1,6 +1,6 @@
 package com.baseai.platform.automation;
 
-import com.baseai.platform.job.JobType;
+import com.baseai.platform.trace.TraceType;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.RequiredPermission;
 import org.springframework.web.bind.annotation.*;
@@ -27,7 +27,7 @@ public class ApiTriggerController {
 
     @PostMapping
     @RequiredPermission("automation:api-trigger:create")
-    @JobType(value = "新增接口触发配置", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "新增接口触发配置", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.View create(@RequestBody ApiTriggerModels.Command command) {
         ApiTriggerModels.View created = service.create(command, AuthContext.require().id());
         scheduler.reschedule(created.id());
@@ -36,7 +36,7 @@ public class ApiTriggerController {
 
     @PutMapping("/{id}")
     @RequiredPermission("automation:api-trigger:update")
-    @JobType(value = "更新接口触发配置", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "更新接口触发配置", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.View update(@PathVariable Long id, @RequestBody ApiTriggerModels.Command command) {
         ApiTriggerModels.View updated = service.update(id, command);
         scheduler.reschedule(id);
@@ -45,22 +45,22 @@ public class ApiTriggerController {
 
     @DeleteMapping("/{id}")
     @RequiredPermission("automation:api-trigger:delete")
-    @JobType(value = "停用接口触发配置", triggerEntry = "MANUAL")
+    @TraceType(value = "停用接口触发配置", triggerEntry = "MANUAL")
     public void disable(@PathVariable Long id) { service.disable(id); scheduler.cancel(id); }
 
     @PostMapping("/{id}/void")
     @RequiredPermission("automation:api-trigger:delete")
-    @JobType(value = "作废接口触发配置", triggerEntry = "MANUAL")
+    @TraceType(value = "作废接口触发配置", triggerEntry = "MANUAL")
     public void voidConfig(@PathVariable Long id) { service.voidConfig(id); scheduler.cancel(id); }
 
     @PostMapping("/{id}/trigger")
     @RequiredPermission("automation:api-trigger:trigger")
-    @JobType(value = "手动执行接口触发", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "手动执行接口触发", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.ExecutionResult trigger(@PathVariable Long id) { return service.execute(id, "MANUAL"); }
 
     @PostMapping("/test")
     @RequiredPermission("automation:api-trigger:trigger")
-    @JobType(value = "临时测试接口调用", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "临时测试接口调用", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.ExecutionResult test(@RequestBody ApiTriggerModels.Command command) { return service.test(command); }
 
     @GetMapping("/{id}/logs")

@@ -2,8 +2,8 @@ package com.baseai.platform.controller;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
-import com.baseai.platform.logging.JobLogQueue;
-import com.baseai.platform.logging.JobLogRecord;
+import com.baseai.platform.logging.TraceLogQueue;
+import com.baseai.platform.logging.TraceLogRecord;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
@@ -15,14 +15,14 @@ import java.util.Map;
 import java.util.Set;
 
 @RestController
-@RequestMapping("/api/internal/job-logs")
-public class InternalJobLogController {
+@RequestMapping("/api/internal/trace-logs")
+public class InternalTraceLogController {
     private static final Set<String> LEVELS = Set.of("DEBUG", "INFO", "WARN", "ERROR");
     private final PlatformProperties properties;
 
-    public InternalJobLogController(PlatformProperties properties) { this.properties = properties; }
+    public InternalTraceLogController(PlatformProperties properties) { this.properties = properties; }
 
-    /** 校验内部令牌并接收 Python 批量任务日志。 */
+    /** 校验内部令牌并接收 Python 批量链路日志。 */
     @PostMapping
     public Map<String, Integer> ingest(@RequestHeader(value = "X-Internal-Token", required = false) String token,
                                        @RequestBody LogBatch batch) {
@@ -31,7 +31,7 @@ public class InternalJobLogController {
         for (LogItem item : batch.logs() == null ? List.<LogItem>of() : batch.logs()) {
             String level = item.level().toUpperCase(Locale.ROOT);
             if (!LEVELS.contains(level)) throw new BusinessException("日志级别无效");
-            if (JobLogQueue.offer(new JobLogRecord(item.jobId(), item.pythonJobId(), "PYTHON", level,
+            if (TraceLogQueue.offer(new TraceLogRecord(item.traceId(), item.pythonTraceId(), "PYTHON", level,
                 item.loggerName(), item.message(), item.threadName(), item.throwable(),
                 item.loggedAt() == null ? Instant.now() : item.loggedAt()))) accepted++;
         }
@@ -47,6 +47,6 @@ public class InternalJobLogController {
     }
 
     public record LogBatch(List<LogItem> logs) {}
-    public record LogItem(String jobId, String pythonJobId, String level, String loggerName,
+    public record LogItem(String traceId, String pythonTraceId, String level, String loggerName,
                           String message, String threadName, String throwable, Instant loggedAt) {}
 }

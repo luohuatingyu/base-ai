@@ -1,4 +1,4 @@
-package com.baseai.platform.job;
+package com.baseai.platform.trace;
 
 import org.springframework.stereotype.Component;
 import java.util.*;import java.util.concurrent.ConcurrentHashMap;

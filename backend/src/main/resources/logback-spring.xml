@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <springProperty scope="context" name="queueCapacity" source="app.job-log.queue-capacity" defaultValue="10000"/>
-    <springProperty scope="context" name="persistLevel" source="app.job-log.persist-level" defaultValue="INFO"/>
+    <springProperty scope="context" name="queueCapacity" source="app.trace-log.queue-capacity" defaultValue="10000"/>
+    <springProperty scope="context" name="persistLevel" source="app.trace-log.persist-level" defaultValue="INFO"/>
     <springProperty scope="context" name="rootLevel" source="app.logging.root-level" defaultValue="INFO"/>
     <springProperty scope="context" name="consoleQueueCapacity" source="app.logging.console-queue-capacity" defaultValue="8192"/>
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -14,12 +14,12 @@
         <maxFlushTime>5000</maxFlushTime>
         <appender-ref ref="CONSOLE"/>
     </appender>
-    <appender name="JOB_DB" class="com.baseai.platform.logging.JobLogDbAppender">
+    <appender name="TRACE_DB" class="com.baseai.platform.logging.TraceLogDbAppender">
         <capacity>${queueCapacity}</capacity>
         <persistLevel>${persistLevel}</persistLevel>
     </appender>
     <root level="${rootLevel}">
         <appender-ref ref="CONSOLE_ASYNC"/>
-        <appender-ref ref="JOB_DB"/>
+        <appender-ref ref="TRACE_DB"/>
     </root>
 </configuration>

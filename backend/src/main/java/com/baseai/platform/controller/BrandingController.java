@@ -1,14 +1,14 @@
 package com.baseai.platform.controller;
 
 import com.baseai.platform.config.PlatformProperties;
-import com.baseai.platform.job.JobIgnored;
+import com.baseai.platform.trace.TraceIgnored;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
-@JobIgnored
+@TraceIgnored
 @RestController
 @RequestMapping("/api/open/branding")
 public class BrandingController {

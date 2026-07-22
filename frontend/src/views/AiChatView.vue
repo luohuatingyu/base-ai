@@ -8,7 +8,7 @@
       <el-empty v-if="!messages.length" description="输入问题开始对话" />
     </div>
     <el-input v-model="prompt" type="textarea" :rows="4" placeholder="请输入问题，Ctrl/Cmd + Enter 发送" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
-    <div class="chat-actions"><span v-if="lastJob">任务编号：{{ lastJob }}</span><el-button type="primary" :loading="loading" @click="send">发送</el-button></div>
+    <div class="chat-actions"><span v-if="lastTrace">Trace ID：{{ lastTrace }}</span><el-button type="primary" :loading="loading" @click="send">发送</el-button></div>
   </div>
 </template>
 
@@ -20,7 +20,7 @@ import http from '../api/http'
 const prompt = ref('')
 const messages = ref([])
 const loading = ref(false)
-const lastJob = ref('')
+const lastTrace = ref('')
 
 /** 将当前对话发送到受权限保护的模型代理接口。 */
 async function send() {
@@ -32,7 +32,7 @@ async function send() {
   try {
     const { data } = await http.post('/ai/chat', { messages: messages.value, temperature: 0 })
     messages.value.push({ role: 'assistant', content: data.content })
-    lastJob.value = data.jobId
+    lastTrace.value = data.traceId
   } catch (error) { ElMessage.error(error.response?.data?.message || '模型调用失败') }
   finally { loading.value = false }
 }

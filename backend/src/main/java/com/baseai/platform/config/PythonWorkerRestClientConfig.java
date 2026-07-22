@@ -20,7 +20,7 @@ public class PythonWorkerRestClientConfig {
             .defaultHeader("X-Internal-Token", properties.getPythonWorker().getInternalToken())
             .defaultRequest(request -> {
                 putIfPresent(request, "X-Request-Id", MDC.get("requestId"));
-                putIfPresent(request, "X-Parent-Job-Id", MDC.get("jobId"));
+                putIfPresent(request, "X-Parent-Trace-Id", MDC.get("traceId"));
             }).build();
     }
 

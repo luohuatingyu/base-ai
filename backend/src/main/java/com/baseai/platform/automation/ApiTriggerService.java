@@ -2,7 +2,7 @@ package com.baseai.platform.automation;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
-import com.baseai.platform.job.JobContextHolder;
+import com.baseai.platform.trace.TraceContextHolder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -147,7 +147,7 @@ public class ApiTriggerService {
         get(configId);
         return jdbcTemplate.query("""
             SELECT * FROM automation_api_trigger_log WHERE config_id=? ORDER BY triggered_at DESC LIMIT 200
-            """, (rs, row) -> new ApiTriggerModels.LogView(rs.getLong("id"), rs.getLong("config_id"), rs.getString("job_id"),
+            """, (rs, row) -> new ApiTriggerModels.LogView(rs.getLong("id"), rs.getLong("config_id"), rs.getString("trace_id"),
             rs.getString("trigger_type"), rs.getString("status"), (Integer) rs.getObject("http_status"),
             (Long) rs.getObject("duration_ms"), rs.getString("response_summary"), rs.getString("error_message"),
             rs.getTimestamp("triggered_at").toLocalDateTime()), configId);
@@ -155,7 +155,7 @@ public class ApiTriggerService {
 
     /** 发起认证请求和目标 HTTP 请求。 */
     private ApiTriggerModels.ExecutionResult call(ApiTriggerModels.View config) {
-        JobContextHolder.checkpoint();
+        TraceContextHolder.checkpoint();
         URI targetUri = buildUri(urlPolicy.validate(config.url()), config.queryParams());
         RestClient client = buildClient(config.timeoutSeconds());
         RestClient.RequestBodySpec spec = client.method(HttpMethod.valueOf(config.httpMethod())).uri(targetUri);
@@ -168,7 +168,7 @@ public class ApiTriggerService {
         ResponseEntity<String> response = hasBody(config.httpMethod(), config.requestBody())
             ? spec.contentType(MediaType.parseMediaType(config.contentType())).body(config.requestBody()).retrieve().toEntity(String.class)
             : spec.retrieve().toEntity(String.class);
-        JobContextHolder.checkpoint();
+        TraceContextHolder.checkpoint();
         return new ApiTriggerModels.ExecutionResult(response.getStatusCode().value(),
             Duration.ofNanos(System.nanoTime() - startedAt).toMillis(), response.getBody() == null ? "" : response.getBody());
     }
@@ -194,11 +194,11 @@ public class ApiTriggerService {
     /** 保存执行日志并更新配置最近执行摘要。 */
     private void saveExecution(Long configId, String triggerType, String status, Integer httpStatus,
                                long durationMs, String result, String error) {
-        String jobId = JobContextHolder.currentJobId().orElse(null);
+        String traceId = TraceContextHolder.currentTraceId().orElse(null);
         jdbcTemplate.update("""
-            INSERT INTO automation_api_trigger_log(config_id, job_id, trigger_type, status, http_status,
+            INSERT INTO automation_api_trigger_log(config_id, trace_id, trigger_type, status, http_status,
                 duration_ms, response_summary, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, configId, jobId, triggerType, status, httpStatus, durationMs, result, error);
+            """, configId, traceId, triggerType, status, httpStatus, durationMs, result, error);
         jdbcTemplate.update("""
             UPDATE automation_api_trigger_config SET last_trigger_at=NOW(), last_status=?, last_result=?, updated_at=NOW() WHERE id=?
             """, status, status.equals("SUCCESS") ? result : error, configId);

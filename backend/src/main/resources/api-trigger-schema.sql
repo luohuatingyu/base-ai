@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS automation_api_trigger_config (
 CREATE TABLE IF NOT EXISTS automation_api_trigger_log (
     id BIGSERIAL PRIMARY KEY,
     config_id BIGINT NOT NULL REFERENCES automation_api_trigger_config(id),
-    job_id VARCHAR(32),
+    trace_id VARCHAR(32),
     trigger_type VARCHAR(20) NOT NULL,
     status VARCHAR(20) NOT NULL,
     http_status INT,

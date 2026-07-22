@@ -1,9 +1,9 @@
-package com.baseai.platform.job;
+package com.baseai.platform.trace;
 
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
-import com.baseai.platform.service.TaskJobService;
+import com.baseai.platform.service.TaskTraceService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -21,17 +21,17 @@ import java.util.Locale;
 
 @Aspect
 @Component
-public class JobTrackingAspect {
-    public static final String JOB_ID_HEADER = "X-Job-Id";
-    private final TaskJobService taskJobService;
-    private final JobRuntimeRegistry runtimeRegistry;
-    private final JobRequestSnapshotSanitizer sanitizer;
+public class TraceTrackingAspect {
+    public static final String TRACE_ID_HEADER = "X-Trace-Id";
+    private final TaskTraceService taskTraceService;
+    private final TraceRuntimeRegistry runtimeRegistry;
+    private final TraceRequestSnapshotSanitizer sanitizer;
     private final PlatformProperties properties;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
-    public JobTrackingAspect(TaskJobService taskJobService, JobRuntimeRegistry runtimeRegistry,
-                             JobRequestSnapshotSanitizer sanitizer, PlatformProperties properties) {
-        this.taskJobService = taskJobService;
+    public TraceTrackingAspect(TaskTraceService taskTraceService, TraceRuntimeRegistry runtimeRegistry,
+                             TraceRequestSnapshotSanitizer sanitizer, PlatformProperties properties) {
+        this.taskTraceService = taskTraceService;
         this.runtimeRegistry = runtimeRegistry;
         this.sanitizer = sanitizer;
         this.properties = properties;
@@ -43,18 +43,18 @@ public class JobTrackingAspect {
         return track(joinPoint, true);
     }
 
-    /** 跟踪显式声明 JobType 的非控制器服务或定时方法。 */
-    @Around("@annotation(com.baseai.platform.job.JobType) && !@within(org.springframework.web.bind.annotation.RestController)")
+    /** 跟踪显式声明 TraceType 的非控制器服务或定时方法。 */
+    @Around("@annotation(com.baseai.platform.trace.TraceType) && !@within(org.springframework.web.bind.annotation.RestController)")
     public Object trackAnnotatedService(ProceedingJoinPoint joinPoint) throws Throwable {
         return track(joinPoint, false);
     }
 
     /** 创建任务、绑定上下文并维护统一终态。 */
     private Object track(ProceedingJoinPoint joinPoint, boolean controllerInvocation) throws Throwable {
-        if (JobContextHolder.current().isPresent()) return joinPoint.proceed();
+        if (TraceContextHolder.current().isPresent()) return joinPoint.proceed();
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         Method method = signature.getMethod();
-        JobType metadata = AnnotatedElementUtils.findMergedAnnotation(method, JobType.class);
+        TraceType metadata = AnnotatedElementUtils.findMergedAnnotation(method, TraceType.class);
         ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = attributes == null ? null : attributes.getRequest();
         if (shouldIgnore(joinPoint, request, controllerInvocation)) return joinPoint.proceed();
@@ -62,51 +62,51 @@ public class JobTrackingAspect {
         if (ownerId == null) return joinPoint.proceed();
         String taskType = metadata == null ? method.getDeclaringClass().getSimpleName() + "." + method.getName() : metadata.value();
         String triggerEntry = metadata == null ? "API" : metadata.triggerEntry();
-        JobSnapshot snapshot = request != null && (metadata == null || metadata.captureRequest())
-            ? sanitizer.sanitize(request, signature.getParameterNames(), joinPoint.getArgs()) : new JobSnapshot("{}", "{}");
-        String jobId = taskJobService.bindOrCreate(request == null ? null : request.getHeader(JOB_ID_HEADER), ownerId,
+        TraceSnapshot snapshot = request != null && (metadata == null || metadata.captureRequest())
+            ? sanitizer.sanitize(request, signature.getParameterNames(), joinPoint.getArgs()) : new TraceSnapshot("{}", "{}");
+        String traceId = taskTraceService.bindOrCreate(request == null ? null : request.getHeader(TRACE_ID_HEADER), ownerId,
             taskType, triggerEntry, request == null ? "INTERNAL" : request.getMethod(),
             request == null ? method.toGenericString() : request.getRequestURI(), snapshot);
         HttpServletResponse response = attributes == null ? null : attributes.getResponse();
-        if (response != null) response.setHeader(JOB_ID_HEADER, jobId);
-        JobRuntime runtime = runtimeRegistry.create(jobId);
+        if (response != null) response.setHeader(TRACE_ID_HEADER, traceId);
+        TraceRuntime runtime = runtimeRegistry.create(traceId);
         runtime.registerThread(Thread.currentThread());
-        JobContext context = new JobContext(jobId, ownerId, taskType, triggerEntry, runtime.token(), runtime);
-        try (JobContextHolder.Scope ignored = JobContextHolder.bind(context)) {
+        TraceContext context = new TraceContext(traceId, ownerId, taskType, triggerEntry, runtime.token(), runtime);
+        try (TraceContextHolder.Scope ignored = TraceContextHolder.bind(context)) {
             Object result = joinPoint.proceed();
             context.checkpoint();
-            taskJobService.markSuccess(jobId);
+            taskTraceService.markSuccess(traceId);
             return result;
-        } catch (JobCancelledException exception) {
-            taskJobService.completeCancellation(jobId);
+        } catch (TraceCancelledException exception) {
+            taskTraceService.completeCancellation(traceId);
             throw exception;
         } catch (Throwable throwable) {
             if (runtime.token().isCancelled() || Thread.currentThread().isInterrupted()) {
-                taskJobService.completeCancellation(jobId);
-                throw new JobCancelledException(jobId);
+                taskTraceService.completeCancellation(traceId);
+                throw new TraceCancelledException(traceId);
             }
-            taskJobService.markFailed(jobId, throwable.getMessage());
+            taskTraceService.markFailed(traceId, throwable.getMessage());
             throw throwable;
         } finally {
             runtime.unregisterThread(Thread.currentThread());
-            runtimeRegistry.remove(jobId);
+            runtimeRegistry.remove(traceId);
         }
     }
 
     /** 判断注解、HTTP 方法和路径是否排除任务跟踪。 */
     private boolean shouldIgnore(ProceedingJoinPoint joinPoint, HttpServletRequest request, boolean controllerInvocation) {
         Method method = ((MethodSignature) joinPoint.getSignature()).getMethod();
-        if (AnnotatedElementUtils.hasAnnotation(method, JobIgnored.class)
-            || AnnotatedElementUtils.hasAnnotation(joinPoint.getTarget().getClass(), JobIgnored.class)) return true;
+        if (AnnotatedElementUtils.hasAnnotation(method, TraceIgnored.class)
+            || AnnotatedElementUtils.hasAnnotation(joinPoint.getTarget().getClass(), TraceIgnored.class)) return true;
         if (!controllerInvocation || request == null) return false;
-        if (properties.getJobTracking().getExcludedMethods().stream()
+        if (properties.getTraceTracking().getExcludedMethods().stream()
             .anyMatch(value -> value.equalsIgnoreCase(request.getMethod()))) return true;
-        return properties.getJobTracking().getExcludedPaths().stream()
+        return properties.getTraceTracking().getExcludedPaths().stream()
             .anyMatch(pattern -> pathMatcher.match(pattern, request.getRequestURI()));
     }
 
     /** 从登录上下文或注解指定的方法参数解析任务所有者。 */
-    private Long resolveOwner(JobType metadata, String[] names, Object[] values) {
+    private Long resolveOwner(TraceType metadata, String[] names, Object[] values) {
         AuthUser authUser = AuthContext.current();
         if (authUser != null) return authUser.id();
         if (metadata == null || metadata.ownerIdParameter().isBlank()) return null;

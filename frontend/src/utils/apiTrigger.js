@@ -1,19 +1,19 @@
-const JOB_ID_KEYS = ['jobId', 'job_id']
-const MAX_JOB_ID_LENGTH = 64
+const TRACE_ID_KEYS = ['traceId', 'trace_id']
+const MAX_TRACE_ID_LENGTH = 64
 
 /**
- * 将接口响应中的候选任务编号规范为可查询文本。
+ * 将接口响应中的候选 Trace ID 规范为可查询文本。
  */
-function normalizeJobId(value) {
+function normalizeTraceId(value) {
   if (typeof value !== 'string' && typeof value !== 'number') return ''
   const normalized = String(value).trim()
-  return normalized && normalized.length <= MAX_JOB_ID_LENGTH ? normalized : ''
+  return normalized && normalized.length <= MAX_TRACE_ID_LENGTH ? normalized : ''
 }
 
 /**
- * 从平台统一响应或直接响应中提取任务编号。
+ * 从平台统一响应或直接响应中提取 Trace ID。
  */
-export function extractJobId(responseBody) {
+export function extractTraceId(responseBody) {
   if (responseBody == null || responseBody === '') return ''
   let parsed = responseBody
   if (typeof responseBody === 'string') {
@@ -28,9 +28,9 @@ export function extractJobId(responseBody) {
     ? parsed.data
     : {}
   for (const source of [nested, parsed]) {
-    for (const key of JOB_ID_KEYS) {
-      const jobId = normalizeJobId(source[key])
-      if (jobId) return jobId
+    for (const key of TRACE_ID_KEYS) {
+      const traceId = normalizeTraceId(source[key])
+      if (traceId) return traceId
     }
   }
   return ''
@@ -44,11 +44,11 @@ export function resolveActiveTab(authEnabled, activeTab) {
 }
 
 /**
- * 并行查询平台任务详情和统一任务日志。
+ * 按 Trace ID 并行查询平台任务详情和统一链路日志。
  */
-export async function fetchTaskProgress(http, jobId) {
-  const normalized = normalizeJobId(jobId)
-  if (!normalized) throw new Error('任务编号不能为空')
+export async function fetchTaskProgress(http, traceId) {
+  const normalized = normalizeTraceId(traceId)
+  if (!normalized) throw new Error('Trace ID 不能为空')
   const encoded = encodeURIComponent(normalized)
   const [detailResponse, logsResponse] = await Promise.all([
     http.get('/system/tasks/' + encoded),

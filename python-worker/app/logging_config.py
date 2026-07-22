@@ -41,8 +41,8 @@ class JsonLogFormatter(logging.Formatter):
             "logger": record.name,
             "thread": record.threadName,
             "requestId": getattr(record, "request_id", "-"),
-            "jobId": getattr(record, "job_id", "-"),
-            "pythonJobId": getattr(record, "python_job_id", "-"),
+            "traceId": getattr(record, "trace_id", "-"),
+            "pythonTraceId": getattr(record, "python_trace_id", "-"),
             "message": sanitize_log_text(record.getMessage()),
         }
         if record.exc_info:
@@ -56,13 +56,13 @@ class ContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         context = current_context()
         record.request_id = context.request_id if context else "-"
-        record.job_id = context.parent_job_id if context else "-"
-        record.python_job_id = context.python_job_id if context else "-"
+        record.trace_id = context.parent_trace_id if context else "-"
+        record.python_trace_id = context.python_trace_id if context else "-"
         return True
 
 
 class JavaLogShipHandler(logging.Handler):
-    """通过有界队列和后台线程批量回传任务日志。"""
+    """通过有界队列和后台线程批量回传链路日志。"""
 
     def __init__(self, settings: Settings, capacity: int = 5000, batch_size: int = 100):
         super().__init__(logging.getLevelNamesMapping().get(settings.persist_level, logging.INFO))
@@ -77,13 +77,13 @@ class JavaLogShipHandler(logging.Handler):
         self.worker.start()
 
     def emit(self, record: logging.LogRecord) -> None:
-        """序列化带父任务编号的日志并非阻塞入队。"""
+        """序列化带父链路编号的日志并非阻塞入队。"""
         context = current_context()
-        if not context or not context.parent_job_id:
+        if not context or not context.parent_trace_id:
             return
         item = {
-            "jobId": context.parent_job_id,
-            "pythonJobId": context.python_job_id,
+            "traceId": context.parent_trace_id,
+            "pythonTraceId": context.python_trace_id,
             "level": record.levelname,
             "loggerName": record.name,
             "message": record.getMessage(),
@@ -137,7 +137,7 @@ class JavaLogShipHandler(logging.Handler):
         for attempt in range(1, SHIP_MAX_ATTEMPTS + 1):
             try:
                 client.post(
-                    f"{self.settings.backend_url}/api/internal/job-logs",
+                    f"{self.settings.backend_url}/api/internal/trace-logs",
                     headers={"X-Internal-Token": self.settings.internal_token},
                     json={"logs": batch},
                 ).raise_for_status()
@@ -168,7 +168,7 @@ class JavaLogShipHandler(logging.Handler):
             self._last_drop_warning_at = current_time
         if dropped:
             logging.getLogger(__name__).warning(
-                "event=python_job_log_dropped count=%d error=%s", dropped, error or "queue_full"
+                "event=python_trace_log_dropped count=%d error=%s", dropped, error or "queue_full"
             )
 
 

@@ -1,18 +1,18 @@
-package com.baseai.platform.job;
+package com.baseai.platform.trace;
 
 import java.io.Closeable;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 
-public final class JobRuntime {
-    private final JobCancellationToken token;
+public final class TraceRuntime {
+    private final TraceCancellationToken token;
     private final Set<Thread> threads = ConcurrentHashMap.newKeySet();
     private final Set<Future<?>> futures = ConcurrentHashMap.newKeySet();
     private final Set<Closeable> closeables = ConcurrentHashMap.newKeySet();
 
-    public JobRuntime(String jobId) { this.token = new JobCancellationToken(jobId); }
-    public JobCancellationToken token() { return token; }
+    public TraceRuntime(String traceId) { this.token = new TraceCancellationToken(traceId); }
+    public TraceCancellationToken token() { return token; }
     public void registerThread(Thread thread) { threads.add(thread); }
     public void unregisterThread(Thread thread) { threads.remove(thread); }
     public void registerFuture(Future<?> future) { futures.add(future); }

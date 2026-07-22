@@ -2,6 +2,9 @@ package com.baseai.platform.service;
 
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.config.PythonWorkerRestClientConfig;
+import com.baseai.platform.trace.TraceContext;
+import com.baseai.platform.trace.TraceContextHolder;
+import com.baseai.platform.trace.TraceRuntime;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -15,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -69,6 +73,23 @@ class AiChatClientTest {
         assertTrue(requestBody.contains("\"enableThinking\":null"));
     }
 
+    /** 父任务 Trace ID 和新生成的 Python Trace ID 应通过新请求头传播。 */
+    @Test
+    void propagatesTraceHeadersToWorker() {
+        LlmManagementService management = mock(LlmManagementService.class);
+        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null));
+        TraceRuntime runtime = new TraceRuntime("parent-trace");
+        TraceContext context = new TraceContext("parent-trace", 1L, "AI 对话", "TEST", runtime.token(), runtime);
+
+        try (TraceContextHolder.Scope ignored = TraceContextHolder.bind(context)) {
+            client(management).chat("chat", "text_model", List.of(new AiChatClient.Message("user", "hello")), 0D);
+        }
+
+        assertEquals("parent-trace", parentTraceId);
+        assertNotNull(pythonTraceId);
+        assertTrue(!pythonTraceId.isBlank());
+    }
+
     /** 创建使用 HTTP/1.1 Worker 客户端的待测对象。 */
     private AiChatClient client(LlmManagementService management) {
         PlatformProperties properties = new PlatformProperties();
@@ -76,7 +97,7 @@ class AiChatClientTest {
         internalToken = "test-internal-token";
         properties.getPythonWorker().setInternalToken(internalToken);
         RestClient restClient = new PythonWorkerRestClientConfig().pythonWorkerRestClient(properties);
-        return new AiChatClient(restClient, mock(TaskJobService.class), management);
+        return new AiChatClient(restClient, mock(TaskTraceService.class), management);
     }
 
     /** 记录 Worker 请求并返回最小 OpenAI-compatible 响应。 */
@@ -84,6 +105,8 @@ class AiChatClientTest {
         assertEquals("HTTP/1.1", exchange.getProtocol());
         requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals(internalToken, exchange.getRequestHeaders().getFirst("X-Internal-Token"));
+        parentTraceId = exchange.getRequestHeaders().getFirst("X-Parent-Trace-Id");
+        pythonTraceId = exchange.getRequestHeaders().getFirst("X-Python-Trace-Id");
         byte[] response = "{\"content\":\"ok\",\"model\":\"worker-model\",\"inputTokens\":1,\"outputTokens\":1,\"totalTokens\":2}"
             .getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -91,4 +114,7 @@ class AiChatClientTest {
         exchange.getResponseBody().write(response);
         exchange.close();
     }
+
+    private String parentTraceId;
+    private String pythonTraceId;
 }

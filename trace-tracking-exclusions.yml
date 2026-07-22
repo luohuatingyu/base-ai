@@ -1,5 +1,5 @@
 app:
-  job-tracking:
+  trace-tracking:
     excluded-methods:
       - GET
       - OPTIONS
