@@ -653,8 +653,8 @@ public PlatformAdminService.PageResult<LoginLog> loginLogs(
 
 **Git基准点更新**：
 ```
-Commit: 2e42cfd3a186939cbd272a2a36869dec608f0ad9
-Message: Add pagination to system management views
+Commit: f5957d00fd5cb95ada6c0daf58db39ee79ceeef8
+Message: Optimize pagination component size and update documentation
 Date: 2026-07-22
 Branch: master
 ```
@@ -685,7 +685,7 @@ Branch: master
 
 ### 验收标志
 - **测试报告生成时间**: 2026-07-22
-- **基准Commit**: 2e42cfd
+- **基准Commit**: f5957d0
 - **下次测试**: 当上述代码范围发生变更时
 
 ---
@@ -694,4 +694,4 @@ Branch: master
 **项目状态**: ✅ 完成（前端待重新构建）
 **维护团队**: 开发团队  
 **配置位置**: backend/src/test/resources/  
-**测试基准**: commit 2e42cfd
+**测试基准**: commit f5957d0
