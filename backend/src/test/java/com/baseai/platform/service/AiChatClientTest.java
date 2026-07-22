@@ -81,6 +81,7 @@ class AiChatClientTest {
 
     /** 记录 Worker 请求并返回最小 OpenAI-compatible 响应。 */
     private void respondToChat(HttpExchange exchange) throws IOException {
+        assertEquals("HTTP/1.1", exchange.getProtocol());
         requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals(internalToken, exchange.getRequestHeaders().getFirst("X-Internal-Token"));
         byte[] response = "{\"content\":\"ok\",\"model\":\"worker-model\",\"inputTokens\":1,\"outputTokens\":1,\"totalTokens\":2}"
