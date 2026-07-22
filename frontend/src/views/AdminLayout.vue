@@ -1,13 +1,18 @@
 <template>
   <el-container class="shell">
-    <el-aside width="236px" class="sidebar">
-      <div class="logo"><span>{{ appConfig.shortName }}</span><strong>{{ appConfig.nameEn }}</strong></div>
+    <el-aside width="272px" class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo"><span>{{ appConfig.shortName }}</span><strong>{{ appConfig.nameEn }}</strong></div>
+        <p>INTELLIGENT OPERATIONS</p>
+      </div>
+      <div class="nav-caption">导航菜单</div>
       <el-scrollbar class="nav-scroll">
         <el-menu router :default-active="$route.path" class="nav">
-          <el-menu-item index="/dashboard"><el-icon><HomeFilled /></el-icon><span>工作台</span></el-menu-item>
+          <el-menu-item v-if="dashboardAvailable" index="/dashboard"><el-icon><HomeFilled /></el-icon><span>工作台</span></el-menu-item>
           <MenuNode v-for="item in menuTree" :key="item.id" :item="item" />
         </el-menu>
       </el-scrollbar>
+      <div class="sidebar-footer"><span>权限导航已启用</span><small>仅展示可访问页面</small></div>
     </el-aside>
     <el-container>
       <el-header class="topbar">
@@ -23,13 +28,18 @@
       <el-main class="main"><router-view /></el-main>
     </el-container>
     <el-drawer v-model="mobileNavigationOpen" class="mobile-nav-drawer" direction="ltr" size="272px" :with-header="false">
-      <div class="logo"><span>{{ appConfig.shortName }}</span><strong>{{ appConfig.nameEn }}</strong></div>
+      <div class="sidebar-brand">
+        <div class="logo"><span>{{ appConfig.shortName }}</span><strong>{{ appConfig.nameEn }}</strong></div>
+        <p>INTELLIGENT OPERATIONS</p>
+      </div>
+      <div class="nav-caption">导航菜单</div>
       <el-scrollbar class="nav-scroll">
         <el-menu router :default-active="$route.path" class="nav" @select="mobileNavigationOpen = false">
-          <el-menu-item index="/dashboard"><el-icon><HomeFilled /></el-icon><span>工作台</span></el-menu-item>
+          <el-menu-item v-if="dashboardAvailable" index="/dashboard"><el-icon><HomeFilled /></el-icon><span>工作台</span></el-menu-item>
           <MenuNode v-for="item in menuTree" :key="item.id" :item="item" />
         </el-menu>
       </el-scrollbar>
+      <div class="sidebar-footer"><span>权限导航已启用</span><small>仅展示可访问页面</small></div>
     </el-drawer>
   </el-container>
 </template>
@@ -47,8 +57,11 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const mobileNavigationOpen = ref(false)
-const availablePaths = computed(() => new Set(router.getRoutes().map(item => item.path)))
-const menuTree = computed(() => buildAccessibleNavigation(auth.user?.menus, availablePaths.value, permission => auth.hasPermission(permission)))
+const navigablePaths = computed(() => new Set(router.getRoutes()
+  .filter(item => item.meta.navigable === true && item.components?.default)
+  .map(item => item.path)))
+const dashboardAvailable = computed(() => navigablePaths.value.has('/dashboard'))
+const menuTree = computed(() => buildAccessibleNavigation(auth.user?.menus, navigablePaths.value, permission => auth.hasPermission(permission)))
 const title = computed(() => findNavigationItem(menuTree.value, route.path)?.name || (route.path === '/dashboard' ? '工作台' : appConfig.nameEn))
 
 /** 从已裁剪的导航树中查找当前页面，避免显示无效菜单名称。 */
