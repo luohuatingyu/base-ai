@@ -51,7 +51,7 @@ public class LlmManagementService {
     /** 返回功能路由候选模型和思考模式配置。 */
     public WorkerRoute resolve(String featureCode){
         LlmRoute route=routeRepository.findByFeatureCode(featureCode).filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
-        return new WorkerRoute(candidates(featureCode),route!=null&&Boolean.TRUE.equals(route.getEnableThinking()));
+        return route==null?new WorkerRoute(List.of(),null):new WorkerRoute(candidates(featureCode),Boolean.TRUE.equals(route.getEnableThinking()));
     }
 
     /** 调用 Worker 验证单个模型连接。 */
