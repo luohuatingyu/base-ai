@@ -7,7 +7,10 @@
     <div class="model-config">
       <el-form :inline="true" size="small">
         <el-form-item :label="t('chat.modelPool')">
-          <el-input v-model="featureCode" :placeholder="t('chat.defaultPool')" style="width: 180px" clearable />
+          <el-select v-model="featureCode" :placeholder="t('chat.defaultPool')" style="width: 180px" clearable filterable>
+            <el-option value="" :label="t('chat.defaultPool')" />
+            <el-option v-for="route in routes" :key="route.id" :value="route.featureCode" :label="route.name + ' (' + route.featureCode + ')'" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('chat.modelType')">
           <el-select v-model="modelType" style="width: 130px">
@@ -43,7 +46,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '../api/http'
 import { useI18n } from 'vue-i18n'
@@ -59,6 +62,17 @@ const featureCode = ref('')
 const modelType = ref('text_model')
 const enableThinking = ref(false)
 const thinkingLevel = ref('MEDIUM')
+const routes = ref([])
+
+// 加载路由列表
+onMounted(async () => {
+  try {
+    const { data } = await http.get('/models/routes')
+    routes.value = data.filter(r => r.enabled)
+  } catch (error) {
+    console.error('Failed to load routes:', error)
+  }
+})
 
 /** 将当前对话发送到受权限保护的模型代理接口。 */
 async function send() {
