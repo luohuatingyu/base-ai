@@ -470,3 +470,4 @@ body { margin: 0; background: var(--app-canvas); }
   .log-line { grid-template-columns: 1fr 52px; }
   .log-line span { grid-column: 1 / -1; }
 }
+.api-key-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--el-border-color-lighter)}.api-key-row:last-child{border-bottom:0}.api-key-row code{flex:1;overflow-wrap:anywhere}
