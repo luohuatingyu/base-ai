@@ -244,13 +244,18 @@ public class LlmManagementService {
      * @return 测试结果Map，包含Worker返回的测试详情
      * @throws BusinessException 如果模型不存在、供应商不可用或Worker返回空结果
      */
-    public Map<String,Object> testModel(Long modelId){
+    public Map<String,Object> testModel(Long modelId){return testModel(modelId,null);}
+    /** 使用可选思考等级测试模型，仅允许模型自身声明的等级参与调用。 */
+    public Map<String,Object> testModel(Long modelId,String thinkingLevel){
         // 构建候选模型配置，包含解密后的API密钥
-        WorkerCandidate candidate=candidate(modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("模型不存在")));
+        String normalizedThinking=blank(thinkingLevel)?null:thinkingLevel.trim().toUpperCase(Locale.ROOT);
+        WorkerCandidate candidate=candidate(modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("模型不存在")),normalizedThinking);
         if(candidate==null)throw new BusinessException("模型供应商不可用");
 
         // 调用Worker的测试接口
-        Map<?,?> result=workerClient.post().uri("/llm/test").contentType(MediaType.APPLICATION_JSON).body(Map.of("candidate",candidate)).retrieve().body(Map.class);
+        Map<String,Object> request=new LinkedHashMap<>();
+        request.put("candidate",candidate);request.put("enableThinking",normalizedThinking!=null);
+        Map<?,?> result=workerClient.post().uri("/llm/test").contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(Map.class);
         if(result==null)throw new BusinessException("Worker 返回空测试结果");
 
         // 转换结果为String类型的Map

@@ -41,7 +41,7 @@ async def chat(request: ChatRequest):
 @app.post("/llm/test")
 async def test_llm(request: LlmTestRequest):
     """测试模型中心下发的单个候选配置。"""
-    return await llm_client.test(request.candidate)
+    return await llm_client.test(request.candidate, request.enableThinking)
 
 
 @app.post("/traces/{python_trace_id}/cancel")

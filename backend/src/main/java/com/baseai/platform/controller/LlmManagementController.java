@@ -40,7 +40,7 @@ public class LlmManagementController {
     /** 删除模型。 */
     @DeleteMapping("/{id}") @RequiredPermission("model:model:delete") public void deleteModel(@PathVariable Long id){service.deleteModel(id);}
     /** 测试指定模型的连通性和调用结果。 */
-    @PostMapping("/{id}/test") @RequiredPermission("model:model:update") public Map<String,Object> testModel(@PathVariable Long id){return service.testModel(id);}
+    @PostMapping("/{id}/test") @RequiredPermission("model:model:update") public Map<String,Object> testModel(@PathVariable Long id,@RequestParam(required=false) String thinkingLevel){return service.testModel(id,thinkingLevel);}
 
     /** 查询模型路由。 */
     @GetMapping("/routes") @RequiredPermission("model:route:list") public List<LlmManagementService.RouteView> routes(){return service.routes();}

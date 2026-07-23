@@ -40,6 +40,7 @@ class LlmTestRequest(BaseModel):
     """模型连接测试请求。"""
 
     candidate: LlmCandidate
+    enableThinking: bool = False
 
 
 class ChatResponse(BaseModel):

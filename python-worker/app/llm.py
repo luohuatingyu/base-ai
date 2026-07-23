@@ -46,10 +46,10 @@ class LlmClient:
                                    candidate.providerCode, candidate.model, sanitize_log_text(exception, 1000), exc_info=True)
         raise RuntimeError("全部候选模型调用失败: " + "; ".join(failures[-10:]))
 
-    async def test(self, candidate: LlmCandidate) -> dict:
+    async def test(self, candidate: LlmCandidate, enable_thinking: bool = False) -> dict:
         """使用最小请求测试模型连接并返回耗时。"""
         started = time.perf_counter()
-        result = await self.chat([ChatMessage(role="user", content="reply OK")], 0, [candidate], False)
+        result = await self.chat([ChatMessage(role="user", content="reply OK")], 0, [candidate], enable_thinking, route_configured=True)
         return {"success": True, "model": result.model, "durationMs": round(self._elapsed(started), 2)}
 
     async def close(self) -> None:
