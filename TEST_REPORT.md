@@ -2,7 +2,7 @@
 
 ## 📋 Git 基准点
 
-- Commit: 8d1e875826f8e386a0f6d01acd0a0ab6aa29a1be
+- Commit: 8d1e8752a214619ba91d940f5ca9f84a8e0e8026
 - 提交说明: Add provider API key viewing
 - 测试日期: 2026-07-23
 - 分支: master
