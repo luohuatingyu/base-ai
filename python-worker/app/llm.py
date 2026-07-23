@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import logging
 import time
 from collections import defaultdict
@@ -74,8 +75,8 @@ class LlmClient:
                 timeout=candidate.timeoutSeconds,
             )
             response.raise_for_status()
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
+            data = self._parse_response(response, candidate)
+            content = self._extract_content(data, candidate)
             usage = data.get("usage", {})
             input_tokens = int(usage.get("prompt_tokens", 0) or 0)
             output_tokens = int(usage.get("completion_tokens", 0) or 0)
@@ -123,6 +124,32 @@ class LlmClient:
             "capability_level": configured.get("capability_level", "middle"),
             "enable_thinking": configured.get("enable_thinking", False),
         }
+
+    def _parse_response(self, response: httpx.Response, candidate: LlmCandidate) -> dict:
+        """校验供应商响应为 JSON 对象，避免空响应被误报为 Worker 内部异常。"""
+        try:
+            data = response.json()
+        except json.JSONDecodeError as exception:
+            content_type = response.headers.get("content-type", "未提供")
+            raise RuntimeError(
+                f"供应商 {candidate.providerCode} 返回非 JSON 或空响应"
+                f"（HTTP {response.status_code}，Content-Type: {content_type}）"
+            ) from exception
+        if not isinstance(data, dict):
+            raise RuntimeError(f"供应商 {candidate.providerCode} 返回的 JSON 根节点不是对象")
+        return data
+
+    def _extract_content(self, data: dict, candidate: LlmCandidate) -> str:
+        """提取 OpenAI 兼容响应中的首个消息内容并校验必要字段。"""
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (IndexError, KeyError, TypeError) as exception:
+            raise RuntimeError(
+                f"供应商 {candidate.providerCode} 返回的 JSON 缺少 choices[0].message.content"
+            ) from exception
+        if not isinstance(content, str):
+            raise RuntimeError(f"供应商 {candidate.providerCode} 返回的消息内容不是字符串")
+        return content
 
     def _log_success(self, model, messages, content, input_tokens, output_tokens, total_tokens, started_at) -> None:
         """记录模型耗时和 Token，默认不记录完整内容。"""
