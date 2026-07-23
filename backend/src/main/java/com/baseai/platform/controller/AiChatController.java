@@ -32,7 +32,8 @@ public class AiChatController {
     @TraceType(value = "AI 对话", triggerEntry = "MANUAL", captureRequest = false)
     public ChatResponse chat(@RequestBody ChatRequest request) {
         log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());
-        AiChatClient.ChatResult result = client.chat(request.featureCode(), request.modelType(), request.messages(), request.temperature());
+        AiChatClient.ChatResult result = client.chat(request.featureCode(), request.modelType(), request.messages(),
+            request.temperature(), request.enableThinking(), request.thinkingLevel());
         log.info("event=ai_chat_succeeded model={} total_tokens={}", result.model(), result.totalTokens());
         return new ChatResponse(com.baseai.platform.trace.TraceContextHolder.currentTraceId().orElse(""), result.content(),
             result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
@@ -40,7 +41,8 @@ public class AiChatController {
 
     /** AI 对话请求参数，字段名称与前端接口协议保持一致。 */
     public record ChatRequest(@JsonProperty("model_type") String modelType, String featureCode,
-                              List<AiChatClient.Message> messages, Double temperature) {}
+                              List<AiChatClient.Message> messages, Double temperature,
+                              Boolean enableThinking, String thinkingLevel) {}
     /** AI 对话响应，包含追踪标识、模型结果和 Token 统计。 */
     public record ChatResponse(String traceId, String content, String model, int inputTokens, int outputTokens, int totalTokens) {}
 }

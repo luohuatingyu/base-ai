@@ -78,10 +78,13 @@ public class AiChatClient {
      * @param modelType 模型类型，指定要使用的模型类别。如果为空或空白，默认使用"text_model"
      * @param messages 对话消息列表，包含角色和内容
      * @param temperature 温度参数，控制模型输出的随机性。如果为null，默认使用0.0（确定性输出）
+     * @param enableThinking 是否启用思考模式。如果为null，使用路由配置的默认值
+     * @param thinkingLevel 思考级别（LOW/MEDIUM/HIGH/EXTRA_HIGH/MAX/ULTRA）。仅在enableThinking为true时有效
      * @return ChatResult 对话结果，包含生成的内容、使用的模型名称和token统计信息
      * @throws BusinessException 当模型服务返回空响应或调用失败时抛出业务异常
      */
-    public ChatResult chat(String featureCode, String modelType, List<Message> messages, Double temperature) {
+    public ChatResult chat(String featureCode, String modelType, List<Message> messages, Double temperature,
+                          Boolean enableThinking, String thinkingLevel) {
         // 设置追踪检查点，记录当前执行位置
         TraceContextHolder.checkpoint();
 
@@ -100,13 +103,17 @@ public class AiChatClient {
         // 注册Python调用追踪记录，关联父追踪ID
         taskTraceService.registerPython(parentTraceId, pythonTraceId, "/llm/chat");
 
+        // 确定最终的思考模式开关：优先使用请求参数，其次使用路由配置
+        Boolean finalEnableThinking = enableThinking != null ? enableThinking : route.enableThinking();
+
         try {
             // 构造请求并发送到Python Worker的/llm/chat接口
             ChatResult result = restClient.post().uri("/llm/chat")
                 .header("X-Python-Trace-Id", pythonTraceId)  // 传递Python追踪ID用于链路追踪
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new ChatRequest(normalizedFeature, modelType == null || modelType.isBlank() ? "text_model" : modelType,
-                    messages, temperature == null ? 0D : temperature, route.candidates(), route.enableThinking(), route.routeConfigured())).retrieve().body(ChatResult.class);
+                    messages, temperature == null ? 0D : temperature, route.candidates(), finalEnableThinking,
+                    thinkingLevel, route.routeConfigured())).retrieve().body(ChatResult.class);
 
             // 验证响应不为空
             if (result == null) throw new BusinessException("模型服务返回空响应");
@@ -150,9 +157,11 @@ public class AiChatClient {
      * @param temperature 温度参数，控制输出随机性
      * @param candidates 候选模型列表，由模型管理服务提供
      * @param enableThinking 是否启用思维链（chain-of-thought）功能
+     * @param thinkingLevel 思考级别（LOW/MEDIUM/HIGH/EXTRA_HIGH/MAX/ULTRA）
+     * @param routeConfigured 路由是否已配置
      */
     public record ChatRequest(String featureCode, @JsonProperty("model_type") String modelType, List<Message> messages, double temperature,
-                              List<LlmManagementService.WorkerCandidate> candidates, Boolean enableThinking, boolean routeConfigured) {}
+                              List<LlmManagementService.WorkerCandidate> candidates, Boolean enableThinking, String thinkingLevel, boolean routeConfigured) {}
 
     /**
      * LLM对话结果对象

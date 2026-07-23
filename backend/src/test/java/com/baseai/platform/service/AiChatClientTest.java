@@ -50,7 +50,7 @@ class AiChatClientTest {
         when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), true, true));
 
         AiChatClient.ChatResult result = client(management).chat("chat", "text_model",
-            List.of(new AiChatClient.Message("user", "hello")), 0D);
+            List.of(new AiChatClient.Message("user", "hello")), 0D, null, null);
 
         assertEquals("worker-model", result.model());
         assertTrue(requestBody.contains("\"featureCode\":\"chat\""));
@@ -66,7 +66,7 @@ class AiChatClientTest {
         LlmManagementService management = mock(LlmManagementService.class);
         when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null, false));
 
-        client(management).chat(null, null, List.of(new AiChatClient.Message("user", "hello")), null);
+        client(management).chat(null, null, List.of(new AiChatClient.Message("user", "hello")), null, null, null);
 
         assertTrue(requestBody.contains("\"featureCode\":\"chat\""));
         assertTrue(requestBody.contains("\"model_type\":\"text_model\""));
@@ -83,7 +83,7 @@ class AiChatClientTest {
         TraceContext context = new TraceContext("parent-trace", 1L, "AI 对话", "TEST", runtime.token(), runtime);
 
         try (TraceContextHolder.Scope ignored = TraceContextHolder.bind(context)) {
-            client(management).chat("chat", "text_model", List.of(new AiChatClient.Message("user", "hello")), 0D);
+            client(management).chat("chat", "text_model", List.of(new AiChatClient.Message("user", "hello")), 0D, null, null);
         }
 
         assertEquals("parent-trace", parentTraceId);
