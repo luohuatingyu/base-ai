@@ -22,6 +22,8 @@ public class LlmManagementController {
 
     /** 查询可用的模型供应商。 */
     @GetMapping("/providers") @RequiredPermission("model:provider:list") public List<LlmManagementService.ProviderView> providers(){return service.providers();}
+    /** 查询指定供应商的明文 API Key，仅允许具备编辑权限的用户调用。 */
+    @GetMapping("/providers/{id}/api-keys") @RequiredPermission("model:provider:update") public LlmManagementService.ProviderApiKeysView providerApiKeys(@PathVariable Long id){return service.providerApiKeys(id);}
     /** 创建模型供应商。 */
     @PostMapping("/providers") @RequiredPermission("model:provider:create") public LlmManagementService.ProviderView createProvider(@RequestBody LlmManagementService.ProviderCommand command){return service.createProvider(command);}
     /** 更新模型供应商。 */

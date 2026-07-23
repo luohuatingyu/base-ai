@@ -75,6 +75,19 @@ public class LlmManagementService {
     public List<ProviderView> providers(){return providerRepository.findAll().stream().sorted(Comparator.comparing(LlmProvider::getId)).map(this::providerView).toList();}
 
     /**
+     * 查询单个供应商的明文 API Key，并统一格式为一行一个密钥。
+     *
+     * <p>此方法只应由受更新权限保护的接口调用，列表接口仍不得返回明文。</p>
+     *
+     * @param id 供应商ID
+     * @return 含明文密钥的供应商密钥视图
+     */
+    public ProviderApiKeysView providerApiKeys(Long id){
+        LlmProvider provider=providerRepository.findById(id).orElseThrow(()->BusinessException.notFound("供应商不存在"));
+        return new ProviderApiKeysView(provider.getId(),normalizeApiKeys(cryptoService.decrypt(provider.getApiKeysEncrypted())));
+    }
+
+    /**
      * 创建新的模型供应商
      *
      * @param command 供应商创建命令，包含编码、名称、服务地址、API密钥等信息
@@ -440,6 +453,15 @@ public class LlmManagementService {
      */
     private boolean blank(String value){return value==null||value.isBlank();}
 
+    /** 将逗号或换行分隔的密钥标准化为每行一个密钥。 */
+    private String normalizeApiKeys(String value){
+        return Arrays.stream(value.split("[,\n]"))
+            .map(String::trim)
+            .filter(key->!key.isBlank())
+            .reduce((first,second)->first+"\n"+second)
+            .orElse("");
+    }
+
     /**
      * 验证必填字符串（工具方法）
      *
@@ -454,6 +476,7 @@ public class LlmManagementService {
     }
     public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,Boolean enabled){}
     public record ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,Boolean enabled){}
+    public record ProviderApiKeysView(Long id,String apiKeys){}
     public record ModelCommand(String code,String name,Long providerId,String modelName,String modelType,String capabilityLevel,Boolean enabled){}
     public record RouteCommand(String featureCode,String name,List<Long> candidateModelIds,Boolean enableThinking,Boolean enabled){}
     public record RouteView(Long id,String featureCode,String name,List<Long> candidateModelIds,Boolean enableThinking,Boolean enabled){}
