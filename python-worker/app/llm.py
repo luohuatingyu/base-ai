@@ -66,6 +66,7 @@ class LlmClient:
                 "temperature": temperature,
                 "messages": [message.model_dump() for message in messages],
                 "enable_thinking": enable_thinking,
+                "stream": False,
             }
             started_at = time.perf_counter()
             response = await self.client.post(

@@ -1,6 +1,7 @@
 """LLM 供应商响应解析测试。"""
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -36,11 +37,18 @@ def candidate() -> LlmCandidate:
     )
 
 
-async def invoke_with(response: httpx.Response):
+async def invoke_with(response: httpx.Response, request_holder: dict | None = None):
     """通过 MockTransport 调用单次模型请求。"""
     client = LlmClient(settings())
     await client.client.aclose()
-    client.client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: response))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """保存请求体，以便断言 OpenAI 兼容参数。"""
+        if request_holder is not None:
+            request_holder["request"] = request
+        return response
+
+    client.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     try:
         return await client._invoke(candidate(), "test-key", [ChatMessage(role="user", content="test")], 0, False)
     finally:
@@ -54,12 +62,14 @@ def test_invoke_returns_openai_compatible_json_response():
         json={"choices": [{"message": {"content": "OK"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}},
     )
 
-    result = asyncio.run(invoke_with(response))
+    request_holder = {}
+    result = asyncio.run(invoke_with(response, request_holder))
 
     assert result.content == "OK"
     assert result.inputTokens == 1
     assert result.outputTokens == 2
     assert result.totalTokens == 3
+    assert json.loads(request_holder["request"].content)["stream"] is False
 
 
 @pytest.mark.parametrize(
