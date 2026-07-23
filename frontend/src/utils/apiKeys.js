@@ -12,6 +12,17 @@ export function splitApiKeys(value) {
   return normalizeApiKeys(value).split('\n').filter(Boolean)
 }
 
+/** 为 API Key 编辑表单创建行数据，至少保留一条可填写的空行。 */
+export function toApiKeyRows(value) {
+  const keys = splitApiKeys(value)
+  return keys.length ? keys : ['']
+}
+
+/** 将编辑行合并为可提交的 API Key 文本，并移除空白行。 */
+export function serializeApiKeyRows(rows) {
+  return normalizeApiKeys((rows ?? []).join('\n'))
+}
+
 /** 复制单个 API Key，便于调用方处理浏览器权限或写入失败。 */
 export async function copyApiKey(value, clipboard = navigator.clipboard) {
   if (!clipboard?.writeText) throw new Error('Clipboard is unavailable')

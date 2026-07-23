@@ -471,3 +471,4 @@ body { margin: 0; background: var(--app-canvas); }
   .log-line span { grid-column: 1 / -1; }
 }
 .api-key-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--el-border-color-lighter)}.api-key-row:last-child{border-bottom:0}.api-key-row code{flex:1;overflow-wrap:anywhere}
+.api-key-editor-row{display:flex;width:100%;align-items:center;gap:12px;margin-bottom:8px}.api-key-editor-row .el-input{flex:1}
