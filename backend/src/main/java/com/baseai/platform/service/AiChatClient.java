@@ -106,7 +106,7 @@ public class AiChatClient {
                 .header("X-Python-Trace-Id", pythonTraceId)  // 传递Python追踪ID用于链路追踪
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new ChatRequest(normalizedFeature, modelType == null || modelType.isBlank() ? "text_model" : modelType,
-                    messages, temperature == null ? 0D : temperature, route.candidates(), route.enableThinking())).retrieve().body(ChatResult.class);
+                    messages, temperature == null ? 0D : temperature, route.candidates(), route.enableThinking(), route.routeConfigured())).retrieve().body(ChatResult.class);
 
             // 验证响应不为空
             if (result == null) throw new BusinessException("模型服务返回空响应");
@@ -152,7 +152,7 @@ public class AiChatClient {
      * @param enableThinking 是否启用思维链（chain-of-thought）功能
      */
     public record ChatRequest(String featureCode, @JsonProperty("model_type") String modelType, List<Message> messages, double temperature,
-                              List<LlmManagementService.WorkerCandidate> candidates, Boolean enableThinking) {}
+                              List<LlmManagementService.WorkerCandidate> candidates, Boolean enableThinking, boolean routeConfigured) {}
 
     /**
      * LLM对话结果对象

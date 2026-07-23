@@ -209,9 +209,17 @@ public class LlmManagementService {
      * @return 可用的候选模型列表，如果路由未配置或被禁用则返回空列表
      */
     public List<WorkerCandidate> candidates(String featureCode){
-        return routeRepository.findByFeatureCode(featureCode).filter(route->Boolean.TRUE.equals(route.getEnabled())).stream()
-            .flatMap(route->parseIds(route.getCandidateModelIds()).stream()).map(modelRepository::findById).flatMap(Optional::stream)
-            .filter(model->Boolean.TRUE.equals(model.getEnabled())).map(this::candidate).filter(Objects::nonNull).toList();
+        LlmRoute route=routeRepository.findByFeatureCode(featureCode).filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
+        if(route==null)return List.of();
+        List<LlmModel> models;
+        if(!parseIds(route.getProviderIds()).isEmpty()) {
+            Set<Long> providers=new LinkedHashSet<>(parseIds(route.getProviderIds()));
+            models=modelRepository.findAll().stream().filter(model->providers.contains(model.getProviderId()))
+                .filter(model->Objects.equals(route.getCapabilityLevel(),model.getCapabilityLevel())).toList();
+        } else models=parseIds(route.getCandidateModelIds()).stream().map(modelRepository::findById).flatMap(Optional::stream).toList();
+        return models.stream().filter(model->Boolean.TRUE.equals(model.getEnabled()))
+            .map(model->candidate(model, Boolean.TRUE.equals(route.getEnableThinking())?route.getThinkingLevel():null))
+            .filter(Objects::nonNull).toList();
     }
 
     /**
@@ -224,7 +232,7 @@ public class LlmManagementService {
      */
     public WorkerRoute resolve(String featureCode){
         LlmRoute route=routeRepository.findByFeatureCode(featureCode).filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
-        return route==null?new WorkerRoute(List.of(),null):new WorkerRoute(candidates(featureCode),Boolean.TRUE.equals(route.getEnableThinking()));
+        return route==null?new WorkerRoute(List.of(),null,false):new WorkerRoute(candidates(featureCode),Boolean.TRUE.equals(route.getEnableThinking()),true);
     }
 
     /**
@@ -279,6 +287,7 @@ public class LlmManagementService {
         provider.setConcurrencyLimit(positive(command.concurrencyLimit(),4)); // 默认并发限制为4
         provider.setConcurrencyLevel(blank(command.concurrencyLevel())?"PROVIDER":command.concurrencyLevel().toUpperCase(Locale.ROOT));
         provider.setTimeoutSeconds(positive(command.timeoutSeconds(),60)); // 默认超时60秒
+        provider.setThinkingParameter(blank(command.thinkingParameter())?"reasoning_effort":command.thinkingParameter().trim());
         provider.setEnabled(command.enabled()==null||command.enabled()); // 默认启用
 
         return providerRepository.save(provider);
@@ -309,6 +318,7 @@ public class LlmManagementService {
         model.setModelName(require(command.modelName(),"请输入模型标识"));
         model.setModelType(blank(command.modelType())?"TEXT":command.modelType().toUpperCase(Locale.ROOT)); // 默认TEXT类型
         model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT)); // 默认MIDDLE能力级别
+        model.setThinkingLevels(normalizeThinkingLevels(command.thinkingLevels()));
         model.setEnabled(command.enabled()==null||command.enabled()); // 默认启用
 
         return modelRepository.save(model);
@@ -330,18 +340,23 @@ public class LlmManagementService {
      */
     private LlmRoute saveRoute(LlmRoute route,RouteCommand command){
         List<Long> ids=command.candidateModelIds()==null?List.of():command.candidateModelIds();
-        if(ids.isEmpty())throw new BusinessException("至少选择一个候选模型");
+        List<Long> providerIds=command.providerIds()==null?List.of():command.providerIds();
+        if(ids.isEmpty()&&providerIds.isEmpty())throw new BusinessException("至少选择一个候选模型或供应商");
 
         // 验证所有候选模型是否都存在
-        if(modelRepository.findAllById(ids).size()!=ids.size())
+        if(!ids.isEmpty()&&modelRepository.findAllById(ids).size()!=ids.size())
             throw BusinessException.notFound("候选模型不存在");
+        if(!providerIds.isEmpty()&&providerRepository.findAllById(providerIds).size()!=providerIds.size())throw BusinessException.notFound("供应商不存在");
 
         route.setFeatureCode(require(command.featureCode(),"请输入功能编码"));
         route.setName(require(command.name(),"请输入路由名称"));
 
         // 将模型ID列表转换为逗号分隔的字符串
         route.setCandidateModelIds(ids.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));
+        route.setProviderIds(providerIds.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));
         route.setEnableThinking(Boolean.TRUE.equals(command.enableThinking()));
+        route.setCapabilityLevel(providerIds.isEmpty()?null:require(command.capabilityLevel(),"请选择模型能力级别").toUpperCase(Locale.ROOT));
+        route.setThinkingLevel(Boolean.TRUE.equals(command.enableThinking())?require(command.thinkingLevel(),"请选择思考级别").toUpperCase(Locale.ROOT):null);
         route.setEnabled(command.enabled()==null||command.enabled()); // 默认启用
 
         return routeRepository.save(route);
@@ -359,7 +374,9 @@ public class LlmManagementService {
      * @param model 模型实体对象
      * @return WorkerCandidate对象，如果供应商不存在或未启用则返回null
      */
-    private WorkerCandidate candidate(LlmModel model){
+    private WorkerCandidate candidate(LlmModel model){return candidate(model,null);}
+    /** 根据路由所需思考等级构建候选；模型未配置该等级时不参与供应商池。 */
+    private WorkerCandidate candidate(LlmModel model,String thinkingLevel){
         // 查找并验证供应商是否启用
         LlmProvider provider=providerRepository.findById(model.getProviderId())
             .filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
@@ -371,6 +388,8 @@ public class LlmManagementService {
             .filter(value->!value.isBlank())
             .toList();
 
+        String thinkingValue=thinkingLevel==null?null:thinkingMappings(model.getThinkingLevels()).get(thinkingLevel);
+        if(thinkingLevel!=null&&blank(thinkingValue))return null;
         return new WorkerCandidate(
             provider.getCode(),
             provider.getBaseUrl(),
@@ -378,7 +397,7 @@ public class LlmManagementService {
             model.getModelName(),
             provider.getConcurrencyLimit(),
             provider.getConcurrencyLevel(),
-            provider.getTimeoutSeconds()
+            provider.getTimeoutSeconds(), provider.getThinkingParameter(), thinkingValue
         );
     }
     /**
@@ -399,6 +418,7 @@ public class LlmManagementService {
             item.getConcurrencyLimit(),
             item.getConcurrencyLevel(),
             item.getTimeoutSeconds(),
+            item.getThinkingParameter(),
             item.getEnabled()
         );
     }
@@ -417,6 +437,7 @@ public class LlmManagementService {
             item.getFeatureCode(),
             item.getName(),
             parseIds(item.getCandidateModelIds()), // 解析模型ID列表
+            parseIds(item.getProviderIds()), item.getCapabilityLevel(), item.getThinkingLevel(),
             item.getEnableThinking(),
             item.getEnabled()
         );
@@ -435,6 +456,20 @@ public class LlmManagementService {
             .filter(v->!v.isBlank())
             .map(Long::valueOf)
             .toList();
+    }
+    /** 规范化并校验思考等级映射，避免未声明的等级参与路由匹配。 */
+    private String normalizeThinkingLevels(String value){
+        if(blank(value))return "";
+        Map<String,String> mappings=thinkingMappings(value);
+        return mappings.entrySet().stream().map(item->item.getKey()+"="+item.getValue()).reduce((a,b)->a+","+b).orElse("");
+    }
+    /** 解析逗号或换行分隔的“标准等级=供应商值”配置。 */
+    private Map<String,String> thinkingMappings(String value){
+        if(blank(value))return Map.of();
+        Set<String> levels=Set.of("LOW","MEDIUM","HIGH","EXTRA_HIGH","MAX","ULTRA");
+        Map<String,String> result=new LinkedHashMap<>();
+        for(String item:value.split("[,\\n]")){String[] pair=item.split("=",2);if(pair.length==2&&!blank(pair[1])){String level=pair[0].trim().toUpperCase(Locale.ROOT);if(levels.contains(level))result.put(level,pair[1].trim());}}
+        return result;
     }
     /**
      * 验证正整数，提供默认值（工具方法）
@@ -474,12 +509,12 @@ public class LlmManagementService {
         if(blank(value))throw new BusinessException(message);
         return value.trim();
     }
-    public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,Boolean enabled){}
-    public record ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,Boolean enabled){}
+    public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
+    public record ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
     public record ProviderApiKeysView(Long id,String apiKeys){}
-    public record ModelCommand(String code,String name,Long providerId,String modelName,String modelType,String capabilityLevel,Boolean enabled){}
-    public record RouteCommand(String featureCode,String name,List<Long> candidateModelIds,Boolean enableThinking,Boolean enabled){}
-    public record RouteView(Long id,String featureCode,String name,List<Long> candidateModelIds,Boolean enableThinking,Boolean enabled){}
-    public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds){}
-    public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking){}
+    public record ModelCommand(String code,String name,Long providerId,String modelName,String modelType,String capabilityLevel,String thinkingLevels,Boolean enabled){}
+    public record RouteCommand(String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,Boolean enableThinking,String thinkingLevel,Boolean enabled){}
+    public record RouteView(Long id,String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,String thinkingLevel,Boolean enableThinking,Boolean enabled){}
+    public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue){}
+    public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
 }

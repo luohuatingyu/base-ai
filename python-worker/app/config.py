@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 POOL_RESERVED_FIELDS = {
-    "base_url", "api_key", "api_keys", "concurrency", "concurrency_level", "concurrency_mode", "timeout_seconds",
+    "base_url", "api_key", "api_keys", "concurrency", "concurrency_level", "concurrency_mode", "timeout_seconds", "thinking_parameter",
 }
 
 
@@ -70,11 +70,25 @@ def _load_group_pools(path: str) -> list[dict]:
             normalized_type = str(model_type).strip()
             if model_type in POOL_RESERVED_FIELDS or not normalized_type or not isinstance(raw_models, dict):
                 continue
-            normalized_models = {
-                str(level).strip(): str(model_name).strip()
-                for level, model_name in raw_models.items()
-                if str(level).strip() and str(model_name).strip()
-            }
+            normalized_models = {}
+            for level, model_config in raw_models.items():
+                normalized_level = str(level).strip()
+                if not normalized_level:
+                    continue
+                if isinstance(model_config, dict):
+                    model_name = str(model_config.get("model", "")).strip()
+                    thinking_levels = model_config.get("thinking_levels", {})
+                    if model_name:
+                        normalized_models[normalized_level] = {
+                            "model": model_name,
+                            "thinking_levels": {
+                                str(key).strip(): str(value).strip()
+                                for key, value in thinking_levels.items()
+                                if str(key).strip() and str(value).strip()
+                            } if isinstance(thinking_levels, dict) else {},
+                        }
+                elif str(model_config).strip():
+                    normalized_models[normalized_level] = str(model_config).strip()
             if normalized_models:
                 models[normalized_type] = normalized_models
         if not base_url or not api_keys or not models:
@@ -103,6 +117,7 @@ def _load_features(path: str) -> dict[str, dict]:
         features[str(feature_code).strip()] = {
             "capability_level": _non_empty(raw_feature.get("capability_level"), "middle"),
             "enable_thinking": _boolean(str(raw_feature.get("enable_thinking", "false"))),
+            "thinking_level": _non_empty(raw_feature.get("thinking_level"), "medium"),
         }
     return features
 

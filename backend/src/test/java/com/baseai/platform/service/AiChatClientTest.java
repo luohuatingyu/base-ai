@@ -46,8 +46,8 @@ class AiChatClientTest {
     void usesManagedCandidatesForConfiguredFeature() {
         LlmManagementService management = mock(LlmManagementService.class);
         LlmManagementService.WorkerCandidate candidate = new LlmManagementService.WorkerCandidate(
-            "managed-provider", "https://provider.example/v1", List.of("key"), "managed-model", 3, "API_KEY", 45);
-        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), true));
+            "managed-provider", "https://provider.example/v1", List.of("key"), "managed-model", 3, "API_KEY", 45, "reasoning_effort", "xhigh");
+        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), true, true));
 
         AiChatClient.ChatResult result = client(management).chat("chat", "text_model",
             List.of(new AiChatClient.Message("user", "hello")), 0D);
@@ -56,6 +56,7 @@ class AiChatClientTest {
         assertTrue(requestBody.contains("\"featureCode\":\"chat\""));
         assertTrue(requestBody.contains("\"providerCode\":\"managed-provider\""));
         assertTrue(requestBody.contains("\"enableThinking\":true"));
+        assertTrue(requestBody.contains("\"routeConfigured\":true"));
         verify(management).resolve("chat");
     }
 
@@ -63,7 +64,7 @@ class AiChatClientTest {
     @Test
     void keepsDefaultPoolFallbackWhenFeatureRouteIsMissing() {
         LlmManagementService management = mock(LlmManagementService.class);
-        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null));
+        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null, false));
 
         client(management).chat(null, null, List.of(new AiChatClient.Message("user", "hello")), null);
 
@@ -77,7 +78,7 @@ class AiChatClientTest {
     @Test
     void propagatesTraceHeadersToWorker() {
         LlmManagementService management = mock(LlmManagementService.class);
-        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null));
+        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null, false));
         TraceRuntime runtime = new TraceRuntime("parent-trace");
         TraceContext context = new TraceContext("parent-trace", 1L, "AI 对话", "TEST", runtime.token(), runtime);
 

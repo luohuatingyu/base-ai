@@ -5,9 +5,15 @@ group_pools:
       - replace-with-api-key-1
       - replace-with-api-key-2
     text_model:
-      low: replace-with-low-model
-      middle: replace-with-middle-model
-      high: replace-with-high-model
+      low:
+        model: replace-with-low-model
+      middle:
+        model: replace-with-middle-model
+        thinking_levels:
+          low: low
+          extra_high: xhigh
+      high:
+        model: replace-with-high-model
     vision_model:
       low: replace-with-low-vision-model
       middle: replace-with-middle-vision-model
@@ -17,3 +23,4 @@ group_pools:
     concurrency: 4
     concurrency_level: api-key
     concurrency_mode: qps
+    thinking_parameter: reasoning_effort

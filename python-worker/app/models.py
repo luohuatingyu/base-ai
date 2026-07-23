@@ -20,6 +20,8 @@ class LlmCandidate(BaseModel):
     concurrencyLimit: int = Field(default=4, ge=1, le=1000)
     concurrencyLevel: str = Field(default="PROVIDER", pattern="^(PROVIDER|API_KEY)$")
     timeoutSeconds: int = Field(default=60, ge=1, le=600)
+    thinkingParameter: str | None = Field(default=None, max_length=64)
+    thinkingValue: str | None = Field(default=None, max_length=100)
 
 
 class ChatRequest(BaseModel):
@@ -31,6 +33,7 @@ class ChatRequest(BaseModel):
     temperature: float = Field(default=0, ge=0, le=2)
     candidates: list[LlmCandidate] = Field(default_factory=list, max_length=20)
     enableThinking: bool | None = None
+    routeConfigured: bool = False
 
 
 class LlmTestRequest(BaseModel):

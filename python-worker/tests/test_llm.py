@@ -72,6 +72,41 @@ def test_invoke_returns_openai_compatible_json_response():
     assert json.loads(request_holder["request"].content)["stream"] is False
 
 
+def test_invoke_sends_mapped_thinking_value():
+    """开启思考时应将模型映射后的供应商等级写入指定字段。"""
+    response = httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+    request_holder = {}
+    configured = candidate().model_copy(update={"thinkingParameter": "reasoning_effort", "thinkingValue": "xhigh"})
+
+    async def invoke():
+        def handler(request: httpx.Request) -> httpx.Response:
+            """记录思考请求并返回 OpenAI 兼容响应。"""
+            request_holder["request"] = request
+            return response
+
+        client = LlmClient(settings())
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            return await client._invoke(configured, "test-key", [ChatMessage(role="user", content="test")], 0, True)
+        finally:
+            await client.close()
+
+    asyncio.run(invoke())
+
+    assert json.loads(request_holder["request"].content)["reasoning_effort"] == "xhigh"
+
+
+def test_configured_route_with_no_candidates_does_not_use_yaml_fallback():
+    """路由已配置但无匹配模型时，不能退回 YAML 默认模型池。"""
+    client = LlmClient(settings())
+    try:
+        with pytest.raises(RuntimeError, match="未配置可用的模型能力路由"):
+            asyncio.run(client.chat([ChatMessage(role="user", content="test")], 0, [], True, route_configured=True))
+    finally:
+        asyncio.run(client.close())
+
+
 @pytest.mark.parametrize(
     ("body", "content_type"),
     [(b"", "application/json"), (b"<html>gateway</html>", "text/html")],

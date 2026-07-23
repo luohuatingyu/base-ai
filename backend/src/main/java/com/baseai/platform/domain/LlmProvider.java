@@ -13,6 +13,8 @@ public class LlmProvider {
     @Column(nullable = false) private Integer concurrencyLimit = 4;
     @Column(nullable = false, length = 24) private String concurrencyLevel = "PROVIDER";
     @Column(nullable = false) private Integer timeoutSeconds = 60;
+    /** 思考等级的供应商请求字段，默认兼容 OpenAI reasoning_effort。 */
+    @Column(nullable = false, length = 64) private String thinkingParameter = "reasoning_effort";
     @Column(nullable = false) private Boolean enabled = true;
     public Long getId() { return id; } public String getCode() { return code; } public void setCode(String value) { code=value; }
     public String getName() { return name; } public void setName(String value) { name=value; }
@@ -21,5 +23,6 @@ public class LlmProvider {
     public Integer getConcurrencyLimit() { return concurrencyLimit; } public void setConcurrencyLimit(Integer value) { concurrencyLimit=value; }
     public String getConcurrencyLevel() { return concurrencyLevel; } public void setConcurrencyLevel(String value) { concurrencyLevel=value; }
     public Integer getTimeoutSeconds() { return timeoutSeconds; } public void setTimeoutSeconds(Integer value) { timeoutSeconds=value; }
+    public String getThinkingParameter() { return thinkingParameter; } public void setThinkingParameter(String value) { thinkingParameter=value; }
     public Boolean getEnabled() { return enabled; } public void setEnabled(Boolean value) { enabled=value; }
 }

@@ -26,10 +26,10 @@ class LlmClient:
 
     async def chat(self, messages: list[ChatMessage], temperature: float,
                    candidates: list[LlmCandidate] | None = None, enable_thinking: bool | None = None,
-                   model_type: str = "text_model") -> ChatResponse:
+                   model_type: str = "text_model", route_configured: bool = False) -> ChatResponse:
         """依次尝试候选模型和 API Key，首个成功结果立即返回。"""
         feature = self._feature_config(model_type)
-        configured = candidates or self._fallback_candidates(feature)
+        configured = candidates if route_configured else (candidates or self._fallback_candidates(feature))
         thinking = feature["enable_thinking"] if enable_thinking is None else enable_thinking
         if not configured:
             raise RuntimeError("未配置可用的模型能力路由")
@@ -68,6 +68,8 @@ class LlmClient:
                 "enable_thinking": enable_thinking,
                 "stream": False,
             }
+            if enable_thinking and candidate.thinkingParameter and candidate.thinkingValue:
+                payload[candidate.thinkingParameter] = candidate.thinkingValue
             started_at = time.perf_counter()
             response = await self.client.post(
                 f"{candidate.baseUrl.rstrip('/')}/chat/completions",
@@ -106,14 +108,20 @@ class LlmClient:
         selected = feature or self._feature_config("text_model")
         candidates = []
         for pool in self.settings.ai_group_pools:
-            model = pool["models"].get(selected["model_type"], {}).get(selected["capability_level"])
-            if not model:
+            model_config = pool["models"].get(selected["model_type"], {}).get(selected["capability_level"])
+            if not model_config:
+                continue
+            model = model_config["model"] if isinstance(model_config, dict) else model_config
+            thinking_value = model_config.get("thinking_levels", {}).get(selected["thinking_level"]) if isinstance(model_config, dict) else None
+            if selected["enable_thinking"] and not thinking_value:
                 continue
             candidates.append(LlmCandidate(
                 providerCode=pool["pool_id"], baseUrl=pool["base_url"], apiKeys=list(pool["api_keys"]),
                 model=model, concurrencyLimit=pool["concurrency"],
                 concurrencyLevel=pool["concurrency_level"],
                 timeoutSeconds=max(1, int(self.settings.llm_timeout_seconds)),
+                thinkingParameter=pool.get("thinking_parameter", "reasoning_effort") if selected["enable_thinking"] else None,
+                thinkingValue=thinking_value,
             ))
         return candidates
 
@@ -124,6 +132,7 @@ class LlmClient:
             "model_type": str(model_type or "").strip() or "text_model",
             "capability_level": configured.get("capability_level", "middle"),
             "enable_thinking": configured.get("enable_thinking", False),
+            "thinking_level": configured.get("thinking_level", "medium"),
         }
 
     def _parse_response(self, response: httpx.Response, candidate: LlmCandidate) -> dict:
