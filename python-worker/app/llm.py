@@ -132,7 +132,7 @@ class LlmClient:
             "model_type": str(model_type or "").strip() or "text_model",
             "capability_level": configured.get("capability_level", "middle"),
             "enable_thinking": configured.get("enable_thinking", False),
-            "thinking_level": configured.get("thinking_level", "medium"),
+            "thinking_level": configured.get("thinking_level"),
         }
 
     def _parse_response(self, response: httpx.Response, candidate: LlmCandidate) -> dict:

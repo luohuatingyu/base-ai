@@ -114,10 +114,11 @@ def _load_features(path: str) -> dict[str, dict]:
     for feature_code, raw_feature in raw_features.items():
         if not isinstance(raw_feature, dict):
             continue
+        enable_thinking = _boolean(str(raw_feature.get("enable_thinking", "false")))
         features[str(feature_code).strip()] = {
             "capability_level": _non_empty(raw_feature.get("capability_level"), "middle"),
-            "enable_thinking": _boolean(str(raw_feature.get("enable_thinking", "false"))),
-            "thinking_level": _non_empty(raw_feature.get("thinking_level"), "medium"),
+            "enable_thinking": enable_thinking,
+            "thinking_level": _non_empty(raw_feature.get("thinking_level"), "medium") if enable_thinking else None,
         }
     return features
 
