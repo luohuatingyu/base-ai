@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.baseai.platform.trace.TraceType;
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.service.AiChatClient;
+import com.baseai.platform.service.LlmManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -22,9 +23,20 @@ import java.util.List;
 public class AiChatController {
     private static final Logger log = LoggerFactory.getLogger(AiChatController.class);
     private final AiChatClient client;
+    private final LlmManagementService llmManagementService;
 
-    public AiChatController(AiChatClient client) {
+    public AiChatController(AiChatClient client, LlmManagementService llmManagementService) {
         this.client = client;
+        this.llmManagementService = llmManagementService;
+    }
+
+    /** 获取可用的路由列表，供对话页面选择模型池。 */
+    @GetMapping("/routes")
+    public List<RouteOption> getAvailableRoutes() {
+        return llmManagementService.routes().stream()
+            .filter(LlmManagementService.RouteView::enabled)
+            .map(r -> new RouteOption(r.id(), r.featureCode(), r.name()))
+            .toList();
     }
 
     /** 建立任务上下文并代理一次通用模型对话。 */
@@ -39,6 +51,8 @@ public class AiChatController {
             result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
     }
 
+    /** 路由选项，用于前端下拉列表。 */
+    public record RouteOption(Long id, String featureCode, String name) {}
     /** AI 对话请求参数，字段名称与前端接口协议保持一致。 */
     public record ChatRequest(@JsonProperty("model_type") String modelType, String featureCode,
                               List<AiChatClient.Message> messages, Double temperature,

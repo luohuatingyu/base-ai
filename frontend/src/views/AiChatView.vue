@@ -67,8 +67,8 @@ const routes = ref([])
 // 加载路由列表
 onMounted(async () => {
   try {
-    const { data } = await http.get('/models/routes')
-    routes.value = data.filter(r => r.enabled)
+    const { data } = await http.get('/ai/chat/routes')
+    routes.value = data
   } catch (error) {
     console.error('Failed to load routes:', error)
   }
