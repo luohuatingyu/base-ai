@@ -30,6 +30,12 @@ test('后台骨架和内容容器允许正确收缩且不会截断页面', () =>
   assertDeclarations(globalStyles, '.section-head > div', [/min-width:\s*0/])
 })
 
+test('收缩侧边栏的菜单宽度适配内层可用空间，图标保持居中', () => {
+  assertDeclarations(globalStyles, '.sidebar--collapsed .nav-scroll', [/width:\s*100%/])
+  assertDeclarations(globalStyles, '.sidebar--collapsed .nav.el-menu--collapse', [/width:\s*100%/])
+  assertDeclarations(globalStyles, '.sidebar--collapsed .nav .el-menu-item,\n.sidebar--collapsed .nav .el-sub-menu__title', [/padding:\s*0\s*!important/, /justify-content:\s*center/])
+})
+
 test('表格、分页和表单内容遵守统一的对齐与溢出规则', () => {
   assertDeclarations(globalStyles, '.el-table', [/width:\s*100%/, /max-width:\s*100%/])
   assertDeclarations(globalStyles, '.el-table .cell', [/overflow-wrap:\s*anywhere/])

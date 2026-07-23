@@ -66,6 +66,8 @@ body { margin: 0; background: var(--app-canvas); }
 .sidebar--collapsed .nav .el-menu-item .el-icon,
 .sidebar--collapsed .nav .el-sub-menu__title .el-icon { margin-right: 0; }
 .sidebar--collapsed .nav-scroll { width: 100%; }
+/* Element Plus 折叠菜单默认宽度为 64px，需与侧栏内层可用宽度保持一致，避免被侧栏内边距裁切。 */
+.sidebar--collapsed .nav.el-menu--collapse { width: 100%; }
 .sidebar--collapsed .collapse-trigger { margin-top: 8px; }
 
 /* 收起触发器按钮 */
