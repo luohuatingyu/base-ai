@@ -52,7 +52,7 @@
         <div class="messages">
       <div v-for="(item, index) in messages" :key="index" :class="['message', item.role]">
         <small>{{ item.role === 'user' ? t('chat.user') : t('chat.assistant') }}</small>
-        <div>{{ item.content }}</div>
+        <div class="message-content">{{ item.content }}</div>
         <div v-if="item.images?.length" class="message-images">
           <img v-for="image in item.images" :key="image.name + image.dataUrl" :src="image.dataUrl" :alt="image.name" />
         </div>

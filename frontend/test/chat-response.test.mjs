@@ -4,6 +4,7 @@ import test from 'node:test'
 import { createAssistantMessage, hasChatResponseMetadata } from '../src/utils/chatResponse.js'
 
 const chatView = readFileSync(new URL('../src/views/AiChatView.vue', import.meta.url), 'utf8')
+const chatStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
 test('将模型响应映射为带模型和 Token 用量的 AI 消息', () => {
   const message = createAssistantMessage({
@@ -52,4 +53,15 @@ test('Trace ID 仅在助手消息元数据中展示', () => {
   assert.match(chatView, /<span v-if="item\.traceId">\{\{ t\('chat\.traceId'\) \}\}: \{\{ item\.traceId \}\}<\/span>/)
   assert.doesNotMatch(chatView, /lastTrace/)
   assert.equal(chatView.match(/t\('chat\.traceId'\)/g)?.length, 1)
+})
+
+test('助手回答使用内容自适应背景并缩小字体', () => {
+  assert.match(chatView, /<div class="message-content">\{\{ item\.content \}\}<\/div>/)
+  assert.match(chatStyles, /\.message-content\s*\{[\s\S]*?display:\s*inline-block[\s\S]*?max-width:\s*100%[\s\S]*?overflow-wrap:\s*anywhere/)
+  assert.match(chatStyles, /\.message\.assistant \.message-content\s*\{\s*font-size:\s*14px;\s*\}/)
+  assert.doesNotMatch(chatStyles, /\.message div\s*\{/)
+})
+
+test('用户消息继续使用原有主题背景', () => {
+  assert.match(chatStyles, /\.message\.user \.message-content\s*\{\s*color:\s*#fff;\s*background:\s*var\(--app-primary\);\s*\}/)
 })
