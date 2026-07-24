@@ -50,6 +50,12 @@
     <div class="messages">
       <div v-for="(item, index) in messages" :key="index" :class="['message', item.role]">
         <small>{{ item.role === 'user' ? t('chat.user') : t('chat.assistant') }}</small><div>{{ item.content }}</div>
+        <div v-if="item.role === 'assistant' && hasChatResponseMetadata(item)" class="message-metadata">
+          <span>{{ t('chat.answerModel') }}: {{ item.model || t('chat.unknownModel') }}</span>
+          <span>{{ t('chat.inputTokens') }}: {{ item.inputTokens ?? '-' }}</span>
+          <span>{{ t('chat.outputTokens') }}: {{ item.outputTokens ?? '-' }}</span>
+          <span>{{ t('chat.totalTokens') }}: {{ item.totalTokens ?? '-' }}</span>
+        </div>
       </div>
       <el-empty v-if="!messages.length" :description="t('chat.empty')" />
     </div>
@@ -63,6 +69,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '../api/http'
 import { useI18n } from 'vue-i18n'
+import { createAssistantMessage, hasChatResponseMetadata } from '../utils/chatResponse'
 
 const { t } = useI18n()
 const prompt = ref('')
@@ -146,7 +153,7 @@ async function send() {
     }
 
     const { data } = await http.post('/ai/chat', payload)
-    messages.value.push({ role: 'assistant', content: data.content })
+    messages.value.push(createAssistantMessage(data))
     lastTrace.value = data.traceId
   } catch (error) { ElMessage.error(error.response?.data?.message || t('chat.callFailed')) }
   finally { loading.value = false }
@@ -169,5 +176,14 @@ async function send() {
 .model-config .el-form-item {
   margin-bottom: 0;
   margin-right: 16px;
+}
+
+.message-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+  color: #909399;
+  font-size: 12px;
 }
 </style>

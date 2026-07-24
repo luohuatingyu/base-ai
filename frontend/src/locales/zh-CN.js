@@ -107,7 +107,12 @@ export default {
     thinkingExtraHigh: '超高',
     thinkingMax: '最高',
     thinkingUltra: '极高',
-    defaultPool: '默认池'
+    defaultPool: '默认池',
+    answerModel: '回答模型',
+    unknownModel: '未知模型',
+    inputTokens: '输入 Token',
+    outputTokens: '输出 Token',
+    totalTokens: '总 Token'
   },
   logs: {
     loginTitle: '登录日志', loginDescription: '记录登录成功与失败事件。',

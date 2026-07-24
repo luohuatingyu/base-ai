@@ -82,7 +82,12 @@ export default {
     thinkingExtraHigh: 'Extra High',
     thinkingMax: 'Max',
     thinkingUltra: 'Ultra',
-    defaultPool: 'Default Pool'
+    defaultPool: 'Default Pool',
+    answerModel: 'Answer Model',
+    unknownModel: 'Unknown Model',
+    inputTokens: 'Input Tokens',
+    outputTokens: 'Output Tokens',
+    totalTokens: 'Total Tokens'
   },
   logs: {
     loginTitle: 'Login Logs', loginDescription: 'Records successful and failed login events.',
