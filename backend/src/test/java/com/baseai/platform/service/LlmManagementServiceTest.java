@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
@@ -131,9 +132,9 @@ class LlmManagementServiceTest {
         assertEquals(List.of("audio_model"), service.routeModelTypes("audio"));
     }
 
-    /** 路由同步选择供应商时，只检查当前路由内被选中的供应商模型。 */
+    /** 路由同步不得按请求中的供应商选择缩小范围，必须检查路由已配置的全部供应商模型。 */
     @Test
-    void syncRouteChecksOnlySelectedRouteProviders() {
+    void syncRouteIgnoresRequestedProviderSelection() {
         LlmRoute route = route("1,2", "");
         LlmModel first = model(1L, "MIDDLE");
         LlmModel second = model(2L, "HIGH");
@@ -145,10 +146,9 @@ class LlmManagementServiceTest {
 
         List<LlmManagementService.ModelHealthView> results = routeService.syncRoute(8L, List.of(2L));
 
-        assertEquals(1, results.size());
-        assertEquals(2L, results.get(0).providerId());
+        assertEquals(List.of(1L, 2L), results.stream().map(LlmManagementService.ModelHealthView::providerId).toList());
+        verify(modelRepository).save(first);
         verify(modelRepository).save(second);
-        verify(modelRepository, never()).save(first);
     }
 
     /** 路由同步未选择供应商时，应检查当前路由供应商池中的全部模型。 */
@@ -170,9 +170,9 @@ class LlmManagementServiceTest {
         verify(modelRepository).save(second);
     }
 
-    /** 空供应商池和空候选模型代表全部供应商，健康检查不应按路由能力排除模型。 */
+    /** 空供应商池和空候选模型不应测试全局模型，并应直接同步成功。 */
     @Test
-    void syncRouteTreatsEmptyConfigurationAsAllProviders() {
+    void syncRouteTreatsEmptyConfigurationAsSuccessfulEmptyRoute() {
         LlmRoute route = route("", "");
         LlmModel matching = model(1L, "MIDDLE");
         LlmModel mismatched = model(2L, "HIGH");
@@ -184,9 +184,108 @@ class LlmManagementServiceTest {
 
         List<LlmManagementService.ModelHealthView> results = routeService.syncRoute(8L, List.of());
 
-        assertEquals(List.of(1L, 2L), results.stream().map(LlmManagementService.ModelHealthView::providerId).toList());
-        verify(modelRepository).save(matching);
-        verify(modelRepository).save(mismatched);
+        assertEquals(List.of(), results);
+        verify(modelRepository, never()).save(any());
+    }
+
+    /** 模型检查失败但未删除时，数据库路由中的模型仍应同步到运行时内存。 */
+    @Test
+    void failedModelRemainsInActiveRouteUntilProviderIsRemoved() {
+        LlmRoute route = route("1", "");
+        route.setFeatureCode("summarize");
+        route.setEnabled(true);
+        LlmModel failed = model(1L, "MIDDLE");
+        failed.setModelName("failed-model");
+        failed.setSupportedModelTypes(List.of("text_model"));
+        ReflectionTestUtils.setField(failed, "id", 10L);
+        LlmProvider provider = provider("encrypted");
+        ReflectionTestUtils.setField(provider, "id", 1L);
+        provider.setEnabled(true);
+        LlmManagementService routeService = spy(service);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(routeRepository.findAll()).thenReturn(List.of(route));
+        when(routeRepository.findByFeatureCode("summarize")).thenReturn(Optional.of(route));
+        when(modelRepository.findAll()).thenReturn(List.of(failed));
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
+        when(cryptoService.decrypt("encrypted")).thenReturn("key");
+        doThrow(new BusinessException("连接失败")).when(routeService).testModel(10L);
+
+        List<LlmManagementService.ModelHealthView> results = routeService.syncRoute(8L, List.of());
+
+        assertEquals("FAILED", results.get(0).status());
+        assertEquals(List.of("failed-model"), routeService.resolveActive("summarize", "text_model").candidates().stream()
+            .map(LlmManagementService.WorkerCandidate::model).toList());
+    }
+
+    /** 模型配置修改后，运行时路由应保持旧快照，直到再次执行同步。 */
+    @Test
+    void modelChangesTakeEffectOnlyAfterNextRouteSync() {
+        LlmRoute route = route("1", "");
+        route.setFeatureCode("summarize");
+        route.setEnabled(true);
+        LlmModel model = model(1L, "MIDDLE");
+        model.setModelName("old-model");
+        model.setSupportedModelTypes(List.of("text_model"));
+        ReflectionTestUtils.setField(model, "id", 10L);
+        LlmProvider provider = provider("encrypted");
+        ReflectionTestUtils.setField(provider, "id", 1L);
+        provider.setEnabled(true);
+        LlmManagementService routeService = spy(service);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(routeRepository.findAll()).thenReturn(List.of(route));
+        when(routeRepository.findByFeatureCode("summarize")).thenReturn(Optional.of(route));
+        when(modelRepository.findAll()).thenReturn(List.of(model));
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
+        when(cryptoService.decrypt("encrypted")).thenReturn("key");
+        doReturn(Map.of()).when(routeService).testModel(10L);
+
+        routeService.syncRoute(8L, List.of());
+        model.setModelName("new-model");
+
+        assertEquals("old-model", routeService.resolveActive("summarize", "text_model").candidates().get(0).model());
+
+        routeService.syncRoute(8L, List.of());
+
+        assertEquals("new-model", routeService.resolveActive("summarize", "text_model").candidates().get(0).model());
+    }
+
+    /** 删除路由模型供应后，应清理数据库关联和内存候选，但保留供应商与模型主数据。 */
+    @Test
+    void removeProviderUpdatesRouteAndMemoryWithoutDeletingMasterData() {
+        LlmRoute route = route("1,2", "");
+        route.setFeatureCode("summarize");
+        route.setEnabled(true);
+        LlmModel first = model(1L, "MIDDLE");
+        first.setModelName("first-model");
+        first.setSupportedModelTypes(List.of("text_model"));
+        ReflectionTestUtils.setField(first, "id", 10L);
+        LlmModel second = model(2L, "MIDDLE");
+        second.setModelName("second-model");
+        second.setSupportedModelTypes(List.of("text_model"));
+        ReflectionTestUtils.setField(second, "id", 11L);
+        LlmProvider firstProvider = provider("first-encrypted");
+        ReflectionTestUtils.setField(firstProvider, "id", 1L);
+        LlmProvider secondProvider = provider("second-encrypted");
+        ReflectionTestUtils.setField(secondProvider, "id", 2L);
+        LlmManagementService routeService = spy(service);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(routeRepository.findAll()).thenReturn(List.of(route));
+        when(routeRepository.findByFeatureCode("summarize")).thenReturn(Optional.of(route));
+        when(modelRepository.findAll()).thenReturn(List.of(first, second));
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(firstProvider));
+        when(providerRepository.findById(2L)).thenReturn(Optional.of(secondProvider));
+        when(cryptoService.decrypt("first-encrypted")).thenReturn("first-key");
+        when(cryptoService.decrypt("second-encrypted")).thenReturn("second-key");
+        doReturn(Map.of()).when(routeService).testModel(anyLong());
+
+        routeService.syncRoute(8L, List.of());
+        routeService.removeProviderFromRoute(8L, 1L);
+
+        assertEquals("2", route.getProviderIds());
+        assertEquals(List.of("second-model"), routeService.resolveActive("summarize", "text_model").candidates().stream()
+            .map(LlmManagementService.WorkerCandidate::model).toList());
+        verify(providerRepository, never()).deleteById(anyLong());
+        verify(modelRepository, never()).deleteById(anyLong());
     }
 
     /** 删除路由供应商时，应同时清理供应商池和旧候选模型并刷新内存。 */
@@ -208,21 +307,18 @@ class LlmManagementServiceTest {
         verify(routeRepository).save(route);
     }
 
-    /** 从隐式全部供应商路由删除成员时，应固化为不含该成员的显式供应商池。 */
+    /** 空路由不代表全部供应商，删除请求不得把全局供应商反向写入路由。 */
     @Test
-    void removeProviderFromImplicitAllRoutePersistsRemainingProviders() {
+    void removeProviderFromEmptyRouteDoesNotExpandProviderPool() {
         LlmRoute route = route("", "");
-        LlmProvider first = mock(LlmProvider.class);
-        LlmProvider second = mock(LlmProvider.class);
-        when(first.getId()).thenReturn(1L);
-        when(second.getId()).thenReturn(2L);
         when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
         when(routeRepository.findAll()).thenReturn(List.of(route));
-        when(providerRepository.findAll()).thenReturn(List.of(first, second));
 
         service.removeProviderFromRoute(8L, 1L);
 
-        assertEquals("2", route.getProviderIds());
+        assertEquals("", route.getProviderIds());
+        assertEquals(false, route.getEnabled());
+        verify(providerRepository, never()).findAll();
         verify(routeRepository).save(route);
     }
 

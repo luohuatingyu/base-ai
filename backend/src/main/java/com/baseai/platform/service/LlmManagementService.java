@@ -248,7 +248,7 @@ public class LlmManagementService {
             .flatMap(model->model.getSupportedModelTypes().stream()).distinct().toList();
     }
 
-    /** 根据候选模型或供应商池配置解析启用且健康的模型实体。 */
+    /** 根据候选模型或供应商池配置解析启用的模型实体，健康结果仅用于同步提示。 */
     private List<LlmModel> routeModels(LlmRoute route){
         List<LlmModel> models;
         if(!parseIds(route.getProviderIds()).isEmpty()){
@@ -256,8 +256,7 @@ public class LlmManagementService {
             models=modelRepository.findAll().stream().filter(model->providers.contains(model.getProviderId()))
                 .filter(model->Objects.equals(route.getCapabilityLevel(),model.getCapabilityLevel())).toList();
         }else models=parseIds(route.getCandidateModelIds()).stream().map(modelRepository::findById).flatMap(Optional::stream).toList();
-        return models.stream().filter(model->Boolean.TRUE.equals(model.getEnabled()))
-            .filter(model->!"FAILED".equals(model.getHealthStatus())).toList();
+        return models.stream().filter(model->Boolean.TRUE.equals(model.getEnabled())).toList();
     }
 
     /**
@@ -301,15 +300,11 @@ public class LlmManagementService {
         List<ModelHealthView> result=checkModels(checked);refreshActiveRoutes();return result;
     }
 
-    /** 检查单条能力路由中的全部或指定供应商模型，并刷新全量内存快照。 */
+    /** 检查单条能力路由已配置的全部供应商模型，并刷新全量内存快照。 */
     @Transactional
-    public synchronized List<ModelHealthView> syncRoute(Long routeId,List<Long> providerIds){
+    public synchronized List<ModelHealthView> syncRoute(Long routeId,List<Long> ignoredProviderIds){
         LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
-        Set<Long> selected=providerIds==null?Set.of():new LinkedHashSet<>(providerIds);
-        Set<Long> routeProviders=routeProviderIds(route);
-        List<LlmModel> checked=routeModelsForHealthCheck(route).stream()
-            .filter(model->selected.isEmpty()||selected.contains(model.getProviderId()))
-            .filter(model->routeProviders.isEmpty()||routeProviders.contains(model.getProviderId())).toList();
+        List<LlmModel> checked=routeModelsForHealthCheck(route);
         List<ModelHealthView> result=checkModels(checked);refreshActiveRoutes();return result;
     }
 
@@ -331,16 +326,7 @@ public class LlmManagementService {
         List<Long> candidateIds=parseIds(route.getCandidateModelIds());
         if(!candidateIds.isEmpty())return candidateIds.stream().map(modelRepository::findById).flatMap(Optional::stream)
             .filter(model->Boolean.TRUE.equals(model.getEnabled())).toList();
-        return modelRepository.findAll().stream().filter(model->Boolean.TRUE.equals(model.getEnabled())).toList();
-    }
-
-    /** 返回当前路由显式关联的供应商集合。 */
-    private Set<Long> routeProviderIds(LlmRoute route){
-        Set<Long> providers=new LinkedHashSet<>(parseIds(route.getProviderIds()));
-        if(!providers.isEmpty())return providers;
-        parseIds(route.getCandidateModelIds()).stream().map(modelRepository::findById).flatMap(Optional::stream)
-            .map(LlmModel::getProviderId).forEach(providers::add);
-        return providers;
+        return List.of();
     }
 
     /** 使用数据库中的最新健康状态原子刷新全部内存路由。 */
@@ -359,7 +345,6 @@ public class LlmManagementService {
         LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
         List<Long> configuredProviders=parseIds(route.getProviderIds());
         List<Long> candidateModels=parseIds(route.getCandidateModelIds());
-        if(configuredProviders.isEmpty()&&candidateModels.isEmpty())configuredProviders=providerRepository.findAll().stream().map(LlmProvider::getId).toList();
         List<Long> remainingProviders=configuredProviders.stream().filter(id->!id.equals(providerId)).toList();
         List<Long> remainingModels=candidateModels.stream()
             .filter(modelId->modelRepository.findById(modelId).map(model->!providerId.equals(model.getProviderId())).orElse(true)).toList();

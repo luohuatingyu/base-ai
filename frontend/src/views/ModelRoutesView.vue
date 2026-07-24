@@ -32,13 +32,7 @@
     </el-dialog>
 
     <el-dialog v-model="syncVisible" :title="t('routes.syncRoute',{name:syncRoute?.name||''})" width="720px">
-      <el-form label-width="110px">
-        <el-form-item :label="t('routes.syncProviders')">
-          <el-select v-model="syncProviderIds" multiple clearable :placeholder="t('routes.syncAllHint')">
-            <el-option v-for="item in syncProviders" :key="item.id" :label="item.name" :value="item.id"/>
-          </el-select>
-        </el-form-item>
-      </el-form>
+      <el-alert :title="t('routes.syncScopeHint')" type="info" show-icon :closable="false"/>
       <div v-if="syncResults.length" class="route-health-results">
         <div v-for="result in syncResults" :key="result.modelId" class="route-health-result" :class="healthStatusClass(result.status)">
           <div class="route-health-summary">
@@ -60,7 +54,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
@@ -76,7 +70,6 @@ const syncVisible = ref(false)
 const syncing = ref(false)
 const syncCompleted = ref(false)
 const syncRoute = ref(null)
-const syncProviderIds = ref([])
 const syncResults = ref([])
 const levels = ['LOW', 'MEDIUM', 'HIGH', 'EXTRA_HIGH', 'MAX', 'ULTRA']
 const form = reactive({ id: null, featureCode: '', name: '', candidateModelIds: [], providerIds: [], capabilityLevel: 'MIDDLE', enableThinking: false, thinkingLevel: 'MEDIUM', enabled: true })
@@ -103,28 +96,19 @@ async function save() {
   ElMessage.success(t('common.successSaved'))
 }
 
-/** 返回当前路由可选择同步的供应商。 */
-const syncProviders = computed(() => {
-  if (!syncRoute.value) return []
-  const explicitIds = syncRoute.value.providerIds || []
-  if (explicitIds.length) return providers.value.filter(item => explicitIds.includes(item.id))
-  return providers.value
-})
-
 /** 打开单条路由同步窗口。 */
 function openSync(row) {
   syncRoute.value = row
-  syncProviderIds.value = []
   syncResults.value = []
   syncCompleted.value = false
   syncVisible.value = true
 }
 
-/** 同步当前路由中的全部或选中供应商。 */
+/** 测试当前路由已配置的全部模型供应并同步到内存。 */
 async function syncCurrentRoute() {
   syncing.value = true
   try {
-    const response = await http.post('/models/routes/sync', { routeId: syncRoute.value.id, providerIds: syncProviderIds.value })
+    const response = await http.post('/models/routes/sync', { routeId: syncRoute.value.id })
     syncResults.value = response.data
     syncCompleted.value = true
     ElMessage.success(t('routes.syncCompleted'))

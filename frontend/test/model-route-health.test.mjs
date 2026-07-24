@@ -27,3 +27,8 @@ test('capability route page warns that edits require synchronization', () => {
   assert.match(zhLocale, /editSyncNotice:\s*'[^']*编辑能力路由后[^']*同步[^']*生效[^']*'/)
   assert.match(enLocale, /editSyncNotice:\s*'[^']*editing a capability route[^']*Sync[^']*take effect[^']*'/)
 })
+
+test('route synchronization does not ask users to select providers', () => {
+  assert.doesNotMatch(routeView, /v-model="syncProviderIds"/)
+  assert.match(routeView, /http\.post\('\/models\/routes\/sync',\s*\{\s*routeId:\s*syncRoute\.value\.id\s*\}\)/)
+})
