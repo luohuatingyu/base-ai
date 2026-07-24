@@ -31,4 +31,5 @@ test('capability route page warns that edits require synchronization', () => {
 test('route synchronization does not ask users to select providers', () => {
   assert.doesNotMatch(routeView, /v-model="syncProviderIds"/)
   assert.match(routeView, /http\.post\('\/models\/routes\/sync',\s*\{\s*routeId:\s*syncRoute\.value\.id\s*\}\)/)
+  assert.match(routeView, /await load\(\)[\s\S]*syncRoute\.value = rows\.value\.find/)
 })

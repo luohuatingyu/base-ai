@@ -132,9 +132,9 @@ class LlmManagementServiceTest {
         assertEquals(List.of("audio_model"), service.routeModelTypes("audio"));
     }
 
-    /** 路由同步不得按请求中的供应商选择缩小范围，必须检查路由已配置的全部供应商模型。 */
+    /** 路由同步应忽略旧请求筛选，并自动移除没有匹配模型能力的供应商。 */
     @Test
-    void syncRouteIgnoresRequestedProviderSelection() {
+    void syncRouteIgnoresRequestedSelectionAndRemovesCapabilityMismatch() {
         LlmRoute route = route("1,2", "");
         LlmModel first = model(1L, "MIDDLE");
         LlmModel second = model(2L, "HIGH");
@@ -146,9 +146,11 @@ class LlmManagementServiceTest {
 
         List<LlmManagementService.ModelHealthView> results = routeService.syncRoute(8L, List.of(2L));
 
-        assertEquals(List.of(1L, 2L), results.stream().map(LlmManagementService.ModelHealthView::providerId).toList());
+        assertEquals(List.of(1L), results.stream().map(LlmManagementService.ModelHealthView::providerId).toList());
+        assertEquals("1", route.getProviderIds());
         verify(modelRepository).save(first);
-        verify(modelRepository).save(second);
+        verify(modelRepository, never()).save(second);
+        verify(routeRepository).save(route);
     }
 
     /** 路由同步未选择供应商时，应检查当前路由供应商池中的全部模型。 */

@@ -320,18 +320,35 @@ public class LlmManagementService {
         return result;
     }
 
-    /** 根据路由配置解析健康检查范围，不受上次失败状态影响。 */
+    /** 根据路由配置解析健康检查范围，并移除没有匹配能力或思考级别的供应商。 */
     private List<LlmModel> routeModelsForHealthCheck(LlmRoute route){
         List<Long> providerIds=parseIds(route.getProviderIds());
         if(!providerIds.isEmpty()){
             Set<Long> providers=new LinkedHashSet<>(providerIds);
-            return modelRepository.findAll().stream().filter(model->providers.contains(model.getProviderId()))
-                .filter(model->Boolean.TRUE.equals(model.getEnabled())).toList();
+            List<LlmModel> matchingModels=modelRepository.findAll().stream()
+                .filter(model->providers.contains(model.getProviderId()))
+                .filter(model->matchesRouteRequirements(route,model)).toList();
+            Set<Long> matchingProviders=matchingModels.stream().map(LlmModel::getProviderId)
+                .collect(java.util.stream.Collectors.toSet());
+            List<Long> remainingProviders=providerIds.stream().filter(matchingProviders::contains).toList();
+            if(!remainingProviders.equals(providerIds)){
+                route.setProviderIds(joinIds(remainingProviders));
+                if(remainingProviders.isEmpty()&&parseIds(route.getCandidateModelIds()).isEmpty())route.setEnabled(false);
+                routeRepository.save(route);
+            }
+            return matchingModels;
         }
         List<Long> candidateIds=parseIds(route.getCandidateModelIds());
         if(!candidateIds.isEmpty())return candidateIds.stream().map(modelRepository::findById).flatMap(Optional::stream)
             .filter(model->Boolean.TRUE.equals(model.getEnabled())).toList();
         return List.of();
+    }
+
+    /** 判断模型是否满足路由的能力等级，以及开启思考模式时的思考级别要求。 */
+    private boolean matchesRouteRequirements(LlmRoute route,LlmModel model){
+        if(!Boolean.TRUE.equals(model.getEnabled())||!Objects.equals(route.getCapabilityLevel(),model.getCapabilityLevel()))return false;
+        if(!Boolean.TRUE.equals(route.getEnableThinking()))return true;
+        return thinkingMappings(model.getThinkingLevels()).containsKey(route.getThinkingLevel());
     }
 
     /** 使用数据库中的最新健康状态原子刷新全部内存路由。 */

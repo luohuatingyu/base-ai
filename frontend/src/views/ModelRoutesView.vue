@@ -111,6 +111,8 @@ async function syncCurrentRoute() {
     const response = await http.post('/models/routes/sync', { routeId: syncRoute.value.id })
     syncResults.value = response.data
     syncCompleted.value = true
+    await load()
+    syncRoute.value = rows.value.find(item => item.id === syncRoute.value.id) || syncRoute.value
     ElMessage.success(t('routes.syncCompleted'))
   } finally {
     syncing.value = false
