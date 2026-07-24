@@ -74,7 +74,6 @@
         </div>
         <el-input v-model="prompt" type="textarea" :rows="4" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
         <div class="chat-actions">
-          <span v-if="lastTrace">{{ t('chat.traceId') }}: {{ lastTrace }}</span>
           <div class="chat-action-buttons">
             <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
             <el-button :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
@@ -120,7 +119,6 @@ const messages = ref([])
 const pendingImages = ref([])
 const imageInput = ref(null)
 const loading = ref(false)
-const lastTrace = ref('')
 const MAX_IMAGES = 4
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
@@ -300,7 +298,6 @@ async function send() {
 
     const { data } = await http.post('/ai/chat', payload)
     messages.value.push(createAssistantMessage(data))
-    lastTrace.value = data.traceId
   } catch (error) { ElMessage.error(error.response?.data?.message || t('chat.callFailed')) }
   finally { loading.value = false }
 }

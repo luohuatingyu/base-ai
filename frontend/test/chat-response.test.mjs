@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { createAssistantMessage, hasChatResponseMetadata } from '../src/utils/chatResponse.js'
+
+const chatView = readFileSync(new URL('../src/views/AiChatView.vue', import.meta.url), 'utf8')
 
 test('将模型响应映射为带模型和 Token 用量的 AI 消息', () => {
   const message = createAssistantMessage({
@@ -43,4 +46,10 @@ test('缺失或非法元数据不会影响 AI 回复内容', () => {
   assert.equal(message.totalTokens, null)
   assert.equal(message.traceId, null)
   assert.equal(hasChatResponseMetadata(message), false)
+})
+
+test('Trace ID 仅在助手消息元数据中展示', () => {
+  assert.match(chatView, /<span v-if="item\.traceId">\{\{ t\('chat\.traceId'\) \}\}: \{\{ item\.traceId \}\}<\/span>/)
+  assert.doesNotMatch(chatView, /lastTrace/)
+  assert.equal(chatView.match(/t\('chat\.traceId'\)/g)?.length, 1)
 })
