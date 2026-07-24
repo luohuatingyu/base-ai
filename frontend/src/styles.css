@@ -434,8 +434,6 @@ body { margin: 0; background: var(--app-canvas); }
 
 .message { max-width: 78%; margin: 14px 0; }
 
-.message small { color: var(--app-muted); }
-
 .message-content {
   display: inline-block;
   max-width: 100%;
@@ -451,7 +449,7 @@ body { margin: 0; background: var(--app-canvas); }
 
 .message.assistant .message-content { font-size: 14px; }
 
-.message.user { margin-left: auto; }
+.message.user { margin-left: auto; text-align: right; }
 
 .message.user .message-content { color: #fff; background: var(--app-primary); }
 

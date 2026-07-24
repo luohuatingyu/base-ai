@@ -62,6 +62,9 @@ test('助手回答使用内容自适应背景并缩小字体', () => {
   assert.doesNotMatch(chatStyles, /\.message div\s*\{/)
 })
 
-test('用户消息继续使用原有主题背景', () => {
+test('消息不展示角色标签且用户问题贴齐右侧', () => {
+  assert.doesNotMatch(chatView, /<small>\{\{ item\.role === 'user'/)
+  assert.doesNotMatch(chatStyles, /\.message small\s*\{/)
+  assert.match(chatStyles, /\.message\.user\s*\{\s*margin-left:\s*auto;\s*text-align:\s*right;\s*\}/)
   assert.match(chatStyles, /\.message\.user \.message-content\s*\{\s*color:\s*#fff;\s*background:\s*var\(--app-primary\);\s*\}/)
 })
