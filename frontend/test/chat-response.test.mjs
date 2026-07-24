@@ -6,6 +6,7 @@ test('将模型响应映射为带模型和 Token 用量的 AI 消息', () => {
   const message = createAssistantMessage({
     content: '你好',
     model: 'gpt-4.1',
+    traceId: '  846c581da692410f85df9693b1aa926a  ',
     inputTokens: 12,
     outputTokens: 34,
     totalTokens: 46
@@ -15,6 +16,7 @@ test('将模型响应映射为带模型和 Token 用量的 AI 消息', () => {
     role: 'assistant',
     content: '你好',
     model: 'gpt-4.1',
+    traceId: '846c581da692410f85df9693b1aa926a',
     inputTokens: 12,
     outputTokens: 34,
     totalTokens: 46
@@ -39,5 +41,6 @@ test('缺失或非法元数据不会影响 AI 回复内容', () => {
   assert.equal(message.inputTokens, null)
   assert.equal(message.outputTokens, null)
   assert.equal(message.totalTokens, null)
+  assert.equal(message.traceId, null)
   assert.equal(hasChatResponseMetadata(message), false)
 })

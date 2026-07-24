@@ -55,6 +55,7 @@
           <span>{{ t('chat.inputTokens') }}: {{ item.inputTokens ?? '-' }}</span>
           <span>{{ t('chat.outputTokens') }}: {{ item.outputTokens ?? '-' }}</span>
           <span>{{ t('chat.totalTokens') }}: {{ item.totalTokens ?? '-' }}</span>
+          <span v-if="item.traceId">{{ t('chat.traceId') }}: {{ item.traceId }}</span>
         </div>
       </div>
       <el-empty v-if="!messages.length" :description="t('chat.empty')" />
