@@ -30,6 +30,20 @@ test('后台骨架和内容容器允许正确收缩且不会截断页面', () =>
   assertDeclarations(globalStyles, '.section-head > div', [/min-width:\s*0/])
 })
 
+test('AI 对话仅滚动消息区域并固定上下操作区域', () => {
+  assertDeclarations(globalStyles, '.chat-panel', [/height:\s*calc\(/, /display:\s*flex/, /flex-direction:\s*column/])
+  assertDeclarations(globalStyles, '.chat-tabs', [/display:\s*flex/, /flex:\s*1/, /flex-direction:\s*column/, /min-height:\s*0/])
+  assertDeclarations(globalStyles, '.chat-tabs .el-tabs__content', [/flex:\s*1/, /min-height:\s*0/, /overflow:\s*hidden/])
+  assertDeclarations(globalStyles, '.chat-tabs .el-tab-pane', [/height:\s*100%/, /display:\s*flex/, /flex-direction:\s*column/, /min-height:\s*0/])
+  assertDeclarations(globalStyles, '.model-config', [/flex:\s*0\s+0\s+auto/])
+  assertDeclarations(globalStyles, '.messages', [/flex:\s*1/, /min-height:\s*0/, /overflow-y:\s*auto/])
+  assertDeclarations(
+    globalStyles,
+    '.chat-tabs .el-tab-pane > .pending-images,\n.chat-tabs .el-tab-pane > .el-textarea,\n.chat-tabs .el-tab-pane > .chat-actions',
+    [/flex:\s*0\s+0\s+auto/]
+  )
+})
+
 test('收缩侧边栏的菜单宽度适配内层可用空间，图标保持居中', () => {
   assertDeclarations(globalStyles, '.sidebar--collapsed .nav-scroll', [/width:\s*100%/])
   assertDeclarations(globalStyles, '.sidebar--collapsed .nav.el-menu--collapse', [/width:\s*100%/])
