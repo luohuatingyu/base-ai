@@ -136,7 +136,7 @@ class LlmManagementServiceTest {
     void syncRouteChecksOnlySelectedRouteProviders() {
         LlmRoute route = route("1,2", "");
         LlmModel first = model(1L, "MIDDLE");
-        LlmModel second = model(2L, "MIDDLE");
+        LlmModel second = model(2L, "HIGH");
         LlmManagementService routeService = spy(service);
         when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
         when(routeRepository.findAll()).thenReturn(List.of(route));
@@ -170,7 +170,7 @@ class LlmManagementServiceTest {
         verify(modelRepository).save(second);
     }
 
-    /** 空供应商池和空候选模型代表全部供应商，但仍需按路由能力过滤模型。 */
+    /** 空供应商池和空候选模型代表全部供应商，健康检查不应按路由能力排除模型。 */
     @Test
     void syncRouteTreatsEmptyConfigurationAsAllProviders() {
         LlmRoute route = route("", "");
@@ -184,9 +184,9 @@ class LlmManagementServiceTest {
 
         List<LlmManagementService.ModelHealthView> results = routeService.syncRoute(8L, List.of());
 
-        assertEquals(List.of(1L), results.stream().map(LlmManagementService.ModelHealthView::providerId).toList());
+        assertEquals(List.of(1L, 2L), results.stream().map(LlmManagementService.ModelHealthView::providerId).toList());
         verify(modelRepository).save(matching);
-        verify(modelRepository, never()).save(mismatched);
+        verify(modelRepository).save(mismatched);
     }
 
     /** 删除路由供应商时，应同时清理供应商池和旧候选模型并刷新内存。 */
@@ -245,13 +245,52 @@ class LlmManagementServiceTest {
     void ensureDefaultRoutePreservesDisabledState() {
         LlmRoute route = route("", "");
         route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
+        route.setCapabilityLevel("HIGH");
         route.setEnabled(false);
         when(routeRepository.findByFeatureCode(LlmManagementService.DEFAULT_ROUTE)).thenReturn(Optional.of(route));
 
         service.ensureDefaultRoute();
 
         assertEquals(false, route.getEnabled());
+        assertEquals("HIGH", route.getCapabilityLevel());
         verify(routeRepository).save(route);
+    }
+
+    /** 默认路由保存时应接受用户选择的能力级别，而不是强制重置为中级。 */
+    @Test
+    void updateDefaultRoutePreservesSelectedCapabilityLevel() {
+        LlmRoute route = route("1", "");
+        route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
+        when(routeRepository.save(route)).thenReturn(route);
+
+        LlmManagementService.RouteView updated = service.updateRoute(8L, new LlmManagementService.RouteCommand(
+            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(), List.of(1L), "HIGH", false, null, true));
+
+        assertEquals("HIGH", updated.capabilityLevel());
+    }
+
+    /** 健康检查可测试不同能力模型，但真实路由候选仍只能包含匹配能力的模型。 */
+    @Test
+    void routeCandidatesStillFilterByCapabilityLevel() {
+        LlmRoute route = route("1", "");
+        route.setEnabled(true);
+        LlmModel matching = model(1L, "MIDDLE");
+        matching.setHealthStatus("HEALTHY");
+        matching.setModelName("middle-model");
+        LlmModel mismatched = model(1L, "HIGH");
+        mismatched.setHealthStatus("HEALTHY");
+        mismatched.setModelName("high-model");
+        LlmProvider provider = provider("encrypted");
+        when(routeRepository.findByFeatureCode("chat")).thenReturn(Optional.of(route));
+        when(modelRepository.findAll()).thenReturn(List.of(matching, mismatched));
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
+        when(cryptoService.decrypt("encrypted")).thenReturn("key");
+
+        List<LlmManagementService.WorkerCandidate> candidates = service.candidates("chat");
+
+        assertEquals(List.of("middle-model"), candidates.stream().map(LlmManagementService.WorkerCandidate::model).toList());
     }
 
     /** 同步耗时必须在10秒和30秒边界切换为对应健康状态。 */
