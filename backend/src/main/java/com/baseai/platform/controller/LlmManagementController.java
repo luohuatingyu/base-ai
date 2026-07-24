@@ -52,8 +52,8 @@ public class LlmManagementController {
     @PutMapping("/routes/{id}") @RequiredPermission("model:route:update") public LlmManagementService.RouteView updateRoute(@PathVariable Long id,@RequestBody LlmManagementService.RouteCommand command){return service.updateRoute(id,command);}
     /** 删除模型路由。 */
     @DeleteMapping("/routes/{id}") @RequiredPermission("model:route:delete") public void deleteRoute(@PathVariable Long id){service.deleteRoute(id);}
-    /** 检查模型可用性并将可用候选加载到内存路由。 */
-    @PostMapping("/routes/sync") @RequiredPermission("model:route:update") public List<LlmManagementService.ModelHealthView> syncRoutes(@RequestBody(required=false) Map<String,List<Long>> body){return service.syncRoutes(body==null?List.of():body.get("providerIds"));}
+    /** 检查当前路由范围内的模型可用性并刷新内存路由。 */
+    @PostMapping("/routes/sync") @RequiredPermission("model:route:update") public List<LlmManagementService.ModelHealthView> syncRoutes(@RequestBody(required=false) LlmManagementService.RouteSyncCommand command){return command==null||command.routeId()==null?service.syncRoutes(command==null?List.of():command.providerIds()):service.syncRoute(command.routeId(),command.providerIds());}
     /** 从路由供应商池移除成员，并同步内存快照。 */
     @DeleteMapping("/routes/{routeId}/providers/{providerId}") @RequiredPermission("model:route:update") public void removeProvider(@PathVariable Long routeId,@PathVariable Long providerId){service.removeProviderFromRoute(routeId,providerId);}
 }

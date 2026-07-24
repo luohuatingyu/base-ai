@@ -15,4 +15,24 @@ class LlmManagementControllerTest {
 
         assertEquals("model:provider:update", permission.value());
     }
+
+    /** 路由级同步接口必须继续要求路由更新权限。 */
+    @Test
+    void routeSyncRequiresUpdatePermission() throws NoSuchMethodException {
+        RequiredPermission permission = LlmManagementController.class
+            .getMethod("syncRoutes", com.baseai.platform.service.LlmManagementService.RouteSyncCommand.class)
+            .getAnnotation(RequiredPermission.class);
+
+        assertEquals("model:route:update", permission.value());
+    }
+
+    /** 删除当前路由供应商必须继续要求路由更新权限。 */
+    @Test
+    void removeRouteProviderRequiresUpdatePermission() throws NoSuchMethodException {
+        RequiredPermission permission = LlmManagementController.class
+            .getMethod("removeProvider", Long.class, Long.class)
+            .getAnnotation(RequiredPermission.class);
+
+        assertEquals("model:route:update", permission.value());
+    }
 }

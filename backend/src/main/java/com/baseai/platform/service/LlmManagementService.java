@@ -290,7 +290,7 @@ public class LlmManagementService {
     public void ensureDefaultRoute(){
         ensureDefaultRoute(DEFAULT_ROUTE,"默认能力路由");
     }
-    private void ensureDefaultRoute(String code,String name){LlmRoute route=routeRepository.findByFeatureCode(code).orElseGet(()->{LlmRoute item=new LlmRoute();item.setFeatureCode(code);item.setName(name);item.setCandidateModelIds("");item.setProviderIds("");return item;});route.setCapabilityLevel("MIDDLE");route.setEnableThinking(false);route.setThinkingLevel(null);route.setEnabled(true);routeRepository.save(route);}
+    private void ensureDefaultRoute(String code,String name){LlmRoute route=routeRepository.findByFeatureCode(code).orElseGet(()->{LlmRoute item=new LlmRoute();item.setFeatureCode(code);item.setName(name);item.setCandidateModelIds("");item.setProviderIds("");item.setEnabled(true);return item;});route.setCapabilityLevel("MIDDLE");route.setEnableThinking(false);route.setThinkingLevel(null);routeRepository.save(route);}
 
     /** 检查指定供应商池（为空时全部）并原子更新数据库状态和内存路由。 */
     @Transactional
@@ -298,28 +298,90 @@ public class LlmManagementService {
         ensureDefaultRoute();Set<Long> selected=providerIds==null?Set.of():new LinkedHashSet<>(providerIds);
         List<LlmModel> checked=modelRepository.findAll().stream().filter(model->Boolean.TRUE.equals(model.getEnabled()))
             .filter(model->selected.isEmpty()||selected.contains(model.getProviderId())).toList();
+        List<ModelHealthView> result=checkModels(checked);refreshActiveRoutes();return result;
+    }
+
+    /** 检查单条能力路由中的全部或指定供应商模型，并刷新全量内存快照。 */
+    @Transactional
+    public synchronized List<ModelHealthView> syncRoute(Long routeId,List<Long> providerIds){
+        LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
+        Set<Long> selected=providerIds==null?Set.of():new LinkedHashSet<>(providerIds);
+        Set<Long> routeProviders=routeProviderIds(route);
+        List<LlmModel> checked=routeModelsForHealthCheck(route).stream()
+            .filter(model->selected.isEmpty()||selected.contains(model.getProviderId()))
+            .filter(model->routeProviders.isEmpty()||routeProviders.contains(model.getProviderId())).toList();
+        List<ModelHealthView> result=checkModels(checked);refreshActiveRoutes();return result;
+    }
+
+    /** 按模型顺序执行健康检查并返回结果。 */
+    private List<ModelHealthView> checkModels(List<LlmModel> models){
         List<ModelHealthView> result=new ArrayList<>();
-        for(LlmModel model:checked) result.add(checkModel(model));
+        for(LlmModel model:models)result.add(checkModel(model));
+        return result;
+    }
+
+    /** 根据路由配置解析健康检查范围，不受上次失败状态影响。 */
+    private List<LlmModel> routeModelsForHealthCheck(LlmRoute route){
+        List<Long> providerIds=parseIds(route.getProviderIds());
+        if(!providerIds.isEmpty()){
+            Set<Long> providers=new LinkedHashSet<>(providerIds);
+            return modelRepository.findAll().stream().filter(model->providers.contains(model.getProviderId()))
+                .filter(model->Objects.equals(route.getCapabilityLevel(),model.getCapabilityLevel()))
+                .filter(model->Boolean.TRUE.equals(model.getEnabled())).toList();
+        }
+        List<Long> candidateIds=parseIds(route.getCandidateModelIds());
+        if(!candidateIds.isEmpty())return candidateIds.stream().map(modelRepository::findById).flatMap(Optional::stream)
+            .filter(model->Boolean.TRUE.equals(model.getEnabled())).toList();
+        return modelRepository.findAll().stream().filter(model->Boolean.TRUE.equals(model.getEnabled()))
+            .filter(model->Objects.equals(route.getCapabilityLevel(),model.getCapabilityLevel())).toList();
+    }
+
+    /** 返回当前路由显式关联的供应商集合。 */
+    private Set<Long> routeProviderIds(LlmRoute route){
+        Set<Long> providers=new LinkedHashSet<>(parseIds(route.getProviderIds()));
+        if(!providers.isEmpty())return providers;
+        parseIds(route.getCandidateModelIds()).stream().map(modelRepository::findById).flatMap(Optional::stream)
+            .map(LlmModel::getProviderId).forEach(providers::add);
+        return providers;
+    }
+
+    /** 使用数据库中的最新健康状态原子刷新全部内存路由。 */
+    private void refreshActiveRoutes(){
         Map<String,WorkerRoute> next=new LinkedHashMap<>();
         for(LlmRoute route:routeRepository.findAll())if(Boolean.TRUE.equals(route.getEnabled())){
             List<WorkerCandidate> available=candidates(route.getFeatureCode());
             next.put(route.getFeatureCode(),new WorkerRoute(available,Boolean.TRUE.equals(route.getEnableThinking()),true));
         }
-        activeRoutes.set(Map.copyOf(next));return result;
+        activeRoutes.set(Map.copyOf(next));
     }
 
-    /** 从当前路由移除供应商池成员，并立即重新同步内存。 */
+    /** 从当前路由移除供应商及其旧候选模型，并立即刷新内存快照。 */
     @Transactional
     public void removeProviderFromRoute(Long routeId,Long providerId){
         LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
-        route.setProviderIds(parseIds(route.getProviderIds()).stream().filter(id->!id.equals(providerId)).map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));routeRepository.save(route);syncRoutes(List.of());
+        List<Long> configuredProviders=parseIds(route.getProviderIds());
+        List<Long> candidateModels=parseIds(route.getCandidateModelIds());
+        if(configuredProviders.isEmpty()&&candidateModels.isEmpty())configuredProviders=providerRepository.findAll().stream().map(LlmProvider::getId).toList();
+        List<Long> remainingProviders=configuredProviders.stream().filter(id->!id.equals(providerId)).toList();
+        List<Long> remainingModels=candidateModels.stream()
+            .filter(modelId->modelRepository.findById(modelId).map(model->!providerId.equals(model.getProviderId())).orElse(true)).toList();
+        route.setProviderIds(joinIds(remainingProviders));
+        route.setCandidateModelIds(joinIds(remainingModels));
+        if(remainingProviders.isEmpty()&&remainingModels.isEmpty())route.setEnabled(false);
+        routeRepository.save(route);refreshActiveRoutes();
     }
+
+    /** 将ID集合保存为路由实体使用的逗号分隔格式。 */
+    private String joinIds(List<Long> ids){return ids.stream().map(String::valueOf).reduce((left,right)->left+","+right).orElse("");}
 
     private ModelHealthView checkModel(LlmModel model){
         long started=System.nanoTime();String status;String error="";
-        try{testModel(model.getId());long duration=(System.nanoTime()-started)/1_000_000;status=duration<10_000?"HEALTHY":duration<30_000?"WARNING":"SLOW";model.setLastCheckDurationMs(duration);}catch(Exception exception){status="FAILED";error=exception.getMessage()==null?"模型检查失败":exception.getMessage();model.setLastCheckDurationMs(null);}
+        try{testModel(model.getId());long duration=(System.nanoTime()-started)/1_000_000;status=healthStatus(duration);model.setLastCheckDurationMs(duration);}catch(Exception exception){status="FAILED";error=exception.getMessage()==null?"模型检查失败":exception.getMessage();model.setLastCheckDurationMs(null);}
         model.setHealthStatus(status);model.setLastCheckError(error);model.setLastCheckedAt(LocalDateTime.now());modelRepository.save(model);return new ModelHealthView(model.getId(),model.getProviderId(),model.getName(),status,model.getLastCheckDurationMs(),error);
     }
+
+    /** 按同步耗时划分健康状态，边界分别为10秒和30秒。 */
+    static String healthStatus(long durationMs){return durationMs<10_000?"HEALTHY":durationMs<30_000?"WARNING":"SLOW";}
 
     /**
      * 按单个模型解析路由配置（单模型直连模式）。
@@ -644,6 +706,7 @@ public class LlmManagementService {
         public ModelCommand(String code,String name,Long providerId,String modelName,String modelType,String capabilityLevel,String thinkingLevels,Boolean enabled){this(code,name,providerId,modelName,null,modelType,capabilityLevel,thinkingLevels,enabled);}
     }
     public record RouteCommand(String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,Boolean enableThinking,String thinkingLevel,Boolean enabled){}
+    public record RouteSyncCommand(Long routeId,List<Long> providerIds){}
     public record RouteView(Long id,String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,String thinkingLevel,Boolean enableThinking,Boolean enabled){}
     public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,@JsonIgnore List<String> supportedModelTypes){}
     public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
