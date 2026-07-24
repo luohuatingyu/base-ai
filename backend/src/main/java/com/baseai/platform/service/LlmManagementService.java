@@ -1,5 +1,6 @@
 package com.baseai.platform.service;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.domain.*;
@@ -47,6 +48,9 @@ public class LlmManagementService {
     /** 路由数据访问接口 */
     private final LlmRouteRepository routeRepository;
 
+    /** 模型类型字典仓储，用于让新增类型无需修改业务代码。 */
+    private final DictionaryDataRepository dictionaryDataRepository;
+
     /** 配置加密解密服务，用于API密钥的安全存储 */
     private final ConfigCryptoService cryptoService;
 
@@ -65,9 +69,10 @@ public class LlmManagementService {
      * @param workerClient Python Worker REST客户端（通过pythonWorkerRestClient限定符注入）
      */
     public LlmManagementService(LlmProviderRepository providerRepository, LlmModelRepository modelRepository,
-                                LlmRouteRepository routeRepository, ConfigCryptoService cryptoService,
+                                LlmRouteRepository routeRepository, DictionaryDataRepository dictionaryDataRepository,
+                                ConfigCryptoService cryptoService,
                                 @org.springframework.beans.factory.annotation.Qualifier("pythonWorkerRestClient") RestClient workerClient) {
-        this.providerRepository=providerRepository;this.modelRepository=modelRepository;this.routeRepository=routeRepository;this.cryptoService=cryptoService;this.workerClient=workerClient;
+        this.providerRepository=providerRepository;this.modelRepository=modelRepository;this.routeRepository=routeRepository;this.dictionaryDataRepository=dictionaryDataRepository;this.cryptoService=cryptoService;this.workerClient=workerClient;
     }
 
     /**
@@ -130,6 +135,16 @@ public class LlmManagementService {
      * @return 模型配置列表，按ID升序排列
      */
     public List<LlmModel> models(){return modelRepository.findAll().stream().sorted(Comparator.comparing(LlmModel::getId)).toList();}
+
+    /** 查询启用的模型类型目录；字典尚未初始化时回退到内置的首批类型。 */
+    public List<ModelTypeOption> modelTypes(){
+        List<ModelTypeOption> result=dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type").stream()
+            .filter(item->Boolean.TRUE.equals(item.getEnabled()))
+            .map(item->new ModelTypeOption(LlmModel.normalizeModelTypes(List.of(item.getDictValue())).stream().findFirst().orElse(""),item.getLabel()))
+            .filter(item->!item.value().isBlank())
+            .toList();
+        return result.isEmpty()?List.of(new ModelTypeOption("text_model","文本模型"),new ModelTypeOption("vision_model","视觉模型")):result;
+    }
 
     /**
      * 创建新的模型配置
@@ -216,15 +231,33 @@ public class LlmManagementService {
     public List<WorkerCandidate> candidates(String featureCode){
         LlmRoute route=routeRepository.findByFeatureCode(featureCode).filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
         if(route==null)return List.of();
+        return routeModels(route).stream()
+            .map(model->candidate(model, Boolean.TRUE.equals(route.getEnableThinking())?route.getThinkingLevel():null))
+            .filter(Objects::nonNull).toList();
+    }
+
+    /** 返回路由当前配置中可参与筛选的全部模型类型编码。 */
+    public List<String> routeModelTypes(String featureCode){
+        LlmRoute route=routeRepository.findByFeatureCode(featureCode).filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
+        if(route==null)return List.of();
+        Set<Long> enabledProviders=providerRepository.findAll().stream().filter(item->Boolean.TRUE.equals(item.getEnabled()))
+            .map(LlmProvider::getId).collect(java.util.stream.Collectors.toSet());
+        String thinkingLevel=Boolean.TRUE.equals(route.getEnableThinking())?route.getThinkingLevel():null;
+        return routeModels(route).stream().filter(model->enabledProviders.contains(model.getProviderId()))
+            .filter(model->thinkingLevel==null||thinkingMappings(model.getThinkingLevels()).containsKey(thinkingLevel))
+            .flatMap(model->model.getSupportedModelTypes().stream()).distinct().toList();
+    }
+
+    /** 根据候选模型或供应商池配置解析启用且健康的模型实体。 */
+    private List<LlmModel> routeModels(LlmRoute route){
         List<LlmModel> models;
-        if(!parseIds(route.getProviderIds()).isEmpty()) {
+        if(!parseIds(route.getProviderIds()).isEmpty()){
             Set<Long> providers=new LinkedHashSet<>(parseIds(route.getProviderIds()));
             models=modelRepository.findAll().stream().filter(model->providers.contains(model.getProviderId()))
                 .filter(model->Objects.equals(route.getCapabilityLevel(),model.getCapabilityLevel())).toList();
-        } else models=parseIds(route.getCandidateModelIds()).stream().map(modelRepository::findById).flatMap(Optional::stream).toList();
-        return models.stream().filter(model->Boolean.TRUE.equals(model.getEnabled())).filter(model->!"FAILED".equals(model.getHealthStatus()))
-            .map(model->candidate(model, Boolean.TRUE.equals(route.getEnableThinking())?route.getThinkingLevel():null))
-            .filter(Objects::nonNull).toList();
+        }else models=parseIds(route.getCandidateModelIds()).stream().map(modelRepository::findById).flatMap(Optional::stream).toList();
+        return models.stream().filter(model->Boolean.TRUE.equals(model.getEnabled()))
+            .filter(model->!"FAILED".equals(model.getHealthStatus())).toList();
     }
 
     /**
@@ -241,12 +274,13 @@ public class LlmManagementService {
     }
 
     /** 只从已同步的内存快照读取候选，避免保存中的数据库配置立即参与调用。 */
-    public WorkerRoute resolveActive(String featureCode){
-        String code=blank(featureCode)?DEFAULT_ROUTE:featureCode.trim();
+    public WorkerRoute resolveActive(String featureCode,String modelType){
+        String code=blank(featureCode)||"chat".equalsIgnoreCase(featureCode)?DEFAULT_ROUTE:featureCode.trim();
         WorkerRoute route=activeRoutes.get().get(code);
+        if(route!=null)route=new WorkerRoute(route.candidates().stream().filter(item->matchesModelType(item.supportedModelTypes(),modelType)).toList(),route.enableThinking(),true);
         if(route==null||route.candidates().isEmpty()){
-            if(DEFAULT_ROUTE.equals(code))throw new BusinessException("请先在能力路由页面为默认路由配置可用模型，并执行同步路由后再调用");
-            throw new BusinessException("能力路由未同步可用模型，请执行同步路由后再调用");
+            if(DEFAULT_ROUTE.equals(code))throw new BusinessException("默认模型池没有支持所选类型的可用模型，请检查能力路由并执行同步");
+            throw new BusinessException("所选模型池没有支持该类型的可用模型，请检查能力路由并执行同步");
         }
         return route;
     }
@@ -254,9 +288,9 @@ public class LlmManagementService {
     /** 确保默认路由存在，并保持其固定业务约束。 */
     @Transactional
     public void ensureDefaultRoute(){
-        LlmRoute route=routeRepository.findByFeatureCode(DEFAULT_ROUTE).orElseGet(()->{LlmRoute item=new LlmRoute();item.setFeatureCode(DEFAULT_ROUTE);item.setName("默认能力路由");item.setCandidateModelIds("");item.setProviderIds("");return item;});
-        route.setCapabilityLevel("MIDDLE");route.setEnableThinking(false);route.setThinkingLevel(null);route.setEnabled(true);routeRepository.save(route);
+        ensureDefaultRoute(DEFAULT_ROUTE,"默认能力路由");
     }
+    private void ensureDefaultRoute(String code,String name){LlmRoute route=routeRepository.findByFeatureCode(code).orElseGet(()->{LlmRoute item=new LlmRoute();item.setFeatureCode(code);item.setName(name);item.setCandidateModelIds("");item.setProviderIds("");return item;});route.setCapabilityLevel("MIDDLE");route.setEnableThinking(false);route.setThinkingLevel(null);route.setEnabled(true);routeRepository.save(route);}
 
     /** 检查指定供应商池（为空时全部）并原子更新数据库状态和内存路由。 */
     @Transactional
@@ -299,14 +333,17 @@ public class LlmManagementService {
      * @return 包含单个候选的 WorkerRoute，routeConfigured 恒为 true
      * @throws BusinessException 模型不存在、供应商停用，或开启思考但模型未配置所选等级
      */
-    public WorkerRoute resolveModel(Long modelId,boolean enableThinking,String thinkingLevel){
+    public WorkerRoute resolveModel(Long modelId,String modelType,boolean enableThinking,String thinkingLevel){
         LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("模型不存在"));
         if(!Boolean.TRUE.equals(model.getEnabled()))throw new BusinessException("所选模型已停用");
+        if(!matchesModelType(model.getSupportedModelTypes(),modelType))throw new BusinessException("所选模型不支持该模型类型");
         String normalizedThinking=enableThinking&&!blank(thinkingLevel)?thinkingLevel.trim().toUpperCase(Locale.ROOT):null;
         WorkerCandidate candidate=candidate(model,normalizedThinking);
         if(candidate==null)throw new BusinessException(enableThinking?"所选模型未配置该思考等级":"所选模型的供应商不可用");
         return new WorkerRoute(List.of(candidate),enableThinking,true);
     }
+    /** 兼容旧调用方，默认按文本模型解析单模型。 */
+    public WorkerRoute resolveModel(Long modelId,boolean enableThinking,String thinkingLevel){return resolveModel(modelId,"text_model",enableThinking,thinkingLevel);}
 
     /**
      * 测试单个模型的连接可用性
@@ -394,7 +431,13 @@ public class LlmManagementService {
         model.setName(require(command.name(),"请输入模型名称"));
         model.setProviderId(command.providerId());
         model.setModelName(require(command.modelName(),"请输入模型标识"));
-        model.setModelType(blank(command.modelType())?"TEXT":command.modelType().toUpperCase(Locale.ROOT)); // 默认TEXT类型
+        List<String> requestedTypes=command.supportedModelTypes()==null||command.supportedModelTypes().isEmpty()
+            ?LlmModel.normalizeModelTypes(List.of(command.modelType()==null?"text_model":command.modelType()))
+            :LlmModel.normalizeModelTypes(command.supportedModelTypes());
+        if(requestedTypes.isEmpty())throw new BusinessException("请至少选择一个模型类型");
+        Set<String> availableTypes=modelTypes().stream().map(ModelTypeOption::value).collect(java.util.stream.Collectors.toSet());
+        if(!availableTypes.containsAll(requestedTypes))throw new BusinessException("模型类型不存在或已停用");
+        model.setSupportedModelTypes(requestedTypes);
         model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT)); // 默认MIDDLE能力级别
         model.setThinkingLevels(normalizeThinkingLevels(command.thinkingLevels()));
         model.setEnabled(command.enabled()==null||command.enabled()); // 默认启用
@@ -476,7 +519,7 @@ public class LlmManagementService {
             model.getModelName(),
             provider.getConcurrencyLimit(),
             provider.getConcurrencyLevel(),
-            provider.getTimeoutSeconds(), provider.getThinkingParameter(), thinkingValue
+            provider.getTimeoutSeconds(), provider.getThinkingParameter(), thinkingValue, model.getSupportedModelTypes()
         );
     }
     /**
@@ -566,6 +609,11 @@ public class LlmManagementService {
      * @return 如果字符串为null或空白，返回true，否则返回false
      */
     private boolean blank(String value){return value==null||value.isBlank();}
+    /** 按任意字典类型编码筛选模型，不依赖固定枚举。 */
+    private boolean matchesModelType(Collection<String> configured,String requested){
+        String normalized=blank(requested)?"text_model":requested.trim().toLowerCase(Locale.ROOT);
+        return LlmModel.normalizeModelTypes(configured).contains(normalized);
+    }
 
     /** 将逗号或换行分隔的密钥标准化为每行一个密钥。 */
     private String normalizeApiKeys(String value){
@@ -591,10 +639,14 @@ public class LlmManagementService {
     public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
     public record ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
     public record ProviderApiKeysView(Long id,String apiKeys){}
-    public record ModelCommand(String code,String name,Long providerId,String modelName,String modelType,String capabilityLevel,String thinkingLevels,Boolean enabled){}
+    public record ModelCommand(String code,String name,Long providerId,String modelName,List<String> supportedModelTypes,String modelType,String capabilityLevel,String thinkingLevels,Boolean enabled){
+        /** 兼容旧版仅提交 modelType 的内部调用。 */
+        public ModelCommand(String code,String name,Long providerId,String modelName,String modelType,String capabilityLevel,String thinkingLevels,Boolean enabled){this(code,name,providerId,modelName,null,modelType,capabilityLevel,thinkingLevels,enabled);}
+    }
     public record RouteCommand(String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,Boolean enableThinking,String thinkingLevel,Boolean enabled){}
     public record RouteView(Long id,String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,String thinkingLevel,Boolean enableThinking,Boolean enabled){}
-    public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue){}
+    public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,@JsonIgnore List<String> supportedModelTypes){}
     public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
     public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
+    public record ModelTypeOption(String value,String label){}
 }

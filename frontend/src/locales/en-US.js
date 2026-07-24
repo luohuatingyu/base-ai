@@ -65,6 +65,7 @@ export default {
     model: 'Model',
     selectProvider: 'Select provider',
     selectModel: 'Select model',
+    selectModelPool: 'Select a pool supporting the current type',
     modelPool: 'Model Pool',
     capabilityLevel: 'Capability Level',
     enableThinking: 'Enable Thinking',

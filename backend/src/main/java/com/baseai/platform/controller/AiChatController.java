@@ -43,7 +43,7 @@ public class AiChatController {
             .map(r -> {
                 log.debug("route: id={} featureCode={} name={} enabled={}",
                     r.id(), r.featureCode(), r.name(), r.enabled());
-                return new RouteOption(r.id(), r.featureCode(), r.name());
+                return new RouteOption(r.id(), r.featureCode(), r.name(), llmManagementService.routeModelTypes(r.featureCode()));
             })
             .toList();
 
@@ -63,7 +63,7 @@ public class AiChatController {
             .collect(java.util.stream.Collectors.groupingBy(
                 com.baseai.platform.domain.LlmModel::getProviderId,
                 java.util.stream.Collectors.mapping(
-                    m -> new ModelOption(m.getId(), m.getName(), m.getModelName(), m.getModelType()),
+                    m -> new ModelOption(m.getId(), m.getName(), m.getModelName(), m.getSupportedModelTypes()),
                     java.util.stream.Collectors.toList())));
 
         List<ProviderModels> result = providers.values().stream()
@@ -75,6 +75,10 @@ public class AiChatController {
         log.info("event=get_chat_providers count={}", result.size());
         return result;
     }
+
+    /** 获取启用的动态模型类型，供对话页生成类型单选项。 */
+    @GetMapping("/model-types")
+    public List<LlmManagementService.ModelTypeOption> getAvailableModelTypes() { return llmManagementService.modelTypes(); }
 
     /** 建立任务上下文并代理一次通用模型对话。 */
     @PostMapping
@@ -89,11 +93,11 @@ public class AiChatController {
     }
 
     /** 路由选项，用于前端下拉列表。 */
-    public record RouteOption(Long id, String featureCode, String name) {}
+    public record RouteOption(Long id, String featureCode, String name, List<String> supportedModelTypes) {}
     /** 供应商及其可用模型，用于对话页“单模型”模式级联选择。 */
     public record ProviderModels(Long id, String code, String name, List<ModelOption> models) {}
     /** 模型选项，用于前端下拉列表。 */
-    public record ModelOption(Long id, String name, String modelName, String modelType) {}
+    public record ModelOption(Long id, String name, String modelName, List<String> supportedModelTypes) {}
     /** AI 对话请求参数，字段名称与前端接口协议保持一致。 */
     public record ChatRequest(@JsonProperty("model_type") String modelType, String featureCode,
                               List<AiChatClient.Message> messages, Double temperature,

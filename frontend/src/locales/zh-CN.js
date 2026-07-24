@@ -90,6 +90,7 @@ export default {
     model: '模型',
     selectProvider: '请选择供应商',
     selectModel: '请选择模型',
+    selectModelPool: '请选择支持当前类型的模型池',
     modelPool: '模型池',
     capabilityLevel: '能力级别',
     enableThinking: '启用思考',

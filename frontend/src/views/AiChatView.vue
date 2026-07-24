@@ -6,6 +6,9 @@
     <!-- 模型配置选择器 -->
     <div class="model-config">
       <el-form :inline="true" size="small">
+        <el-form-item :label="t('chat.modelType')">
+          <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ type.label }}</el-radio-button></el-radio-group>
+        </el-form-item>
         <el-form-item :label="t('chat.mode')">
           <el-radio-group v-model="mode">
             <el-radio-button value="multi">{{ t('chat.multiModel') }}</el-radio-button>
@@ -14,24 +17,18 @@
         </el-form-item>
         <el-form-item v-if="mode === 'multi'" :label="t('chat.modelPool')">
           <el-select v-model="featureCode" :placeholder="t('chat.defaultPool')" style="width: 180px" clearable filterable>
-            <el-option value="" :label="t('chat.defaultPool')" />
-            <el-option v-for="route in routes" :key="route.id" :value="route.featureCode" :label="route.name + ' (' + route.featureCode + ')'" />
+            <el-option v-if="defaultRouteSupportsType" value="" :label="t('chat.defaultPool')" />
+            <el-option v-for="route in filteredRoutes" :key="route.id" :value="route.featureCode" :label="route.name + ' (' + route.featureCode + ')'" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="mode === 'single'" :label="t('chat.provider')">
           <el-select v-model="providerId" :placeholder="t('chat.selectProvider')" style="width: 180px" filterable @change="onProviderChange">
-            <el-option v-for="p in providers" :key="p.id" :value="p.id" :label="p.name + ' (' + p.code + ')'" />
+            <el-option v-for="p in filteredProviders" :key="p.id" :value="p.id" :label="p.name + ' (' + p.code + ')'" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="mode === 'single'" :label="t('chat.model')">
           <el-select v-model="modelId" :placeholder="t('chat.selectModel')" style="width: 180px" filterable>
             <el-option v-for="m in currentModels" :key="m.id" :value="m.id" :label="m.name + ' (' + m.modelName + ')'" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chat.modelType')">
-          <el-select v-model="modelType" style="width: 130px">
-            <el-option value="text_model" :label="t('chat.textModel')" />
-            <el-option value="vision_model" :label="t('chat.visionModel')" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('chat.enableThinking')">
@@ -77,6 +74,7 @@ const lastTrace = ref('')
 const mode = ref('multi') // multi=模型池(能力路由) / single=供应商+模型直连
 const featureCode = ref('')
 const modelType = ref('text_model')
+const modelTypes = ref([])
 const enableThinking = ref(false)
 const thinkingLevel = ref('MEDIUM')
 const routes = ref([])
@@ -84,23 +82,36 @@ const providers = ref([])
 const providerId = ref(null)
 const modelId = ref(null)
 
-// 当前所选供应商下的模型列表
-const currentModels = computed(() => providers.value.find(p => p.id === providerId.value)?.models || [])
+// 根据动态类型目录过滤模型池、供应商和模型
+const legacyTypes = model => String(model?.modelType || '').split(',').map(value => value.trim().toLowerCase()).flatMap(value => value === 'both' ? ['text_model', 'vision_model'] : [value === 'text' ? 'text_model' : value === 'vision' ? 'vision_model' : value])
+const matchesType = model => (Array.isArray(model?.supportedModelTypes) ? model.supportedModelTypes : legacyTypes(model)).includes(modelType.value)
+const defaultRouteSupportsType = computed(() => routes.value.some(route => route.featureCode === 'DEFAULT' && route.supportedModelTypes?.includes(modelType.value)))
+const filteredRoutes = computed(() => routes.value.filter(route => route.featureCode !== 'DEFAULT' && route.supportedModelTypes?.includes(modelType.value)))
+const filteredProviders = computed(() => providers.value.filter(provider => provider.models.some(matchesType)))
+const currentModels = computed(() => (providers.value.find(p => p.id === providerId.value)?.models || []).filter(matchesType))
 
 // 切换供应商时清空已选模型
 function onProviderChange() {
   modelId.value = null
 }
+function onModelTypeChange() {
+  if (!defaultRouteSupportsType.value && !filteredRoutes.value.some(route => route.featureCode === featureCode.value)) featureCode.value = ''
+  if (!filteredProviders.value.some(provider => provider.id === providerId.value)) providerId.value = null
+  if (!currentModels.value.some(model => model.id === modelId.value)) modelId.value = null
+}
 
 // 加载路由列表和供应商列表
 onMounted(async () => {
   try {
-    const [routesRes, providersRes] = await Promise.all([
+    const [routesRes, providersRes, typesRes] = await Promise.all([
       http.get('/ai/chat/routes'),
-      http.get('/ai/chat/providers')
+      http.get('/ai/chat/providers'),
+      http.get('/ai/chat/model-types')
     ])
     routes.value = routesRes.data
     providers.value = providersRes.data
+    modelTypes.value = typesRes.data
+    if (!modelTypes.value.some(type => type.value === modelType.value)) modelType.value = modelTypes.value[0]?.value || 'text_model'
   } catch (error) {
     console.error('Failed to load chat options:', error)
   }
@@ -111,6 +122,7 @@ async function send() {
   const content = prompt.value.trim()
   if (!content || loading.value) return
   if (mode.value === 'single' && !modelId.value) { ElMessage.warning(t('chat.selectModel')); return }
+  if (mode.value === 'multi' && !defaultRouteSupportsType.value && !filteredRoutes.value.some(route => route.featureCode === featureCode.value)) { ElMessage.warning(t('chat.selectModelPool')); return }
   messages.value.push({ role: 'user', content })
   prompt.value = ''
   loading.value = true

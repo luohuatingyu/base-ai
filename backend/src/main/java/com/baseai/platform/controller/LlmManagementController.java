@@ -33,6 +33,8 @@ public class LlmManagementController {
 
     /** 查询模型列表。 */
     @GetMapping @RequiredPermission("model:model:list") public List<LlmModel> models(){return service.models();}
+    /** 查询可配置的模型类型目录。 */
+    @GetMapping("/model-types") @RequiredPermission("model:model:list") public List<LlmManagementService.ModelTypeOption> modelTypes(){return service.modelTypes();}
     /** 创建模型。 */
     @PostMapping @RequiredPermission("model:model:create") public LlmModel createModel(@RequestBody LlmManagementService.ModelCommand command){return service.createModel(command);}
     /** 更新模型。 */

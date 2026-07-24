@@ -5,6 +5,10 @@ import com.baseai.platform.domain.Menu;
 import com.baseai.platform.domain.Department;
 import com.baseai.platform.domain.Role;
 import com.baseai.platform.domain.UserAccount;
+import com.baseai.platform.domain.DictionaryData;
+import com.baseai.platform.domain.DictionaryType;
+import com.baseai.platform.repository.DictionaryDataRepository;
+import com.baseai.platform.repository.DictionaryTypeRepository;
 import com.baseai.platform.repository.MenuRepository;
 import com.baseai.platform.repository.DepartmentRepository;
 import com.baseai.platform.repository.RoleRepository;
@@ -54,6 +58,12 @@ public class DataInitializer implements ApplicationRunner {
     /** 部门数据仓库，用于管理组织架构 */
     private final DepartmentRepository departmentRepository;
 
+    /** 模型类型字典仓储。 */
+    private final DictionaryTypeRepository dictionaryTypeRepository;
+
+    /** 模型类型字典数据仓储。 */
+    private final DictionaryDataRepository dictionaryDataRepository;
+
     /** BCrypt 密码编码器，用于加密用户密码 */
     private final BCryptPasswordEncoder passwordEncoder;
 
@@ -68,12 +78,16 @@ public class DataInitializer implements ApplicationRunner {
      * @param passwordEncoder 密码编码器
      */
     public DataInitializer(PlatformProperties properties, MenuRepository menuRepository, RoleRepository roleRepository,
-                           UserRepository userRepository, DepartmentRepository departmentRepository, BCryptPasswordEncoder passwordEncoder) {
+                           UserRepository userRepository, DepartmentRepository departmentRepository,
+                           DictionaryTypeRepository dictionaryTypeRepository, DictionaryDataRepository dictionaryDataRepository,
+                           BCryptPasswordEncoder passwordEncoder) {
         this.properties = properties;
         this.menuRepository = menuRepository;
         this.roleRepository = roleRepository;
         this.userRepository = userRepository;
         this.departmentRepository = departmentRepository;
+        this.dictionaryTypeRepository = dictionaryTypeRepository;
+        this.dictionaryDataRepository = dictionaryDataRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -106,6 +120,9 @@ public class DataInitializer implements ApplicationRunner {
 
         // 第三步：初始化所有系统菜单和权限
         seedMenus();
+
+        // 初始化可扩展的模型类型目录，后续类型可直接通过字典管理追加
+        seedModelTypes();
 
         // 获取所有菜单，用于分配给管理员角色
         List<Menu> menus = menuRepository.findAll();
@@ -140,6 +157,33 @@ public class DataInitializer implements ApplicationRunner {
         admin.getRoles().add(adminRole);
         admin.setEnabled(true);
         userRepository.save(admin);
+    }
+
+    /** 初始化首批模型类型，重复启动只补充缺失项且不覆盖管理员配置。 */
+    private void seedModelTypes() {
+        DictionaryType type=dictionaryTypeRepository.findByCode("llm_model_type").orElseGet(DictionaryType::new);
+        if(type.getId()==null){
+            type.setCode("llm_model_type");
+            type.setName("模型类型");
+            type.setDescription("模型可支持的输入或能力类型编码");
+            type.setEnabled(true);
+            dictionaryTypeRepository.save(type);
+        }
+        seedModelType("text_model","文本模型",10);
+        seedModelType("vision_model","视觉模型",20);
+    }
+
+    /** 仅在缺失时写入内置模型类型，保留管理员对已有字典项的调整。 */
+    private void seedModelType(String value,String label,int sortOrder) {
+        if(dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type").stream()
+            .anyMatch(item->value.equals(item.getDictValue())))return;
+        DictionaryData data=new DictionaryData();
+        data.setTypeCode("llm_model_type");
+        data.setDictValue(value);
+        data.setLabel(label);
+        data.setSortOrder(sortOrder);
+        data.setEnabled(true);
+        dictionaryDataRepository.save(data);
     }
 
     /**
