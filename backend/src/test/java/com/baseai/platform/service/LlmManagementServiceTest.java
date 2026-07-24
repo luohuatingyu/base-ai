@@ -415,6 +415,68 @@ class LlmManagementServiceTest {
         assertEquals("HIGH", updated.capabilityLevel());
     }
 
+    /** 默认路由应保存用户选择的思考模式和思考级别。 */
+    @Test
+    void updateDefaultRoutePreservesThinkingConfiguration() {
+        LlmRoute route = route("1", "");
+        route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
+        when(routeRepository.save(route)).thenReturn(route);
+
+        LlmManagementService.RouteView updated = service.updateRoute(8L, new LlmManagementService.RouteCommand(
+            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(), List.of(1L), "HIGH", true, "EXTRA_HIGH", true));
+
+        assertEquals(true, updated.enableThinking());
+        assertEquals("EXTRA_HIGH", updated.thinkingLevel());
+    }
+
+    /** 关闭默认路由思考模式时，应清空已保存的思考级别。 */
+    @Test
+    void disablingDefaultRouteThinkingClearsThinkingLevel() {
+        LlmRoute route = route("1", "");
+        route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
+        route.setEnableThinking(true);
+        route.setThinkingLevel("HIGH");
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
+        when(routeRepository.save(route)).thenReturn(route);
+
+        LlmManagementService.RouteView updated = service.updateRoute(8L, new LlmManagementService.RouteCommand(
+            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(), List.of(1L), "HIGH", false, "HIGH", true));
+
+        assertEquals(false, updated.enableThinking());
+        assertEquals(null, updated.thinkingLevel());
+    }
+
+    /** 开启默认路由思考模式但未选择级别时，应拒绝保存。 */
+    @Test
+    void enablingDefaultRouteThinkingRequiresThinkingLevel() {
+        LlmRoute route = route("1", "");
+        route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
+
+        assertThrows(BusinessException.class, () -> service.updateRoute(8L, new LlmManagementService.RouteCommand(
+            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(), List.of(1L), "HIGH", true, null, true)));
+    }
+
+    /** 默认路由同步前置检查不应覆盖已保存的思考配置。 */
+    @Test
+    void ensureDefaultRoutePreservesThinkingConfiguration() {
+        LlmRoute route = route("1", "");
+        route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
+        route.setEnableThinking(true);
+        route.setThinkingLevel("HIGH");
+        when(routeRepository.findByFeatureCode(LlmManagementService.DEFAULT_ROUTE)).thenReturn(Optional.of(route));
+
+        service.ensureDefaultRoute();
+
+        assertEquals(true, route.getEnableThinking());
+        assertEquals("HIGH", route.getThinkingLevel());
+        verify(routeRepository).save(route);
+    }
+
     /** 健康检查可测试不同能力模型，但真实路由候选仍只能包含匹配能力的模型。 */
     @Test
     void routeCandidatesStillFilterByCapabilityLevel() {
