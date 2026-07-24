@@ -4,6 +4,7 @@
       <div><h2>{{ t('routes.title') }}</h2><p>{{ t('routes.description') }}</p></div>
       <el-button v-if="auth.hasPermission('model:route:create')" type="primary" @click="open()">{{ t('routes.add') }}</el-button>
     </div>
+    <el-alert class="route-sync-notice" :title="t('routes.editSyncNotice')" type="warning" show-icon :closable="false"/>
     <el-table :data="rows">
       <el-table-column prop="featureCode" :label="t('routes.featureCode')"/>
       <el-table-column prop="name" :label="t('common.name')"/>
@@ -156,6 +157,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.route-sync-notice { margin-bottom: 16px; }
 .route-health-results { display: grid; gap: 12px; margin-top: 18px; }
 .route-health-result { padding: 14px 16px; border: 1px solid transparent; border-radius: 10px; }
 .route-health-result.is-healthy { border-color: #95d475; background: #f0f9eb; }
