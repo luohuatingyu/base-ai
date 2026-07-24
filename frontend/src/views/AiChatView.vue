@@ -3,8 +3,10 @@
   <div class="panel chat-panel">
     <div class="section-head"><div><h2>{{ t('chat.title') }}</h2><p>{{ t('chat.description') }}</p></div><el-tag type="success">OpenAI Compatible</el-tag></div>
 
-    <!-- 模型配置选择器 -->
-    <div class="model-config">
+    <el-tabs v-model="activeTab" class="chat-tabs">
+      <el-tab-pane :label="t('chat.conversationTab')" name="conversation">
+        <!-- 模型配置选择器 -->
+        <div class="model-config">
       <el-form :inline="true" size="small">
         <el-form-item :label="t('chat.modelType')">
           <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ type.label }}</el-radio-button></el-radio-group>
@@ -45,9 +47,9 @@
           </el-select>
         </el-form-item>
       </el-form>
-    </div>
+        </div>
 
-    <div class="messages">
+        <div class="messages">
       <div v-for="(item, index) in messages" :key="index" :class="['message', item.role]">
         <small>{{ item.role === 'user' ? t('chat.user') : t('chat.assistant') }}</small>
         <div>{{ item.content }}</div>
@@ -63,22 +65,40 @@
         </div>
       </div>
       <el-empty v-if="!messages.length" :description="t('chat.empty')" />
-    </div>
-    <div v-if="pendingImages.length" class="pending-images">
+        </div>
+        <div v-if="pendingImages.length" class="pending-images">
       <div v-for="image in pendingImages" :key="image.name + image.dataUrl" class="pending-image">
         <img :src="image.dataUrl" :alt="image.name" />
         <el-button circle size="small" type="danger" @click="removeImage(image)">×</el-button>
       </div>
-    </div>
-    <el-input v-model="prompt" type="textarea" :rows="4" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
-    <div class="chat-actions">
-      <span v-if="lastTrace">{{ t('chat.traceId') }}: {{ lastTrace }}</span>
-      <div class="chat-action-buttons">
-        <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
-        <el-button :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
-        <el-button type="primary" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
-      </div>
-    </div>
+        </div>
+        <el-input v-model="prompt" type="textarea" :rows="4" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
+        <div class="chat-actions">
+          <span v-if="lastTrace">{{ t('chat.traceId') }}: {{ lastTrace }}</span>
+          <div class="chat-action-buttons">
+            <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
+            <el-button :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
+            <el-button type="primary" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
+          </div>
+        </div>
+      </el-tab-pane>
+      <el-tab-pane :label="t('chat.promptTab')" name="prompt">
+        <div class="prompt-settings">
+          <div class="prompt-settings-head">
+            <div>
+              <h3>{{ t('chat.promptTitle') }}</h3>
+              <p>{{ t('chat.promptDescription') }}</p>
+            </div>
+            <el-button plain @click="clearPrompt">{{ t('chat.clearPrompt') }}</el-button>
+          </div>
+          <input ref="promptFileInput" type="file" accept=".txt,.md,text/plain,text/markdown" hidden @change="onPromptFileSelected" />
+          <el-button @click="openPromptFilePicker">{{ t('chat.choosePromptFile') }}</el-button>
+          <span v-if="promptFileName" class="prompt-file-name">{{ promptFileName }}</span>
+          <el-input v-model="systemPrompt" class="prompt-input" type="textarea" :rows="16" :placeholder="t('chat.promptPlaceholder')" />
+          <p class="prompt-hint">{{ t('chat.promptHint') }}</p>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -88,9 +108,14 @@ import { ElMessage } from 'element-plus'
 import http from '../api/http'
 import { useI18n } from 'vue-i18n'
 import { createAssistantMessage, hasChatResponseMetadata } from '../utils/chatResponse'
+import { isPromptFile, readPromptFile, withSystemPrompt } from '../utils/prompt'
 
 const { t } = useI18n()
 const prompt = ref('')
+const systemPrompt = ref('')
+const promptFileName = ref('')
+const promptFileInput = ref(null)
+const activeTab = ref('conversation')
 const messages = ref([])
 const pendingImages = ref([])
 const imageInput = ref(null)
@@ -99,6 +124,7 @@ const lastTrace = ref('')
 const MAX_IMAGES = 4
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const MAX_PROMPT_FILE_SIZE = 1024 * 1024
 
 // 模型配置
 const mode = ref('multi') // multi=模型池(能力路由) / single=供应商+模型直连
@@ -177,6 +203,39 @@ function removeImage(image) {
   pendingImages.value = pendingImages.value.filter(item => item !== image)
 }
 
+/** 打开系统文件选择器，读取 Markdown 或纯文本提示词文件。 */
+function openPromptFilePicker() {
+  promptFileInput.value?.click()
+}
+
+/** 读取提示词文件并校验扩展名、大小和文本内容。 */
+async function onPromptFileSelected(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  if (!isPromptFile(file)) {
+    ElMessage.warning(t('chat.promptFileType'))
+    return
+  }
+  if (file.size > MAX_PROMPT_FILE_SIZE) {
+    ElMessage.warning(t('chat.promptFileSize'))
+    return
+  }
+  try {
+    systemPrompt.value = await readPromptFile(file)
+    promptFileName.value = file.name
+  } catch (error) {
+    console.error('Failed to read prompt file:', error)
+    ElMessage.error(t('chat.promptFileReadFailed'))
+  }
+}
+
+/** 清空当前页面中的提示词和已选择的文件名。 */
+function clearPrompt() {
+  systemPrompt.value = ''
+  promptFileName.value = ''
+}
+
 /** 将页面消息转换为后端兼容的纯文本或多模态消息。 */
 function toApiMessage(message) {
   if (!message.images?.length) return { role: message.role, content: message.content }
@@ -222,7 +281,7 @@ async function send() {
   loading.value = true
   try {
     const payload = {
-      messages: messages.value.map(toApiMessage),
+      messages: withSystemPrompt(messages.value.map(toApiMessage), systemPrompt.value),
       temperature: 0,
       model_type: modelType.value
     }
@@ -254,6 +313,47 @@ async function send() {
   background-color: #f5f7fa;
   border-radius: 8px;
   border: 1px solid #e4e7ed;
+}
+
+.chat-tabs :deep(.el-tabs__content) {
+  overflow: visible;
+}
+
+.prompt-settings {
+  max-width: 960px;
+}
+
+.prompt-settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.prompt-settings-head h3,
+.prompt-settings-head p,
+.prompt-hint {
+  margin: 0;
+}
+
+.prompt-settings-head p,
+.prompt-hint,
+.prompt-file-name {
+  color: #909399;
+  font-size: 13px;
+}
+
+.prompt-file-name {
+  margin-left: 12px;
+}
+
+.prompt-input {
+  margin-top: 16px;
+}
+
+.prompt-hint {
+  margin-top: 8px;
 }
 
 .model-config .el-form {
