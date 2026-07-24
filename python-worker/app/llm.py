@@ -28,9 +28,8 @@ class LlmClient:
                    candidates: list[LlmCandidate] | None = None, enable_thinking: bool | None = None,
                    model_type: str = "text_model", route_configured: bool = False) -> ChatResponse:
         """依次尝试候选模型和 API Key，首个成功结果立即返回。"""
-        feature = self._feature_config(model_type)
-        configured = candidates if route_configured else (candidates or self._fallback_candidates(feature))
-        thinking = feature["enable_thinking"] if enable_thinking is None else enable_thinking
+        configured = candidates
+        thinking = bool(enable_thinking)
         if not configured:
             raise RuntimeError("未配置可用的模型能力路由")
         failures: list[str] = []

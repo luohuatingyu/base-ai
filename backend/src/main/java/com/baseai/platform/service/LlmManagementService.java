@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.time.LocalDateTime;
 
 /**
  * LLM模型管理服务
@@ -35,6 +37,7 @@ import java.util.*;
  */
 @Service
 public class LlmManagementService {
+    public static final String DEFAULT_ROUTE = "DEFAULT";
     /** 供应商数据访问接口 */
     private final LlmProviderRepository providerRepository;
 
@@ -49,6 +52,8 @@ public class LlmManagementService {
 
     /** Python Worker服务客户端，用于模型连接测试 */
     private final RestClient workerClient;
+    /** 经健康检查后可参与真实调用的不可变路由快照。 */
+    private final AtomicReference<Map<String, WorkerRoute>> activeRoutes = new AtomicReference<>(Map.of());
 
     /**
      * 构造函数，注入所需的依赖
@@ -191,7 +196,7 @@ public class LlmManagementService {
      *
      * @param id 路由ID
      */
-    public void deleteRoute(Long id){routeRepository.deleteById(id);}
+    public void deleteRoute(Long id){LlmRoute route=routeRepository.findById(id).orElseThrow(()->BusinessException.notFound("能力路由不存在"));if(DEFAULT_ROUTE.equals(route.getFeatureCode()))throw new BusinessException("默认能力路由不可删除");routeRepository.deleteById(id);activeRoutes.updateAndGet(routes->{Map<String,WorkerRoute> copy=new LinkedHashMap<>(routes);copy.remove(route.getFeatureCode());return Map.copyOf(copy);});}
 
     /**
      * 解析指定功能的候选模型列表
@@ -217,7 +222,7 @@ public class LlmManagementService {
             models=modelRepository.findAll().stream().filter(model->providers.contains(model.getProviderId()))
                 .filter(model->Objects.equals(route.getCapabilityLevel(),model.getCapabilityLevel())).toList();
         } else models=parseIds(route.getCandidateModelIds()).stream().map(modelRepository::findById).flatMap(Optional::stream).toList();
-        return models.stream().filter(model->Boolean.TRUE.equals(model.getEnabled()))
+        return models.stream().filter(model->Boolean.TRUE.equals(model.getEnabled())).filter(model->!"FAILED".equals(model.getHealthStatus()))
             .map(model->candidate(model, Boolean.TRUE.equals(route.getEnableThinking())?route.getThinkingLevel():null))
             .filter(Objects::nonNull).toList();
     }
@@ -233,6 +238,74 @@ public class LlmManagementService {
     public WorkerRoute resolve(String featureCode){
         LlmRoute route=routeRepository.findByFeatureCode(featureCode).filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
         return route==null?new WorkerRoute(List.of(),null,false):new WorkerRoute(candidates(featureCode),Boolean.TRUE.equals(route.getEnableThinking()),true);
+    }
+
+    /** 只从已同步的内存快照读取候选，避免保存中的数据库配置立即参与调用。 */
+    public WorkerRoute resolveActive(String featureCode){
+        String code=blank(featureCode)?DEFAULT_ROUTE:featureCode.trim();
+        WorkerRoute route=activeRoutes.get().get(code);
+        if(route==null||route.candidates().isEmpty()){
+            if(DEFAULT_ROUTE.equals(code))throw new BusinessException("请先在能力路由页面为默认路由配置可用模型，并执行同步路由后再调用");
+            throw new BusinessException("能力路由未同步可用模型，请执行同步路由后再调用");
+        }
+        return route;
+    }
+
+    /** 确保默认路由存在，并保持其固定业务约束。 */
+    @Transactional
+    public void ensureDefaultRoute(){
+        LlmRoute route=routeRepository.findByFeatureCode(DEFAULT_ROUTE).orElseGet(()->{LlmRoute item=new LlmRoute();item.setFeatureCode(DEFAULT_ROUTE);item.setName("默认能力路由");item.setCandidateModelIds("");item.setProviderIds("");return item;});
+        route.setCapabilityLevel("MIDDLE");route.setEnableThinking(false);route.setThinkingLevel(null);route.setEnabled(true);routeRepository.save(route);
+    }
+
+    /** 检查指定供应商池（为空时全部）并原子更新数据库状态和内存路由。 */
+    @Transactional
+    public synchronized List<ModelHealthView> syncRoutes(List<Long> providerIds){
+        ensureDefaultRoute();Set<Long> selected=providerIds==null?Set.of():new LinkedHashSet<>(providerIds);
+        List<LlmModel> checked=modelRepository.findAll().stream().filter(model->Boolean.TRUE.equals(model.getEnabled()))
+            .filter(model->selected.isEmpty()||selected.contains(model.getProviderId())).toList();
+        List<ModelHealthView> result=new ArrayList<>();
+        for(LlmModel model:checked) result.add(checkModel(model));
+        Map<String,WorkerRoute> next=new LinkedHashMap<>();
+        for(LlmRoute route:routeRepository.findAll())if(Boolean.TRUE.equals(route.getEnabled())){
+            List<WorkerCandidate> available=candidates(route.getFeatureCode());
+            next.put(route.getFeatureCode(),new WorkerRoute(available,Boolean.TRUE.equals(route.getEnableThinking()),true));
+        }
+        activeRoutes.set(Map.copyOf(next));return result;
+    }
+
+    /** 从当前路由移除供应商池成员，并立即重新同步内存。 */
+    @Transactional
+    public void removeProviderFromRoute(Long routeId,Long providerId){
+        LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
+        route.setProviderIds(parseIds(route.getProviderIds()).stream().filter(id->!id.equals(providerId)).map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));routeRepository.save(route);syncRoutes(List.of());
+    }
+
+    private ModelHealthView checkModel(LlmModel model){
+        long started=System.nanoTime();String status;String error="";
+        try{testModel(model.getId());long duration=(System.nanoTime()-started)/1_000_000;status=duration<10_000?"HEALTHY":duration<30_000?"WARNING":"SLOW";model.setLastCheckDurationMs(duration);}catch(Exception exception){status="FAILED";error=exception.getMessage()==null?"模型检查失败":exception.getMessage();model.setLastCheckDurationMs(null);}
+        model.setHealthStatus(status);model.setLastCheckError(error);model.setLastCheckedAt(LocalDateTime.now());modelRepository.save(model);return new ModelHealthView(model.getId(),model.getProviderId(),model.getName(),status,model.getLastCheckDurationMs(),error);
+    }
+
+    /**
+     * 按单个模型解析路由配置（单模型直连模式）。
+     *
+     * <p>不经过能力路由，直接以指定模型构建单元素候选池，用于对话页“单模型”模式。
+     * 复用 {@link #candidate(LlmModel, String)}，与“测试模型”功能同源。</p>
+     *
+     * @param modelId 模型ID
+     * @param enableThinking 是否启用思考
+     * @param thinkingLevel 思考等级，仅在 enableThinking 为 true 时生效
+     * @return 包含单个候选的 WorkerRoute，routeConfigured 恒为 true
+     * @throws BusinessException 模型不存在、供应商停用，或开启思考但模型未配置所选等级
+     */
+    public WorkerRoute resolveModel(Long modelId,boolean enableThinking,String thinkingLevel){
+        LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("模型不存在"));
+        if(!Boolean.TRUE.equals(model.getEnabled()))throw new BusinessException("所选模型已停用");
+        String normalizedThinking=enableThinking&&!blank(thinkingLevel)?thinkingLevel.trim().toUpperCase(Locale.ROOT):null;
+        WorkerCandidate candidate=candidate(model,normalizedThinking);
+        if(candidate==null)throw new BusinessException(enableThinking?"所选模型未配置该思考等级":"所选模型的供应商不可用");
+        return new WorkerRoute(List.of(candidate),enableThinking,true);
     }
 
     /**
@@ -346,23 +419,24 @@ public class LlmManagementService {
     private LlmRoute saveRoute(LlmRoute route,RouteCommand command){
         List<Long> ids=command.candidateModelIds()==null?List.of():command.candidateModelIds();
         List<Long> providerIds=command.providerIds()==null?List.of():command.providerIds();
-        if(ids.isEmpty()&&providerIds.isEmpty())throw new BusinessException("至少选择一个候选模型或供应商");
+        boolean isDefault=DEFAULT_ROUTE.equals(route.getFeatureCode())||DEFAULT_ROUTE.equals(command.featureCode());
+        if(ids.isEmpty()&&providerIds.isEmpty()&&!isDefault)throw new BusinessException("至少选择一个候选模型或供应商");
 
         // 验证所有候选模型是否都存在
         if(!ids.isEmpty()&&modelRepository.findAllById(ids).size()!=ids.size())
             throw BusinessException.notFound("候选模型不存在");
         if(!providerIds.isEmpty()&&providerRepository.findAllById(providerIds).size()!=providerIds.size())throw BusinessException.notFound("供应商不存在");
 
-        route.setFeatureCode(require(command.featureCode(),"请输入功能编码"));
+        route.setFeatureCode(isDefault?DEFAULT_ROUTE:require(command.featureCode(),"请输入功能编码"));
         route.setName(require(command.name(),"请输入路由名称"));
 
         // 将模型ID列表转换为逗号分隔的字符串
         route.setCandidateModelIds(ids.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));
         route.setProviderIds(providerIds.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));
-        route.setEnableThinking(Boolean.TRUE.equals(command.enableThinking()));
-        route.setCapabilityLevel(providerIds.isEmpty()?null:require(command.capabilityLevel(),"请选择模型能力级别").toUpperCase(Locale.ROOT));
-        route.setThinkingLevel(Boolean.TRUE.equals(command.enableThinking())?require(command.thinkingLevel(),"请选择思考级别").toUpperCase(Locale.ROOT):null);
-        route.setEnabled(command.enabled()==null||command.enabled()); // 默认启用
+        route.setEnableThinking(isDefault?false:Boolean.TRUE.equals(command.enableThinking()));
+        route.setCapabilityLevel(isDefault?"MIDDLE":(providerIds.isEmpty()?null:require(command.capabilityLevel(),"请选择模型能力级别").toUpperCase(Locale.ROOT)));
+        route.setThinkingLevel(Boolean.TRUE.equals(route.getEnableThinking())?require(command.thinkingLevel(),"请选择思考级别").toUpperCase(Locale.ROOT):null);
+        route.setEnabled(isDefault||command.enabled()==null||command.enabled());
 
         return routeRepository.save(route);
     }
@@ -522,4 +596,5 @@ public class LlmManagementService {
     public record RouteView(Long id,String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,String thinkingLevel,Boolean enableThinking,Boolean enabled){}
     public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue){}
     public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
+    public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
 }

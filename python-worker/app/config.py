@@ -18,10 +18,6 @@ class Settings:
     backend_url: str
     internal_token: str
     instance_id: str
-    ai_model_pools_file: str
-    ai_feature_routing_file: str
-    ai_group_pools: tuple[dict, ...]
-    ai_features: dict[str, dict]
     llm_timeout_seconds: float
     llm_log_content: bool
     persist_level: str
@@ -30,16 +26,10 @@ class Settings:
 
 def load_settings() -> Settings:
     """从环境变量、模型组池和业务模型 YAML 构建不可变配置。"""
-    model_pools_file = os.getenv("AI_MODEL_POOLS_FILE", "/app/config/ai-model-pools.yml").strip()
-    feature_routing_file = os.getenv("AI_FEATURE_ROUTING_FILE", "/app/config/ai-feature-routing.yml").strip()
     return Settings(
         backend_url=os.getenv("BACKEND_URL", "http://backend:8080").rstrip("/"),
         internal_token=os.getenv("PYTHON_WORKER_INTERNAL_TOKEN", "").strip(),
         instance_id=os.getenv("PYTHON_WORKER_INSTANCE_ID", "python-worker-1").strip(),
-        ai_model_pools_file=model_pools_file,
-        ai_feature_routing_file=feature_routing_file,
-        ai_group_pools=tuple(_load_group_pools(model_pools_file)),
-        ai_features=_load_features(feature_routing_file),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
         llm_log_content=_boolean(os.getenv("LLM_LOG_CONTENT", "true")),
         persist_level=os.getenv("TRACE_LOG_PERSIST_LEVEL", "INFO").upper(),

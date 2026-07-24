@@ -6,10 +6,26 @@
     <!-- 模型配置选择器 -->
     <div class="model-config">
       <el-form :inline="true" size="small">
-        <el-form-item :label="t('chat.modelPool')">
+        <el-form-item :label="t('chat.mode')">
+          <el-radio-group v-model="mode">
+            <el-radio-button value="multi">{{ t('chat.multiModel') }}</el-radio-button>
+            <el-radio-button value="single">{{ t('chat.singleModel') }}</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="mode === 'multi'" :label="t('chat.modelPool')">
           <el-select v-model="featureCode" :placeholder="t('chat.defaultPool')" style="width: 180px" clearable filterable>
             <el-option value="" :label="t('chat.defaultPool')" />
             <el-option v-for="route in routes" :key="route.id" :value="route.featureCode" :label="route.name + ' (' + route.featureCode + ')'" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="mode === 'single'" :label="t('chat.provider')">
+          <el-select v-model="providerId" :placeholder="t('chat.selectProvider')" style="width: 180px" filterable @change="onProviderChange">
+            <el-option v-for="p in providers" :key="p.id" :value="p.id" :label="p.name + ' (' + p.code + ')'" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="mode === 'single'" :label="t('chat.model')">
+          <el-select v-model="modelId" :placeholder="t('chat.selectModel')" style="width: 180px" filterable>
+            <el-option v-for="m in currentModels" :key="m.id" :value="m.id" :label="m.name + ' (' + m.modelName + ')'" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('chat.modelType')">
@@ -46,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '../api/http'
 import { useI18n } from 'vue-i18n'
@@ -58,19 +74,35 @@ const loading = ref(false)
 const lastTrace = ref('')
 
 // 模型配置
+const mode = ref('multi') // multi=模型池(能力路由) / single=供应商+模型直连
 const featureCode = ref('')
 const modelType = ref('text_model')
 const enableThinking = ref(false)
 const thinkingLevel = ref('MEDIUM')
 const routes = ref([])
+const providers = ref([])
+const providerId = ref(null)
+const modelId = ref(null)
 
-// 加载路由列表
+// 当前所选供应商下的模型列表
+const currentModels = computed(() => providers.value.find(p => p.id === providerId.value)?.models || [])
+
+// 切换供应商时清空已选模型
+function onProviderChange() {
+  modelId.value = null
+}
+
+// 加载路由列表和供应商列表
 onMounted(async () => {
   try {
-    const { data } = await http.get('/ai/chat/routes')
-    routes.value = data
+    const [routesRes, providersRes] = await Promise.all([
+      http.get('/ai/chat/routes'),
+      http.get('/ai/chat/providers')
+    ])
+    routes.value = routesRes.data
+    providers.value = providersRes.data
   } catch (error) {
-    console.error('Failed to load routes:', error)
+    console.error('Failed to load chat options:', error)
   }
 })
 
@@ -78,6 +110,7 @@ onMounted(async () => {
 async function send() {
   const content = prompt.value.trim()
   if (!content || loading.value) return
+  if (mode.value === 'single' && !modelId.value) { ElMessage.warning(t('chat.selectModel')); return }
   messages.value.push({ role: 'user', content })
   prompt.value = ''
   loading.value = true
@@ -88,8 +121,10 @@ async function send() {
       model_type: modelType.value
     }
 
-    // 添加可选参数
-    if (featureCode.value && featureCode.value.trim()) {
+    // 单模型模式：直连所选模型；否则走能力路由(模型池)
+    if (mode.value === 'single' && modelId.value) {
+      payload.modelId = modelId.value
+    } else if (featureCode.value && featureCode.value.trim()) {
       payload.featureCode = featureCode.value.trim()
     }
 

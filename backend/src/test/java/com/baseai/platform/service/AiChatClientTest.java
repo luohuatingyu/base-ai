@@ -47,26 +47,44 @@ class AiChatClientTest {
         LlmManagementService management = mock(LlmManagementService.class);
         LlmManagementService.WorkerCandidate candidate = new LlmManagementService.WorkerCandidate(
             "managed-provider", "https://provider.example/v1", List.of("key"), "managed-model", 3, "API_KEY", 45, "reasoning_effort", "xhigh");
-        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), true, true));
+        when(management.resolveActive("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), true, true));
 
         AiChatClient.ChatResult result = client(management).chat("chat", "text_model",
-            List.of(new AiChatClient.Message("user", "hello")), 0D, null, null);
+            List.of(new AiChatClient.Message("user", "hello")), 0D, null, null, null);
 
         assertEquals("worker-model", result.model());
         assertTrue(requestBody.contains("\"featureCode\":\"chat\""));
         assertTrue(requestBody.contains("\"providerCode\":\"managed-provider\""));
         assertTrue(requestBody.contains("\"enableThinking\":true"));
         assertTrue(requestBody.contains("\"routeConfigured\":true"));
-        verify(management).resolve("chat");
+        verify(management).resolveActive("chat");
+    }
+
+    /** 单模型模式应按 modelId 解析单候选并下发，跳过能力路由。 */
+    @Test
+    void usesResolvedModelCandidateWhenModelIdProvided() {
+        LlmManagementService management = mock(LlmManagementService.class);
+        LlmManagementService.WorkerCandidate candidate = new LlmManagementService.WorkerCandidate(
+            "youmi-openai", "https://youmi.example/v1", List.of("key"), "gpt-x", 3, "API_KEY", 45, "reasoning_effort", "high");
+        when(management.resolveActive("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), true, true));
+
+        AiChatClient.ChatResult result = client(management).chat(null, "text_model",
+            List.of(new AiChatClient.Message("user", "hello")), 0D, true, "HIGH", 7L);
+
+        assertEquals("worker-model", result.model());
+        assertTrue(requestBody.contains("\"providerCode\":\"youmi-openai\""));
+        assertTrue(requestBody.contains("\"routeConfigured\":true"));
+        assertTrue(requestBody.contains("\"enableThinking\":true"));
+        verify(management).resolveActive("chat");
     }
 
     /** 未配置能力路由时保持空候选和空开关，以触发 Worker 默认模型池回退。 */
     @Test
     void keepsDefaultPoolFallbackWhenFeatureRouteIsMissing() {
         LlmManagementService management = mock(LlmManagementService.class);
-        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null, false));
+        when(management.resolveActive("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null, false));
 
-        client(management).chat(null, null, List.of(new AiChatClient.Message("user", "hello")), null, null, null);
+        client(management).chat(null, null, List.of(new AiChatClient.Message("user", "hello")), null, null, null, null);
 
         assertTrue(requestBody.contains("\"featureCode\":\"chat\""));
         assertTrue(requestBody.contains("\"model_type\":\"text_model\""));
@@ -78,12 +96,12 @@ class AiChatClientTest {
     @Test
     void propagatesTraceHeadersToWorker() {
         LlmManagementService management = mock(LlmManagementService.class);
-        when(management.resolve("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null, false));
+        when(management.resolveActive("chat")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), null, false));
         TraceRuntime runtime = new TraceRuntime("parent-trace");
         TraceContext context = new TraceContext("parent-trace", 1L, "AI 对话", "TEST", runtime.token(), runtime);
 
         try (TraceContextHolder.Scope ignored = TraceContextHolder.bind(context)) {
-            client(management).chat("chat", "text_model", List.of(new AiChatClient.Message("user", "hello")), 0D, null, null);
+            client(management).chat("chat", "text_model", List.of(new AiChatClient.Message("user", "hello")), 0D, null, null, null);
         }
 
         assertEquals("parent-trace", parentTraceId);

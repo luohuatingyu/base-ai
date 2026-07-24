@@ -84,15 +84,15 @@ public class AiChatClient {
      * @throws BusinessException 当模型服务返回空响应或调用失败时抛出业务异常
      */
     public ChatResult chat(String featureCode, String modelType, List<Message> messages, Double temperature,
-                          Boolean enableThinking, String thinkingLevel) {
+                          Boolean enableThinking, String thinkingLevel, Long modelId) {
         // 设置追踪检查点，记录当前执行位置
         TraceContextHolder.checkpoint();
 
         // 标准化功能特性码：如果为空或空白则使用默认值"chat"
         String normalizedFeature = featureCode == null || featureCode.isBlank() ? "chat" : featureCode.trim();
 
-        // 解析模型路由配置，获取候选模型列表和思维链配置
-        LlmManagementService.WorkerRoute route = llmManagementService.resolve(normalizedFeature);
+        // 解析路由配置：指定了 modelId 走单模型直连，否则走能力路由
+        LlmManagementService.WorkerRoute route = llmManagementService.resolveActive(normalizedFeature);
 
         // 获取当前追踪ID作为父追踪ID
         String parentTraceId = TraceContextHolder.currentTraceId().orElse(null);

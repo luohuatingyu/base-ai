@@ -87,15 +87,10 @@ services:
       PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
       PYTHON_WORKER_INSTANCE_ID: ${PYTHON_WORKER_INSTANCE_ID:-python-worker-1}
       APP_PLATFORM_NAME_EN: ${APP_PLATFORM_NAME_EN:-AI Platform}
-      AI_MODEL_POOLS_FILE: /app/config/ai-model-pools.yml
-      AI_FEATURE_ROUTING_FILE: /app/config/ai-feature-routing.yml
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
       LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-true}
       TRACE_LOG_PERSIST_LEVEL: ${TRACE_LOG_PERSIST_LEVEL:-INFO}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    volumes:
-      - ${AI_MODEL_POOLS_FILE:-./ai-model-pools.yml}:/app/config/ai-model-pools.yml:ro
-      - ${AI_FEATURE_ROUTING_FILE:-./ai-feature-routing.yml}:/app/config/ai-feature-routing.yml:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s
