@@ -51,11 +51,10 @@ test('selected capability routes render independent synchronization tabs', () =>
   assert.match(routeView, /syncState\(route\.id\)\.error/)
 })
 
-test('selected capability routes synchronize separately and retain partial failures', () => {
-  assert.match(routeView, /for \(const route of selectedRoutes\.value\)/)
-  assert.match(routeView, /http\.post\('\/models\/routes\/sync', \{ routeId: route\.id \}\)/)
-  assert.match(routeView, /catch \(error\)[\s\S]*failedCount \+= 1[\s\S]*state\.error =/)
-  assert.match(routeView, /syncPartialCompleted/)
+test('selected capability routes use one batch request and distribute route results', () => {
+  assert.match(routeView, /http\.post\('\/models\/routes\/sync\/batch', \{ routeIds: selectedRouteIds\.value \}\)/)
+  assert.match(routeView, /response\.data\.find\(item => item\.routeId === route\.id\)/)
+  assert.doesNotMatch(routeView, /for \(const route of selectedRoutes\.value\)[\s\S]*http\.post\('\/models\/routes\/sync'/)
 })
 
 test('route synchronization does not ask users to select providers and keeps row sync compatibility', () => {

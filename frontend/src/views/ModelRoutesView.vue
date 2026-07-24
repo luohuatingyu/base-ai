@@ -140,29 +140,27 @@ function syncState(routeId) {
   return ensureSyncState(routeId)
 }
 
-/** 依次同步所选能力路由，并把结果分别保存在对应 Tab。 */
+/** 批量同步所选能力路由，并按路由编号分发复用后的测试结果。 */
 async function syncSelectedRoutes() {
   syncing.value = true
-  let failedCount = 0
+  const routesToSync = [...selectedRoutes.value]
+  routesToSync.forEach(route => Object.assign(ensureSyncState(route.id), { results: [], completed: false, syncing: true, error: '' }))
   try {
-    for (const route of selectedRoutes.value) {
+    const response = await http.post('/models/routes/sync/batch', { routeIds: selectedRouteIds.value })
+    routesToSync.forEach(route => {
       const state = ensureSyncState(route.id)
-      Object.assign(state, { results: [], completed: false, syncing: true, error: '' })
-      try {
-        const response = await http.post('/models/routes/sync', { routeId: route.id })
-        state.results = response.data
-        state.completed = true
-      } catch (error) {
-        failedCount += 1
-        state.completed = true
-        state.error = error.response?.data?.message || error.message || t('routes.syncFailed')
-      } finally {
-        state.syncing = false
-      }
-    }
+      const routeResult = response.data.find(item => item.routeId === route.id)
+      state.results = routeResult?.results || []
+      state.completed = true
+    })
     await load()
-    failedCount ? ElMessage.warning(t('routes.syncPartialCompleted', { count: failedCount })) : ElMessage.success(t('routes.syncCompleted'))
+    ElMessage.success(t('routes.syncCompleted'))
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || t('routes.syncFailed')
+    routesToSync.forEach(route => Object.assign(ensureSyncState(route.id), { completed: true, error: message }))
+    ElMessage.error(message)
   } finally {
+    routesToSync.forEach(route => { ensureSyncState(route.id).syncing = false })
     syncing.value = false
   }
 }

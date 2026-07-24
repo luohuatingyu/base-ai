@@ -313,6 +313,27 @@ public class LlmManagementService {
         List<ModelHealthView> result=checkModels(checked);refreshActiveRoutes();return result;
     }
 
+    /** 批量同步所选能力路由，并复用模型与思考配置完全相同的健康检查结果。 */
+    @Transactional
+    public synchronized List<RouteSyncView> syncRoutesByIds(List<Long> routeIds){
+        List<Long> selectedRouteIds=routeIds==null?List.of():routeIds.stream().filter(Objects::nonNull).distinct().toList();
+        if(selectedRouteIds.isEmpty())return List.of();
+        Map<ModelSyncKey,ModelHealthView> checkedResults=new LinkedHashMap<>();
+        List<RouteSyncView> results=new ArrayList<>();
+        for(Long routeId:selectedRouteIds){
+            LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
+            boolean enableThinking=Boolean.TRUE.equals(route.getEnableThinking());
+            String thinkingLevel=enableThinking&&!blank(route.getThinkingLevel())?route.getThinkingLevel().trim().toUpperCase(Locale.ROOT):null;
+            List<ModelHealthView> routeResults=routeModelsForHealthCheck(route).stream().map(model->{
+                ModelSyncKey key=new ModelSyncKey(model.getId(),enableThinking,thinkingLevel);
+                return checkedResults.computeIfAbsent(key,ignored->checkModel(model,thinkingLevel));
+            }).toList();
+            results.add(new RouteSyncView(routeId,routeResults));
+        }
+        refreshActiveRoutes();
+        return results;
+    }
+
     /** 按模型顺序执行健康检查并返回结果。 */
     private List<ModelHealthView> checkModels(List<LlmModel> models){
         List<ModelHealthView> result=new ArrayList<>();
@@ -379,9 +400,15 @@ public class LlmManagementService {
     /** 将ID集合保存为路由实体使用的逗号分隔格式。 */
     private String joinIds(List<Long> ids){return ids.stream().map(String::valueOf).reduce((left,right)->left+","+right).orElse("");}
 
-    private ModelHealthView checkModel(LlmModel model){
+    private ModelHealthView checkModel(LlmModel model){return checkModel(model,()->testModel(model.getId()));}
+
+    /** 使用指定思考等级执行模型健康检查并更新模型最近检查状态。 */
+    private ModelHealthView checkModel(LlmModel model,String thinkingLevel){return checkModel(model,()->testModel(model.getId(),thinkingLevel));}
+
+    /** 执行模型测试动作并统一记录耗时、状态和错误。 */
+    private ModelHealthView checkModel(LlmModel model,Runnable testAction){
         long started=System.nanoTime();String status;String error="";
-        try{testModel(model.getId());long duration=(System.nanoTime()-started)/1_000_000;status=healthStatus(duration);model.setLastCheckDurationMs(duration);}catch(Exception exception){status="FAILED";error=exception.getMessage()==null?"模型检查失败":exception.getMessage();model.setLastCheckDurationMs(null);}
+        try{testAction.run();long duration=(System.nanoTime()-started)/1_000_000;status=healthStatus(duration);model.setLastCheckDurationMs(duration);}catch(Exception exception){status="FAILED";error=exception.getMessage()==null?"模型检查失败":exception.getMessage();model.setLastCheckDurationMs(null);}
         model.setHealthStatus(status);model.setLastCheckError(error);model.setLastCheckedAt(LocalDateTime.now());modelRepository.save(model);return new ModelHealthView(model.getId(),model.getProviderId(),model.getName(),status,model.getLastCheckDurationMs(),error);
     }
 
@@ -712,9 +739,12 @@ public class LlmManagementService {
     }
     public record RouteCommand(String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,Boolean enableThinking,String thinkingLevel,Boolean enabled){}
     public record RouteSyncCommand(Long routeId,List<Long> providerIds){}
+    public record RouteBatchSyncCommand(List<Long> routeIds){}
     public record RouteView(Long id,String featureCode,String name,List<Long> candidateModelIds,List<Long> providerIds,String capabilityLevel,String thinkingLevel,Boolean enableThinking,Boolean enabled){}
+    public record RouteSyncView(Long routeId,List<ModelHealthView> results){}
     public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,@JsonIgnore List<String> supportedModelTypes){}
     public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
     public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
     public record ModelTypeOption(String value,String label){}
+    private record ModelSyncKey(Long modelId,boolean enableThinking,String thinkingLevel){}
 }

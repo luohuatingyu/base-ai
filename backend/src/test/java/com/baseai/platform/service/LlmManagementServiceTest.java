@@ -172,6 +172,67 @@ class LlmManagementServiceTest {
         verify(modelRepository).save(second);
     }
 
+    /** 批量同步相同模型且均未启用思考时，应只执行一次模型测试并复用结果。 */
+    @Test
+    void batchSyncDeduplicatesSameModelWithoutThinking() {
+        LlmRoute firstRoute = route("1", "");
+        LlmRoute secondRoute = route("1", "");
+        LlmModel sharedModel = model(1L, "MIDDLE");
+        ReflectionTestUtils.setField(sharedModel, "id", 10L);
+        LlmManagementService routeService = spy(service);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(firstRoute));
+        when(routeRepository.findById(9L)).thenReturn(Optional.of(secondRoute));
+        when(routeRepository.findAll()).thenReturn(List.of(firstRoute, secondRoute));
+        when(modelRepository.findAll()).thenReturn(List.of(sharedModel));
+        doThrow(new BusinessException("连接失败")).when(routeService).testModel(10L, null);
+
+        List<LlmManagementService.RouteSyncView> results = routeService.syncRoutesByIds(List.of(8L, 9L));
+
+        assertEquals(List.of(8L, 9L), results.stream().map(LlmManagementService.RouteSyncView::routeId).toList());
+        assertEquals(List.of(10L), results.get(0).results().stream().map(LlmManagementService.ModelHealthView::modelId).toList());
+        assertEquals(List.of(10L), results.get(1).results().stream().map(LlmManagementService.ModelHealthView::modelId).toList());
+        assertEquals(List.of("FAILED", "FAILED"), results.stream().map(result->result.results().get(0).status()).toList());
+        assertEquals(List.of("连接失败", "连接失败"), results.stream().map(result->result.results().get(0).error()).toList());
+        verify(routeService, times(1)).testModel(10L, null);
+        verify(modelRepository, times(1)).save(sharedModel);
+    }
+
+    /** 批量同步应复用相同思考等级，并区分未启用思考和不同思考等级。 */
+    @Test
+    void batchSyncUsesThinkingConfigurationAsDeduplicationKey() {
+        LlmRoute noThinkingRoute = route("1", "");
+        LlmRoute firstHighRoute = route("1", "");
+        firstHighRoute.setEnableThinking(true);
+        firstHighRoute.setThinkingLevel("HIGH");
+        LlmRoute secondHighRoute = route("1", "");
+        secondHighRoute.setEnableThinking(true);
+        secondHighRoute.setThinkingLevel("HIGH");
+        LlmRoute extraHighRoute = route("1", "");
+        extraHighRoute.setEnableThinking(true);
+        extraHighRoute.setThinkingLevel("EXTRA_HIGH");
+        LlmModel sharedModel = model(1L, "MIDDLE");
+        sharedModel.setThinkingLevels("HIGH=high,EXTRA_HIGH=xhigh");
+        ReflectionTestUtils.setField(sharedModel, "id", 10L);
+        LlmManagementService routeService = spy(service);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(noThinkingRoute));
+        when(routeRepository.findById(9L)).thenReturn(Optional.of(firstHighRoute));
+        when(routeRepository.findById(10L)).thenReturn(Optional.of(secondHighRoute));
+        when(routeRepository.findById(11L)).thenReturn(Optional.of(extraHighRoute));
+        when(routeRepository.findAll()).thenReturn(List.of(noThinkingRoute, firstHighRoute, secondHighRoute, extraHighRoute));
+        when(modelRepository.findAll()).thenReturn(List.of(sharedModel));
+        doReturn(Map.of()).when(routeService).testModel(10L, null);
+        doReturn(Map.of()).when(routeService).testModel(10L, "HIGH");
+        doReturn(Map.of()).when(routeService).testModel(10L, "EXTRA_HIGH");
+
+        List<LlmManagementService.RouteSyncView> results = routeService.syncRoutesByIds(List.of(8L, 9L, 10L, 11L));
+
+        assertEquals(4, results.size());
+        verify(routeService, times(1)).testModel(10L, null);
+        verify(routeService, times(1)).testModel(10L, "HIGH");
+        verify(routeService, times(1)).testModel(10L, "EXTRA_HIGH");
+        verify(modelRepository, times(3)).save(sharedModel);
+    }
+
     /** 开启思考模式时，只保留同时匹配能力和思考级别的供应商。 */
     @Test
     void syncRouteRemovesProviderWithoutMatchingThinkingLevel() {

@@ -54,6 +54,8 @@ public class LlmManagementController {
     @DeleteMapping("/routes/{id}") @RequiredPermission("model:route:delete") public void deleteRoute(@PathVariable Long id){service.deleteRoute(id);}
     /** 检查当前路由范围内的模型可用性并刷新内存路由。 */
     @PostMapping("/routes/sync") @RequiredPermission("model:route:update") public List<LlmManagementService.ModelHealthView> syncRoutes(@RequestBody(required=false) LlmManagementService.RouteSyncCommand command){return command==null||command.routeId()==null?service.syncRoutes(command==null?List.of():command.providerIds()):service.syncRoute(command.routeId(),command.providerIds());}
+    /** 批量检查所选能力路由，并复用模型与思考配置相同的测试结果。 */
+    @PostMapping("/routes/sync/batch") @RequiredPermission("model:route:update") public List<LlmManagementService.RouteSyncView> syncRouteBatch(@RequestBody(required=false) LlmManagementService.RouteBatchSyncCommand command){return service.syncRoutesByIds(command==null?List.of():command.routeIds());}
     /** 从路由供应商池移除成员，并同步内存快照。 */
     @DeleteMapping("/routes/{routeId}/providers/{providerId}") @RequiredPermission("model:route:update") public void removeProvider(@PathVariable Long routeId,@PathVariable Long providerId){service.removeProviderFromRoute(routeId,providerId);}
 }
