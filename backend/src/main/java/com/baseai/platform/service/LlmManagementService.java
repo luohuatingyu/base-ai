@@ -289,7 +289,12 @@ public class LlmManagementService {
     public void ensureDefaultRoute(){
         ensureDefaultRoute(DEFAULT_ROUTE,"默认能力路由");
     }
-    private void ensureDefaultRoute(String code,String name){LlmRoute route=routeRepository.findByFeatureCode(code).orElseGet(()->{LlmRoute item=new LlmRoute();item.setFeatureCode(code);item.setName(name);item.setCandidateModelIds("");item.setProviderIds("");item.setCapabilityLevel("MIDDLE");item.setEnabled(true);return item;});route.setEnableThinking(false);route.setThinkingLevel(null);routeRepository.save(route);}
+    private void ensureDefaultRoute(String code,String name){
+        LlmRoute route=routeRepository.findByFeatureCode(code).orElseGet(()->{
+            LlmRoute item=new LlmRoute();item.setFeatureCode(code);item.setName(name);item.setCandidateModelIds("");item.setProviderIds("");item.setCapabilityLevel("MIDDLE");item.setEnableThinking(false);item.setThinkingLevel(null);item.setEnabled(true);return item;
+        });
+        routeRepository.save(route);
+    }
 
     /** 检查指定供应商池（为空时全部）并原子更新数据库状态和内存路由。 */
     @Transactional
@@ -521,7 +526,7 @@ public class LlmManagementService {
         // 将模型ID列表转换为逗号分隔的字符串
         route.setCandidateModelIds(ids.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));
         route.setProviderIds(providerIds.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));
-        route.setEnableThinking(isDefault?false:Boolean.TRUE.equals(command.enableThinking()));
+        route.setEnableThinking(Boolean.TRUE.equals(command.enableThinking()));
         route.setCapabilityLevel(isDefault||!providerIds.isEmpty()?require(command.capabilityLevel(),"请选择模型能力级别").toUpperCase(Locale.ROOT):null);
         route.setThinkingLevel(Boolean.TRUE.equals(route.getEnableThinking())?require(command.thinkingLevel(),"请选择思考级别").toUpperCase(Locale.ROOT):null);
         route.setEnabled(isDefault||command.enabled()==null||command.enabled());

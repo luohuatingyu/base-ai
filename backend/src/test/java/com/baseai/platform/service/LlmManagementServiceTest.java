@@ -170,6 +170,52 @@ class LlmManagementServiceTest {
         verify(modelRepository).save(second);
     }
 
+    /** 开启思考模式时，只保留同时匹配能力和思考级别的供应商。 */
+    @Test
+    void syncRouteRemovesProviderWithoutMatchingThinkingLevel() {
+        LlmRoute route = route("1,2", "");
+        route.setEnableThinking(true);
+        route.setThinkingLevel("HIGH");
+        LlmModel matching = model(1L, "MIDDLE");
+        matching.setThinkingLevels("HIGH=high");
+        LlmModel mismatched = model(2L, "MIDDLE");
+        mismatched.setThinkingLevels("MEDIUM=medium");
+        LlmManagementService routeService = spy(service);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(routeRepository.findAll()).thenReturn(List.of(route));
+        when(modelRepository.findAll()).thenReturn(List.of(matching, mismatched));
+        doReturn(Map.of()).when(routeService).testModel(null);
+
+        List<LlmManagementService.ModelHealthView> results = routeService.syncRoute(8L, List.of());
+
+        assertEquals(List.of(1L), results.stream().map(LlmManagementService.ModelHealthView::providerId).toList());
+        assertEquals("1", route.getProviderIds());
+        verify(modelRepository).save(matching);
+        verify(modelRepository, never()).save(mismatched);
+        verify(routeRepository).save(route);
+    }
+
+    /** 所有供应商均无有效匹配模型时，应跳过检查、清空供应商池并停用路由。 */
+    @Test
+    void syncRouteDisablesRouteWhenAllProvidersAreUnmatched() {
+        LlmRoute route = route("1", "");
+        route.setEnabled(true);
+        LlmModel mismatched = model(1L, "HIGH");
+        LlmManagementService routeService = spy(service);
+        when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
+        when(routeRepository.findAll()).thenReturn(List.of(route));
+        when(modelRepository.findAll()).thenReturn(List.of(mismatched));
+        doReturn(Map.of()).when(routeService).testModel(null);
+
+        List<LlmManagementService.ModelHealthView> results = routeService.syncRoute(8L, List.of());
+
+        assertEquals(List.of(), results);
+        assertEquals("", route.getProviderIds());
+        assertEquals(false, route.getEnabled());
+        verify(modelRepository, never()).save(any());
+        verify(routeRepository).save(route);
+    }
+
     /** 空供应商池和空候选模型不应测试全局模型，并应直接同步成功。 */
     @Test
     void syncRouteTreatsEmptyConfigurationAsSuccessfulEmptyRoute() {
