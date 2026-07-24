@@ -28,8 +28,33 @@ test('capability route page warns that edits require synchronization', () => {
   assert.match(enLocale, /editSyncNotice:\s*'[^']*editing a capability route[^']*Sync[^']*take effect[^']*'/)
 })
 
-test('route synchronization does not ask users to select providers', () => {
+test('capability route page provides a top-level multi-route sync entry', () => {
+  assert.match(routeView, /@click="open\(\)"[^>]*>[\s\S]*routes\.add/)
+  assert.match(routeView, /@click="openSync\(\)"[^>]*>[\s\S]*routes\.syncRoutes/)
+  assert.match(routeView, /<el-select v-model="selectedRouteIds" multiple filterable/)
+  assert.match(routeView, /v-for="route in rows"[^>]*`\$\{route\.name\} \(\$\{route\.featureCode\}\)`/)
+  assert.match(zhLocale, /syncRoutes:\s*'同步路由'/)
+  assert.match(enLocale, /syncRoutes:\s*'Sync Routes'/)
+})
+
+test('selected capability routes render independent synchronization tabs', () => {
+  assert.match(routeView, /<el-tabs[^>]*v-model="activeSyncRouteId"/)
+  assert.match(routeView, /v-for="route in selectedRoutes"[^>]*:name="String\(route\.id\)"[^>]*:label="route\.featureCode"/)
+  assert.match(routeView, /syncStates\[routeId\] = \{ results: \[\], completed: false, syncing: false, error: '' \}/)
+  assert.match(routeView, /syncState\(route\.id\)\.results/)
+  assert.match(routeView, /syncState\(route\.id\)\.error/)
+})
+
+test('selected capability routes synchronize separately and retain partial failures', () => {
+  assert.match(routeView, /for \(const route of selectedRoutes\.value\)/)
+  assert.match(routeView, /http\.post\('\/models\/routes\/sync', \{ routeId: route\.id \}\)/)
+  assert.match(routeView, /catch \(error\)[\s\S]*failedCount \+= 1[\s\S]*state\.error =/)
+  assert.match(routeView, /syncPartialCompleted/)
+})
+
+test('route synchronization does not ask users to select providers and keeps row sync compatibility', () => {
   assert.doesNotMatch(routeView, /v-model="syncProviderIds"/)
-  assert.match(routeView, /http\.post\('\/models\/routes\/sync',\s*\{\s*routeId:\s*syncRoute\.value\.id\s*\}\)/)
-  assert.match(routeView, /await load\(\)[\s\S]*syncRoute\.value = rows\.value\.find/)
+  assert.match(routeView, /@click="openSync\(scope\.row\)"/)
+  assert.match(routeView, /selectedRouteIds\.value = row \? \[row\.id\] : \[\]/)
+  assert.match(routeView, /http\.delete\(`\/models\/routes\/\$\{route\.id\}\/providers\/\$\{result\.providerId\}`\)/)
 })

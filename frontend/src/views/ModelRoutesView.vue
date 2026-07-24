@@ -2,7 +2,10 @@
   <div class="panel model-routes-panel">
     <div class="section-head">
       <div><h2>{{ t('routes.title') }}</h2><p>{{ t('routes.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('model:route:create')" type="primary" @click="open()">{{ t('routes.add') }}</el-button>
+      <div class="route-actions">
+        <el-button v-if="auth.hasPermission('model:route:create')" type="primary" @click="open()">{{ t('routes.add') }}</el-button>
+        <el-button v-if="auth.hasPermission('model:route:update')" @click="openSync()">{{ t('routes.syncRoutes') }}</el-button>
+      </div>
     </div>
     <el-alert class="route-sync-notice" :title="t('routes.editSyncNotice')" type="warning" show-icon :closable="false"/>
     <el-table :data="rows">
@@ -31,30 +34,45 @@
       <template #footer><el-button @click="visible=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="save">{{ t('common.save') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="syncVisible" :title="t('routes.syncRoute',{name:syncRoute?.name||''})" width="720px">
+    <el-dialog v-model="syncVisible" :title="t('routes.syncRoutes')" width="860px">
+      <el-form label-width="110px">
+        <el-form-item :label="t('routes.featureCode')">
+          <el-select v-model="selectedRouteIds" multiple filterable collapse-tags :placeholder="t('routes.selectFeatureCodes')">
+            <el-option v-for="route in rows" :key="route.id" :label="`${route.name} (${route.featureCode})`" :value="route.id"/>
+          </el-select>
+        </el-form-item>
+      </el-form>
       <el-alert :title="t('routes.syncScopeHint')" type="info" show-icon :closable="false"/>
-      <div v-if="syncResults.length" class="route-health-results">
-        <div v-for="result in syncResults" :key="result.modelId" class="route-health-result" :class="healthStatusClass(result.status)">
-          <div class="route-health-summary">
-            <strong>{{ result.modelName }}</strong>
-            <span>{{ providerName(result.providerId) }}</span>
-            <span>{{ healthLabel(result) }}</span>
+      <el-tabs v-if="selectedRoutes.length" v-model="activeSyncRouteId" class="route-sync-tabs">
+        <el-tab-pane v-for="route in selectedRoutes" :key="route.id" :name="String(route.id)" :label="route.featureCode">
+          <el-alert v-if="syncState(route.id).error" :title="syncState(route.id).error" type="error" show-icon :closable="false"/>
+          <div v-if="syncState(route.id).results.length" class="route-health-results">
+            <div v-for="result in syncState(route.id).results" :key="result.modelId" class="route-health-result" :class="healthStatusClass(result.status)">
+              <div class="route-health-summary">
+                <strong>{{ result.modelName }}</strong>
+                <span>{{ providerName(result.providerId) }}</span>
+                <span>{{ healthLabel(result) }}</span>
+              </div>
+              <p v-if="result.error">{{ result.error }}</p>
+              <el-button v-if="canRemoveModelProvider(result.status)" link type="danger" @click="removeModelProvider(route, result)">{{ t('routes.removeModelProvider') }}</el-button>
+            </div>
           </div>
-          <p v-if="result.error">{{ result.error }}</p>
-          <el-button v-if="canRemoveModelProvider(result.status)" link type="danger" @click="removeModelProvider(result)">{{ t('routes.removeModelProvider') }}</el-button>
-        </div>
-      </div>
-      <el-empty v-else-if="syncCompleted" :description="t('routes.noModelsToSync')"/>
+          <el-empty v-else-if="syncState(route.id).completed && !syncState(route.id).error" :description="t('routes.noModelsToSync')"/>
+          <el-empty v-else-if="!syncState(route.id).syncing && !syncState(route.id).error" :description="t('routes.waitingSync')"/>
+          <div v-if="syncState(route.id).syncing" class="route-sync-loading">{{ t('routes.syncingRoute', { code: route.featureCode }) }}</div>
+        </el-tab-pane>
+      </el-tabs>
+      <el-empty v-else :description="t('routes.selectFeatureCodes')"/>
       <template #footer>
         <el-button @click="syncVisible=false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="syncing" @click="syncCurrentRoute">{{ t('routes.startSync') }}</el-button>
+        <el-button type="primary" :loading="syncing" :disabled="!selectedRouteIds.length" @click="syncSelectedRoutes">{{ t('routes.startSync') }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
@@ -68,11 +86,20 @@ const providers = ref([])
 const visible = ref(false)
 const syncVisible = ref(false)
 const syncing = ref(false)
-const syncCompleted = ref(false)
-const syncRoute = ref(null)
-const syncResults = ref([])
+const selectedRouteIds = ref([])
+const activeSyncRouteId = ref('')
+const syncStates = reactive({})
 const levels = ['LOW', 'MEDIUM', 'HIGH', 'EXTRA_HIGH', 'MAX', 'ULTRA']
 const form = reactive({ id: null, featureCode: '', name: '', candidateModelIds: [], providerIds: [], capabilityLevel: 'MIDDLE', enableThinking: false, thinkingLevel: 'MEDIUM', enabled: true })
+
+/** 按用户选择顺序返回待同步的能力路由。 */
+const selectedRoutes = computed(() => selectedRouteIds.value.map(routeId => rows.value.find(route => route.id === routeId)).filter(Boolean))
+
+/** 选择变化时初始化各路由状态并保持当前 Tab 有效。 */
+watch(selectedRouteIds, routeIds => {
+  routeIds.forEach(ensureSyncState)
+  if (!routeIds.some(routeId => String(routeId) === activeSyncRouteId.value)) activeSyncRouteId.value = routeIds.length ? String(routeIds[0]) : ''
+})
 
 /** 加载路由和供应商目录。 */
 async function load() {
@@ -96,24 +123,47 @@ async function save() {
   ElMessage.success(t('common.successSaved'))
 }
 
-/** 打开单条路由同步窗口。 */
+/** 打开路由同步窗口，行内入口默认选中当前路由。 */
 function openSync(row) {
-  syncRoute.value = row
-  syncResults.value = []
-  syncCompleted.value = false
+  Object.keys(syncStates).forEach(routeId => delete syncStates[routeId])
+  selectedRouteIds.value = row ? [row.id] : []
+  activeSyncRouteId.value = row ? String(row.id) : ''
   syncVisible.value = true
 }
 
-/** 测试当前路由已配置的全部模型供应并同步到内存。 */
-async function syncCurrentRoute() {
+/** 初始化并返回指定能力路由的独立同步状态。 */
+function ensureSyncState(routeId) {
+  if (!syncStates[routeId]) syncStates[routeId] = { results: [], completed: false, syncing: false, error: '' }
+  return syncStates[routeId]
+}
+
+/** 返回指定能力路由的同步状态。 */
+function syncState(routeId) {
+  return ensureSyncState(routeId)
+}
+
+/** 依次同步所选能力路由，并把结果分别保存在对应 Tab。 */
+async function syncSelectedRoutes() {
   syncing.value = true
+  let failedCount = 0
   try {
-    const response = await http.post('/models/routes/sync', { routeId: syncRoute.value.id })
-    syncResults.value = response.data
-    syncCompleted.value = true
+    for (const route of selectedRoutes.value) {
+      const state = ensureSyncState(route.id)
+      Object.assign(state, { results: [], completed: false, syncing: true, error: '' })
+      try {
+        const response = await http.post('/models/routes/sync', { routeId: route.id })
+        state.results = response.data
+        state.completed = true
+      } catch (error) {
+        failedCount += 1
+        state.completed = true
+        state.error = error.response?.data?.message || error.message || t('routes.syncFailed')
+      } finally {
+        state.syncing = false
+      }
+    }
     await load()
-    syncRoute.value = rows.value.find(item => item.id === syncRoute.value.id) || syncRoute.value
-    ElMessage.success(t('routes.syncCompleted'))
+    failedCount ? ElMessage.warning(t('routes.syncPartialCompleted', { count: failedCount })) : ElMessage.success(t('routes.syncCompleted'))
   } finally {
     syncing.value = false
   }
@@ -129,13 +179,13 @@ function healthLabel(result) {
   return result.status === 'FAILED' ? t('routes.syncFailed') : t('routes.syncDuration', { duration: result.durationMs })
 }
 
-/** 从当前能力路由删除结果所属供应商。 */
-async function removeModelProvider(result) {
-  await ElMessageBox.confirm(t('routes.removeProviderConfirm', { provider: providerName(result.providerId), route: syncRoute.value.name }), t('routes.removeModelProvider'), { type: 'warning' })
-  await http.delete(`/models/routes/${syncRoute.value.id}/providers/${result.providerId}`)
-  syncResults.value = syncResults.value.filter(item => item.providerId !== result.providerId)
+/** 从指定能力路由删除结果所属供应商。 */
+async function removeModelProvider(route, result) {
+  await ElMessageBox.confirm(t('routes.removeProviderConfirm', { provider: providerName(result.providerId), route: route.name }), t('routes.removeModelProvider'), { type: 'warning' })
+  await http.delete(`/models/routes/${route.id}/providers/${result.providerId}`)
+  const state = ensureSyncState(route.id)
+  state.results = state.results.filter(item => item.providerId !== result.providerId)
   await load()
-  syncRoute.value = rows.value.find(item => item.id === syncRoute.value.id) || syncRoute.value
   ElMessage.success(t('routes.providerRemoved'))
 }
 
@@ -143,7 +193,10 @@ onMounted(load)
 </script>
 
 <style scoped>
+.route-actions { display: flex; gap: 12px; }
 .route-sync-notice { margin-bottom: 16px; }
+.route-sync-tabs { margin-top: 18px; }
+.route-sync-loading { padding: 36px 0; color: var(--el-text-color-secondary); text-align: center; }
 .route-health-results { display: grid; gap: 12px; margin-top: 18px; }
 .route-health-result { padding: 14px 16px; border: 1px solid transparent; border-radius: 10px; }
 .route-health-result.is-healthy { border-color: #95d475; background: #f0f9eb; }
