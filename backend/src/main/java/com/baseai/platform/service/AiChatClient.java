@@ -144,9 +144,9 @@ public class AiChatClient {
      * </p>
      *
      * @param role 消息角色，如"user"（用户）、"assistant"（助手）、"system"（系统）
-     * @param content 消息内容文本
+     * @param content 消息内容文本，或符合 OpenAI-compatible 规范的多模态内容数组
      */
-    public record Message(String role, String content) {}
+    public record Message(String role, Object content) {}
 
     /**
      * LLM对话请求对象

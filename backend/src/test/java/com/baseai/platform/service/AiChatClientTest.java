@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -90,6 +91,24 @@ class AiChatClientTest {
         assertTrue(requestBody.contains("\"model_type\":\"text_model\""));
         assertTrue(requestBody.contains("\"candidates\":[]"));
         assertTrue(requestBody.contains("\"enableThinking\":null"));
+    }
+
+    /** 多模态消息应保持图片片段结构并完整下发到 Worker。 */
+    @Test
+    void forwardsMultimodalMessageContent() {
+        LlmManagementService management = mock(LlmManagementService.class);
+        when(management.resolveActive("chat", "vision_model"))
+            .thenReturn(new LlmManagementService.WorkerRoute(List.of(), null, false));
+        List<Map<String, Object>> content = List.of(
+            Map.of("type", "text", "text", "请描述图片"),
+            Map.of("type", "image_url", "image_url", Map.of("url", "data:image/png;base64,AAAA")));
+
+        client(management).chat("chat", "vision_model",
+            List.of(new AiChatClient.Message("user", content)), 0D, null, null, null);
+
+        assertTrue(requestBody.contains("\"model_type\":\"vision_model\""));
+        assertTrue(requestBody.contains("\"type\":\"image_url\""));
+        assertTrue(requestBody.contains("data:image/png;base64,AAAA"));
     }
 
     /** 父任务 Trace ID 和新生成的 Python Trace ID 应通过新请求头传播。 */

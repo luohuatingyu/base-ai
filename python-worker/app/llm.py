@@ -63,7 +63,7 @@ class LlmClient:
             payload = {
                 "model": candidate.model,
                 "temperature": temperature,
-                "messages": [message.model_dump() for message in messages],
+                "messages": [message.model_dump(exclude_none=True) for message in messages],
                 "enable_thinking": enable_thinking,
                 "stream": False,
             }
@@ -172,25 +172,38 @@ class LlmClient:
 
             # 记录系统提示词（即使为空也记录）
             if system_messages:
-                system_content = "\n\n".join([msg.content for msg in system_messages])
+                system_content = "\n\n".join([self._message_log_content(msg) for msg in system_messages])
                 logger.info("event=llm_system_prompt content=%s", sanitize_log_text(system_content, 4000))
             else:
                 logger.info("event=llm_system_prompt content=")
 
             # 记录用户提示词
             if user_messages:
-                user_content = "\n\n".join([msg.content for msg in user_messages])
+                user_content = "\n\n".join([self._message_log_content(msg) for msg in user_messages])
                 logger.info("event=llm_user_prompt content=%s", sanitize_log_text(user_content, 4000))
 
             # 记录之前的助手消息（对话历史）
             if assistant_messages:
                 for idx, msg in enumerate(assistant_messages[-5:]):  # 最多记录最近5条
-                    logger.info("event=llm_assistant_history index=%d content=%s", idx, sanitize_log_text(msg.content, 2000))
+                    logger.info("event=llm_assistant_history index=%d content=%s", idx,
+                                sanitize_log_text(self._message_log_content(msg), 2000))
 
             # 记录模型响应
             logger.info("event=llm_model_response content=%s", sanitize_log_text(content, 4000))
         else:
             logger.info("event=llm_content_redacted response_sha256=%s", hashlib.sha256(content.encode()).hexdigest()[:16])
+
+    def _message_log_content(self, message: ChatMessage) -> str:
+        """将消息转换为不泄露 Base64 图片内容的日志摘要。"""
+        if isinstance(message.content, str):
+            return message.content
+        parts = []
+        for part in message.content:
+            if part.type == "text":
+                parts.append(part.text or "")
+            else:
+                parts.append("[image omitted]")
+        return " ".join(parts)
 
     def _elapsed(self, started_at: float) -> float:
         """计算请求耗时毫秒。"""

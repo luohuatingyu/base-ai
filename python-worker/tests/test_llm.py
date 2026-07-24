@@ -93,6 +93,52 @@ def test_invoke_sends_mapped_thinking_value():
     assert json.loads(request_holder["request"].content)["reasoning_effort"] == "xhigh"
 
 
+def test_invoke_forwards_multimodal_content_without_rewriting():
+    """视觉请求应按 OpenAI-compatible 结构转发文本和图片片段。"""
+    response = httpx.Response(200, json={"choices": [{"message": {"content": "图片中有一只猫"}}]})
+    request_holder = {}
+    client = LlmClient(settings())
+
+    async def invoke():
+        def handler(request: httpx.Request) -> httpx.Response:
+            request_holder["request"] = request
+            return response
+
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            message = ChatMessage(
+                role="user",
+                content=[
+                    {"type": "text", "text": "请描述图片"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+                ],
+            )
+            return await client._invoke(candidate(), "test-key", [message], 0, False)
+        finally:
+            await client.close()
+
+    asyncio.run(invoke())
+    payload = json.loads(request_holder["request"].content)
+    assert payload["messages"][0]["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,AAAA"},
+    }
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        [{"type": "image_url", "image_url": {"url": "data:image/gif;base64,AAAA"}}],
+        [{"type": "image_url", "image_url": {"url": "not-a-url"}}],
+    ],
+)
+def test_chat_message_rejects_unsupported_image_urls(content):
+    """Worker 应拒绝不支持格式或不安全的图片地址。"""
+    with pytest.raises(ValueError):
+        ChatMessage(role="user", content=content)
+
+
 def test_configured_route_with_no_candidates_does_not_use_yaml_fallback():
     """路由已配置但无匹配模型时，不能退回 YAML 默认模型池。"""
     client = LlmClient(settings())

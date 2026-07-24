@@ -112,7 +112,10 @@ export default {
     unknownModel: '未知模型',
     inputTokens: '输入 Token',
     outputTokens: '输出 Token',
-    totalTokens: '总 Token'
+    totalTokens: '总 Token',
+    uploadImage: '上传图片', imageLimit: '最多上传 {count} 张图片',
+    imageType: '仅支持 PNG、JPEG、WEBP 图片', imageSize: '单张图片不能超过 10 MB',
+    imageReadFailed: '图片读取失败', imageVisionOnly: '图片只能发送给视觉模型'
   },
   logs: {
     loginTitle: '登录日志', loginDescription: '记录登录成功与失败事件。',

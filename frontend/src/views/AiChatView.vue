@@ -49,7 +49,11 @@
 
     <div class="messages">
       <div v-for="(item, index) in messages" :key="index" :class="['message', item.role]">
-        <small>{{ item.role === 'user' ? t('chat.user') : t('chat.assistant') }}</small><div>{{ item.content }}</div>
+        <small>{{ item.role === 'user' ? t('chat.user') : t('chat.assistant') }}</small>
+        <div>{{ item.content }}</div>
+        <div v-if="item.images?.length" class="message-images">
+          <img v-for="image in item.images" :key="image.name + image.dataUrl" :src="image.dataUrl" :alt="image.name" />
+        </div>
         <div v-if="item.role === 'assistant' && hasChatResponseMetadata(item)" class="message-metadata">
           <span>{{ t('chat.answerModel') }}: {{ item.model || t('chat.unknownModel') }}</span>
           <span>{{ t('chat.inputTokens') }}: {{ item.inputTokens ?? '-' }}</span>
@@ -60,8 +64,21 @@
       </div>
       <el-empty v-if="!messages.length" :description="t('chat.empty')" />
     </div>
+    <div v-if="pendingImages.length" class="pending-images">
+      <div v-for="image in pendingImages" :key="image.name + image.dataUrl" class="pending-image">
+        <img :src="image.dataUrl" :alt="image.name" />
+        <el-button circle size="small" type="danger" @click="removeImage(image)">×</el-button>
+      </div>
+    </div>
     <el-input v-model="prompt" type="textarea" :rows="4" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
-    <div class="chat-actions"><span v-if="lastTrace">{{ t('chat.traceId') }}: {{ lastTrace }}</span><el-button type="primary" :loading="loading" @click="send">{{ t('chat.send') }}</el-button></div>
+    <div class="chat-actions">
+      <span v-if="lastTrace">{{ t('chat.traceId') }}: {{ lastTrace }}</span>
+      <div class="chat-action-buttons">
+        <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
+        <el-button :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
+        <el-button type="primary" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -75,8 +92,13 @@ import { createAssistantMessage, hasChatResponseMetadata } from '../utils/chatRe
 const { t } = useI18n()
 const prompt = ref('')
 const messages = ref([])
+const pendingImages = ref([])
+const imageInput = ref(null)
 const loading = ref(false)
 const lastTrace = ref('')
+const MAX_IMAGES = 4
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 
 // 模型配置
 const mode = ref('multi') // multi=模型池(能力路由) / single=供应商+模型直连
@@ -106,6 +128,65 @@ function onModelTypeChange() {
   if (!defaultRouteSupportsType.value && !filteredRoutes.value.some(route => route.featureCode === featureCode.value)) featureCode.value = ''
   if (!filteredProviders.value.some(provider => provider.id === providerId.value)) providerId.value = null
   if (!currentModels.value.some(model => model.id === modelId.value)) modelId.value = null
+  if (modelType.value !== 'vision_model') pendingImages.value = []
+}
+
+/** 打开系统文件选择器，仅允许视觉模型选择图片。 */
+function openImagePicker() {
+  if (modelType.value === 'vision_model') imageInput.value?.click()
+}
+
+/** 读取并校验用户选择的图片，转换为可直接发送的 Data URL。 */
+async function onImageSelected(event) {
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+  if (modelType.value !== 'vision_model') return
+  if (pendingImages.value.length + files.length > MAX_IMAGES) {
+    ElMessage.warning(t('chat.imageLimit', { count: MAX_IMAGES }))
+    return
+  }
+  for (const file of files) {
+    if (!IMAGE_TYPES.has(file.type)) {
+      ElMessage.warning(t('chat.imageType'))
+      continue
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      ElMessage.warning(t('chat.imageSize'))
+      continue
+    }
+    const dataUrl = await readImage(file)
+    pendingImages.value.push({ name: file.name, dataUrl })
+  }
+}
+
+/** 将图片文件读取为 Base64 Data URL。 */
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => {
+      ElMessage.error(t('chat.imageReadFailed'))
+      reject(reader.error)
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+/** 从待发送列表移除图片。 */
+function removeImage(image) {
+  pendingImages.value = pendingImages.value.filter(item => item !== image)
+}
+
+/** 将页面消息转换为后端兼容的纯文本或多模态消息。 */
+function toApiMessage(message) {
+  if (!message.images?.length) return { role: message.role, content: message.content }
+  return {
+    role: message.role,
+    content: [
+      ...(message.content ? [{ type: 'text', text: message.content }] : []),
+      ...message.images.map(image => ({ type: 'image_url', image_url: { url: image.dataUrl } }))
+    ]
+  }
 }
 
 // 加载路由列表和供应商列表
@@ -129,14 +210,19 @@ onMounted(async () => {
 async function send() {
   const content = prompt.value.trim()
   if (!content || loading.value) return
+  if (pendingImages.value.length && modelType.value !== 'vision_model') {
+    ElMessage.warning(t('chat.imageVisionOnly'))
+    return
+  }
   if (mode.value === 'single' && !modelId.value) { ElMessage.warning(t('chat.selectModel')); return }
   if (mode.value === 'multi' && !defaultRouteSupportsType.value && !filteredRoutes.value.some(route => route.featureCode === featureCode.value)) { ElMessage.warning(t('chat.selectModelPool')); return }
-  messages.value.push({ role: 'user', content })
+  messages.value.push({ role: 'user', content, images: pendingImages.value })
   prompt.value = ''
+  pendingImages.value = []
   loading.value = true
   try {
     const payload = {
-      messages: messages.value,
+      messages: messages.value.map(toApiMessage),
       temperature: 0,
       model_type: modelType.value
     }
@@ -186,5 +272,37 @@ async function send() {
   margin-top: 8px;
   color: #909399;
   font-size: 12px;
+}
+
+.message-images,
+.pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.message-images img,
+.pending-image img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #dcdfe6;
+}
+
+.pending-image {
+  position: relative;
+}
+
+.pending-image .el-button {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+}
+
+.chat-action-buttons {
+  display: flex;
+  gap: 8px;
 }
 </style>

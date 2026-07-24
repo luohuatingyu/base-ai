@@ -87,7 +87,10 @@ export default {
     unknownModel: 'Unknown Model',
     inputTokens: 'Input Tokens',
     outputTokens: 'Output Tokens',
-    totalTokens: 'Total Tokens'
+    totalTokens: 'Total Tokens',
+    uploadImage: 'Upload Image', imageLimit: 'You can upload up to {count} images',
+    imageType: 'Only PNG, JPEG, and WEBP images are supported', imageSize: 'Each image must be no larger than 10 MB',
+    imageReadFailed: 'Failed to read image', imageVisionOnly: 'Images can only be sent to vision models'
   },
   logs: {
     loginTitle: 'Login Logs', loginDescription: 'Records successful and failed login events.',
