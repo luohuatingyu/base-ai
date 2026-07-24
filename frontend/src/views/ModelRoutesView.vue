@@ -2,10 +2,8 @@
   <div class="panel model-routes-panel">
     <div class="section-head">
       <div><h2>{{ t('routes.title') }}</h2><p>{{ t('routes.description') }}</p></div>
-      <div class="route-actions">
-        <el-button v-if="auth.hasPermission('model:route:create')" type="primary" @click="open()">{{ t('routes.add') }}</el-button>
-        <el-button v-if="auth.hasPermission('model:route:update')" @click="openSync()">{{ t('routes.syncRoutes') }}</el-button>
-      </div>
+      <el-button v-if="auth.hasPermission('model:route:create')" type="primary" @click="open()">{{ t('routes.add') }}</el-button>
+      <el-button v-if="auth.hasPermission('model:route:update')" @click="openSync()">{{ t('routes.syncRoutes') }}</el-button>
     </div>
     <el-alert class="route-sync-notice" :title="t('routes.editSyncNotice')" type="warning" show-icon :closable="false"/>
     <el-table :data="rows">
@@ -193,7 +191,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.route-actions { display: flex; gap: 12px; }
 .route-sync-notice { margin-bottom: 16px; }
 .route-sync-tabs { margin-top: 18px; }
 .route-sync-loading { padding: 36px 0; color: var(--el-text-color-secondary); text-align: center; }

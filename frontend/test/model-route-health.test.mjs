@@ -37,6 +37,12 @@ test('capability route page provides a top-level multi-route sync entry', () => 
   assert.match(enLocale, /syncRoutes:\s*'Sync Routes'/)
 })
 
+test('capability route actions remain direct children of the section header', () => {
+  assert.match(routeView, /<div class="section-head">\s*<div>[\s\S]*?<\/div>\s*<el-button[^>]*model:route:create/)
+  assert.match(routeView, /<\/el-button>\s*<el-button[^>]*model:route:update[^>]*@click="openSync\(\)"/)
+  assert.doesNotMatch(routeView, /<div class="route-actions">/)
+})
+
 test('selected capability routes render independent synchronization tabs', () => {
   assert.match(routeView, /<el-tabs[^>]*v-model="activeSyncRouteId"/)
   assert.match(routeView, /v-for="route in selectedRoutes"[^>]*:name="String\(route\.id\)"[^>]*:label="route\.featureCode"/)
