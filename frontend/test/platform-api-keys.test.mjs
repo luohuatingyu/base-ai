@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+
+const viewSource = readFileSync(new URL('../src/views/ApiKeysView.vue', import.meta.url), 'utf8')
+const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
+const menuSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
+const zhSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
+
+test('API Key 管理页面注册独立路由和导航权限', () => {
+  assert.match(routerSource, /path: 'api-keys'/)
+  assert.match(routerSource, /system:api-key:list/)
+  assert.match(menuSource, /nav\.items\.apiKeys/)
+  assert.match(zhSource, /API Key 管理/)
+})
+
+test('API Key 页面支持绑定用户、接口范围、IP 和限流', () => {
+  assert.match(viewSource, /ownerUserId/)
+  assert.match(viewSource, /endpointCodes/)
+  assert.match(viewSource, /allowedCidrs/)
+  assert.match(viewSource, /rateLimitPerMinute/)
+  assert.match(viewSource, /\/system\/api-keys\/endpoints/)
+})
+
+test('API Key 页面支持永久有效和指定过期时间', () => {
+  assert.match(viewSource, /v-model="form\.neverExpires"/)
+  assert.match(viewSource, /v-if="!form\.neverExpires"/)
+  assert.match(viewSource, /expiresAt: form\.neverExpires \? null : form\.expiresAt/)
+  assert.match(viewSource, /neverExpiresConfirm/)
+})
+
+test('完整 API Key 仅在创建或轮换后展示并支持复制', () => {
+  assert.match(viewSource, /showSecret\(data\.apiKey\)/)
+  assert.match(viewSource, /navigator\.clipboard\.writeText/)
+  assert.match(viewSource, /\/rotate`/)
+  assert.match(viewSource, /http\.delete\(`/)
+})

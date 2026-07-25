@@ -3,6 +3,8 @@ package com.baseai.platform.automation;
 import com.baseai.platform.trace.TraceType;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.RequiredPermission;
+import com.baseai.platform.security.ApiKeyEndpoint;
+import com.baseai.platform.security.ApiKeyRisk;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -55,6 +57,7 @@ public class ApiTriggerController {
 
     @PostMapping("/{id}/trigger")
     @RequiredPermission("automation:api-trigger:trigger")
+    @ApiKeyEndpoint(code = "automation.api-trigger.execute", name = "执行接口触发器", group = "自动化", risk = ApiKeyRisk.HIGH)
     @TraceType(value = "手动执行接口触发", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.ExecutionResult trigger(@PathVariable Long id) { return service.execute(id, "MANUAL"); }
 

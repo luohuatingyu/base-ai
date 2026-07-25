@@ -55,7 +55,13 @@ public class OperationAuditAspect {
             MethodSignature signature = (MethodSignature) point.getSignature();
             AuthUser user = AuthContext.current();
             OperationLog log = new OperationLog();
-            if (user != null) { log.setUserId(user.id()); log.setUsername(user.username()); }
+            if (user != null) {
+                log.setUserId(user.id());
+                log.setUsername(user.username());
+                log.setCredentialType(user.authenticationType().name());
+                log.setCredentialId(user.credentialId());
+                log.setCredentialName(user.credentialName());
+            }
             log.setMethod(request.getMethod());
             log.setPath(request.getRequestURI());
             log.setController(signature.getDeclaringType().getSimpleName());

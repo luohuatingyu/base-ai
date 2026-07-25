@@ -239,6 +239,13 @@ public class DataInitializer implements ApplicationRunner {
         menu(system.getId(), "任务调度", "MENU", "/tasks", "TasksView", "List", "system:task:view", 31, true);
         // 任务管理操作按钮权限（包括启动、停止、编辑等）
         menu(system.getId(), "任务管理", "BUTTON", null, null, null, "system:task:manage", 311, false);
+        // API Key 管理页面和独立操作权限
+        Menu apiKeys = menu(system.getId(), "API Key 管理", "MENU", "/api-keys", "ApiKeysView", "Key",
+            "system:api-key:list", 32, true);
+        menu(apiKeys.getId(), "新增 API Key", "BUTTON", null, null, null, "system:api-key:create", 321, false);
+        menu(apiKeys.getId(), "更新 API Key", "BUTTON", null, null, null, "system:api-key:update", 322, false);
+        menu(apiKeys.getId(), "吊销 API Key", "BUTTON", null, null, null, "system:api-key:delete", 323, false);
+        menu(apiKeys.getId(), "轮换 API Key", "BUTTON", null, null, null, "system:api-key:rotate", 324, false);
 
         // ========== 模型管理模块 ==========
         Menu model = menu(null, "模型管理", "CATALOG", "/models", null, "Cpu", "model:catalog", 40, true);
@@ -356,6 +363,7 @@ public class DataInitializer implements ApplicationRunner {
         String internalToken = properties.getPythonWorker().getInternalToken();
         String adminPassword = properties.getSeed().getAdminPassword();
         String encryptionKey = properties.getConfigEncryptionKey();
+        String apiKeyHashSecret = properties.getApiKey().getHashSecret();
         if (tokenSecret == null || tokenSecret.length() < 32 || tokenSecret.contains("replace-with")) {
             throw new IllegalStateException("APP_TOKEN_SECRET 必须设置为至少 32 位随机字符串");
         }
@@ -371,6 +379,9 @@ public class DataInitializer implements ApplicationRunner {
             }
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException("APP_CONFIG_ENCRYPTION_KEY 必须是有效 Base64", exception);
+        }
+        if (apiKeyHashSecret == null || apiKeyHashSecret.length() < 32) {
+            throw new IllegalStateException("APP_API_KEY_HASH_SECRET 必须设置为至少 32 位密钥");
         }
     }
 }

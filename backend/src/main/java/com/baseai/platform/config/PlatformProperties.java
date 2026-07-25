@@ -29,6 +29,8 @@ public class PlatformProperties {
     private TraceTracking traceTracking = new TraceTracking();
     /** API 触发器配置。 */
     private ApiTrigger apiTrigger = new ApiTrigger();
+    /** API Key 认证配置。 */
+    private ApiKey apiKey = new ApiKey();
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }
     public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
@@ -51,6 +53,8 @@ public class PlatformProperties {
     public void setTraceTracking(TraceTracking traceTracking) { this.traceTracking = traceTracking; }
     public ApiTrigger getApiTrigger() { return apiTrigger; }
     public void setApiTrigger(ApiTrigger apiTrigger) { this.apiTrigger = apiTrigger; }
+    public ApiKey getApiKey() { return apiKey; }
+    public void setApiKey(ApiKey apiKey) { this.apiKey = apiKey; }
 
     public static class Token {
         private String secret;
@@ -59,6 +63,12 @@ public class PlatformProperties {
         public void setSecret(String secret) { this.secret = secret; }
         public long getExpireMinutes() { return expireMinutes; }
         public void setExpireMinutes(long expireMinutes) { this.expireMinutes = expireMinutes; }
+    }
+
+    public static class ApiKey {
+        private String hashSecret;
+        public String getHashSecret() { return hashSecret; }
+        public void setHashSecret(String hashSecret) { this.hashSecret = hashSecret; }
     }
 
     public static class Platform {

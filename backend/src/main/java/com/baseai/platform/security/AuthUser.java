@@ -2,7 +2,8 @@ package com.baseai.platform.security;
 
 import java.util.Set;
 
-public record AuthUser(Long id, String username, Set<String> roles, Set<String> permissions) {
+public record AuthUser(Long id, String username, Set<String> roles, Set<String> permissions,
+                       AuthenticationType authenticationType, Long credentialId, String credentialName) {
     /** 管理员角色拥有所有平台权限。 */
     public boolean hasPermission(String permission) {
         if (roles.contains("ADMIN") || permissions.contains(permission)) return true;

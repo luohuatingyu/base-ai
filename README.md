@@ -47,6 +47,26 @@ Redis 只保存可丢失、可重建的缓存状态。当前用于登录 Token �
 - 用户可绑定部门、岗位和多个角色；角色数据范围支持全部、本部门、本部门及下级、本人和自定义部门。
 - 系统管理接口使用 `list/create/update/delete` 细粒度权限，并兼容历史 `manage` 权限。
 
+## API Key 访问
+
+平台保留现有 Bearer Token 登录方式，并支持外部系统通过 `X-API-Key` 直接访问显式开放的 Java API：
+
+```bash
+curl -H 'X-API-Key: bai_live_<key-id>.<secret>' \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"hello"}]}' \
+  http://localhost/api/ai/chat
+```
+
+- API Key 在“系统管理 → API Key 管理”页面创建、授权、停用、轮换和吊销。
+- 完整 Key 只在创建或轮换成功时展示一次，数据库仅保存 HMAC-SHA256 摘要。
+- 每个 Key 必须绑定启用用户，实际权限为“Key 勾选接口”和绑定用户 RBAC 权限的交集。
+- 有效期支持指定时间或永久有效；永久有效仍受停用、吊销、用户状态、IP 白名单和限流控制。
+- 只有代码中带 `@ApiKeyEndpoint` 的接口会出现在授权目录，不能通过页面填写任意 URL。
+- 首批开放接口为 AI 对话调用和正式执行接口触发器；API Key 管理接口本身始终只接受 Bearer Token。
+- 请求不能同时携带 `Authorization` 和 `X-API-Key`，否则返回 401。
+- `APP_API_KEY_HASH_SECRET` 可单独配置摘要密钥；未设置时复用 `APP_CONFIG_ENCRYPTION_KEY`。
+
 ## 系统管理
 
 - 部门、岗位、字典和系统参数统一存放在 MySQL 系统库。
@@ -213,6 +233,7 @@ docker-compose.yml
 ## 安全要求
 
 - `APP_TOKEN_SECRET` 至少使用 32 位随机字符串。
+- `APP_API_KEY_HASH_SECRET` 建议使用独立的至少 32 位随机字符串；未配置时复用配置加密密钥。
 - `PYTHON_WORKER_INTERNAL_TOKEN` 至少使用 24 位随机字符串。
 - 首次启动管理员密码不得使用示例值。
 - LLM Key 只能写入仓库外部的 `ai-model-pools.yml`，不得写入源码或 Git 历史。

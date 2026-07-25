@@ -56,6 +56,8 @@ app:
   token:
     secret: ${APP_TOKEN_SECRET}
     expire-minutes: ${APP_TOKEN_EXPIRE_MINUTES:720}
+  api-key:
+    hash-secret: ${APP_API_KEY_HASH_SECRET:${APP_CONFIG_ENCRYPTION_KEY}}
   seed:
     admin-username: ${APP_SEED_ADMIN_USERNAME:admin}
     admin-password: ${APP_SEED_ADMIN_PASSWORD}

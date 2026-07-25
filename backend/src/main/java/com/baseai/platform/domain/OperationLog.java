@@ -10,6 +10,9 @@ public class OperationLog {
     private Long id;
     private Long userId;
     @Column(length = 64) private String username;
+    @Column(length = 20) private String credentialType;
+    private Long credentialId;
+    @Column(length = 100) private String credentialName;
     @Column(nullable = false, length = 16) private String method;
     @Column(nullable = false, length = 255) private String path;
     @Column(length = 64) private String controller;
@@ -26,6 +29,12 @@ public class OperationLog {
     public void setUserId(Long userId) { this.userId = userId; }
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
+    public String getCredentialType() { return credentialType; }
+    public void setCredentialType(String credentialType) { this.credentialType = credentialType; }
+    public Long getCredentialId() { return credentialId; }
+    public void setCredentialId(Long credentialId) { this.credentialId = credentialId; }
+    public String getCredentialName() { return credentialName; }
+    public void setCredentialName(String credentialName) { this.credentialName = credentialName; }
     public String getMethod() { return method; }
     public void setMethod(String method) { this.method = method; }
     public String getPath() { return path; }

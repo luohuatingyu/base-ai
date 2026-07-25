@@ -20,6 +20,7 @@ import LoginLogsView from '../views/LoginLogsView.vue'
 import ModelProvidersView from '../views/ModelProvidersView.vue'
 import ModelsView from '../views/ModelsView.vue'
 import ModelRoutesView from '../views/ModelRoutesView.vue'
+import ApiKeysView from '../views/ApiKeysView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -43,6 +44,7 @@ const router = createRouter({
         { path: 'models', component: ModelsView, meta: { permission: 'model:model:list', navigable: true, desc: 'models.description' } },
         { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list', navigable: true, desc: 'routes.description' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view', navigable: true, desc: 'tasks.description' } },
+        { path: 'api-keys', component: ApiKeysView, meta: { permission: 'system:api-key:list', navigable: true, desc: 'apiKeys.description' } },
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
         { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } }
       ]
