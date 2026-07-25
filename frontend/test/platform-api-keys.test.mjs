@@ -27,6 +27,7 @@ test('开放 API 名称和分组随当前语言动态翻译', () => {
   assert.match(viewSource, /translateEndpoint\(endpoint\.nameKey, endpoint\.code\)/)
   assert.match(viewSource, /translateEndpoint\(endpoint\.groupKey, endpoint\.code\)/)
   assert.match(viewSource, /te\(translationKey\)/)
+  assert.match(viewSource, /:\s*endpointCode/)
   assert.match(zhSource, /endpointNames:\s*\{\s*aiChatInvoke:\s*'AI 对话调用'/)
   assert.match(zhSource, /endpointGroups:\s*\{\s*ai:\s*'AI 能力'/)
   assert.match(enSource, /endpointNames:\s*\{\s*aiChatInvoke:\s*'AI Chat Invocation'/)
