@@ -65,6 +65,9 @@ app:
     url: ${PYTHON_WORKER_URL:http://python-worker:8000}
     internal-token: ${PYTHON_WORKER_INTERNAL_TOKEN}
     java-instance-id: ${JAVA_INSTANCE_ID:java-backend-1}
+  llm:
+    route-health-check-enabled: ${LLM_ROUTE_HEALTH_CHECK_ENABLED:false}
+    route-health-check-interval-ms: ${LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS:3600000}
   trace-log:
     queue-capacity: ${TRACE_LOG_QUEUE_CAPACITY:10000}
     batch-size: ${TRACE_LOG_BATCH_SIZE:100}
