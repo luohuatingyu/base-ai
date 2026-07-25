@@ -56,7 +56,7 @@ public class ApiKeyAuthenticationService {
 
         String clientIp = clientIpResolver.resolve(request);
         if (!cidrMatcher.matches(clientIp, credential.getAllowedCidrs())) throw BusinessException.forbidden("API Key 来源地址不允许");
-        rateLimiter.check(credential.getId(), credential.getRateLimitPerMinute());
+        rateLimiter.check(credential.getId(), credential.getRateLimitType(), credential.getRateLimitCount());
         credential.setLastUsedAt(now);
         credential.setLastUsedIp(clientIp);
         return authUserFactory.fromApiKey(owner, credential.getId(), credential.getName());

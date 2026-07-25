@@ -2,6 +2,7 @@ package com.baseai.platform.service;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.domain.ApiKeyCredential;
+import com.baseai.platform.domain.ApiKeyRateLimitType;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.repository.ApiKeyCredentialRepository;
 import com.baseai.platform.repository.UserRepository;
@@ -127,7 +128,10 @@ public class ApiKeyManagementService {
         credential.setOwner(owner);
         credential.setEnabled(command.enabled() == null || command.enabled());
         credential.setExpiresAt(resolveExpiresAt(command.neverExpires(), command.expiresAt()));
-        credential.setRateLimitPerMinute(resolveRateLimit(command.rateLimitPerMinute()));
+        RateLimitConfiguration rateLimit = resolveRateLimit(command);
+        credential.setRateLimitType(rateLimit.type());
+        credential.setRateLimitCount(rateLimit.count());
+        if (rateLimit.type() == ApiKeyRateLimitType.MINUTE) credential.setRateLimitPerMinute(rateLimit.count());
         credential.setEndpointCodes(resolveEndpointCodes(command.endpointCodes()));
         credential.setAllowedCidrs(resolveCidrs(command.allowedCidrs()));
     }
@@ -142,11 +146,22 @@ public class ApiKeyManagementService {
         return expiresAt;
     }
 
-    /** 校验每分钟限流范围。 */
-    private int resolveRateLimit(Integer value) {
-        int rateLimit = value == null ? 60 : value;
-        if (rateLimit < 1 || rateLimit > 100000) throw new BusinessException("每分钟限流必须在 1 到 100000 之间");
-        return rateLimit;
+    /** 校验限流周期和调用次数，兼容历史每分钟字段。 */
+    private RateLimitConfiguration resolveRateLimit(ApiKeyCommand command) {
+        ApiKeyRateLimitType type = command.rateLimitType();
+        Integer count = command.rateLimitCount();
+        if (type == null) {
+            type = ApiKeyRateLimitType.MINUTE;
+            count = command.rateLimitPerMinute() == null ? 60 : command.rateLimitPerMinute();
+        }
+        if (!type.isLimited()) {
+            if (count != null) throw new BusinessException("无限制模式不能设置调用次数");
+            return new RateLimitConfiguration(type, null);
+        }
+        if (count == null || count < 1 || count > 100000) {
+            throw new BusinessException("调用次数必须在 1 到 100000 之间");
+        }
+        return new RateLimitConfiguration(type, count);
     }
 
     /** 校验接口代码全部来自代码开放目录。 */
@@ -187,17 +202,22 @@ public class ApiKeyManagementService {
         UserAccount owner = credential.getOwner();
         return new ApiKeyView(credential.getId(), credential.getName(), secretService.displayPrefix(credential.getKeyId()),
             owner.getId(), owner.getUsername(), owner.getDisplayName(), credential.getEnabled(), credential.getExpiresAt() == null,
-            credential.getExpiresAt(), credential.getRateLimitPerMinute(), credential.getEndpointCodes(), credential.getAllowedCidrs(),
+            credential.getExpiresAt(), credential.getRateLimitType(), credential.getRateLimitCount(),
+            credential.getRateLimitType() == ApiKeyRateLimitType.MINUTE ? credential.getRateLimitCount() : null,
+            credential.getEndpointCodes(), credential.getAllowedCidrs(),
             credential.getLastUsedAt(), credential.getLastUsedIp(), credential.getCreatedAt(), credential.getUpdatedAt());
     }
 
     public record ApiKeyCommand(String name, Long ownerUserId, Boolean enabled, Boolean neverExpires, Instant expiresAt,
-                                Integer rateLimitPerMinute, Set<String> endpointCodes, Set<String> allowedCidrs) {}
+                                ApiKeyRateLimitType rateLimitType, Integer rateLimitCount, Integer rateLimitPerMinute,
+                                Set<String> endpointCodes, Set<String> allowedCidrs) {}
     public record ApiKeyView(Long id, String name, String keyPrefix, Long ownerUserId, String ownerUsername,
                              String ownerDisplayName, Boolean enabled, Boolean neverExpires, Instant expiresAt,
-                             Integer rateLimitPerMinute, Set<String> endpointCodes, Set<String> allowedCidrs,
+                             ApiKeyRateLimitType rateLimitType, Integer rateLimitCount, Integer rateLimitPerMinute,
+                             Set<String> endpointCodes, Set<String> allowedCidrs,
                              Instant lastUsedAt, String lastUsedIp, Instant createdAt, Instant updatedAt) {}
     public record CreatedApiKey(ApiKeyView item, String apiKey) {}
     public record RotatedApiKey(ApiKeyView item, String apiKey) {}
     public record OwnerView(Long id, String username, String displayName) {}
+    private record RateLimitConfiguration(ApiKeyRateLimitType type, Integer count) {}
 }

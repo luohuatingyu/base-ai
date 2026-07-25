@@ -11,6 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -51,6 +53,13 @@ public class ApiKeyCredential {
 
     @Column(name = "rate_limit_per_minute", nullable = false)
     private Integer rateLimitPerMinute = 60;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rate_limit_type", length = 20)
+    private ApiKeyRateLimitType rateLimitType;
+
+    @Column(name = "rate_limit_count")
+    private Integer rateLimitCount;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "sys_api_key_endpoint", joinColumns = @JoinColumn(name = "api_key_id"),
@@ -111,6 +120,16 @@ public class ApiKeyCredential {
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
     public Integer getRateLimitPerMinute() { return rateLimitPerMinute; }
     public void setRateLimitPerMinute(Integer rateLimitPerMinute) { this.rateLimitPerMinute = rateLimitPerMinute; }
+    public ApiKeyRateLimitType getRateLimitType() {
+        return rateLimitType == null ? ApiKeyRateLimitType.MINUTE : rateLimitType;
+    }
+    public void setRateLimitType(ApiKeyRateLimitType rateLimitType) { this.rateLimitType = rateLimitType; }
+    public Integer getRateLimitCount() {
+        return rateLimitType == null ? rateLimitPerMinute : rateLimitCount;
+    }
+    public void setRateLimitCount(Integer rateLimitCount) { this.rateLimitCount = rateLimitCount; }
+    /** 判断是否仍使用历史每分钟限流字段。 */
+    public boolean hasLegacyRateLimitConfiguration() { return rateLimitType == null; }
     public Set<String> getEndpointCodes() { return endpointCodes; }
     public void setEndpointCodes(Set<String> endpointCodes) { this.endpointCodes = endpointCodes; }
     public Set<String> getAllowedCidrs() { return allowedCidrs; }
