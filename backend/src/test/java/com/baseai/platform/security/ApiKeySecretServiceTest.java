@@ -5,6 +5,7 @@ import com.baseai.platform.config.PlatformProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -27,16 +28,18 @@ class ApiKeySecretServiceTest {
         ApiKeySecretService.GeneratedApiKey generated = service.generate();
         ApiKeySecretService.ParsedApiKey parsed = service.parse(generated.rawApiKey());
 
-        assertTrue(generated.rawApiKey().startsWith("bai_live_"));
+        assertTrue(generated.rawApiKey().matches("sk-[0-9a-f]{16}\\.[A-Za-z0-9_-]{43}"));
         assertTrue(service.matches(parsed.secret(), generated.secretHash()));
         assertNotEquals(parsed.secret(), generated.secretHash());
+        assertEquals("sk-" + parsed.keyId() + ".****", service.displayPrefix(parsed.keyId()));
         assertFalse(service.displayPrefix(parsed.keyId()).contains(parsed.secret()));
     }
 
     /** 非法前缀、缺失 Secret 和超长输入必须统一拒绝。 */
     @Test
     void parseRejectsMalformedKeys() {
-        for (String value : new String[]{null, "bad-key", "bai_live_1234", "bai_live_1234567890abcdef.short", "x".repeat(300)}) {
+        for (String value : new String[]{null, "bad-key", "sk-1234", "sk-1234567890abcdef.short",
+            "bai_live_1234567890abcdef.abcdefghijklmnopqrstuvwxyz123456", "x".repeat(300)}) {
             assertThrows(BusinessException.class, () -> service.parse(value));
         }
     }

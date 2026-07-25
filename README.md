@@ -52,13 +52,14 @@ Redis 只保存可丢失、可重建的缓存状态。当前用于登录 Token �
 平台保留现有 Bearer Token 登录方式，并支持外部系统通过 `X-API-Key` 直接访问显式开放的 Java API：
 
 ```bash
-curl -H 'X-API-Key: bai_live_<key-id>.<secret>' \
+curl -H 'X-API-Key: sk-<key-id>.<secret>' \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"hello"}]}' \
   http://localhost/api/ai/chat
 ```
 
 - API Key 在“系统管理 → API Key 管理”页面创建、授权、停用、轮换和吊销。
+- 历史 `bai_live_` 前缀已停用，需在管理页面轮换为 `sk-` 前缀后继续使用。
 - 完整 Key 只在创建或轮换成功时展示一次，数据库仅保存 HMAC-SHA256 摘要。
 - 每个 Key 必须绑定启用用户，实际权限为“Key 勾选接口”和绑定用户 RBAC 权限的交集。
 - 有效期支持指定时间或永久有效；永久有效仍受停用、吊销、用户状态、IP 白名单和限流控制。

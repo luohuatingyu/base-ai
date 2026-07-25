@@ -70,7 +70,7 @@ class ApiKeyManagementServiceTest {
 
         assertNull(created.item().expiresAt());
         assertTrue(created.item().neverExpires());
-        assertTrue(created.apiKey().startsWith("bai_live_"));
+        assertTrue(created.apiKey().startsWith("sk-"));
         assertEquals(ApiKeyRateLimitType.MINUTE, created.item().rateLimitType());
         assertEquals(120, created.item().rateLimitCount());
     }

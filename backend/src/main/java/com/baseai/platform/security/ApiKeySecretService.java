@@ -14,7 +14,7 @@ import java.util.HexFormat;
 
 @Component
 public class ApiKeySecretService {
-    private static final String PREFIX = "bai_live_";
+    private static final String PREFIX = "sk-";
     private final SecureRandom secureRandom = new SecureRandom();
     private final byte[] hashSecret;
 
