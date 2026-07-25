@@ -70,7 +70,7 @@ class ApiKeyManagementServiceTest {
 
         assertNull(created.item().expiresAt());
         assertTrue(created.item().neverExpires());
-        assertTrue(created.apiKey().startsWith("sk-"));
+        assertTrue(created.apiKey().matches("sk-[A-Za-z0-9]{32}"));
         assertEquals(ApiKeyRateLimitType.MINUTE, created.item().rateLimitType());
         assertEquals(120, created.item().rateLimitCount());
     }

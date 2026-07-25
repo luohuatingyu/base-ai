@@ -15,6 +15,9 @@ import java.util.HexFormat;
 @Component
 public class ApiKeySecretService {
     private static final String PREFIX = "sk-";
+    private static final String TOKEN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final int TOKEN_LENGTH = 32;
+    private static final int KEY_ID_LENGTH = 12;
     private final SecureRandom secureRandom = new SecureRandom();
     private final byte[] hashSecret;
 
@@ -24,22 +27,19 @@ public class ApiKeySecretService {
 
     /** 创建新的 API Key 标识、明文和不可逆摘要。 */
     public GeneratedApiKey generate() {
-        String keyId = randomHex(8);
-        String secret = randomBase64(32);
-        return new GeneratedApiKey(keyId, PREFIX + keyId + "." + secret, hash(secret));
+        String secret = randomAlphanumeric(TOKEN_LENGTH);
+        String keyId = secret.substring(0, KEY_ID_LENGTH);
+        return new GeneratedApiKey(keyId, PREFIX + secret, hash(secret));
     }
 
     /** 解析 API Key 并拒绝非法或超长输入。 */
     public ParsedApiKey parse(String rawApiKey) {
-        if (rawApiKey == null || rawApiKey.length() > 256 || !rawApiKey.startsWith(PREFIX)) {
+        if (rawApiKey == null || rawApiKey.length() != PREFIX.length() + TOKEN_LENGTH || !rawApiKey.startsWith(PREFIX)) {
             throw BusinessException.unauthorized("API Key 无效");
         }
-        int separator = rawApiKey.indexOf('.', PREFIX.length());
-        if (separator < 0) throw BusinessException.unauthorized("API Key 无效");
-        String keyId = rawApiKey.substring(PREFIX.length(), separator);
-        String secret = rawApiKey.substring(separator + 1);
-        if (!keyId.matches("[0-9a-f]{16}") || secret.length() < 32) throw BusinessException.unauthorized("API Key 无效");
-        return new ParsedApiKey(keyId, secret);
+        String secret = rawApiKey.substring(PREFIX.length());
+        if (!secret.matches("[A-Za-z0-9]{32}")) throw BusinessException.unauthorized("API Key 无效");
+        return new ParsedApiKey(secret.substring(0, KEY_ID_LENGTH), secret);
     }
 
     /** 使用恒定时间比较验证 API Key Secret。 */
@@ -50,7 +50,7 @@ public class ApiKeySecretService {
 
     /** 返回适合列表展示且不包含 Secret 的 Key 前缀。 */
     public String displayPrefix(String keyId) {
-        return PREFIX + keyId + ".****";
+        return PREFIX + keyId + "****";
     }
 
     /** 计算 Secret 的 HMAC-SHA256 摘要。 */
@@ -78,18 +78,13 @@ public class ApiKeySecretService {
         return bytes;
     }
 
-    /** 生成指定字节数的十六进制随机值。 */
-    private String randomHex(int bytes) {
-        byte[] value = new byte[bytes];
-        secureRandom.nextBytes(value);
-        return HexFormat.of().formatHex(value);
-    }
-
-    /** 生成 URL 安全的随机 Secret。 */
-    private String randomBase64(int bytes) {
-        byte[] value = new byte[bytes];
-        secureRandom.nextBytes(value);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
+    /** 生成指定长度的大小写字母和数字随机串。 */
+    private String randomAlphanumeric(int length) {
+        StringBuilder value = new StringBuilder(length);
+        for (int index = 0; index < length; index++) {
+            value.append(TOKEN_ALPHABET.charAt(secureRandom.nextInt(TOKEN_ALPHABET.length())));
+        }
+        return value.toString();
     }
 
     public record GeneratedApiKey(String keyId, String rawApiKey, String secretHash) {}
