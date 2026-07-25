@@ -2,85 +2,80 @@
 
 ## 📋 Git 基准点
 
-- Commit: 03641ff
-- 提交说明: Explain scheduled model route synchronization
+- Commit: 41492e2
+- 提交说明: Use sk prefix for API keys
 - 测试日期: 2026-07-25
 - 分支: master
 
 ## 🎯 当前变更范围
 
-- 模型路由自动同步默认改为开启，默认间隔保持 1 小时（`3600000` 毫秒）。
-- Backend 和 Frontend 使用相同的环境变量，能力路由页面展示实际运行开关和间隔。
-- 能力路由页面补充启动同步、定时同步和手动同步的动态说明。
-- 同步间隔按天、小时、分钟、秒逐级拆分，例如 90 分钟展示为 1 小时 30 分钟。
-- 手动模型路由同步接口、权限和既有同步行为保持不变。
+- 新创建及轮换的 API Key 使用 `sk-<keyId>.<secret>` 格式。
+- 列表脱敏值使用 `sk-<keyId>.****` 格式，不暴露 Secret。
+- 历史 `bai_live_` 前缀立即失效，认证入口统一拒绝旧格式。
+- Key ID、随机 Secret、HMAC-SHA256 摘要、接口授权、IP 白名单及限流机制保持不变。
 
 ## 📋 当前变更测试结果（2026-07-25）
 
-**变更范围**：模型路由自动同步默认开启、前端运行时配置、动态同步说明和组合时间格式。
+**变更范围**：API Key 生成、解析和脱敏前缀由 `bai_live_` 调整为 `sk-`，旧前缀立即失效。
 
 **测试执行结果**：
-- 调度器定向测试：5 个，通过 5 个（100%）
-- 能力路由前端定向测试：10 个，通过 10 个（100%）
+- 总测试用例：106 个
+- API Key 定向测试：14 个，通过 14 个（100%）
 - 后端完整测试：106 个，通过 106 个（100%）
-- 前端完整测试：70 个，通过 70 个（100%）
+- 通过：106 个（100%）
 - 失败：0 个
 - 错误：0 个
 - 跳过：0 个
 
 **关键模块测试**：
-- 调度器默认开启与显式关闭：2/2，通过
-- 启动同步与异常隔离：2/2，通过
-- 默认间隔配置：1/1，通过
-- 组合时间和动态说明：3/3，通过
+- API Key Secret 生成、解析、旧前缀拒绝和摘要校验：3/3，通过
+- API Key 身份认证、接口授权、IP 和异常路径：4/4，通过
+- API Key 管理创建及配置校验：7/7，通过
 - 后端完整回归：106/106，通过
-- 前端完整回归：70/70，通过
+- 前端测试：本次未执行，未修改前端代码
 - Python Worker 测试：本次未执行，未修改 Worker 代码
 
 ## 📊 当前测试执行记录
 
 | 测试范围 | 执行命令 | 结果 |
 | --- | --- | --- |
-| 调度器定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=LlmRouteHealthSchedulerTest test` | 5 通过，0 失败，0 错误，0 跳过 |
-| 能力路由前端定向测试 | `node --test frontend/test/model-route-health.test.mjs` | 10 通过，0 失败，0 错误，0 跳过 |
+| API Key 定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeySecretServiceTest,ApiKeyAuthenticationServiceTest,ApiKeyManagementServiceTest test` | 14 通过，0 失败，0 错误，0 跳过 |
 | 后端完整测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 106 通过，0 失败，0 错误，0 跳过 |
-| 前端完整测试 | `node --test frontend/test/*.test.mjs` | 70 通过，0 失败，0 错误，0 跳过 |
-| Compose 配置检查 | `docker compose config` | Backend 和 Frontend 默认接收 `LLM_ROUTE_HEALTH_CHECK_ENABLED=true` 和 `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS=3600000` |
 | 服务重建与启动 | `docker compose up --build -d` | 三个镜像构建成功，Backend 构建内 106 个测试通过，Frontend 生产构建通过，三个服务启动成功 |
 | 服务健康检查 | `docker compose ps`、`curl -fsS http://localhost/health`、`curl -fsS http://localhost:8080/api/open/health` | Backend、Frontend、Python Worker 全部 healthy，两个端点返回 UP |
-| 运行配置检查 | `curl -fsS http://localhost/runtime-config.js`、Backend/Frontend 容器环境检查 | 页面和两个容器实际值均为 `true` 和 `3600000` |
 | 差异格式检查 | `git diff --check` | 通过 |
 
 ## 🔄 当前覆盖范围与结果
 
-- 正常场景：未配置开关时默认创建调度器，应用就绪后立即执行同步；页面显示每 1 小时同步一次。
-- 边界场景：覆盖不足一秒、秒、分钟、小时、天和非法间隔回退；90 分钟展示为 1 小时 30 分钟。
-- 异常场景：单次模型同步异常被记录并隔离，不中断调度调用。
-- 权限与安全：本次不修改手动同步接口及权限控制，既有 Controller 测试继续通过。
-- 兼容性：显式配置 `false` 仍可关闭调度器；手动同步逻辑和其他前后端模块完整回归通过。
-- 运行环境：Compose 默认开启自动同步，同一开关和间隔已正确传入 Backend 与 Frontend。
+- 正常场景：生成结果符合 `sk-[0-9a-f]{16}.<43位URL安全Secret>`，可解析并通过摘要校验。
+- 边界场景：覆盖缺少 Key ID、Secret 过短和超过 256 字符的输入。
+- 异常场景：空值、非法前缀和格式错误统一返回 API Key 无效。
+- 权限与安全：数据库继续仅保存 HMAC-SHA256 摘要，列表仅展示 `sk-<keyId>.****`。
+- 兼容性：按确认方案主动中止旧格式兼容，`bai_live_` Key 会立即认证失败，需轮换后使用。
+- 回归场景：API Key 身份认证、接口授权、IP 白名单、限流及后端全部 106 个测试通过。
+- 运行环境：Compose 已使用变更源码重新构建，三个服务均处于 healthy 状态。
 
 ## 🔄 当前重测触发条件
 
-- 修改 `LlmRouteHealthScheduler` 的条件加载、启动触发或定时执行逻辑。
-- 修改 `LLM_ROUTE_HEALTH_CHECK_ENABLED` 或 `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS` 的默认值和传递方式。
-- 修改模型路由同步服务、Controller、模型实体或相关 Repository。
-- 修改 Spring Scheduling 配置或用户明确要求重新执行完整覆盖测试。
+- 修改 `ApiKeySecretService` 的生成格式、解析规则、摘要或脱敏逻辑。
+- 修改 API Key 管理服务、认证服务、实体、Repository 或 Controller。
+- 修改接口授权、IP 白名单、限流、Hash Secret 配置或 Bearer Token 共存规则。
+- 用户明确要求重新执行完整覆盖测试。
 
 ## ⚠️ 当前已知问题与限制
 
 - 本机没有安装 `mvn`，Maven 测试通过官方 Maven Docker 镜像执行。
-- 当前间隔采用 `fixedDelay`，上一次同步完成后才开始计算下一小时等待时间。
-- 调度器异常隔离测试会按预期输出一条模拟异常的 WARN 日志，不代表测试失败。
-- 内置浏览器因缺少会话元数据无法建立交互连接；已完成本地预览打开、运行时配置检查、源码级页面测试和生产构建，但未执行登录后的浏览器点击回归。
+- 历史 `bai_live_` Key 不会自动转换，必须在 API Key 管理页面执行轮换。
+- 未执行真实登录态创建、调用、轮换的外部客户端端到端测试；当前通过单元测试、完整回归、构建和健康检查验证。
+- `TaskTraceService` 的既有未检查泛型编译提示未影响测试结果。
 
 ## 📝 下次测试建议
 
-1. 增加多次调度集成测试，验证实际时间间隔与并发行为。
-2. 增加最近一次自动同步时间、结果和下次预计执行时间展示。
-3. 浏览器连接恢复后补充登录态页面视觉和交互回归。
+1. 补充真实登录态端到端测试，覆盖创建 `sk-` Key、调用开放接口、轮换和吊销。
+2. 在发布前通知 API Key 使用方完成旧 Key 轮换，避免接口调用中断。
+3. 补充真实 MySQL 与 Redis 环境下的 API Key 全链路集成测试。
 
-**当前 Git 基准点**：`03641ff`
+**当前 Git 基准点**：`41492e2`
 
 ---
 
