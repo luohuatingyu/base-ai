@@ -40,6 +40,9 @@
       <el-table-column :label="t('apiKeys.endpoints')" width="110">
         <template #default="scope">{{ scope.row.endpointCodes?.length || 0 }}</template>
       </el-table-column>
+      <el-table-column :label="t('apiKeys.rateLimit')" min-width="150">
+        <template #default="scope">{{ rateLimitDisplay(scope.row) }}</template>
+      </el-table-column>
       <el-table-column :label="t('common.status')" width="100">
         <template #default="scope">
           <el-tag :type="scope.row.enabled ? 'success' : 'info'">
@@ -92,7 +95,14 @@
             :placeholder="t('apiKeys.selectExpiresAt')" style="width: 100%" />
         </el-form-item>
         <el-form-item :label="t('apiKeys.rateLimit')">
-          <el-input-number v-model="form.rateLimitPerMinute" :min="1" :max="100000" style="width: 220px" />
+          <div class="rate-limit-editor">
+            <el-select v-model="form.rateLimitType" style="width: 180px">
+              <el-option v-for="type in rateLimitTypes" :key="type" :value="type"
+                :label="t(`apiKeys.rateLimitTypes.${type}`)" />
+            </el-select>
+            <el-input-number v-if="form.rateLimitType !== 'UNLIMITED'" v-model="form.rateLimitCount"
+              :min="1" :max="100000" style="width: 220px" />
+          </div>
         </el-form-item>
         <el-form-item :label="t('apiKeys.allowedIps')">
           <el-input v-model="form.allowedCidrsText" type="textarea" :rows="4" :placeholder="t('apiKeys.allowedIpsPlaceholder')" />
@@ -153,6 +163,7 @@ const secretVisible = ref(false)
 const generatedApiKey = ref('')
 const query = reactive({ keyword: '', enabled: null, page: 1, size: 5 })
 const form = reactive(emptyForm())
+const rateLimitTypes = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'UNLIMITED']
 const endpointGroups = computed(() => {
   const groups = new Map()
   for (const endpoint of endpoints.value) {
@@ -170,7 +181,7 @@ function translateEndpoint(translationKey, endpointCode) {
 
 /** 创建 API Key 编辑表单的默认值。 */
 function emptyForm() {
-  return { id: null, name: '', ownerUserId: null, enabled: true, neverExpires: false, expiresAt: defaultExpiration(), rateLimitPerMinute: 60, endpointCodes: [], allowedCidrsText: '' }
+  return { id: null, name: '', ownerUserId: null, enabled: true, neverExpires: false, expiresAt: defaultExpiration(), rateLimitType: 'MINUTE', rateLimitCount: 60, endpointCodes: [], allowedCidrsText: '' }
 }
 
 /** 默认将指定有效期设置为一年后。 */
@@ -217,7 +228,8 @@ function openEdit(row) {
     enabled: row.enabled,
     neverExpires: row.neverExpires,
     expiresAt: row.expiresAt,
-    rateLimitPerMinute: row.rateLimitPerMinute,
+    rateLimitType: row.rateLimitType || 'MINUTE',
+    rateLimitCount: row.rateLimitCount ?? row.rateLimitPerMinute ?? 60,
     endpointCodes: [...row.endpointCodes],
     allowedCidrsText: (row.allowedCidrs || []).join('\n')
   })
@@ -242,7 +254,8 @@ async function save() {
       enabled: form.enabled,
       neverExpires: form.neverExpires,
       expiresAt: form.neverExpires ? null : form.expiresAt,
-      rateLimitPerMinute: form.rateLimitPerMinute,
+      rateLimitType: form.rateLimitType,
+      rateLimitCount: form.rateLimitType === 'UNLIMITED' ? null : form.rateLimitCount,
       endpointCodes: form.endpointCodes,
       allowedCidrs: parseCidrs()
     }
@@ -258,6 +271,13 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+/** 格式化列表中的 API Key 限流配置。 */
+function rateLimitDisplay(row) {
+  const type = row.rateLimitType || 'MINUTE'
+  if (type === 'UNLIMITED') return t('apiKeys.rateLimitTypes.UNLIMITED')
+  return `${row.rateLimitCount ?? row.rateLimitPerMinute} ${t(`apiKeys.rateLimitUnits.${type}`)}`
 }
 
 /** 将逐行 IP 输入规范为去重规则列表。 */
@@ -323,6 +343,7 @@ onMounted(async () => {
 .endpoint-method { color: var(--el-color-primary); font-weight: 700; }
 .endpoint-option code { overflow-wrap: anywhere; color: var(--el-text-color-secondary); }
 .form-help { margin-top: 6px; color: var(--el-text-color-secondary); font-size: 13px; }
+.rate-limit-editor { display: flex; gap: 12px; flex-wrap: wrap; }
 .secret-value { margin-top: 18px; }
 @media (max-width: 720px) {
   .endpoint-option :deep(.el-checkbox__label) { grid-template-columns: 48px 1fr; }

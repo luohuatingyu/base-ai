@@ -3,6 +3,7 @@ package com.baseai.platform.security;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.domain.ApiKeyCredential;
+import com.baseai.platform.domain.ApiKeyRateLimitType;
 import com.baseai.platform.domain.Menu;
 import com.baseai.platform.domain.Role;
 import com.baseai.platform.domain.UserAccount;
@@ -66,7 +67,7 @@ class ApiKeyAuthenticationServiceTest {
         assertEquals("integration-key", user.credentialName());
         assertTrue(user.hasPermission("test:invoke"));
         assertEquals("10.0.0.8", credential.getLastUsedIp());
-        verify(rateLimiter).check(99L, 60);
+        verify(rateLimiter).check(99L, ApiKeyRateLimitType.MINUTE, 60);
     }
 
     /** 未声明开放的接口必须在查询 Key 前拒绝。 */
@@ -88,7 +89,7 @@ class ApiKeyAuthenticationServiceTest {
         when(repository.findByKeyIdAndRevokedAtIsNull(generated.keyId())).thenReturn(Optional.of(credential));
 
         assertThrows(BusinessException.class, () -> service.authenticate(generated.rawApiKey(), request, handler));
-        verify(rateLimiter, never()).check(99L, 60);
+        verify(rateLimiter, never()).check(99L, ApiKeyRateLimitType.MINUTE, 60);
     }
 
     /** 过期、停用和来源 IP 不匹配均必须拒绝。 */
