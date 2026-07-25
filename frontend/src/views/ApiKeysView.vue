@@ -100,12 +100,12 @@
         </el-form-item>
         <el-form-item :label="t('apiKeys.endpoints')">
           <div class="endpoint-groups">
-            <section v-for="group in endpointGroups" :key="group.name" class="endpoint-group">
+            <section v-for="group in endpointGroups" :key="group.key" class="endpoint-group">
               <strong>{{ group.name }}</strong>
               <el-checkbox-group v-model="form.endpointCodes">
                 <el-checkbox v-for="endpoint in group.items" :key="endpoint.code" :value="endpoint.code" class="endpoint-option">
                   <span class="endpoint-method">{{ endpoint.method }}</span>
-                  <span>{{ endpoint.name }}</span>
+                  <span>{{ translateEndpoint(endpoint.nameKey, endpoint.code) }}</span>
                   <code>{{ endpoint.path }}</code>
                   <el-tag :type="riskType(endpoint.risk)" size="small">{{ t(`apiKeys.risk.${endpoint.risk}`) }}</el-tag>
                 </el-checkbox>
@@ -140,7 +140,7 @@ import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
 const owners = ref([])
@@ -156,11 +156,17 @@ const form = reactive(emptyForm())
 const endpointGroups = computed(() => {
   const groups = new Map()
   for (const endpoint of endpoints.value) {
-    if (!groups.has(endpoint.group)) groups.set(endpoint.group, [])
-    groups.get(endpoint.group).push(endpoint)
+    const groupName = translateEndpoint(endpoint.groupKey, endpoint.code)
+    if (!groups.has(endpoint.groupKey)) groups.set(endpoint.groupKey, { name: groupName, items: [] })
+    groups.get(endpoint.groupKey).items.push(endpoint)
   }
-  return [...groups.entries()].map(([name, items]) => ({ name, items }))
+  return [...groups.entries()].map(([key, group]) => ({ key, ...group }))
 })
+
+/** 按当前语言翻译开放接口文案，缺失词条时回退接口编码。 */
+function translateEndpoint(translationKey, endpointCode) {
+  return translationKey && te(translationKey) ? t(translationKey) : endpointCode
+}
 
 /** 创建 API Key 编辑表单的默认值。 */
 function emptyForm() {

@@ -143,7 +143,7 @@ class ApiKeyAuthenticationServiceTest {
     }
 
     private static class SampleController {
-        @ApiKeyEndpoint(code = "test.allowed", name = "测试接口", group = "测试")
+        @ApiKeyEndpoint(code = "test.allowed", nameKey = "test.endpoint.name", groupKey = "test.endpoint.group")
         @RequiredPermission("test:invoke")
         public void allowed() {}
         public void closed() {}

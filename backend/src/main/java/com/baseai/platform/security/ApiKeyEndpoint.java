@@ -10,7 +10,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ApiKeyEndpoint {
     String code();
-    String name();
-    String group();
+    String nameKey();
+    String groupKey();
     ApiKeyRisk risk() default ApiKeyRisk.NORMAL;
 }

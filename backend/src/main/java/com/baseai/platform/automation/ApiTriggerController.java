@@ -57,7 +57,8 @@ public class ApiTriggerController {
 
     @PostMapping("/{id}/trigger")
     @RequiredPermission("automation:api-trigger:trigger")
-    @ApiKeyEndpoint(code = "automation.api-trigger.execute", name = "执行接口触发器", group = "自动化", risk = ApiKeyRisk.HIGH)
+    @ApiKeyEndpoint(code = "automation.api-trigger.execute", nameKey = "apiKeys.endpointNames.apiTriggerExecute",
+        groupKey = "apiKeys.endpointGroups.automation", risk = ApiKeyRisk.HIGH)
     @TraceType(value = "手动执行接口触发", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.ExecutionResult trigger(@PathVariable Long id) { return service.execute(id, "MANUAL"); }
 

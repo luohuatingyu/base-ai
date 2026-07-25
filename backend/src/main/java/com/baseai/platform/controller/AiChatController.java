@@ -84,7 +84,8 @@ public class AiChatController {
 
     /** 建立任务上下文并代理一次通用模型对话。 */
     @PostMapping
-    @ApiKeyEndpoint(code = "ai.chat.invoke", name = "AI 对话调用", group = "AI 能力", risk = ApiKeyRisk.SENSITIVE)
+    @ApiKeyEndpoint(code = "ai.chat.invoke", nameKey = "apiKeys.endpointNames.aiChatInvoke",
+        groupKey = "apiKeys.endpointGroups.ai", risk = ApiKeyRisk.SENSITIVE)
     @TraceType(value = "AI 对话", triggerEntry = "MANUAL", captureRequest = false)
     public ChatResponse chat(@RequestBody ChatRequest request) {
         log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());

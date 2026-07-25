@@ -20,14 +20,18 @@ class ApiKeyManagementControllerTest {
         assertNull(create.getAnnotation(ApiKeyEndpoint.class));
     }
 
-    /** 首批仅显式开放 AI 对话和正式接口触发执行。 */
+    /** 首批开放接口声明稳定代码和前端国际化键。 */
     @Test
-    void businessEndpointsDeclareStableApiKeyCodes() throws Exception {
+    void businessEndpointsDeclareStableApiKeyCodesAndTranslationKeys() throws Exception {
         Method chat = AiChatController.class.getMethod("chat", AiChatController.ChatRequest.class);
         Method trigger = ApiTriggerController.class.getMethod("trigger", Long.class);
 
         assertEquals("ai.chat.invoke", chat.getAnnotation(ApiKeyEndpoint.class).code());
+        assertEquals("apiKeys.endpointNames.aiChatInvoke", chat.getAnnotation(ApiKeyEndpoint.class).nameKey());
+        assertEquals("apiKeys.endpointGroups.ai", chat.getAnnotation(ApiKeyEndpoint.class).groupKey());
         assertEquals("automation.api-trigger.execute", trigger.getAnnotation(ApiKeyEndpoint.class).code());
+        assertEquals("apiKeys.endpointNames.apiTriggerExecute", trigger.getAnnotation(ApiKeyEndpoint.class).nameKey());
+        assertEquals("apiKeys.endpointGroups.automation", trigger.getAnnotation(ApiKeyEndpoint.class).groupKey());
         assertNotNull(chat.getAnnotation(ApiKeyEndpoint.class));
         assertNotNull(trigger.getAnnotation(ApiKeyEndpoint.class));
     }

@@ -34,7 +34,7 @@ public class ApiKeyEndpointCatalogService implements ApplicationRunner {
     /** 返回按分组、名称和请求路径排序的 API Key 接口目录。 */
     public List<EndpointView> catalog() {
         return catalogByCode().values().stream()
-            .sorted(Comparator.comparing(EndpointView::group).thenComparing(EndpointView::name)
+            .sorted(Comparator.comparing(EndpointView::groupKey).thenComparing(EndpointView::nameKey)
                 .thenComparing(EndpointView::path).thenComparing(EndpointView::method))
             .toList();
     }
@@ -74,9 +74,9 @@ public class ApiKeyEndpointCatalogService implements ApplicationRunner {
         RequiredPermission permission = handler.getMethodAnnotation(RequiredPermission.class);
         if (permission == null) permission = handler.getBeanType().getAnnotation(RequiredPermission.class);
         if (permission == null) throw new IllegalStateException("API Key 接口必须声明 RequiredPermission: " + annotation.code());
-        return new EndpointView(annotation.code(), annotation.name(), annotation.group(), annotation.risk().name(),
+        return new EndpointView(annotation.code(), annotation.nameKey(), annotation.groupKey(), annotation.risk().name(),
             methods.iterator().next().name(), patterns.iterator().next(), permission.value());
     }
 
-    public record EndpointView(String code, String name, String group, String risk, String method, String path, String permission) {}
+    public record EndpointView(String code, String nameKey, String groupKey, String risk, String method, String path, String permission) {}
 }
