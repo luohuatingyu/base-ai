@@ -31,6 +31,15 @@ test('配置页面加载和保存结构化 Host 规则', () => {
   assert.match(viewSource, /allowLoopback: form\.allowLoopback/)
 })
 
+test('配置接口返回前不展示本地默认状态', () => {
+  assert.match(viewSource, /const loading = ref\(true\)/)
+  assert.match(viewSource, /const loaded = ref\(false\)/)
+  assert.match(viewSource, /v-loading="loading"/)
+  assert.match(viewSource, /<template v-if="loaded">/)
+  assert.match(viewSource, /v-if="loaded && auth\.hasPermission/)
+  assert.match(viewSource, /form\.allowPrivateNetwork = Boolean\(data\.allowPrivateNetwork\)[\s\S]*loaded\.value = true/)
+})
+
 test('五种匹配类型和任意 Host 风险确认均存在', () => {
   for (const type of ['EXACT', 'PREFIX', 'SUFFIX', 'CONTAINS', 'ANY']) assert.match(utilitySource, new RegExp(type))
   assert.match(viewSource, /rule\.type === 'ANY'/)

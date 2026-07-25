@@ -5,38 +5,43 @@
         <h2>{{ t('apiTriggerSecurity.title') }}</h2>
         <p>{{ t('apiTriggerSecurity.description') }}</p>
       </div>
-      <el-button v-if="auth.hasPermission('automation:api-trigger-security:update')" type="primary" @click="save">
+      <el-button v-if="loaded && auth.hasPermission('automation:api-trigger-security:update')" type="primary" @click="save">
         {{ t('common.save') }}
       </el-button>
     </div>
 
-    <el-alert :title="t('apiTriggerSecurity.defaultPolicy')" type="info" :closable="false" show-icon />
-    <el-alert v-if="hasAnyRule" :title="t('apiTriggerSecurity.anyWarning')" type="warning" :closable="false" show-icon />
+    <div v-loading="loading" class="security-content">
+      <template v-if="loaded">
+        <el-alert :title="t('apiTriggerSecurity.defaultPolicy')" type="info" :closable="false" show-icon />
+        <el-alert v-if="hasAnyRule" :title="t('apiTriggerSecurity.anyWarning')" type="warning" :closable="false" show-icon />
 
-    <el-form label-position="top" class="security-form">
-      <el-form-item :label="t('apiTriggerSecurity.allowedHosts')">
-        <div class="host-rule-editor">
-          <div v-for="(rule, index) in hostRuleRows" :key="index" class="host-rule-editor-row">
-            <el-select v-model="rule.type" class="host-rule-type" @change="changeRuleType(rule)">
-              <el-option v-for="type in hostRuleTypes" :key="type" :label="t(`apiTriggerSecurity.ruleTypes.${type}`)" :value="type" />
-            </el-select>
-            <el-input v-if="rule.type !== 'ANY'" v-model="rule.value" :placeholder="t('apiTriggerSecurity.ruleValuePlaceholder')" />
-            <div v-else class="any-rule-value">{{ t('apiTriggerSecurity.anyRuleValue') }}</div>
-            <el-button link type="danger" @click="deleteHostRule(index)">{{ t('apiTriggerSecurity.deleteRule') }}</el-button>
-          </div>
-          <el-button plain type="primary" @click="addHostRule">+ {{ t('apiTriggerSecurity.addRule') }}</el-button>
-        </div>
-        <div class="form-help">{{ t('apiTriggerSecurity.allowedHostsHelp') }}</div>
-      </el-form-item>
-      <el-form-item :label="t('apiTriggerSecurity.allowLoopback')">
-        <el-switch v-model="form.allowLoopback" />
-        <span class="switch-help">{{ t('apiTriggerSecurity.allowLoopbackHelp') }}</span>
-      </el-form-item>
-      <el-form-item :label="t('apiTriggerSecurity.allowPrivateNetwork')">
-        <el-switch v-model="form.allowPrivateNetwork" />
-        <span class="switch-help">{{ t('apiTriggerSecurity.allowPrivateNetworkHelp') }}</span>
-      </el-form-item>
-    </el-form>
+        <el-form label-position="top" class="security-form">
+          <el-form-item :label="t('apiTriggerSecurity.allowedHosts')">
+            <div class="host-rule-editor">
+              <div v-for="(rule, index) in hostRuleRows" :key="index" class="host-rule-editor-row">
+                <el-select v-model="rule.type" class="host-rule-type" @change="changeRuleType(rule)">
+                  <el-option v-for="type in hostRuleTypes" :key="type" :label="t(`apiTriggerSecurity.ruleTypes.${type}`)" :value="type" />
+                </el-select>
+                <el-input v-if="rule.type !== 'ANY'" v-model="rule.value" :placeholder="t('apiTriggerSecurity.ruleValuePlaceholder')" />
+                <div v-else class="any-rule-value">{{ t('apiTriggerSecurity.anyRuleValue') }}</div>
+                <el-button link type="danger" @click="deleteHostRule(index)">{{ t('apiTriggerSecurity.deleteRule') }}</el-button>
+              </div>
+              <el-button plain type="primary" @click="addHostRule">+ {{ t('apiTriggerSecurity.addRule') }}</el-button>
+            </div>
+            <div class="form-help">{{ t('apiTriggerSecurity.allowedHostsHelp') }}</div>
+          </el-form-item>
+          <el-form-item :label="t('apiTriggerSecurity.allowLoopback')">
+            <el-switch v-model="form.allowLoopback" />
+            <span class="switch-help">{{ t('apiTriggerSecurity.allowLoopbackHelp') }}</span>
+          </el-form-item>
+          <el-form-item :label="t('apiTriggerSecurity.allowPrivateNetwork')">
+            <el-switch v-model="form.allowPrivateNetwork" />
+            <span class="switch-help">{{ t('apiTriggerSecurity.allowPrivateNetworkHelp') }}</span>
+          </el-form-item>
+        </el-form>
+      </template>
+      <el-button v-else-if="!loading" @click="load">{{ t('common.refresh') }}</el-button>
+    </div>
   </div>
 </template>
 
@@ -53,6 +58,8 @@ const auth = useAuthStore()
 const form = reactive({ allowLoopback: true, allowPrivateNetwork: false })
 const hostRuleTypes = HOST_RULE_TYPES
 const hostRuleRows = ref([createHostRule()])
+const loading = ref(true)
+const loaded = ref(false)
 const hasAnyRule = computed(() => normalizeHostRules(hostRuleRows.value).some(rule => rule.type === 'ANY'))
 
 /** 新增一条默认精确匹配规则。 */
@@ -73,10 +80,17 @@ function changeRuleType(rule) {
 
 /** 加载当前生效配置并转换为便于编辑的逐行文本。 */
 async function load() {
-  const { data } = await http.get('/automation/api-trigger-security')
-  hostRuleRows.value = toHostRuleRows(data.hostRules)
-  form.allowLoopback = Boolean(data.allowLoopback)
-  form.allowPrivateNetwork = Boolean(data.allowPrivateNetwork)
+  loading.value = true
+  loaded.value = false
+  try {
+    const { data } = await http.get('/automation/api-trigger-security')
+    hostRuleRows.value = toHostRuleRows(data.hostRules)
+    form.allowLoopback = Boolean(data.allowLoopback)
+    form.allowPrivateNetwork = Boolean(data.allowPrivateNetwork)
+    loaded.value = true
+  } finally {
+    loading.value = false
+  }
 }
 
 /** 保存配置；完全放开公网和私网时要求管理员再次确认。 */
@@ -101,6 +115,7 @@ onMounted(load)
 
 <style scoped>
 .api-trigger-security { display: grid; gap: 18px; }
+.security-content { display: grid; gap: 18px; min-height: 160px; align-content: start; }
 .security-form { max-width: 760px; }
 .host-rule-editor { display: grid; gap: 10px; width: 100%; }
 .host-rule-editor-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
