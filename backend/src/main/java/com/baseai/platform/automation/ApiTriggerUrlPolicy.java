@@ -28,7 +28,7 @@ public class ApiTriggerUrlPolicy {
             if (literalLoopback && !configuration.allowLoopback()) {
                 throw BusinessException.forbidden("禁止访问回环地址");
             }
-            if (!literalLoopback && configuration.allowedHosts().stream().noneMatch(pattern -> matches(pattern, host))) {
+            if (!literalLoopback && configuration.hostRules().stream().noneMatch(rule -> matches(rule, host))) {
                 throw BusinessException.forbidden("目标域名不在接口触发 Host 白名单");
             }
             if (!configuration.allowLoopback() || !configuration.allowPrivateNetwork()) {
@@ -49,13 +49,17 @@ public class ApiTriggerUrlPolicy {
         }
     }
 
-    /** 支持星号、精确域名及 *.example.com 通配形式，并兼容 IPv6 方括号。 */
-    private boolean matches(String pattern, String host) {
-        String normalized = String.valueOf(pattern).trim().toLowerCase(Locale.ROOT);
+    /** 按精确、域名边界前后缀、普通包含和任意 Host 五种类型匹配。 */
+    private boolean matches(ApiTriggerSecurityConfigurationService.HostRule rule, String host) {
         String normalizedHost = host.startsWith("[") && host.endsWith("]") ? host.substring(1, host.length() - 1) : host;
-        return "*".equals(normalized) || (normalized.startsWith("*.")
-            ? normalizedHost.endsWith(normalized.substring(1)) && normalizedHost.length() > normalized.length() - 1
-            : normalized.equals(normalizedHost));
+        String value = rule.value() == null ? "" : rule.value().toLowerCase(Locale.ROOT);
+        return switch (ApiTriggerSecurityConfigurationService.HostMatchType.valueOf(rule.type())) {
+            case EXACT -> normalizedHost.equals(value);
+            case PREFIX -> normalizedHost.equals(value) || normalizedHost.startsWith(value + ".");
+            case SUFFIX -> normalizedHost.equals(value) || normalizedHost.endsWith("." + value);
+            case CONTAINS -> normalizedHost.contains(value);
+            case ANY -> true;
+        };
     }
 
     /** 识别无需配置额外 Host 白名单的三个字面回环地址。 */

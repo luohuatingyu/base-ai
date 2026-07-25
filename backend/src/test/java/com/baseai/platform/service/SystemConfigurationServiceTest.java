@@ -59,8 +59,8 @@ class SystemConfigurationServiceTest {
     @Test
     void createSettingRejectsApiTriggerSecurityKeys() {
         SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
-            "api-trigger", ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY,
-            "回环开关", "false", false, true);
+            "api-trigger", ApiTriggerSecurityConfigurationService.HOST_RULES_KEY,
+            "Host 规则", "[]", false, true);
 
         assertThrows(BusinessException.class, () -> service.createSetting(command));
         verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());

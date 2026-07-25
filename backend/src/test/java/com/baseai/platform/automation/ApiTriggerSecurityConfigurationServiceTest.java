@@ -4,6 +4,7 @@ import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.domain.SystemSetting;
 import com.baseai.platform.repository.SystemSettingRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,88 +37,99 @@ class ApiTriggerSecurityConfigurationServiceTest {
     void setUp() {
         PlatformProperties properties = new PlatformProperties();
         properties.getPlatform().setCode("baseai");
-        service = new ApiTriggerSecurityConfigurationService(settingRepository, redisTemplate, properties);
+        service = new ApiTriggerSecurityConfigurationService(settingRepository, redisTemplate, properties, new ObjectMapper());
     }
 
-    /** 未保存配置时应不允许额外 Host，仅开启回环并关闭其他私网访问。 */
+    /** 未保存配置时应没有额外 Host 规则，仅开启回环并关闭其他私网。 */
     @Test
-    void currentUsesLoopbackDefaultsWhenSettingsDoNotExist() {
+    void currentUsesSafeDefaultsWhenSettingsDoNotExist() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(anyString())).thenReturn(null);
         when(settingRepository.findByConfigKey(anyString())).thenReturn(Optional.empty());
 
         ApiTriggerSecurityConfigurationService.ConfigurationView current = service.current();
 
-        assertEquals(List.of(), current.allowedHosts());
+        assertEquals(List.of(), current.hostRules());
         assertEquals(true, current.allowLoopback());
         assertEquals(false, current.allowPrivateNetwork());
     }
 
-    /** 已保存配置应覆盖默认值，并支持显式空白名单表示拒绝全部 Host。 */
+    /** 新版 JSON 规则应被规范化、去重并作为当前运行时配置返回。 */
     @Test
-    void currentReadsStoredRuntimeValues() {
+    void currentReadsStructuredRuntimeRules() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY))
-            .thenReturn("");
-        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY))
-            .thenReturn("false");
-        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY))
-            .thenReturn("true");
+        when(valueOperations.get(cacheKey(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY)))
+            .thenReturn("[{\"type\":\"suffix\",\"value\":\" Factory.AI \"},{\"type\":\"SUFFIX\",\"value\":\"factory.ai\"}]");
+        when(valueOperations.get(cacheKey(ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY))).thenReturn("false");
+        when(valueOperations.get(cacheKey(ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY))).thenReturn("true");
 
         ApiTriggerSecurityConfigurationService.ConfigurationView current = service.current();
 
-        assertEquals(List.of(), current.allowedHosts());
+        assertEquals(List.of(rule("SUFFIX", "factory.ai")), current.hostRules());
         assertEquals(false, current.allowLoopback());
         assertEquals(true, current.allowPrivateNetwork());
     }
 
-    /** 读取旧版本配置时应自动隐藏已经持久化的内置回环 Host。 */
+    /** 新键不存在时应兼容旧精确、子域通配和星号规则，并剔除内置回环值。 */
     @Test
-    void currentRemovesPersistedBuiltInLoopbackHosts() {
+    void currentMigratesLegacyAllowedHostsInMemory() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY))
-            .thenReturn("localhost,api.example.com,127.0.0.1,::1");
-        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY))
-            .thenReturn("true");
-        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY))
-            .thenReturn("false");
+        when(valueOperations.get(anyString())).thenAnswer(invocation -> switch (invocation.getArgument(0, String.class)) {
+            case "baseai:api-trigger-security:api.trigger.allowed-hosts" -> "localhost,api.example.com,*.factory.ai,*";
+            case "baseai:api-trigger-security:api.trigger.allow-loopback" -> "true";
+            case "baseai:api-trigger-security:api.trigger.allow-private-network" -> "false";
+            default -> null;
+        });
+        when(settingRepository.findByConfigKey(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY)).thenReturn(Optional.empty());
 
         ApiTriggerSecurityConfigurationService.ConfigurationView current = service.current();
 
-        assertEquals(List.of("api.example.com"), current.allowedHosts());
-        assertEquals(true, current.allowLoopback());
-        assertEquals(false, current.allowPrivateNetwork());
+        assertEquals(List.of(rule("EXACT", "api.example.com"), rule("SUFFIX", "factory.ai"), rule("ANY", null)),
+            current.hostRules());
     }
 
-    /** 保存时应规范化、去重 Host 规则并同时清除两个共享缓存键。 */
+    /** 保存时应规范化五类规则、忽略 ANY 值并清除全部共享缓存键。 */
     @Test
-    void updateNormalizesAndPersistsConfiguration() {
+    void updateNormalizesAndPersistsStructuredRules() {
         when(settingRepository.findByConfigKey(anyString())).thenReturn(Optional.empty());
         ArgumentCaptor<SystemSetting> settingCaptor = ArgumentCaptor.forClass(SystemSetting.class);
 
         ApiTriggerSecurityConfigurationService.ConfigurationView updated = service.update(
-            new ApiTriggerSecurityConfigurationService.UpdateCommand(
-                List.of(" LOCALHOST ", "*.Example.com", "localhost", "[::1]", "*"), false, true));
+            new ApiTriggerSecurityConfigurationService.UpdateCommand(List.of(
+                rule(" suffix ", " Factory.AI "), rule("SUFFIX", "factory.ai"),
+                rule("contains", "Factory"), rule("ANY", "ignored"), rule("EXACT", "localhost")), false, true));
 
-        assertEquals(List.of("*.example.com", "*"), updated.allowedHosts());
-        assertEquals(false, updated.allowLoopback());
-        assertEquals(true, updated.allowPrivateNetwork());
+        assertEquals(List.of(rule("SUFFIX", "factory.ai"), rule("CONTAINS", "factory"), rule("ANY", null)),
+            updated.hostRules());
         verify(settingRepository, org.mockito.Mockito.times(3)).save(settingCaptor.capture());
-        assertEquals(List.of("*.example.com,*", "false", "true"),
-            settingCaptor.getAllValues().stream().map(SystemSetting::getConfigValue).toList());
-        verify(redisTemplate).delete(List.of(
-            "baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY,
-            "baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY,
-            "baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY));
+        assertEquals("[{\"type\":\"SUFFIX\",\"value\":\"factory.ai\"},{\"type\":\"CONTAINS\",\"value\":\"factory\"},{\"type\":\"ANY\",\"value\":null}]",
+            settingCaptor.getAllValues().get(0).getConfigValue());
+        verify(redisTemplate).delete(List.of(cacheKey(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY),
+            cacheKey(ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY),
+            cacheKey(ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY),
+            cacheKey(ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY)));
     }
 
-    /** 非法 URL、端口或越界 IP 形式不得作为 Host 规则保存。 */
+    /** 非法类型、空值、协议、端口和非法 DNS 字符不得保存。 */
     @Test
-    void updateRejectsInvalidHostPatterns() {
-        for (String invalid : List.of("http://example.com", "example.com:8080", "*.bad host", "256.1.1.1")) {
+    void updateRejectsInvalidStructuredRules() {
+        List<ApiTriggerSecurityConfigurationService.HostRule> invalidRules = List.of(
+            rule("UNKNOWN", "example.com"), rule("PREFIX", ""), rule("EXACT", "http://example.com"),
+            rule("SUFFIX", "example.com:8080"), rule("PREFIX", "bad..host"), rule("CONTAINS", "bad host"));
+        for (ApiTriggerSecurityConfigurationService.HostRule invalid : invalidRules) {
             assertThrows(BusinessException.class, () -> service.update(
                 new ApiTriggerSecurityConfigurationService.UpdateCommand(List.of(invalid), true, true)));
         }
         verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 创建测试规则，减少不同场景的重复构造代码。 */
+    private ApiTriggerSecurityConfigurationService.HostRule rule(String type, String value) {
+        return new ApiTriggerSecurityConfigurationService.HostRule(type, value);
+    }
+
+    /** 构建当前服务使用的 Redis 缓存键。 */
+    private String cacheKey(String key) {
+        return "baseai:api-trigger-security:" + key;
     }
 }

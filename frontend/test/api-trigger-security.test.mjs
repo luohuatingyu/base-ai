@@ -6,6 +6,7 @@ const viewSource = readFileSync(new URL('../src/views/ApiTriggerSecurityView.vue
 const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const menuSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
 const zhSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
+const utilitySource = readFileSync(new URL('../src/utils/hostRules.js', import.meta.url), 'utf8')
 
 test('接口触发安全配置注册独立路由和导航名称', () => {
   assert.match(routerSource, /automation\/api-trigger-security/)
@@ -14,24 +15,31 @@ test('接口触发安全配置注册独立路由和导航名称', () => {
   assert.match(zhSource, /触发安全配置/)
 })
 
-test('配置页面加载和保存运行时安全配置', () => {
+test('Host 使用 API Key 风格的逐条类型编辑器', () => {
+  assert.match(viewSource, /v-for="\(rule, index\) in hostRuleRows"/)
+  assert.match(viewSource, /v-model="rule\.type"/)
+  assert.match(viewSource, /v-model="rule\.value"/)
+  assert.match(viewSource, /addHostRule/)
+  assert.match(viewSource, /deleteHostRule\(index\)/)
+  assert.doesNotMatch(viewSource, /type="textarea"/)
+})
+
+test('配置页面加载和保存结构化 Host 规则', () => {
   assert.match(viewSource, /http\.get\('\/automation\/api-trigger-security'\)/)
   assert.match(viewSource, /http\.put\('\/automation\/api-trigger-security'/)
-  assert.match(viewSource, /automation:api-trigger-security:update/)
-  assert.match(viewSource, /split\(\/\[\\n,\]\//)
-  assert.match(viewSource, /v-model="form\.allowLoopback"/)
+  assert.match(viewSource, /hostRules,/)
   assert.match(viewSource, /allowLoopback: form\.allowLoopback/)
 })
 
-test('星号、回环和私网全部开放时展示警告并二次确认', () => {
-  assert.match(viewSource, /parseAllowedHosts\(\)\.includes\('\*'\)/)
-  assert.match(viewSource, /allowedHosts\.includes\('\*'\) && form\.allowLoopback && form\.allowPrivateNetwork/)
+test('五种匹配类型和任意 Host 风险确认均存在', () => {
+  for (const type of ['EXACT', 'PREFIX', 'SUFFIX', 'CONTAINS', 'ANY']) assert.match(utilitySource, new RegExp(type))
+  assert.match(viewSource, /rule\.type === 'ANY'/)
+  assert.match(viewSource, /hostRules\.some\(rule => rule\.type === 'ANY'\)/)
   assert.match(viewSource, /ElMessageBox\.confirm/)
-  assert.match(viewSource, /wildcardWarning/)
 })
 
-test('页面默认不要求填写回环 Host 并关闭其他私网', () => {
-  assert.match(viewSource, /allowedHosts: '', allowLoopback: true, allowPrivateNetwork: false/)
-  assert.match(zhSource, /allowedHostsPlaceholder: 'api\.example\.com/)
-  assert.doesNotMatch(zhSource, /allowedHostsPlaceholder: 'localhost/)
+test('回环和私网继续使用独立开关', () => {
+  assert.match(viewSource, /allowLoopback: true, allowPrivateNetwork: false/)
+  assert.match(viewSource, /v-model="form\.allowLoopback"/)
+  assert.match(viewSource, /v-model="form\.allowPrivateNetwork"/)
 })
