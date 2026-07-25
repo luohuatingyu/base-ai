@@ -18,6 +18,10 @@
         <el-input v-model="form.allowedHosts" type="textarea" :rows="8" :placeholder="t('apiTriggerSecurity.allowedHostsPlaceholder')" />
         <div class="form-help">{{ t('apiTriggerSecurity.allowedHostsHelp') }}</div>
       </el-form-item>
+      <el-form-item :label="t('apiTriggerSecurity.allowLoopback')">
+        <el-switch v-model="form.allowLoopback" />
+        <span class="switch-help">{{ t('apiTriggerSecurity.allowLoopbackHelp') }}</span>
+      </el-form-item>
       <el-form-item :label="t('apiTriggerSecurity.allowPrivateNetwork')">
         <el-switch v-model="form.allowPrivateNetwork" />
         <span class="switch-help">{{ t('apiTriggerSecurity.allowPrivateNetworkHelp') }}</span>
@@ -35,7 +39,7 @@ import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
 const auth = useAuthStore()
-const form = reactive({ allowedHosts: '', allowPrivateNetwork: true })
+const form = reactive({ allowedHosts: '', allowLoopback: true, allowPrivateNetwork: false })
 const hasWildcard = computed(() => parseAllowedHosts().includes('*'))
 
 /** 将逗号或换行分隔的输入转换为 Host 规则列表。 */
@@ -47,20 +51,23 @@ function parseAllowedHosts() {
 async function load() {
   const { data } = await http.get('/automation/api-trigger-security')
   form.allowedHosts = (data.allowedHosts || []).join('\n')
+  form.allowLoopback = Boolean(data.allowLoopback)
   form.allowPrivateNetwork = Boolean(data.allowPrivateNetwork)
 }
 
 /** 保存配置；完全放开公网和私网时要求管理员再次确认。 */
 async function save() {
   const allowedHosts = parseAllowedHosts()
-  if (allowedHosts.includes('*') && form.allowPrivateNetwork) {
+  if (allowedHosts.includes('*') && form.allowLoopback && form.allowPrivateNetwork) {
     await ElMessageBox.confirm(t('apiTriggerSecurity.fullAccessConfirm'), t('apiTriggerSecurity.riskTitle'), { type: 'warning' })
   }
   const { data } = await http.put('/automation/api-trigger-security', {
     allowedHosts,
+    allowLoopback: form.allowLoopback,
     allowPrivateNetwork: form.allowPrivateNetwork
   })
   form.allowedHosts = (data.allowedHosts || []).join('\n')
+  form.allowLoopback = Boolean(data.allowLoopback)
   form.allowPrivateNetwork = Boolean(data.allowPrivateNetwork)
   ElMessage.success(t('common.successSaved'))
 }

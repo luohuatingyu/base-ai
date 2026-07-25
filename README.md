@@ -121,7 +121,8 @@ psql "$POSTGRES_DSN" -f database/postgresql/api-trigger.sql
 
 - `APP_CONFIG_ENCRYPTION_KEY` 使用 AES-GCM 加密请求头、请求体和认证请求体。
 - “接口触发安全配置”页面动态维护目标 Host 白名单和私网访问开关，保存后无需重启服务。
-- 默认仅允许 `localhost`、`127.0.0.1` 和 `::1`；支持 `*.example.com` 和 `*`，私网开关始终独立生效。
+- 默认开启回环开关，无需在 Host 白名单配置 `localhost`、`127.0.0.1` 和 `::1`；其他私网默认关闭。
+- 额外 Host 支持精确值、`*.example.com` 和 `*`，星号不会绕过回环与私网两个独立开关。
 - Redis 分布式锁避免多后端实例重复执行同一 Cron。
 - 执行摘要会截断并屏蔽常见 Token、密码和 Authorization 内容。
 

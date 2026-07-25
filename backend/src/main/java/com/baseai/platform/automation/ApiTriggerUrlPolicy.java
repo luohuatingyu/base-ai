@@ -24,13 +24,20 @@ public class ApiTriggerUrlPolicy {
             }
             String host = uri.getHost().toLowerCase(Locale.ROOT);
             ApiTriggerSecurityConfigurationService.ConfigurationView configuration = configurationService.current();
-            if (configuration.allowedHosts().stream().noneMatch(pattern -> matches(pattern, host))) {
+            boolean literalLoopback = isLiteralLoopbackHost(host);
+            if (literalLoopback && !configuration.allowLoopback()) {
+                throw BusinessException.forbidden("禁止访问回环地址");
+            }
+            if (!literalLoopback && configuration.allowedHosts().stream().noneMatch(pattern -> matches(pattern, host))) {
                 throw BusinessException.forbidden("目标域名不在接口触发 Host 白名单");
             }
-            if (!configuration.allowPrivateNetwork()) {
+            if (!configuration.allowLoopback() || !configuration.allowPrivateNetwork()) {
                 for (InetAddress address : InetAddress.getAllByName(host)) {
-                    if (isPrivateAddress(address)) {
-                        throw BusinessException.forbidden("禁止访问本机或私有网络地址");
+                    if (address.isLoopbackAddress() && !configuration.allowLoopback()) {
+                        throw BusinessException.forbidden("禁止访问回环地址");
+                    }
+                    if (isNonLoopbackPrivateAddress(address) && !configuration.allowPrivateNetwork()) {
+                        throw BusinessException.forbidden("禁止访问私有网络地址");
                     }
                 }
             }
@@ -51,11 +58,17 @@ public class ApiTriggerUrlPolicy {
             : normalized.equals(normalizedHost));
     }
 
-    /** 识别本机、链路本地、私有网段、IPv6 ULA 和组播地址。 */
-    private boolean isPrivateAddress(InetAddress address) {
+    /** 识别无需配置额外 Host 白名单的三个字面回环地址。 */
+    private boolean isLiteralLoopbackHost(String host) {
+        String normalized = host.startsWith("[") && host.endsWith("]") ? host.substring(1, host.length() - 1) : host;
+        return "localhost".equals(normalized) || "127.0.0.1".equals(normalized) || "::1".equals(normalized);
+    }
+
+    /** 识别回环之外的本机、链路本地、私有网段、IPv6 ULA 和组播地址。 */
+    private boolean isNonLoopbackPrivateAddress(InetAddress address) {
         byte[] bytes = address.getAddress();
         boolean uniqueLocalIpv6 = bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
-        return address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+        return address.isAnyLocalAddress() || address.isLinkLocalAddress()
             || address.isSiteLocalAddress() || address.isMulticastAddress() || uniqueLocalIpv6;
     }
 }

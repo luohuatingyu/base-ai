@@ -21,9 +21,10 @@ import java.util.regex.Pattern;
 @Service
 public class ApiTriggerSecurityConfigurationService {
     public static final String ALLOWED_HOSTS_KEY = "api.trigger.allowed-hosts";
+    public static final String ALLOW_LOOPBACK_KEY = "api.trigger.allow-loopback";
     public static final String ALLOW_PRIVATE_NETWORK_KEY = "api.trigger.allow-private-network";
-    static final List<String> DEFAULT_ALLOWED_HOSTS = List.of("localhost", "127.0.0.1", "::1");
-    static final boolean DEFAULT_ALLOW_PRIVATE_NETWORK = true;
+    static final boolean DEFAULT_ALLOW_LOOPBACK = true;
+    static final boolean DEFAULT_ALLOW_PRIVATE_NETWORK = false;
 
     private static final String GROUP_CODE = "api-trigger";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
@@ -43,31 +44,35 @@ public class ApiTriggerSecurityConfigurationService {
 
     /** 判断系统参数键是否由接口触发安全配置页面专用管理。 */
     public static boolean isReservedKey(String key) {
-        return ALLOWED_HOSTS_KEY.equals(key) || ALLOW_PRIVATE_NETWORK_KEY.equals(key);
+        return ALLOWED_HOSTS_KEY.equals(key) || ALLOW_LOOPBACK_KEY.equals(key) || ALLOW_PRIVATE_NETWORK_KEY.equals(key);
     }
 
-    /** 读取当前生效的接口触发安全配置，未保存时使用仅允许回环地址的安全默认值。 */
+    /** 读取当前生效的接口触发安全配置，未保存时仅隐式允许回环地址。 */
     public ConfigurationView current() {
         List<String> allowedHosts = readValue(ALLOWED_HOSTS_KEY)
             .map(this::parseAllowedHosts)
-            .orElse(DEFAULT_ALLOWED_HOSTS);
+            .orElse(List.of());
+        boolean allowLoopback = readValue(ALLOW_LOOPBACK_KEY)
+            .map(Boolean::parseBoolean)
+            .orElse(DEFAULT_ALLOW_LOOPBACK);
         boolean allowPrivateNetwork = readValue(ALLOW_PRIVATE_NETWORK_KEY)
             .map(Boolean::parseBoolean)
             .orElse(DEFAULT_ALLOW_PRIVATE_NETWORK);
-        return new ConfigurationView(allowedHosts, allowPrivateNetwork);
+        return new ConfigurationView(allowedHosts, allowLoopback, allowPrivateNetwork);
     }
 
     /** 校验并保存运行时安全配置，清除共享缓存后供后续请求立即读取。 */
     @Transactional
     public ConfigurationView update(UpdateCommand command) {
-        if (command == null || command.allowPrivateNetwork() == null) {
-            throw new BusinessException("请选择是否允许访问私有网络");
+        if (command == null || command.allowLoopback() == null || command.allowPrivateNetwork() == null) {
+            throw new BusinessException("请选择是否允许访问回环地址和私有网络");
         }
         List<String> allowedHosts = normalizeAllowedHosts(command.allowedHosts());
         saveValue(ALLOWED_HOSTS_KEY, "接口触发允许访问的 Host", String.join(",", allowedHosts));
+        saveValue(ALLOW_LOOPBACK_KEY, "接口触发是否允许回环地址", command.allowLoopback().toString());
         saveValue(ALLOW_PRIVATE_NETWORK_KEY, "接口触发是否允许私有网络", command.allowPrivateNetwork().toString());
         evictCache();
-        return new ConfigurationView(allowedHosts, command.allowPrivateNetwork());
+        return new ConfigurationView(allowedHosts, command.allowLoopback(), command.allowPrivateNetwork());
     }
 
     /** 从 Redis 和系统参数表读取固定配置值，缓存空字符串以保留“拒绝全部”的显式配置。 */
@@ -94,9 +99,10 @@ public class ApiTriggerSecurityConfigurationService {
         settingRepository.save(setting);
     }
 
-    /** 删除两个运行时缓存键，确保单实例和多实例部署均在下一次读取时获取新值。 */
+    /** 删除三个运行时缓存键，确保单实例和多实例部署均在下一次读取时获取新值。 */
     private void evictCache() {
-        redisTemplate.delete(List.of(cachePrefix + ALLOWED_HOSTS_KEY, cachePrefix + ALLOW_PRIVATE_NETWORK_KEY));
+        redisTemplate.delete(List.of(cachePrefix + ALLOWED_HOSTS_KEY, cachePrefix + ALLOW_LOOPBACK_KEY,
+            cachePrefix + ALLOW_PRIVATE_NETWORK_KEY));
     }
 
     /** 将存储值解析为去重后的 Host 规则列表。 */
@@ -113,9 +119,15 @@ public class ApiTriggerSecurityConfigurationService {
             if (value == null || value.isBlank()) continue;
             String pattern = normalizePattern(value);
             if (!isValidPattern(pattern)) throw new BusinessException("Host 规则格式错误：" + value);
+            if (isBuiltInLoopback(pattern)) continue;
             normalized.add(pattern);
         }
         return List.copyOf(new ArrayList<>(normalized));
+    }
+
+    /** 剔除无需保存和展示的三个内置回环 Host。 */
+    private boolean isBuiltInLoopback(String value) {
+        return "localhost".equals(value) || "127.0.0.1".equals(value) || "::1".equals(value);
     }
 
     /** 统一大小写并移除 IPv6 URL 中可选的方括号。 */
@@ -170,6 +182,6 @@ public class ApiTriggerSecurityConfigurationService {
         }
     }
 
-    public record UpdateCommand(List<String> allowedHosts, Boolean allowPrivateNetwork) {}
-    public record ConfigurationView(List<String> allowedHosts, boolean allowPrivateNetwork) {}
+    public record UpdateCommand(List<String> allowedHosts, Boolean allowLoopback, Boolean allowPrivateNetwork) {}
+    public record ConfigurationView(List<String> allowedHosts, boolean allowLoopback, boolean allowPrivateNetwork) {}
 }

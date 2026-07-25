@@ -19,11 +19,19 @@ test('配置页面加载和保存运行时安全配置', () => {
   assert.match(viewSource, /http\.put\('\/automation\/api-trigger-security'/)
   assert.match(viewSource, /automation:api-trigger-security:update/)
   assert.match(viewSource, /split\(\/\[\\n,\]\//)
+  assert.match(viewSource, /v-model="form\.allowLoopback"/)
+  assert.match(viewSource, /allowLoopback: form\.allowLoopback/)
 })
 
-test('星号与私网同时开放时展示警告并二次确认', () => {
+test('星号、回环和私网全部开放时展示警告并二次确认', () => {
   assert.match(viewSource, /parseAllowedHosts\(\)\.includes\('\*'\)/)
-  assert.match(viewSource, /allowedHosts\.includes\('\*'\) && form\.allowPrivateNetwork/)
+  assert.match(viewSource, /allowedHosts\.includes\('\*'\) && form\.allowLoopback && form\.allowPrivateNetwork/)
   assert.match(viewSource, /ElMessageBox\.confirm/)
   assert.match(viewSource, /wildcardWarning/)
+})
+
+test('页面默认不要求填写回环 Host 并关闭其他私网', () => {
+  assert.match(viewSource, /allowedHosts: '', allowLoopback: true, allowPrivateNetwork: false/)
+  assert.match(zhSource, /allowedHostsPlaceholder: 'api\.example\.com/)
+  assert.doesNotMatch(zhSource, /allowedHostsPlaceholder: 'localhost/)
 })

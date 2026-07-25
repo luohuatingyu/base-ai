@@ -39,7 +39,7 @@ class ApiTriggerSecurityConfigurationServiceTest {
         service = new ApiTriggerSecurityConfigurationService(settingRepository, redisTemplate, properties);
     }
 
-    /** 未保存配置时应仅允许全部回环地址并开启私网访问。 */
+    /** 未保存配置时应不允许额外 Host，仅开启回环并关闭其他私网访问。 */
     @Test
     void currentUsesLoopbackDefaultsWhenSettingsDoNotExist() {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -48,8 +48,9 @@ class ApiTriggerSecurityConfigurationServiceTest {
 
         ApiTriggerSecurityConfigurationService.ConfigurationView current = service.current();
 
-        assertEquals(List.of("localhost", "127.0.0.1", "::1"), current.allowedHosts());
-        assertEquals(true, current.allowPrivateNetwork());
+        assertEquals(List.of(), current.allowedHosts());
+        assertEquals(true, current.allowLoopback());
+        assertEquals(false, current.allowPrivateNetwork());
     }
 
     /** 已保存配置应覆盖默认值，并支持显式空白名单表示拒绝全部 Host。 */
@@ -58,12 +59,33 @@ class ApiTriggerSecurityConfigurationServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY))
             .thenReturn("");
+        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY))
+            .thenReturn("false");
+        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY))
+            .thenReturn("true");
+
+        ApiTriggerSecurityConfigurationService.ConfigurationView current = service.current();
+
+        assertEquals(List.of(), current.allowedHosts());
+        assertEquals(false, current.allowLoopback());
+        assertEquals(true, current.allowPrivateNetwork());
+    }
+
+    /** 读取旧版本配置时应自动隐藏已经持久化的内置回环 Host。 */
+    @Test
+    void currentRemovesPersistedBuiltInLoopbackHosts() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY))
+            .thenReturn("localhost,api.example.com,127.0.0.1,::1");
+        when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY))
+            .thenReturn("true");
         when(valueOperations.get("baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY))
             .thenReturn("false");
 
         ApiTriggerSecurityConfigurationService.ConfigurationView current = service.current();
 
-        assertEquals(List.of(), current.allowedHosts());
+        assertEquals(List.of("api.example.com"), current.allowedHosts());
+        assertEquals(true, current.allowLoopback());
         assertEquals(false, current.allowPrivateNetwork());
     }
 
@@ -75,15 +97,17 @@ class ApiTriggerSecurityConfigurationServiceTest {
 
         ApiTriggerSecurityConfigurationService.ConfigurationView updated = service.update(
             new ApiTriggerSecurityConfigurationService.UpdateCommand(
-                List.of(" LOCALHOST ", "*.Example.com", "localhost", "[::1]", "*"), false));
+                List.of(" LOCALHOST ", "*.Example.com", "localhost", "[::1]", "*"), false, true));
 
-        assertEquals(List.of("localhost", "*.example.com", "::1", "*"), updated.allowedHosts());
-        assertEquals(false, updated.allowPrivateNetwork());
-        verify(settingRepository, org.mockito.Mockito.times(2)).save(settingCaptor.capture());
-        assertEquals(List.of("localhost,*.example.com,::1,*", "false"),
+        assertEquals(List.of("*.example.com", "*"), updated.allowedHosts());
+        assertEquals(false, updated.allowLoopback());
+        assertEquals(true, updated.allowPrivateNetwork());
+        verify(settingRepository, org.mockito.Mockito.times(3)).save(settingCaptor.capture());
+        assertEquals(List.of("*.example.com,*", "false", "true"),
             settingCaptor.getAllValues().stream().map(SystemSetting::getConfigValue).toList());
         verify(redisTemplate).delete(List.of(
             "baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY,
+            "baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY,
             "baseai:api-trigger-security:" + ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY));
     }
 
@@ -92,7 +116,7 @@ class ApiTriggerSecurityConfigurationServiceTest {
     void updateRejectsInvalidHostPatterns() {
         for (String invalid : List.of("http://example.com", "example.com:8080", "*.bad host", "256.1.1.1")) {
             assertThrows(BusinessException.class, () -> service.update(
-                new ApiTriggerSecurityConfigurationService.UpdateCommand(List.of(invalid), true)));
+                new ApiTriggerSecurityConfigurationService.UpdateCommand(List.of(invalid), true, true)));
         }
         verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());
     }

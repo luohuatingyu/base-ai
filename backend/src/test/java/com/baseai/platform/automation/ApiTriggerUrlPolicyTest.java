@@ -14,24 +14,35 @@ class ApiTriggerUrlPolicyTest {
     private final ApiTriggerSecurityConfigurationService configurationService = mock(ApiTriggerSecurityConfigurationService.class);
     private final ApiTriggerUrlPolicy policy = new ApiTriggerUrlPolicy(configurationService);
 
-    /** 默认配置应允许 localhost、IPv4 回环和 IPv6 回环地址。 */
+    /** 默认配置无需 Host 白名单即可允许 localhost、IPv4 回环和 IPv6 回环地址。 */
     @Test
     void defaultConfigurationAllowsAllLoopbackAddresses() {
         when(configurationService.current()).thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(
-            List.of("localhost", "127.0.0.1", "::1"), true));
+            List.of(), true, false));
 
         assertDoesNotThrow(() -> policy.validate("http://localhost:8080/health"));
         assertDoesNotThrow(() -> policy.validate("http://127.0.0.1:8080/health"));
         assertDoesNotThrow(() -> policy.validate("http://[::1]:8080/health"));
     }
 
-    /** 星号仅放开 Host，关闭私网开关时仍必须拒绝回环地址。 */
+    /** 星号仅放开 Host，关闭其他私网开关时仍必须拒绝非回环私网地址。 */
     @Test
     void wildcardStillRespectsPrivateNetworkSwitch() {
         when(configurationService.current()).thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(
-            List.of("*"), false));
+            List.of("*"), true, false));
 
-        for (String url : List.of("http://127.0.0.1/internal", "http://10.0.0.8/internal", "http://[fd00::1]/internal")) {
+        for (String url : List.of("http://10.0.0.8/internal", "http://[fd00::1]/internal")) {
+            assertThrows(BusinessException.class, () -> policy.validate(url));
+        }
+    }
+
+    /** 关闭回环开关后，星号和显式 Host 都不得绕过回环限制。 */
+    @Test
+    void loopbackSwitchBlocksLoopbackEvenWhenHostsAreAllowed() {
+        when(configurationService.current()).thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(
+            List.of("*", "localhost", "127.0.0.1", "::1"), false, true));
+
+        for (String url : List.of("http://localhost/internal", "http://127.0.0.1/internal", "http://[::1]/internal")) {
             assertThrows(BusinessException.class, () -> policy.validate(url));
         }
     }
@@ -40,7 +51,7 @@ class ApiTriggerUrlPolicyTest {
     @Test
     void wildcardAndPrivateNetworkAllowPrivateAddress() {
         when(configurationService.current()).thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(
-            List.of("*"), true));
+            List.of("*"), true, true));
 
         assertDoesNotThrow(() -> policy.validate("http://10.0.0.8/internal"));
     }
@@ -49,7 +60,7 @@ class ApiTriggerUrlPolicyTest {
     @Test
     void exactAndSubdomainRulesRemainCompatible() {
         when(configurationService.current()).thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(
-            List.of("api.example.com", "*.trusted.example.com"), true));
+            List.of("api.example.com", "*.trusted.example.com"), true, true));
 
         assertDoesNotThrow(() -> policy.validate("https://api.example.com/path"));
         assertDoesNotThrow(() -> policy.validate("https://child.trusted.example.com/path"));
@@ -60,8 +71,8 @@ class ApiTriggerUrlPolicyTest {
     @Test
     void policyReadsConfigurationForEveryValidation() {
         when(configurationService.current())
-            .thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(List.of("localhost"), true))
-            .thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(List.of(), true));
+            .thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(List.of(), true, false))
+            .thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(List.of(), false, false));
 
         assertDoesNotThrow(() -> policy.validate("http://localhost/health"));
         assertThrows(BusinessException.class, () -> policy.validate("http://localhost/health"));
@@ -71,7 +82,7 @@ class ApiTriggerUrlPolicyTest {
     @Test
     void wildcardDoesNotBypassUrlSyntaxValidation() {
         when(configurationService.current()).thenReturn(new ApiTriggerSecurityConfigurationService.ConfigurationView(
-            List.of("*"), true));
+            List.of("*"), true, true));
 
         assertThrows(BusinessException.class, () -> policy.validate("file:///etc/passwd"));
         assertThrows(BusinessException.class, () -> policy.validate("localhost:8080/path"));
