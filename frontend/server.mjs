@@ -6,11 +6,15 @@ import { fileURLToPath } from 'url'
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist')
 const port = Number(process.env.PORT || 80)
 const backend = new URL(process.env.BACKEND_URL || 'http://backend:8080')
+const configuredRouteHealthCheckIntervalMs = Number(process.env.LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS || 3600000)
 const platformConfig = {
   code: process.env.APP_PLATFORM_CODE || 'ai-platform',
   nameEn: process.env.APP_PLATFORM_NAME_EN || 'AI Platform',
   nameZh: process.env.APP_PLATFORM_NAME_ZH || 'AI平台',
-  shortName: process.env.APP_PLATFORM_SHORT_NAME || 'AI'
+  shortName: process.env.APP_PLATFORM_SHORT_NAME || 'AI',
+  routeHealthCheckEnabled: String(process.env.LLM_ROUTE_HEALTH_CHECK_ENABLED || 'true').toLowerCase() === 'true',
+  routeHealthCheckIntervalMs: Number.isFinite(configuredRouteHealthCheckIntervalMs) && configuredRouteHealthCheckIntervalMs > 0
+    ? configuredRouteHealthCheckIntervalMs : 3600000
 }
 const contentTypes = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',

@@ -12,3 +12,21 @@ export function healthStatusClass(status) {
 export function canRemoveModelProvider(status) {
   return status !== 'HEALTHY'
 }
+
+/** 将毫秒间隔逐级拆分为天、小时、分钟和秒。 */
+export function formatSyncInterval(intervalMs, formatUnit) {
+  const numericInterval = Number(intervalMs)
+  let remainingSeconds = Number.isFinite(numericInterval) && numericInterval > 0 ? Math.ceil(numericInterval / 1000) : 3600
+  const units = [
+    ['day', 86400],
+    ['hour', 3600],
+    ['minute', 60],
+    ['second', 1]
+  ]
+
+  return units.flatMap(([unit, seconds]) => {
+    const value = Math.floor(remainingSeconds / seconds)
+    remainingSeconds %= seconds
+    return value ? [formatUnit(unit, value)] : []
+  }).join(' ')
+}

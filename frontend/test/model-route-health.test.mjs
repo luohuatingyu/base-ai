@@ -2,11 +2,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { canRemoveModelProvider, healthStatusClass } from '../src/utils/modelRouteHealth.js'
+import { canRemoveModelProvider, formatSyncInterval, healthStatusClass } from '../src/utils/modelRouteHealth.js'
 
 const routeView = readFileSync(new URL('../src/views/ModelRoutesView.vue', import.meta.url), 'utf8')
 const zhLocale = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const enLocale = readFileSync(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
+const runtimeServer = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+const frontendConfig = readFileSync(new URL('../src/config.js', import.meta.url), 'utf8')
+const composeConfig = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8')
 
 test('maps route health statuses to required colors', () => {
   assert.equal(healthStatusClass('HEALTHY'), 'is-healthy')
@@ -22,10 +25,33 @@ test('only healthy results hide provider removal', () => {
   assert.equal(canRemoveModelProvider('FAILED'), true)
 })
 
-test('capability route page warns that edits require synchronization', () => {
-  assert.match(routeView, /<el-alert[^>]*t\('routes\.editSyncNotice'\)[^>]*type="warning"[^>]*:closable="false"/)
-  assert.match(zhLocale, /editSyncNotice:\s*'[^']*编辑能力路由后[^']*同步[^']*生效[^']*'/)
-  assert.match(enLocale, /editSyncNotice:\s*'[^']*editing a capability route[^']*Sync[^']*take effect[^']*'/)
+test('capability route page explains scheduled and manual synchronization', () => {
+  assert.match(routeView, /<el-alert[^>]*:title="routeSyncNotice"[^>]*:type="routeSyncNoticeType"[^>]*:closable="false"/)
+  assert.match(routeView, /appConfig\.routeHealthCheckEnabled/)
+  assert.match(routeView, /formatSyncInterval\(appConfig\.routeHealthCheckIntervalMs/)
+  assert.match(zhLocale, /autoSyncEnabledNotice:\s*'[^']*每 \{interval\} 自动同步一次[^']*服务启动时也会同步一次[^']*手动点击“同步”立即生效[^']*'/)
+  assert.match(zhLocale, /autoSyncDisabledNotice:\s*'[^']*定时同步当前已关闭[^']*手动点击“同步”[^']*生效[^']*'/)
+  assert.match(enLocale, /autoSyncEnabledNotice:\s*'[^']*every \{interval\}[^']*service starts[^']*click “Sync”[^']*'/)
+})
+
+test('formats synchronization intervals as composed day hour minute and second values', () => {
+  const formatUnit = (unit, value) => `${value}${{ day: '天', hour: '小时', minute: '分钟', second: '秒' }[unit]}`
+
+  assert.equal(formatSyncInterval(90000, formatUnit), '1分钟 30秒')
+  assert.equal(formatSyncInterval(5400000, formatUnit), '1小时 30分钟')
+  assert.equal(formatSyncInterval(3661000, formatUnit), '1小时 1分钟 1秒')
+  assert.equal(formatSyncInterval(90061000, formatUnit), '1天 1小时 1分钟 1秒')
+  assert.equal(formatSyncInterval(1, formatUnit), '1秒')
+  assert.equal(formatSyncInterval('invalid', formatUnit), '1小时')
+})
+
+test('runtime configuration exposes enabled one-hour route synchronization defaults', () => {
+  assert.match(frontendConfig, /routeHealthCheckEnabled:\s*true/)
+  assert.match(frontendConfig, /routeHealthCheckIntervalMs:\s*3600000/)
+  assert.match(runtimeServer, /LLM_ROUTE_HEALTH_CHECK_ENABLED \|\| 'true'/)
+  assert.match(runtimeServer, /LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS \|\| 3600000/)
+  assert.match(composeConfig, /frontend:[\s\S]*LLM_ROUTE_HEALTH_CHECK_ENABLED: \$\{LLM_ROUTE_HEALTH_CHECK_ENABLED:-true\}/)
+  assert.match(composeConfig, /frontend:[\s\S]*LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS: \$\{LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS:-3600000\}/)
 })
 
 test('capability route page provides a top-level multi-route sync entry', () => {

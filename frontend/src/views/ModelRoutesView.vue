@@ -5,7 +5,7 @@
       <el-button v-if="auth.hasPermission('model:route:create')" type="primary" @click="open()">{{ t('routes.add') }}</el-button>
       <el-button v-if="auth.hasPermission('model:route:update')" @click="openSync()">{{ t('routes.syncRoutes') }}</el-button>
     </div>
-    <el-alert class="route-sync-notice" :title="t('routes.editSyncNotice')" type="warning" show-icon :closable="false"/>
+    <el-alert class="route-sync-notice" :title="routeSyncNotice" :type="routeSyncNoticeType" show-icon :closable="false"/>
     <el-table :data="rows">
       <el-table-column prop="featureCode" :label="t('routes.featureCode')"/>
       <el-table-column prop="name" :label="t('common.name')"/>
@@ -74,8 +74,9 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
+import { appConfig } from '../config'
 import { useAuthStore } from '../stores/auth'
-import { canRemoveModelProvider, healthStatusClass } from '../utils/modelRouteHealth'
+import { canRemoveModelProvider, formatSyncInterval, healthStatusClass } from '../utils/modelRouteHealth'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -92,6 +93,16 @@ const form = reactive({ id: null, featureCode: '', name: '', candidateModelIds: 
 
 /** 按用户选择顺序返回待同步的能力路由。 */
 const selectedRoutes = computed(() => selectedRouteIds.value.map(routeId => rows.value.find(route => route.id === routeId)).filter(Boolean))
+
+/** 返回当前自动同步配置对应的可读说明。 */
+const routeSyncNotice = computed(() => {
+  if (!appConfig.routeHealthCheckEnabled) return t('routes.autoSyncDisabledNotice')
+  const interval = formatSyncInterval(appConfig.routeHealthCheckIntervalMs, (unit, count) => t(`routes.intervalUnits.${unit}`, { count }))
+  return t('routes.autoSyncEnabledNotice', { interval })
+})
+
+/** 自动同步关闭时使用警告提示，开启时使用普通信息提示。 */
+const routeSyncNoticeType = computed(() => appConfig.routeHealthCheckEnabled ? 'info' : 'warning')
 
 /** 选择变化时初始化各路由状态并保持当前 Tab 有效。 */
 watch(selectedRouteIds, routeIds => {

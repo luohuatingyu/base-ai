@@ -18,18 +18,18 @@ class LlmRouteHealthSchedulerTest {
         .withUserConfiguration(SchedulerConfiguration.class)
         .withBean(LlmManagementService.class, () -> mock(LlmManagementService.class));
 
-    /** 未显式开启自动同步时，不应创建调度器。 */
+    /** 未显式配置自动同步时，应按默认值创建调度器。 */
     @Test
-    void schedulerIsDisabledByDefault() {
-        contextRunner.run(context -> context.assertThat().doesNotHaveBean(LlmRouteHealthScheduler.class));
+    void schedulerIsEnabledByDefault() {
+        contextRunner.run(context -> context.assertThat().hasSingleBean(LlmRouteHealthScheduler.class));
     }
 
-    /** 显式开启自动同步时，应创建调度器。 */
+    /** 显式关闭自动同步时，不应创建调度器。 */
     @Test
-    void schedulerIsCreatedWhenEnabled() {
+    void schedulerIsNotCreatedWhenDisabled() {
         contextRunner
-            .withPropertyValues("app.llm.route-health-check-enabled=true")
-            .run(context -> context.assertThat().hasSingleBean(LlmRouteHealthScheduler.class));
+            .withPropertyValues("app.llm.route-health-check-enabled=false")
+            .run(context -> context.assertThat().doesNotHaveBean(LlmRouteHealthScheduler.class));
     }
 
     /** 应用启动完成后应立即同步一次模型路由。 */
@@ -61,6 +61,7 @@ class LlmRouteHealthSchedulerTest {
 
         assertEquals("${app.llm.route-health-check-interval-ms:3600000}", scheduled.fixedDelayString());
         assertEquals("true", condition.havingValue());
+        assertEquals(true, condition.matchIfMissing());
     }
 
     @Configuration(proxyBeanMethods = false)

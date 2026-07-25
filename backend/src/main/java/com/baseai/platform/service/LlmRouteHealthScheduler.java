@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 
 /** 启动与定时检查模型，并刷新仅供调用使用的内存路由快照。 */
 @Component
-@ConditionalOnProperty(prefix = "app.llm", name = "route-health-check-enabled", havingValue = "true")
+@ConditionalOnProperty(prefix = "app.llm", name = "route-health-check-enabled", havingValue = "true", matchIfMissing = true)
 public class LlmRouteHealthScheduler {
     private static final Logger log = LoggerFactory.getLogger(LlmRouteHealthScheduler.class);
     private final LlmManagementService service;
