@@ -2,12 +2,84 @@
 
 ## 📋 Git 基准点
 
-- Commit: dd4c6e5
-- 提交说明: Support flexible API key rate limits
+- Commit: 5cccb59
+- 提交说明: Configure model route auto sync
 - 测试日期: 2026-07-25
 - 分支: master
 
-## 🎯 本次变更范围
+## 🎯 当前变更范围
+
+- 模型路由自动同步增加配置开关，默认关闭。
+- 自动同步开启后，应用启动完成时立即同步一次，后续使用固定延迟执行。
+- 默认同步间隔由 5 分钟调整为 1 小时（`3600000` 毫秒）。
+- `.env.example`、Spring Boot 配置和 Docker Compose 均暴露并传递同步开关与间隔。
+- 手动模型路由同步接口不受自动同步开关影响。
+
+## 📋 当前变更测试结果（2026-07-25）
+
+**变更范围**：模型路由自动同步开关、默认一小时间隔、环境变量传递和调度器条件加载。
+
+**测试执行结果**：
+- 调度器定向测试：5 个，通过 5 个（100%）
+- 后端完整测试：106 个，通过 106 个（100%）
+- 失败：0 个
+- 错误：0 个
+- 跳过：0 个
+
+**关键模块测试**：
+- 调度器条件加载：2/2，通过
+- 启动同步与异常隔离：2/2，通过
+- 默认间隔配置：1/1，通过
+- 后端完整回归：106/106，通过
+- 前端测试：本次未执行，未修改前端代码
+- Python Worker 测试：本次未执行，未修改 Worker 代码
+
+## 📊 当前测试执行记录
+
+| 测试范围 | 执行命令 | 结果 |
+| --- | --- | --- |
+| 调度器定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=LlmRouteHealthSchedulerTest test` | 5 通过，0 失败，0 错误，0 跳过 |
+| 后端完整测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 106 通过，0 失败，0 错误，0 跳过 |
+| Compose 配置检查 | `docker compose config` | Backend 默认接收 `LLM_ROUTE_HEALTH_CHECK_ENABLED=false` 和 `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS=3600000` |
+| 服务重建与启动 | `docker compose up --build -d` | 三个镜像构建成功，Backend 构建内 106 个测试通过，三个服务启动成功 |
+| 服务健康检查 | `docker compose ps`、`curl -fsS http://localhost/health`、`curl -fsS http://localhost:8080/api/open/health` | Backend、Frontend、Python Worker 全部 healthy，两个端点返回 UP |
+| 容器配置检查 | `docker compose exec -T backend sh -lc 'printf "%s\\n" "$LLM_ROUTE_HEALTH_CHECK_ENABLED" "$LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS"'` | 实际值为 `false` 和 `3600000` |
+| 差异格式检查 | `git diff --check` | 通过 |
+
+## 🔄 当前覆盖范围与结果
+
+- 正常场景：显式开启自动同步时创建调度器，应用就绪后立即执行同步。
+- 边界场景：未配置开关时默认关闭；默认间隔精确验证为一小时。
+- 异常场景：单次模型同步异常被记录并隔离，不中断调度调用。
+- 权限与安全：本次不修改手动同步接口及权限控制，既有 Controller 测试继续通过。
+- 兼容性：手动同步逻辑、模型管理服务和其他后端模块完整回归通过。
+- 运行环境：Compose 默认关闭自动同步，环境变量已正确传入 Backend 容器。
+
+## 🔄 当前重测触发条件
+
+- 修改 `LlmRouteHealthScheduler` 的条件加载、启动触发或定时执行逻辑。
+- 修改 `LLM_ROUTE_HEALTH_CHECK_ENABLED` 或 `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS` 的默认值和传递方式。
+- 修改模型路由同步服务、Controller、模型实体或相关 Repository。
+- 修改 Spring Scheduling 配置或用户明确要求重新执行完整覆盖测试。
+
+## ⚠️ 当前已知问题与限制
+
+- 本机没有安装 `mvn`，Maven 测试通过官方 Maven Docker 镜像执行。
+- 当前间隔采用 `fixedDelay`，上一次同步完成后才开始计算下一小时等待时间。
+- 默认关闭时不会执行启动同步；需要通过手动同步接口刷新，或开启环境变量后重启 Backend。
+- 调度器异常隔离测试会按预期输出一条模拟异常的 WARN 日志，不代表测试失败。
+
+## 📝 下次测试建议
+
+1. 增加开启自动同步后的多次调度集成测试，验证实际时间间隔与并发行为。
+2. 增加运行时指标或管理端状态展示，便于确认最近一次自动同步时间和结果。
+3. 如未来支持页面配置开关，应补充权限、安全审计和配置即时生效测试。
+
+**当前 Git 基准点**：`5cccb59`
+
+---
+
+## 历史测试记录（API Key）
 
 - API Key 调用频次支持每秒、每分钟、每小时、每天和无限制五种模式。
 - 受限模式继续使用 Redis 自然固定窗口计数，无限制模式不访问 Redis。
