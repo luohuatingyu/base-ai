@@ -78,8 +78,6 @@ app:
       - /api/internal/**
       - /api/system/tasks/**
   api-trigger:
-    allowed-hosts: ${API_TRIGGER_ALLOWED_HOSTS}
-    allow-private-network: ${API_TRIGGER_ALLOW_PRIVATE_NETWORK:false}
     scheduler-pool-size: ${API_TRIGGER_SCHEDULER_POOL_SIZE:4}
     lock-seconds: ${API_TRIGGER_LOCK_SECONDS:300}
     result-max-length: ${API_TRIGGER_RESULT_MAX_LENGTH:2000}

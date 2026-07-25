@@ -259,6 +259,11 @@ public class DataInitializer implements ApplicationRunner {
         menu(trigger.getId(), "删除接口触发", "BUTTON", null, null, null, "automation:api-trigger:delete", 513, false);
         menu(trigger.getId(), "执行接口触发", "BUTTON", null, null, null, "automation:api-trigger:trigger", 514, false);
         menu(trigger.getId(), "接口触发日志", "BUTTON", null, null, null, "automation:api-trigger:logs", 515, false);
+        // 接口触发安全配置页面和更新权限
+        Menu triggerSecurity = menu(automation.getId(), "接口触发安全配置", "MENU", "/automation/api-trigger-security",
+            "ApiTriggerSecurityView", "Lock", "automation:api-trigger-security:view", 52, true);
+        menu(triggerSecurity.getId(), "更新接口触发安全配置", "BUTTON", null, null, null,
+            "automation:api-trigger-security:update", 521, false);
 
         // ========== 兼容性权限 ==========
         // 以下权限用于兼容旧版本的权限代码，提供统一的管理权限标识

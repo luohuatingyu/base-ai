@@ -73,8 +73,6 @@ app:
       - /api/auth/**
       - /api/open/**
   api-trigger:
-    allowed-hosts:
-    allow-private-network: true
     scheduler-pool-size: 2
     lock-seconds: 60
     result-max-length: 1000

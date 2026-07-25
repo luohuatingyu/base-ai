@@ -120,8 +120,8 @@ psql "$POSTGRES_DSN" -f database/postgresql/api-trigger.sql
 支持 HTTP 方法、请求头、查询参数、请求体、Cron、超时、前置认证、手动执行和临时测试。正式执行会同时创建 MySQL 系统任务。
 
 - `APP_CONFIG_ENCRYPTION_KEY` 使用 AES-GCM 加密请求头、请求体和认证请求体。
-- `API_TRIGGER_ALLOWED_HOSTS` 是必填目标域名白名单，支持 `*.example.com`。
-- `API_TRIGGER_ALLOW_PRIVATE_NETWORK=false` 默认阻止本机、链路本地及私有网络地址。
+- “接口触发安全配置”页面动态维护目标 Host 白名单和私网访问开关，保存后无需重启服务。
+- 默认仅允许 `localhost`、`127.0.0.1` 和 `::1`；支持 `*.example.com` 和 `*`，私网开关始终独立生效。
 - Redis 分布式锁避免多后端实例重复执行同一 Cron。
 - 执行摘要会截断并屏蔽常见 Token、密码和 Authorization 内容。
 
@@ -170,7 +170,7 @@ TRACE_TRACKING_EXCLUSIONS_FILE=/etc/base-ai/trace-tracking-exclusions.yml
 - 平台安全：`APP_TOKEN_SECRET`、`APP_SEED_ADMIN_PASSWORD`、`PYTHON_WORKER_INTERNAL_TOKEN`。
 - 配置加密：`APP_CONFIG_ENCRYPTION_KEY`，可通过 `openssl rand -base64 32` 生成。
 - YAML 文件挂载：`AI_MODEL_POOLS_FILE`、`AI_FEATURE_ROUTING_FILE`、`TRACE_TRACKING_EXCLUSIONS_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
-- 接口触发：`API_TRIGGER_ALLOWED_HOSTS`、`API_TRIGGER_ALLOW_PRIVATE_NETWORK`、`API_TRIGGER_LOCK_SECONDS`。
+- 接口触发：Host 与私网策略通过页面配置；调度参数继续使用 `API_TRIGGER_LOCK_SECONDS` 等环境变量。
 - 日志：`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_LOG_QUEUE_CAPACITY`。
 - 任务治理：`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 

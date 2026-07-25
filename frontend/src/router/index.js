@@ -9,6 +9,7 @@ import RolesView from '../views/RolesView.vue'
 import MenusView from '../views/MenusView.vue'
 import TasksView from '../views/TasksView.vue'
 import ApiTriggerView from '../views/ApiTriggerView.vue'
+import ApiTriggerSecurityView from '../views/ApiTriggerSecurityView.vue'
 import DepartmentsView from '../views/DepartmentsView.vue'
 import PositionsView from '../views/PositionsView.vue'
 import DictionariesView from '../views/DictionariesView.vue'
@@ -42,7 +43,8 @@ const router = createRouter({
         { path: 'models', component: ModelsView, meta: { permission: 'model:model:list', navigable: true, desc: 'models.description' } },
         { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list', navigable: true, desc: 'routes.description' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view', navigable: true, desc: 'tasks.description' } },
-        { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } }
+        { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
+        { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } }
       ]
     }
   ]

@@ -1,5 +1,6 @@
 package com.baseai.platform.service;
 
+import com.baseai.platform.automation.ApiTriggerSecurityConfigurationService;
 import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
@@ -75,7 +76,9 @@ public class SystemConfigurationService {
      */
     public List<SettingView> settings() {
         // 查询所有参数，先按分组代码排序，再按参数键排序
-        return settingRepository.findAll().stream().sorted(Comparator.comparing(SystemSetting::getGroupCode).thenComparing(SystemSetting::getConfigKey))
+        return settingRepository.findAll().stream()
+            .filter(item -> !ApiTriggerSecurityConfigurationService.isReservedKey(item.getConfigKey()))
+            .sorted(Comparator.comparing(SystemSetting::getGroupCode).thenComparing(SystemSetting::getConfigKey))
             .map(this::toView).toList();
     }
 
@@ -91,6 +94,7 @@ public class SystemConfigurationService {
      */
     @Transactional
     public SettingView createSetting(SettingCommand command) {
+        rejectReservedKey(command.configKey());
         // 检查参数键是否已存在
         if (settingRepository.findByConfigKey(require(command.configKey(), "请输入参数键")).isPresent()) throw new BusinessException("参数键已存在");
         return saveSetting(new SystemSetting(), command);
@@ -110,6 +114,8 @@ public class SystemConfigurationService {
     @Transactional
     public SettingView updateSetting(Long id, SettingCommand command) {
         SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("系统参数不存在"));
+        rejectReservedKey(setting.getConfigKey());
+        rejectReservedKey(command.configKey());
         return saveSetting(setting, command);
     }
 
@@ -124,6 +130,7 @@ public class SystemConfigurationService {
     @Transactional
     public void deleteSetting(Long id) {
         SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("系统参数不存在"));
+        rejectReservedKey(setting.getConfigKey());
         // 删除Redis缓存
         redisTemplate.delete(cachePrefix + setting.getConfigKey());
         settingRepository.delete(setting);
@@ -369,6 +376,13 @@ public class SystemConfigurationService {
     private String require(String value, String message) {
         if (blank(value)) throw new BusinessException(message);
         return value.trim();
+    }
+
+    /** 阻止通用系统参数入口修改接口触发专用安全配置。 */
+    private void rejectReservedKey(String key) {
+        if (ApiTriggerSecurityConfigurationService.isReservedKey(key == null ? null : key.trim())) {
+            throw BusinessException.forbidden("接口触发安全配置只能通过专用页面修改");
+        }
     }
 
     /**

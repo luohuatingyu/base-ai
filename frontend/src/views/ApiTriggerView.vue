@@ -41,7 +41,7 @@
               </el-form-item>
               <el-form-item :label="t('apiTrigger.timeoutSeconds')"><el-input-number v-model="form.timeoutSeconds" :min="1" :max="300"/></el-form-item>
             </div>
-            <el-form-item :label="t('apiTrigger.targetUrl')"><el-input v-model="form.url" placeholder="API_TRIGGER_ALLOWED_HOSTS"/></el-form-item>
+            <el-form-item :label="t('apiTrigger.targetUrl')"><el-input v-model="form.url" :placeholder="t('apiTrigger.targetUrlPlaceholder')"/></el-form-item>
             <el-form-item :label="t('apiTrigger.headers')"><el-input v-model="form.headers" type="textarea" :rows="3"/></el-form-item>
             <el-form-item :label="t('apiTrigger.queryParams')"><el-input v-model="form.queryParams" type="textarea" :rows="3"/></el-form-item>
             <el-form-item label="Content-Type"><el-input v-model="form.contentType"/></el-form-item>

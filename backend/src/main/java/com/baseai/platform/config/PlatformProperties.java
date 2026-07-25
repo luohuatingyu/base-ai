@@ -127,15 +127,9 @@ public class PlatformProperties {
     }
 
     public static class ApiTrigger {
-        private java.util.List<String> allowedHosts = java.util.List.of();
-        private boolean allowPrivateNetwork;
         private int schedulerPoolSize = 4;
         private int lockSeconds = 300;
         private int resultMaxLength = 2000;
-        public java.util.List<String> getAllowedHosts() { return allowedHosts; }
-        public void setAllowedHosts(java.util.List<String> allowedHosts) { this.allowedHosts = allowedHosts; }
-        public boolean isAllowPrivateNetwork() { return allowPrivateNetwork; }
-        public void setAllowPrivateNetwork(boolean allowPrivateNetwork) { this.allowPrivateNetwork = allowPrivateNetwork; }
         public int getSchedulerPoolSize() { return schedulerPoolSize; }
         public void setSchedulerPoolSize(int schedulerPoolSize) { this.schedulerPoolSize = schedulerPoolSize; }
         public int getLockSeconds() { return lockSeconds; }
