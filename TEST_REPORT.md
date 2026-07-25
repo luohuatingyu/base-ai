@@ -2,36 +2,36 @@
 
 ## 📋 Git 基准点
 
-- Commit: 41492e2
-- 提交说明: Use sk prefix for API keys
+- Commit: 8341a18
+- 提交说明: Generate fixed length API keys
 - 测试日期: 2026-07-25
 - 分支: master
 
 ## 🎯 当前变更范围
 
-- 新创建及轮换的 API Key 使用 `sk-<keyId>.<secret>` 格式。
-- 列表脱敏值使用 `sk-<keyId>.****` 格式，不暴露 Secret。
-- 历史 `bai_live_` 前缀立即失效，认证入口统一拒绝旧格式。
-- Key ID、随机 Secret、HMAC-SHA256 摘要、接口授权、IP 白名单及限流机制保持不变。
+- 新创建及轮换的 API Key 使用 `sk-` 后接固定 32 位大小写字母和数字。
+- 使用随机串前 12 位作为数据库查询标识，完整随机串仅保存 HMAC-SHA256 摘要。
+- 列表脱敏值使用 `sk-<前12位>****` 格式，不暴露完整 Key。
+- 历史 `bai_live_<keyId>.<secret>` 和 `sk-<keyId>.<secret>` 格式立即失效。
 
 ## 📋 当前变更测试结果（2026-07-25）
 
-**变更范围**：API Key 生成、解析和脱敏前缀由 `bai_live_` 调整为 `sk-`，旧前缀立即失效。
+**变更范围**：API Key 调整为严格匹配 `sk-[A-Za-z0-9]{32}` 的固定长度格式，并停用两代点分格式。
 
 **测试执行结果**：
-- 总测试用例：106 个
-- API Key 定向测试：14 个，通过 14 个（100%）
-- 后端完整测试：106 个，通过 106 个（100%）
-- 通过：106 个（100%）
+- 总测试用例：112 个
+- API Key 定向测试：20 个，通过 20 个（100%）
+- 后端完整测试：112 个，通过 112 个（100%）
+- 通过：112 个（100%）
 - 失败：0 个
 - 错误：0 个
 - 跳过：0 个
 
 **关键模块测试**：
-- API Key Secret 生成、解析、旧前缀拒绝和摘要校验：3/3，通过
+- API Key Secret 生成、解析、长度边界、非法字符、历史格式拒绝和摘要校验：9/9，通过
 - API Key 身份认证、接口授权、IP 和异常路径：4/4，通过
 - API Key 管理创建及配置校验：7/7，通过
-- 后端完整回归：106/106，通过
+- 后端完整回归：112/112，通过
 - 前端测试：本次未执行，未修改前端代码
 - Python Worker 测试：本次未执行，未修改 Worker 代码
 
@@ -39,20 +39,20 @@
 
 | 测试范围 | 执行命令 | 结果 |
 | --- | --- | --- |
-| API Key 定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeySecretServiceTest,ApiKeyAuthenticationServiceTest,ApiKeyManagementServiceTest test` | 14 通过，0 失败，0 错误，0 跳过 |
-| 后端完整测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 106 通过，0 失败，0 错误，0 跳过 |
-| 服务重建与启动 | `docker compose up --build -d` | 三个镜像构建成功，Backend 构建内 106 个测试通过，Frontend 生产构建通过，三个服务启动成功 |
+| API Key 定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeySecretServiceTest,ApiKeyAuthenticationServiceTest,ApiKeyManagementServiceTest test` | 20 通过，0 失败，0 错误，0 跳过 |
+| 后端完整测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 112 通过，0 失败，0 错误，0 跳过 |
+| 服务重建与启动 | `docker compose up --build -d` | 三个镜像构建成功，Backend 构建内 112 个测试通过，Frontend 生产构建通过，三个服务启动成功 |
 | 服务健康检查 | `docker compose ps`、`curl -fsS http://localhost/health`、`curl -fsS http://localhost:8080/api/open/health` | Backend、Frontend、Python Worker 全部 healthy，两个端点返回 UP |
 | 差异格式检查 | `git diff --check` | 通过 |
 
 ## 🔄 当前覆盖范围与结果
 
-- 正常场景：生成结果符合 `sk-[0-9a-f]{16}.<43位URL安全Secret>`，可解析并通过摘要校验。
-- 边界场景：覆盖缺少 Key ID、Secret 过短和超过 256 字符的输入。
-- 异常场景：空值、非法前缀和格式错误统一返回 API Key 无效。
-- 权限与安全：数据库继续仅保存 HMAC-SHA256 摘要，列表仅展示 `sk-<keyId>.****`。
-- 兼容性：按确认方案主动中止旧格式兼容，`bai_live_` Key 会立即认证失败，需轮换后使用。
-- 回归场景：API Key 身份认证、接口授权、IP 白名单、限流及后端全部 106 个测试通过。
+- 正常场景：生成结果严格符合 `sk-[A-Za-z0-9]{32}`，可解析并通过摘要校验。
+- 边界场景：31 位和 33 位随机串均被拒绝，仅接受固定 32 位。
+- 异常场景：空值、非法前缀、下划线及两代历史点分格式统一返回 API Key 无效。
+- 权限与安全：数据库仅保存随机串前 12 位查询标识和完整随机串的 HMAC-SHA256 摘要，列表不展示完整 Key。
+- 兼容性：按确认方案主动中止旧格式兼容，两代历史 Key 均需轮换后使用。
+- 回归场景：API Key 身份认证、接口授权、IP 白名单、限流及后端全部 112 个测试通过。
 - 运行环境：Compose 已使用变更源码重新构建，三个服务均处于 healthy 状态。
 
 ## 🔄 当前重测触发条件
@@ -65,7 +65,7 @@
 ## ⚠️ 当前已知问题与限制
 
 - 本机没有安装 `mvn`，Maven 测试通过官方 Maven Docker 镜像执行。
-- 历史 `bai_live_` Key 不会自动转换，必须在 API Key 管理页面执行轮换。
+- 历史 `bai_live_<keyId>.<secret>` 和 `sk-<keyId>.<secret>` Key 不会自动转换，必须在管理页面执行轮换。
 - 未执行真实登录态创建、调用、轮换的外部客户端端到端测试；当前通过单元测试、完整回归、构建和健康检查验证。
 - `TaskTraceService` 的既有未检查泛型编译提示未影响测试结果。
 
@@ -75,7 +75,7 @@
 2. 在发布前通知 API Key 使用方完成旧 Key 轮换，避免接口调用中断。
 3. 补充真实 MySQL 与 Redis 环境下的 API Key 全链路集成测试。
 
-**当前 Git 基准点**：`41492e2`
+**当前 Git 基准点**：`8341a18`
 
 ---
 
