@@ -12,6 +12,23 @@
 
     <el-alert :title="t('apiKeys.secretNotice')" type="warning" :closable="false" show-icon />
 
+    <el-collapse class="api-key-usage">
+      <el-collapse-item name="usage-guide">
+        <template #title><strong>{{ t('apiKeyUsage.title') }}</strong></template>
+        <div class="api-key-usage-content">
+          <p>{{ t('apiKeyUsage.introduction') }}</p>
+          <strong>{{ t('apiKeyUsage.exampleTitle') }}</strong>
+          <pre><code>{{ t('apiKeyUsage.curlExample') }}</code></pre>
+          <strong>{{ t('apiKeyUsage.rulesTitle') }}</strong>
+          <ul>
+            <li>{{ t('apiKeyUsage.permissionRule') }}</li>
+            <li>{{ t('apiKeyUsage.credentialRule') }}</li>
+            <li>{{ t('apiKeyUsage.restrictionRule') }}</li>
+          </ul>
+        </div>
+      </el-collapse-item>
+    </el-collapse>
+
     <el-form inline class="api-key-query">
       <el-form-item>
         <el-input v-model="query.keyword" clearable :placeholder="t('apiKeys.keyword')" @keyup.enter="load" />
@@ -335,6 +352,12 @@ onMounted(async () => {
 
 <style scoped>
 .api-key-page { display: grid; gap: 18px; }
+.api-key-usage { border: 1px solid var(--el-border-color); border-radius: 8px; padding: 0 16px; }
+.api-key-usage-content { color: var(--el-text-color-regular); }
+.api-key-usage-content p { margin: 0 0 14px; }
+.api-key-usage-content pre { overflow-x: auto; margin: 8px 0 16px; padding: 14px; border-radius: 6px; background: var(--el-fill-color-light); white-space: pre-wrap; overflow-wrap: anywhere; }
+.api-key-usage-content ul { margin: 8px 0 16px; padding-left: 22px; }
+.api-key-usage-content li + li { margin-top: 6px; }
 .api-key-query { margin-bottom: 0; }
 .endpoint-groups { display: grid; gap: 14px; width: 100%; }
 .endpoint-group { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--el-border-color); border-radius: 8px; }

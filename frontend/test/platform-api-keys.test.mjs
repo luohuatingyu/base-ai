@@ -47,3 +47,19 @@ test('完整 API Key 仅在创建或轮换后展示并支持复制', () => {
   assert.match(viewSource, /\/rotate`/)
   assert.match(viewSource, /http\.delete\(`/)
 })
+
+test('API Key 页面提供默认收起的双语调用指南', () => {
+  assert.match(viewSource, /<el-collapse class="api-key-usage">/)
+  assert.match(viewSource, /<el-collapse-item name="usage-guide">/)
+  assert.match(viewSource, /apiKeyUsage\.curlExample/)
+  assert.match(zhSource, /apiKeyUsage:\s*\{\s*title:\s*'使用说明'/)
+  assert.match(enSource, /apiKeyUsage:\s*\{\s*title:\s*'Usage Guide'/)
+})
+
+test('API Key 调用指南说明请求头、示例接口和安全限制', () => {
+  for (const source of [zhSource, enSource]) {
+    assert.match(source, /X-API-Key/)
+    assert.match(source, /\/api\/ai\/chat/)
+    assert.match(source, /Authorization/)
+  }
+})

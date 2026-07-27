@@ -60,6 +60,7 @@ export default {
     cacheTokens: 'Cache and token state', worker: 'OpenAI-compatible calls'
   },
   language: { zhCN: '简体中文', enUS: 'English' },
+  apiKeyUsage: { title: 'Usage Guide', introduction: 'To call an authorized API from an external system, put the complete API key in the X-API-Key request header.', exampleTitle: 'curl Example', curlExample: 'curl -X POST <BASE_URL>/api/ai/chat\n  -H "X-API-Key: sk-<your-api-key>"\n  -H "Content-Type: application/json"\n  -d \'{"messages":[{"role":"user","content":"hello"}]}\'', rulesTitle: 'Request Rules', permissionRule: 'The effective scope is the intersection of the APIs selected for the key and the bound user RBAC permissions.', credentialRule: 'Do not send Authorization and X-API-Key in the same request; the server returns 401.', restrictionRule: 'The key must be enabled, unexpired, and not revoked, and the request must satisfy its IP allowlist and rate limit.' },
   chat: {
     title: 'General AI Chat', description: 'Requests are routed through Java authorization and task layers to the Python Worker.',
     user: 'You', assistant: 'AI', empty: 'Enter a question to start chatting',
