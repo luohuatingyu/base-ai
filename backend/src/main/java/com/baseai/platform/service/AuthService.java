@@ -115,13 +115,16 @@ public class AuthService {
             sessionService.register(claims, metadata.ipAddress(), metadata.userAgent());
 
             // 记录登录成功的审计日志
-            loginAuditService.save(user.getUsername(), metadata, true, "登录成功");
+            loginAuditService.save(user.getUsername(), metadata, true, "auth.loginSuccess");
 
             // 返回登录结果，包含令牌、过期时间和用户信息
             return new LoginResult(token, claims.expiresAt(), toCurrentUser(user));
         } catch (RuntimeException exception) {
             // 捕获所有运行时异常，记录登录失败的审计日志
-            loginAuditService.save(normalized, metadata, false, exception.getMessage());
+            String messageKey = exception instanceof com.baseai.platform.common.BusinessException
+                ? ((com.baseai.platform.common.BusinessException) exception).getMessageKey()
+                : exception.getMessage();
+            loginAuditService.save(normalized, metadata, false, messageKey);
             throw exception;
         }
     }

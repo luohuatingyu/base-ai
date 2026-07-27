@@ -86,7 +86,7 @@ public class AiChatController {
     @PostMapping
     @ApiKeyEndpoint(code = "ai.chat.invoke", nameKey = "apiKeys.endpointNames.aiChatInvoke",
         groupKey = "apiKeys.endpointGroups.ai", risk = ApiKeyRisk.SENSITIVE)
-    @TraceType(value = "AI 对话", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "tasks.types.aiChat", triggerEntry = "MANUAL", captureRequest = false)
     public ChatResponse chat(@RequestBody ChatRequest request) {
         log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());
         AiChatClient.ChatResult result = client.chat(request.featureCode(), request.modelType(), request.messages(),
