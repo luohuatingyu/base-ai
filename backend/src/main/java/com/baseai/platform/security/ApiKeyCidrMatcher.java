@@ -11,30 +11,30 @@ public class ApiKeyCidrMatcher {
     /** 判断客户端 IP 是否匹配任一精确地址或 CIDR 规则。 */
     public boolean matches(String clientIp, Set<String> rules) {
         if (rules == null || rules.isEmpty()) return true;
-        byte[] address = parseAddress(clientIp, "客户端 IP 无效");
+        byte[] address = parseAddress(clientIp, "apiKey.clientIpInvalid");
         return rules.stream().anyMatch(rule -> matchesRule(address, rule));
     }
 
     /** 校验并规范化单条 IP 或 CIDR 规则。 */
     public String normalize(String rule) {
-        if (rule == null || rule.isBlank()) throw new BusinessException("IP 白名单规则不能为空");
+        if (rule == null || rule.isBlank()) throw new BusinessException("apiKey.cidrRequired");
         String normalized = rule.trim();
         String[] parts = normalized.split("/", -1);
-        if (parts.length > 2) throw new BusinessException("IP 白名单规则格式错误");
-        byte[] address = parseAddress(parts[0], "IP 白名单地址无效");
+        if (parts.length > 2) throw new BusinessException("apiKey.cidrFormatInvalid");
+        byte[] address = parseAddress(parts[0], "apiKey.cidrAddressInvalid");
         int maxBits = address.length * 8;
         int prefix = parts.length == 1 ? maxBits : parsePrefix(parts[1], maxBits);
         try {
             return InetAddress.getByAddress(address).getHostAddress() + (prefix == maxBits ? "" : "/" + prefix);
         } catch (Exception exception) {
-            throw new BusinessException("IP 白名单地址无效");
+            throw new BusinessException("apiKey.cidrAddressInvalid");
         }
     }
 
     /** 判断地址字节是否落在指定网络前缀内。 */
     private boolean matchesRule(byte[] address, String rule) {
         String[] parts = rule.split("/", -1);
-        byte[] network = parseAddress(parts[0], "IP 白名单地址无效");
+        byte[] network = parseAddress(parts[0], "apiKey.cidrAddressInvalid");
         if (network.length != address.length) return false;
         int prefix = parts.length == 1 ? network.length * 8 : parsePrefix(parts[1], network.length * 8);
         int fullBytes = prefix / 8;
@@ -46,15 +46,15 @@ public class ApiKeyCidrMatcher {
     }
 
     /** 解析仅包含 IP 字面量的地址，禁止触发 DNS 查询。 */
-    private byte[] parseAddress(String value, String message) {
+    private byte[] parseAddress(String value, String messageKey) {
         String normalized = value == null ? "" : value.trim();
         if (!normalized.matches("[0-9a-fA-F:.]+") || (!normalized.contains(".") && !normalized.contains(":"))) {
-            throw new BusinessException(message);
+            throw new BusinessException(messageKey);
         }
         try {
             return InetAddress.getByName(normalized).getAddress();
         } catch (Exception exception) {
-            throw new BusinessException(message);
+            throw new BusinessException(messageKey);
         }
     }
 
@@ -65,7 +65,7 @@ public class ApiKeyCidrMatcher {
             if (prefix < 0 || prefix > maxBits) throw new NumberFormatException();
             return prefix;
         } catch (NumberFormatException exception) {
-            throw new BusinessException("IP 白名单前缀长度无效");
+            throw new BusinessException("apiKey.cidrPrefixInvalid");
         }
     }
 }

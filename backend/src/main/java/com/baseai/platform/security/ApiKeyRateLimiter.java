@@ -31,12 +31,12 @@ public class ApiKeyRateLimiter {
             Long count = redisTemplate.opsForValue().increment(key);
             if (count != null && count == 1L) redisTemplate.expire(key, windowDuration.multipliedBy(2));
             if (count != null && count > effectiveLimit) {
-                throw new BusinessException(429, "RATE_LIMITED", "API Key 请求频率超过限制");
+                throw new BusinessException(429, "apiKey.rateLimitExceeded");
             }
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException(503, "API_KEY_RATE_LIMIT_UNAVAILABLE", "API Key 限流服务暂不可用");
+            throw new BusinessException(503, "apiKey.rateLimitUnavailable");
         }
     }
 }

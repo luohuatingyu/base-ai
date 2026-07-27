@@ -184,7 +184,7 @@ class LlmManagementServiceTest {
         when(routeRepository.findById(9L)).thenReturn(Optional.of(secondRoute));
         when(routeRepository.findAll()).thenReturn(List.of(firstRoute, secondRoute));
         when(modelRepository.findAll()).thenReturn(List.of(sharedModel));
-        doThrow(new BusinessException("连接失败")).when(routeService).testModel(10L, null);
+        doThrow(new IllegalStateException("连接失败")).when(routeService).testModel(10L, null);
 
         List<LlmManagementService.RouteSyncView> results = routeService.syncRoutesByIds(List.of(8L, 9L));
 
@@ -317,7 +317,7 @@ class LlmManagementServiceTest {
         when(modelRepository.findAll()).thenReturn(List.of(failed));
         when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
         when(cryptoService.decrypt("encrypted")).thenReturn("key");
-        doThrow(new BusinessException("连接失败")).when(routeService).testModel(10L);
+        doThrow(new IllegalStateException("连接失败")).when(routeService).testModel(10L);
 
         List<LlmManagementService.ModelHealthView> results = routeService.syncRoute(8L, List.of());
 

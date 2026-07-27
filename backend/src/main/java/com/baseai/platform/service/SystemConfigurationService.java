@@ -96,7 +96,7 @@ public class SystemConfigurationService {
     public SettingView createSetting(SettingCommand command) {
         rejectReservedKey(command.configKey());
         // 检查参数键是否已存在
-        if (settingRepository.findByConfigKey(require(command.configKey(), "请输入参数键")).isPresent()) throw new BusinessException("参数键已存在");
+        if (settingRepository.findByConfigKey(require(command.configKey(), "setting.keyRequired")).isPresent()) throw new BusinessException("setting.keyExists");
         return saveSetting(new SystemSetting(), command);
     }
 
@@ -113,7 +113,7 @@ public class SystemConfigurationService {
      */
     @Transactional
     public SettingView updateSetting(Long id, SettingCommand command) {
-        SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("系统参数不存在"));
+        SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("setting.notFound"));
         rejectReservedKey(setting.getConfigKey());
         rejectReservedKey(command.configKey());
         return saveSetting(setting, command);
@@ -129,7 +129,7 @@ public class SystemConfigurationService {
      */
     @Transactional
     public void deleteSetting(Long id) {
-        SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("系统参数不存在"));
+        SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("setting.notFound"));
         rejectReservedKey(setting.getConfigKey());
         // 删除Redis缓存
         redisTemplate.delete(cachePrefix + setting.getConfigKey());
@@ -189,7 +189,7 @@ public class SystemConfigurationService {
     @Transactional
     public DictionaryType createDictionaryType(DictionaryTypeCommand command) {
         // 检查字典编码是否已存在
-        if (typeRepository.findByCode(require(command.code(), "请输入字典编码")).isPresent()) throw new BusinessException("字典编码已存在");
+        if (typeRepository.findByCode(require(command.code(), "dictionary.codeRequired")).isPresent()) throw new BusinessException("dictionary.codeExists");
         return saveDictionaryType(new DictionaryType(), command);
     }
 
@@ -203,7 +203,7 @@ public class SystemConfigurationService {
      */
     @Transactional
     public DictionaryType updateDictionaryType(Long id, DictionaryTypeCommand command) {
-        return saveDictionaryType(typeRepository.findById(id).orElseThrow(() -> BusinessException.notFound("字典类型不存在")), command);
+        return saveDictionaryType(typeRepository.findById(id).orElseThrow(() -> BusinessException.notFound("dictionary.typeNotFound")), command);
     }
 
     /**
@@ -216,9 +216,9 @@ public class SystemConfigurationService {
      */
     @Transactional
     public void deleteDictionaryType(Long id) {
-        DictionaryType type = typeRepository.findById(id).orElseThrow(() -> BusinessException.notFound("字典类型不存在"));
+        DictionaryType type = typeRepository.findById(id).orElseThrow(() -> BusinessException.notFound("dictionary.typeNotFound"));
         // 检查是否还有关联的字典数据
-        if (!dataRepository.findByTypeCodeOrderBySortOrderAscIdAsc(type.getCode()).isEmpty()) throw new BusinessException("请先删除字典数据");
+        if (!dataRepository.findByTypeCodeOrderBySortOrderAscIdAsc(type.getCode()).isEmpty()) throw new BusinessException("dictionary.typeInUse");
         typeRepository.delete(type);
     }
 
@@ -252,7 +252,7 @@ public class SystemConfigurationService {
      */
     @Transactional
     public DictionaryData updateDictionaryData(Long id, DictionaryDataCommand command) {
-        return saveDictionaryData(dataRepository.findById(id).orElseThrow(() -> BusinessException.notFound("字典数据不存在")), command);
+        return saveDictionaryData(dataRepository.findById(id).orElseThrow(() -> BusinessException.notFound("dictionary.dataNotFound")), command);
     }
 
     /**
@@ -278,9 +278,9 @@ public class SystemConfigurationService {
      * @return 保存后的系统参数视图
      */
     private SettingView saveSetting(SystemSetting setting, SettingCommand command) {
-        setting.setGroupCode(require(command.groupCode(), "请输入参数分组"));
-        setting.setConfigKey(require(command.configKey(), "请输入参数键"));
-        setting.setName(require(command.name(), "请输入参数名称"));
+        setting.setGroupCode(require(command.groupCode(), "setting.groupRequired"));
+        setting.setConfigKey(require(command.configKey(), "setting.keyRequired"));
+        setting.setName(require(command.name(), "setting.nameRequired"));
         boolean sensitive = Boolean.TRUE.equals(command.sensitive());
         // 判断是否需要更新配置值：非敏感参数总是更新；敏感参数在值非空或新建时才更新
         if (!sensitive || !blank(command.configValue()) || setting.getId() == null) {
@@ -304,8 +304,8 @@ public class SystemConfigurationService {
      * @return 保存后的字典类型
      */
     private DictionaryType saveDictionaryType(DictionaryType type, DictionaryTypeCommand command) {
-        type.setCode(require(command.code(), "请输入字典编码"));
-        type.setName(require(command.name(), "请输入字典名称"));
+        type.setCode(require(command.code(), "dictionary.codeRequired"));
+        type.setName(require(command.name(), "dictionary.nameRequired"));
         type.setDescription(trim(command.description()));
         // 默认启用
         type.setEnabled(command.enabled() == null || command.enabled());
@@ -320,12 +320,12 @@ public class SystemConfigurationService {
      * @return 保存后的字典数据
      */
     private DictionaryData saveDictionaryData(DictionaryData data, DictionaryDataCommand command) {
-        String typeCode = require(command.typeCode(), "请选择字典类型");
+        String typeCode = require(command.typeCode(), "dictionary.typeRequired");
         // 验证字典类型是否存在
-        if (typeRepository.findByCode(typeCode).isEmpty()) throw BusinessException.notFound("字典类型不存在");
+        if (typeRepository.findByCode(typeCode).isEmpty()) throw BusinessException.notFound("dictionary.typeNotFound");
         data.setTypeCode(typeCode);
-        data.setLabel(require(command.label(), "请输入字典标签"));
-        data.setDictValue(require(command.dictValue(), "请输入字典值"));
+        data.setLabel(require(command.label(), "dictionary.labelRequired"));
+        data.setDictValue(require(command.dictValue(), "dictionary.valueRequired"));
         // 排序号默认为0
         data.setSortOrder(command.sortOrder() == null ? 0 : command.sortOrder());
         // 默认启用
@@ -369,19 +369,19 @@ public class SystemConfigurationService {
      * <p>验证字符串不为空，如果为空则抛出业务异常。
      *
      * @param value 待验证的字符串
-     * @param message 验证失败时的错误消息
+     * @param messageKey 验证失败时的消息资源键
      * @return 去除首尾空白后的字符串
      * @throws BusinessException 如果字符串为空或空白
      */
-    private String require(String value, String message) {
-        if (blank(value)) throw new BusinessException(message);
+    private String require(String value, String messageKey) {
+        if (blank(value)) throw new BusinessException(messageKey);
         return value.trim();
     }
 
     /** 阻止通用系统参数入口修改接口触发专用安全配置。 */
     private void rejectReservedKey(String key) {
         if (ApiTriggerSecurityConfigurationService.isReservedKey(key == null ? null : key.trim())) {
-            throw BusinessException.forbidden("接口触发安全配置只能通过专用页面修改");
+            throw BusinessException.forbidden("apiTrigger.securityDedicatedPageOnly");
         }
     }
 

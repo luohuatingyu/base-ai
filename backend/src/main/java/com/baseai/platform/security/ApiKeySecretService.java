@@ -35,10 +35,10 @@ public class ApiKeySecretService {
     /** 解析 API Key 并拒绝非法或超长输入。 */
     public ParsedApiKey parse(String rawApiKey) {
         if (rawApiKey == null || rawApiKey.length() != PREFIX.length() + TOKEN_LENGTH || !rawApiKey.startsWith(PREFIX)) {
-            throw BusinessException.unauthorized("API Key 无效");
+            throw BusinessException.unauthorized("apiKey.invalid");
         }
         String secret = rawApiKey.substring(PREFIX.length());
-        if (!secret.matches("[A-Za-z0-9]{32}")) throw BusinessException.unauthorized("API Key 无效");
+        if (!secret.matches("[A-Za-z0-9]{32}")) throw BusinessException.unauthorized("apiKey.invalid");
         return new ParsedApiKey(secret.substring(0, KEY_ID_LENGTH), secret);
     }
 

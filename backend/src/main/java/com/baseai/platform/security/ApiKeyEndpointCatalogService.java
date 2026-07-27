@@ -69,7 +69,7 @@ public class ApiKeyEndpointCatalogService implements ApplicationRunner {
         Set<String> patterns = mapping.getPatternValues();
         Set<RequestMethod> methods = mapping.getMethodsCondition().getMethods();
         if (patterns.size() != 1 || methods.size() != 1) {
-            throw new BusinessException("API Key 接口必须声明唯一请求路径和 HTTP 方法: " + annotation.code());
+            throw new BusinessException("apiKey.endpointMappingInvalid", annotation.code());
         }
         RequiredPermission permission = handler.getMethodAnnotation(RequiredPermission.class);
         if (permission == null) permission = handler.getBeanType().getAnnotation(RequiredPermission.class);

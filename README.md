@@ -75,7 +75,7 @@ curl -H 'X-API-Key: sk-<32-character-secret>' \
 - 敏感系统参数与模型 API Key 使用 AES-GCM 加密，管理接口只返回脱敏值。
 - Redis 维护在线会话、最后活跃时间和 Token 撤销状态，管理员可强制下线单个会话或用户全部会话。
 - 操作日志通过 AOP 记录写请求、耗时、结果和脱敏参数；登录日志独立记录登录成功与失败事件。
-- 外部业务 API 使用 `{success, code, message, data}` 统一响应结构，健康检查和内部服务协议保持精简格式。
+- 外部业务 API 使用 `{success, code, message, data}` 统一响应结构；`code` 为与 HTTP 状态一致的数字，`message` 根据 `Accept-Language` 返回中文或英文，未声明语言时默认英文；健康检查和内部服务协议保持精简格式。
 
 首次启动自动创建以下权限：
 

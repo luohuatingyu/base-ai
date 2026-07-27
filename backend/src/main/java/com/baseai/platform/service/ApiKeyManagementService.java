@@ -119,12 +119,12 @@ public class ApiKeyManagementService {
 
     /** 应用并校验管理页面提交的 API Key 配置。 */
     private void apply(ApiKeyCredential credential, ApiKeyCommand command) {
-        if (command == null) throw new BusinessException("API Key 配置不能为空");
-        credential.setName(requireText(command.name(), "请输入 API Key 名称", 100));
-        if (command.ownerUserId() == null) throw new BusinessException("请选择绑定用户");
+        if (command == null) throw new BusinessException("apiKey.configurationRequired");
+        credential.setName(requireText(command.name(), "apiKey.nameRequired", "apiKey.nameTooLong", 100));
+        if (command.ownerUserId() == null) throw new BusinessException("apiKey.ownerRequired");
         UserAccount owner = userRepository.findById(command.ownerUserId())
-            .orElseThrow(() -> BusinessException.notFound("绑定用户不存在"));
-        if (!Boolean.TRUE.equals(owner.getEnabled())) throw new BusinessException("绑定用户已停用");
+            .orElseThrow(() -> BusinessException.notFound("apiKey.ownerNotFound"));
+        if (!Boolean.TRUE.equals(owner.getEnabled())) throw new BusinessException("apiKey.ownerDisabled");
         credential.setOwner(owner);
         credential.setEnabled(command.enabled() == null || command.enabled());
         credential.setExpiresAt(resolveExpiresAt(command.neverExpires(), command.expiresAt()));
@@ -139,10 +139,10 @@ public class ApiKeyManagementService {
     /** 校验永久有效与指定过期时间的互斥关系。 */
     private Instant resolveExpiresAt(Boolean neverExpires, Instant expiresAt) {
         if (Boolean.TRUE.equals(neverExpires)) {
-            if (expiresAt != null) throw new BusinessException("永久有效时不能设置过期时间");
+            if (expiresAt != null) throw new BusinessException("apiKey.neverExpiresConflict");
             return null;
         }
-        if (expiresAt == null || !expiresAt.isAfter(Instant.now())) throw new BusinessException("过期时间必须晚于当前时间");
+        if (expiresAt == null || !expiresAt.isAfter(Instant.now())) throw new BusinessException("apiKey.expirationInvalid");
         return expiresAt;
     }
 
@@ -155,22 +155,22 @@ public class ApiKeyManagementService {
             count = command.rateLimitPerMinute() == null ? 60 : command.rateLimitPerMinute();
         }
         if (!type.isLimited()) {
-            if (count != null) throw new BusinessException("无限制模式不能设置调用次数");
+            if (count != null) throw new BusinessException("apiKey.unlimitedCountConflict");
             return new RateLimitConfiguration(type, null);
         }
         if (count == null || count < 1 || count > 100000) {
-            throw new BusinessException("调用次数必须在 1 到 100000 之间");
+            throw new BusinessException("apiKey.rateLimitCountInvalid");
         }
         return new RateLimitConfiguration(type, count);
     }
 
     /** 校验接口代码全部来自代码开放目录。 */
     private Set<String> resolveEndpointCodes(Set<String> values) {
-        if (values == null || values.isEmpty()) throw new BusinessException("请至少选择一个开放 API");
+        if (values == null || values.isEmpty()) throw new BusinessException("apiKey.endpointRequired");
         LinkedHashSet<String> codes = new LinkedHashSet<>();
         for (String value : values) {
-            String code = requireText(value, "API 接口代码不能为空", 120);
-            if (!endpointCatalog.contains(code)) throw new BusinessException("API 接口不存在或不允许开放: " + code);
+            String code = requireText(value, "apiKey.endpointCodeRequired", "apiKey.endpointCodeTooLong", 120);
+            if (!endpointCatalog.contains(code)) throw new BusinessException("apiKey.endpointUnavailable", code);
             codes.add(code);
         }
         return codes;
@@ -186,14 +186,14 @@ public class ApiKeyManagementService {
 
     /** 查询未吊销 API Key。 */
     private ApiKeyCredential requireCredential(Long id) {
-        return repository.findByIdAndRevokedAtIsNull(id).orElseThrow(() -> BusinessException.notFound("API Key 不存在"));
+        return repository.findByIdAndRevokedAtIsNull(id).orElseThrow(() -> BusinessException.notFound("apiKey.notFound"));
     }
 
     /** 校验必填文本和最大长度。 */
-    private String requireText(String value, String message, int maxLength) {
-        if (value == null || value.isBlank()) throw new BusinessException(message);
+    private String requireText(String value, String requiredMessageKey, String tooLongMessageKey, int maxLength) {
+        if (value == null || value.isBlank()) throw new BusinessException(requiredMessageKey);
         String normalized = value.trim();
-        if (normalized.length() > maxLength) throw new BusinessException(message + "，长度不能超过 " + maxLength);
+        if (normalized.length() > maxLength) throw new BusinessException(tooLongMessageKey, maxLength);
         return normalized;
     }
 

@@ -96,20 +96,20 @@ public class ApiTriggerService {
     public ApiTriggerModels.View get(Long id) {
         List<ApiTriggerModels.View> rows = jdbcTemplate.query("SELECT * FROM automation_api_trigger_config WHERE id=?",
             (rs, row) -> mapView(rs), id);
-        if (rows.isEmpty()) throw BusinessException.notFound("接口触发配置不存在");
+        if (rows.isEmpty()) throw BusinessException.notFound("apiTrigger.notFound");
         return rows.get(0);
     }
 
     /** 停用配置并保留历史记录。 */
     public void disable(Long id) {
         if (jdbcTemplate.update("UPDATE automation_api_trigger_config SET enabled=false, updated_at=NOW() WHERE id=? AND voided=false", id) == 0)
-            throw BusinessException.notFound("接口触发配置不存在");
+            throw BusinessException.notFound("apiTrigger.notFound");
     }
 
     /** 作废配置并从正常列表隐藏。 */
     public void voidConfig(Long id) {
         if (jdbcTemplate.update("UPDATE automation_api_trigger_config SET enabled=false, voided=true, updated_at=NOW() WHERE id=?", id) == 0)
-            throw BusinessException.notFound("接口触发配置不存在");
+            throw BusinessException.notFound("apiTrigger.notFound");
     }
 
     /** 查询全部启用且配置 Cron 的任务。 */
@@ -123,7 +123,7 @@ public class ApiTriggerService {
     /** 正式执行配置并记录 PostgreSQL 执行历史。 */
     public ApiTriggerModels.ExecutionResult execute(Long id, String triggerType) {
         ApiTriggerModels.View config = get(id);
-        if (config.voided() || !config.enabled()) throw new BusinessException("接口触发配置未启用");
+        if (config.voided() || !config.enabled()) throw new BusinessException("apiTrigger.disabled");
         long startedAt = System.nanoTime();
         try {
             ApiTriggerModels.ExecutionResult result = call(config);
@@ -182,12 +182,12 @@ public class ApiTriggerService {
         try {
             JsonNode node = objectMapper.readTree(response.getBody());
             for (String part : config.authTokenPath().split("\\.")) node = node.path(part);
-            if (!node.isValueNode() || node.asText().isBlank()) throw new BusinessException("认证响应中未找到 Token");
+            if (!node.isValueNode() || node.asText().isBlank()) throw new BusinessException("apiTrigger.authTokenMissing");
             return node.asText();
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("认证响应不是有效 JSON");
+            throw new BusinessException("apiTrigger.authResponseInvalidJson");
         }
     }
 
@@ -206,7 +206,7 @@ public class ApiTriggerService {
 
     /** 校验方法、URL、JSON 和 Cron 表达式。 */
     private void validate(ApiTriggerModels.Command command) {
-        if (command == null || text(command.name()).isBlank()) throw new BusinessException("任务名称不能为空");
+        if (command == null || text(command.name()).isBlank()) throw new BusinessException("apiTrigger.nameRequired");
         method(command.httpMethod());
         urlPolicy.validate(command.url());
         parseMap(command.headers());
@@ -232,14 +232,14 @@ public class ApiTriggerService {
         if (value == null || value.isBlank()) return Map.of();
         try {
             JsonNode root = objectMapper.readTree(value);
-            if (!root.isObject()) throw new BusinessException("请求头和查询参数必须是 JSON 对象");
+            if (!root.isObject()) throw new BusinessException("apiTrigger.mapMustBeObject");
             Map<String, String> result = new LinkedHashMap<>();
             root.fields().forEachRemaining(entry -> result.put(entry.getKey(), entry.getValue().asText()));
             return result;
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("JSON 配置格式错误");
+            throw new BusinessException("apiTrigger.jsonConfigurationInvalid");
         }
     }
 
@@ -267,14 +267,14 @@ public class ApiTriggerService {
 
     private String method(String value) {
         String normalized = defaultText(value, "GET").toUpperCase(Locale.ROOT);
-        if (!METHODS.contains(normalized)) throw new BusinessException("不支持的 HTTP 方法");
+        if (!METHODS.contains(normalized)) throw new BusinessException("apiTrigger.httpMethodUnsupported");
         return normalized;
     }
     private String methodOrDefault(String value, String defaultValue) { return method(defaultText(value, defaultValue)); }
     private String cron(String value) {
         if (value == null || value.isBlank()) return null;
         try { CronExpression.parse(value.trim()); return value.trim(); }
-        catch (IllegalArgumentException exception) { throw new BusinessException("Cron 表达式无效"); }
+        catch (IllegalArgumentException exception) { throw new BusinessException("apiTrigger.cronInvalid"); }
     }
     private int timeout(Integer value) { return value == null ? 30 : Math.max(1, Math.min(300, value)); }
     private boolean enabled(Boolean value) { return value == null || value; }

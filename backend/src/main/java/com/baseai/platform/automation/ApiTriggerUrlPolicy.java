@@ -20,24 +20,24 @@ public class ApiTriggerUrlPolicy {
         try {
             URI uri = URI.create(value == null ? "" : value.trim());
             if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) || uri.getHost() == null) {
-                throw new BusinessException("接口地址必须是完整 HTTP/HTTPS URL");
+                throw new BusinessException("apiTrigger.urlAbsoluteRequired");
             }
             String host = uri.getHost().toLowerCase(Locale.ROOT);
             ApiTriggerSecurityConfigurationService.ConfigurationView configuration = configurationService.current();
             boolean literalLoopback = isLiteralLoopbackHost(host);
             if (literalLoopback && !configuration.allowLoopback()) {
-                throw BusinessException.forbidden("禁止访问回环地址");
+                throw BusinessException.forbidden("apiTrigger.loopbackForbidden");
             }
             if (!literalLoopback && configuration.hostRules().stream().noneMatch(rule -> matches(rule, host))) {
-                throw BusinessException.forbidden("目标域名不在接口触发 Host 白名单");
+                throw BusinessException.forbidden("apiTrigger.hostForbidden");
             }
             if (!configuration.allowLoopback() || !configuration.allowPrivateNetwork()) {
                 for (InetAddress address : InetAddress.getAllByName(host)) {
                     if (address.isLoopbackAddress() && !configuration.allowLoopback()) {
-                        throw BusinessException.forbidden("禁止访问回环地址");
+                        throw BusinessException.forbidden("apiTrigger.loopbackForbidden");
                     }
                     if (isNonLoopbackPrivateAddress(address) && !configuration.allowPrivateNetwork()) {
-                        throw BusinessException.forbidden("禁止访问私有网络地址");
+                        throw BusinessException.forbidden("apiTrigger.privateNetworkForbidden");
                     }
                 }
             }
@@ -45,7 +45,7 @@ public class ApiTriggerUrlPolicy {
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("接口地址解析失败");
+            throw new BusinessException("apiTrigger.urlParseFailed");
         }
     }
 

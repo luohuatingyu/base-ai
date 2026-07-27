@@ -37,25 +37,25 @@ public class ApiKeyAuthenticationService {
     /** 校验 API Key、开放接口、来源地址和限流后建立绑定用户身份。 */
     @Transactional
     public AuthUser authenticate(String rawApiKey, HttpServletRequest request, Object handler) {
-        if (!(handler instanceof HandlerMethod method)) throw BusinessException.forbidden("API Key 不允许访问该资源");
+        if (!(handler instanceof HandlerMethod method)) throw BusinessException.forbidden("apiKey.resourceForbidden");
         ApiKeyEndpoint endpoint = endpointCatalog.resolveAnnotation(method);
-        if (endpoint == null) throw BusinessException.forbidden("API Key 不允许访问该接口");
+        if (endpoint == null) throw BusinessException.forbidden("apiKey.endpointForbidden");
 
         ApiKeySecretService.ParsedApiKey parsed = secretService.parse(rawApiKey);
         ApiKeyCredential credential = repository.findByKeyIdAndRevokedAtIsNull(parsed.keyId())
-            .orElseThrow(() -> BusinessException.unauthorized("API Key 无效"));
+            .orElseThrow(() -> BusinessException.unauthorized("apiKey.invalid"));
         Instant now = Instant.now();
         if (!secretService.matches(parsed.secret(), credential.getSecretHash())
             || !Boolean.TRUE.equals(credential.getEnabled())
             || credential.getExpiresAt() != null && !credential.getExpiresAt().isAfter(now)) {
-            throw BusinessException.unauthorized("API Key 无效");
+            throw BusinessException.unauthorized("apiKey.invalid");
         }
         UserAccount owner = credential.getOwner();
-        if (owner == null || !Boolean.TRUE.equals(owner.getEnabled())) throw BusinessException.unauthorized("API Key 无效");
-        if (!credential.getEndpointCodes().contains(endpoint.code())) throw BusinessException.forbidden("API Key 未授权当前接口");
+        if (owner == null || !Boolean.TRUE.equals(owner.getEnabled())) throw BusinessException.unauthorized("apiKey.invalid");
+        if (!credential.getEndpointCodes().contains(endpoint.code())) throw BusinessException.forbidden("apiKey.endpointUnauthorized");
 
         String clientIp = clientIpResolver.resolve(request);
-        if (!cidrMatcher.matches(clientIp, credential.getAllowedCidrs())) throw BusinessException.forbidden("API Key 来源地址不允许");
+        if (!cidrMatcher.matches(clientIp, credential.getAllowedCidrs())) throw BusinessException.forbidden("apiKey.ipForbidden");
         rateLimiter.check(credential.getId(), credential.getRateLimitType(), credential.getRateLimitCount());
         credential.setLastUsedAt(now);
         credential.setLastUsedIp(clientIp);

@@ -10,7 +10,7 @@ public final class AuthContext {
     public static AuthUser current() { return CURRENT.get(); }
     public static AuthUser require() {
         AuthUser user = CURRENT.get();
-        if (user == null) throw BusinessException.unauthorized("请先登录");
+        if (user == null) throw BusinessException.unauthorized("auth.required");
         return user;
     }
     public static void clear() { CURRENT.remove(); }

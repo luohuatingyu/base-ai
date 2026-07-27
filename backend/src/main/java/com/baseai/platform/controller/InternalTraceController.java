@@ -81,7 +81,7 @@ public class InternalTraceController {
         String expected = properties.getPythonWorker().getInternalToken();
         // 使用常量时间比较防止时序攻击，同时检查令牌是否为空
         if (token == null || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
-            throw BusinessException.unauthorized("内部令牌无效");
+            throw BusinessException.unauthorized("internal.invalidToken");
         }
     }
 

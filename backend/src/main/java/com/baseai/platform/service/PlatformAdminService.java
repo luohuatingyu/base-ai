@@ -111,9 +111,9 @@ public class PlatformAdminService {
      */
     @Transactional
     public UserView createUser(UserCommand command) {
-        String username = require(command.username(), "请输入用户名");
+        String username = require(command.username(), "user.usernameRequired");
         // 校验用户名唯一性
-        if (userRepository.existsByUsername(username)) throw new BusinessException("用户名已存在");
+        if (userRepository.existsByUsername(username)) throw new BusinessException("user.usernameExists");
         UserAccount user = new UserAccount();
         user.setUsername(username);
         // 应用用户属性和关系（创建模式）
@@ -135,12 +135,12 @@ public class PlatformAdminService {
      */
     @Transactional
     public UserView updateUser(Long id, UserCommand command) {
-        UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("用户不存在"));
+        UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("user.notFound"));
         // 如果用户名发生变化，校验新用户名的唯一性
-        if (!user.getUsername().equals(command.username()) && userRepository.existsByUsername(require(command.username(), "请输入用户名"))) {
-            throw new BusinessException("用户名已存在");
+        if (!user.getUsername().equals(command.username()) && userRepository.existsByUsername(require(command.username(), "user.usernameRequired"))) {
+            throw new BusinessException("user.usernameExists");
         }
-        user.setUsername(require(command.username(), "请输入用户名"));
+        user.setUsername(require(command.username(), "user.usernameRequired"));
         // 应用用户属性和关系（更新模式）
         applyUser(user, command, false);
         return toUserView(userRepository.save(user));
@@ -158,8 +158,8 @@ public class PlatformAdminService {
     @Transactional
     public void deleteUser(Long id) {
         // 防止删除当前登录用户
-        if (Objects.equals(AuthContext.require().id(), id)) throw new BusinessException("不能删除当前登录用户");
-        UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("用户不存在"));
+        if (Objects.equals(AuthContext.require().id(), id)) throw new BusinessException("user.deleteCurrentForbidden");
+        UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("user.notFound"));
         // 清除用户的角色和岗位关联关系
         user.getRoles().clear();
         user.getPositions().clear();
@@ -191,9 +191,9 @@ public class PlatformAdminService {
      */
     @Transactional
     public RoleView createRole(RoleCommand command) {
-        String code = require(command.code(), "请输入角色编码").toUpperCase(Locale.ROOT);
+        String code = require(command.code(), "role.codeRequired").toUpperCase(Locale.ROOT);
         // 校验角色编码唯一性
-        if (roleRepository.findByCode(code).isPresent()) throw new BusinessException("角色编码已存在");
+        if (roleRepository.findByCode(code).isPresent()) throw new BusinessException("role.codeExists");
         Role role = new Role();
         role.setCode(code);
         // 应用角色属性和权限配置
@@ -204,11 +204,11 @@ public class PlatformAdminService {
     /** 更新角色菜单与数据权限。 */
     @Transactional
     public RoleView updateRole(Long id, RoleCommand command) {
-        Role role = roleRepository.findById(id).orElseThrow(() -> BusinessException.notFound("角色不存在"));
-        if (!role.getCode().equalsIgnoreCase(command.code()) && roleRepository.findByCode(require(command.code(), "请输入角色编码").toUpperCase(Locale.ROOT)).isPresent()) {
-            throw new BusinessException("角色编码已存在");
+        Role role = roleRepository.findById(id).orElseThrow(() -> BusinessException.notFound("role.notFound"));
+        if (!role.getCode().equalsIgnoreCase(command.code()) && roleRepository.findByCode(require(command.code(), "role.codeRequired").toUpperCase(Locale.ROOT)).isPresent()) {
+            throw new BusinessException("role.codeExists");
         }
-        role.setCode(require(command.code(), "请输入角色编码").toUpperCase(Locale.ROOT));
+        role.setCode(require(command.code(), "role.codeRequired").toUpperCase(Locale.ROOT));
         applyRole(role, command);
         return toRoleView(roleRepository.save(role));
     }
@@ -216,10 +216,10 @@ public class PlatformAdminService {
     /** 删除未绑定用户的非内置角色。 */
     @Transactional
     public void deleteRole(Long id) {
-        Role role = roleRepository.findById(id).orElseThrow(() -> BusinessException.notFound("角色不存在"));
-        if ("ADMIN".equals(role.getCode())) throw new BusinessException("不能删除内置管理员角色");
+        Role role = roleRepository.findById(id).orElseThrow(() -> BusinessException.notFound("role.notFound"));
+        if ("ADMIN".equals(role.getCode())) throw new BusinessException("role.deleteBuiltinForbidden");
         boolean used = userRepository.findAll().stream().anyMatch(user -> user.getRoles().stream().anyMatch(item -> item.getId().equals(id)));
-        if (used) throw new BusinessException("角色已被用户使用，不能删除");
+        if (used) throw new BusinessException("role.inUse");
         role.getMenus().clear();
         role.getCustomDepartments().clear();
         roleRepository.delete(role);
@@ -242,8 +242,8 @@ public class PlatformAdminService {
     /** 更新菜单节点并阻止循环父子关系。 */
     @Transactional
     public MenuView updateMenu(Long id, MenuCommand command) {
-        Menu menu = menuRepository.findById(id).orElseThrow(() -> BusinessException.notFound("菜单不存在"));
-        if (Objects.equals(id, command.parentId())) throw new BusinessException("菜单不能选择自身作为父级");
+        Menu menu = menuRepository.findById(id).orElseThrow(() -> BusinessException.notFound("menu.notFound"));
+        if (Objects.equals(id, command.parentId())) throw new BusinessException("menu.selfParent");
         applyMenu(menu, command);
         return toMenuView(menuRepository.save(menu));
     }
@@ -251,10 +251,10 @@ public class PlatformAdminService {
     /** 删除未被角色使用且没有下级节点的菜单。 */
     @Transactional
     public void deleteMenu(Long id) {
-        Menu menu = menuRepository.findById(id).orElseThrow(() -> BusinessException.notFound("菜单不存在"));
-        if (menuRepository.findAll().stream().anyMatch(item -> id.equals(item.getParentId()))) throw new BusinessException("请先删除下级菜单");
+        Menu menu = menuRepository.findById(id).orElseThrow(() -> BusinessException.notFound("menu.notFound"));
+        if (menuRepository.findAll().stream().anyMatch(item -> id.equals(item.getParentId()))) throw new BusinessException("menu.hasChildren");
         if (roleRepository.findAll().stream().anyMatch(role -> role.getMenus().stream().anyMatch(item -> item.getId().equals(id)))) {
-            throw new BusinessException("菜单已被角色使用，不能删除");
+            throw new BusinessException("menu.inUse");
         }
         menuRepository.delete(menu);
     }
@@ -268,7 +268,7 @@ public class PlatformAdminService {
     /** 创建部门节点。 */
     @Transactional
     public DepartmentView createDepartment(DepartmentCommand command) {
-        if (departmentRepository.findByCode(require(command.code(), "请输入部门编码")).isPresent()) throw new BusinessException("部门编码已存在");
+        if (departmentRepository.findByCode(require(command.code(), "department.codeRequired")).isPresent()) throw new BusinessException("department.codeExists");
         Department department = new Department();
         applyDepartment(department, command);
         return toDepartmentView(departmentRepository.save(department));
@@ -277,8 +277,8 @@ public class PlatformAdminService {
     /** 更新部门节点。 */
     @Transactional
     public DepartmentView updateDepartment(Long id, DepartmentCommand command) {
-        Department department = departmentRepository.findById(id).orElseThrow(() -> BusinessException.notFound("部门不存在"));
-        if (Objects.equals(id, command.parentId())) throw new BusinessException("部门不能选择自身作为上级");
+        Department department = departmentRepository.findById(id).orElseThrow(() -> BusinessException.notFound("department.notFound"));
+        if (Objects.equals(id, command.parentId())) throw new BusinessException("department.selfParent");
         applyDepartment(department, command);
         return toDepartmentView(departmentRepository.save(department));
     }
@@ -286,9 +286,9 @@ public class PlatformAdminService {
     /** 删除无下级且未被用户引用的部门。 */
     @Transactional
     public void deleteDepartment(Long id) {
-        if (departmentRepository.existsByParentId(id)) throw new BusinessException("请先删除下级部门");
+        if (departmentRepository.existsByParentId(id)) throw new BusinessException("department.hasChildren");
         if (userRepository.findAll().stream().anyMatch(user -> user.getDepartment() != null && id.equals(user.getDepartment().getId()))) {
-            throw new BusinessException("部门已被用户使用，不能删除");
+            throw new BusinessException("department.inUse");
         }
         departmentRepository.deleteById(id);
     }
@@ -302,7 +302,7 @@ public class PlatformAdminService {
     /** 创建岗位。 */
     @Transactional
     public PositionView createPosition(PositionCommand command) {
-        if (positionRepository.findByCode(require(command.code(), "请输入岗位编码")).isPresent()) throw new BusinessException("岗位编码已存在");
+        if (positionRepository.findByCode(require(command.code(), "position.codeRequired")).isPresent()) throw new BusinessException("position.codeExists");
         Position position = new Position();
         applyPosition(position, command);
         return toPositionView(positionRepository.save(position));
@@ -311,7 +311,7 @@ public class PlatformAdminService {
     /** 更新岗位。 */
     @Transactional
     public PositionView updatePosition(Long id, PositionCommand command) {
-        Position position = positionRepository.findById(id).orElseThrow(() -> BusinessException.notFound("岗位不存在"));
+        Position position = positionRepository.findById(id).orElseThrow(() -> BusinessException.notFound("position.notFound"));
         applyPosition(position, command);
         return toPositionView(positionRepository.save(position));
     }
@@ -320,29 +320,29 @@ public class PlatformAdminService {
     @Transactional
     public void deletePosition(Long id) {
         if (userRepository.findAll().stream().anyMatch(user -> user.getPositions().stream().anyMatch(item -> item.getId().equals(id)))) {
-            throw new BusinessException("岗位已被用户使用，不能删除");
+            throw new BusinessException("position.inUse");
         }
         positionRepository.deleteById(id);
     }
 
     /** 应用用户表单字段和关系。 */
     private void applyUser(UserAccount user, UserCommand command, boolean creating) {
-        user.setDisplayName(require(command.displayName(), "请输入显示名称"));
+        user.setDisplayName(require(command.displayName(), "user.displayNameRequired"));
         user.setEnabled(command.enabled() == null || command.enabled());
-        if (creating || !blank(command.password())) user.setPasswordHash(passwordEncoder.encode(require(command.password(), "请输入密码")));
+        if (creating || !blank(command.password())) user.setPasswordHash(passwordEncoder.encode(require(command.password(), "auth.password.required")));
         user.setRoles(load(command.roleIds(), roleRepository::findAllById));
         user.setPositions(load(command.positionIds(), positionRepository::findAllById));
         user.setDepartment(command.departmentId() == null ? null : departmentRepository.findById(command.departmentId())
-            .orElseThrow(() -> BusinessException.notFound("部门不存在")));
+            .orElseThrow(() -> BusinessException.notFound("department.notFound")));
     }
 
     /** 应用角色基础信息、菜单和数据范围。 */
     private void applyRole(Role role, RoleCommand command) {
-        role.setName(require(command.name(), "请输入角色名称"));
+        role.setName(require(command.name(), "role.nameRequired"));
         role.setDescription(trim(command.description()));
         role.setEnabled(command.enabled() == null || command.enabled());
         String dataScope = blank(command.dataScope()) ? "ALL" : command.dataScope().toUpperCase(Locale.ROOT);
-        if (!DATA_SCOPES.contains(dataScope)) throw new BusinessException("数据权限范围不正确");
+        if (!DATA_SCOPES.contains(dataScope)) throw new BusinessException("role.dataScopeInvalid");
         role.setDataScope(dataScope);
         role.setMenus(load(command.menuIds(), menuRepository::findAllById));
         role.setCustomDepartments("CUSTOM".equals(dataScope) ? load(command.departmentIds(), departmentRepository::findAllById) : new LinkedHashSet<>());
@@ -351,13 +351,13 @@ public class PlatformAdminService {
     /** 校验并应用菜单配置。 */
     private void applyMenu(Menu menu, MenuCommand command) {
         String type = blank(command.type()) ? "MENU" : command.type().toUpperCase(Locale.ROOT);
-        if (!MENU_TYPES.contains(type)) throw new BusinessException("菜单类型不正确");
+        if (!MENU_TYPES.contains(type)) throw new BusinessException("menu.typeInvalid");
         String permission = trim(command.permission());
         menuRepository.findByPermission(permission).filter(existing -> !existing.getId().equals(menu.getId()))
-            .ifPresent(existing -> { throw new BusinessException("权限编码已存在"); });
-        if (command.parentId() != null && menuRepository.findById(command.parentId()).isEmpty()) throw BusinessException.notFound("父级菜单不存在");
+            .ifPresent(existing -> { throw new BusinessException("menu.permissionExists"); });
+        if (command.parentId() != null && menuRepository.findById(command.parentId()).isEmpty()) throw BusinessException.notFound("menu.parentNotFound");
         menu.setParentId(command.parentId());
-        menu.setName(require(command.name(), "请输入菜单名称"));
+        menu.setName(require(command.name(), "menu.nameRequired"));
         menu.setType(type);
         menu.setPath(trim(command.path()));
         menu.setComponent(trim(command.component()));
@@ -371,16 +371,16 @@ public class PlatformAdminService {
     /** 应用部门字段。 */
     private void applyDepartment(Department department, DepartmentCommand command) {
         department.setParentId(command.parentId());
-        department.setCode(require(command.code(), "请输入部门编码"));
-        department.setName(require(command.name(), "请输入部门名称"));
+        department.setCode(require(command.code(), "department.codeRequired"));
+        department.setName(require(command.name(), "department.nameRequired"));
         department.setSortOrder(command.sortOrder() == null ? 0 : command.sortOrder());
         department.setEnabled(command.enabled() == null || command.enabled());
     }
 
     /** 应用岗位字段。 */
     private void applyPosition(Position position, PositionCommand command) {
-        position.setCode(require(command.code(), "请输入岗位编码"));
-        position.setName(require(command.name(), "请输入岗位名称"));
+        position.setCode(require(command.code(), "position.codeRequired"));
+        position.setName(require(command.name(), "position.nameRequired"));
         position.setSortOrder(command.sortOrder() == null ? 0 : command.sortOrder());
         position.setEnabled(command.enabled() == null || command.enabled());
     }
@@ -412,7 +412,7 @@ public class PlatformAdminService {
     private boolean contains(String value, String keyword) { return value != null && value.toLowerCase(Locale.ROOT).contains(keyword.trim().toLowerCase(Locale.ROOT)); }
     private boolean blank(String value) { return value == null || value.isBlank(); }
     private String trim(String value) { return blank(value) ? null : value.trim(); }
-    private String require(String value, String message) { if (blank(value)) throw new BusinessException(message); return value.trim(); }
+    private String require(String value, String messageKey) { if (blank(value)) throw new BusinessException(messageKey); return value.trim(); }
 
     public record PageResult<T>(List<T> items, long total, int page, int size) {}
     public record UserCommand(String username, String displayName, String password, Boolean enabled, Long departmentId, List<Long> roleIds, List<Long> positionIds) {}

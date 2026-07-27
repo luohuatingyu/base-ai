@@ -48,23 +48,23 @@ public class TokenService {
     public TokenClaims parseToken(String token) {
         try {
             String[] parts = token == null ? new String[0] : token.split("\\.");
-            if (parts.length != 3) throw BusinessException.unauthorized("登录状态无效");
+            if (parts.length != 3) throw BusinessException.unauthorized("auth.invalidToken");
             String content = parts[0] + "." + parts[1];
             if (!MessageDigest.isEqual(sign(content).getBytes(StandardCharsets.UTF_8), parts[2].getBytes(StandardCharsets.UTF_8))) {
-                throw BusinessException.unauthorized("登录状态无效");
+                throw BusinessException.unauthorized("auth.invalidToken");
             }
             Map<String, Object> payload = objectMapper.readValue(Base64.getUrlDecoder().decode(parts[1]), new TypeReference<>() {});
             Instant expiresAt = Instant.ofEpochSecond(((Number) payload.get("exp")).longValue());
             String tokenId = String.valueOf(payload.get("jti"));
-            if (!expiresAt.isAfter(Instant.now())) throw BusinessException.unauthorized("登录已过期");
+            if (!expiresAt.isAfter(Instant.now())) throw BusinessException.unauthorized("auth.tokenExpired");
             if (Boolean.TRUE.equals(redisTemplate.hasKey(revokedKey(tokenId)))) {
-                throw BusinessException.unauthorized("登录状态已退出");
+                throw BusinessException.unauthorized("auth.loggedOut");
             }
             return new TokenClaims(((Number) payload.get("userId")).longValue(), String.valueOf(payload.get("username")), tokenId, expiresAt);
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw BusinessException.unauthorized("登录状态无效");
+            throw BusinessException.unauthorized("auth.invalidToken");
         }
     }
 

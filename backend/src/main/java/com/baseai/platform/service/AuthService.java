@@ -94,16 +94,16 @@ public class AuthService {
         String normalized = username == null ? "" : username.trim();
         try {
             // 查询用户账号，验证用户名格式并检查用户是否存在
-            UserAccount user = userRepository.findByUsername(requireText(username, "请输入账号"))
-                .orElseThrow(() -> BusinessException.unauthorized("账号或密码错误"));
+            UserAccount user = userRepository.findByUsername(requireText(username, "auth.username.required"))
+                .orElseThrow(() -> BusinessException.unauthorized("auth.invalidCredentials"));
 
             // 使用BCrypt验证密码，密码错误时统一返回"账号或密码错误"避免信息泄露
-            if (!passwordEncoder.matches(requireText(password, "请输入密码"), user.getPasswordHash())) {
-                throw BusinessException.unauthorized("账号或密码错误");
+            if (!passwordEncoder.matches(requireText(password, "auth.password.required"), user.getPasswordHash())) {
+                throw BusinessException.unauthorized("auth.invalidCredentials");
             }
 
             // 检查账号是否已启用
-            if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("账号已停用");
+            if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("auth.accountDisabled");
 
             // 创建JWT令牌
             String token = tokenService.createToken(user.getId(), user.getUsername());
@@ -139,7 +139,7 @@ public class AuthService {
     public CurrentUser currentUser() {
         // 从认证上下文获取当前用户ID，并查询用户完整信息
         UserAccount user = userRepository.findById(AuthContext.require().id())
-            .orElseThrow(() -> BusinessException.unauthorized("登录用户不存在"));
+            .orElseThrow(() -> BusinessException.unauthorized("auth.userNotFound"));
         return toCurrentUser(user);
     }
 
@@ -177,8 +177,8 @@ public class AuthService {
     }
 
     /** 校验必要文本字段。 */
-    private String requireText(String value, String message) {
-        if (value == null || value.isBlank()) throw new BusinessException(message);
+    private String requireText(String value, String messageKey) {
+        if (value == null || value.isBlank()) throw new BusinessException(messageKey);
         return value.trim();
     }
 

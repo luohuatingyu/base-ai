@@ -34,7 +34,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         AuthUser authUser = resolveAuthUser(request, handler);
         AuthContext.set(authUser);
         RequiredPermission required = resolvePermission(handler);
-        if (required != null && !authUser.hasPermission(required.value())) throw BusinessException.forbidden("没有操作权限");
+        if (required != null && !authUser.hasPermission(required.value())) throw BusinessException.forbidden("auth.permissionDenied");
         return true;
     }
 
@@ -44,12 +44,12 @@ public class AuthInterceptor implements HandlerInterceptor {
         String apiKey = request.getHeader("X-API-Key");
         boolean hasToken = authorization != null && !authorization.isBlank();
         boolean hasApiKey = apiKey != null && !apiKey.isBlank();
-        if (hasToken && hasApiKey) throw BusinessException.unauthorized("不能同时使用 Token 和 API Key");
+        if (hasToken && hasApiKey) throw BusinessException.unauthorized("auth.multipleCredentials");
         if (hasApiKey) return apiKeyAuthenticationService.authenticate(apiKey.trim(), request, handler);
         TokenClaims claims = tokenService.parseToken(resolveToken(authorization));
         UserAccount user = userRepository.findById(claims.userId())
-            .orElseThrow(() -> BusinessException.unauthorized("登录用户不存在"));
-        if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("账号已停用");
+            .orElseThrow(() -> BusinessException.unauthorized("auth.userNotFound"));
+        if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("auth.accountDisabled");
         sessionService.touch(claims);
         return authUserFactory.fromToken(user);
     }
@@ -62,7 +62,7 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     /** 从 Authorization 请求头提取 Bearer Token。 */
     private String resolveToken(String authorization) {
-        if (authorization == null || !authorization.startsWith("Bearer ")) throw BusinessException.unauthorized("请先登录");
+        if (authorization == null || !authorization.startsWith("Bearer ")) throw BusinessException.unauthorized("auth.required");
         return authorization.substring(7).trim();
     }
 

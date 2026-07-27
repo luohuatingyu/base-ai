@@ -119,7 +119,7 @@ public class AiChatClient {
                     thinkingLevel, route.routeConfigured())).retrieve().body(ChatResult.class);
 
             // 验证响应不为空
-            if (result == null) throw new BusinessException("模型服务返回空响应");
+            if (result == null) throw new BusinessException("ai.emptyResponse");
 
             // 更新追踪记录为成功状态
             taskTraceService.updatePython(pythonTraceId, "SUCCESS", null, null);
@@ -133,7 +133,7 @@ public class AiChatClient {
             taskTraceService.updatePython(pythonTraceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, exception.getMessage());
 
             // 将REST客户端异常转换为业务异常，返回502状态码
-            throw new BusinessException(502, "模型服务调用失败");
+            throw new BusinessException(502, "ai.serviceCallFailed");
         }
     }
 

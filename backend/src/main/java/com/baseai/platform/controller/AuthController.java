@@ -30,8 +30,8 @@ public class AuthController {
         authService.logout(authorization.substring("Bearer ".length()).trim());
     }
 
-    public record LoginRequest(@NotBlank(message = "请输入账号") String username,
-                               @NotBlank(message = "请输入密码") String password) {}
+    public record LoginRequest(@NotBlank(message = "{auth.username.required}") String username,
+                               @NotBlank(message = "{auth.password.required}") String password) {}
 
     /** 优先读取反向代理传播的客户端地址。 */
     private String clientIp(HttpServletRequest request) {

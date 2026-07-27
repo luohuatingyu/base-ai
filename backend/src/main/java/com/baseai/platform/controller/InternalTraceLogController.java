@@ -80,7 +80,7 @@ public class InternalTraceLogController {
             String level = item.level().toUpperCase(Locale.ROOT);
 
             // 验证日志级别是否合法
-            if (!LEVELS.contains(level)) throw new BusinessException("日志级别无效");
+            if (!LEVELS.contains(level)) throw new BusinessException("internal.logLevelInvalid");
 
             // 将日志记录添加到队列中，如果成功则计数加1
             // 如果loggedAt为null则使用当前时间
@@ -109,7 +109,7 @@ public class InternalTraceLogController {
         // 使用常量时间比较，防止时序攻击
         // 如果令牌为null或不匹配，则抛出未授权异常
         if (token == null || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
-            throw BusinessException.unauthorized("内部令牌无效");
+            throw BusinessException.unauthorized("internal.invalidToken");
         }
     }
 

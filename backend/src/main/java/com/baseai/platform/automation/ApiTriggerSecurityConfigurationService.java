@@ -72,7 +72,7 @@ public class ApiTriggerSecurityConfigurationService {
     @Transactional
     public ConfigurationView update(UpdateCommand command) {
         if (command == null || command.allowLoopback() == null || command.allowPrivateNetwork() == null) {
-            throw new BusinessException("请选择是否允许访问回环地址和私有网络");
+            throw new BusinessException("apiTrigger.networkPolicyRequired");
         }
         List<HostRule> hostRules = normalizeHostRules(command.hostRules());
         saveValue(HOST_RULES_KEY, "接口触发 Host 匹配规则", serializeHostRules(hostRules));
@@ -120,7 +120,7 @@ public class ApiTriggerSecurityConfigurationService {
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException("接口触发 Host 规则格式错误");
+            throw new BusinessException("apiTrigger.hostRulesInvalid");
         }
     }
 
@@ -143,7 +143,7 @@ public class ApiTriggerSecurityConfigurationService {
         try {
             return objectMapper.writeValueAsString(rules);
         } catch (Exception exception) {
-            throw new BusinessException("接口触发 Host 规则保存失败");
+            throw new BusinessException("apiTrigger.hostRulesSaveFailed");
         }
     }
 
@@ -157,21 +157,21 @@ public class ApiTriggerSecurityConfigurationService {
             try {
                 type = HostMatchType.valueOf(rule.type().trim().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException exception) {
-                throw new BusinessException("不支持的 Host 匹配类型：" + rule.type());
+                throw new BusinessException("apiTrigger.hostMatchTypeUnsupported", rule.type());
             }
             if (type == HostMatchType.ANY) {
                 normalized.add(new HostRule(type.name(), null));
                 continue;
             }
-            if (rule.value() == null || rule.value().isBlank()) throw new BusinessException("请输入 Host 匹配值");
+            if (rule.value() == null || rule.value().isBlank()) throw new BusinessException("apiTrigger.hostValueRequired");
             String value = normalizeValue(rule.value());
             if (type == HostMatchType.EXACT) {
-                if (!isValidExactHost(value)) throw new BusinessException("Host 规则格式错误：" + rule.value());
+                if (!isValidExactHost(value)) throw new BusinessException("apiTrigger.hostRuleInvalid", rule.value());
                 if (isBuiltInLoopback(value)) continue;
             } else if ((type == HostMatchType.PREFIX || type == HostMatchType.SUFFIX) && !isValidDnsName(value)) {
-                throw new BusinessException("Host 规则格式错误：" + rule.value());
+                throw new BusinessException("apiTrigger.hostRuleInvalid", rule.value());
             } else if (type == HostMatchType.CONTAINS && !isValidDnsPattern(value)) {
-                throw new BusinessException("Host 规则格式错误：" + rule.value());
+                throw new BusinessException("apiTrigger.hostRuleInvalid", rule.value());
             }
             normalized.add(new HostRule(type.name(), value));
         }

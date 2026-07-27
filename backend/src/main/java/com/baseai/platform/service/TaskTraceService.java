@@ -120,7 +120,7 @@ public class TaskTraceService {
                 """, taskType, triggerEntry, requestMethod, requestPath, snapshot.paramsJson(), snapshot.headersJson(),
                 instanceId, now(), now(), reservedTraceId.trim(), ownerUserId);
             // 如果没有更新到记录，说明ID无效或已被使用
-            if (updated == 0) throw new BusinessException("预留任务编号无效或已被使用");
+            if (updated == 0) throw new BusinessException("trace.reservationInvalid");
             return reservedTraceId.trim();
         }
 
@@ -352,7 +352,7 @@ public class TaskTraceService {
     /** 查询单个任务详情并附带 Python 子任务。 */
     public Map<String, Object> get(String traceId, Long userId, boolean admin) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT * FROM task_trace WHERE trace_id=?", traceId);
-        if (rows.isEmpty()) throw BusinessException.notFound("任务不存在");
+        if (rows.isEmpty()) throw BusinessException.notFound("trace.notFound");
         verifyOwner(rows.get(0), userId, admin);
         Map<String, Object> result = new LinkedHashMap<>(rows.get(0));
         result.put("pythonTraces", jdbcTemplate.queryForList("SELECT * FROM task_trace_python WHERE parent_trace_id=? ORDER BY created_at", traceId));
@@ -418,7 +418,7 @@ public class TaskTraceService {
     public Map<String, Object> cancel(String traceId, Long userId, boolean admin, String reason) {
         Map<String, Object> trace = get(traceId, userId, admin);
         String status = String.valueOf(value(trace, "status"));
-        if (!List.of("RUNNING", "CANCEL_REQUESTED").contains(status)) throw new BusinessException("当前任务不可取消");
+        if (!List.of("RUNNING", "CANCEL_REQUESTED").contains(status)) throw new BusinessException("trace.notCancellable");
         jdbcTemplate.update("UPDATE task_trace SET status='CANCEL_REQUESTED', cancellation_reason=?, cancel_requested_at=?, version=version+1 WHERE trace_id=?", truncate(reason, 500), now(), traceId);
         runtimeRegistry.cancel(traceId);
         cancelPythonTraces(traceId, false, userId, reason);
@@ -427,7 +427,7 @@ public class TaskTraceService {
 
     /** 管理员强制终止父任务及全部 Python 子任务并记录审计。 */
     public Map<String, Object> forceTerminate(String traceId, Long userId, boolean admin, String reason) {
-        if (!admin) throw BusinessException.forbidden("仅管理员可强制终止任务");
+        if (!admin) throw BusinessException.forbidden("trace.forceTerminateAdminOnly");
         get(traceId, userId, true);
         runtimeRegistry.cancel(traceId);
         cancelPythonTraces(traceId, true, userId, reason);
@@ -456,7 +456,7 @@ public class TaskTraceService {
     /** 校验任务归属关系。 */
     private void verifyOwner(Map<String, Object> trace, Long userId, boolean admin) {
         Object rawOwner = value(trace, "owner_user_id");
-        if (!admin && (!(rawOwner instanceof Number owner) || owner.longValue() != userId)) throw BusinessException.forbidden("无权访问该任务");
+        if (!admin && (!(rawOwner instanceof Number owner) || owner.longValue() != userId)) throw BusinessException.forbidden("trace.accessForbidden");
     }
     private Object value(Map<String, Object> row, String name) { return row.entrySet().stream().filter(entry -> entry.getKey().equalsIgnoreCase(name)).map(Map.Entry::getValue).findFirst().orElse(null); }
     private boolean hasText(String value) { return value != null && !value.isBlank(); }

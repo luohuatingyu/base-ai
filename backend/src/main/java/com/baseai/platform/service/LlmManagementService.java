@@ -93,7 +93,7 @@ public class LlmManagementService {
      * @return 含明文密钥的供应商密钥视图
      */
     public ProviderApiKeysView providerApiKeys(Long id){
-        LlmProvider provider=providerRepository.findById(id).orElseThrow(()->BusinessException.notFound("供应商不存在"));
+        LlmProvider provider=providerRepository.findById(id).orElseThrow(()->BusinessException.notFound("llm.providerNotFound"));
         return new ProviderApiKeysView(provider.getId(),normalizeApiKeys(cryptoService.decrypt(provider.getApiKeysEncrypted())));
     }
 
@@ -105,7 +105,7 @@ public class LlmManagementService {
      * @throws BusinessException 如果供应商编码已存在
      */
     @Transactional
-    public ProviderView createProvider(ProviderCommand command){if(providerRepository.findByCode(require(command.code(),"请输入供应商编码")).isPresent())throw new BusinessException("供应商编码已存在");return providerView(saveProvider(new LlmProvider(),command));}
+    public ProviderView createProvider(ProviderCommand command){if(providerRepository.findByCode(require(command.code(),"llm.providerCodeRequired")).isPresent())throw new BusinessException("llm.providerCodeExists");return providerView(saveProvider(new LlmProvider(),command));}
 
     /**
      * 更新已有的模型供应商
@@ -116,7 +116,7 @@ public class LlmManagementService {
      * @throws BusinessException 如果供应商不存在
      */
     @Transactional
-    public ProviderView updateProvider(Long id,ProviderCommand command){return providerView(saveProvider(providerRepository.findById(id).orElseThrow(()->BusinessException.notFound("供应商不存在")),command));}
+    public ProviderView updateProvider(Long id,ProviderCommand command){return providerView(saveProvider(providerRepository.findById(id).orElseThrow(()->BusinessException.notFound("llm.providerNotFound")),command));}
 
     /**
      * 删除模型供应商
@@ -127,7 +127,7 @@ public class LlmManagementService {
      * @throws BusinessException 如果供应商已被模型使用
      */
     @Transactional
-    public void deleteProvider(Long id){if(modelRepository.findAll().stream().anyMatch(item->id.equals(item.getProviderId())))throw new BusinessException("供应商已被模型使用");providerRepository.deleteById(id);}
+    public void deleteProvider(Long id){if(modelRepository.findAll().stream().anyMatch(item->id.equals(item.getProviderId())))throw new BusinessException("llm.providerInUse");providerRepository.deleteById(id);}
 
     /**
      * 查询所有模型配置列表
@@ -154,7 +154,7 @@ public class LlmManagementService {
      * @throws BusinessException 如果模型编码已存在
      */
     @Transactional
-    public LlmModel createModel(ModelCommand command){if(modelRepository.findByCode(require(command.code(),"请输入模型编码")).isPresent())throw new BusinessException("模型编码已存在");return saveModel(new LlmModel(),command);}
+    public LlmModel createModel(ModelCommand command){if(modelRepository.findByCode(require(command.code(),"llm.modelCodeRequired")).isPresent())throw new BusinessException("llm.modelCodeExists");return saveModel(new LlmModel(),command);}
 
     /**
      * 更新已有的模型配置
@@ -165,7 +165,7 @@ public class LlmManagementService {
      * @throws BusinessException 如果模型不存在
      */
     @Transactional
-    public LlmModel updateModel(Long id,ModelCommand command){return saveModel(modelRepository.findById(id).orElseThrow(()->BusinessException.notFound("模型不存在")),command);}
+    public LlmModel updateModel(Long id,ModelCommand command){return saveModel(modelRepository.findById(id).orElseThrow(()->BusinessException.notFound("llm.modelNotFound")),command);}
 
     /**
      * 删除模型配置
@@ -176,7 +176,7 @@ public class LlmManagementService {
      * @throws BusinessException 如果模型已被能力路由使用
      */
     @Transactional
-    public void deleteModel(Long id){if(routeRepository.findAll().stream().anyMatch(route->parseIds(route.getCandidateModelIds()).contains(id)))throw new BusinessException("模型已被能力路由使用");modelRepository.deleteById(id);}
+    public void deleteModel(Long id){if(routeRepository.findAll().stream().anyMatch(route->parseIds(route.getCandidateModelIds()).contains(id)))throw new BusinessException("llm.modelInUse");modelRepository.deleteById(id);}
 
     /**
      * 查询所有能力路由配置列表
@@ -193,7 +193,7 @@ public class LlmManagementService {
      * @throws BusinessException 如果功能编码已存在
      */
     @Transactional
-    public RouteView createRoute(RouteCommand command){if(routeRepository.findByFeatureCode(require(command.featureCode(),"请输入功能编码")).isPresent())throw new BusinessException("功能编码已存在");return routeView(saveRoute(new LlmRoute(),command));}
+    public RouteView createRoute(RouteCommand command){if(routeRepository.findByFeatureCode(require(command.featureCode(),"llm.featureCodeRequired")).isPresent())throw new BusinessException("llm.featureCodeExists");return routeView(saveRoute(new LlmRoute(),command));}
 
     /**
      * 更新已有的能力路由配置
@@ -204,14 +204,14 @@ public class LlmManagementService {
      * @throws BusinessException 如果路由不存在
      */
     @Transactional
-    public RouteView updateRoute(Long id,RouteCommand command){return routeView(saveRoute(routeRepository.findById(id).orElseThrow(()->BusinessException.notFound("能力路由不存在")),command));}
+    public RouteView updateRoute(Long id,RouteCommand command){return routeView(saveRoute(routeRepository.findById(id).orElseThrow(()->BusinessException.notFound("llm.routeNotFound")),command));}
 
     /**
      * 删除能力路由配置
      *
      * @param id 路由ID
      */
-    public void deleteRoute(Long id){LlmRoute route=routeRepository.findById(id).orElseThrow(()->BusinessException.notFound("能力路由不存在"));if(DEFAULT_ROUTE.equals(route.getFeatureCode()))throw new BusinessException("默认能力路由不可删除");routeRepository.deleteById(id);activeRoutes.updateAndGet(routes->{Map<String,WorkerRoute> copy=new LinkedHashMap<>(routes);copy.remove(route.getFeatureCode());return Map.copyOf(copy);});}
+    public void deleteRoute(Long id){LlmRoute route=routeRepository.findById(id).orElseThrow(()->BusinessException.notFound("llm.routeNotFound"));if(DEFAULT_ROUTE.equals(route.getFeatureCode()))throw new BusinessException("llm.defaultRouteDeleteForbidden");routeRepository.deleteById(id);activeRoutes.updateAndGet(routes->{Map<String,WorkerRoute> copy=new LinkedHashMap<>(routes);copy.remove(route.getFeatureCode());return Map.copyOf(copy);});}
 
     /**
      * 解析指定功能的候选模型列表
@@ -278,8 +278,8 @@ public class LlmManagementService {
         WorkerRoute route=activeRoutes.get().get(code);
         if(route!=null)route=new WorkerRoute(route.candidates().stream().filter(item->matchesModelType(item.supportedModelTypes(),modelType)).toList(),route.enableThinking(),true);
         if(route==null||route.candidates().isEmpty()){
-            if(DEFAULT_ROUTE.equals(code))throw new BusinessException("默认模型池没有支持所选类型的可用模型，请检查能力路由并执行同步");
-            throw new BusinessException("所选模型池没有支持该类型的可用模型，请检查能力路由并执行同步");
+            if(DEFAULT_ROUTE.equals(code))throw new BusinessException("llm.defaultPoolUnavailable");
+            throw new BusinessException("llm.selectedPoolUnavailable");
         }
         return route;
     }
@@ -308,7 +308,7 @@ public class LlmManagementService {
     /** 检查单条能力路由已配置的全部供应商模型，并刷新全量内存快照。 */
     @Transactional
     public synchronized List<ModelHealthView> syncRoute(Long routeId,List<Long> ignoredProviderIds){
-        LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
+        LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("llm.routeNotFound"));
         List<LlmModel> checked=routeModelsForHealthCheck(route);
         List<ModelHealthView> result=checkModels(checked);refreshActiveRoutes();return result;
     }
@@ -321,7 +321,7 @@ public class LlmManagementService {
         Map<ModelSyncKey,ModelHealthView> checkedResults=new LinkedHashMap<>();
         List<RouteSyncView> results=new ArrayList<>();
         for(Long routeId:selectedRouteIds){
-            LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
+            LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("llm.routeNotFound"));
             boolean enableThinking=Boolean.TRUE.equals(route.getEnableThinking());
             String thinkingLevel=enableThinking&&!blank(route.getThinkingLevel())?route.getThinkingLevel().trim().toUpperCase(Locale.ROOT):null;
             List<ModelHealthView> routeResults=routeModelsForHealthCheck(route).stream().map(model->{
@@ -385,7 +385,7 @@ public class LlmManagementService {
     /** 从当前路由移除供应商及其旧候选模型，并立即刷新内存快照。 */
     @Transactional
     public void removeProviderFromRoute(Long routeId,Long providerId){
-        LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("能力路由不存在"));
+        LlmRoute route=routeRepository.findById(routeId).orElseThrow(()->BusinessException.notFound("llm.routeNotFound"));
         List<Long> configuredProviders=parseIds(route.getProviderIds());
         List<Long> candidateModels=parseIds(route.getCandidateModelIds());
         List<Long> remainingProviders=configuredProviders.stream().filter(id->!id.equals(providerId)).toList();
@@ -428,12 +428,12 @@ public class LlmManagementService {
      * @throws BusinessException 模型不存在、供应商停用，或开启思考但模型未配置所选等级
      */
     public WorkerRoute resolveModel(Long modelId,String modelType,boolean enableThinking,String thinkingLevel){
-        LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("模型不存在"));
-        if(!Boolean.TRUE.equals(model.getEnabled()))throw new BusinessException("所选模型已停用");
-        if(!matchesModelType(model.getSupportedModelTypes(),modelType))throw new BusinessException("所选模型不支持该模型类型");
+        LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound"));
+        if(!Boolean.TRUE.equals(model.getEnabled()))throw new BusinessException("llm.selectedModelDisabled");
+        if(!matchesModelType(model.getSupportedModelTypes(),modelType))throw new BusinessException("llm.modelTypeUnsupported");
         String normalizedThinking=enableThinking&&!blank(thinkingLevel)?thinkingLevel.trim().toUpperCase(Locale.ROOT):null;
         WorkerCandidate candidate=candidate(model,normalizedThinking);
-        if(candidate==null)throw new BusinessException(enableThinking?"所选模型未配置该思考等级":"所选模型的供应商不可用");
+        if(candidate==null)throw new BusinessException(enableThinking?"llm.thinkingLevelUnavailable":"llm.selectedModelProviderUnavailable");
         return new WorkerRoute(List.of(candidate),enableThinking,true);
     }
     /** 兼容旧调用方，默认按文本模型解析单模型。 */
@@ -453,14 +453,14 @@ public class LlmManagementService {
     public Map<String,Object> testModel(Long modelId,String thinkingLevel){
         // 构建候选模型配置，包含解密后的API密钥
         String normalizedThinking=blank(thinkingLevel)?null:thinkingLevel.trim().toUpperCase(Locale.ROOT);
-        WorkerCandidate candidate=candidate(modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("模型不存在")),normalizedThinking);
-        if(candidate==null)throw new BusinessException("模型供应商不可用");
+        WorkerCandidate candidate=candidate(modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound")),normalizedThinking);
+        if(candidate==null)throw new BusinessException("llm.providerUnavailable");
 
         // 调用Worker的测试接口
         Map<String,Object> request=new LinkedHashMap<>();
         request.put("candidate",candidate);request.put("enableThinking",normalizedThinking!=null);
         Map<?,?> result=workerClient.post().uri("/llm/test").contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(Map.class);
-        if(result==null)throw new BusinessException("Worker 返回空测试结果");
+        if(result==null)throw new BusinessException("llm.workerEmptyTestResult");
 
         // 转换结果为String类型的Map
         Map<String,Object> response=new LinkedHashMap<>();
@@ -485,13 +485,13 @@ public class LlmManagementService {
      * @throws BusinessException 如果必填字段缺失
      */
     private LlmProvider saveProvider(LlmProvider provider,ProviderCommand command){
-        provider.setCode(require(command.code(),"请输入供应商编码"));
-        provider.setName(require(command.name(),"请输入供应商名称"));
-        provider.setBaseUrl(require(command.baseUrl(),"请输入服务地址").replaceAll("/+$","")); // 去除末尾的斜杠
+        provider.setCode(require(command.code(),"llm.providerCodeRequired"));
+        provider.setName(require(command.name(),"llm.providerNameRequired"));
+        provider.setBaseUrl(require(command.baseUrl(),"llm.serviceUrlRequired").replaceAll("/+$","")); // 去除末尾的斜杠
 
         // 仅在新建或提供了新密钥时才更新加密的API密钥
         if(provider.getId()==null||!blank(command.apiKeys()))
-            provider.setApiKeysEncrypted(cryptoService.encrypt(require(command.apiKeys(),"请输入 API Key")));
+            provider.setApiKeysEncrypted(cryptoService.encrypt(require(command.apiKeys(),"llm.apiKeyRequired")));
 
         provider.setConcurrencyLimit(positive(command.concurrencyLimit(),4)); // 默认并发限制为4
         provider.setConcurrencyLevel(blank(command.concurrencyLevel())?"PROVIDER":command.concurrencyLevel().toUpperCase(Locale.ROOT));
@@ -519,18 +519,18 @@ public class LlmManagementService {
     private LlmModel saveModel(LlmModel model,ModelCommand command){
         // 验证供应商是否存在
         if(providerRepository.findById(command.providerId()).isEmpty())
-            throw BusinessException.notFound("供应商不存在");
+            throw BusinessException.notFound("llm.providerNotFound");
 
-        model.setCode(require(command.code(),"请输入模型编码"));
-        model.setName(require(command.name(),"请输入模型名称"));
+        model.setCode(require(command.code(),"llm.modelCodeRequired"));
+        model.setName(require(command.name(),"llm.modelNameRequired"));
         model.setProviderId(command.providerId());
-        model.setModelName(require(command.modelName(),"请输入模型标识"));
+        model.setModelName(require(command.modelName(),"llm.modelIdentifierRequired"));
         List<String> requestedTypes=command.supportedModelTypes()==null||command.supportedModelTypes().isEmpty()
             ?LlmModel.normalizeModelTypes(List.of(command.modelType()==null?"text_model":command.modelType()))
             :LlmModel.normalizeModelTypes(command.supportedModelTypes());
-        if(requestedTypes.isEmpty())throw new BusinessException("请至少选择一个模型类型");
+        if(requestedTypes.isEmpty())throw new BusinessException("llm.modelTypeRequired");
         Set<String> availableTypes=modelTypes().stream().map(ModelTypeOption::value).collect(java.util.stream.Collectors.toSet());
-        if(!availableTypes.containsAll(requestedTypes))throw new BusinessException("模型类型不存在或已停用");
+        if(!availableTypes.containsAll(requestedTypes))throw new BusinessException("llm.modelTypeUnavailable");
         model.setSupportedModelTypes(requestedTypes);
         model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT)); // 默认MIDDLE能力级别
         model.setThinkingLevels(normalizeThinkingLevels(command.thinkingLevels()));
@@ -557,22 +557,22 @@ public class LlmManagementService {
         List<Long> ids=command.candidateModelIds()==null?List.of():command.candidateModelIds();
         List<Long> providerIds=command.providerIds()==null?List.of():command.providerIds();
         boolean isDefault=DEFAULT_ROUTE.equals(route.getFeatureCode())||DEFAULT_ROUTE.equals(command.featureCode());
-        if(ids.isEmpty()&&providerIds.isEmpty()&&!isDefault)throw new BusinessException("至少选择一个候选模型或供应商");
+        if(ids.isEmpty()&&providerIds.isEmpty()&&!isDefault)throw new BusinessException("llm.routeCandidateRequired");
 
         // 验证所有候选模型是否都存在
         if(!ids.isEmpty()&&modelRepository.findAllById(ids).size()!=ids.size())
-            throw BusinessException.notFound("候选模型不存在");
-        if(!providerIds.isEmpty()&&providerRepository.findAllById(providerIds).size()!=providerIds.size())throw BusinessException.notFound("供应商不存在");
+            throw BusinessException.notFound("llm.candidateModelNotFound");
+        if(!providerIds.isEmpty()&&providerRepository.findAllById(providerIds).size()!=providerIds.size())throw BusinessException.notFound("llm.providerNotFound");
 
-        route.setFeatureCode(isDefault?DEFAULT_ROUTE:require(command.featureCode(),"请输入功能编码"));
-        route.setName(require(command.name(),"请输入路由名称"));
+        route.setFeatureCode(isDefault?DEFAULT_ROUTE:require(command.featureCode(),"llm.featureCodeRequired"));
+        route.setName(require(command.name(),"llm.routeNameRequired"));
 
         // 将模型ID列表转换为逗号分隔的字符串
         route.setCandidateModelIds(ids.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));
         route.setProviderIds(providerIds.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));
         route.setEnableThinking(Boolean.TRUE.equals(command.enableThinking()));
-        route.setCapabilityLevel(isDefault||!providerIds.isEmpty()?require(command.capabilityLevel(),"请选择模型能力级别").toUpperCase(Locale.ROOT):null);
-        route.setThinkingLevel(Boolean.TRUE.equals(route.getEnableThinking())?require(command.thinkingLevel(),"请选择思考级别").toUpperCase(Locale.ROOT):null);
+        route.setCapabilityLevel(isDefault||!providerIds.isEmpty()?require(command.capabilityLevel(),"llm.capabilityLevelRequired").toUpperCase(Locale.ROOT):null);
+        route.setThinkingLevel(Boolean.TRUE.equals(route.getEnableThinking())?require(command.thinkingLevel(),"llm.thinkingLevelRequired").toUpperCase(Locale.ROOT):null);
         route.setEnabled(isDefault||command.enabled()==null||command.enabled());
 
         return routeRepository.save(route);
@@ -722,12 +722,12 @@ public class LlmManagementService {
      * 验证必填字符串（工具方法）
      *
      * @param value 待验证的字符串
-     * @param message 错误提示消息
+     * @param messageKey 错误消息资源键
      * @return 去除首尾空格后的字符串
      * @throws BusinessException 如果字符串为空
      */
-    private String require(String value,String message){
-        if(blank(value))throw new BusinessException(message);
+    private String require(String value,String messageKey){
+        if(blank(value))throw new BusinessException(messageKey);
         return value.trim();
     }
     public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
