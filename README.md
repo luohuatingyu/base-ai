@@ -1,5 +1,7 @@
 # Base AI
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Base AI is an extensible administration and AI integration platform. It combines a Vue management console, a Spring Boot system service, and a Python LLM worker behind a Docker Compose deployment.
 
 The platform provides identity and access management, OpenAI-compatible model routing, API key access, task tracing, audit logs, and scheduled HTTP automation. MySQL stores platform data, PostgreSQL stores automation data, and Redis stores disposable session state.

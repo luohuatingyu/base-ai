@@ -1,0 +1,286 @@
+# Base AI
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+Base AI 是一个可扩展的管理与 AI 集成平台，由 Vue 管理控制台、Spring Boot 系统服务和 Python LLM Worker 组成，并通过 Docker Compose 部署。
+
+平台提供身份与访问管理、兼容 OpenAI 的模型路由、API Key 访问、任务追踪、审计日志和定时 HTTP 自动化功能。MySQL 存储平台数据，PostgreSQL 存储自动化业务数据，Redis 存储可丢弃的会话状态。
+
+## 功能特性
+
+- 基于角色的访问控制，涵盖用户、角色、菜单、部门、岗位和数据权限范围。
+- 支持英文和简体中文界面，以及本地化 API 消息。
+- 可在管理控制台中管理模型供应商、模型和能力路由。
+- 通过兼容 OpenAI 的供应商提供文本及多模态对话，支持候选模型故障切换、并发限制和 Token 统计。
+- 支持 Bearer Token 会话，以及带有效期、吊销、IP 白名单和限流能力的 `X-API-Key` 凭据。
+- 支持跨服务任务追踪、任务取消、任务恢复、操作日志和登录日志。
+- 支持手动和基于 Cron 的 HTTP 自动化，并提供加密请求配置与目标 Host 访问控制。
+- 支持运行时平台品牌和语言配置。
+
+## 技术栈
+
+- **前端：** Vue 3、Vite、Pinia、Vue Router、Element Plus 和 Axios。
+- **后端：** Java 17、Spring Boot 3.3、Spring MVC、Spring Data JPA 和 JDBC。
+- **LLM Worker：** Python 3.12、FastAPI、HTTPX、PyYAML 和兼容 OpenAI 的 API。
+- **数据服务：** MySQL、PostgreSQL 和 Redis。
+- **部署：** Docker Compose 和多阶段容器构建。
+
+## 系统架构
+
+```text
+浏览器
+  |
+  v
+Vue 前端（端口 80）
+  |
+  | /api/* 反向代理
+  v
+Spring Boot 后端（端口 8080）
+  |                  |
+  |                  +--> MySQL：身份、配置、模型、任务和日志
+  |                  +--> PostgreSQL：自动化配置和执行日志
+  |                  +--> Redis：会话、已撤销 Token、锁和限流状态
+  |
+  | 经过内部认证的请求
+  v
+Python Worker（内部端口 8000）
+  |
+  v
+兼容 OpenAI 的模型供应商
+```
+
+浏览器不会接触供应商 API Key。Java 服务解析已启用的模型路由，解密对应的供应商凭据，并将候选配置发送给 Python Worker。Worker 负责执行并发限制、凭据轮询、候选模型故障切换，并向 Java 上报用量和链路追踪数据。
+
+## 数据职责
+
+### MySQL 系统数据库
+
+MySQL 是平台的主数据库，存储以下数据：
+
+- 用户、角色、菜单、权限、部门、岗位、字典和系统参数。
+- 模型供应商、加密的供应商凭据、模型和能力路由。
+- 外部 API Key 元数据和经过哈希处理的密钥。
+- 系统任务、Java/Python 链路记录、操作日志和登录日志。
+
+JPA 负责管理平台实体，`backend/src/main/resources/system-schema.sql` 负责初始化任务和日志表。启动应用前需要先创建目标数据库，并为配置的数据库账号授予 Schema 管理权限。
+
+### PostgreSQL 业务数据库
+
+PostgreSQL 专门用于承载从属业务模块。当前平台将接口触发配置和执行日志存储在 PostgreSQL 中。后端会在启动时幂等执行 `backend/src/main/resources/api-trigger-schema.sql`，因此配置的账号需要具备 DDL 权限。
+
+未来的业务模块可以通过 Spring Bean `postgresqlJdbcTemplate` 访问 PostgreSQL，并应独立维护各自的 Schema。
+
+### Redis 缓存
+
+Redis 存储可重建状态，包括在线会话、已撤销 Token 标识、API Key 限流计数器和分布式调度锁。用户和权限数据仍以 MySQL 为准。
+
+## 安全模型
+
+- 密码使用 BCrypt 哈希保存。
+- 登录 Token 使用 HS256 签名，包含唯一 `jti`，并支持配置有效期。
+- 用户退出后，Token 标识会记录到 Redis 中，直至 Token 自然过期。
+- 后端接口通过 `@RequiredPermission` 强制校验权限；前端路由和菜单使用对应权限控制用户界面。
+- 内置 `ADMIN` 角色拥有所有初始化权限。
+- 敏感系统参数、供应商凭据和自动化请求数据使用 AES-GCM 加密。
+- 请求日志和审计日志会屏蔽密码、Token、Cookie、Authorization 请求头和 API Key。
+- API 响应统一使用 `{success, code, message, data}` 结构。消息语言遵循 `Accept-Language`，缺少该请求头时使用 `APP_DEFAULT_LOCALE`。
+
+## 模型管理与对话
+
+在 Web 控制台的**模型管理**模块中配置供应商、模型和能力路由：
+
+1. 添加兼容 OpenAI 的供应商地址和一个或多个 API Key。
+2. 添加模型，选择支持的模型类型，并按需配置超时时间和思考参数。
+3. 添加能力路由，并设置候选模型顺序。
+4. 在 AI 对话页面使用路由模式，或直接选择单个供应商模型。
+
+初始模型类型字典包含 `text_model` 和 `vision_model`；管理员可以通过字典管理添加其他启用的类型。请求未提供 `model_type` 时，默认使用 `text_model`。
+
+对话请求链路如下：
+
+```text
+Vue -> Java /api/ai/chat -> Python /llm/chat -> 兼容 OpenAI 的 API
+```
+
+如果运行环境不允许将提示词和模型响应写入应用日志，请设置 `LLM_LOG_CONTENT=false`。关闭内容日志后，Worker 只记录元数据和响应摘要。
+
+## API Key 访问
+
+外部系统可以调用代码中明确标记为支持 API Key 的接口。管理员可在**系统管理 > API Key 管理**中创建、授权、轮换、停用或吊销 Key。
+
+```bash
+curl -X POST http://localhost/api/ai/chat \
+  -H 'X-API-Key: sk-<your-api-key>' \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"hello"}]}'
+```
+
+重要规则：
+
+- Key 使用 `sk-` 前缀并附带自动生成的密钥。完整值仅在创建或轮换后显示一次。
+- 数据库只保存定位前缀和 HMAC-SHA256 摘要，不保存完整 Key。
+- 实际访问范围是 Key 选中的接口与绑定用户 RBAC 权限的交集。
+- 绑定用户和 Key 都必须保持启用，同时还会校验有效期、吊销状态、IP 白名单和调用频率限制。
+- 请求不得同时携带 `Authorization` 和 `X-API-Key`；混合凭据会返回 HTTP 401。
+- API Key 管理接口本身仅接受 Bearer Token。
+- `APP_API_KEY_HASH_SECRET` 建议使用独立密钥；未设置时会复用 `APP_CONFIG_ENCRYPTION_KEY`。
+
+当前支持 API Key 的接口包括 AI 对话调用和正式的接口触发执行。
+
+## 任务追踪与审计日志
+
+- Java 为每个 HTTP 请求创建或传播 `X-Request-Id`。
+- 被追踪的操作会获得独立的 `traceId`，用于关联 Java、Python 和数据库记录。
+- 调用 Worker 时会传播请求标识、父链路标识、Python 链路标识和内部认证请求头。
+- `@TraceType` 描述任务类型和触发元数据；`@TraceIgnored` 排除不应创建任务的接口。
+- 任务状态覆盖开始、成功、失败、取消和强制终止。
+- 父任务取消会传播至对应的 Python 任务，但不会终止共享的 Worker 进程。
+- 启动恢复和定时检查会在心跳超时后将遗留任务标记为失败。
+- 操作日志和登录日志与任务链路分开管理。
+
+`trace-tracking-exclusions.yml` 用于定义不自动创建任务的 HTTP 方法和路径。
+
+## HTTP 自动化
+
+自动化模块支持配置 HTTP 方法、请求头、查询参数、请求体、Cron 计划、超时时间、前置认证、手动执行和临时连接测试。
+
+- 请求头、请求体和认证请求体使用 `APP_CONFIG_ENCRYPTION_KEY` 加密。
+- 目标 Host 规则以及回环和私网开关在**接口触发安全配置**页面管理，修改后无需重启即可生效。
+- 多个后端实例运行时，Redis 锁可防止 Cron 任务重复执行。
+- 响应摘要在保存前会截断并脱敏。
+- 正式执行还会创建 MySQL 任务链路记录。
+
+## 前置条件
+
+- Docker Engine 和 Docker Compose v2。
+- 可访问的 MySQL、PostgreSQL 和 Redis 服务。Docker Compose 不会创建这些外部依赖。
+- 已创建的 MySQL 和 PostgreSQL 数据库，以及具有初始化所需 Schema 权限的账号。
+
+如需在容器外进行本地开发，请使用 Java 17、Maven 3.9、Node.js 24 和 Python 3.12。
+
+## 配置
+
+仓库只跟踪 `.env.example`，请勿提交包含真实配置的 `.env` 文件。
+
+1. 复制配置模板：
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. 配置外部 MySQL、PostgreSQL 和 Redis 连接。
+
+3. 替换所有占位凭据。可使用以下命令生成配置加密密钥：
+
+   ```bash
+   openssl rand -base64 32
+   ```
+
+4. 至少检查以下安全敏感配置：
+
+   ```dotenv
+   APP_TOKEN_SECRET=<至少32位随机字符>
+   APP_SEED_ADMIN_PASSWORD=<至少10位安全字符>
+   APP_CONFIG_ENCRYPTION_KEY=<Base64编码的32字节密钥>
+   APP_API_KEY_HASH_SECRET=<至少32位随机字符>
+   PYTHON_WORKER_INTERNAL_TOKEN=<至少24位随机字符>
+   ```
+
+API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产环境建议配置独立值。
+
+### 环境变量分组
+
+- **Compose：** `COMPOSE_PROJECT_NAME`。
+- **MySQL：** `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
+- **PostgreSQL：** `POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`、`POSTGRES_POOL_SIZE`。
+- **Redis：** `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`、`REDIS_TIMEOUT`。
+- **品牌与语言：** `APP_PLATFORM_CODE`、`APP_PLATFORM_NAME_EN`、`APP_PLATFORM_NAME_ZH`、`APP_PLATFORM_SHORT_NAME`、`APP_DEFAULT_LOCALE`。
+- **认证与加密：** `APP_TOKEN_SECRET`、`APP_TOKEN_EXPIRE_MINUTES`、`APP_SEED_ADMIN_USERNAME`、`APP_SEED_ADMIN_PASSWORD`、`APP_CONFIG_ENCRYPTION_KEY`、`APP_API_KEY_HASH_SECRET`。
+- **Worker 与模型调用：** `PYTHON_WORKER_INTERNAL_TOKEN`、`JAVA_INSTANCE_ID`、`PYTHON_WORKER_INSTANCE_ID`、`LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
+- **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
+- **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
+- **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
+- **端口和镜像：** `BACKEND_PORT`、`FRONTEND_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。
+
+`APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
+
+## 使用 Docker Compose 启动
+
+启动前先验证最终配置。请注意，`docker compose config` 会展开敏感配置，请勿分享其输出。
+
+```bash
+docker compose config --quiet
+docker compose up --build -d
+docker compose ps
+```
+
+所有服务进入健康状态后，可访问：
+
+- Web 控制台：<http://localhost>
+- 后端 API：<http://localhost:8080>
+- 后端健康检查：<http://localhost:8080/api/open/health>
+- 前端健康检查：<http://localhost/health>
+
+使用 `APP_SEED_ADMIN_USERNAME` 配置的用户名和 `APP_SEED_ADMIN_PASSWORD` 配置的密码登录。初始管理员、角色、权限树、根部门和模型类型字典会自动创建。
+
+停止应用：
+
+```bash
+docker compose down
+```
+
+## 开发与测试
+
+运行后端测试套件：
+
+```bash
+cd backend
+mvn test -B
+```
+
+使用 Python 3.12 运行 Worker 测试：
+
+```bash
+cd python-worker
+python3.12 -m pytest
+```
+
+在仓库根目录运行完整的前端 Node 测试套件：
+
+```bash
+node --test frontend/test/*.test.mjs frontend/tests/*.test.js
+```
+
+代码变更后重新构建 Docker 环境：
+
+```bash
+docker compose up --build -d
+```
+
+## 仓库结构
+
+```text
+backend/                        Spring Boot API 和平台服务
+database/postgresql/            PostgreSQL Schema 参考脚本
+frontend/                       Vue 管理控制台和 API 代理
+python-worker/                  FastAPI LLM Worker
+.env.example                    环境变量模板
+docker-compose.yml              应用容器定义
+trace-tracking-exclusions.yml   默认任务追踪排除项
+TEST_REPORT.md                  测试基准和执行历史
+```
+
+## 生产环境注意事项
+
+- 将生产环境变量文件保存在仓库外，并限制其文件系统权限。
+- MySQL 系统数据库和 PostgreSQL 业务数据库应使用独立的最小权限账号。
+- 首次启动前轮换所有示例凭据。
+- 不要将供应商凭据写入源代码、Shell 历史、日志或 Git 历史。
+- 为 `APP_API_KEY_HASH_SECRET` 配置独立密钥，不要依赖加密密钥回退机制。
+- 检查 `LLM_LOG_CONTENT`；配置模板默认开启内容日志，可能不适合处理敏感数据的环境。
+- 执行 Schema 或应用升级前，备份 MySQL 任务与日志数据以及 PostgreSQL 自动化日志。
+- 无法访问公共镜像仓库时，可覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE`、`PYTHON_IMAGE` 或 Python 软件包镜像源配置。
+
+## 许可证
+
+本项目使用 Apache License 2.0，详情请参阅 `LICENSE`。
