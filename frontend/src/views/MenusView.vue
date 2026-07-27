@@ -8,10 +8,12 @@
       <el-table-column :label="t('common.name')">
         <template #default="scope"><span :title="localizedName(scope.row)">{{ localizedName(scope.row) }}</span></template>
       </el-table-column>
-      <el-table-column prop="type" :label="t('common.type')" width="100" />
+      <el-table-column :label="t('common.type')" width="100">
+        <template #default="scope">{{ t(`menus.types.${scope.row.type.toLowerCase()}`) }}</template>
+      </el-table-column>
       <el-table-column prop="path" :label="t('menus.route')" />
       <el-table-column prop="permission" :label="t('menus.permission')" />
-      <el-table-column :label="t('common.operation')" width="210">
+      <el-table-column :label="t('common.operation')" width="240">
         <template #default="scope">
           <el-button v-if="auth.hasPermission('system:menu:create')" link @click="open(null, scope.row.id)">{{ t('departments.addChild') }}</el-button>
           <el-button v-if="auth.hasPermission('system:menu:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>

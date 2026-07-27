@@ -5,7 +5,7 @@
       <el-table-column prop="code" :label="t('common.code')" />
       <el-table-column prop="name" :label="t('common.name')" />
       <el-table-column prop="modelName" :label="t('models.identifier')" />
-      <el-table-column :label="t('models.modelType')"><template #default="scope"><el-tag v-for="type in scope.row.supportedModelTypes" :key="type" size="small">{{ typeLabel(type) }}</el-tag></template></el-table-column>
+      <el-table-column :label="t('models.modelType')"><template #default="scope"><el-tag v-for="type in scope.row.supportedModelTypes" :key="type" size="small">{{ t(`models.types.${type}`) }}</el-tag></template></el-table-column>
       <el-table-column prop="capabilityLevel" :label="t('models.capability')" />
       <el-table-column prop="thinkingLevels" :label="t('models.thinkingLevels')" />
       <el-table-column :label="t('common.operation')"><template #default="s"><el-button link type="success" @click="startTest(s.row)">{{ t('models.test') }}</el-button><el-button link type="primary" @click="open(s.row)">{{ t('common.edit') }}</el-button></template></el-table-column>
@@ -17,7 +17,7 @@
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('models.provider')"><el-select v-model="form.providerId"><el-option v-for="item in providers" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
         <el-form-item :label="t('models.identifier')"><el-input v-model="form.modelName" /></el-form-item>
-        <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value">{{ type.label }}</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value">{{ t(`models.types.${type.value}`) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('models.capability')"><el-select v-model="form.capabilityLevel"><el-option :label="t('models.low')" value="LOW" /><el-option :label="t('models.middle')" value="MIDDLE" /><el-option :label="t('models.high')" value="HIGH" /></el-select></el-form-item>
         <el-form-item :label="t('models.thinkingLevels')"><div class="thinking-levels"><el-input v-for="level in thinkingLevels" :key="level" v-model="thinkingMapping[level]" :placeholder="level" /></div></el-form-item>
         <el-form-item :label="t('common.enabled')"><el-switch v-model="form.enabled" /></el-form-item>

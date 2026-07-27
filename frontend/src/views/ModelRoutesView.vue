@@ -8,7 +8,7 @@
     <el-alert class="route-sync-notice" :title="routeSyncNotice" :type="routeSyncNoticeType" show-icon :closable="false"/>
     <el-table :data="rows">
       <el-table-column prop="featureCode" :label="t('routes.featureCode')"/>
-      <el-table-column prop="name" :label="t('common.name')"/>
+      <el-table-column :label="t('common.name')"><template #default="scope">{{ localizeRouteName(scope.row, t) }}</template></el-table-column>
       <el-table-column prop="capabilityLevel" :label="t('models.capability')"/>
       <el-table-column prop="thinkingLevel" :label="t('routes.thinkingLevel')"/>
       <el-table-column :label="t('common.operation')" width="180">
@@ -76,6 +76,7 @@ import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import { appConfig } from '../config'
 import { useAuthStore } from '../stores/auth'
+import { localizeRouteName } from '../utils/localization'
 import { canRemoveModelProvider, formatSyncInterval, healthStatusClass } from '../utils/modelRouteHealth'
 
 const { t } = useI18n()
