@@ -84,7 +84,7 @@ export default {
     worker: 'OpenAI-compatible 调用'
   },
   language: { zhCN: '简体中文', enUS: 'English' },
-  apiKeyUsage: { title: '使用说明', introduction: '外部系统调用已授权 API 时，将完整 API Key 放入 X-API-Key 请求头。', exampleTitle: 'curl 示例', curlExample: 'curl -X POST <BASE_URL>/api/ai/chat\n  -H "X-API-Key: sk-<your-api-key>"\n  -H "Content-Type: application/json"\n  -d \'{"messages":[{"role":"user","content":"hello"}]}\'', rulesTitle: '调用规则', permissionRule: '实际可调用范围是 Key 勾选的开放 API 与绑定用户 RBAC 权限的交集。', credentialRule: '请求不能同时携带 Authorization 和 X-API-Key，否则会返回 401。', restrictionRule: 'Key 必须处于启用且未过期、未吊销状态，并同时满足来源 IP 白名单和调用频次限制。' },
+  apiKeyUsage: { title: '使用说明', introduction: '外部系统调用已授权 API 时，将完整 API Key 放入 X-API-Key 请求头。', exampleTitle: 'curl 示例', curlExample: `curl -X POST <BASE_URL>/api/ai/chat\n  -H "X-API-Key: sk-<your-api-key>"\n  -H "Content-Type: application/json"\n  -d '{'{'}"messages":[{'{'}"role":"user","content":"hello"{'}'}]{'}'}'`, rulesTitle: '调用规则', permissionRule: '实际可调用范围是 Key 勾选的开放 API 与绑定用户 RBAC 权限的交集。', credentialRule: '请求不能同时携带 Authorization 和 X-API-Key，否则会返回 401。', restrictionRule: 'Key 必须处于启用且未过期、未吊销状态，并同时满足来源 IP 白名单和调用频次限制。' },
   chat: {
     title: '通用 AI 对话',
     description: '请求经 Java 权限和任务层转发至 Python Worker。',
