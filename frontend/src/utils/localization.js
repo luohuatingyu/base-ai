@@ -97,3 +97,15 @@ export function localizeModelType(value, options, translate) {
   if (key) return translate(key)
   return options?.find(option => option?.value === value)?.label || value || ''
 }
+
+/** 按内置字典编码映射类型名称，未知字典回退管理员维护的名称。 */
+export function localizeDictionaryTypeName(type, translate) {
+  const key = type?.code === 'llm_model_type' ? 'models.modelType' : null
+  return key ? translate(key) : (type?.name || '')
+}
+
+/** 本地化模型类型字典的内置标签，其他字典数据保持管理员维护的标签。 */
+export function localizeDictionaryDataLabel(data, translate) {
+  if (data?.typeCode !== 'llm_model_type') return data?.label || ''
+  return localizeModelType(data?.dictValue, [{ value: data?.dictValue, label: data?.label }], translate)
+}

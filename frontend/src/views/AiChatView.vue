@@ -9,7 +9,7 @@
         <div class="model-config">
       <el-form :inline="true" size="small">
         <el-form-item :label="t('chat.modelType')">
-          <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ type.label }}</el-radio-button></el-radio-group>
+          <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-radio-button></el-radio-group>
         </el-form-item>
         <el-form-item :label="t('chat.mode')">
           <el-radio-group v-model="mode">
@@ -106,6 +106,7 @@ import { ElMessage } from 'element-plus'
 import http from '../api/http'
 import { useI18n } from 'vue-i18n'
 import { createAssistantMessage, hasChatResponseMetadata } from '../utils/chatResponse'
+import { localizeModelType } from '../utils/localization'
 import { isPromptFile, readPromptFile, withSystemPrompt } from '../utils/prompt'
 
 const { t } = useI18n()

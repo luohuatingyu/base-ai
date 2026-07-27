@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
   localizeDepartmentName,
+  localizeDictionaryDataLabel,
+  localizeDictionaryTypeName,
   localizeLoginMessage,
   localizeModelType,
   localizeRoleName,
@@ -13,7 +15,7 @@ import {
 import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
 
-const viewSources = Object.fromEntries(['UsersView', 'RolesView', 'MenusView', 'DepartmentsView', 'LoginLogsView', 'TasksView', 'ModelsView', 'ModelRoutesView']
+const viewSources = Object.fromEntries(['UsersView', 'RolesView', 'MenusView', 'DepartmentsView', 'LoginLogsView', 'TasksView', 'ModelsView', 'ModelRoutesView', 'DictionariesView', 'AiChatView']
   .map(name => [name, readFileSync(new URL(`../src/views/${name}.vue`, import.meta.url), 'utf8')]))
 
 /** 使用真实语言资源创建测试翻译器，缺失词条时与 vue-i18n 一样回退 key。 */
@@ -84,7 +86,20 @@ test('模型类型按稳定 value 翻译，自定义类型回退字典 label', (
   assert.equal(localizeModelType(null, options, en), '')
 })
 
-test('八个问题页面全部接入共享本地化解析器', () => {
+test('字典页面按稳定 code 和 value 翻译内置名称及标签', () => {
+  assert.equal(localizeDictionaryTypeName({ code: 'llm_model_type', name: '模型类型' }, en), 'Model Type')
+  assert.equal(localizeDictionaryTypeName({ code: 'llm_model_type', name: 'Custom Name' }, zh), '模型类型')
+  assert.equal(localizeDictionaryDataLabel({ typeCode: 'llm_model_type', dictValue: 'text_model', label: '文本模型' }, en), 'Text Model')
+  assert.equal(localizeDictionaryDataLabel({ typeCode: 'llm_model_type', dictValue: 'vision_model', label: 'Vision' }, zh), '视觉模型')
+})
+
+test('自定义字典名称和标签保持管理员维护的原值', () => {
+  assert.equal(localizeDictionaryTypeName({ code: 'custom_type', name: '自定义类型' }, en), '自定义类型')
+  assert.equal(localizeDictionaryDataLabel({ typeCode: 'custom_type', dictValue: 'custom', label: '自定义标签' }, en), '自定义标签')
+  assert.equal(localizeDictionaryDataLabel({ typeCode: 'llm_model_type', dictValue: 'audio_model', label: '音频模型' }, en), '音频模型')
+})
+
+test('十个问题页面全部接入共享本地化解析器', () => {
   assert.match(viewSources.UsersView, /localizeUserDisplayName\(s\.row, roles, t\)/)
   assert.match(viewSources.UsersView, /:label="localizeRoleName\(role, t\)"/)
   assert.match(viewSources.UsersView, /:label="localizeDepartmentName\(item, t\)"/)
@@ -99,6 +114,12 @@ test('八个问题页面全部接入共享本地化解析器', () => {
   assert.match(viewSources.ModelsView, /localizeModelType\(type\.value, modelTypes, t\)/)
   assert.match(viewSources.ModelRoutesView, /localizeRouteName\(scope\.row, t\)/)
   assert.match(viewSources.ModelRoutesView, /localizeRouteName\(route, t\)/)
+  assert.match(viewSources.DictionariesView, /localizeDictionaryTypeName\(s\.row,t\)/)
+  assert.match(viewSources.DictionariesView, /current\?localizeDictionaryTypeName\(current,t\):t\('dictionaries\.selectType'\)/)
+  assert.match(viewSources.DictionariesView, /localizeDictionaryDataLabel\(s\.row,t\)/)
+  assert.match(viewSources.DictionariesView, /name:localizeDictionaryTypeName\(row,t\)/)
+  assert.match(viewSources.DictionariesView, /name:localizeDictionaryDataLabel\(row,t\)/)
+  assert.match(viewSources.AiChatView, /localizeModelType\(type\.value, modelTypes, t\)/)
 })
 
 test('空值和 null 安全回退', () => {
@@ -107,4 +128,6 @@ test('空值和 null 安全回退', () => {
   assert.equal(localizeDepartmentName(null, en), '')
   assert.equal(localizeUserDisplayName(null, [], en), '')
   assert.equal(localizeRouteName(null, en), '')
+  assert.equal(localizeDictionaryTypeName(null, en), '')
+  assert.equal(localizeDictionaryDataLabel(null, en), '')
 })
