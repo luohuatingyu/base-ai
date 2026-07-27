@@ -4,14 +4,14 @@ import test from 'node:test'
 
 const viewSource = readFileSync(new URL('../src/views/ApiKeysView.vue', import.meta.url), 'utf8')
 const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
-const menuSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
+const navigationSource = readFileSync(new URL('../src/utils/navigation.js', import.meta.url), 'utf8')
 const zhSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const enSource = readFileSync(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
 
 test('API Key 管理页面注册独立路由和导航权限', () => {
   assert.match(routerSource, /path: 'api-keys'/)
   assert.match(routerSource, /system:api-key:list/)
-  assert.match(menuSource, /nav\.items\.apiKeys/)
+  assert.match(navigationSource, /nav\.items\.apiKeys/)
   assert.match(zhSource, /API Key 管理/)
 })
 

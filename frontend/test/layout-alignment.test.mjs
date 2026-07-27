@@ -4,6 +4,8 @@ import test from 'node:test'
 
 const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 const automationStyles = readFileSync(new URL('../src/automation.css', import.meta.url), 'utf8')
+const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
+const menusViewSource = readFileSync(new URL('../src/views/MenusView.vue', import.meta.url), 'utf8')
 
 /** 转义选择器并提取对应的 CSS 声明，确保布局规则可以被自动回归。 */
 function declarations(source, selector) {
@@ -50,6 +52,18 @@ test('收缩侧边栏的菜单宽度适配内层可用空间，图标保持居�
   assertDeclarations(globalStyles, '.sidebar--collapsed .nav .el-menu-item,\n.sidebar--collapsed .nav .el-sub-menu__title', [/padding:\s*0\s*!important/, /justify-content:\s*center/])
 })
 
+test('英文导航为长名称保留空间且文本不会撑破侧栏', () => {
+  assert.match(adminLayoutSource, /isEnglish\.value\s*\?\s*'296px'\s*:\s*'272px'/)
+  assert.match(adminLayoutSource, /mobile-nav-drawer--english/)
+  assertDeclarations(globalStyles, '.sidebar-brand p', [/overflow:\s*hidden/, /text-overflow:\s*ellipsis/, /white-space:\s*nowrap/])
+  assertDeclarations(
+    globalStyles,
+    '.nav .el-menu-item > span,\n.nav .el-sub-menu__title > span',
+    [/flex:\s*1/, /min-width:\s*0/, /overflow:\s*hidden/, /text-overflow:\s*ellipsis/, /white-space:\s*nowrap/]
+  )
+  assertDeclarations(globalStyles, '.sidebar-footer span,\n.sidebar-footer small', [/overflow-wrap:\s*anywhere/, /line-height:\s*1\.45/])
+})
+
 test('表格、分页和表单内容遵守统一的对齐与溢出规则', () => {
   assertDeclarations(globalStyles, '.el-table', [/width:\s*100%/, /max-width:\s*100%/])
   assertDeclarations(globalStyles, '.el-table .cell', [/overflow-wrap:\s*anywhere/])
@@ -70,6 +84,14 @@ test('表单标签、输入控件和开关文案使用一致的垂直节奏', ()
   assertDeclarations(automationStyles, '.form-help', [/display:\s*inline-flex/, /align-items:\s*center/, /min-height:\s*32px/])
 })
 
+test('菜单管理英文弹窗为长标签和选项提供响应式空间', () => {
+  assert.match(menusViewSource, /class="menu-editor-dialog"[\s\S]*?width="680px"/)
+  assert.match(menusViewSource, /class="menu-editor-form"\s+label-width="120px"/)
+  assertDeclarations(globalStyles, '.menu-editor-dialog', [/max-width:\s*calc\(100vw\s*-\s*24px\)/])
+  assertDeclarations(globalStyles, '.menu-editor-form .el-form-item__label', [/overflow-wrap:\s*anywhere/])
+  assertDeclarations(globalStyles, '.menu-editor-form .el-radio-group', [/flex-wrap:\s*wrap/])
+})
+
 test('平板断点将字典双栏切换为单列并保持查询区可收缩', () => {
   assert.match(globalStyles, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.panel\s*>\s*\.el-row\s*>\s*\.el-col\s*\{[^}]*max-width:\s*100%[^}]*flex:\s*0\s+0\s+100%/)
   assert.match(globalStyles, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.panel\s*>\s*\.el-row\s*>\s*\.el-col\s*\+\s*\.el-col\s*\{[^}]*margin-top:/)
@@ -82,6 +104,7 @@ test('手机断点使分页、表单、弹窗和操作区适配窄视口', () =>
   assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.el-dialog\s+\.el-form-item\s*\{[^}]*display:\s*block/)
   assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.el-dialog\s+\.el-form-item__label\s*\{[^}]*width:\s*auto\s*!important/)
   assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.el-drawer:not\(\.mobile-nav-drawer\)\s*\{[^}]*width:\s*100%\s*!important/)
+  assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.mobile-nav-drawer\.mobile-nav-drawer--english\s*\{[^}]*width:\s*min\(296px,\s*90vw\)\s*!important/)
   assert.match(automationStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.filter-row\s*>\s*\.el-input,[\s\S]*?flex:\s*1\s+1\s+100%/)
   assert.match(automationStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.progress-toolbar\s*>\s*div\s*\{[^}]*width:\s*100%/)
 })

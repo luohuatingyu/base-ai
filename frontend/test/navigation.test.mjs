@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { buildAccessibleNavigation, getNavigablePaths } from '../src/utils/navigation.js'
+import enUS from '../src/locales/en-US.js'
+import zhCN from '../src/locales/zh-CN.js'
+import { buildAccessibleNavigation, findNavigationItem, getNavigablePaths, localizeMenuName } from '../src/utils/navigation.js'
+
+const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
+const menuNodeSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
+const menusViewSource = readFileSync(new URL('../src/views/MenusView.vue', import.meta.url), 'utf8')
+
+/** 创建与 vue-i18n 行为一致的简易翻译函数，用于验证真实语言资源。 */
+function translator(messages) {
+  return key => key.split('.').reduce((value, segment) => value?.[segment], messages) || key
+}
 
 /** 创建测试菜单，减少各场景的重复字段。 */
 function menu(id, parentId, name, type, path, permission, visible = true, sortOrder = id) {
@@ -48,4 +60,41 @@ test('只将显式标记且绑定页面组件的路由加入导航白名单', ()
   ]
 
   assert.deepEqual([...getNavigablePaths(routes)], ['/users'])
+})
+
+test('内置菜单按当前语言显示并通过权限区分相同路径', () => {
+  const translateEnglish = translator(enUS)
+  const translateChinese = translator(zhCN)
+  const modelCatalog = menu(20, null, '模型管理', 'CATALOG', '/models', 'model:catalog')
+  const modelPage = menu(21, 20, '模型配置', 'MENU', '/models', 'model:model:list')
+
+  assert.equal(localizeMenuName(modelCatalog, translateEnglish), 'Model Management')
+  assert.equal(localizeMenuName(modelPage, translateEnglish), 'Model Configuration')
+  assert.equal(localizeMenuName(modelPage, translateChinese), '模型配置')
+  assert.equal(localizeMenuName(menu(22, null, 'API Key 管理', 'MENU', '/api-keys', 'system:api-key:list'), translateEnglish), 'API Keys')
+  assert.equal(localizeMenuName(menu(23, null, '触发安全配置', 'MENU', '/automation/api-trigger-security', 'automation:api-trigger-security:view'), translateEnglish), 'Trigger Security')
+})
+
+test('顶部标题在目录与页面路径相同时优先使用页面名称', () => {
+  const modelCatalog = { ...menu(20, null, '模型管理', 'CATALOG', '/models', 'model:catalog'), children: [
+    menu(21, 20, '模型配置', 'MENU', '/models', 'model:model:list')
+  ] }
+
+  assert.equal(findNavigationItem([modelCatalog], '/models')?.permission, 'model:model:list')
+})
+
+test('未知和空菜单名称安全回退后台原值', () => {
+  const translateEnglish = translator(enUS)
+
+  assert.equal(localizeMenuName(menu(30, null, 'Custom Reports', 'MENU', '/custom-reports', 'custom:reports'), translateEnglish), 'Custom Reports')
+  assert.equal(localizeMenuName(null, translateEnglish), '')
+})
+
+test('侧栏、顶部标题和菜单管理页复用统一菜单名称解析', () => {
+  assert.match(menuNodeSource, /localizeMenuName\(props\.item,\s*t\)/)
+  assert.match(adminLayoutSource, /localizeMenuName\(item\s*\|\|\s*\{\s*path:\s*route\.path/)
+  assert.match(menusViewSource, /localizedName=row=>localizeMenuName\(row,t\)/)
+  assert.match(menusViewSource, /:label="localizedName\(item\)"/)
+  assert.doesNotMatch(menuNodeSource, /menuKeyMap/)
+  assert.doesNotMatch(adminLayoutSource, /menuKeyMap/)
 })

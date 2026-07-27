@@ -4,14 +4,14 @@ import test from 'node:test'
 
 const viewSource = readFileSync(new URL('../src/views/ApiTriggerSecurityView.vue', import.meta.url), 'utf8')
 const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
-const menuSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
+const navigationSource = readFileSync(new URL('../src/utils/navigation.js', import.meta.url), 'utf8')
 const zhSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const utilitySource = readFileSync(new URL('../src/utils/hostRules.js', import.meta.url), 'utf8')
 
 test('接口触发安全配置注册独立路由和导航名称', () => {
   assert.match(routerSource, /automation\/api-trigger-security/)
   assert.match(routerSource, /automation:api-trigger-security:view/)
-  assert.match(menuSource, /nav\.items\.apiTriggerSecurity/)
+  assert.match(navigationSource, /nav\.items\.apiTriggerSecurity/)
   assert.match(zhSource, /触发安全配置/)
 })
 

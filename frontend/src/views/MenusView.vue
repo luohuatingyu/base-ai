@@ -1,6 +1,57 @@
-<template><div class="panel"><div class="section-head"><div><h2>{{ t('menus.title') }}</h2><p>{{ t('menus.description') }}</p></div><el-button v-if="auth.hasPermission('system:menu:create')" type="primary" @click="open()">{{ t('menus.add') }}</el-button></div><el-table :data="treeRows" row-key="id" default-expand-all><el-table-column prop="name" :label="t('common.name')"/><el-table-column prop="type" :label="t('common.type')" width="100"/><el-table-column prop="path" :label="t('menus.route')"/><el-table-column prop="permission" :label="t('menus.permission')"/><el-table-column :label="t('common.operation')" width="210"><template #default="s"><el-button v-if="auth.hasPermission('system:menu:create')" link @click="open(null,s.row.id)">{{ t('departments.addChild') }}</el-button><el-button v-if="auth.hasPermission('system:menu:update')" link type="primary" @click="open(s.row)">{{ t('common.edit') }}</el-button><el-button v-if="auth.hasPermission('system:menu:delete')" link type="danger" @click="remove(s.row)">{{ t('common.delete') }}</el-button></template></el-table-column></el-table><el-dialog v-model="visible" :title="form.id?t('menus.edit'):t('menus.add')" width="620px"><el-form label-width="90px"><el-form-item :label="t('menus.parent')"><el-select v-model="form.parentId" clearable><el-option v-for="item in rows" :key="item.id" :label="item.name" :value="item.id"/></el-select></el-form-item><el-form-item :label="t('common.name')"><el-input v-model="form.name"/></el-form-item><el-form-item :label="t('common.type')"><el-radio-group v-model="form.type"><el-radio-button value="CATALOG">{{ t('menus.catalog') }}</el-radio-button><el-radio-button value="MENU">{{ t('menus.menu') }}</el-radio-button><el-radio-button value="BUTTON">{{ t('menus.button') }}</el-radio-button></el-radio-group></el-form-item><el-form-item :label="t('menus.route')"><el-input v-model="form.path"/></el-form-item><el-form-item :label="t('menus.component')"><el-input v-model="form.component"/></el-form-item><el-form-item :label="t('menus.icon')"><el-input v-model="form.icon"/></el-form-item><el-form-item :label="t('menus.permission')"><el-input v-model="form.permission"/></el-form-item><el-form-item :label="t('common.sort')"><el-input-number v-model="form.sortOrder"/></el-form-item><el-form-item :label="t('menus.visible')"><el-switch v-model="form.visible"/></el-form-item><el-form-item :label="t('common.enabled')"><el-switch v-model="form.enabled"/></el-form-item></el-form><template #footer><el-button @click="visible=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="save">{{ t('common.save') }}</el-button></template></el-dialog></div></template>
+<template>
+  <div class="panel">
+    <div class="section-head">
+      <div><h2>{{ t('menus.title') }}</h2><p>{{ t('menus.description') }}</p></div>
+      <el-button v-if="auth.hasPermission('system:menu:create')" type="primary" @click="open()">{{ t('menus.add') }}</el-button>
+    </div>
+    <el-table :data="treeRows" row-key="id" default-expand-all>
+      <el-table-column :label="t('common.name')">
+        <template #default="scope"><span :title="localizedName(scope.row)">{{ localizedName(scope.row) }}</span></template>
+      </el-table-column>
+      <el-table-column prop="type" :label="t('common.type')" width="100" />
+      <el-table-column prop="path" :label="t('menus.route')" />
+      <el-table-column prop="permission" :label="t('menus.permission')" />
+      <el-table-column :label="t('common.operation')" width="210">
+        <template #default="scope">
+          <el-button v-if="auth.hasPermission('system:menu:create')" link @click="open(null, scope.row.id)">{{ t('departments.addChild') }}</el-button>
+          <el-button v-if="auth.hasPermission('system:menu:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+          <el-button v-if="auth.hasPermission('system:menu:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <el-dialog v-model="visible" class="menu-editor-dialog" :title="form.id ? t('menus.edit') : t('menus.add')" width="680px">
+      <el-form class="menu-editor-form" label-width="120px">
+        <el-form-item :label="t('menus.parent')">
+          <el-select v-model="form.parentId" clearable>
+            <el-option v-for="item in rows" :key="item.id" :label="localizedName(item)" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item :label="t('common.type')">
+          <el-radio-group v-model="form.type">
+            <el-radio-button value="CATALOG">{{ t('menus.catalog') }}</el-radio-button>
+            <el-radio-button value="MENU">{{ t('menus.menu') }}</el-radio-button>
+            <el-radio-button value="BUTTON">{{ t('menus.button') }}</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="t('menus.route')"><el-input v-model="form.path" /></el-form-item>
+        <el-form-item :label="t('menus.component')"><el-input v-model="form.component" /></el-form-item>
+        <el-form-item :label="t('menus.icon')"><el-input v-model="form.icon" /></el-form-item>
+        <el-form-item :label="t('menus.permission')"><el-input v-model="form.permission" /></el-form-item>
+        <el-form-item :label="t('common.sort')"><el-input-number v-model="form.sortOrder" /></el-form-item>
+        <el-form-item :label="t('menus.visible')"><el-switch v-model="form.visible" /></el-form-item>
+        <el-form-item :label="t('common.enabled')"><el-switch v-model="form.enabled" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="visible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="save">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
 <script setup>
-import { computed,onMounted,reactive,ref } from 'vue'; import { ElMessage,ElMessageBox } from 'element-plus'; import { useI18n } from 'vue-i18n'; import http from '../api/http'; import { useAuthStore } from '../stores/auth'; import { buildTree } from '../utils/tree'
+import { computed,onMounted,reactive,ref } from 'vue'; import { ElMessage,ElMessageBox } from 'element-plus'; import { useI18n } from 'vue-i18n'; import http from '../api/http'; import { useAuthStore } from '../stores/auth'; import { localizeMenuName } from '../utils/navigation'; import { buildTree } from '../utils/tree'
 const { t } = useI18n(); const auth=useAuthStore(),rows=ref([]),visible=ref(false),treeRows=computed(()=>buildTree(rows.value)); const empty=parentId=>({id:null,parentId:parentId||null,name:'',type:'MENU',path:'',component:'',icon:'',permission:'',sortOrder:0,visible:true,enabled:true}); const form=reactive(empty())
-async function load(){rows.value=(await http.get('/system/menus')).data} /** 打开菜单编辑窗口。 */ function open(row,parentId){Object.assign(form,row?{...row}:empty(parentId));visible.value=true} /** 保存菜单节点。 */ async function save(){try{form.id?await http.put(`/system/menus/${form.id}`,form):await http.post('/system/menus',form);visible.value=false;await load();ElMessage.success(t('common.successSaved'))}catch(e){ElMessage.error(e.response?.data?.message||t('common.saveFailed'))}} /** 删除菜单节点。 */ async function remove(row){await ElMessageBox.confirm(t('common.confirmDelete',{name:row.name}),t('common.deleteConfirm'),{type:'warning'});await http.delete(`/system/menus/${row.id}`);await load();ElMessage.success(t('common.successDeleted'))} onMounted(load)
+/** 返回菜单当前语言名称，未知菜单保留后台原始名称。 */ const localizedName=row=>localizeMenuName(row,t)
+async function load(){rows.value=(await http.get('/system/menus')).data} /** 打开菜单编辑窗口。 */ function open(row,parentId){Object.assign(form,row?{...row}:empty(parentId));visible.value=true} /** 保存菜单节点。 */ async function save(){try{form.id?await http.put(`/system/menus/${form.id}`,form):await http.post('/system/menus',form);visible.value=false;await load();ElMessage.success(t('common.successSaved'))}catch(e){ElMessage.error(e.response?.data?.message||t('common.saveFailed'))}} /** 删除菜单节点。 */ async function remove(row){await ElMessageBox.confirm(t('common.confirmDelete',{name:localizedName(row)}),t('common.deleteConfirm'),{type:'warning'});await http.delete(`/system/menus/${row.id}`);await load();ElMessage.success(t('common.successDeleted'))} onMounted(load)
 </script>

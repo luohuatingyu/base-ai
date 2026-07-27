@@ -1,6 +1,6 @@
 <template>
   <el-container class="shell">
-    <el-aside :width="sidebarCollapsed ? '64px' : '272px'" class="sidebar" :class="{ 'sidebar--collapsed': sidebarCollapsed }">
+    <el-aside :width="sidebarCollapsed ? '64px' : expandedSidebarWidth" class="sidebar" :class="{ 'sidebar--collapsed': sidebarCollapsed }">
       <div class="sidebar-brand">
         <div class="logo">
           <span>{{ appConfig.shortName }}</span>
@@ -36,7 +36,7 @@
       </el-header>
       <el-main class="main"><router-view /></el-main>
     </el-container>
-    <el-drawer v-model="mobileNavigationOpen" class="mobile-nav-drawer" direction="ltr" size="272px" :with-header="false">
+    <el-drawer v-model="mobileNavigationOpen" class="mobile-nav-drawer" :class="{ 'mobile-nav-drawer--english': isEnglish }" direction="ltr" :size="expandedSidebarWidth" :with-header="false">
       <div class="sidebar-brand">
         <div class="logo"><span>{{ appConfig.shortName }}</span><strong>{{ appConfig.nameEn }}</strong></div>
         <p>{{ t('nav.operations') }}</p>
@@ -62,29 +62,24 @@ import { useAuthStore } from '../stores/auth'
 import { appConfig } from '../config'
 import MenuNode from '../components/MenuNode.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
-import { buildAccessibleNavigation, getNavigablePaths } from '../utils/navigation'
+import { buildAccessibleNavigation, findNavigationItem, getNavigablePaths, localizeMenuName } from '../utils/navigation'
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const mobileNavigationOpen = ref(false)
 const sidebarCollapsed = ref(false)
+const isEnglish = computed(() => locale.value === 'en-US')
+const expandedSidebarWidth = computed(() => isEnglish.value ? '296px' : '272px')
 const navigablePaths = computed(() => getNavigablePaths(router.getRoutes()))
 const dashboardAvailable = computed(() => navigablePaths.value.has('/dashboard'))
 const menuTree = computed(() => buildAccessibleNavigation(auth.user?.menus, navigablePaths.value, permission => auth.hasPermission(permission)))
-const menuKeyMap = { '/ai': 'nav.items.ai', '/ai-chat': 'nav.items.aiChat', '/system': 'nav.items.system', '/users': 'nav.items.users', '/roles': 'nav.items.roles', '/menus': 'nav.items.menus', '/departments': 'nav.items.departments', '/positions': 'nav.items.positions', '/dictionaries': 'nav.items.dictionaries', '/settings': 'nav.items.settings', '/online-users': 'nav.items.onlineUsers', '/operation-logs': 'nav.items.operationLogs', '/login-logs': 'nav.items.loginLogs', '/tasks': 'nav.items.tasks', '/models': 'nav.items.models', '/model-providers': 'nav.items.providers', '/model-routes': 'nav.items.routes', '/automation': 'nav.items.automation', '/automation/api-triggers': 'nav.items.apiTriggers' }
-const title = computed(() => { const item = findNavigationItem(menuTree.value, route.path); return menuKeyMap[route.path] ? t(menuKeyMap[route.path]) : item?.name || (route.path === '/dashboard' ? t('nav.dashboard') : appConfig.nameEn) })
-
-/** 从已裁剪的导航树中查找当前页面，避免显示无效菜单名称。 */
-function findNavigationItem(items, path) {
-  for (const item of items) {
-    if (item.path === path) return item
-    const child = findNavigationItem(item.children || [], path)
-    if (child) return child
-  }
-  return null
-}
+const title = computed(() => {
+  if (route.path === '/dashboard') return t('nav.dashboard')
+  const item = findNavigationItem(menuTree.value, route.path)
+  return localizeMenuName(item || { path: route.path, name: appConfig.nameEn }, t)
+})
 
 /** 处理用户菜单命令。 */
 async function handleCommand(command) {

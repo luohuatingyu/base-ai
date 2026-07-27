@@ -117,7 +117,7 @@ body { margin: 0; background: var(--app-canvas); }
 
 .logo strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.sidebar-brand p { margin: 10px 0 0 50px; color: #8fa6d1; font-size: 10px; font-weight: 600; letter-spacing: 1.4px; }
+.sidebar-brand p { margin: 10px 0 0 50px; overflow: hidden; color: #8fa6d1; font-size: 10px; font-weight: 600; letter-spacing: 1.4px; text-overflow: ellipsis; white-space: nowrap; }
 
 .logo span,
 .brand-mark {
@@ -169,6 +169,10 @@ body { margin: 0; background: var(--app-canvas); }
 .nav .el-menu-item .el-icon,
 .nav .el-sub-menu__title .el-icon { margin-right: 10px; color: inherit; font-size: 16px; }
 
+/* 英文菜单较长时允许文字收缩并显示省略号，图标和展开箭头保持稳定。 */
+.nav .el-menu-item > span,
+.nav .el-sub-menu__title > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .nav .el-sub-menu .el-menu { background: transparent; }
 
 .nav .el-sub-menu .el-menu-item { min-width: auto; padding-left: 48px !important; }
@@ -178,6 +182,9 @@ body { margin: 0; background: var(--app-canvas); }
 .sidebar-footer span::before { display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: #52d6a4; box-shadow: 0 0 0 4px rgba(82, 214, 164, 0.12); content: ''; }
 
 .sidebar-footer small { color: #8098c5; font-size: 11px; }
+
+.sidebar-footer span,
+.sidebar-footer small { overflow-wrap: anywhere; line-height: 1.45; }
 
 .topbar {
   display: flex;
@@ -309,6 +316,12 @@ body { margin: 0; background: var(--app-canvas); }
 .el-pagination button { padding: 0 8px; height: 28px; min-width: 28px; }
 
 .el-dialog { border-radius: 14px; }
+
+.menu-editor-dialog { max-width: calc(100vw - 24px); }
+
+.menu-editor-form .el-form-item__label { overflow-wrap: anywhere; }
+
+.menu-editor-form .el-radio-group { flex-wrap: wrap; }
 
 .el-dialog__header { margin-right: 0; padding: 20px 24px 16px; border-bottom: 1px solid var(--app-border); }
 
@@ -509,6 +522,7 @@ body { margin: 0; background: var(--app-canvas); }
   .el-dialog .el-form-item__content { width: 100%; }
   .el-drawer:not(.mobile-nav-drawer) { width: 100% !important; }
   .mobile-nav-drawer { width: min(272px, 86vw) !important; }
+  .mobile-nav-drawer.mobile-nav-drawer--english { width: min(296px, 90vw) !important; }
   .el-drawer__header, .el-drawer__body { padding-right: 16px; padding-left: 16px; }
   .el-descriptions__body, .el-descriptions__table, .el-descriptions__table tbody, .el-descriptions__table tr { display: block; width: 100%; }
   .el-descriptions__table .el-descriptions__cell { display: block; width: 100% !important; }
