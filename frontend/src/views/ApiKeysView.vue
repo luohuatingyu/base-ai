@@ -68,7 +68,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="lastUsedAt" :label="t('apiKeys.lastUsedAt')" min-width="170" />
-      <el-table-column :label="t('common.operation')" width="260" fixed="right">
+      <el-table-column :label="t('common.operation')" width="320" fixed="right">
         <template #default="scope">
           <el-button v-if="auth.hasPermission('system:api-key:update')" link type="primary" @click="openEdit(scope.row)">
             {{ t('common.edit') }}

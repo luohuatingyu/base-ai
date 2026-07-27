@@ -23,6 +23,10 @@ test('API Key 页面支持绑定用户、接口范围、IP 和限流', () => {
   assert.match(viewSource, /\/system\/api-keys\/endpoints/)
 })
 
+test('API Key 操作列提供充足宽度并固定在表格右侧', () => {
+  assert.match(viewSource, /:label="t\('common\.operation'\)" width="320" fixed="right"/)
+})
+
 test('开放 API 名称和分组随当前语言动态翻译', () => {
   assert.match(viewSource, /translateEndpoint\(endpoint\.nameKey, endpoint\.code\)/)
   assert.match(viewSource, /translateEndpoint\(endpoint\.groupKey, endpoint\.code\)/)
