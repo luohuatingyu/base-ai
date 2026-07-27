@@ -28,11 +28,19 @@
         <el-form-item :label="t('models.identifier')"><el-input v-model="form.modelName" /></el-form-item>
         <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('models.capability')"><el-select v-model="form.capabilityLevel"><el-option :label="t('models.low')" value="LOW" /><el-option :label="t('models.middle')" value="MIDDLE" /><el-option :label="t('models.high')" value="HIGH" /></el-select></el-form-item>
-        <el-form-item :label="t('models.thinkingLevels')">
-          <div class="thinking-levels">
-            <div v-for="level in thinkingLevels" :key="level" class="thinking-level-row">
-              <span class="thinking-level-label">{{ thinkingLevelLabel(level) }}</span>
-              <el-input v-model="thinkingMapping[level]" :placeholder="t('models.thinkingValuePlaceholder')" />
+        <el-form-item :label="t('models.thinkingLevels')" class="thinking-level-form-item">
+          <div class="thinking-mapping-editor">
+            <p class="thinking-mapping-help">{{ t('models.thinkingMappingHelp') }}</p>
+            <div class="thinking-mapping-header">
+              <span>{{ t('models.standardThinkingLevel') }}</span>
+              <span>{{ t('models.providerThinkingValue') }}</span>
+            </div>
+            <div v-for="level in thinkingLevels" :key="level" class="thinking-mapping-row">
+              <div class="thinking-level-identity">
+                <span>{{ t(`models.thinkingLevelLabels.${level}`) }}</span>
+                <el-tag size="small" effect="plain">{{ level }}</el-tag>
+              </div>
+              <el-input v-model="thinkingMapping[level]" clearable :placeholder="t('models.thinkingValuePlaceholder')" />
             </div>
           </div>
         </el-form-item>
@@ -106,29 +114,67 @@ onMounted(load)
   padding: 4px 0;
 }
 
-.thinking-levels {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 18px;
+.thinking-level-form-item :deep(.el-form-item__content) {
+  min-width: 0;
+}
+
+.thinking-mapping-editor {
   width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
 }
 
-.thinking-level-row {
-  display: grid;
-  grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-}
-
-.thinking-level-label {
-  color: var(--el-text-color-regular);
+.thinking-mapping-help {
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
-  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.thinking-mapping-header,
+.thinking-mapping-row {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 10px 14px;
+}
+
+.thinking-mapping-header {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.thinking-mapping-row {
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.thinking-level-identity {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
 }
 
 @media (max-width: 768px) {
-  .thinking-levels {
+  .thinking-mapping-header {
+    display: none;
+  }
+
+  .thinking-mapping-row {
     grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .thinking-level-identity {
+    justify-content: flex-start;
   }
 }
 </style>
