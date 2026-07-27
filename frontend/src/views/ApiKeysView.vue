@@ -12,7 +12,7 @@
 
     <el-alert :title="t('apiKeys.secretNotice')" type="warning" :closable="false" show-icon />
 
-    <el-collapse class="api-key-usage">
+    <el-collapse v-model="expandedUsageSections" class="api-key-usage">
       <el-collapse-item name="usage-guide">
         <template #title><strong>{{ t('apiKeyUsage.title') }}</strong></template>
         <div class="api-key-usage-content">
@@ -178,6 +178,7 @@ const saving = ref(false)
 const editorVisible = ref(false)
 const secretVisible = ref(false)
 const generatedApiKey = ref('')
+const expandedUsageSections = ref([])
 const query = reactive({ keyword: '', enabled: null, page: 1, size: 5 })
 const form = reactive(emptyForm())
 const rateLimitTypes = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'UNLIMITED']
