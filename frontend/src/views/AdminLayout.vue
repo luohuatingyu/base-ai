@@ -29,7 +29,7 @@
         <div class="topbar-actions">
           <LanguageSwitcher />
           <el-dropdown @command="handleCommand">
-            <span class="user-chip">{{ auth.user?.displayName || auth.user?.username }}</span>
+            <span class="user-chip">{{ localizeAuthenticatedUserDisplayName(auth.user, t) }}</span>
             <template #dropdown><el-dropdown-menu><el-dropdown-item command="logout">{{ t('nav.logout') }}</el-dropdown-item></el-dropdown-menu></template>
           </el-dropdown>
         </div>
@@ -64,6 +64,7 @@ import MenuNode from '../components/MenuNode.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { findLocale } from '../locales/registry'
 import { buildAccessibleNavigation, findNavigationItem, getNavigablePaths, localizeMenuName } from '../utils/navigation'
+import { localizeAuthenticatedUserDisplayName } from '../utils/localization'
 
 const { locale, t } = useI18n()
 const auth = useAuthStore()

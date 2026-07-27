@@ -102,3 +102,7 @@ test('新增和编辑弹窗按四类 tab 分隔字段且进度页没有手工输
   assert.match(progress, /\{\{ progressTraceId \}\}/)
   assert.doesNotMatch(progress, /v-model="progressTraceId"/)
 })
+
+test('操作列为中英文按钮保留足够宽度并固定在表格右侧', () => {
+  assert.match(viewSource, /:label="t\('common\.operation'\)"\s+width="380"\s+fixed="right"/)
+})

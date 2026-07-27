@@ -24,6 +24,13 @@ export function localizeUserDisplayName(user, roles, translate) {
   return isBuiltInAdmin ? translate('users.systemAdmin') : (user?.displayName || user?.username || '')
 }
 
+/** 根据登录态角色编码本地化顶部栏中的内置管理员名称。 */
+export function localizeAuthenticatedUserDisplayName(user, translate) {
+  const isBuiltInAdmin = user?.roles?.includes('ADMIN')
+    && ['系统管理员', 'System Administrator'].includes(user?.displayName)
+  return isBuiltInAdmin ? translate('users.systemAdmin') : (user?.displayName || user?.username || '')
+}
+
 /** 按内置功能编码映射路由名，未知路由回退原值。 */
 export function localizeRouteName(route, translate) {
   const key = route?.featureCode === 'DEFAULT' ? 'routes.default' : null

@@ -5,6 +5,7 @@ import {
   localizeDepartmentName,
   localizeDictionaryDataLabel,
   localizeDictionaryTypeName,
+  localizeAuthenticatedUserDisplayName,
   localizeLoginMessage,
   localizeModelType,
   localizeRoleName,
@@ -17,6 +18,7 @@ import zhCN from '../src/locales/zh-CN.js'
 
 const viewSources = Object.fromEntries(['UsersView', 'RolesView', 'MenusView', 'DepartmentsView', 'LoginLogsView', 'TasksView', 'ModelsView', 'ModelRoutesView', 'DictionariesView', 'AiChatView']
   .map(name => [name, readFileSync(new URL(`../src/views/${name}.vue`, import.meta.url), 'utf8')]))
+const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
 
 /** 使用真实语言资源创建测试翻译器，缺失词条时与 vue-i18n 一样回退 key。 */
 function translator(messages) {
@@ -46,6 +48,15 @@ test('用户显示名同时校验 ADMIN 角色和默认名称，避免同名误�
   assert.equal(localizeUserDisplayName({ username: 'admin', displayName: 'Custom Name', roleIds: [1] }, roles, en), 'Custom Name')
   assert.equal(localizeUserDisplayName({ username: 'alice', displayName: '系统管理员', roleIds: [2] }, roles, en), '系统管理员')
   assert.equal(localizeUserDisplayName({ username: 'alice', displayName: null, roleIds: [] }, roles, en), 'alice')
+})
+
+test('顶部栏仅本地化仍使用默认名称的当前管理员', () => {
+  assert.equal(localizeAuthenticatedUserDisplayName({ username: 'admin', displayName: '系统管理员', roles: ['ADMIN'] }, en), 'System Administrator')
+  assert.equal(localizeAuthenticatedUserDisplayName({ username: 'admin', displayName: 'System Administrator', roles: ['ADMIN'] }, zh), '系统管理员')
+  assert.equal(localizeAuthenticatedUserDisplayName({ username: 'admin', displayName: 'Platform Owner', roles: ['ADMIN'] }, zh), 'Platform Owner')
+  assert.equal(localizeAuthenticatedUserDisplayName({ username: 'alice', displayName: '系统管理员', roles: ['USER'] }, en), '系统管理员')
+  assert.equal(localizeAuthenticatedUserDisplayName({ username: 'alice', displayName: null, roles: [] }, en), 'alice')
+  assert.match(adminLayoutSource, /localizeAuthenticatedUserDisplayName\(auth\.user,\s*t\)/)
 })
 
 test('路由名仅按稳定 featureCode 映射，未知路由回退原值', () => {
@@ -126,6 +137,7 @@ test('空值和 null 安全回退', () => {
   assert.equal(localizeRoleName(null, en), '')
   assert.equal(localizeRoleName({ code: null, name: null }, en), '')
   assert.equal(localizeDepartmentName(null, en), '')
+  assert.equal(localizeAuthenticatedUserDisplayName(null, en), '')
   assert.equal(localizeUserDisplayName(null, [], en), '')
   assert.equal(localizeRouteName(null, en), '')
   assert.equal(localizeDictionaryTypeName(null, en), '')
