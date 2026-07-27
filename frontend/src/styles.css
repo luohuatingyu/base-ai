@@ -521,8 +521,7 @@ body { margin: 0; background: var(--app-canvas); }
   .el-dialog .el-form-item__label { width: auto !important; min-height: 0; height: auto; margin-bottom: 6px; padding: 0; justify-content: flex-start; line-height: 1.4; }
   .el-dialog .el-form-item__content { width: 100%; }
   .el-drawer:not(.mobile-nav-drawer) { width: 100% !important; }
-  .mobile-nav-drawer { width: min(272px, 86vw) !important; }
-  .mobile-nav-drawer.mobile-nav-drawer--english { width: min(296px, 90vw) !important; }
+  .mobile-nav-drawer { width: min(var(--sidebar-expanded-width, 272px), 90vw) !important; }
   .el-drawer__header, .el-drawer__body { padding-right: 16px; padding-left: 16px; }
   .el-descriptions__body, .el-descriptions__table, .el-descriptions__table tbody, .el-descriptions__table tr { display: block; width: 100%; }
   .el-descriptions__table .el-descriptions__cell { display: block; width: 100% !important; }

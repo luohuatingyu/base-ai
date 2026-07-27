@@ -8,13 +8,10 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElConfigProvider } from 'element-plus'
-import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import en from 'element-plus/dist/locale/en.mjs'
+import { findLocale } from './locales/registry'
 
 const { locale } = useI18n()
 
-// 动态计算 Element Plus 的语言包
-const elementLocale = computed(() => {
-  return locale.value === 'en-US' ? en : zhCn
-})
+// 按当前语言从注册表解析 Element Plus 语言包，新增语言无需改动此处
+const elementLocale = computed(() => findLocale(locale.value).element)
 </script>

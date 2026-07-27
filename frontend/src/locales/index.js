@@ -1,24 +1,20 @@
 import { createI18n } from 'vue-i18n'
-import zhCN from './zh-CN'
-import enUS from './en-US'
+import { LOCALES, DEFAULT_LOCALE, buildMessages, findLocale } from './registry'
 
-// 从 localStorage 获取保存的语言设置，默认中文
-const savedLocale = localStorage.getItem('locale') || 'zh-CN'
+// 从 localStorage 获取保存的语言设置，未命中或不支持时回退默认语言
+const savedLocale = localStorage.getItem('locale')
+const initialLocale = LOCALES.some(locale => locale.code === savedLocale) ? savedLocale : DEFAULT_LOCALE
 
 const i18n = createI18n({
   legacy: false, // 使用 Composition API 模式
-  locale: savedLocale,
-  fallbackLocale: 'zh-CN',
-  messages: {
-    'zh-CN': zhCN,
-    'en-US': enUS
-  }
+  locale: initialLocale,
+  fallbackLocale: DEFAULT_LOCALE,
+  messages: buildMessages()
 })
 
-// 导出语言映射函数，供 Element Plus 使用
+// 导出当前语言对应的 Element Plus 语言包，供 Element Plus 组件使用
 export function getElementLocale() {
-  const locale = i18n.global.locale.value
-  return locale === 'en-US' ? 'en' : 'zh-cn'
+  return findLocale(i18n.global.locale.value).element
 }
 
 export default i18n

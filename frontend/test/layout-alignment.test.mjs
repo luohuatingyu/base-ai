@@ -53,8 +53,13 @@ test('收缩侧边栏的菜单宽度适配内层可用空间，图标保持居�
 })
 
 test('英文导航为长名称保留空间且文本不会撑破侧栏', () => {
-  assert.match(adminLayoutSource, /isEnglish\.value\s*\?\s*'296px'\s*:\s*'272px'/)
-  assert.match(adminLayoutSource, /mobile-nav-drawer--english/)
+  // 侧栏宽度由语言注册表按 code 提供：英文更宽，中文较窄
+  const registrySource = readFileSync(new URL('../src/locales/registry.js', import.meta.url), 'utf8')
+  assert.match(registrySource, /code:\s*'en-US'[\s\S]*?sidebarExpandedWidth:\s*'296px'/)
+  assert.match(registrySource, /code:\s*'zh-CN'[\s\S]*?sidebarExpandedWidth:\s*'272px'/)
+  // 布局按注册表解析宽度并写入 CSS 变量，供移动端抽屉在窄视口下按语言收缩
+  assert.match(adminLayoutSource, /findLocale\(locale\.value\)\.sidebarExpandedWidth/)
+  assert.match(adminLayoutSource, /--sidebar-expanded-width/)
   assertDeclarations(globalStyles, '.sidebar-brand p', [/overflow:\s*hidden/, /text-overflow:\s*ellipsis/, /white-space:\s*nowrap/])
   assertDeclarations(
     globalStyles,
@@ -104,7 +109,7 @@ test('手机断点使分页、表单、弹窗和操作区适配窄视口', () =>
   assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.el-dialog\s+\.el-form-item\s*\{[^}]*display:\s*block/)
   assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.el-dialog\s+\.el-form-item__label\s*\{[^}]*width:\s*auto\s*!important/)
   assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.el-drawer:not\(\.mobile-nav-drawer\)\s*\{[^}]*width:\s*100%\s*!important/)
-  assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.mobile-nav-drawer\.mobile-nav-drawer--english\s*\{[^}]*width:\s*min\(296px,\s*90vw\)\s*!important/)
+  assert.match(globalStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.mobile-nav-drawer\s*\{[^}]*width:\s*min\(var\(--sidebar-expanded-width,\s*272px\),\s*90vw\)\s*!important/)
   assert.match(automationStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.filter-row\s*>\s*\.el-input,[\s\S]*?flex:\s*1\s+1\s+100%/)
   assert.match(automationStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.progress-toolbar\s*>\s*div\s*\{[^}]*width:\s*100%/)
 })

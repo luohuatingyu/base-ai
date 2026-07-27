@@ -5,11 +5,9 @@
     </el-button>
     <template #dropdown>
       <el-dropdown-menu>
-        <el-dropdown-item command="zh-CN" :class="{ 'is-active': currentLocale === 'zh-CN' }">
-          <span class="flag">🇨🇳</span> {{ t('language.zhCN') }}
-        </el-dropdown-item>
-        <el-dropdown-item command="en-US" :class="{ 'is-active': currentLocale === 'en-US' }">
-          <span class="flag">🇺🇸</span> {{ t('language.enUS') }}
+        <el-dropdown-item v-for="option in locales" :key="option.code" :command="option.code"
+                          :class="{ 'is-active': currentLocale === option.code }">
+          <span class="flag">{{ option.flag }}</span> {{ t(option.labelKey) }}
         </el-dropdown-item>
       </el-dropdown-menu>
     </template>
@@ -20,8 +18,12 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Operation } from '@element-plus/icons-vue'
+import { LOCALES } from '../locales/registry'
 
 const { locale, t } = useI18n()
+
+// 语言选项来源于注册表，新增语言自动出现在下拉列表
+const locales = LOCALES
 
 const currentLocale = computed(() => locale.value)
 
