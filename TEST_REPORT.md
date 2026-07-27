@@ -2,6 +2,90 @@
 
 ## 📋 Git 基准点
 
+- Commit: da79cc2
+- 提交说明: Make backend default locale configurable
+- 测试日期: 2026-07-27
+- 分支: master
+
+## 🎯 当前变更范围
+
+- 新增 `APP_DEFAULT_LOCALE` 后端默认语言配置，支持 `en-US`、`zh-CN`。
+- 未配置时保持 `en-US`，请求显式携带 `Accept-Language` 时仍优先使用请求语言。
+- 非法、空白或不支持的配置会阻止 Backend 启动并输出允许值。
+- 同步类型安全配置、应用配置、Compose、环境变量模板和 README。
+
+## 📋 当前变更测试结果（2026-07-27）
+
+**变更范围**：后端默认 Locale 可配置、配置值严格校验、部署环境映射及请求语言优先级。
+
+**测试执行结果**：
+- 完整回归测试：210 个，通过 210 个（100%）
+- 后端完整测试：139 个，通过 139 个（100%）
+- 前端完整测试：71 个，通过 71 个（100%）
+- 默认语言与响应契约定向测试：27 个，通过 27 个（100%）
+- 失败：0 个
+- 错误：0 个
+- 跳过：0 个
+
+**关键模块测试**：
+- 默认英文、中英文配置、属性绑定、请求头覆盖和非法值拒绝：10/10，通过
+- 数字响应码、双语响应与消息资源完整性：17/17，通过
+- 后端完整回归：139/139，通过
+- 前端完整回归：71/71，通过
+- Python Worker：本次未执行测试，未修改 Worker 代码
+
+## 📊 当前测试执行记录
+
+| 测试范围 | 执行命令 | 结果 |
+| --- | --- | --- |
+| 默认语言与响应契约定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=I18nConfigTest,ApiResponseContractTest,MessageBundleTest test` | 最终 27 通过，0 失败，0 错误，0 跳过；首次测试编译失败后修正 `BindResult.orElseThrow` Supplier 用法并复测通过 |
+| 后端完整回归 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 139 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs` | 71 通过，0 失败，0 跳过 |
+| Compose 配置映射 | `docker compose config` | Backend 环境已包含默认 `APP_DEFAULT_LOCALE=en-US` |
+| 服务重建与启动 | `docker compose up --build -d` | Backend 构建内 139 个测试通过，Frontend 生产构建通过，三个服务启动成功 |
+| 默认英文验证 | 无语言头请求受保护接口 | 返回 HTTP 401、数字 `code: 401` 和英文消息 |
+| 配置中文及请求覆盖验证 | 临时以 `APP_DEFAULT_LOCALE=zh-CN` 重建 Backend；分别使用无语言头和 `en-US` 请求 | 无语言头返回中文，显式 `en-US` 返回英文；验证后已恢复 `en-US` |
+| 服务健康与格式检查 | `docker compose ps`、健康端点、`git diff --check` | 三个服务均 healthy，健康端点正常，格式检查通过 |
+
+## 🔄 当前覆盖范围与结果
+
+- 正常场景：`en-US`、`zh-CN` 均能配置为默认语言，Compose 环境变量映射正确。
+- 边界场景：未配置保持英文；空值、空字符串、`fr-FR`、`zh`、`english` 均被拒绝。
+- 异常场景：非法配置抛出明确异常并列出允许值，避免静默回退。
+- 权限与安全：无语言头与显式请求头均通过未认证接口验证，响应继续使用 HTTP 401 和数字状态码。
+- 兼容性：默认值仍为 `en-US`，前端继续显式发送当前语言，现有调用行为不变。
+- 回归场景：API 响应契约、消息资源、认证、系统管理和前端全部测试通过。
+- 运行环境：最终以 `APP_DEFAULT_LOCALE=en-US` 运行，Backend、Frontend、Python Worker 均 healthy。
+
+## 🔄 当前重测触发条件
+
+- 修改 `APP_DEFAULT_LOCALE` 名称、默认值、支持语言或非法值处理方式。
+- 修改 `PlatformProperties.I18n`、`I18nConfig`、LocaleResolver 或请求语言优先级。
+- 修改 Compose、应用配置或环境变量模板中的默认语言映射。
+- 用户明确要求重新执行完整覆盖测试。
+
+## ⚠️ 当前已知问题与限制
+
+- 本机没有安装 `mvn`，Maven 测试通过官方 Maven Docker 镜像执行。
+- 非法配置的启动失败行为通过 LocaleResolver 单元测试验证，未使用错误配置实际启动完整 Compose 环境。
+- `docker compose config` 会展开当前环境中的敏感变量；诊断输出不得对非受信人员公开，若已经泄露应轮换相关凭据。
+- 仅支持 `en-US`、`zh-CN`；增加其他语言需要同步消息资源、支持列表和测试。
+- `TaskTraceService` 的既有未检查泛型编译提示和前端大 Chunk 构建警告未影响测试结果。
+
+## 📝 下次测试建议
+
+1. 在发布流水线增加非法 `APP_DEFAULT_LOCALE` 的容器启动失败测试，并校验错误日志。
+2. 部署时在外部环境文件显式设置 `APP_DEFAULT_LOCALE`，避免不同环境依赖隐式默认值。
+3. 新增语言时同时补充完整消息资源、前端 Locale 和端到端响应验证。
+
+**当前 Git 基准点**：`da79cc2`
+
+---
+
+## 历史测试记录（统一 API 响应码与双语消息）
+
+## 📋 Git 基准点
+
 - Commit: e959210
 - 提交说明: Align API response codes and messages
 - 测试日期: 2026-07-27
