@@ -70,18 +70,20 @@
       <el-table-column prop="lastUsedAt" :label="t('apiKeys.lastUsedAt')" min-width="170" />
       <el-table-column :label="t('common.operation')" width="320" fixed="right">
         <template #default="scope">
-          <el-button v-if="auth.hasPermission('system:api-key:update')" link type="primary" @click="openEdit(scope.row)">
-            {{ t('common.edit') }}
-          </el-button>
-          <el-button v-if="auth.hasPermission('system:api-key:update')" link @click="toggle(scope.row)">
-            {{ scope.row.enabled ? t('common.disabled') : t('common.enabled') }}
-          </el-button>
-          <el-button v-if="auth.hasPermission('system:api-key:rotate')" link type="warning" @click="rotate(scope.row)">
-            {{ t('apiKeys.rotate') }}
-          </el-button>
-          <el-button v-if="auth.hasPermission('system:api-key:delete')" link type="danger" @click="revoke(scope.row)">
-            {{ t('apiKeys.revoke') }}
-          </el-button>
+          <div class="table-actions">
+            <el-button v-if="auth.hasPermission('system:api-key:update')" link type="primary" @click="openEdit(scope.row)">
+              {{ t('common.edit') }}
+            </el-button>
+            <el-button v-if="auth.hasPermission('system:api-key:update')" link @click="toggle(scope.row)">
+              {{ scope.row.enabled ? t('common.disabled') : t('common.enabled') }}
+            </el-button>
+            <el-button v-if="auth.hasPermission('system:api-key:rotate')" link type="warning" @click="rotate(scope.row)">
+              {{ t('apiKeys.rotate') }}
+            </el-button>
+            <el-button v-if="auth.hasPermission('system:api-key:delete')" link type="danger" @click="revoke(scope.row)">
+              {{ t('apiKeys.revoke') }}
+            </el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>

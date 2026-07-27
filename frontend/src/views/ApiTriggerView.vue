@@ -8,7 +8,7 @@
       <el-table-column prop="cronExpression" label="Cron" min-width="150"><template #default="s">{{s.row.cronExpression||t('apiTrigger.manualOnly')}}</template></el-table-column>
       <el-table-column :label="t('common.status')" width="100"><template #default="s"><el-tag :type="s.row.enabled?'success':'info'">{{s.row.enabled?t('common.enabled'):t('common.disabled')}}</el-tag></template></el-table-column>
       <el-table-column prop="lastStatus" :label="t('apiTrigger.latestResult')" width="110"/><el-table-column :label="t('common.operation')" width="380" fixed="right"><template #default="s">
-        <div class="api-trigger-actions">
+        <div class="table-actions">
           <el-button v-if="auth.hasPermission('automation:api-trigger:update')" link type="primary" @click="open(s.row)">{{ t('common.edit') }}</el-button>
           <el-button v-if="auth.hasPermission('automation:api-trigger:trigger')" link type="success" @click="trigger(s.row)">{{ t('apiTrigger.execute') }}</el-button>
           <el-button v-if="auth.hasPermission('automation:api-trigger:logs')" link @click="showLogs(s.row)">{{ t('apiTrigger.logs') }}</el-button>
@@ -217,15 +217,3 @@ watch(activeTab,tab=>{
 })
 onMounted(load)
 </script>
-
-<style scoped>
-.api-trigger-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.api-trigger-actions :deep(.el-button + .el-button) { margin-left: 0; }
-</style>

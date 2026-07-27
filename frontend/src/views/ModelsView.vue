@@ -17,7 +17,9 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.operation')"><template #default="s"><el-button link type="success" @click="startTest(s.row)">{{ t('models.test') }}</el-button><el-button link type="primary" @click="open(s.row)">{{ t('common.edit') }}</el-button></template></el-table-column>
+      <el-table-column :label="t('common.operation')" width="180" fixed="right">
+        <template #default="s"><div class="table-actions"><el-button link type="success" @click="startTest(s.row)">{{ t('models.test') }}</el-button><el-button link type="primary" @click="open(s.row)">{{ t('common.edit') }}</el-button></div></template>
+      </el-table-column>
     </el-table>
 
     <el-dialog v-model="visible" :title="form.id ? t('models.edit') : t('models.add')">

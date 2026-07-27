@@ -11,10 +11,12 @@
       <el-table-column :label="t('common.name')"><template #default="scope">{{ localizeRouteName(scope.row, t) }}</template></el-table-column>
       <el-table-column prop="capabilityLevel" :label="t('models.capability')"/>
       <el-table-column prop="thinkingLevel" :label="t('routes.thinkingLevel')"/>
-      <el-table-column :label="t('common.operation')" width="180">
+      <el-table-column :label="t('common.operation')" width="180" fixed="right">
         <template #default="scope">
-          <el-button v-if="auth.hasPermission('model:route:update')" link type="primary" @click="openSync(scope.row)">{{ t('routes.sync') }}</el-button>
-          <el-button v-if="auth.hasPermission('model:route:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+          <div class="table-actions">
+            <el-button v-if="auth.hasPermission('model:route:update')" link type="primary" @click="openSync(scope.row)">{{ t('routes.sync') }}</el-button>
+            <el-button v-if="auth.hasPermission('model:route:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>

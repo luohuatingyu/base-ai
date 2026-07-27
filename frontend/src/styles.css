@@ -307,6 +307,17 @@ body { margin: 0; background: var(--app-canvas); }
 
 .el-table .cell { overflow-wrap: anywhere; line-height: 1.5; }
 
+/* 列表操作区：固定列内按钮保持单行，并统一 API Triggers 使用的紧凑间距。 */
+.table-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.table-actions > .el-button + .el-button { margin-left: 0; }
+
 .el-pagination { flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; padding: 0; }
 
 .el-pagination > * { margin: 0 !important; }

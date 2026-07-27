@@ -13,11 +13,13 @@
       </el-table-column>
       <el-table-column prop="path" :label="t('menus.route')" />
       <el-table-column prop="permission" :label="t('menus.permission')" />
-      <el-table-column :label="t('common.operation')" width="240">
+      <el-table-column :label="t('common.operation')" width="240" fixed="right">
         <template #default="scope">
-          <el-button v-if="auth.hasPermission('system:menu:create')" link @click="open(null, scope.row.id)">{{ t('departments.addChild') }}</el-button>
-          <el-button v-if="auth.hasPermission('system:menu:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
-          <el-button v-if="auth.hasPermission('system:menu:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
+          <div class="table-actions">
+            <el-button v-if="auth.hasPermission('system:menu:create')" link @click="open(null, scope.row.id)">{{ t('departments.addChild') }}</el-button>
+            <el-button v-if="auth.hasPermission('system:menu:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+            <el-button v-if="auth.hasPermission('system:menu:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>

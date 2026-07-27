@@ -29,6 +29,7 @@ test('API Key 页面支持绑定用户、接口范围、IP 和限流', () => {
 
 test('API Key 操作列提供充足宽度并固定在表格右侧', () => {
   assert.match(viewSource, /:label="t\('common\.operation'\)" width="320" fixed="right"/)
+  assert.match(viewSource, /<div class="table-actions">[\s\S]*?openEdit[\s\S]*?toggle[\s\S]*?rotate[\s\S]*?revoke[\s\S]*?<\/div>/)
 })
 
 test('开放 API 名称和分组随当前语言动态翻译', () => {

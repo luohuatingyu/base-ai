@@ -20,14 +20,6 @@ function tabSection(startMarker, endMarker) {
   return viewSource.slice(start, end)
 }
 
-/** 提取页面内指定选择器的样式声明，用于回归关键布局约束。 */
-function styleDeclarations(selector) {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = viewSource.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))
-  assert.ok(match, `缺少接口触发页面样式：${selector}`)
-  return match[1]
-}
-
 const traceIdCases = [
   ['统一响应 camelCase', '{"data":{"traceId":"0123456789abcdef0123456789abcdef"}}', '0123456789abcdef0123456789abcdef'],
   ['直接响应 camelCase', '{"traceId":"root-trace"}', 'root-trace'],
@@ -113,10 +105,6 @@ test('新增和编辑弹窗按四类 tab 分隔字段且进度页没有手工输
 
 test('接口触发操作列固定在右侧且所有操作按钮保持单行', () => {
   assert.match(viewSource, /:label="t\('common\.operation'\)"\s+width="380"\s+fixed="right"/)
-  assert.match(viewSource, /<div class="api-trigger-actions">[\s\S]*?automation:api-trigger:update[\s\S]*?automation:api-trigger:trigger[\s\S]*?automation:api-trigger:logs[\s\S]*?automation:api-trigger:delete[\s\S]*?<\/div>/)
-
-  const actions = styleDeclarations('.api-trigger-actions')
-  assert.match(actions, /display:\s*flex/)
-  assert.match(actions, /flex-wrap:\s*nowrap/)
-  assert.match(actions, /white-space:\s*nowrap/)
+  assert.match(viewSource, /<div class="table-actions">[\s\S]*?automation:api-trigger:update[\s\S]*?automation:api-trigger:trigger[\s\S]*?automation:api-trigger:logs[\s\S]*?automation:api-trigger:delete[\s\S]*?<\/div>/)
+  assert.doesNotMatch(viewSource, /api-trigger-actions/)
 })

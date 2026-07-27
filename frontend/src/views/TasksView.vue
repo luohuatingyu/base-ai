@@ -77,12 +77,14 @@
       </el-table-column>
       <el-table-column prop="created_at" :label="t('tasks.createdAt')" min-width="180"/>
       <el-table-column prop="finished_at" :label="t('tasks.finishedAt')" min-width="180"/>
-      <el-table-column :label="t('common.actions')" width="250" fixed="right">
+      <el-table-column :label="t('common.actions')" width="320" fixed="right">
         <template #default="s">
-          <el-button link type="primary" @click="showDetail(s.row)">{{ t('common.detail') }}</el-button>
-          <el-button link type="primary" @click="showLogs(s.row.trace_id)">{{ t('tasks.logs') }}</el-button>
-          <el-button v-if="manageable(s.row)" link type="warning" @click="cancelTrace(s.row.trace_id)">{{ t('tasks.cancel') }}</el-button>
-          <el-button v-if="auth.isAdmin && manageable(s.row)" link type="danger" @click="forceTrace(s.row.trace_id)">{{ t('tasks.forceTerminate') }}</el-button>
+          <div class="table-actions">
+            <el-button link type="primary" @click="showDetail(s.row)">{{ t('common.detail') }}</el-button>
+            <el-button link type="primary" @click="showLogs(s.row.trace_id)">{{ t('tasks.logs') }}</el-button>
+            <el-button v-if="manageable(s.row)" link type="warning" @click="cancelTrace(s.row.trace_id)">{{ t('tasks.cancel') }}</el-button>
+            <el-button v-if="auth.isAdmin && manageable(s.row)" link type="danger" @click="forceTrace(s.row.trace_id)">{{ t('tasks.forceTerminate') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
