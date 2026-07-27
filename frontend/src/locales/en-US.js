@@ -46,6 +46,13 @@ export default {
     description: 'Unified Model Capability and System Management Platform',
     username: 'Username', password: 'Password', submit: 'Sign In', loginFailed: 'Login failed'
   },
+  auth: {
+    loginSuccess: 'Login successful',
+    loginFailed: 'Login failed',
+    invalidCredentials: 'Incorrect username or password',
+    accountDisabled: 'The account is disabled',
+    userNotFound: 'The authenticated user does not exist'
+  },
   dashboard: {
     eyebrow: 'AI PLATFORM READY', title: 'Unified access to model capabilities.',
     description: 'System data is stored in MySQL, business data belongs to PostgreSQL, and Redis provides caching and token revocation.',

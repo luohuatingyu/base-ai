@@ -75,6 +75,32 @@ test('内置菜单按当前语言显示并通过权限区分相同路径', () =>
   assert.equal(localizeMenuName(menu(23, null, '触发安全配置', 'MENU', '/automation/api-trigger-security', 'automation:api-trigger-security:view'), translateEnglish), 'Trigger Security')
 })
 
+test('全部内置 BUTTON 权限均使用稳定权限编码翻译', () => {
+  const translateEnglish = translator(enUS)
+  const permissions = [
+    'system:user:create', 'system:user:update', 'system:user:delete', 'system:user:manage',
+    'system:role:create', 'system:role:update', 'system:role:delete', 'system:role:manage',
+    'system:menu:create', 'system:menu:update', 'system:menu:delete', 'system:menu:manage',
+    'system:department:create', 'system:department:update', 'system:department:delete',
+    'system:position:create', 'system:position:update', 'system:position:delete',
+    'system:dictionary:create', 'system:dictionary:update', 'system:dictionary:delete',
+    'system:setting:create', 'system:setting:update', 'system:setting:delete',
+    'system:session:terminate', 'system:task:manage',
+    'system:api-key:create', 'system:api-key:update', 'system:api-key:delete', 'system:api-key:rotate',
+    'model:provider:create', 'model:provider:update', 'model:provider:delete',
+    'model:model:create', 'model:model:update', 'model:model:delete',
+    'model:route:create', 'model:route:update', 'model:route:delete',
+    'automation:api-trigger:create', 'automation:api-trigger:update', 'automation:api-trigger:delete',
+    'automation:api-trigger:trigger', 'automation:api-trigger:logs',
+    'automation:api-trigger-security:update'
+  ]
+
+  for (const [index, permission] of permissions.entries()) {
+    const original = `原始按钮 ${index}`
+    assert.notEqual(localizeMenuName(menu(100 + index, null, original, 'BUTTON', null, permission), translateEnglish), original, permission)
+  }
+})
+
 test('顶部标题在目录与页面路径相同时优先使用页面名称', () => {
   const modelCatalog = { ...menu(20, null, '模型管理', 'CATALOG', '/models', 'model:catalog'), children: [
     menu(21, 20, '模型配置', 'MENU', '/models', 'model:model:list')

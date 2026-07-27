@@ -29,7 +29,7 @@ public class ApiTriggerController {
 
     @PostMapping
     @RequiredPermission("automation:api-trigger:create")
-    @TraceType(value = "tasks.types.createTrigger", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "API_TRIGGER_CREATE", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.View create(@RequestBody ApiTriggerModels.Command command) {
         ApiTriggerModels.View created = service.create(command, AuthContext.require().id());
         scheduler.reschedule(created.id());
@@ -38,7 +38,7 @@ public class ApiTriggerController {
 
     @PutMapping("/{id}")
     @RequiredPermission("automation:api-trigger:update")
-    @TraceType(value = "tasks.types.updateTrigger", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "API_TRIGGER_UPDATE", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.View update(@PathVariable Long id, @RequestBody ApiTriggerModels.Command command) {
         ApiTriggerModels.View updated = service.update(id, command);
         scheduler.reschedule(id);
@@ -47,24 +47,24 @@ public class ApiTriggerController {
 
     @DeleteMapping("/{id}")
     @RequiredPermission("automation:api-trigger:delete")
-    @TraceType(value = "tasks.types.disableTrigger", triggerEntry = "MANUAL")
+    @TraceType(value = "API_TRIGGER_DISABLE", triggerEntry = "MANUAL")
     public void disable(@PathVariable Long id) { service.disable(id); scheduler.cancel(id); }
 
     @PostMapping("/{id}/void")
     @RequiredPermission("automation:api-trigger:delete")
-    @TraceType(value = "tasks.types.voidTrigger", triggerEntry = "MANUAL")
+    @TraceType(value = "API_TRIGGER_VOID", triggerEntry = "MANUAL")
     public void voidConfig(@PathVariable Long id) { service.voidConfig(id); scheduler.cancel(id); }
 
     @PostMapping("/{id}/trigger")
     @RequiredPermission("automation:api-trigger:trigger")
     @ApiKeyEndpoint(code = "automation.api-trigger.execute", nameKey = "apiKeys.endpointNames.apiTriggerExecute",
         groupKey = "apiKeys.endpointGroups.automation", risk = ApiKeyRisk.HIGH)
-    @TraceType(value = "tasks.types.executeTrigger", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "API_TRIGGER_EXECUTE", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.ExecutionResult trigger(@PathVariable Long id) { return service.execute(id, "MANUAL"); }
 
     @PostMapping("/test")
     @RequiredPermission("automation:api-trigger:trigger")
-    @TraceType(value = "tasks.types.testTrigger", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "API_TRIGGER_TEST", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.ExecutionResult test(@RequestBody ApiTriggerModels.Command command) { return service.test(command); }
 
     @GetMapping("/{id}/logs")

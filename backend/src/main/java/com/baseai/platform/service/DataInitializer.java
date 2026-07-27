@@ -169,8 +169,8 @@ public class DataInitializer implements ApplicationRunner {
             type.setEnabled(true);
             dictionaryTypeRepository.save(type);
         }
-        seedModelType("text_model","models.types.text",10);
-        seedModelType("vision_model","models.types.vision",20);
+        seedModelType("text_model","文本模型",10);
+        seedModelType("vision_model","视觉模型",20);
     }
 
     /** 仅在缺失时写入内置模型类型，保留管理员对已有字典项的调整。 */

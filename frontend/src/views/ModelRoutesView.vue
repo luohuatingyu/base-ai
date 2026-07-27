@@ -36,7 +36,7 @@
       <el-form label-width="110px">
         <el-form-item :label="t('routes.featureCode')">
           <el-select v-model="selectedRouteIds" multiple filterable collapse-tags :placeholder="t('routes.selectFeatureCodes')">
-            <el-option v-for="route in rows" :key="route.id" :label="`${route.name} (${route.featureCode})`" :value="route.id"/>
+            <el-option v-for="route in rows" :key="route.id" :label="`${localizeRouteName(route, t)} (${route.featureCode})`" :value="route.id"/>
           </el-select>
         </el-form-item>
       </el-form>
@@ -189,7 +189,7 @@ function healthLabel(result) {
 
 /** 从指定能力路由删除结果所属供应商。 */
 async function removeModelProvider(route, result) {
-  await ElMessageBox.confirm(t('routes.removeProviderConfirm', { provider: providerName(result.providerId), route: route.name }), t('routes.removeModelProvider'), { type: 'warning' })
+  await ElMessageBox.confirm(t('routes.removeProviderConfirm', { provider: providerName(result.providerId), route: localizeRouteName(route, t) }), t('routes.removeModelProvider'), { type: 'warning' })
   await http.delete(`/models/routes/${route.id}/providers/${result.providerId}`)
   const state = ensureSyncState(route.id)
   state.results = state.results.filter(item => item.providerId !== result.providerId)

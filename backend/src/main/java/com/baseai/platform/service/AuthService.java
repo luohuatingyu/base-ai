@@ -121,9 +121,9 @@ public class AuthService {
             return new LoginResult(token, claims.expiresAt(), toCurrentUser(user));
         } catch (RuntimeException exception) {
             // 捕获所有运行时异常，记录登录失败的审计日志
-            String messageKey = exception instanceof com.baseai.platform.common.BusinessException
-                ? ((com.baseai.platform.common.BusinessException) exception).getMessageKey()
-                : exception.getMessage();
+            String messageKey = exception instanceof BusinessException businessException
+                ? businessException.getMessageKey()
+                : "auth.loginFailed";
             loginAuditService.save(normalized, metadata, false, messageKey);
             throw exception;
         }

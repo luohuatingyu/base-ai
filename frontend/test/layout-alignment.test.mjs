@@ -90,6 +90,7 @@ test('表单标签、输入控件和开关文案使用一致的垂直节奏', ()
 })
 
 test('菜单管理英文弹窗为长标签和选项提供响应式空间', () => {
+  assert.match(menusViewSource, /:label="t\('common\.operation'\)" width="240"/)
   assert.match(menusViewSource, /class="menu-editor-dialog"[\s\S]*?width="680px"/)
   assert.match(menusViewSource, /class="menu-editor-form"\s+label-width="120px"/)
   assertDeclarations(globalStyles, '.menu-editor-dialog', [/max-width:\s*calc\(100vw\s*-\s*24px\)/])

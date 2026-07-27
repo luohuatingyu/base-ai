@@ -27,7 +27,7 @@ public class ApiTriggerSecurityConfigurationController {
     /** 更新接口触发安全配置并使其立即生效。 */
     @PutMapping
     @RequiredPermission("automation:api-trigger-security:update")
-    @TraceType(value = "tasks.types.updateTriggerSecurity", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "API_TRIGGER_SECURITY_UPDATE", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerSecurityConfigurationService.ConfigurationView update(
         @RequestBody ApiTriggerSecurityConfigurationService.UpdateCommand command) {
         return configurationService.update(command);

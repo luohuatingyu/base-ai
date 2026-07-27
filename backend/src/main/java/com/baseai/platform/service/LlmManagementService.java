@@ -143,7 +143,7 @@ public class LlmManagementService {
             .map(item->new ModelTypeOption(LlmModel.normalizeModelTypes(List.of(item.getDictValue())).stream().findFirst().orElse(""),item.getLabel()))
             .filter(item->!item.value().isBlank())
             .toList();
-        return result.isEmpty()?List.of(new ModelTypeOption("text_model","models.types.text"),new ModelTypeOption("vision_model","models.types.vision")):result;
+        return result.isEmpty()?List.of(new ModelTypeOption("text_model","文本模型"),new ModelTypeOption("vision_model","视觉模型")):result;
     }
 
     /**

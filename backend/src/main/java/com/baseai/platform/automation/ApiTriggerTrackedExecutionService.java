@@ -10,7 +10,7 @@ public class ApiTriggerTrackedExecutionService {
     public ApiTriggerTrackedExecutionService(ApiTriggerService service) { this.service = service; }
 
     /** Redis 锁获取成功后，通过 AOP 建立唯一 Cron 系统任务。 */
-    @TraceType(value = "tasks.types.cronTrigger", triggerEntry = "CRON", ownerIdParameter = "ownerUserId", captureRequest = false)
+    @TraceType(value = "API_TRIGGER_CRON", triggerEntry = "CRON", ownerIdParameter = "ownerUserId", captureRequest = false)
     public void execute(Long configId, Long ownerUserId) {
         service.execute(configId, "CRON");
     }

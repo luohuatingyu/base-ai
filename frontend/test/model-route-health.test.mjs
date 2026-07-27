@@ -58,7 +58,7 @@ test('capability route page provides a top-level multi-route sync entry', () => 
   assert.match(routeView, /@click="open\(\)"[^>]*>[\s\S]*routes\.add/)
   assert.match(routeView, /@click="openSync\(\)"[^>]*>[\s\S]*routes\.syncRoutes/)
   assert.match(routeView, /<el-select v-model="selectedRouteIds" multiple filterable/)
-  assert.match(routeView, /v-for="route in rows"[^>]*`\$\{route\.name\} \(\$\{route\.featureCode\}\)`/)
+  assert.match(routeView, /v-for="route in rows"[^>]*`\$\{localizeRouteName\(route, t\)\} \(\$\{route\.featureCode\}\)`/)
   assert.match(zhLocale, /syncRoutes:\s*'同步路由'/)
   assert.match(enLocale, /syncRoutes:\s*'Sync Routes'/)
 })

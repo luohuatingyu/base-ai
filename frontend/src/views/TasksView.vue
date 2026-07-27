@@ -16,7 +16,7 @@
           <el-option v-for="item in statuses" :key="item" :label="t(`tasks.statuses.${item}`)" :value="item"/>
         </el-select>
         <el-select v-model="query.taskType" clearable filterable :placeholder="t('tasks.taskType')" class="filter-item-select">
-          <el-option v-for="item in taskTypes" :key="item" :label="t(item)" :value="item"/>
+          <el-option v-for="item in taskTypes" :key="item" :label="localizeTaskType(item, t)" :value="item"/>
         </el-select>
         <el-select v-model="query.triggerEntry" clearable :placeholder="t('tasks.triggerEntry')" class="filter-item-select">
           <el-option v-for="item in triggerEntries" :key="item" :label="item" :value="item"/>
@@ -65,7 +65,7 @@
         </template>
       </el-table-column>
       <el-table-column :label="t('tasks.taskType')" min-width="150">
-        <template #default="scope">{{ t(scope.row.task_type) }}</template>
+        <template #default="scope">{{ localizeTaskType(scope.row.task_type, t) }}</template>
       </el-table-column>
       <el-table-column prop="trigger_entry" :label="t('tasks.entry')" width="110"/>
       <el-table-column :label="t('tasks.status')" width="145">
@@ -182,6 +182,7 @@ import { Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
+import { localizeTaskType } from '../utils/localization'
 
 const { t } = useI18n()
 const auth = useAuthStore()

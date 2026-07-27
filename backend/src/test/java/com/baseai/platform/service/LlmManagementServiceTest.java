@@ -74,6 +74,16 @@ class LlmManagementServiceTest {
         when(dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type")).thenReturn(List.of(data));
 
         assertEquals("audio_model", service.modelTypes().get(0).value());
+        assertEquals("音频模型", service.modelTypes().get(0).label());
+    }
+
+    /** 字典为空时的内置模型类型也必须返回可读标签，不能暴露前端翻译键。 */
+    @Test
+    void modelTypeFallbackReturnsReadableLabels() {
+        when(dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type")).thenReturn(List.of());
+
+        assertEquals("文本模型", service.modelTypes().get(0).label());
+        assertEquals("视觉模型", service.modelTypes().get(1).label());
     }
 
     /** 模型保存应接受字典中新增的类型编码并持久化为支持集合。 */
