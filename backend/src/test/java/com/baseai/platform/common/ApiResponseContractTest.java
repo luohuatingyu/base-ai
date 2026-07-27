@@ -69,7 +69,8 @@ class ApiResponseContractTest {
     /** 客户端未声明语言时应采用已确认的英文默认语言。 */
     @Test
     void localeResolverDefaultsToEnglish() {
-        Locale locale = new I18nConfig().localeResolver().resolveLocale(new MockHttpServletRequest());
+        Locale locale = new I18nConfig(new com.baseai.platform.config.PlatformProperties())
+            .localeResolver().resolveLocale(new MockHttpServletRequest());
 
         assertEquals(Locale.US, locale);
     }

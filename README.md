@@ -75,7 +75,7 @@ curl -H 'X-API-Key: sk-<32-character-secret>' \
 - 敏感系统参数与模型 API Key 使用 AES-GCM 加密，管理接口只返回脱敏值。
 - Redis 维护在线会话、最后活跃时间和 Token 撤销状态，管理员可强制下线单个会话或用户全部会话。
 - 操作日志通过 AOP 记录写请求、耗时、结果和脱敏参数；登录日志独立记录登录成功与失败事件。
-- 外部业务 API 使用 `{success, code, message, data}` 统一响应结构；`code` 为与 HTTP 状态一致的数字，`message` 根据 `Accept-Language` 返回中文或英文，未声明语言时默认英文；健康检查和内部服务协议保持精简格式。
+- 外部业务 API 使用 `{success, code, message, data}` 统一响应结构；`code` 为与 HTTP 状态一致的数字，`message` 根据 `Accept-Language` 返回中文或英文，未声明语言时使用 `APP_DEFAULT_LOCALE`（默认 `en-US`，支持 `en-US`、`zh-CN`）；健康检查和内部服务协议保持精简格式。
 
 首次启动自动创建以下权限：
 
@@ -186,7 +186,7 @@ TRACE_TRACKING_EXCLUSIONS_FILE=/etc/base-ai/trace-tracking-exclusions.yml
 
 环境变量分为：
 
-- 平台配置：`APP_PLATFORM_CODE`、`APP_PLATFORM_NAME_EN`、`APP_PLATFORM_NAME_ZH`、`APP_PLATFORM_SHORT_NAME`，默认展示为 `AI Platform` 和 `AI平台`。
+- 平台配置：`APP_PLATFORM_CODE`、`APP_PLATFORM_NAME_EN`、`APP_PLATFORM_NAME_ZH`、`APP_PLATFORM_SHORT_NAME`，默认展示为 `AI Platform` 和 `AI平台`；`APP_DEFAULT_LOCALE` 配置后端默认语言，仅支持 `en-US`、`zh-CN`，默认 `en-US`。
 - MySQL 系统库：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
 - PostgreSQL 业务库：`POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`。
 - Redis 缓存：`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`。

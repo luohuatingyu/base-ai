@@ -12,6 +12,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class PlatformProperties {
     /** 对外展示的平台基础信息。 */
     private Platform platform = new Platform();
+    /** 接口国际化配置。 */
+    private I18n i18n = new I18n();
     private String configEncryptionKey;
     /** MySQL 主数据源配置。 */
     private DatabaseProperties mysqlDatabase = new DatabaseProperties();
@@ -36,6 +38,10 @@ public class PlatformProperties {
     public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
     public Platform getPlatform() { return platform; }
     public void setPlatform(Platform platform) { this.platform = platform; }
+    /** 返回接口国际化配置。 */
+    public I18n getI18n() { return i18n; }
+    /** 设置接口国际化配置。 */
+    public void setI18n(I18n i18n) { this.i18n = i18n; }
 
     public DatabaseProperties getMysqlDatabase() { return mysqlDatabase; }
     public void setMysqlDatabase(DatabaseProperties mysqlDatabase) { this.mysqlDatabase = mysqlDatabase; }
@@ -84,6 +90,14 @@ public class PlatformProperties {
         public void setNameZh(String nameZh) { this.nameZh = nameZh; }
         public String getShortName() { return shortName; }
         public void setShortName(String shortName) { this.shortName = shortName; }
+    }
+
+    public static class I18n {
+        private String defaultLocale = "en-US";
+        /** 返回无请求语言时使用的默认 Locale 标签。 */
+        public String getDefaultLocale() { return defaultLocale; }
+        /** 设置无请求语言时使用的默认 Locale 标签。 */
+        public void setDefaultLocale(String defaultLocale) { this.defaultLocale = defaultLocale; }
     }
 
     public static class Seed {

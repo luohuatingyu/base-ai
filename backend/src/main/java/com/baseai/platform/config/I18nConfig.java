@@ -10,7 +10,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.i18n.LocaleChangeInterceptor;
 import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver;
 
-import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -19,6 +19,11 @@ import java.util.Locale;
  */
 @Configuration
 public class I18nConfig implements WebMvcConfigurer {
+    private static final List<Locale> SUPPORTED_LOCALES = List.of(Locale.SIMPLIFIED_CHINESE, Locale.US);
+    private final PlatformProperties properties;
+
+    /** 注入后端默认语言配置。 */
+    public I18nConfig(PlatformProperties properties) { this.properties = properties; }
 
     /**
      * 配置语言解析器
@@ -27,12 +32,18 @@ public class I18nConfig implements WebMvcConfigurer {
     @Bean
     public LocaleResolver localeResolver() {
         AcceptHeaderLocaleResolver resolver = new AcceptHeaderLocaleResolver();
-        resolver.setDefaultLocale(Locale.US); // 未声明语言时默认英文
-        resolver.setSupportedLocales(Arrays.asList(
-            Locale.SIMPLIFIED_CHINESE,
-            Locale.US
-        ));
+        resolver.setDefaultLocale(resolveDefaultLocale(properties.getI18n().getDefaultLocale()));
+        resolver.setSupportedLocales(SUPPORTED_LOCALES);
         return resolver;
+    }
+
+    /** 严格解析配置值，避免不支持的语言被静默接受。 */
+    private Locale resolveDefaultLocale(String value) {
+        return SUPPORTED_LOCALES.stream()
+            .filter(locale -> locale.toLanguageTag().equalsIgnoreCase(value == null ? "" : value.trim()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException(
+                "app.i18n.default-locale must be one of: en-US, zh-CN"));
     }
 
     /**

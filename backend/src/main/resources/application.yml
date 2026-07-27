@@ -40,6 +40,8 @@ app:
     name-en: ${APP_PLATFORM_NAME_EN:AI Platform}
     name-zh: ${APP_PLATFORM_NAME_ZH:AI平台}
     short-name: ${APP_PLATFORM_SHORT_NAME:AI}
+  i18n:
+    default-locale: ${APP_DEFAULT_LOCALE:en-US}
   config-encryption-key: ${APP_CONFIG_ENCRYPTION_KEY}
   mysql-database:
     url: ${MYSQL_URL}
