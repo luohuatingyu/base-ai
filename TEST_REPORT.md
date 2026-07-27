@@ -2,6 +2,90 @@
 
 ## 📋 Git 基准点
 
+- Commit: e959210
+- 提交说明: Align API response codes and messages
+- 测试日期: 2026-07-27
+- 分支: master
+
+## 🎯 当前变更范围
+
+- 外部业务 API 统一响应体的 `code` 改为与 HTTP 状态一致的数字。
+- 成功、框架异常、认证鉴权、业务异常和限流消息通过中英文资源按 `Accept-Language` 返回。
+- 未提供语言时默认英文，前端请求自动携带当前 Vue i18n 语言状态。
+- 业务异常改用消息键和占位参数，异步日志继续保留可读的中文默认文本。
+- `/api/open/**` 与 `/api/internal/**` 的成功响应继续保持原始精简结构。
+
+## 📋 当前变更测试结果（2026-07-27）
+
+**变更范围**：统一 API 数字状态码、双语响应消息、默认英文 Locale、前端语言请求头及全部业务异常消息键迁移。
+
+**测试执行结果**：
+- 完整回归测试：200 个，通过 200 个（100%）
+- 后端完整测试：129 个，通过 129 个（100%）
+- 前端完整测试：71 个，通过 71 个（100%）
+- 响应契约与消息资源定向测试：17 个，通过 17 个（100%）
+- 失败：0 个
+- 错误：0 个
+- 跳过：0 个
+
+**关键模块测试**：
+- 数字状态码、双语消息、默认语言和精简接口兼容：14/14，通过
+- 中英文资源键一致、英文资源纯英文及源码消息键完整性：3/3，通过
+- 后端认证、权限、API Key、系统配置、模型管理、接口触发和任务链路完整回归：129/129，通过
+- 前端语言请求头及既有页面逻辑完整回归：71/71，通过
+- Python Worker：本次未执行测试，未修改 Worker 代码
+
+## 📊 当前测试执行记录
+
+| 测试范围 | 执行命令 | 结果 |
+| --- | --- | --- |
+| 响应契约与消息资源定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiResponseContractTest,MessageBundleTest test` | 17 通过，0 失败，0 错误，0 跳过 |
+| 后端完整回归 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 129 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs` | 71 通过，0 失败，0 跳过 |
+| 服务重建与启动 | `docker compose up --build -d` | Backend 构建内 129 个测试通过，Frontend 生产构建通过，三个服务启动成功 |
+| 服务健康检查 | `docker compose ps`、`curl -fsS http://localhost/health`、`curl -fsS http://localhost:8080/api/open/health` | Backend、Frontend、Python Worker 全部 healthy，两个健康端点返回 UP |
+| 双语接口验证 | 分别以 `en-US`、`zh-CN` 和无语言头请求受保护接口 | 均返回 HTTP 401 和数字 `code: 401`；消息分别为英文、中文和默认英文 |
+| 消息资源与格式检查 | 中英文键差异检查、业务异常中文硬编码扫描、`git diff --check` | 全部通过 |
+
+## 🔄 当前覆盖范围与结果
+
+- 正常场景：成功响应使用数字 `code: 200`，并根据语言状态返回成功消息。
+- 边界场景：无语言头时默认英文；中文和英文语言状态动态切换；动态 Trace ID 和长度限制占位参数可解析。
+- 异常场景：覆盖 400、401、403、404、409、429、500、502 和 503，响应体 `code` 与 HTTP 状态一致。
+- 权限与安全：未认证、无权限、API Key 无效、接口未授权、IP 限制和限流消息均使用统一本地化契约；未知异常不泄露内部文本。
+- 兼容性：保留 `success/message/data` 字段、前端数据解包和 401 跳转；公开与内部成功响应不增加包装。
+- 回归场景：系统配置、模型管理、接口触发、任务链路、API Key 及全部前端测试通过。
+- 运行环境：Compose 已使用提交 `e959210` 的源码重建，三个服务均处于 healthy 状态。
+
+## 🔄 当前重测触发条件
+
+- 修改 `ApiResponse`、`ApiResponseAdvice`、`GlobalExceptionHandler` 或 `BusinessException`。
+- 修改 Locale 解析、前端 `Accept-Language` 请求头或中英文消息资源。
+- 新增或修改业务异常、校验消息、认证鉴权状态或 HTTP 状态映射。
+- 修改公开/内部接口包装排除规则，或用户明确要求重新测试。
+
+## ⚠️ 当前已知问题与限制
+
+- 本机没有安装 `mvn`，Maven 测试通过官方 Maven Docker 镜像执行。
+- 未使用真实登录账号验证 HTTP 200 的受保护业务接口；成功响应通过响应契约单元测试验证，401 双语响应通过运行中服务实测。
+- 首次 Compose 启动分别遇到 8080 和 80 端口被 `domestic-trade-backend-1`、`domestic-trade-frontend-1` 占用；已按项目规则停止两个占用容器并重试成功。
+- 未测试除 `zh-CN`、`en-US` 之外的语言；当前 Locale 解析器只声明支持中文和英文。
+- `TaskTraceService` 的既有未检查泛型编译提示和前端大 Chunk 构建警告未影响测试结果。
+
+## 📝 下次测试建议
+
+1. 使用真实 MySQL、Redis 和登录账号补充受保护接口 200/400/403 的端到端双语验证。
+2. 发布前通知外部调用方将字符串 `SUCCESS` 等判断迁移为数字 HTTP 状态码。
+3. 后续新增业务异常时同时补充中英文消息键，并保留消息资源完整性测试。
+
+**当前 Git 基准点**：`e959210`
+
+---
+
+## 历史测试记录（固定长度 API Key）
+
+## 📋 Git 基准点
+
 - Commit: 8341a18
 - 提交说明: Generate fixed length API keys
 - 测试日期: 2026-07-25
