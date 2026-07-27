@@ -1,242 +1,284 @@
-# AI Platform
+# Base AI
 
-AI平台是一个可直接扩展业务模块的平台，提供 Vue 管理端、Spring Boot 系统服务和 Python LLM Worker。
+Base AI is an extensible administration and AI integration platform. It combines a Vue management console, a Spring Boot system service, and a Python LLM worker behind a Docker Compose deployment.
 
-## 技术架构
+The platform provides identity and access management, OpenAI-compatible model routing, API key access, task tracing, audit logs, and scheduled HTTP automation. MySQL stores platform data, PostgreSQL stores automation data, and Redis stores disposable session state.
 
-- 前端：Vue 3、Vite、Pinia、Vue Router、Element Plus、Axios。
-- 后端：Java 17、Spring Boot 3.3、Spring MVC、Spring Data JPA、JdbcTemplate。
-- Worker：Python 3.12、FastAPI、httpx、OpenAI-compatible API。
-- 部署：Docker Compose 仅管理应用容器，数据库使用外部服务。
+## Features
 
-## 数据库职责
+- Role-based access control with users, roles, menus, departments, positions, and data scopes.
+- English and Simplified Chinese interfaces and localized API messages.
+- Model provider, model, and capability-route management from the administration console.
+- Text and multimodal chat through OpenAI-compatible providers, with candidate failover, concurrency limits, and token accounting.
+- Bearer-token sessions and scoped `X-API-Key` credentials with expiry, revocation, IP allowlists, and rate limits.
+- Cross-service task tracing, cancellation, recovery, operation logs, and login logs.
+- Manual and Cron-based HTTP automation with encrypted request configuration and outbound-host controls.
+- Runtime platform branding and language configuration.
 
-### MySQL 系统数据库
+## Technology Stack
 
-MySQL 是平台主数据源，仅保存系统功能数据：
+- **Frontend:** Vue 3, Vite, Pinia, Vue Router, Element Plus, and Axios.
+- **Backend:** Java 17, Spring Boot 3.3, Spring MVC, Spring Data JPA, and JDBC.
+- **LLM worker:** Python 3.12, FastAPI, HTTPX, PyYAML, and OpenAI-compatible APIs.
+- **Data services:** MySQL, PostgreSQL, and Redis.
+- **Deployment:** Docker Compose and multi-stage container builds.
 
-- 用户、角色、权限菜单及关联关系。
-- AI 调用等系统任务。
-- Java 和 Python Worker 的统一任务日志。
+## Architecture
 
-JPA 实体默认绑定 MySQL。任务与日志表通过 `backend/src/main/resources/system-schema.sql` 初始化，目标数据库需要提前创建。
-
-### PostgreSQL 从属业务数据库
-
-PostgreSQL 专门承载后续业务模块的数据，不保存系统用户、权限和任务日志。Java 业务模块通过以下 Bean 访问：
-
-```java
-@Qualifier("postgresqlJdbcTemplate") JdbcTemplate postgresqlJdbcTemplate
+```text
+Browser
+  |
+  v
+Vue frontend (port 80)
+  |
+  | /api/* reverse proxy
+  v
+Spring Boot backend (port 8080)
+  |                  |
+  |                  +--> MySQL: identity, configuration, models, tasks, and logs
+  |                  +--> PostgreSQL: automation configurations and execution logs
+  |                  +--> Redis: sessions, revoked tokens, locks, and rate-limit state
+  |
+  | authenticated internal requests
+  v
+Python worker (internal port 8000)
+  |
+  v
+OpenAI-compatible model providers
 ```
 
-AI平台不创建具体业务表；业务模块应使用独立迁移脚本维护 PostgreSQL Schema。
+The browser never receives provider API keys. The Java service resolves an enabled model route, decrypts the relevant provider credentials, and sends candidate configurations to the Python worker. The worker enforces concurrency limits, rotates credentials, fails over between candidates, and reports usage and tracing data to Java.
 
-### Redis 缓存数据库
+## Data Responsibilities
 
-Redis 只保存可丢失、可重建的缓存状态。当前用于登录 Token 撤销列表，权限主数据仍以 MySQL 为准。
+### MySQL system database
 
-## 权限体系
+MySQL is the primary platform database. It contains:
 
-- 密码使用 BCrypt 保存。
-- 登录令牌使用 HS256 签名，并带唯一 `jti` 和过期时间。
-- 退出登录后，令牌编号写入 Redis 直到自然过期。
-- 后端通过 `@RequiredPermission` 执行最终接口权限校验。
-- 前端根据相同权限编码控制路由和菜单显示。
-- 管理员角色编码为 `ADMIN`，拥有全部平台权限。
-- 菜单支持目录、页面和按钮三级类型，并由登录用户的菜单树动态生成侧边栏。
-- 用户可绑定部门、岗位和多个角色；角色数据范围支持全部、本部门、本部门及下级、本人和自定义部门。
-- 系统管理接口使用 `list/create/update/delete` 细粒度权限，并兼容历史 `manage` 权限。
+- Users, roles, menus, permissions, departments, positions, dictionaries, and system settings.
+- Model providers, encrypted provider credentials, models, and capability routes.
+- External API key metadata and hashed secrets.
+- System tasks, Java/Python trace records, operation logs, and login logs.
 
-## API Key 访问
+JPA manages platform entities, while `backend/src/main/resources/system-schema.sql` initializes the task and log tables. Create the target database before starting the application and grant the configured account schema-management privileges.
 
-平台保留现有 Bearer Token 登录方式，并支持外部系统通过 `X-API-Key` 直接访问显式开放的 Java API：
+### PostgreSQL business database
+
+PostgreSQL is reserved for subordinate business modules. The current platform stores API-trigger configurations and execution logs there. The backend runs `backend/src/main/resources/api-trigger-schema.sql` idempotently at startup, so the configured account requires DDL privileges.
+
+Future business modules can access PostgreSQL through the `postgresqlJdbcTemplate` Spring bean and should maintain their schemas independently.
+
+### Redis cache
+
+Redis stores state that can be rebuilt, including online sessions, revoked token identifiers, API key rate-limit counters, and distributed scheduler locks. MySQL remains the source of truth for users and permissions.
+
+## Security Model
+
+- Passwords are hashed with BCrypt.
+- Login tokens use HS256 signatures, unique `jti` values, and configurable expiration.
+- Logging out records the token identifier in Redis until the token expires.
+- Backend endpoints enforce permissions with `@RequiredPermission`; frontend route and menu checks provide the corresponding user experience.
+- The built-in `ADMIN` role receives all seeded permissions.
+- Sensitive system settings, provider credentials, and automation request data are encrypted with AES-GCM.
+- Request and audit logging masks passwords, tokens, cookies, authorization headers, and API keys.
+- API responses use `{success, code, message, data}`. Messages follow `Accept-Language`, or `APP_DEFAULT_LOCALE` when the header is absent.
+
+## Model Management and Chat
+
+Configure providers, models, and capability routes from the **Model Management** section of the web console:
+
+1. Add an OpenAI-compatible provider URL and one or more API keys.
+2. Add models, select their supported model types, and configure timeouts or thinking parameters as needed.
+3. Add a capability route and order its candidate models.
+4. Use the AI Chat page in route mode or select a single provider model directly.
+
+The initial model-type dictionary contains `text_model` and `vision_model`; administrators can add more enabled values through dictionary management. A request without `model_type` defaults to `text_model`.
+
+The chat request path is:
+
+```text
+Vue -> Java /api/ai/chat -> Python /llm/chat -> OpenAI-compatible API
+```
+
+Set `LLM_LOG_CONTENT=false` in environments where prompts and model responses must not be written to application logs. When content logging is disabled, the worker records metadata and a response digest instead.
+
+## API Key Access
+
+External systems can call endpoints explicitly annotated as API-key accessible. Create, authorize, rotate, disable, or revoke keys from **System Management > API Key Management**.
 
 ```bash
-curl -H 'X-API-Key: sk-<32-character-secret>' \
+curl -X POST http://localhost/api/ai/chat \
+  -H 'X-API-Key: sk-<your-api-key>' \
   -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"hello"}]}' \
-  http://localhost/api/ai/chat
+  -d '{"messages":[{"role":"user","content":"hello"}]}'
 ```
 
-- API Key 在“系统管理 → API Key 管理”页面创建、授权、停用、轮换和吊销。
-- API Key 使用 `sk-` 前缀，后接固定 32 位大小写字母和数字。
-- 历史 `bai_live_<key-id>.<secret>` 和 `sk-<key-id>.<secret>` 格式已停用，需在管理页面轮换后继续使用。
-- 完整 Key 只在创建或轮换成功时展示一次，数据库仅保存用于定位的前 12 位字符和 HMAC-SHA256 摘要。
-- 每个 Key 必须绑定启用用户，实际权限为“Key 勾选接口”和绑定用户 RBAC 权限的交集。
-- 有效期支持指定时间或永久有效；永久有效仍受停用、吊销、用户状态、IP 白名单和限流控制。
-- 只有代码中带 `@ApiKeyEndpoint` 的接口会出现在授权目录，不能通过页面填写任意 URL。
-- 首批开放接口为 AI 对话调用和正式执行接口触发器；API Key 管理接口本身始终只接受 Bearer Token。
-- 请求不能同时携带 `Authorization` 和 `X-API-Key`，否则返回 401。
-- `APP_API_KEY_HASH_SECRET` 可单独配置摘要密钥；未设置时复用 `APP_CONFIG_ENCRYPTION_KEY`。
+Important rules:
 
-## 系统管理
+- A key uses the `sk-` prefix followed by a generated secret. The complete value is displayed only after creation or rotation.
+- The database stores only a lookup prefix and an HMAC-SHA256 digest, not the full key.
+- Effective access is the intersection of the endpoints selected for the key and the bound user's RBAC permissions.
+- The bound user and key must both remain enabled. Expiry, revocation, IP allowlists, and rate limits are also enforced.
+- A request must not contain both `Authorization` and `X-API-Key`; mixed credentials return HTTP 401.
+- API key management endpoints themselves accept Bearer tokens only.
+- `APP_API_KEY_HASH_SECRET` should be a dedicated secret. If omitted, the application reuses `APP_CONFIG_ENCRYPTION_KEY`.
 
-- 部门、岗位、字典和系统参数统一存放在 MySQL 系统库。
-- 敏感系统参数与模型 API Key 使用 AES-GCM 加密，管理接口只返回脱敏值。
-- Redis 维护在线会话、最后活跃时间和 Token 撤销状态，管理员可强制下线单个会话或用户全部会话。
-- 操作日志通过 AOP 记录写请求、耗时、结果和脱敏参数；登录日志独立记录登录成功与失败事件。
-- 外部业务 API 使用 `{success, code, message, data}` 统一响应结构；`code` 为与 HTTP 状态一致的数字，`message` 根据 `Accept-Language` 返回中文或英文，未声明语言时使用 `APP_DEFAULT_LOCALE`（默认 `en-US`，支持 `en-US`、`zh-CN`）；健康检查和内部服务协议保持精简格式。
+The currently exposed API-key endpoints are AI chat invocation and production API-trigger execution.
 
-首次启动自动创建以下权限：
+## Task Tracing and Audit Logs
 
-- `ai:chat:invoke`
-- `system:user:manage`
-- `system:role:manage`
-- `system:menu:manage`
-- `system:task:view`
+- Java creates or propagates `X-Request-Id` for each HTTP request.
+- Tracked operations receive a separate `traceId` that joins Java, Python, and database records.
+- Calls to the worker propagate request, parent-trace, Python-trace, and internal-authentication headers.
+- `@TraceType` describes task type and trigger metadata; `@TraceIgnored` excludes endpoints that should not create tasks.
+- Task state covers start, success, failure, cancellation, and forced termination.
+- Parent cancellation propagates to the corresponding Python task without terminating the shared worker process.
+- Startup recovery and scheduled checks mark abandoned tasks as failed after the heartbeat timeout.
+- Operation and login logs are managed separately from task traces.
 
-## LLM 调用
+`trace-tracking-exclusions.yml` defines HTTP methods and paths excluded from automatic task creation.
 
-浏览器不会直接持有模型 API Key。完整调用链如下：
+## HTTP Automation
+
+The automation module supports configurable HTTP methods, headers, query parameters, request bodies, Cron schedules, timeouts, pre-request authentication, manual execution, and temporary connection tests.
+
+- Request headers, request bodies, and authentication bodies are encrypted with `APP_CONFIG_ENCRYPTION_KEY`.
+- Outbound host rules and loopback/private-network switches are managed from the **API Trigger Security** page and apply without a restart.
+- Redis locks prevent duplicate Cron execution when multiple backend instances are running.
+- Response summaries are truncated and sanitized before storage.
+- Production executions also create MySQL task traces.
+
+## Prerequisites
+
+- Docker Engine with Docker Compose v2.
+- Reachable MySQL, PostgreSQL, and Redis services. Docker Compose does not create these dependencies.
+- Existing MySQL and PostgreSQL databases with accounts permitted to initialize the required schemas.
+
+For local development outside containers, use Java 17, Maven 3.9, Node.js 24, and Python 3.12.
+
+## Configuration
+
+The repository tracks `.env.example` only. Never commit a populated `.env` file.
+
+1. Copy the template:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Configure the external MySQL, PostgreSQL, and Redis connections.
+
+3. Replace every placeholder credential. Generate an encryption key with:
+
+   ```bash
+   openssl rand -base64 32
+   ```
+
+4. At minimum, review these security-sensitive values:
+
+   ```dotenv
+   APP_TOKEN_SECRET=<at-least-32-random-characters>
+   APP_SEED_ADMIN_PASSWORD=<at-least-10-secure-characters>
+   APP_CONFIG_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
+   APP_API_KEY_HASH_SECRET=<at-least-32-random-characters>
+   PYTHON_WORKER_INTERNAL_TOKEN=<at-least-24-random-characters>
+   ```
+
+The API key hash secret is optional only because it falls back to the encryption key; a separate value is recommended for production.
+
+### Environment variable groups
+
+- **Compose:** `COMPOSE_PROJECT_NAME`.
+- **MySQL:** `MYSQL_URL`, `MYSQL_USERNAME`, `MYSQL_PASSWORD`.
+- **PostgreSQL:** `POSTGRES_URL`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_POOL_SIZE`.
+- **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`.
+- **Branding and locale:** `APP_PLATFORM_CODE`, `APP_PLATFORM_NAME_EN`, `APP_PLATFORM_NAME_ZH`, `APP_PLATFORM_SHORT_NAME`, `APP_DEFAULT_LOCALE`.
+- **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_API_KEY_HASH_SECRET`.
+- **Worker and model calls:** `PYTHON_WORKER_INTERNAL_TOKEN`, `JAVA_INSTANCE_ID`, `PYTHON_WORKER_INSTANCE_ID`, `LLM_TIMEOUT_SECONDS`, `LLM_LOG_CONTENT`.
+- **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
+- **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
+- **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
+- **Ports and images:** `BACKEND_PORT`, `FRONTEND_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`.
+
+`APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
+
+## Start with Docker Compose
+
+Validate the resolved configuration before starting the stack. Be aware that `docker compose config` expands secrets, so do not share its output.
+
+```bash
+docker compose config --quiet
+docker compose up --build -d
+docker compose ps
+```
+
+After all services are healthy:
+
+- Web console: <http://localhost>
+- Backend API: <http://localhost:8080>
+- Backend health check: <http://localhost:8080/api/open/health>
+- Frontend health check: <http://localhost/health>
+
+Use the username configured by `APP_SEED_ADMIN_USERNAME` and the password configured by `APP_SEED_ADMIN_PASSWORD`. The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically.
+
+To stop the application:
+
+```bash
+docker compose down
+```
+
+## Development and Tests
+
+Run the backend test suite:
+
+```bash
+cd backend
+mvn test -B
+```
+
+Run the Python worker tests with Python 3.12:
+
+```bash
+cd python-worker
+python3.12 -m pytest
+```
+
+Run the complete frontend Node test suite from the repository root:
+
+```bash
+node --test frontend/test/*.test.mjs frontend/tests/*.test.js
+```
+
+Rebuild the Docker environment after code changes:
+
+```bash
+docker compose up --build -d
+```
+
+## Repository Layout
 
 ```text
-Vue -> Java /api/ai/chat -> Python Worker /llm/chat -> OpenAI-compatible API
+backend/                        Spring Boot API and platform services
+database/postgresql/            Reference PostgreSQL schema scripts
+frontend/                       Vue administration console and API proxy
+python-worker/                  FastAPI LLM worker
+.env.example                    Environment variable template
+docker-compose.yml              Application container definitions
+trace-tracking-exclusions.yml   Default task-tracking exclusions
+TEST_REPORT.md                  Test baseline and execution history
 ```
 
-Java 负责用户权限、任务状态和父任务日志上下文；Python Worker 负责模型连接池、并发限制、API Key 轮询和 Token 统计。
+## Production Notes
 
-默认 `LLM_LOG_CONTENT=false`，任务日志只保存模型、耗时、Token 数及响应摘要，不记录完整提示词和模型响应。
+- Keep the production environment file outside the repository and restrict its filesystem permissions.
+- Use separate least-privilege accounts for the MySQL system database and PostgreSQL business database.
+- Rotate all example credentials before the first startup.
+- Keep provider credentials out of source code, shell history, logs, and Git history.
+- Use a dedicated `APP_API_KEY_HASH_SECRET` instead of relying on the encryption-key fallback.
+- Review `LLM_LOG_CONTENT`; the provided template enables content logging, which may be inappropriate for sensitive workloads.
+- Back up MySQL task/log data and PostgreSQL automation logs before schema or application upgrades.
+- Override `MAVEN_IMAGE`, `JRE_IMAGE`, `NODE_IMAGE`, `PYTHON_IMAGE`, or Python package-mirror settings when public registries are unavailable.
 
-模型调用始终读取容器内 `/app/config/ai-model-pools.yml` 和 `/app/config/ai-feature-routing.yml`。仓库提供 `ai-model-pools.example.yml` 作为模型池结构示例，并提供可直接使用的 `ai-feature-routing.yml` 通用模型路由配置；真实模型地址和 API Key 必须保存在仓库外。
+## License
 
-YAML 支持：
-
-- 多供应商和多个 API Key。
-- 供应商级或 API Key 级并发限制。
-- `ai-feature-routing.yml` 只配置通用模型的能力等级和思考模式。
-- 每次请求通过 `model_type` 选择具体模型类型，例如 `text_model`、`audio_model` 或 `reasoning_model`。
-- 组池顺序和 API Key 故障切换。
-- `model_type` 为空时默认使用 `text_model`；通用配置缺失时默认使用 `middle` 能力等级并关闭思考模式。
-
-## 统一日志
-
-- Java 请求自动生成或传播 `X-Request-Id`，用于标识单次 HTTP 请求。
-- AI 调用创建 MySQL 系统任务并写入 MDC `traceId`。
-- Java Logback 将带 `traceId` 的日志异步批量写入 MySQL。
-- Java 调用 Worker 时传播 `X-Request-Id`、`X-Parent-Trace-Id`、`X-Python-Trace-Id` 和内部令牌。
-- Python 使用 ContextVar 注入 `requestId`、`traceId`、`pythonTraceId`，并异步批量回传 Java。
-- `traceId` 关联跨 Java、Python Worker 和数据库的完整任务链路，与 `requestId` 相互独立。
-- 日志保留天数、队列容量和持久化级别均由统一环境变量维护。
-
-## 任务调度与 AOP
-
-- 默认对未排除的 `RestController` 写操作建立系统任务。
-- `@TraceType` 用于声明任务名称、触发入口和定时任务所有者参数。
-- `@TraceIgnored` 用于排除登录、健康检查、任务查询和内部日志接口。
-- AOP 自动维护任务开始、成功、失败、取消和强制终止状态。
-- 请求参数与请求头保存前会递归屏蔽密码、Token、Cookie、Authorization 和 API Key。
-- 前端可预留 `X-Trace-Id`，后端绑定后通过响应头返回同一 Trace ID。
-- `trace-tracking-exclusions.yml` 统一维护不需要建立任务的 HTTP 方法和路径。
-- Python 子任务独立记录 Worker 实例、状态、心跳和完成原因。
-- 父任务取消会传播到对应 Python 异步任务，强制终止不会杀死共享 Worker 进程。
-- 定时巡检和应用启动恢复会将心跳超时的遗留任务标记为失败。
-
-## 自动化接口触发
-
-接口触发配置和执行记录存放在 PostgreSQL 业务库。首次部署需使用具有 DDL 权限的账号执行：
-
-```bash
-psql "$POSTGRES_DSN" -f database/postgresql/api-trigger.sql
-```
-
-支持 HTTP 方法、请求头、查询参数、请求体、Cron、超时、前置认证、手动执行和临时测试。正式执行会同时创建 MySQL 系统任务。
-
-- `APP_CONFIG_ENCRYPTION_KEY` 使用 AES-GCM 加密请求头、请求体和认证请求体。
-- “接口触发安全配置”页面动态维护目标 Host 白名单和私网访问开关，保存后无需重启服务。
-- 默认开启回环开关，无需在 Host 白名单配置 `localhost`、`127.0.0.1` 和 `::1`；其他私网默认关闭。
-- 额外 Host 使用逐条规则配置，支持精确、域名边界前缀、域名边界后缀、字符串包含和任意 Host；任意 Host 不会绕过回环与私网两个独立开关。
-- Redis 分布式锁避免多后端实例重复执行同一 Cron。
-- 执行摘要会截断并屏蔽常见 Token、密码和 Authorization 内容。
-
-## 环境变量
-
-仓库只提供 `.env.example`，**不会提供或提交 `.env`**。生产环境建议把真实变量文件保存在仓库外，例如：
-
-```bash
-sudo install -d -m 700 /etc/base-ai
-sudo cp .env.example /etc/base-ai/base-ai.env
-sudo chmod 600 /etc/base-ai/base-ai.env
-sudo editor /etc/base-ai/base-ai.env
-```
-
-必须替换所有密码和内部令牌。不要把 `/etc/base-ai/base-ai.env` 复制回仓库。
-
-`COMPOSE_PROJECT_NAME` 是 Docker Compose 资源的统一命名前缀，默认示例值为 `base-ai`。修改该值会同步调整 Compose 项目名、应用镜像名称和网络名称。
-
-另行创建外部运行时 YAML：
-
-```bash
-sudo cp ai-model-pools.example.yml /etc/base-ai/ai-model-pools.yml
-sudo cp ai-feature-routing.yml /etc/base-ai/ai-feature-routing.yml
-sudo cp trace-tracking-exclusions.yml /etc/base-ai/trace-tracking-exclusions.yml
-sudo chmod 600 /etc/base-ai/ai-model-pools.yml
-sudo chmod 644 /etc/base-ai/ai-feature-routing.yml /etc/base-ai/trace-tracking-exclusions.yml
-sudo editor /etc/base-ai/ai-model-pools.yml
-```
-
-将真实模型地址和 API Key 写入组池 YAML，并在环境文件中设置：
-
-```dotenv
-AI_MODEL_POOLS_FILE=/etc/base-ai/ai-model-pools.yml
-AI_FEATURE_ROUTING_FILE=/etc/base-ai/ai-feature-routing.yml
-TRACE_TRACKING_EXCLUSIONS_FILE=/etc/base-ai/trace-tracking-exclusions.yml
-```
-
-三份运行时 YAML 均可通过外部环境文件指定宿主机路径；未设置对应路径时，Docker Compose 分别回退到仓库内的 `ai-model-pools.yml`、`ai-feature-routing.yml` 和 `trace-tracking-exclusions.yml`。具体模型类型和能力等级分别通过请求的 `model_type` 与通用配置选择。
-
-环境变量分为：
-
-- 平台配置：`APP_PLATFORM_CODE`、`APP_PLATFORM_NAME_EN`、`APP_PLATFORM_NAME_ZH`、`APP_PLATFORM_SHORT_NAME`，默认展示为 `AI Platform` 和 `AI平台`；`APP_DEFAULT_LOCALE` 配置后端默认语言，仅支持 `en-US`、`zh-CN`，默认 `en-US`。
-- MySQL 系统库：`MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
-- PostgreSQL 业务库：`POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`。
-- Redis 缓存：`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`。
-- 平台安全：`APP_TOKEN_SECRET`、`APP_SEED_ADMIN_PASSWORD`、`PYTHON_WORKER_INTERNAL_TOKEN`。
-- 配置加密：`APP_CONFIG_ENCRYPTION_KEY`，可通过 `openssl rand -base64 32` 生成。
-- YAML 文件挂载：`AI_MODEL_POOLS_FILE`、`AI_FEATURE_ROUTING_FILE`、`TRACE_TRACKING_EXCLUSIONS_FILE`；调用超时和内容日志仍使用 `LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
-- 接口触发：Host 与私网策略通过页面配置；调度参数继续使用 `API_TRIGGER_LOCK_SECONDS` 等环境变量。
-- 日志：`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_LOG_QUEUE_CAPACITY`。
-- 任务治理：`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
-
-升级已有部署时，必须先备份 MySQL 系统任务与链路日志表以及 PostgreSQL 接口触发执行日志，并将外部环境文件中的相关配置统一更新为 `TRACE_*`。新版本只识别 Trace Schema；启动前需由运维人员完成一次性数据库结构调整并核对数据行数，再启动应用。
-
-## Docker 启动
-
-Docker Compose 不创建 MySQL、PostgreSQL 或 Redis。启动前需要保证三个外部服务可以从容器网络访问。
-
-启动前必须在环境变量文件中设置 `COMPOSE_PROJECT_NAME`，已有部署升级时也需要补充该配置项。
-
-```bash
-docker compose --env-file /etc/base-ai/base-ai.env config
-docker compose --env-file /etc/base-ai/base-ai.env up -d --build
-docker compose --env-file /etc/base-ai/base-ai.env ps
-```
-
-默认访问地址：
-
-- 前端：`http://localhost`
-- Java 后端：`http://localhost:8080`
-- 后端健康检查：`http://localhost:8080/api/open/health`
-
-如果网络无法访问 Docker Hub，可在外部环境变量文件中覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE` 和 `PYTHON_IMAGE`。
-
-## 目录结构
-
-```text
-backend/         Spring Boot 系统服务
-frontend/        Vue 管理端与同源 API 代理
-python-worker/   FastAPI LLM Worker
-.env.example     唯一环境变量模板
-ai-model-pools.example.yml  LLM 模型池配置模板
-ai-feature-routing.yml  默认业务模型路由配置
-trace-tracking-exclusions.yml  默认任务跟踪排除配置
-docker-compose.yml
-```
-
-## 安全要求
-
-- `APP_TOKEN_SECRET` 至少使用 32 位随机字符串。
-- `APP_API_KEY_HASH_SECRET` 建议使用独立的至少 32 位随机字符串；未配置时复用配置加密密钥。
-- `PYTHON_WORKER_INTERNAL_TOKEN` 至少使用 24 位随机字符串。
-- 首次启动管理员密码不得使用示例值。
-- LLM Key 只能写入仓库外部的 `ai-model-pools.yml`，不得写入源码或 Git 历史。
-- PostgreSQL 业务账号和 MySQL 系统账号应分别授权，不得共用数据库超级用户。
+This project is licensed under the Apache License 2.0. See `LICENSE` for details.
