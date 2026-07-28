@@ -6,6 +6,8 @@ const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url),
 const automationStyles = readFileSync(new URL('../src/automation.css', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
+const zhLocaleSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
+const enLocaleSource = readFileSync(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
 const menuNodeSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
 const menusViewSource = readFileSync(new URL('../src/views/MenusView.vue', import.meta.url), 'utf8')
 const actionColumnCases = [
@@ -48,6 +50,23 @@ test('后台骨架和内容容器允许正确收缩且不会截断页面', () =>
   assertDeclarations(globalStyles, '.topbar-title', [/flex:\s*1/, /overflow:\s*hidden/])
   assertDeclarations(globalStyles, '.user-chip', [/max-width:\s*100%/, /text-overflow:\s*ellipsis/])
   assertDeclarations(globalStyles, '.section-head > div', [/min-width:\s*0/])
+})
+
+test('登录后顶部栏将开放平台与语言切换保持为独立入口', () => {
+  const actionsStart = adminLayoutSource.indexOf('class="topbar-actions"')
+  const openPlatformLink = adminLayoutSource.indexOf('class="topbar-open-platform-link"')
+  const languageSwitcher = adminLayoutSource.indexOf('<LanguageSwitcher />')
+
+  assert.ok(actionsStart >= 0)
+  assert.ok(openPlatformLink > actionsStart)
+  assert.ok(languageSwitcher > openPlatformLink)
+  assert.match(adminLayoutSource, /class="topbar-open-platform-link" to="\/open-platform"/)
+  assertDeclarations(globalStyles, '.topbar-actions', [/display:\s*flex/, /align-items:\s*center/, /gap:\s*12px/])
+  assert.doesNotMatch(declarations(globalStyles, '.topbar-actions'), /border:|background:/)
+  assertDeclarations(globalStyles, '.topbar-open-platform-link', [/display:\s*inline-flex/, /border:/, /background:\s*#fff/])
+  assert.match(globalStyles, /@media \(max-width: 600px\)[\s\S]*?\.topbar-open-platform-link span\s*\{\s*display:\s*none;/)
+  assert.match(zhLocaleSource, /openPlatform:\s*'开放平台'/)
+  assert.match(enLocaleSource, /openPlatform:\s*'Open Platform'/)
 })
 
 test('AI 对话仅滚动消息区域并固定上下操作区域', () => {

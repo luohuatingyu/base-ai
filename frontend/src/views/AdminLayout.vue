@@ -29,6 +29,10 @@
           <div><strong>{{ title }}</strong><small v-if="route.meta.desc">{{ t(route.meta.desc) }}</small></div>
         </div>
         <div class="topbar-actions">
+          <router-link class="topbar-open-platform-link" to="/open-platform" :aria-label="t('nav.openPlatform')" :title="t('nav.openPlatform')">
+            <el-icon><Promotion /></el-icon>
+            <span>{{ t('nav.openPlatform') }}</span>
+          </router-link>
           <LanguageSwitcher />
           <el-dropdown @command="handleCommand">
             <span class="user-chip">{{ localizeAuthenticatedUserDisplayName(auth.user, t) }}</span>
@@ -58,7 +62,7 @@
 <script setup>
 import { computed, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { HomeFilled, Menu, Fold, Expand } from '@element-plus/icons-vue'
+import { HomeFilled, Menu, Fold, Expand, Promotion } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
 import { appConfig } from '../config'
