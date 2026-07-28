@@ -89,12 +89,14 @@ test('英文导航为长名称保留空间且文本不会撑破侧栏', () => {
 test('表格、分页和表单内容遵守统一的对齐与溢出规则', () => {
   assertDeclarations(globalStyles, '.el-table', [/width:\s*100%/, /max-width:\s*100%/])
   assertDeclarations(globalStyles, '.el-table .cell', [
-    /overflow:\s*visible/,
+    /overflow:\s*hidden/,
     /overflow-wrap:\s*normal/,
-    /text-overflow:\s*clip/,
+    /padding:\s*0\s+12px/,
+    /text-overflow:\s*ellipsis/,
     /white-space:\s*nowrap/,
     /word-break:\s*normal/
   ])
+  assert.doesNotMatch(declarations(globalStyles, '.el-table .cell'), /overflow-x:\s*auto|scrollbar-width:/, '单元格不应显示独立横向滑动条')
   assertDeclarations(globalStyles, '.el-table .el-scrollbar__wrap', [/overflow-x:\s*auto/])
   assertDeclarations(globalStyles, '.el-pagination', [/flex-wrap:\s*wrap/, /gap:\s*8px/])
   assertDeclarations(globalStyles, '.el-form-item__content', [/min-width:\s*0/])

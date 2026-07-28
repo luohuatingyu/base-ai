@@ -305,14 +305,15 @@ body { margin: 0; background: var(--app-canvas); }
 
 .el-table td.el-table__cell { height: 52px; color: #39465b; }
 
+/* 表格单元格统一缩略长文本，滚动仅由整张表承载，避免每个字段出现独立滑动条。 */
 .el-table .cell {
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   overflow-wrap: normal;
+  padding: 0 12px;
   line-height: 1.5;
+  text-overflow: ellipsis;
   white-space: nowrap;
   word-break: normal;
-  scrollbar-width: thin;
 }
 
 .el-table .el-scrollbar__wrap { overflow-x: auto; }
