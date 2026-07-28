@@ -12,5 +12,11 @@ public @interface ApiKeyEndpoint {
     String code();
     String nameKey();
     String groupKey();
+    String descriptionKey() default "";
     ApiKeyRisk risk() default ApiKeyRisk.NORMAL;
+    ApiKeyField[] pathParameters() default {};
+    ApiKeyField[] requestFields() default {};
+    ApiKeyField[] responseFields() default {};
+    String requestExample() default "";
+    String responseExample() default "";
 }

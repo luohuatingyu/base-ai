@@ -13,6 +13,7 @@
         <el-form-item><el-input v-model="form.password" size="large" type="password" show-password :placeholder="t('login.password')" /></el-form-item>
         <el-button class="full" size="large" type="primary" :loading="loading" @click="submit">{{ t('login.submit') }}</el-button>
       </el-form>
+      <router-link class="login-open-platform-link" to="/open-platform">{{ t('login.openPlatform') }}</router-link>
     </el-card>
   </div>
 </template>

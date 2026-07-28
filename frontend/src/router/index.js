@@ -21,11 +21,13 @@ import ModelProvidersView from '../views/ModelProvidersView.vue'
 import ModelsView from '../views/ModelsView.vue'
 import ModelRoutesView from '../views/ModelRoutesView.vue'
 import ApiKeysView from '../views/ApiKeysView.vue'
+import OpenPlatformView from '../views/OpenPlatformView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/login', component: LoginView, meta: { public: true } },
+    { path: '/login', component: LoginView, meta: { guestOnly: true } },
+    { path: '/open-platform', component: OpenPlatformView, meta: { public: true } },
     {
       path: '/', component: AdminLayout, redirect: '/dashboard', children: [
         { path: 'dashboard', component: DashboardView, meta: { navigable: true, desc: 'dashboard.description' } },
@@ -54,7 +56,8 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
-  if (to.meta.public) return auth.isLoggedIn ? '/dashboard' : true
+  if (to.meta.guestOnly) return auth.isLoggedIn ? '/dashboard' : true
+  if (to.meta.public) return true
   if (!auth.isLoggedIn) return `/login?redirect=${encodeURIComponent(to.fullPath)}`
   if (!auth.user) {
     try { await auth.fetchMe() } catch { return '/login' }

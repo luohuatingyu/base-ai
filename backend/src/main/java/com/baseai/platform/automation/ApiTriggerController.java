@@ -4,6 +4,7 @@ import com.baseai.platform.trace.TraceType;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.security.ApiKeyEndpoint;
+import com.baseai.platform.security.ApiKeyField;
 import com.baseai.platform.security.ApiKeyRisk;
 import org.springframework.web.bind.annotation.*;
 
@@ -58,7 +59,21 @@ public class ApiTriggerController {
     @PostMapping("/{id}/trigger")
     @RequiredPermission("automation:api-trigger:trigger")
     @ApiKeyEndpoint(code = "automation.api-trigger.execute", nameKey = "apiKeys.endpointNames.apiTriggerExecute",
-        groupKey = "apiKeys.endpointGroups.automation", risk = ApiKeyRisk.HIGH)
+        groupKey = "apiKeys.endpointGroups.automation",
+        descriptionKey = "openPlatform.endpointDescriptions.apiTriggerExecute", risk = ApiKeyRisk.HIGH,
+        pathParameters = {
+            @ApiKeyField(name = "id", descriptionKey = "openPlatform.fields.triggerId", type = "integer",
+                required = true, example = "1")
+        },
+        responseFields = {
+            @ApiKeyField(name = "success", descriptionKey = "openPlatform.fields.success", type = "boolean", required = true),
+            @ApiKeyField(name = "code", descriptionKey = "openPlatform.fields.code", type = "integer", required = true),
+            @ApiKeyField(name = "message", descriptionKey = "openPlatform.fields.message", type = "string", required = true),
+            @ApiKeyField(name = "data.httpStatus", descriptionKey = "openPlatform.fields.httpStatus", type = "integer", required = true),
+            @ApiKeyField(name = "data.durationMs", descriptionKey = "openPlatform.fields.durationMs", type = "integer", required = true),
+            @ApiKeyField(name = "data.responseBody", descriptionKey = "openPlatform.fields.responseBody", type = "string", required = true)
+        },
+        responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"data\": {\n    \"httpStatus\": 200,\n    \"durationMs\": 126,\n    \"responseBody\": \"{\\\"status\\\":\\\"ok\\\"}\"\n  }\n}")
     @TraceType(value = "API_TRIGGER_EXECUTE", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.ExecutionResult trigger(@PathVariable Long id) { return service.execute(id, "MANUAL"); }
 

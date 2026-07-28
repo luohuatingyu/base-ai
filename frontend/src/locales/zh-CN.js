@@ -65,7 +65,8 @@ export default {
     username: '账号',
     password: '密码',
     submit: '登录',
-    loginFailed: '登录失败'
+    loginFailed: '登录失败',
+    openPlatform: '查看开放平台'
   },
   auth: {
     loginSuccess: '登录成功',
@@ -85,6 +86,22 @@ export default {
   },
   language: { zhCN: '简体中文', enUS: 'English' },
   apiKeyUsage: { title: '使用说明', introduction: '外部系统调用已授权 API 时，将完整 API Key 放入 X-API-Key 请求头。', exampleTitle: 'curl 示例', curlExample: `curl -X POST <BASE_URL>/api/ai/chat\n  -H "X-API-Key: sk-<your-api-key>"\n  -H "Content-Type: application/json"\n  -d '{'{'}"messages":[{'{'}"role":"user","content":"hello"{'}'}]{'}'}'`, rulesTitle: '调用规则', permissionRule: '实际可调用范围是 Key 勾选的开放 API 与绑定用户 RBAC 权限的交集。', credentialRule: '请求不能同时携带 Authorization 和 X-API-Key，否则会返回 401。', restrictionRule: 'Key 必须处于启用且未过期、未吊销状态，并同时满足来源 IP 白名单和调用频次限制。' },
+  openPlatform: {
+    eyebrow: 'BASE AI OPEN PLATFORM', title: '开放能力，标准接入。', description: '浏览 API Key 可授权的全部开放接口，查看协议并直接发起真实调试请求。',
+    authentication: '认证方式', authenticationHelp: 'API Key 的接口范围还需同时满足绑定用户的 RBAC 权限、IP 白名单、有效期和频次限制。',
+    endpoints: '开放接口', console: '进入控制台', login: '登录控制台', pathParameters: '路径参数', requestParameters: '请求参数', responseParameters: '响应参数',
+    curlExample: 'curl 调用示例', responseExample: '响应示例', field: '字段', fieldType: '类型', required: '必填', defaultValue: '默认值',
+    debugger: '在线调试', debuggerHelp: '调试会向真实业务接口发送请求；API Key 仅保存在当前页面内存中。', requestBody: 'JSON 请求体', sendRequest: '发送请求', debugResult: '调试结果',
+    highRiskWarning: '高风险真实操作', highRiskTitle: '确认高风险调用', highRiskConfirm: '该接口会执行真实业务操作，确认使用当前 API Key 继续调用？',
+    pathRequired: '请填写路径参数 {name}', loadFailed: '开放接口目录加载失败',
+    risks: { NORMAL: '普通', SENSITIVE: '敏感', HIGH: '高风险' },
+    errors: { API_KEY_REQUIRED: '请输入 API Key', REQUEST_BODY_REQUIRED: '请输入 JSON 请求体', INVALID_JSON: 'JSON 请求体格式不正确' },
+    endpointDescriptions: { aiChatInvoke: '调用平台已配置的模型路由或指定模型，返回模型内容、追踪标识及 Token 使用量。', apiTriggerExecute: '立即执行指定的接口触发器配置，并返回下游 HTTP 状态、耗时和响应内容。' },
+    fields: {
+      modelType: '模型类型；为空时使用 text_model。', featureCode: '能力路由编码；未指定 modelId 时用于选择模型池，为空时使用 chat。', messages: '按顺序发送给模型的对话消息列表。', messageRole: '消息角色，例如 user、assistant 或 system。', messageContent: '消息内容，可为文本或模型支持的结构化内容。', temperature: '模型输出随机性，未提供时为 0。', enableThinking: '是否启用模型思考能力；为空时使用路由配置。', thinkingLevel: '思考等级，仅在启用思考时生效。', modelId: '指定单个模型直连；提供后不再按 featureCode 选择路由。',
+      triggerId: '需要立即执行的接口触发器配置 ID。', success: '统一响应是否成功。', code: '业务响应码，与 HTTP 状态保持一致。', message: '当前语言的响应消息。', traceId: '本次模型调用的任务追踪标识。', content: '模型生成的响应内容。', model: '实际提供响应的模型名称。', inputTokens: '输入 Token 数。', outputTokens: '输出 Token 数。', totalTokens: 'Token 总数。', httpStatus: '下游接口返回的 HTTP 状态。', durationMs: '下游调用耗时，单位毫秒。', responseBody: '下游接口返回的原始响应文本。'
+    }
+  },
   chat: {
     title: '通用 AI 对话',
     description: '请求经 Java 权限和任务层转发至 Python Worker。',

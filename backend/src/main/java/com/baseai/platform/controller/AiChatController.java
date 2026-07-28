@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.baseai.platform.trace.TraceType;
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.security.ApiKeyEndpoint;
+import com.baseai.platform.security.ApiKeyField;
 import com.baseai.platform.security.ApiKeyRisk;
 import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.LlmManagementService;
@@ -85,7 +86,41 @@ public class AiChatController {
     /** 建立任务上下文并代理一次通用模型对话。 */
     @PostMapping
     @ApiKeyEndpoint(code = "ai.chat.invoke", nameKey = "apiKeys.endpointNames.aiChatInvoke",
-        groupKey = "apiKeys.endpointGroups.ai", risk = ApiKeyRisk.SENSITIVE)
+        groupKey = "apiKeys.endpointGroups.ai", descriptionKey = "openPlatform.endpointDescriptions.aiChatInvoke",
+        risk = ApiKeyRisk.SENSITIVE,
+        requestFields = {
+            @ApiKeyField(name = "model_type", descriptionKey = "openPlatform.fields.modelType", type = "string",
+                defaultValue = "text_model", example = "text_model"),
+            @ApiKeyField(name = "featureCode", descriptionKey = "openPlatform.fields.featureCode", type = "string",
+                defaultValue = "chat", example = "chat"),
+            @ApiKeyField(name = "messages", descriptionKey = "openPlatform.fields.messages", type = "array<object>",
+                required = true, example = "[{\"role\":\"user\",\"content\":\"Hello\"}]"),
+            @ApiKeyField(name = "messages[].role", descriptionKey = "openPlatform.fields.messageRole", type = "string",
+                required = true, example = "user"),
+            @ApiKeyField(name = "messages[].content", descriptionKey = "openPlatform.fields.messageContent", type = "any",
+                required = true, example = "Hello"),
+            @ApiKeyField(name = "temperature", descriptionKey = "openPlatform.fields.temperature", type = "number",
+                defaultValue = "0", example = "0.7"),
+            @ApiKeyField(name = "enableThinking", descriptionKey = "openPlatform.fields.enableThinking", type = "boolean",
+                example = "false"),
+            @ApiKeyField(name = "thinkingLevel", descriptionKey = "openPlatform.fields.thinkingLevel", type = "string",
+                example = "LOW"),
+            @ApiKeyField(name = "modelId", descriptionKey = "openPlatform.fields.modelId", type = "integer",
+                example = "1")
+        },
+        responseFields = {
+            @ApiKeyField(name = "success", descriptionKey = "openPlatform.fields.success", type = "boolean", required = true),
+            @ApiKeyField(name = "code", descriptionKey = "openPlatform.fields.code", type = "integer", required = true),
+            @ApiKeyField(name = "message", descriptionKey = "openPlatform.fields.message", type = "string", required = true),
+            @ApiKeyField(name = "data.traceId", descriptionKey = "openPlatform.fields.traceId", type = "string", required = true),
+            @ApiKeyField(name = "data.content", descriptionKey = "openPlatform.fields.content", type = "string", required = true),
+            @ApiKeyField(name = "data.model", descriptionKey = "openPlatform.fields.model", type = "string", required = true),
+            @ApiKeyField(name = "data.inputTokens", descriptionKey = "openPlatform.fields.inputTokens", type = "integer", required = true),
+            @ApiKeyField(name = "data.outputTokens", descriptionKey = "openPlatform.fields.outputTokens", type = "integer", required = true),
+            @ApiKeyField(name = "data.totalTokens", descriptionKey = "openPlatform.fields.totalTokens", type = "integer", required = true)
+        },
+        requestExample = "{\n  \"model_type\": \"text_model\",\n  \"featureCode\": \"chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Hello\" }\n  ],\n  \"temperature\": 0.7,\n  \"enableThinking\": false\n}",
+        responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"data\": {\n    \"traceId\": \"trace-id\",\n    \"content\": \"Hello!\",\n    \"model\": \"example-model\",\n    \"inputTokens\": 8,\n    \"outputTokens\": 4,\n    \"totalTokens\": 12\n  }\n}")
     @TraceType(value = "AI_CHAT", triggerEntry = "MANUAL", captureRequest = false)
     public ChatResponse chat(@RequestBody ChatRequest request) {
         log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());

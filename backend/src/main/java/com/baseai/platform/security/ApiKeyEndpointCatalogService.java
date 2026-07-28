@@ -16,9 +16,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class ApiKeyEndpointCatalogService implements ApplicationRunner {
+    private static final Pattern PATH_PARAMETER_PATTERN = Pattern.compile("\\{([^}/]+)}");
     private final ObjectProvider<RequestMappingHandlerMapping> handlerMappingProvider;
 
     public ApiKeyEndpointCatalogService(ObjectProvider<RequestMappingHandlerMapping> handlerMappingProvider) {
@@ -74,9 +77,46 @@ public class ApiKeyEndpointCatalogService implements ApplicationRunner {
         RequiredPermission permission = handler.getMethodAnnotation(RequiredPermission.class);
         if (permission == null) permission = handler.getBeanType().getAnnotation(RequiredPermission.class);
         if (permission == null) throw new IllegalStateException("API Key 接口必须声明 RequiredPermission: " + annotation.code());
-        return new EndpointView(annotation.code(), annotation.nameKey(), annotation.groupKey(), annotation.risk().name(),
-            methods.iterator().next().name(), patterns.iterator().next(), permission.value());
+        String path = patterns.iterator().next();
+        validateDocumentation(annotation, path);
+        return new EndpointView(annotation.code(), annotation.nameKey(), annotation.groupKey(), annotation.descriptionKey(),
+            annotation.risk().name(), methods.iterator().next().name(), path, permission.value(),
+            toFields(annotation.pathParameters()), toFields(annotation.requestFields()),
+            toFields(annotation.responseFields()), annotation.requestExample(), annotation.responseExample());
     }
 
-    public record EndpointView(String code, String nameKey, String groupKey, String risk, String method, String path, String permission) {}
+    /** 校验接口路径参数和文档字段是否完整一致。 */
+    private void validateDocumentation(ApiKeyEndpoint annotation, String path) {
+        if (annotation.descriptionKey().isBlank() || annotation.responseFields().length == 0
+            || annotation.responseExample().isBlank()) {
+            throw new IllegalStateException("API Key 接口文档不完整: " + annotation.code());
+        }
+        Set<String> declaredParameters = java.util.Arrays.stream(annotation.pathParameters())
+            .map(ApiKeyField::name).collect(java.util.stream.Collectors.toSet());
+        Set<String> pathParameters = new java.util.LinkedHashSet<>();
+        Matcher matcher = PATH_PARAMETER_PATTERN.matcher(path);
+        while (matcher.find()) pathParameters.add(matcher.group(1));
+        if (!pathParameters.equals(declaredParameters)) {
+            throw new IllegalStateException("API Key 接口路径参数文档不匹配: " + annotation.code());
+        }
+        if (annotation.requestFields().length > 0 && annotation.requestExample().isBlank()) {
+            throw new IllegalStateException("API Key 接口请求示例缺失: " + annotation.code());
+        }
+    }
+
+    /** 将字段注解转换为稳定的页面展示模型。 */
+    private List<FieldView> toFields(ApiKeyField[] fields) {
+        return java.util.Arrays.stream(fields)
+            .map(field -> new FieldView(field.name(), field.descriptionKey(), field.type(), field.required(),
+                field.defaultValue(), field.example()))
+            .toList();
+    }
+
+    public record FieldView(String name, String descriptionKey, String type, boolean required,
+                            String defaultValue, String example) {}
+
+    public record EndpointView(String code, String nameKey, String groupKey, String descriptionKey, String risk,
+                               String method, String path, String permission, List<FieldView> pathParameters,
+                               List<FieldView> requestFields, List<FieldView> responseFields,
+                               String requestExample, String responseExample) {}
 }
