@@ -306,12 +306,13 @@ body { margin: 0; background: var(--app-canvas); }
 .el-table td.el-table__cell { height: 52px; color: #39465b; }
 
 .el-table .cell {
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: hidden;
   overflow-wrap: normal;
   line-height: 1.5;
-  text-overflow: clip;
   white-space: nowrap;
   word-break: normal;
+  scrollbar-width: thin;
 }
 
 .el-table .el-scrollbar__wrap { overflow-x: auto; }
