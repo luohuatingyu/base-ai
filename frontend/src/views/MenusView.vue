@@ -6,7 +6,7 @@
     </div>
     <el-table :data="treeRows" row-key="id" default-expand-all table-layout="auto">
       <el-table-column :label="t('common.name')" min-width="220">
-        <template #default="scope"><span :title="localizedName(scope.row)">{{ localizedName(scope.row) }}</span></template>
+        <template #default="scope"><span>{{ localizedName(scope.row) }}</span></template>
       </el-table-column>
       <el-table-column :label="t('common.type')" width="100">
         <template #default="scope">{{ t(`menus.types.${scope.row.type.toLowerCase()}`) }}</template>

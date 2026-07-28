@@ -2,13 +2,17 @@
   <el-sub-menu v-if="children.length" :index="String(item.id)">
     <template #title>
       <el-icon><component :is="menuIcon" /></el-icon>
-      <span :title="menuName">{{ menuName }}</span>
+      <el-tooltip :content="menuName" effect="dark" placement="right" :enterable="true" popper-class="copyable-tooltip">
+        <span>{{ menuName }}</span>
+      </el-tooltip>
     </template>
     <MenuNode v-for="child in children" :key="child.id" :item="child" />
   </el-sub-menu>
   <el-menu-item v-else-if="item.type === 'MENU' && item.path" :index="item.path">
     <el-icon><component :is="menuIcon" /></el-icon>
-    <span :title="menuName">{{ menuName }}</span>
+    <el-tooltip :content="menuName" effect="dark" placement="right" :enterable="true" popper-class="copyable-tooltip">
+      <span>{{ menuName }}</span>
+    </el-tooltip>
   </el-menu-item>
 </template>
 

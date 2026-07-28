@@ -4,7 +4,9 @@ import test from 'node:test'
 
 const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 const automationStyles = readFileSync(new URL('../src/automation.css', import.meta.url), 'utf8')
+const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
+const menuNodeSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
 const menusViewSource = readFileSync(new URL('../src/views/MenusView.vue', import.meta.url), 'utf8')
 const actionColumnCases = [
   ['ApiTriggerView.vue', 380, 1],
@@ -84,6 +86,19 @@ test('英文导航为长名称保留空间且文本不会撑破侧栏', () => {
     [/flex:\s*1/, /min-width:\s*0/, /overflow:\s*hidden/, /text-overflow:\s*ellipsis/, /white-space:\s*nowrap/]
   )
   assertDeclarations(globalStyles, '.sidebar-footer span,\n.sidebar-footer small', [/overflow-wrap:\s*anywhere/, /line-height:\s*1\.45/])
+})
+
+test('溢出提示统一使用深色可复制的 Element Plus Tooltip', () => {
+  assert.match(appSource, /<el-config-provider[^>]*:table="tableConfig"/)
+  assert.match(appSource, /showOverflowTooltip:\s*true/)
+  assert.match(appSource, /tooltipEffect:\s*'dark'/)
+  assert.match(appSource, /tooltipOptions:\s*\{[\s\S]*?enterable:\s*true[\s\S]*?popperClass:\s*'copyable-tooltip'/)
+  assert.equal((menuNodeSource.match(/<el-tooltip\b/g) || []).length, 2, '侧栏菜单应统一使用 Element Plus Tooltip')
+  assert.doesNotMatch(menuNodeSource, /<span\s+:title=/, '侧栏菜单不应继续使用浏览器原生 title')
+  assert.match(adminLayoutSource, /<el-tooltip[^>]*popper-class="copyable-tooltip"[\s\S]*?<button class="collapse-trigger"/)
+  assert.doesNotMatch(adminLayoutSource, /<button class="collapse-trigger"[^>]*:title=/, '折叠按钮不应继续使用浏览器原生 title')
+  assert.doesNotMatch(menusViewSource, /<span\s+:title="localizedName/, '菜单名称应复用全局表格溢出提示')
+  assertDeclarations(globalStyles, '.copyable-tooltip', [/user-select:\s*text/, /cursor:\s*text/])
 })
 
 test('表格、分页和表单内容遵守统一的对齐与溢出规则', () => {

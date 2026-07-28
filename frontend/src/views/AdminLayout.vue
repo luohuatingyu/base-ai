@@ -16,9 +16,11 @@
         </el-menu>
       </el-scrollbar>
       <div v-show="!sidebarCollapsed" class="sidebar-footer"><span>{{ t('nav.permissionEnabled') }}</span><small>{{ t('nav.permissionDesc') }}</small></div>
-      <button class="collapse-trigger" @click="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? t('nav.expand') : t('nav.collapse')">
-        <el-icon><component :is="sidebarCollapsed ? Expand : Fold" /></el-icon>
-      </button>
+      <el-tooltip :content="sidebarCollapsed ? t('nav.expand') : t('nav.collapse')" effect="dark" placement="right" :enterable="true" popper-class="copyable-tooltip">
+        <button class="collapse-trigger" @click="sidebarCollapsed = !sidebarCollapsed">
+          <el-icon><component :is="sidebarCollapsed ? Expand : Fold" /></el-icon>
+        </button>
+      </el-tooltip>
     </el-aside>
     <el-container class="body-container">
       <el-header class="topbar">

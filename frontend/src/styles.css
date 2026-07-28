@@ -318,6 +318,15 @@ body { margin: 0; background: var(--app-canvas); }
 
 .el-table .el-scrollbar__wrap { overflow-x: auto; }
 
+/* 深色提示允许鼠标进入并选择文本，统一替代不可复制的浏览器原生 title。 */
+.copyable-tooltip {
+  max-width: min(480px, calc(100vw - 24px));
+  overflow-wrap: anywhere;
+  cursor: text;
+  user-select: text;
+  white-space: pre-wrap;
+}
+
 /* 列表操作区：固定列内按钮保持单行，并统一 API Triggers 使用的紧凑间距。 */
 .table-actions {
   display: flex;
