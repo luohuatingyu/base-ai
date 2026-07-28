@@ -317,7 +317,8 @@ async function send() {
 }
 
 .prompt-settings {
-  max-width: 960px;
+  width: 100%;
+  min-width: 0;
 }
 
 .prompt-settings-head {
