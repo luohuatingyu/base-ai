@@ -6,6 +6,7 @@ const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url),
 const automationStyles = readFileSync(new URL('../src/automation.css', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
+const languageSwitcherSource = readFileSync(new URL('../src/components/LanguageSwitcher.vue', import.meta.url), 'utf8')
 const zhLocaleSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const enLocaleSource = readFileSync(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
 const menuNodeSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
@@ -52,21 +53,37 @@ test('后台骨架和内容容器允许正确收缩且不会截断页面', () =>
   assertDeclarations(globalStyles, '.section-head > div', [/min-width:\s*0/])
 })
 
-test('登录后顶部栏将开放平台与语言切换保持为独立入口', () => {
+test('登录后顶部栏依次展示语言切换、开放平台和用户入口', () => {
   const actionsStart = adminLayoutSource.indexOf('class="topbar-actions"')
   const openPlatformLink = adminLayoutSource.indexOf('class="topbar-open-platform-link"')
-  const languageSwitcher = adminLayoutSource.indexOf('<LanguageSwitcher />')
+  const languageSwitcher = adminLayoutSource.indexOf('<LanguageSwitcher appearance="topbar" />')
+  const userChip = adminLayoutSource.indexOf('class="user-chip"')
 
   assert.ok(actionsStart >= 0)
-  assert.ok(openPlatformLink > actionsStart)
-  assert.ok(languageSwitcher > openPlatformLink)
+  assert.ok(languageSwitcher > actionsStart)
+  assert.ok(openPlatformLink > languageSwitcher)
+  assert.ok(userChip > openPlatformLink)
   assert.match(adminLayoutSource, /class="topbar-open-platform-link" to="\/open-platform"/)
   assertDeclarations(globalStyles, '.topbar-actions', [/display:\s*flex/, /align-items:\s*center/, /gap:\s*12px/])
   assert.doesNotMatch(declarations(globalStyles, '.topbar-actions'), /border:|background:/)
   assertDeclarations(globalStyles, '.topbar-open-platform-link', [/display:\s*inline-flex/, /border:/, /background:\s*#fff/])
+  assertDeclarations(globalStyles, '.user-chip', [/min-height:\s*36px/, /border:\s*1px solid #d8e4ff/, /color:\s*#315fcb/])
   assert.match(globalStyles, /@media \(max-width: 600px\)[\s\S]*?\.topbar-open-platform-link span\s*\{\s*display:\s*none;/)
   assert.match(zhLocaleSource, /openPlatform:\s*'开放平台'/)
   assert.match(enLocaleSource, /openPlatform:\s*'Open Platform'/)
+})
+
+test('登录后语言切换除圆形外与顶部入口保持统一视觉规格', () => {
+  assert.match(languageSwitcherSource, /appearance:\s*\{[\s\S]*default:\s*'plain'/)
+  assert.match(languageSwitcherSource, /'language-switcher--topbar':\s*props\.appearance === 'topbar'/)
+  assertDeclarations(languageSwitcherSource, '.language-switcher--topbar', [
+    /width:\s*36px/,
+    /height:\s*36px/,
+    /border:\s*1px solid #d8e4ff/,
+    /color:\s*#315fcb/,
+    /background:\s*#fff/
+  ])
+  assert.match(languageSwitcherSource, /\.language-switcher--topbar:hover,[\s\S]*\.language-switcher--topbar:focus-visible/)
 })
 
 test('AI 对话仅滚动消息区域并固定上下操作区域', () => {

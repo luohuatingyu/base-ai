@@ -29,11 +29,11 @@
           <div><strong>{{ title }}</strong><small v-if="route.meta.desc">{{ t(route.meta.desc) }}</small></div>
         </div>
         <div class="topbar-actions">
+          <LanguageSwitcher appearance="topbar" />
           <router-link class="topbar-open-platform-link" to="/open-platform" :aria-label="t('nav.openPlatform')" :title="t('nav.openPlatform')">
             <el-icon><Promotion /></el-icon>
             <span>{{ t('nav.openPlatform') }}</span>
           </router-link>
-          <LanguageSwitcher />
           <el-dropdown @command="handleCommand">
             <span class="user-chip">{{ localizeAuthenticatedUserDisplayName(auth.user, t) }}</span>
             <template #dropdown><el-dropdown-menu><el-dropdown-item command="logout">{{ t('nav.logout') }}</el-dropdown-item></el-dropdown-menu></template>

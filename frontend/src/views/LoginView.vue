@@ -1,12 +1,14 @@
 <!-- 登录页面：收集账号密码并建立平台会话。 -->
 <template>
   <div class="login-page">
-    <router-link class="login-open-platform-entry" to="/open-platform">
-      <el-icon><Promotion /></el-icon>
-      <span>{{ t('login.openPlatform') }}</span>
-    </router-link>
-    <div class="login-language-entry">
-      <LanguageSwitcher />
+    <div class="login-page-actions">
+      <div class="login-language-entry">
+        <LanguageSwitcher />
+      </div>
+      <router-link class="login-open-platform-entry" to="/open-platform">
+        <el-icon><Promotion /></el-icon>
+        <span>{{ t('login.openPlatform') }}</span>
+      </router-link>
     </div>
     <el-card class="login-card">
       <div class="brand-mark">{{ appConfig.shortName }}</div>
@@ -55,11 +57,17 @@ async function submit() {
   position: relative;
 }
 
-.login-open-platform-entry {
+.login-page-actions {
   position: absolute;
   top: 24px;
-  right: 76px;
+  right: 24px;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.login-open-platform-entry {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -86,10 +94,6 @@ async function submit() {
 }
 
 .login-language-entry {
-  position: absolute;
-  top: 24px;
-  right: 24px;
-  z-index: 1;
   display: grid;
   place-items: center;
   width: 40px;
@@ -102,14 +106,10 @@ async function submit() {
 }
 
 @media (max-width: 640px) {
-  .login-open-platform-entry {
-    top: 16px;
-    right: 68px;
-  }
-
-  .login-language-entry {
+  .login-page-actions {
     top: 16px;
     right: 16px;
+    gap: 10px;
   }
 }
 </style>

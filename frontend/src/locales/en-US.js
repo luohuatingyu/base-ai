@@ -45,7 +45,7 @@ export default {
   },
   login: {
     description: 'Unified Model Capability and System Management Platform',
-    username: 'Username', password: 'Password', submit: 'Sign In', loginFailed: 'Login failed', openPlatform: 'View Open Platform'
+    username: 'Username', password: 'Password', submit: 'Sign In', loginFailed: 'Login failed', openPlatform: 'Open Platform'
   },
   auth: {
     loginSuccess: 'Login successful',

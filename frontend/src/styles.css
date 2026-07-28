@@ -247,7 +247,7 @@ body { margin: 0; background: var(--app-canvas); }
   align-items: center;
   max-width: 100%;
   overflow: hidden;
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 13px;
   border: 1px solid #d8e4ff;
   border-radius: 18px;

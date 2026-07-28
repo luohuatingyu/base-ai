@@ -67,7 +67,7 @@ export default {
     password: '密码',
     submit: '登录',
     loginFailed: '登录失败',
-    openPlatform: '查看开放平台'
+    openPlatform: '开放平台'
   },
   auth: {
     loginSuccess: '登录成功',
