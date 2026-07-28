@@ -65,10 +65,11 @@ test('request body formatting produces readable JSON and rejects invalid input',
 })
 
 test('public route and view enforce guest access and credential safety contracts', async () => {
-  const [router, view, login, zh, en] = await Promise.all([
+  const [router, view, login, styles, zh, en] = await Promise.all([
     readFile(new URL('../src/router/index.js', import.meta.url), 'utf8'),
     readFile(new URL('../src/views/OpenPlatformView.vue', import.meta.url), 'utf8'),
     readFile(new URL('../src/views/LoginView.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
     readFile(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8'),
     readFile(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
   ])
@@ -91,4 +92,5 @@ test('public route and view enforce guest access and credential safety contracts
   assert.match(en, /endpointDescriptions/)
   assert.match(en, /endpoints:\s*'API Endpoints'/)
   assert.doesNotMatch(en, /endpoints:\s*'API Categories'/)
+  assert.match(styles, /\.open-platform-path\s*\{[^}]*max-width:\s*58%[^}]*overflow-x:\s*auto[^}]*white-space:\s*nowrap[^}]*word-break:\s*normal[^}]*\}/)
 })
