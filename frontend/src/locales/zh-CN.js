@@ -100,7 +100,7 @@ export default {
     endpointDescriptions: { aiChatInvoke: '调用平台已配置的模型路由或指定模型，返回模型内容、追踪标识及 Token 使用量。', apiTriggerExecute: '立即执行指定的接口触发器配置，并返回下游 HTTP 状态、耗时和响应内容。' },
     fields: {
       modelType: '模型类型；为空时使用 text_model。', featureCode: '能力路由编码；未指定 modelId 时用于选择模型池，为空时使用 chat。', messages: '按顺序发送给模型的对话消息列表。', messageRole: '消息角色，例如 user、assistant 或 system。', messageContent: '消息内容，可为文本或模型支持的结构化内容。', temperature: '模型输出随机性，未提供时为 0。', enableThinking: '是否启用模型思考能力；为空时使用路由配置。', thinkingLevel: '思考等级，仅在启用思考时生效。', modelId: '指定单个模型直连；提供后不再按 featureCode 选择路由。',
-      triggerId: '需要立即执行的接口触发器配置 ID。', success: '统一响应是否成功。', code: '业务响应码，与 HTTP 状态保持一致。', message: '当前语言的响应消息。', traceId: '本次模型调用的任务追踪标识。', content: '模型生成的响应内容。', model: '实际提供响应的模型名称。', inputTokens: '输入 Token 数。', outputTokens: '输出 Token 数。', totalTokens: 'Token 总数。', httpStatus: '下游接口返回的 HTTP 状态。', durationMs: '下游调用耗时，单位毫秒。', responseBody: '下游接口返回的原始响应文本。'
+      triggerId: '需要立即执行的接口触发器配置 ID。', success: '统一响应是否成功。', code: '业务响应码，与 HTTP 状态保持一致。', message: '当前语言的响应消息。', traceId: '当前 HTTP 请求的追踪标识，与 code 平级。', content: '模型生成的响应内容。', model: '实际提供响应的模型名称。', inputTokens: '输入 Token 数。', outputTokens: '输出 Token 数。', totalTokens: 'Token 总数。', httpStatus: '下游接口返回的 HTTP 状态。', durationMs: '下游调用耗时，单位毫秒。', responseBody: '下游接口返回的原始响应文本。'
     }
   },
   chat: {

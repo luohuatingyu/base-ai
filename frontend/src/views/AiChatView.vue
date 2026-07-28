@@ -296,8 +296,8 @@ async function send() {
       payload.thinkingLevel = thinkingLevel.value
     }
 
-    const { data } = await http.post('/ai/chat', payload)
-    messages.value.push(createAssistantMessage(data))
+    const { data, api } = await http.post('/ai/chat', payload)
+    messages.value.push(createAssistantMessage(data, api?.traceId))
   } catch (error) { ElMessage.error(error.response?.data?.message || t('chat.callFailed')) }
   finally { loading.value = false }
 }

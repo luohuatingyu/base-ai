@@ -38,7 +38,11 @@ class ApiKeyEndpointCatalogServiceTest {
         ApiKeyEndpointCatalogService.EndpointView chat = endpoints.get(0);
         assertEquals("openPlatform.endpointDescriptions.aiChatInvoke", chat.descriptionKey());
         assertTrue(chat.requestFields().stream().anyMatch(field -> field.name().equals("messages") && field.required()));
-        assertFalse(chat.responseFields().isEmpty());
+        assertTrue(chat.responseFields().stream().anyMatch(field -> field.name().equals("traceId")));
+        assertFalse(chat.responseFields().stream().anyMatch(field -> field.name().equals("data.traceId")));
+        assertTrue(chat.responseExample().contains("\"traceId\": \"trace-id\""));
+        assertFalse(java.util.Arrays.stream(AiChatController.ChatResponse.class.getRecordComponents())
+            .anyMatch(component -> component.getName().equals("traceId")));
         ApiKeyEndpointCatalogService.EndpointView trigger = endpoints.get(1);
         assertEquals("id", trigger.pathParameters().get(0).name());
         assertEquals("automation:api-trigger:trigger", trigger.permission());

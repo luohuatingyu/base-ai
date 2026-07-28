@@ -112,7 +112,7 @@ public class AiChatController {
             @ApiKeyField(name = "success", descriptionKey = "openPlatform.fields.success", type = "boolean", required = true),
             @ApiKeyField(name = "code", descriptionKey = "openPlatform.fields.code", type = "integer", required = true),
             @ApiKeyField(name = "message", descriptionKey = "openPlatform.fields.message", type = "string", required = true),
-            @ApiKeyField(name = "data.traceId", descriptionKey = "openPlatform.fields.traceId", type = "string", required = true),
+            @ApiKeyField(name = "traceId", descriptionKey = "openPlatform.fields.traceId", type = "string", required = true),
             @ApiKeyField(name = "data.content", descriptionKey = "openPlatform.fields.content", type = "string", required = true),
             @ApiKeyField(name = "data.model", descriptionKey = "openPlatform.fields.model", type = "string", required = true),
             @ApiKeyField(name = "data.inputTokens", descriptionKey = "openPlatform.fields.inputTokens", type = "integer", required = true),
@@ -120,15 +120,14 @@ public class AiChatController {
             @ApiKeyField(name = "data.totalTokens", descriptionKey = "openPlatform.fields.totalTokens", type = "integer", required = true)
         },
         requestExample = "{\n  \"model_type\": \"text_model\",\n  \"featureCode\": \"chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Hello\" }\n  ],\n  \"temperature\": 0.7,\n  \"enableThinking\": false\n}",
-        responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"data\": {\n    \"traceId\": \"trace-id\",\n    \"content\": \"Hello!\",\n    \"model\": \"example-model\",\n    \"inputTokens\": 8,\n    \"outputTokens\": 4,\n    \"totalTokens\": 12\n  }\n}")
+        responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"traceId\": \"trace-id\",\n  \"data\": {\n    \"content\": \"Hello!\",\n    \"model\": \"example-model\",\n    \"inputTokens\": 8,\n    \"outputTokens\": 4,\n    \"totalTokens\": 12\n  }\n}")
     @TraceType(value = "AI_CHAT", triggerEntry = "MANUAL", captureRequest = false)
     public ChatResponse chat(@RequestBody ChatRequest request) {
         log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());
         AiChatClient.ChatResult result = client.chat(request.featureCode(), request.modelType(), request.messages(),
             request.temperature(), request.enableThinking(), request.thinkingLevel(), request.modelId());
         log.info("event=ai_chat_succeeded model={} total_tokens={}", result.model(), result.totalTokens());
-        return new ChatResponse(com.baseai.platform.trace.TraceContextHolder.currentTraceId().orElse(""), result.content(),
-            result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
+        return new ChatResponse(result.content(), result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
     }
 
     /** 路由选项，用于前端下拉列表。 */
@@ -141,6 +140,6 @@ public class AiChatController {
     public record ChatRequest(@JsonProperty("model_type") String modelType, String featureCode,
                               List<AiChatClient.Message> messages, Double temperature,
                               Boolean enableThinking, String thinkingLevel, Long modelId) {}
-    /** AI 对话响应，包含追踪标识、模型结果和 Token 统计。 */
-    public record ChatResponse(String traceId, String content, String model, int inputTokens, int outputTokens, int totalTokens) {}
+    /** AI 对话业务响应，仅包含模型结果和 Token 统计。 */
+    public record ChatResponse(String content, String model, int inputTokens, int outputTokens, int totalTokens) {}
 }

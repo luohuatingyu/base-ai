@@ -1,10 +1,10 @@
-/** 将聊天接口响应转换为前端消息及其可展示的调用元数据。 */
-export function createAssistantMessage(response = {}) {
+/** 将业务数据和统一响应 traceId 转换为前端消息及其可展示元数据。 */
+export function createAssistantMessage(response = {}, traceId = null) {
   return {
     role: 'assistant',
     content: response.content || '',
     model: typeof response.model === 'string' && response.model.trim() ? response.model.trim() : null,
-    traceId: typeof response.traceId === 'string' && response.traceId.trim() ? response.traceId.trim() : null,
+    traceId: typeof traceId === 'string' && traceId.trim() ? traceId.trim() : null,
     inputTokens: normalizeTokenCount(response.inputTokens),
     outputTokens: normalizeTokenCount(response.outputTokens),
     totalTokens: normalizeTokenCount(response.totalTokens)

@@ -6,15 +6,15 @@ import { createAssistantMessage, hasChatResponseMetadata } from '../src/utils/ch
 const chatView = readFileSync(new URL('../src/views/AiChatView.vue', import.meta.url), 'utf8')
 const chatStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
-test('将模型响应映射为带模型和 Token 用量的 AI 消息', () => {
+test('从统一响应顶层映射 Trace ID 和模型业务数据', () => {
   const message = createAssistantMessage({
     content: '你好',
     model: 'gpt-4.1',
-    traceId: '  846c581da692410f85df9693b1aa926a  ',
+    traceId: 'nested-trace-must-be-ignored',
     inputTokens: 12,
     outputTokens: 34,
     totalTokens: 46
-  })
+  }, '  846c581da692410f85df9693b1aa926a  ')
 
   assert.deepEqual(message, {
     role: 'assistant',
@@ -51,6 +51,8 @@ test('缺失或非法元数据不会影响 AI 回复内容', () => {
 
 test('Trace ID 仅在助手消息元数据中展示', () => {
   assert.match(chatView, /<span v-if="item\.traceId">\{\{ t\('chat\.traceId'\) \}\}: \{\{ item\.traceId \}\}<\/span>/)
+  assert.match(chatView, /const \{ data, api \} = await http\.post\('\/ai\/chat', payload\)/)
+  assert.match(chatView, /createAssistantMessage\(data, api\?\.traceId\)/)
   assert.doesNotMatch(chatView, /lastTrace/)
   assert.equal(chatView.match(/t\('chat\.traceId'\)/g)?.length, 1)
 })
