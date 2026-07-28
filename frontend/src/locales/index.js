@@ -1,14 +1,16 @@
 import { createI18n } from 'vue-i18n'
-import { LOCALES, DEFAULT_LOCALE, buildMessages, findLocale } from './registry'
+import { appConfig, resolveLocale } from '../config'
+import { buildMessages, findLocale } from './registry'
 
-// 从 localStorage 获取保存的语言设置，未命中或不支持时回退默认语言
+// 优先使用浏览器保存语言，未命中时使用环境变量配置的系统默认语言
 const savedLocale = localStorage.getItem('locale')
-const initialLocale = LOCALES.some(locale => locale.code === savedLocale) ? savedLocale : DEFAULT_LOCALE
+const configuredDefaultLocale = resolveLocale(appConfig.defaultLocale)
+const initialLocale = resolveLocale(savedLocale, appConfig.defaultLocale)
 
 const i18n = createI18n({
   legacy: false, // 使用 Composition API 模式
   locale: initialLocale,
-  fallbackLocale: DEFAULT_LOCALE,
+  fallbackLocale: configuredDefaultLocale,
   messages: buildMessages()
 })
 

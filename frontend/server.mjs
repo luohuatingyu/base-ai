@@ -12,6 +12,7 @@ const platformConfig = {
   nameEn: process.env.APP_PLATFORM_NAME_EN || 'AI Platform',
   nameZh: process.env.APP_PLATFORM_NAME_ZH || 'AI平台',
   shortName: process.env.APP_PLATFORM_SHORT_NAME || 'AI',
+  defaultLocale: process.env.APP_DEFAULT_LOCALE || 'en-US',
   routeHealthCheckEnabled: String(process.env.LLM_ROUTE_HEALTH_CHECK_ENABLED || 'true').toLowerCase() === 'true',
   routeHealthCheckIntervalMs: Number.isFinite(configuredRouteHealthCheckIntervalMs) && configuredRouteHealthCheckIntervalMs > 0
     ? configuredRouteHealthCheckIntervalMs : 3600000

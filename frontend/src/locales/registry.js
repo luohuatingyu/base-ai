@@ -33,8 +33,8 @@ export const LOCALES = Object.freeze([
   }
 ])
 
-/** 默认语言编码，作为未持久化选择和回退语言的统一来源。 */
-export const DEFAULT_LOCALE = 'zh-CN'
+/** 内置兜底语言编码，仅在调用方未提供有效运行时语言时使用。 */
+export const DEFAULT_LOCALE = 'en-US'
 
 /** 按编码查找语言配置，未命中时回退默认语言，保证调用方始终拿到有效配置。 */
 export function findLocale(code) {

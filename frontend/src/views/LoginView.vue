@@ -3,8 +3,8 @@
   <div class="login-page">
     <el-card class="login-card">
       <div class="brand-mark">{{ appConfig.shortName }}</div>
-      <h1>{{ appConfig.nameEn }}</h1>
-      <p>{{ appConfig.nameZh }} · {{ t('login.description') }}</p>
+      <h1>{{ getLocalizedPlatformName(locale.value) }}</h1>
+      <p>{{ t('login.description') }}</p>
       <el-form @submit.prevent="submit">
         <el-form-item><el-input v-model="form.username" size="large" :placeholder="t('login.username')" /></el-form-item>
         <el-form-item><el-input v-model="form.password" size="large" type="password" show-password :placeholder="t('login.password')" /></el-form-item>
@@ -19,10 +19,10 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { appConfig } from '../config'
+import { appConfig, getLocalizedPlatformName } from '../config'
 import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const form = reactive({ username: '', password: '' })
 const loading = ref(false)
 const auth = useAuthStore()
