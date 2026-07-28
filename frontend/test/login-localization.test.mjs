@@ -25,6 +25,11 @@ test('平台名称严格跟随当前语言，不同时展示中英文名称', ()
   assert.doesNotMatch(loginViewSource, /appConfig\.nameZh/)
 })
 
+test('登录页提供可复用的语言切换入口', () => {
+  assert.match(loginViewSource, /import LanguageSwitcher from ['"]\.\.\/components\/LanguageSwitcher\.vue['"]?/)
+  assert.match(loginViewSource, /<LanguageSwitcher \/>/)
+})
+
 test('未保存语言时前端使用 APP_DEFAULT_LOCALE 运行时配置', () => {
   assert.match(serverSource, /defaultLocale:\s*process\.env\.APP_DEFAULT_LOCALE/)
   assert.match(composeSource, /frontend:[\s\S]*?APP_DEFAULT_LOCALE:\s*\$\{APP_DEFAULT_LOCALE:-en-US\}/)
