@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { appConfig } from '../config'
 import i18n from '../locales'
+import { unwrapApiResponse } from '../utils/apiResponse'
 
 const tokenKey = `${appConfig.code}-token`
 
@@ -15,13 +16,7 @@ http.interceptors.request.use((config) => {
 })
 
 http.interceptors.response.use(
-  (response) => {
-    if (response.data && typeof response.data.success === 'boolean' && 'data' in response.data) {
-      response.api = response.data
-      response.data = response.data.data
-    }
-    return response
-  },
+  unwrapApiResponse,
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem(tokenKey)

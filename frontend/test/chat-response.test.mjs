@@ -51,8 +51,8 @@ test('缺失或非法元数据不会影响 AI 回复内容', () => {
 
 test('Trace ID 仅在助手消息元数据中展示', () => {
   assert.match(chatView, /<span v-if="item\.traceId">\{\{ t\('chat\.traceId'\) \}\}: \{\{ item\.traceId \}\}<\/span>/)
-  assert.match(chatView, /const \{ data, api \} = await http\.post\('\/ai\/chat', payload\)/)
-  assert.match(chatView, /createAssistantMessage\(data, api\?\.traceId\)/)
+  assert.match(chatView, /const response = await http\.post\('\/ai\/chat', payload\)/)
+  assert.match(chatView, /createAssistantMessage\(response\.data, response\.traceId\)/)
   assert.doesNotMatch(chatView, /lastTrace/)
   assert.equal(chatView.match(/t\('chat\.traceId'\)/g)?.length, 1)
 })
