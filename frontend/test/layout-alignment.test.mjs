@@ -50,6 +50,7 @@ test('后台骨架和内容容器允许正确收缩且不会截断页面', () =>
 
 test('AI 对话仅滚动消息区域并固定上下操作区域', () => {
   assertDeclarations(globalStyles, '.chat-panel', [/height:\s*calc\(/, /display:\s*flex/, /flex-direction:\s*column/])
+  assert.doesNotMatch(declarations(globalStyles, '.chat-panel'), /max-width\s*:/, 'AI 对话面板不应限制最大宽度，需铺满右侧剩余空间')
   assertDeclarations(globalStyles, '.chat-tabs', [/display:\s*flex/, /flex:\s*1/, /flex-direction:\s*column/, /min-height:\s*0/])
   assertDeclarations(globalStyles, '.chat-tabs .el-tabs__content', [/flex:\s*1/, /min-height:\s*0/, /overflow:\s*hidden/])
   assertDeclarations(globalStyles, '.chat-tabs .el-tab-pane', [/height:\s*100%/, /display:\s*flex/, /flex-direction:\s*column/, /min-height:\s*0/])

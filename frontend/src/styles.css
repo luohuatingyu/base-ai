@@ -433,7 +433,6 @@ body { margin: 0; background: var(--app-canvas); }
   flex-direction: column;
   height: calc(100vh - 124px);
   min-height: 0;
-  max-width: 1280px;
 }
 
 .chat-panel > .section-head { flex: 0 0 auto; }
