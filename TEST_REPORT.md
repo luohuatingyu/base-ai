@@ -2,43 +2,40 @@
 
 ## 📋 Git 基准点
 
-Commit: 1d145abff5002f04bd7e0732156104084a21166c
-- 提交说明: Place trace ID before response data
+Commit: d96017ea0eadd8ebe02224a8d65cfcedc3d2baa2
+- 提交说明: Preserve chat trace ID after response unwrap
 - 测试日期: 2026-07-28
 - 分支: master
 
 ## 🎯 当前变更范围
 
-- AI 对话业务响应 `data` 删除重复的 `traceId`，仅保留模型内容、模型名称和 Token 统计。
-- 当前 HTTP 请求 traceId 由统一响应信封提供，与 `code`、`message` 平级，并在 JSON 序列化顺序中位于 `data` 之前。
-- 开放平台 AI 对话文档将 `data.traceId` 修正为根级 `traceId`，响应示例同步调整。
-- 前端从 Axios 保存的统一响应对象 `response.api.traceId` 读取请求追踪标识，不再信任业务 `data` 中的同名字段。
-- 双语字段说明明确 traceId 是当前 HTTP 请求追踪标识，不是 AI 对话业务数据。
-- 任务列表、任务日志等领域数据中的历史任务 traceId 属于被查询资源属性，本次保持兼容。
+- Axios 统一响应解包前读取根级 `traceId`，并保存为标准化的 `response.traceId`。
+- AI 对话页面使用 `response.traceId` 创建助手回显消息，避免解包 `data` 后丢失当前请求追踪标识。
+- 当统一响应体缺少 traceId 时，前端使用 `X-Trace-Id` 响应头兜底；业务 `data.traceId` 不参与当前请求 traceId 判定。
+- 非统一响应保持原业务数据结构，避免影响健康检查等既有调用。
+- 本次仅修改前端响应解包、AI 对话回显及对应测试；后端统一响应协议保持不变。
 
 ## 📋 当前变更测试结果（2026-07-28）
 
-**变更范围**：AI 对话响应层级、统一响应字段顺序、开放接口文档、前端响应解包和 Trace ID 展示。
+**变更范围**：前端统一响应解包、AI 对话助手消息 Trace ID 回显和兼容性测试。
 
 **测试执行结果**：
-- 完整回归测试：296 个，通过 296 个（100%）
+- 完整回归测试：299 个，通过 299 个（100%）
 - 后端完整测试：160 个，通过 160 个（100%）
 - 前端现行测试：4 个，通过 4 个（100%）
-- 前端历史完整回归：120 个，通过 120 个（100%）
+- 前端历史完整回归：123 个，通过 123 个（100%）
 - Python Worker 完整测试（Python 3.12）：12 个，通过 12 个（100%）
 - 失败：0 个
 - 错误：0 个
 - 跳过：0 个
 
 **实施验证记录**：
-- 后端目录和统一响应定向测试初次执行 17/17 通过，前端 AI 对话及开放平台定向测试 13/13 通过。
-- 前端测试通过业务 data 内放置伪造 traceId，确认页面仅采用统一响应根级 traceId。
-- 调整 `ApiResponse` 字段声明顺序后新增成功、失败响应序列化顺序测试，最终后端完整回归更新为 160/160 通过。
-- 前端完整回归 124/124、Python 3.12 回归 12/12 均通过。
-- `docker compose up --build -d` 构建内再次执行后端 160 个测试并通过，Backend、Frontend、Python Worker 均为 healthy。
-- 运行态公开目录确认 AI 对话响应字段存在根级 `traceId`、不存在 `data.traceId`，示例 `data` 仅含模型业务字段。
-- 运行态未认证 POST 响应确认根级 `traceId` 位于 `data` 前，且 `data` 中不存在 traceId。
-- 未调用会产生费用的真实模型成功路径；DTO、统一响应、开放目录、前端解包和运行态错误响应共同验证结构。
+- 缺陷复现测试初次因 `apiResponse.js` 尚不存在而失败，确认 AI 对话页面缺少稳定保留根级 traceId 的解包能力。
+- 新增统一响应解包测试，覆盖根级 traceId、响应头兜底、嵌套伪造 traceId 忽略和非统一响应兼容性。
+- AI 对话定向测试 9/9 通过；前端完整回归合计 127/127 通过。
+- 后端完整回归 160/160、Python 3.12 回归 12/12 均通过。
+- `docker compose up --build -d` 最终成功返回，Backend、Frontend、Python Worker 复核均为 healthy。
+- 未调用会产生费用的真实模型成功路径；通过 Axios 解包到助手消息创建的单元链路验证回显 traceId。
 
 ## ✅ 验收标准—测试用例映射
 
@@ -48,46 +45,45 @@ Commit: 1d145abff5002f04bd7e0732156104084a21166c
 | traceId 位于 data 前 | 后端 ObjectMapper 测试及运行态原始 JSON | 检查字段索引顺序 | traceId 在 data 之前序列化 | 正常、契约 |
 | AI 对话 data 不包含 traceId | 后端 DTO 反射测试 | 检查 `ChatResponse` 记录组件 | 仅包含模型业务字段 | 正常、回归 |
 | 开放文档层级正确 | 后端目录测试及运行态公开目录 | 检查字段和解析响应示例 | 仅声明根级 traceId，不存在 data.traceId | 正常、文档 |
-| 前端从统一响应读取 traceId | 前端工具及源码契约测试 | 提供业务 data 和独立信封 traceId | 助手消息使用信封 traceId | 正常、兼容性 |
+| 前端从统一响应读取 traceId | 前端工具及源码契约测试 | 提供业务 data 和独立信封 traceId | 解包后 `response.traceId` 保留根级值，助手消息正确展示 | 正常、兼容性 |
 | 嵌套伪造 traceId 不生效 | 前端单元测试 | data 和信封提供不同 traceId | 页面忽略 data 值，仅采用信封值 | 安全、边界 |
+| 响应头可作为 traceId 兜底 | 前端单元测试 | 响应体无 traceId、响应头包含 `X-Trace-Id` | `response.traceId` 使用响应头值 | 边界、兼容性 |
+| 非统一响应不被误解包 | 前端单元测试 | 返回普通健康状态对象 | 业务数据结构保持不变 | 兼容性、回归 |
 | 缺失 traceId 不影响模型内容 | 前端单元测试 | 仅提供模型结果或 Token | 内容正常展示，traceId 为 null | 边界、异常 |
-| 既有功能保持稳定 | 三端完整回归 | 执行全部测试 | 296 个测试全部通过 | 兼容性、回归 |
+| 既有功能保持稳定 | 三端完整回归 | 执行全部测试 | 299 个测试全部通过 | 兼容性、回归 |
 
 ## 📊 当前测试执行记录
 
 | 测试范围 | 执行命令 | 结果 |
 | --- | --- | --- |
-| 后端定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeyEndpointCatalogServiceTest,ApiResponseContractTest test` | 初次 17 通过；新增顺序测试后纳入完整回归 |
-| 前端定向测试 | `cd frontend && node --test test/chat-response.test.mjs test/open-platform.test.mjs` | 13 通过，0 失败 |
+| 前端缺陷复现 | `node --test frontend/test/api-response.test.mjs` | 实现前因响应解包工具缺失而失败，稳定复现问题 |
+| 前端定向测试 | `node --test frontend/test/api-response.test.mjs frontend/test/chat-response.test.mjs` | 9 通过，0 失败 |
 | 后端完整回归 | `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 最终 160 通过，0 失败，0 错误，0 跳过 |
-| 前端完整回归 | `cd frontend && npm test && node --test test/*.test.mjs` | 124 通过，0 失败 |
+| 前端完整回归 | `cd frontend && npm test && node --test test/*.test.mjs` | 127 通过，0 失败 |
 | Python Worker 完整回归 | `docker run --rm -e PYTHONPATH=/workspace -v "$PWD/python-worker:/workspace" -w /workspace python:3.12-slim sh -lc 'pip install -q -r requirements.txt && pytest -q'` | 12 通过，0 失败 |
-| 服务重建与启动 | `docker compose up --build -d` | 最终构建内后端 160 个测试通过；三个服务均 healthy |
-| 运行态目录验证 | Node Fetch 请求 `/api/open/platform/endpoints` | 根级 traceId 存在，data.traceId 不存在，data 仅含业务字段 |
-| 运行态 JSON 顺序验证 | Node Fetch 请求未认证 POST 接口 | traceId 与 data 同级且位于 data 前，HTTP 401 符合预期 |
+| 服务重建与启动 | `docker compose up --build -d` | 最终命令成功返回；三个服务复核均为 healthy |
 | 格式与工作区检查 | `git diff --check`、`git status --short` | 格式检查通过，无临时调试文件 |
 
 ## 🔄 当前覆盖范围与结果
 
-- 正常场景：根级 traceId、字段顺序、模型业务 data、开放文档和前端展示均已覆盖。
-- 边界场景：业务 data 伪造 traceId、缺失 traceId、零 Token 和非法元数据均有测试。
-- 异常场景：失败响应保留根级 traceId 和空 data，并验证 traceId 位于 data 前。
-- 权限与安全：前端不信任业务 data 中的 traceId，只采用后端统一响应信封字段。
-- 兼容性：任务领域对象中的历史 traceId 保留；AI 对话内容、模型和 Token 字段名称不变。
-- 回归场景：后端 160 个、前端 124 个、Python Worker 12 个测试全部通过。
+- 正常场景：统一响应根级 traceId 在解包后保留，并传入 AI 助手消息展示。
+- 边界场景：响应体缺失 traceId 时使用响应头兜底；空值和超长值被规范化过滤。
+- 异常场景：缺失 traceId 不影响 AI 内容、模型和 Token 元数据回显。
+- 权限与安全：前端不信任业务 data 中的 traceId，仅采用统一响应根级字段或后端响应头。
+- 兼容性：非统一响应不解包；`response.api` 和 `response.data` 的既有调用方式继续保留。
+- 回归场景：后端 160 个、前端 127 个、Python Worker 12 个测试全部通过。
 
 ## ⚠️ 当前已知问题与限制
 
-- 本次未执行会产生真实模型费用的 AI 对话成功调用；已通过 DTO、文档目录、前端解包及完整回归验证结构。
-- Axios 拦截器将完整统一响应保存在 `response.api`，业务调用继续从 `response.data` 获取纯业务数据。
+- 本次未执行会产生真实模型费用的 AI 对话成功调用；已通过前端解包到消息创建的单元链路及完整回归验证。
+- Axios 拦截器将当前请求 traceId 保存在 `response.traceId`，同时继续用 `response.api` 保留完整信封、用 `response.data` 提供业务数据。
 - 任务查询结果中的 traceId 是任务资源属性，不代表查询接口自身的当前请求 traceId，因此仍可存在于业务 data 中。
-- 报告更新过程中曾因未引用 heredoc 导致 Markdown 反引号被 shell 误解释；补丁未应用，误触发的测试和 Compose 命令均正常结束，未产生调试文件或额外代码变更。
 
 ## 📝 下次测试建议
 
-1. 在具备无费用测试模型时，补充 AI 对话成功响应端到端断言，验证响应头、根级 traceId、字段顺序和 data 字段集合。
-2. 新增统一响应接口时，文档应将 traceId 声明为根级字段，不得在业务 DTO 中重复定义。
-3. 可为开放接口目录增加通用校验，禁止将当前请求 traceId 文档声明为 `data.traceId`。
+1. 在具备无费用测试模型时，补充 AI 对话成功响应端到端断言，验证页面展示的 traceId 与响应根级字段一致。
+2. 新增统一响应调用时统一使用拦截器提供的 `response.traceId`，不得从业务 `data` 中读取当前请求 traceId。
+3. 可补充 Axios 实例级集成测试，覆盖真实拦截器注册和响应头大小写归一化行为。
 
 ## ↩️ 回滚方式
 
