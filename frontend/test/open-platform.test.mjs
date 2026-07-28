@@ -92,5 +92,7 @@ test('public route and view enforce guest access and credential safety contracts
   assert.match(en, /endpointDescriptions/)
   assert.match(en, /endpoints:\s*'API Endpoints'/)
   assert.doesNotMatch(en, /endpoints:\s*'API Categories'/)
-  assert.match(styles, /\.open-platform-path\s*\{[^}]*max-width:\s*58%[^}]*overflow-x:\s*auto[^}]*white-space:\s*nowrap[^}]*word-break:\s*normal[^}]*\}/)
+  assert.match(styles, /\.open-platform-endpoint-heading\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*\}/)
+  assert.match(styles, /\.open-platform-path\s*\{[^}]*justify-self:\s*end[^}]*max-width:\s*100%[^}]*overflow-x:\s*auto[^}]*white-space:\s*nowrap[^}]*word-break:\s*normal[^}]*\}/)
+  assert.match(styles, /@media \(max-width:\s*640px\)[\s\S]*?\.open-platform-path\s*\{[^}]*justify-self:\s*stretch[^}]*\}/)
 })
