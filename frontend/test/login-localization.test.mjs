@@ -30,17 +30,20 @@ test('登录页提供可复用的语言切换入口', () => {
   assert.match(loginViewSource, /<LanguageSwitcher \/>/)
 })
 
-test('登录页将开放平台和语言切换放在卡片外的公共操作区', () => {
-  const actionsStart = loginViewSource.indexOf('class="login-page-actions"')
-  const openPlatformLink = loginViewSource.indexOf('class="login-open-platform-link"')
-  const languageSwitcher = loginViewSource.indexOf('<LanguageSwitcher />')
+test('登录页将开放平台和语言切换作为右上角独立入口', () => {
+  const openPlatformEntry = loginViewSource.indexOf('class="login-open-platform-entry"')
+  const languageEntry = loginViewSource.indexOf('class="login-language-entry"')
   const loginCard = loginViewSource.indexOf('class="login-card"')
+  const pageStyle = loginViewSource.match(/\.login-page \{([^}]*)\}/)?.[1] || ''
 
-  assert.ok(actionsStart >= 0)
-  assert.ok(openPlatformLink > actionsStart)
-  assert.ok(languageSwitcher > openPlatformLink)
-  assert.ok(loginCard > languageSwitcher)
-  assert.match(loginViewSource, /@media \(max-width: 640px\)[\s\S]*\.login-page-actions/)
+  assert.doesNotMatch(loginViewSource, /class="login-page-actions"/)
+  assert.ok(openPlatformEntry >= 0)
+  assert.ok(languageEntry > openPlatformEntry)
+  assert.ok(loginCard > languageEntry)
+  assert.doesNotMatch(pageStyle, /padding/)
+  assert.match(loginViewSource, /\.login-open-platform-entry \{[\s\S]*right: 76px/)
+  assert.match(loginViewSource, /\.login-language-entry \{[\s\S]*right: 24px/)
+  assert.match(loginViewSource, /@media \(max-width: 640px\)[\s\S]*\.login-open-platform-entry[\s\S]*right: 68px[\s\S]*\.login-language-entry[\s\S]*right: 16px/)
 })
 
 test('未保存语言时前端使用 APP_DEFAULT_LOCALE 运行时配置', () => {

@@ -1,11 +1,11 @@
 <!-- 登录页面：收集账号密码并建立平台会话。 -->
 <template>
   <div class="login-page">
-    <div class="login-page-actions">
-      <router-link class="login-open-platform-link" to="/open-platform">
-        <el-icon><Promotion /></el-icon>
-        <span>{{ t('login.openPlatform') }}</span>
-      </router-link>
+    <router-link class="login-open-platform-entry" to="/open-platform">
+      <el-icon><Promotion /></el-icon>
+      <span>{{ t('login.openPlatform') }}</span>
+    </router-link>
+    <div class="login-language-entry">
       <LanguageSwitcher />
     </div>
     <el-card class="login-card">
@@ -53,52 +53,61 @@ async function submit() {
 <style scoped>
 .login-page {
   position: relative;
-  padding-top: 88px;
 }
 
-.login-page-actions {
+.login-open-platform-entry {
   position: absolute;
   top: 24px;
-  right: 24px;
+  right: 76px;
   z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px;
-  border: 1px solid rgb(214 223 237 / 85%);
-  border-radius: 14px;
-  background: rgb(255 255 255 / 78%);
-  box-shadow: 0 10px 28px rgb(32 59 105 / 9%);
-  backdrop-filter: blur(12px);
-}
-
-.login-open-platform-link {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 10px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgb(214 223 237 / 85%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 78%);
+  box-shadow: 0 10px 28px rgb(32 59 105 / 9%);
   color: var(--app-muted);
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
-  transition: color 0.2s ease, background-color 0.2s ease;
+  backdrop-filter: blur(12px);
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
 }
 
-.login-open-platform-link:hover,
-.login-open-platform-link:focus-visible {
+.login-open-platform-entry:hover,
+.login-open-platform-entry:focus-visible {
+  border-color: var(--el-color-primary-light-7);
   color: var(--app-primary-dark);
   background: var(--el-color-primary-light-9);
   outline: none;
 }
 
+.login-language-entry {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgb(214 223 237 / 85%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 78%);
+  box-shadow: 0 10px 28px rgb(32 59 105 / 9%);
+  backdrop-filter: blur(12px);
+}
+
 @media (max-width: 640px) {
-  .login-page {
-    padding: 76px 16px 24px;
+  .login-open-platform-entry {
+    top: 16px;
+    right: 68px;
   }
 
-  .login-page-actions {
+  .login-language-entry {
     top: 16px;
     right: 16px;
   }
