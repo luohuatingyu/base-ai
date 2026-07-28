@@ -95,6 +95,11 @@ test('public route and view enforce guest access and credential safety contracts
   assert.match(en, /endpointDescriptions/)
   assert.match(en, /endpoints:\s*'API Endpoints'/)
   assert.doesNotMatch(en, /endpoints:\s*'API Categories'/)
+  const mainStyles = styles.match(/\.open-platform-main\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(mainStyles, /width:\s*96vw/)
+  assert.doesNotMatch(mainStyles, /max-width|min\(/)
+  assert.match(styles, /\.open-platform-header\s*\{[^}]*padding:\s*0\s+2vw[^}]*\}/)
+  assert.match(styles, /@media \(max-width:\s*640px\)[\s\S]*?\.open-platform-header\s*\{[^}]*padding:\s*12px\s+4vw[^}]*\}[\s\S]*?\.open-platform-main\s*\{[^}]*width:\s*94vw[^}]*\}/)
   assert.match(styles, /\.open-platform-endpoint-heading\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto[^}]*grid-template-areas:\s*"summary path"\s*"description description"[^}]*\}/)
   assert.match(styles, /\.open-platform-endpoint-summary\s*\{[^}]*grid-area:\s*summary[^}]*\}/)
   assert.match(styles, /\.open-platform-endpoint-description\s*\{[^}]*grid-area:\s*description[^}]*\}/)

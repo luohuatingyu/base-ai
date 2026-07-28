@@ -599,14 +599,14 @@ body { margin: 0; background: var(--app-canvas); }
 .api-key-editor-row{display:flex;width:100%;align-items:center;gap:12px;margin-bottom:8px}.api-key-editor-row .el-input{flex:1}
 .login-open-platform-link { display: block; margin-top: 18px; color: #2563eb; text-align: center; text-decoration: none; font-weight: 600; }
 .open-platform-page { min-height: 100vh; color: #182230; background: radial-gradient(circle at top left, #e8f0ff 0, transparent 36%), #f5f7fb; }
-.open-platform-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; min-height: 68px; padding: 0 5vw; border-bottom: 1px solid #dce3ef; background: rgb(255 255 255 / 92%); backdrop-filter: blur(16px); }
+.open-platform-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; min-height: 68px; padding: 0 2vw; border-bottom: 1px solid #dce3ef; background: rgb(255 255 255 / 92%); backdrop-filter: blur(16px); }
 .open-platform-brand { display: flex; align-items: center; gap: 12px; color: #182230; text-decoration: none; }
 .open-platform-brand span { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; color: #fff; background: #1d4ed8; font-weight: 800; }
 .open-platform-brand strong { font-size: 18px; }
 .open-platform-header-actions { display: flex; align-items: center; gap: 14px; }
 .open-platform-locale { width: 150px; }
 .open-platform-login-link { color: #1d4ed8; text-decoration: none; font-weight: 700; }
-.open-platform-main { width: min(1440px, 92vw); margin: 0 auto; padding: 54px 0 80px; }
+.open-platform-main { width: 96vw; margin: 0 auto; padding: 54px 0 80px; }
 .open-platform-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); gap: 56px; align-items: center; margin-bottom: 42px; }
 .open-platform-eyebrow { color: #2563eb; font-size: 12px; font-weight: 800; letter-spacing: .18em; }
 .open-platform-hero h1 { margin: 12px 0 16px; font-size: clamp(36px, 5vw, 64px); line-height: 1.05; letter-spacing: -.04em; }
