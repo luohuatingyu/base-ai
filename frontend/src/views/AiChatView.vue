@@ -71,7 +71,7 @@
         <el-button circle size="small" type="danger" @click="removeImage(image)">×</el-button>
       </div>
         </div>
-        <el-input v-model="prompt" type="textarea" :rows="4" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
+        <el-input v-model="prompt" class="chat-question-input" type="textarea" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
         <div class="chat-actions">
           <div class="chat-action-buttons">
             <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
@@ -92,7 +92,7 @@
           <input ref="promptFileInput" type="file" accept=".txt,.md,text/plain,text/markdown" hidden @change="onPromptFileSelected" />
           <el-button @click="openPromptFilePicker">{{ t('chat.choosePromptFile') }}</el-button>
           <span v-if="promptFileName" class="prompt-file-name">{{ promptFileName }}</span>
-          <el-input v-model="systemPrompt" class="prompt-input" type="textarea" :rows="16" :placeholder="t('chat.promptPlaceholder')" />
+          <el-input v-model="systemPrompt" class="prompt-input" type="textarea" :placeholder="t('chat.promptPlaceholder')" />
           <p class="prompt-hint">{{ t('chat.promptHint') }}</p>
         </div>
       </el-tab-pane>
