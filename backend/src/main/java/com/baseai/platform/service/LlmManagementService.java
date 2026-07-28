@@ -3,6 +3,7 @@ package com.baseai.platform.service;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.domain.*;
 import com.baseai.platform.repository.*;
 import org.springframework.stereotype.Service;
@@ -93,6 +94,7 @@ public class LlmManagementService {
      * @return 含明文密钥的供应商密钥视图
      */
     public ProviderApiKeysView providerApiKeys(Long id){
+        AuthContext.requireAdmin();
         LlmProvider provider=providerRepository.findById(id).orElseThrow(()->BusinessException.notFound("llm.providerNotFound"));
         return new ProviderApiKeysView(provider.getId(),normalizeApiKeys(cryptoService.decrypt(provider.getApiKeysEncrypted())));
     }

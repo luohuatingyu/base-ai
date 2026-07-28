@@ -47,6 +47,13 @@ public class ApiKeyManagementController {
         return service.endpoints();
     }
 
+    /** 查询指定 API Key 的完整明文，服务层额外要求管理员角色。 */
+    @GetMapping("/{id}/secret")
+    @RequiredPermission("system:api-key:list")
+    public ApiKeyManagementService.RevealedApiKey reveal(@PathVariable Long id) {
+        return service.reveal(id);
+    }
+
     /** 创建并一次性返回完整 API Key。 */
     @PostMapping
     @RequiredPermission("system:api-key:create")

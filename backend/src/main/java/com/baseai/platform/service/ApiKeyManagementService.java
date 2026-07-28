@@ -1,5 +1,6 @@
 package com.baseai.platform.service;
 
+import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.domain.ApiKeyCredential;
 import com.baseai.platform.domain.ApiKeyRateLimitType;
@@ -24,15 +25,17 @@ public class ApiKeyManagementService {
     private final ApiKeyCredentialRepository repository;
     private final UserRepository userRepository;
     private final ApiKeySecretService secretService;
+    private final ConfigCryptoService cryptoService;
     private final ApiKeyEndpointCatalogService endpointCatalog;
     private final ApiKeyCidrMatcher cidrMatcher;
 
     public ApiKeyManagementService(ApiKeyCredentialRepository repository, UserRepository userRepository,
-                                   ApiKeySecretService secretService, ApiKeyEndpointCatalogService endpointCatalog,
-                                   ApiKeyCidrMatcher cidrMatcher) {
+                                   ApiKeySecretService secretService, ConfigCryptoService cryptoService,
+                                   ApiKeyEndpointCatalogService endpointCatalog, ApiKeyCidrMatcher cidrMatcher) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.secretService = secretService;
+        this.cryptoService = cryptoService;
         this.endpointCatalog = endpointCatalog;
         this.cidrMatcher = cidrMatcher;
     }
@@ -68,17 +71,30 @@ public class ApiKeyManagementService {
         return endpointCatalog.catalog();
     }
 
-    /** 创建 API Key 并仅在本次响应返回完整明文。 */
+    /** 创建 API Key，加密保存明文并仅向管理员返回。 */
     @Transactional
     public CreatedApiKey create(ApiKeyCommand command) {
+        AuthContext.requireAdmin();
         ApiKeyCredential credential = new ApiKeyCredential();
         apply(credential, command);
         ApiKeySecretService.GeneratedApiKey generated = secretService.generate();
         credential.setKeyId(generated.keyId());
         credential.setSecretHash(generated.secretHash());
+        credential.setSecretEncrypted(cryptoService.encrypt(generated.rawApiKey()));
         credential.setCreatedBy(AuthContext.require().id());
         repository.save(credential);
         return new CreatedApiKey(toView(credential), generated.rawApiKey());
+    }
+
+    /** 仅允许管理员解密查看新建或轮换后保存的完整 API Key。 */
+    @Transactional(readOnly = true)
+    public RevealedApiKey reveal(Long id) {
+        AuthContext.requireAdmin();
+        ApiKeyCredential credential = requireCredential(id);
+        if (credential.getSecretEncrypted() == null || credential.getSecretEncrypted().isBlank()) {
+            throw new BusinessException(409, "apiKey.secretUnavailable");
+        }
+        return new RevealedApiKey(credential.getId(), cryptoService.decrypt(credential.getSecretEncrypted()));
     }
 
     /** 更新 API Key 元数据和授权范围但不改变 Secret。 */
@@ -92,10 +108,12 @@ public class ApiKeyManagementService {
     /** 生成新 Secret 并立即使旧 API Key 失效。 */
     @Transactional
     public RotatedApiKey rotate(Long id) {
+        AuthContext.requireAdmin();
         ApiKeyCredential credential = requireCredential(id);
         ApiKeySecretService.GeneratedApiKey generated = secretService.generate();
         credential.setKeyId(generated.keyId());
         credential.setSecretHash(generated.secretHash());
+        credential.setSecretEncrypted(cryptoService.encrypt(generated.rawApiKey()));
         credential.setLastUsedAt(null);
         credential.setLastUsedIp(null);
         return new RotatedApiKey(toView(credential), generated.rawApiKey());
@@ -218,6 +236,7 @@ public class ApiKeyManagementService {
                              Instant lastUsedAt, String lastUsedIp, Instant createdAt, Instant updatedAt) {}
     public record CreatedApiKey(ApiKeyView item, String apiKey) {}
     public record RotatedApiKey(ApiKeyView item, String apiKey) {}
+    public record RevealedApiKey(Long id, String apiKey) {}
     public record OwnerView(Long id, String username, String displayName) {}
     private record RateLimitConfiguration(ApiKeyRateLimitType type, Integer count) {}
 }

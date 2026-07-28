@@ -20,6 +20,15 @@ class ApiKeyManagementControllerTest {
         assertNull(create.getAnnotation(ApiKeyEndpoint.class));
     }
 
+    /** 明文 API Key 查询必须复用列表权限，并继续禁止 API Key 凭证访问管理接口。 */
+    @Test
+    void revealEndpointRemainsBearerOnly() throws Exception {
+        Method reveal = ApiKeyManagementController.class.getMethod("reveal", Long.class);
+
+        assertEquals("system:api-key:list", reveal.getAnnotation(RequiredPermission.class).value());
+        assertNull(reveal.getAnnotation(ApiKeyEndpoint.class));
+    }
+
     /** 首批开放接口声明稳定代码和前端国际化键。 */
     @Test
     void businessEndpointsDeclareStableApiKeyCodesAndTranslationKeys() throws Exception {

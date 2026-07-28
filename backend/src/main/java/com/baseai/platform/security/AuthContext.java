@@ -13,5 +13,9 @@ public final class AuthContext {
         if (user == null) throw BusinessException.unauthorized("auth.required");
         return user;
     }
+    /** 要求当前登录用户具有系统管理员角色。 */
+    public static void requireAdmin() {
+        if (!require().roles().contains("ADMIN")) throw BusinessException.forbidden("auth.adminRoleRequired");
+    }
     public static void clear() { CURRENT.remove(); }
 }

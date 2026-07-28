@@ -5,7 +5,7 @@
         <h2>{{ t('apiKeys.title') }}</h2>
         <p>{{ t('apiKeys.description') }}</p>
       </div>
-      <el-button v-if="auth.hasPermission('system:api-key:create')" type="primary" @click="openCreate">
+      <el-button v-if="auth.isAdmin && auth.hasPermission('system:api-key:create')" type="primary" @click="openCreate">
         {{ t('apiKeys.add') }}
       </el-button>
     </div>
@@ -71,13 +71,16 @@
       <el-table-column :label="t('common.operation')" fixed="right">
         <template #default="scope">
           <div class="table-actions">
+            <el-button v-if="auth.isAdmin" link type="primary" @click="viewSecret(scope.row)">
+              {{ t('apiKeys.viewKey') }}
+            </el-button>
             <el-button v-if="auth.hasPermission('system:api-key:update')" link type="primary" @click="openEdit(scope.row)">
               {{ t('common.edit') }}
             </el-button>
             <el-button v-if="auth.hasPermission('system:api-key:update')" link @click="toggle(scope.row)">
               {{ scope.row.enabled ? t('common.disabled') : t('common.enabled') }}
             </el-button>
-            <el-button v-if="auth.hasPermission('system:api-key:rotate')" link type="warning" @click="rotate(scope.row)">
+            <el-button v-if="auth.isAdmin && auth.hasPermission('system:api-key:rotate')" link type="warning" @click="rotate(scope.row)">
               {{ t('apiKeys.rotate') }}
             </el-button>
             <el-button v-if="auth.hasPermission('system:api-key:delete')" link type="danger" @click="revoke(scope.row)">
@@ -152,8 +155,9 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="secretVisible" :title="t('apiKeys.secretTitle')" width="620px" :close-on-click-modal="false">
-      <el-alert :title="t('apiKeys.secretOnce')" type="warning" :closable="false" show-icon />
+    <el-dialog v-model="secretVisible" :title="t('apiKeys.secretTitle')" width="620px" :close-on-click-modal="false"
+      @closed="clearSecret">
+      <el-alert :title="t('apiKeys.secretAdminNotice')" type="warning" :closable="false" show-icon />
       <el-input v-model="generatedApiKey" readonly class="secret-value">
         <template #append><el-button @click="copySecret">{{ t('apiKeys.copy') }}</el-button></template>
       </el-input>
@@ -311,6 +315,16 @@ async function toggle(row) {
   await load()
 }
 
+/** 查询并展示管理员可解密读取的完整 API Key。 */
+async function viewSecret(row) {
+  try {
+    const { data } = await http.get(`/system/api-keys/${row.id}/secret`)
+    showSecret(data.apiKey)
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || t('common.failed'))
+  }
+}
+
 /** 二次确认后轮换 Secret 并展示新 Key。 */
 async function rotate(row) {
   await ElMessageBox.confirm(t('apiKeys.rotateConfirm', { name: row.name }), t('common.confirm'), { type: 'warning' })
@@ -326,10 +340,15 @@ async function revoke(row) {
   await load()
 }
 
-/** 展示仅可查看一次的完整 API Key。 */
+/** 展示仅管理员可读取的完整 API Key。 */
 function showSecret(apiKey) {
   generatedApiKey.value = apiKey
   secretVisible.value = true
+}
+
+/** 弹窗关闭后清除浏览器内存中的完整 API Key。 */
+function clearSecret() {
+  generatedApiKey.value = ''
 }
 
 /** 复制完整 API Key 到系统剪贴板。 */

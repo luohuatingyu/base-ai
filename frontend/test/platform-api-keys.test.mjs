@@ -7,6 +7,7 @@ import enMessages from '../src/locales/en-US.js'
 import zhMessages from '../src/locales/zh-CN.js'
 
 const viewSource = readFileSync(new URL('../src/views/ApiKeysView.vue', import.meta.url), 'utf8')
+const providerViewSource = readFileSync(new URL('../src/views/ModelProvidersView.vue', import.meta.url), 'utf8')
 const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const navigationSource = readFileSync(new URL('../src/utils/navigation.js', import.meta.url), 'utf8')
 const zhSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
@@ -52,11 +53,24 @@ test('API Key 页面支持永久有效和指定过期时间', () => {
   assert.match(viewSource, /neverExpiresConfirm/)
 })
 
-test('完整 API Key 仅在创建或轮换后展示并支持复制', () => {
+test('平台 API Key 的创建、轮换和查看明文入口仅向管理员展示', () => {
+  assert.match(viewSource, /v-if="auth\.isAdmin && auth\.hasPermission\('system:api-key:create'\)"/)
+  assert.match(viewSource, /v-if="auth\.isAdmin"[^>]*@click="viewSecret\(scope\.row\)"/)
+  assert.match(viewSource, /v-if="auth\.isAdmin && auth\.hasPermission\('system:api-key:rotate'\)"/)
+  assert.match(viewSource, /\/system\/api-keys\/\$\{row\.id\}\/secret/)
   assert.match(viewSource, /showSecret\(data\.apiKey\)/)
+  assert.match(viewSource, /@closed="clearSecret"/)
+  assert.match(viewSource, /generatedApiKey\.value = ''/)
   assert.match(viewSource, /navigator\.clipboard\.writeText/)
   assert.match(viewSource, /\/rotate`/)
   assert.match(viewSource, /http\.delete\(`/)
+})
+
+test('模型供应商查看和编辑回显明文 Key 仅向管理员开放', () => {
+  assert.match(providerViewSource, /v-if="auth\.isAdmin"[^>]*@click="viewKeys\(s\.row\)"/)
+  assert.match(providerViewSource, /if\(row\)[\s\S]*auth\.isAdmin\?toApiKeyRows\(await loadKeys\(row\.id\)\):\[''\]/)
+  assert.match(providerViewSource, /@closed="clearKeys"/)
+  assert.match(providerViewSource, /keysContent\.value=\[\]/)
 })
 
 test('API Key 页面提供默认收起的双语调用指南', () => {

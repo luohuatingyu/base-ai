@@ -10,6 +10,10 @@ import com.baseai.platform.repository.LlmModelRepository;
 import com.baseai.platform.repository.LlmProviderRepository;
 import com.baseai.platform.repository.LlmRouteRepository;
 import com.baseai.platform.repository.DictionaryDataRepository;
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,6 +24,7 @@ import org.springframework.web.client.RestClient;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -42,6 +47,13 @@ class LlmManagementServiceTest {
         dictionaryDataRepository = mock(DictionaryDataRepository.class);
         cryptoService = mock(ConfigCryptoService.class);
         service = new LlmManagementService(providerRepository, modelRepository, routeRepository, dictionaryDataRepository, cryptoService, mock(RestClient.class));
+        AuthContext.set(new AuthUser(1L, "admin", Set.of("ADMIN"), Set.of(), AuthenticationType.TOKEN, null, null));
+    }
+
+    /** 清理线程级认证上下文。 */
+    @AfterEach
+    void tearDown() {
+        AuthContext.clear();
     }
 
     /** 供应商列表必须继续只返回脱敏密钥，不能批量泄露明文。 */
@@ -62,6 +74,18 @@ class LlmManagementServiceTest {
         when(cryptoService.decrypt("encrypted-keys")).thenReturn(" key-one, key-two\n\n key-three ");
 
         assertEquals("key-one\nkey-two\nkey-three", service.providerApiKeys(3L).apiKeys());
+    }
+
+    /** 具备供应商更新权限但没有 ADMIN 角色时仍不得读取明文密钥。 */
+    @Test
+    void nonAdminCannotViewProviderApiKeys() {
+        AuthContext.set(new AuthUser(2L, "operator", Set.of("OPERATOR"), Set.of("model:provider:update"),
+            AuthenticationType.TOKEN, null, null));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.providerApiKeys(3L));
+
+        assertEquals(403, exception.getStatus());
+        verifyNoInteractions(providerRepository, cryptoService);
     }
 
     /** 模型类型目录应允许任意新增编码，不应被 TEXT/VISION 固定集合限制。 */

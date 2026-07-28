@@ -49,7 +49,7 @@ Python worker (internal port 8000)
 OpenAI-compatible model providers
 ```
 
-The browser never receives provider API keys. The Java service resolves an enabled model route, decrypts the relevant provider credentials, and sends candidate configurations to the Python worker. The worker enforces concurrency limits, rotates credentials, fails over between candidates, and reports usage and tracing data to Java.
+Provider API keys are normally kept out of browser responses; authenticated system administrators may explicitly reveal them from the management console. The Java service resolves an enabled model route, decrypts the relevant provider credentials, and sends candidate configurations to the Python worker. The worker enforces concurrency limits, rotates credentials, fails over between candidates, and reports usage and tracing data to Java.
 
 ## Data Responsibilities
 
@@ -59,7 +59,7 @@ MySQL is the primary platform database. It contains:
 
 - Users, roles, menus, permissions, departments, positions, dictionaries, and system settings.
 - Model providers, encrypted provider credentials, models, and capability routes.
-- External API key metadata and hashed secrets.
+- External API key metadata, HMAC-SHA256 digests, and encrypted copies for administrator-only reveal.
 - System tasks, Java/Python trace records, operation logs, and login logs.
 
 JPA manages platform entities, while `backend/src/main/resources/system-schema.sql` initializes the task and log tables. Create the target database before starting the application and grant the configured account schema-management privileges.
@@ -117,8 +117,9 @@ curl -X POST http://localhost/api/ai/chat \
 
 Important rules:
 
-- A key uses the `sk-` prefix followed by a generated secret. The complete value is displayed only after creation or rotation.
-- The database stores only a lookup prefix and an HMAC-SHA256 digest, not the full key.
+- A key uses the `sk-` prefix followed by a generated secret. Only users with the built-in `ADMIN` role may create, rotate, or reveal complete values.
+- The database keeps a lookup prefix and HMAC-SHA256 digest for authentication. New and rotated keys also have an AES-GCM encrypted copy for administrator-only reveal.
+- Existing keys created before encrypted copies were introduced remain valid but cannot be revealed until an administrator rotates them.
 - Effective access is the intersection of the endpoints selected for the key and the bound user's RBAC permissions.
 - The bound user and key must both remain enabled. Expiry, revocation, IP allowlists, and rate limits are also enforced.
 - A request must not contain both `Authorization` and `X-API-Key`; mixed credentials return HTTP 401.

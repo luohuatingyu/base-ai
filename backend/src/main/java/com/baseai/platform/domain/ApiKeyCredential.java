@@ -41,6 +41,9 @@ public class ApiKeyCredential {
     @Column(name = "secret_hash", nullable = false, length = 64)
     private String secretHash;
 
+    @Column(name = "secret_encrypted", columnDefinition = "TEXT")
+    private String secretEncrypted;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "owner_user_id", nullable = false)
     private UserAccount owner;
@@ -112,6 +115,10 @@ public class ApiKeyCredential {
     public void setKeyId(String keyId) { this.keyId = keyId; }
     public String getSecretHash() { return secretHash; }
     public void setSecretHash(String secretHash) { this.secretHash = secretHash; }
+    /** 读取仅用于管理员查看的 API Key 加密副本。 */
+    public String getSecretEncrypted() { return secretEncrypted; }
+    /** 保存仅用于管理员查看的 API Key 加密副本。 */
+    public void setSecretEncrypted(String secretEncrypted) { this.secretEncrypted = secretEncrypted; }
     public UserAccount getOwner() { return owner; }
     public void setOwner(UserAccount owner) { this.owner = owner; }
     public Boolean getEnabled() { return enabled; }

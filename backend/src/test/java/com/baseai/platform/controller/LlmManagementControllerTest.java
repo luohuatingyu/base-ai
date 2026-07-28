@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class LlmManagementControllerTest {
-    /** 明文密钥查询接口必须要求供应商更新权限。 */
+    /** 明文密钥查询接口必须继续要求供应商更新权限，角色限制由服务层强制执行。 */
     @Test
     void providerApiKeysRequiresUpdatePermission() throws NoSuchMethodException {
         RequiredPermission permission = LlmManagementController.class
