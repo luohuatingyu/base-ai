@@ -87,6 +87,7 @@ test('public route and view enforce guest access and credential safety contracts
   assert.match(view, /resetRequestBody/)
   assert.match(view, /copyText\(curlExample/)
   assert.match(view, /copyText\(debugResult\.body/)
+  assert.match(styles, /\.open-platform-debug-result pre\s*\{[^}]*overflow:\s*auto[^}]*max-height:\s*620px[^}]*white-space:\s*pre-wrap[^}]*word-break:\s*break-word[^}]*overflow-wrap:\s*anywhere[^}]*\}/)
   assert.doesNotMatch(view, /localStorage\.setItem\(['"]apiKey/)
   assert.doesNotMatch(view, /sessionStorage/)
   assert.match(login, /to="\/open-platform"/)
