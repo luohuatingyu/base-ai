@@ -2,110 +2,118 @@
 
 ## 📋 Git 基准点
 
-Commit: e677aa943ef516d282b2e0b3bff26bc310998282
-- 提交说明: Restrict key viewing to administrators
+Commit: 29662482c198e28688c7220188ce6531affabae1
+- 提交说明: Add API key open platform documentation
 - 测试日期: 2026-07-28
 - 分支: master
 
 ## 🎯 当前变更范围
 
-- 平台 API Key 新建和轮换时，在原有 HMAC-SHA256 认证摘要之外保存 AES-GCM 加密副本。
-- 平台 API Key 增加管理员查看完整值接口和前端操作，完整值的创建、轮换及查看均要求内置 `ADMIN` 角色。
-- Model Providers 的 View keys 接口、按钮和编辑回显均限制为 `ADMIN` 角色；非管理员编辑时留空保留原 Key。
-- 历史平台 API Key 保持有效但不补写不可恢复的明文，管理员必须先轮换才能查看。
-- 密钥查看弹窗关闭后清除浏览器内存中的明文，并同步更新中英文提示和安全文档。
+- 新增公开访问的 `/open-platform` 页面，展示 API Key 可配置开放接口的认证、入参、出参、示例和风险等级。
+- 扩展 `@ApiKeyEndpoint` 后端元数据，由同一目录同时驱动 API Key 管理和开放平台文档；缺少响应文档或路径参数不一致时启动校验失败。
+- 新增公开目录接口 `GET /api/open/platform/endpoints`，返回接口文档但不暴露内部 RBAC 权限编码。
+- 新增 API Key 在线调试，支持路径变量编码、JSON 请求体校验、响应状态和耗时展示；高风险接口调用前强制确认。
+- API Key 仅保存在页面组件内存，不写入 URL、日志、`localStorage` 或 `sessionStorage`，请求不携带 Bearer Token。
+- 登录页增加开放平台入口，并调整公开路由守卫，使登录前后均可访问开放平台。
 
 ## 📋 当前变更测试结果（2026-07-28）
 
-**变更范围**：平台 API Key 可逆加密副本、管理员明文查看、历史 Key 兼容和模型供应商 Key 管理员角色限制。
+**变更范围**：API Key 开放接口文档元数据、公开目录、双语开放平台页面和安全在线调试。
 
 **测试执行结果**：
-- 完整回归测试：268 个，通过 268 个（100%）
-- 后端完整测试：150 个，通过 150 个（100%）
-- 前端完整测试：106 个，通过 106 个（100%）
+- 完整回归测试：285 个，通过 285 个（100%）
+- 后端完整测试：154 个，通过 154 个（100%）
+- 前端完整测试：119 个，通过 119 个（100%）
 - Python Worker 完整测试（Python 3.12.13）：12 个，通过 12 个（100%）
 - 失败：0 个
 - 错误：0 个
 - 跳过：0 个
 
-**缺陷复现记录**：
-- 修复前前端定向测试：10 个中 8 个通过、2 个失败，稳定复现平台和供应商明文入口未限制管理员角色。
-- 修复前后端定向测试：测试编译出现 6 个预期错误，稳定复现缺少密文字段、查看接口、查看模型及加密依赖。
-- 实现过程中首次后端定向测试有 3 个 Mockito 严格桩错误；调整共享测试桩后，新增轮换测试首次暴露测试实体缺少 owner，补全有效实体后最终全部通过。
-- 修复后定向测试、三端完整测试、镜像构建测试和服务健康检查全部通过，未删除、跳过或弱化既有测试。
+**实施验证记录**：
+- 前端定向测试首次执行即 6/6 通过，生产构建成功。
+- 后端定向测试首次在测试编译阶段发现 Java 17 不支持 `List.getFirst()`，且既有测试样例注解缺少新增必填元素；改为 `get(0)`，并通过默认空元数据保持源码兼容、由启动期完整性校验继续强制生产文档后，22/22 通过。
+- 首次 `docker compose up --build -d` 完成镜像构建及 154 项后端测试后，Backend 健康等待阶段短暂以 143 退出；容器自动恢复健康后重新执行同一命令，三个服务均成功重建并 healthy。
+- 公开目录真实请求返回 2 个接口且不包含权限编码；使用无效 API Key 调用 AI 对话接口返回 HTTP 401 和统一错误体，未触发模型调用。
+- 前端应用预览成功打开，控制台无错误；浏览器自动化连接因运行会话缺少元数据未能执行点击式在线调用，未将此项误报为已验证。
 
 **关键模块测试**：
-- ApiKeyManagementService 创建、轮换、查看、历史兼容及非管理员拒绝：11/11，通过
-- LlmManagementService 供应商脱敏、管理员查看及非管理员拒绝等回归：34/34，通过
-- API Key 与模型管理 Controller 权限声明：7/7，通过
-- 双语消息资源一致性：3/3，通过
-- 前端 API Key、供应商管理员入口、内存清理及本地化定向回归：29/29，通过
-- 原有认证、限流、路由、系统管理和自动化等后端回归：全部通过
+- API Key 接口目录、文档完整性和路径参数一致性：3/3，通过
+- 公开目录权限字段脱敏：1/1，通过
+- API Key 认证、目录管理和服务兼容定向回归：18/18，通过
+- 前端路径编码、请求构造、非法输入、curl 示例、公开路由及凭证内存安全：6/6，通过
+- 后端完整回归：154/154，通过
+- 前端完整回归：119/119，通过
+- Python Worker 完整回归：12/12，通过
 
 ## ✅ 验收标准—测试用例映射
 
 | 验收标准 | 测试层级与前置条件 | 输入/操作 | 预期结果 | 场景类型 |
 | --- | --- | --- | --- | --- |
-| 管理员可查看新建或轮换后的平台 API Key | Service；认证上下文含 `ADMIN` | 创建、轮换后调用 reveal | 保存 AES-GCM 密文并返回完整 `sk-` Key | 正常、安全 |
-| 非管理员不能从任何平台 Key 渠道取得明文 | Service + 前端；仅有 create/rotate/list 权限，无 `ADMIN` | 创建、轮换、直接 reveal、检查页面入口 | 后端均返回 403，前端隐藏创建、轮换和查看入口 | 权限、安全、恶意输入 |
-| 历史平台 Key 继续有效但需轮换后查看 | Service；历史记录的密文字段为空 | 管理员调用 reveal | 返回 HTTP 409 对应业务错误，不修改摘要或认证行为 | 边界、兼容性 |
-| Model Providers View keys 同样仅限管理员 | Service + 前端；分别使用管理员和普通更新权限用户 | 请求明文接口、打开查看和编辑窗口 | 管理员正常解密；非管理员返回 403，编辑不加载已有明文 | 权限、安全、回归 |
-| 列表与调用认证不得因可查看功能泄露或失效 | Service + 完整回归 | 列表供应商、使用 API Key 认证及执行既有测试 | 列表仍脱敏，认证继续使用 HMAC 摘要，既有行为通过 | 兼容性、回归 |
-| 查看窗口关闭后不保留前端明文 | 前端源码契约测试 | 关闭平台或供应商 Key 弹窗 | 对应响应式明文变量清空 | 安全、副作用 |
+| 未登录和已登录用户均可访问开放平台 | 前端路由契约；任意登录状态 | 访问 `/open-platform` | 不跳转登录页或工作台；登录页仍只允许游客 | 正常、权限、兼容性 |
+| 页面接口集合与 API Key 可配置目录一致 | 后端目录测试；扫描实际 Controller | 生成开放接口目录 | 仅包含 `ai.chat.invoke` 和 `automation.api-trigger.execute`，顺序稳定 | 正常、回归 |
+| 新增开放接口必须提供完整文档 | 后端目录测试；构造缺失响应文档的接口 | 执行启动目录校验 | 抛出文档不完整错误，禁止带缺失文档的接口启动 | 异常、兼容性 |
+| 路径变量必须与文档声明一致 | 后端目录测试；路径含 `{id}` 但未声明字段 | 生成接口目录 | 抛出路径参数文档不匹配错误 | 边界、异常 |
+| 公开目录不泄露内部权限编码 | Controller 单元测试 | 请求公开接口模型 | 保留参数和示例，不包含 `permission` 字段 | 权限、安全 |
+| AI 对话调试正确发送 JSON | 前端工具测试；有效 Key 和 JSON | 构造调试请求 | 发送 `X-API-Key`、语言和 JSON，不发送 Authorization | 正常、安全 |
+| 触发器调试正确处理路径且无空请求体 | 前端参数化测试；ID 含特殊字符或正常数字 | 构造请求 | 路径值 URL 编码；无请求体和 Content-Type | 正常、边界 |
+| 无效输入不得发送请求 | 前端工具测试；空 Key、空请求体、非法 JSON、空路径参数 | 构造请求 | 在发起 Axios 请求前返回明确校验错误 | 边界、异常、安全 |
+| 高风险接口调用前必须确认且凭证不持久化 | 前端源码契约测试 | 检查页面生命周期和高风险分支 | 存在确认框；卸载时清空 Key；不写入持久化存储 | 权限、安全、副作用 |
+| 实际业务接口继续执行 API Key 认证 | 真实 HTTP 请求；使用无效 Key | 调用 `POST /api/ai/chat` | 返回 HTTP 401 和统一错误体，不调用模型 | 权限、安全、回归 |
 
 ## 📊 当前测试执行记录
 
 | 测试范围 | 执行命令 | 结果 |
 | --- | --- | --- |
-| 前端缺陷复现 | `node --test test/platform-api-keys.test.mjs`（在 `frontend/` 执行） | 修复前 8 通过、2 失败；修复后 10/10 通过 |
-| 后端缺陷复现 | `docker run --rm -v "$PWD:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeyManagementControllerTest,ApiKeyManagementServiceTest,LlmManagementServiceTest test`（在 `backend/` 执行） | 修复前测试编译失败，6 个缺失实现错误；实现并完善测试数据后通过 |
-| 后端 Key 权限定向测试 | `docker run --rm -v "$PWD:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeyManagementControllerTest,ApiKeyManagementServiceTest,LlmManagementControllerTest,LlmManagementServiceTest,MessageBundleTest test`（在 `backend/` 执行） | 55 通过，0 失败，0 错误，0 跳过 |
-| 前端 Key 权限定向测试 | `node --test test/platform-api-keys.test.mjs test/api-keys.test.mjs test/localization.test.mjs`（在 `frontend/` 执行） | 29 通过，0 失败，0 错误，0 跳过 |
-| 后端完整回归 | `docker run --rm -v "$PWD:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B`（在 `backend/` 执行） | 150 通过，0 失败，0 错误，0 跳过 |
-| 前端完整回归 | `node --test test/*.test.mjs tests/*.test.js`（在 `frontend/` 执行） | 106 通过，0 失败，0 错误，0 跳过 |
+| 前端开放平台定向测试 | `node --test test/open-platform.test.mjs`（在 `frontend/` 执行） | 6 通过，0 失败，0 错误，0 跳过 |
+| 前端生产构建 | `npm run build`（在 `frontend/` 执行） | 构建成功；仅有既有 runtime-config、第三方 PURE 注释和大 Chunk 警告 |
+| 后端开放平台与 API Key 定向测试 | `docker run --rm -v "$PWD:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeyEndpointCatalogServiceTest,OpenPlatformControllerTest,ApiKeyManagementControllerTest,ApiKeyManagementServiceTest,ApiKeyAuthenticationServiceTest test`（在 `backend/` 执行） | 首次测试编译发现 Java 17 和注解兼容问题；修正后 22 通过，0 失败，0 错误，0 跳过 |
+| 后端完整回归 | `docker run --rm -v "$PWD:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B`（在 `backend/` 执行） | 154 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `node --test test/*.test.mjs tests/*.test.js`（在 `frontend/` 执行） | 119 通过，0 失败，0 错误，0 跳过 |
 | Python Worker 完整回归 | `docker run --rm -v "$PWD/python-worker:/workspace" -w /workspace base-ai-python-worker:latest python -m pytest -q` | Python 3.12.13；12 通过，0 失败 |
-| 服务重建与启动 | `docker compose up --build -d` | Backend 镜像构建内 150 个测试通过；Frontend 生产构建通过；三个服务重新创建成功 |
-| 服务健康检查 | `docker compose ps`、`curl -fsS http://localhost/health`、`curl -fsS http://localhost:8080/api/open/health` | Backend、Frontend、Python Worker 全部 healthy，两个端点均返回 UP |
+| 服务重建与启动 | `docker compose up --build -d` | 首次健康等待短暂失败后自动恢复；重新执行同一命令成功，Backend 镜像构建内 154 项测试通过，三个服务重建完成 |
+| 服务健康与公开目录 | `docker compose ps`、`curl -fsS http://localhost:8080/api/open/health`、`curl -fsS http://localhost:8080/api/open/platform/endpoints`、`curl -fsSI http://localhost/open-platform` | 三个服务 healthy；健康接口 UP；公开目录返回 2 项；页面返回 HTTP 200 |
+| API Key 拒绝验证 | `curl -X POST http://localhost:8080/api/ai/chat -H 'X-API-Key: sk-invalid' ...` | HTTP 401，响应 `code=401`、消息“API Key 无效”，未进入模型调用 |
+| 页面预览检查 | IDE 应用预览打开 `http://localhost/open-platform` 并读取 ConsoleOutput | 页面成功打开，控制台无错误；浏览器点击自动化因会话元数据缺失未执行 |
 | 格式与提交范围检查 | `git diff --check`、`git diff --cached --check`、`git status --short` | 格式检查通过；功能变更已独立提交，未产生临时调试文件 |
 
 ## 🔄 当前覆盖范围与结果
 
-- 正常场景：管理员创建、轮换、查看平台 API Key，以及查看供应商 API Key 均有可执行测试。
-- 边界场景：历史 Key 密文为空、多个供应商 Key 的规范化、弹窗关闭后的内存清理均已覆盖。
-- 异常场景：历史 Key 查看返回 409、资源查询和加密解密依赖路径由服务测试及完整回归覆盖。
-- 权限与安全：普通用户即使拥有对应 CRUD 权限也不能访问明文；角色校验先于资源查询，避免资源存在性探测。
-- 兼容性：历史 Key 不失效，现有 HMAC-SHA256 认证、列表脱敏、供应商更新留空保留原 Key 的行为保持不变。
-- 回归场景：后端 150 个、前端 106 个、Python Worker 12 个测试全部通过。
-- 运行环境：Backend、Frontend、Python Worker 已由当前源码重新构建并全部 healthy；Hibernate 启动成功完成可空密文字段兼容更新。
+- 正常场景：公开目录、两类接口文档、JSON 请求构造、路径替换、curl 示例和统一响应展示均有测试。
+- 边界场景：空 API Key、空请求体、非法 JSON、空路径参数、路径特殊字符和无请求体接口均已覆盖。
+- 异常场景：文档缺失、路径文档不匹配、无效 API Key、Compose 首次健康等待异常均已记录并验证最终结果。
+- 权限与安全：公开目录不暴露权限编码；调试只发送 `X-API-Key`，不发送 Bearer Token，不持久化 Key；高风险操作要求二次确认。
+- 兼容性：API Key 管理继续使用同一目录服务，认证、限流、RBAC、IP 白名单和既有接口响应结构未改变。
+- 回归场景：后端 154 个、前端 119 个、Python Worker 12 个测试全部通过。
+- 运行环境：Backend、Frontend、Python Worker 已由提交 `2966248` 的源码重新构建并全部 healthy。
 
 ## 🔄 当前重测触发条件
 
-- 修改平台 API Key 生成、轮换、摘要认证、加密副本或查看接口。
-- 修改 `AuthContext` 管理员角色判断、认证上下文或权限拦截逻辑。
-- 修改 Model Providers 明文接口、编辑回显或前端管理员入口。
-- 修改 `APP_CONFIG_ENCRYPTION_KEY`、加密算法或 API Key 数据结构。
-- 修改 API Key 管理、模型管理页面或相关双语消息。
+- 新增、删除或修改任何 `@ApiKeyEndpoint` 开放接口。
+- 修改开放接口路径、HTTP 方法、请求或响应结构。
+- 修改 `ApiKeyEndpointCatalogService`、公开目录 Controller 或 API Key 认证拦截逻辑。
+- 修改开放平台路由、在线调试请求构造、风险确认或凭证生命周期。
+- 修改开放平台及 API Key 接口名称、分组和字段双语消息。
 - 用户明确要求重新执行完整覆盖测试。
 
 ## ⚠️ 当前已知问题与限制
 
-- 历史平台 API Key 的 HMAC 摘要不可逆，无法自动补写密文；必须由管理员逐个轮换，轮换会立即使旧 Key 失效。
-- 可查看能力意味着完整 Key 存在可逆的 AES-GCM 加密副本；必须严格保护 `APP_CONFIG_ENCRYPTION_KEY` 和管理员账号。
-- 本次未执行登录后浏览器点击式端到端测试；前端通过源码契约测试、生产构建和真实服务健康检查验证。
+- 在线调试会调用真实业务接口，AI 对话可能产生模型费用，接口触发器可能产生外部副作用；页面通过风险提示和高风险二次确认降低误操作风险，但不能替代调用方权限治理。
+- 本次未使用有效 API Key 执行真实模型或真实接口触发器，避免产生费用和外部副作用；有效凭证端到端成功路径尚未验证。
+- 浏览器自动化连接因当前运行会话缺少必需元数据而不可用；已完成应用预览、控制台检查、公开页面 HTTP 200、源码契约测试和生产构建，但未完成点击切换及移动视口自动化截图验证。
 - Frontend 生产构建仍有既有 runtime-config、第三方 PURE 注释和大 Chunk 警告，不影响构建成功。
-- 后端完整测试中的预期异常日志和路由同步失败日志属于既有异常分支验证，测试结果仍为 150/150 通过。
+- 后端完整测试中的预期异常日志和路由同步失败日志属于既有异常分支验证，测试结果仍为 154/154 通过。
 
 ## 📝 下次测试建议
 
-1. 引入浏览器端到端环境后，分别使用管理员和普通权限账号验证按钮可见性、403 提示、复制及弹窗关闭清理。
-2. 在密钥轮换操作流程中增加调用方确认清单，避免管理员轮换历史 Key 后遗漏更新外部系统。
-3. 若后续增加更多敏感凭据查看入口，统一复用 `AuthContext.requireAdmin()` 并补齐直接接口绕过测试。
-4. 定期轮换 `APP_CONFIG_ENCRYPTION_KEY` 时应先设计密文重加密流程，不得直接替换配置导致现有密文不可解密。
+1. 在可提供专用测试 API Key 和无副作用触发器时，补充 AI 对话成功响应和触发器成功响应的浏览器端到端测试。
+2. 浏览器自动化环境恢复后，补充中文/英文切换、接口切换、高风险确认取消及桌面/移动视口截图回归。
+3. 新增开放接口时沿用 `@ApiKeyEndpoint` 元数据并补充目录完整性测试，不得在前端单独维护接口清单。
+4. 若开放接口数量增长明显，可评估分页、搜索和 JSON Schema 展示，但需保持当前 API Key 目录为唯一接口来源。
 
 ## ↩️ 回滚方式
 
-- 回滚功能提交 `e677aa9` 可恢复旧行为；Hibernate 已新增的可空 `secret_encrypted` 列会保留但不再使用，不影响旧代码运行。
-- 回滚后，新建或轮换的 Key 仍可通过原有 HMAC 摘要认证，但管理页面不再提供完整值查看。
+- 回滚功能提交 `2966248` 可移除开放平台页面、公开目录及文档元数据，不涉及数据库迁移或配置回滚。
+- 回滚后 API Key 现有生成、认证、接口授权、IP 白名单和频次限制行为保持不变，仅不再提供本次新增的公开文档与在线调试入口。
 
 ## 历史测试记录（内置数据本地化）
 
