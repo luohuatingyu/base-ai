@@ -30,6 +30,19 @@ test('登录页提供可复用的语言切换入口', () => {
   assert.match(loginViewSource, /<LanguageSwitcher \/>/)
 })
 
+test('登录页将开放平台和语言切换放在卡片外的公共操作区', () => {
+  const actionsStart = loginViewSource.indexOf('class="login-page-actions"')
+  const openPlatformLink = loginViewSource.indexOf('class="login-open-platform-link"')
+  const languageSwitcher = loginViewSource.indexOf('<LanguageSwitcher />')
+  const loginCard = loginViewSource.indexOf('class="login-card"')
+
+  assert.ok(actionsStart >= 0)
+  assert.ok(openPlatformLink > actionsStart)
+  assert.ok(languageSwitcher > openPlatformLink)
+  assert.ok(loginCard > languageSwitcher)
+  assert.match(loginViewSource, /@media \(max-width: 640px\)[\s\S]*\.login-page-actions/)
+})
+
 test('未保存语言时前端使用 APP_DEFAULT_LOCALE 运行时配置', () => {
   assert.match(serverSource, /defaultLocale:\s*process\.env\.APP_DEFAULT_LOCALE/)
   assert.match(composeSource, /frontend:[\s\S]*?APP_DEFAULT_LOCALE:\s*\$\{APP_DEFAULT_LOCALE:-en-US\}/)
