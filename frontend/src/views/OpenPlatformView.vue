@@ -63,7 +63,7 @@
             <code class="open-platform-path">{{ selectedEndpoint.path }}</code>
           </div>
 
-          <el-tabs v-model="activeTab" class="open-platform-tabs">
+          <el-tabs :key="locale" v-model="activeTab" class="open-platform-tabs">
             <el-tab-pane :label="t('openPlatform.documentationTab')" name="documentation">
               <div class="open-platform-documentation">
                 <section v-if="selectedEndpoint.pathParameters.length" class="open-platform-section">
