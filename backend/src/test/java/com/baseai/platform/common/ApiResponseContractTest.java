@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.MDC;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -33,12 +34,14 @@ class ApiResponseContractTest {
     @AfterEach
     void tearDown() {
         LocaleContextHolder.resetLocaleContext();
+        MDC.clear();
     }
 
     /** 成功响应应使用数字 200，并根据当前请求语言返回消息。 */
     @Test
     void successResponseUsesNumericCodeAndCurrentLocale() {
         LocaleContextHolder.setLocale(Locale.US);
+        MDC.put("traceId", "backend-trace-1");
         ApiResponseAdvice advice = new ApiResponseAdvice(messageSource);
         ServerHttpRequest request = mock(ServerHttpRequest.class);
         when(request.getURI()).thenReturn(URI.create("http://localhost/api/system/users"));
@@ -50,6 +53,7 @@ class ApiResponseContractTest {
         assertEquals(200, response.code());
         assertEquals("Operation successful", response.message());
         assertEquals(Map.of("id", 1), response.data());
+        assertEquals("backend-trace-1", response.traceId());
     }
 
     /** 公开和内部协议应继续保持原始响应结构。 */
@@ -80,6 +84,7 @@ class ApiResponseContractTest {
     @MethodSource("businessErrors")
     void businessErrorCodeMatchesHttpStatus(int status, String key, String expectedMessage) {
         LocaleContextHolder.setLocale(Locale.US);
+        MDC.put("traceId", "backend-trace-error");
 
         ResponseEntity<ApiResponse<Void>> entity = exceptionHandler.business(new BusinessException(status, key));
 
@@ -88,6 +93,7 @@ class ApiResponseContractTest {
         assertFalse(entity.getBody().success());
         assertEquals(expectedMessage, entity.getBody().message());
         assertNull(entity.getBody().data());
+        assertEquals("backend-trace-error", entity.getBody().traceId());
     }
 
     /** 同一业务异常应按照中文语言状态返回中文消息。 */

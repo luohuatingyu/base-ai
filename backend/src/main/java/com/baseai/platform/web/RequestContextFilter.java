@@ -32,6 +32,7 @@ public class RequestContextFilter extends OncePerRequestFilter {
             long durationMs = (System.nanoTime() - started) / 1_000_000;
             log.info("event=http_request method={} path={} status={} duration_ms={}",
                 request.getMethod(), request.getRequestURI(), response.getStatus(), durationMs);
+            MDC.remove("traceId");
             MDC.remove("requestId");
         }
     }

@@ -1,9 +1,9 @@
 package com.baseai.platform.trace;
 
-import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.service.TaskTraceService;
+import com.baseai.platform.web.TraceIdInterceptor;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -12,7 +12,6 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.stereotype.Component;
-import org.springframework.util.AntPathMatcher;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -26,15 +25,14 @@ public class TraceTrackingAspect {
     private final TaskTraceService taskTraceService;
     private final TraceRuntimeRegistry runtimeRegistry;
     private final TraceRequestSnapshotSanitizer sanitizer;
-    private final PlatformProperties properties;
-    private final AntPathMatcher pathMatcher = new AntPathMatcher();
+    private final TraceTrackingPolicy trackingPolicy;
 
     public TraceTrackingAspect(TaskTraceService taskTraceService, TraceRuntimeRegistry runtimeRegistry,
-                             TraceRequestSnapshotSanitizer sanitizer, PlatformProperties properties) {
+                             TraceRequestSnapshotSanitizer sanitizer, TraceTrackingPolicy trackingPolicy) {
         this.taskTraceService = taskTraceService;
         this.runtimeRegistry = runtimeRegistry;
         this.sanitizer = sanitizer;
-        this.properties = properties;
+        this.trackingPolicy = trackingPolicy;
     }
 
     /** 默认跟踪未排除的公开控制器方法。 */
@@ -64,7 +62,8 @@ public class TraceTrackingAspect {
         String triggerEntry = metadata == null ? "API" : metadata.triggerEntry();
         TraceSnapshot snapshot = request != null && (metadata == null || metadata.captureRequest())
             ? sanitizer.sanitize(request, signature.getParameterNames(), joinPoint.getArgs()) : new TraceSnapshot("{}", "{}");
-        String traceId = taskTraceService.bindOrCreate(request == null ? null : request.getHeader(TRACE_ID_HEADER), ownerId,
+        String requestTraceId = request == null ? null : (String) request.getAttribute(TraceIdInterceptor.TRACE_ID_ATTRIBUTE);
+        String traceId = taskTraceService.create(requestTraceId, ownerId,
             taskType, triggerEntry, request == null ? "INTERNAL" : request.getMethod(),
             request == null ? method.toGenericString() : request.getRequestURI(), snapshot);
         HttpServletResponse response = attributes == null ? null : attributes.getResponse();
@@ -96,13 +95,7 @@ public class TraceTrackingAspect {
     /** 判断注解、HTTP 方法和路径是否排除任务跟踪。 */
     private boolean shouldIgnore(ProceedingJoinPoint joinPoint, HttpServletRequest request, boolean controllerInvocation) {
         Method method = ((MethodSignature) joinPoint.getSignature()).getMethod();
-        if (AnnotatedElementUtils.hasAnnotation(method, TraceIgnored.class)
-            || AnnotatedElementUtils.hasAnnotation(joinPoint.getTarget().getClass(), TraceIgnored.class)) return true;
-        if (!controllerInvocation || request == null) return false;
-        if (properties.getTraceTracking().getExcludedMethods().stream()
-            .anyMatch(value -> value.equalsIgnoreCase(request.getMethod()))) return true;
-        return properties.getTraceTracking().getExcludedPaths().stream()
-            .anyMatch(pattern -> pathMatcher.match(pattern, request.getRequestURI()));
+        return trackingPolicy.isIgnored(request, method, joinPoint.getTarget().getClass(), controllerInvocation);
     }
 
     /** 从登录上下文或注解指定的方法参数解析任务所有者。 */

@@ -1,7 +1,9 @@
 package com.baseai.platform.config;
 
 import com.baseai.platform.security.AuthInterceptor;
+import com.baseai.platform.web.TraceIdInterceptor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -10,13 +12,18 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
     private final AuthInterceptor authInterceptor;
+    private final TraceIdInterceptor traceIdInterceptor;
 
-    public WebConfig(AuthInterceptor authInterceptor) { this.authInterceptor = authInterceptor; }
+    public WebConfig(AuthInterceptor authInterceptor, TraceIdInterceptor traceIdInterceptor) {
+        this.authInterceptor = authInterceptor;
+        this.traceIdInterceptor = traceIdInterceptor;
+    }
 
-    /** 注册统一认证拦截器并排除公开及内部认证接口。 */
+    /** 先建立 traceId 上下文，再执行统一认证和权限校验。 */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(authInterceptor).addPathPatterns("/api/**")
+        registry.addInterceptor(traceIdInterceptor).order(Ordered.HIGHEST_PRECEDENCE).addPathPatterns("/api/**");
+        registry.addInterceptor(authInterceptor).order(Ordered.HIGHEST_PRECEDENCE + 1).addPathPatterns("/api/**")
             .excludePathPatterns("/api/auth/login", "/api/open/**", "/api/internal/**");
     }
 

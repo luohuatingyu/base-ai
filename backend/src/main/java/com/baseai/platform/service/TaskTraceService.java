@@ -107,11 +107,10 @@ public class TaskTraceService {
      */
     public String bindOrCreate(String reservedTraceId, Long ownerUserId, String taskType, String triggerEntry,
                                String requestMethod, String requestPath, TraceSnapshot snapshot) {
-        // 注册任务类型和触发入口到元数据注册表
-        taskTypeRegistry.register(taskType, triggerEntry);
-
         // 如果提供了预留ID，则绑定到已有记录
         if (hasText(reservedTraceId)) {
+            // 注册绑定后的任务类型和触发入口到元数据注册表
+            taskTypeRegistry.register(taskType, triggerEntry);
             // 更新预留记录，将状态改为RUNNING并填充实际任务信息
             int updated = jdbcTemplate.update("""
                 UPDATE task_trace SET task_type=?, trigger_entry=?, status='RUNNING', request_method=?, request_path=?,
@@ -124,15 +123,21 @@ public class TaskTraceService {
             return reservedTraceId.trim();
         }
 
-        // 没有预留ID，直接创建新任务
-        String traceId = newTraceId();
+        return create(null, ownerUserId, taskType, triggerEntry, requestMethod, requestPath, snapshot);
+    }
+
+    /** 使用后端请求入口生成的 traceId 创建运行任务。 */
+    public String create(String traceId, Long ownerUserId, String taskType, String triggerEntry,
+                         String requestMethod, String requestPath, TraceSnapshot snapshot) {
+        taskTypeRegistry.register(taskType, triggerEntry);
+        String actualTraceId = hasText(traceId) ? traceId.trim() : newTraceId();
         jdbcTemplate.update("""
             INSERT INTO task_trace(trace_id, owner_user_id, task_type, trigger_entry, status, request_path, request_method,
                 request_params_json, request_headers_json, java_instance_id, started_at, heartbeat_at)
             VALUES (?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?, ?, ?)
-            """, traceId, ownerUserId, taskType, triggerEntry, requestPath, requestMethod, snapshot.paramsJson(),
+            """, actualTraceId, ownerUserId, taskType, triggerEntry, requestPath, requestMethod, snapshot.paramsJson(),
             snapshot.headersJson(), instanceId, now(), now());
-        return traceId;
+        return actualTraceId;
     }
 
     /**
