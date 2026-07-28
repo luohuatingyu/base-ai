@@ -1,7 +1,7 @@
 <template>
   <div class="panel">
     <div class="section-head"><div><h2>{{ t('models.title') }}</h2><p>{{ t('models.description') }}</p></div><el-button type="primary" @click="open()">{{ t('models.add') }}</el-button></div>
-    <el-table :data="rows">
+    <el-table :data="rows" table-layout="auto">
       <el-table-column prop="code" :label="t('common.code')" />
       <el-table-column prop="name" :label="t('common.name')" />
       <el-table-column prop="modelName" :label="t('models.identifier')" />
@@ -17,7 +17,7 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.operation')" width="180" fixed="right">
+      <el-table-column :label="t('common.operation')" fixed="right">
         <template #default="s"><div class="table-actions"><el-button link type="success" @click="startTest(s.row)">{{ t('models.test') }}</el-button><el-button link type="primary" @click="open(s.row)">{{ t('common.edit') }}</el-button></div></template>
       </el-table-column>
     </el-table>

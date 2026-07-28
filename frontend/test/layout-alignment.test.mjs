@@ -7,20 +7,20 @@ const automationStyles = readFileSync(new URL('../src/automation.css', import.me
 const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
 const menusViewSource = readFileSync(new URL('../src/views/MenusView.vue', import.meta.url), 'utf8')
 const actionColumnCases = [
-  ['ApiTriggerView.vue', 380, 1],
-  ['ApiKeysView.vue', 320, 1],
-  ['TasksView.vue', 320, 1],
-  ['UsersView.vue', 180, 1],
-  ['RolesView.vue', 180, 1],
-  ['MenusView.vue', 240, 1],
-  ['DepartmentsView.vue', 240, 1],
-  ['PositionsView.vue', 180, 1],
-  ['DictionariesView.vue', 180, 2],
-  ['SettingsView.vue', 180, 1],
-  ['OnlineUsersView.vue', 140, 1],
-  ['ModelsView.vue', 180, 1],
-  ['ModelProvidersView.vue', 240, 1],
-  ['ModelRoutesView.vue', 180, 1]
+  ['ApiTriggerView.vue', 1],
+  ['ApiKeysView.vue', 1],
+  ['TasksView.vue', 1],
+  ['UsersView.vue', 1],
+  ['RolesView.vue', 1],
+  ['MenusView.vue', 1],
+  ['DepartmentsView.vue', 1],
+  ['PositionsView.vue', 1],
+  ['DictionariesView.vue', 2],
+  ['SettingsView.vue', 1],
+  ['OnlineUsersView.vue', 1],
+  ['ModelsView.vue', 1],
+  ['ModelProvidersView.vue', 1],
+  ['ModelRoutesView.vue', 1]
 ]
 
 /** 转义选择器并提取对应的 CSS 声明，确保布局规则可以被自动回归。 */
@@ -94,15 +94,16 @@ test('表格、分页和表单内容遵守统一的对齐与溢出规则', () =>
   assertDeclarations(globalStyles, '.el-drawer', [/max-width:\s*100vw/])
 })
 
-test('所有主列表操作列固定右侧并使用按内容分级的公共单行布局', () => {
-  for (const [fileName, width, expectedColumns] of actionColumnCases) {
+test('所有主列表操作列使用自然内容宽度并在缩窄后固定右侧', () => {
+  for (const [fileName, expectedColumns] of actionColumnCases) {
     const source = readFileSync(new URL(`../src/views/${fileName}`, import.meta.url), 'utf8')
     const columns = [...source.matchAll(/<el-table-column\s+:label="t\('common\.(?:operation|actions)'\)"[^>]*>/g)]
     assert.equal(columns.length, expectedColumns, `${fileName} 操作列数量不匹配`)
     for (const [column] of columns) {
-      assert.match(column, new RegExp(`width="${width}"`), `${fileName} 操作列宽度不统一`)
       assert.match(column, /fixed="right"/, `${fileName} 操作列未固定右侧`)
+      assert.doesNotMatch(column, /(?:^|\s)(?:width|min-width)="/, `${fileName} 操作列不应使用固定宽度`)
     }
+    assert.equal((source.match(/<el-table\b[^>]*table-layout="auto"/g) || []).length, expectedColumns, `${fileName} 操作表格未使用自动布局`)
     assert.equal((source.match(/class="table-actions"/g) || []).length, expectedColumns, `${fileName} 未使用公共操作按钮容器`)
   }
 
@@ -132,7 +133,9 @@ test('表单标签、输入控件和开关文案使用一致的垂直节奏', ()
 })
 
 test('菜单管理英文弹窗为长标签和选项提供响应式空间', () => {
-  assert.match(menusViewSource, /:label="t\('common\.operation'\)" width="240"/)
+  assert.match(menusViewSource, /<el-table :data="treeRows"[^>]*table-layout="auto"/)
+  assert.match(menusViewSource, /:label="t\('common\.operation'\)" fixed="right"/)
+  assert.doesNotMatch(menusViewSource, /:label="t\('common\.operation'\)"[^>]*(?:width|min-width)=/)
   assert.match(menusViewSource, /class="menu-editor-dialog"[\s\S]*?width="680px"/)
   assert.match(menusViewSource, /class="menu-editor-form"\s+label-width="120px"/)
   assertDeclarations(globalStyles, '.menu-editor-dialog', [/max-width:\s*calc\(100vw\s*-\s*24px\)/])

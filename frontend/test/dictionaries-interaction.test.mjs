@@ -6,7 +6,7 @@ const source = readFileSync(new URL('../src/views/DictionariesView.vue', import.
 
 test('未选择字典类型时显示左侧选择提示并隐藏右侧数据区', () => {
   assert.match(source, /<el-empty v-else :description="t\('dictionaries\.selectTypeHint'\)"\s*\/>/)
-  assert.match(source, /<template v-if="current"><el-table :data="pagedDataRows">/)
+  assert.match(source, /<template v-if="current"><el-table :data="pagedDataRows" table-layout="auto">/)
 })
 
 test('删除当前字典类型后清理右侧选择和数据', () => {

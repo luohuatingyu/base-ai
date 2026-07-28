@@ -4,7 +4,7 @@
       <div><h2>{{ t('menus.title') }}</h2><p>{{ t('menus.description') }}</p></div>
       <el-button v-if="auth.hasPermission('system:menu:create')" type="primary" @click="open()">{{ t('menus.add') }}</el-button>
     </div>
-    <el-table :data="treeRows" row-key="id" default-expand-all>
+    <el-table :data="treeRows" row-key="id" default-expand-all table-layout="auto">
       <el-table-column :label="t('common.name')">
         <template #default="scope"><span :title="localizedName(scope.row)">{{ localizedName(scope.row) }}</span></template>
       </el-table-column>
@@ -13,7 +13,7 @@
       </el-table-column>
       <el-table-column prop="path" :label="t('menus.route')" />
       <el-table-column prop="permission" :label="t('menus.permission')" />
-      <el-table-column :label="t('common.operation')" width="240" fixed="right">
+      <el-table-column :label="t('common.operation')" fixed="right">
         <template #default="scope">
           <div class="table-actions">
             <el-button v-if="auth.hasPermission('system:menu:create')" link @click="open(null, scope.row.id)">{{ t('departments.addChild') }}</el-button>

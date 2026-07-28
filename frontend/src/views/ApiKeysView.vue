@@ -42,7 +42,7 @@
       <el-button @click="load">{{ t('common.query') }}</el-button>
     </el-form>
 
-    <el-table v-loading="loading" :data="rows">
+    <el-table v-loading="loading" :data="rows" table-layout="auto">
       <el-table-column prop="name" :label="t('common.name')" min-width="150" />
       <el-table-column prop="keyPrefix" :label="t('apiKeys.keyPrefix')" min-width="210" />
       <el-table-column :label="t('apiKeys.owner')" min-width="150">
@@ -68,7 +68,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="lastUsedAt" :label="t('apiKeys.lastUsedAt')" min-width="170" />
-      <el-table-column :label="t('common.operation')" width="320" fixed="right">
+      <el-table-column :label="t('common.operation')" fixed="right">
         <template #default="scope">
           <div class="table-actions">
             <el-button v-if="auth.hasPermission('system:api-key:update')" link type="primary" @click="openEdit(scope.row)">

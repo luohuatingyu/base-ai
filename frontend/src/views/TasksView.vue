@@ -58,7 +58,7 @@
     </div>
 
     <!-- 数据表格 -->
-    <el-table :data="rows" v-loading="loading" class="tasks-table">
+    <el-table :data="rows" v-loading="loading" class="tasks-table" table-layout="auto">
       <el-table-column prop="trace_id" :label="t('tasks.traceId')" min-width="280">
         <template #default="scope">
           <el-text class="trace-id" truncated>{{ scope.row.trace_id }}</el-text>
@@ -77,7 +77,7 @@
       </el-table-column>
       <el-table-column prop="created_at" :label="t('tasks.createdAt')" min-width="180"/>
       <el-table-column prop="finished_at" :label="t('tasks.finishedAt')" min-width="180"/>
-      <el-table-column :label="t('common.actions')" width="320" fixed="right">
+      <el-table-column :label="t('common.actions')" fixed="right">
         <template #default="s">
           <div class="table-actions">
             <el-button link type="primary" @click="showDetail(s.row)">{{ t('common.detail') }}</el-button>
