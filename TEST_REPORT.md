@@ -2,6 +2,115 @@
 
 ## 📋 Git 基准点
 
+Commit: e677aa943ef516d282b2e0b3bff26bc310998282
+- 提交说明: Restrict key viewing to administrators
+- 测试日期: 2026-07-28
+- 分支: master
+
+## 🎯 当前变更范围
+
+- 平台 API Key 新建和轮换时，在原有 HMAC-SHA256 认证摘要之外保存 AES-GCM 加密副本。
+- 平台 API Key 增加管理员查看完整值接口和前端操作，完整值的创建、轮换及查看均要求内置 `ADMIN` 角色。
+- Model Providers 的 View keys 接口、按钮和编辑回显均限制为 `ADMIN` 角色；非管理员编辑时留空保留原 Key。
+- 历史平台 API Key 保持有效但不补写不可恢复的明文，管理员必须先轮换才能查看。
+- 密钥查看弹窗关闭后清除浏览器内存中的明文，并同步更新中英文提示和安全文档。
+
+## 📋 当前变更测试结果（2026-07-28）
+
+**变更范围**：平台 API Key 可逆加密副本、管理员明文查看、历史 Key 兼容和模型供应商 Key 管理员角色限制。
+
+**测试执行结果**：
+- 完整回归测试：268 个，通过 268 个（100%）
+- 后端完整测试：150 个，通过 150 个（100%）
+- 前端完整测试：106 个，通过 106 个（100%）
+- Python Worker 完整测试（Python 3.12.13）：12 个，通过 12 个（100%）
+- 失败：0 个
+- 错误：0 个
+- 跳过：0 个
+
+**缺陷复现记录**：
+- 修复前前端定向测试：10 个中 8 个通过、2 个失败，稳定复现平台和供应商明文入口未限制管理员角色。
+- 修复前后端定向测试：测试编译出现 6 个预期错误，稳定复现缺少密文字段、查看接口、查看模型及加密依赖。
+- 实现过程中首次后端定向测试有 3 个 Mockito 严格桩错误；调整共享测试桩后，新增轮换测试首次暴露测试实体缺少 owner，补全有效实体后最终全部通过。
+- 修复后定向测试、三端完整测试、镜像构建测试和服务健康检查全部通过，未删除、跳过或弱化既有测试。
+
+**关键模块测试**：
+- ApiKeyManagementService 创建、轮换、查看、历史兼容及非管理员拒绝：11/11，通过
+- LlmManagementService 供应商脱敏、管理员查看及非管理员拒绝等回归：34/34，通过
+- API Key 与模型管理 Controller 权限声明：7/7，通过
+- 双语消息资源一致性：3/3，通过
+- 前端 API Key、供应商管理员入口、内存清理及本地化定向回归：29/29，通过
+- 原有认证、限流、路由、系统管理和自动化等后端回归：全部通过
+
+## ✅ 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入/操作 | 预期结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 管理员可查看新建或轮换后的平台 API Key | Service；认证上下文含 `ADMIN` | 创建、轮换后调用 reveal | 保存 AES-GCM 密文并返回完整 `sk-` Key | 正常、安全 |
+| 非管理员不能从任何平台 Key 渠道取得明文 | Service + 前端；仅有 create/rotate/list 权限，无 `ADMIN` | 创建、轮换、直接 reveal、检查页面入口 | 后端均返回 403，前端隐藏创建、轮换和查看入口 | 权限、安全、恶意输入 |
+| 历史平台 Key 继续有效但需轮换后查看 | Service；历史记录的密文字段为空 | 管理员调用 reveal | 返回 HTTP 409 对应业务错误，不修改摘要或认证行为 | 边界、兼容性 |
+| Model Providers View keys 同样仅限管理员 | Service + 前端；分别使用管理员和普通更新权限用户 | 请求明文接口、打开查看和编辑窗口 | 管理员正常解密；非管理员返回 403，编辑不加载已有明文 | 权限、安全、回归 |
+| 列表与调用认证不得因可查看功能泄露或失效 | Service + 完整回归 | 列表供应商、使用 API Key 认证及执行既有测试 | 列表仍脱敏，认证继续使用 HMAC 摘要，既有行为通过 | 兼容性、回归 |
+| 查看窗口关闭后不保留前端明文 | 前端源码契约测试 | 关闭平台或供应商 Key 弹窗 | 对应响应式明文变量清空 | 安全、副作用 |
+
+## 📊 当前测试执行记录
+
+| 测试范围 | 执行命令 | 结果 |
+| --- | --- | --- |
+| 前端缺陷复现 | `node --test test/platform-api-keys.test.mjs`（在 `frontend/` 执行） | 修复前 8 通过、2 失败；修复后 10/10 通过 |
+| 后端缺陷复现 | `docker run --rm -v "$PWD:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeyManagementControllerTest,ApiKeyManagementServiceTest,LlmManagementServiceTest test`（在 `backend/` 执行） | 修复前测试编译失败，6 个缺失实现错误；实现并完善测试数据后通过 |
+| 后端 Key 权限定向测试 | `docker run --rm -v "$PWD:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeyManagementControllerTest,ApiKeyManagementServiceTest,LlmManagementControllerTest,LlmManagementServiceTest,MessageBundleTest test`（在 `backend/` 执行） | 55 通过，0 失败，0 错误，0 跳过 |
+| 前端 Key 权限定向测试 | `node --test test/platform-api-keys.test.mjs test/api-keys.test.mjs test/localization.test.mjs`（在 `frontend/` 执行） | 29 通过，0 失败，0 错误，0 跳过 |
+| 后端完整回归 | `docker run --rm -v "$PWD:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B`（在 `backend/` 执行） | 150 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `node --test test/*.test.mjs tests/*.test.js`（在 `frontend/` 执行） | 106 通过，0 失败，0 错误，0 跳过 |
+| Python Worker 完整回归 | `docker run --rm -v "$PWD/python-worker:/workspace" -w /workspace base-ai-python-worker:latest python -m pytest -q` | Python 3.12.13；12 通过，0 失败 |
+| 服务重建与启动 | `docker compose up --build -d` | Backend 镜像构建内 150 个测试通过；Frontend 生产构建通过；三个服务重新创建成功 |
+| 服务健康检查 | `docker compose ps`、`curl -fsS http://localhost/health`、`curl -fsS http://localhost:8080/api/open/health` | Backend、Frontend、Python Worker 全部 healthy，两个端点均返回 UP |
+| 格式与提交范围检查 | `git diff --check`、`git diff --cached --check`、`git status --short` | 格式检查通过；功能变更已独立提交，未产生临时调试文件 |
+
+## 🔄 当前覆盖范围与结果
+
+- 正常场景：管理员创建、轮换、查看平台 API Key，以及查看供应商 API Key 均有可执行测试。
+- 边界场景：历史 Key 密文为空、多个供应商 Key 的规范化、弹窗关闭后的内存清理均已覆盖。
+- 异常场景：历史 Key 查看返回 409、资源查询和加密解密依赖路径由服务测试及完整回归覆盖。
+- 权限与安全：普通用户即使拥有对应 CRUD 权限也不能访问明文；角色校验先于资源查询，避免资源存在性探测。
+- 兼容性：历史 Key 不失效，现有 HMAC-SHA256 认证、列表脱敏、供应商更新留空保留原 Key 的行为保持不变。
+- 回归场景：后端 150 个、前端 106 个、Python Worker 12 个测试全部通过。
+- 运行环境：Backend、Frontend、Python Worker 已由当前源码重新构建并全部 healthy；Hibernate 启动成功完成可空密文字段兼容更新。
+
+## 🔄 当前重测触发条件
+
+- 修改平台 API Key 生成、轮换、摘要认证、加密副本或查看接口。
+- 修改 `AuthContext` 管理员角色判断、认证上下文或权限拦截逻辑。
+- 修改 Model Providers 明文接口、编辑回显或前端管理员入口。
+- 修改 `APP_CONFIG_ENCRYPTION_KEY`、加密算法或 API Key 数据结构。
+- 修改 API Key 管理、模型管理页面或相关双语消息。
+- 用户明确要求重新执行完整覆盖测试。
+
+## ⚠️ 当前已知问题与限制
+
+- 历史平台 API Key 的 HMAC 摘要不可逆，无法自动补写密文；必须由管理员逐个轮换，轮换会立即使旧 Key 失效。
+- 可查看能力意味着完整 Key 存在可逆的 AES-GCM 加密副本；必须严格保护 `APP_CONFIG_ENCRYPTION_KEY` 和管理员账号。
+- 本次未执行登录后浏览器点击式端到端测试；前端通过源码契约测试、生产构建和真实服务健康检查验证。
+- Frontend 生产构建仍有既有 runtime-config、第三方 PURE 注释和大 Chunk 警告，不影响构建成功。
+- 后端完整测试中的预期异常日志和路由同步失败日志属于既有异常分支验证，测试结果仍为 150/150 通过。
+
+## 📝 下次测试建议
+
+1. 引入浏览器端到端环境后，分别使用管理员和普通权限账号验证按钮可见性、403 提示、复制及弹窗关闭清理。
+2. 在密钥轮换操作流程中增加调用方确认清单，避免管理员轮换历史 Key 后遗漏更新外部系统。
+3. 若后续增加更多敏感凭据查看入口，统一复用 `AuthContext.requireAdmin()` 并补齐直接接口绕过测试。
+4. 定期轮换 `APP_CONFIG_ENCRYPTION_KEY` 时应先设计密文重加密流程，不得直接替换配置导致现有密文不可解密。
+
+## ↩️ 回滚方式
+
+- 回滚功能提交 `e677aa9` 可恢复旧行为；Hibernate 已新增的可空 `secret_encrypted` 列会保留但不再使用，不影响旧代码运行。
+- 回滚后，新建或轮换的 Key 仍可通过原有 HMAC 摘要认证，但管理页面不再提供完整值查看。
+
+## 历史测试记录（内置数据本地化）
+
+## 📋 Git 基准点
+
 - Commit: b3e5ca6
 - 提交说明: Fix built-in data localization switching
 - 测试日期: 2026-07-27
