@@ -1,7 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { buildCurlExample, buildDebugRequest, buildEndpointPath, formatDebugResponse } from '../src/utils/openPlatform.js'
+import {
+  buildCurlExample,
+  buildDebugRequest,
+  buildEndpointPath,
+  formatDebugResponse,
+  formatJsonRequestBody
+} from '../src/utils/openPlatform.js'
 
 const chatEndpoint = {
   method: 'POST', path: '/api/ai/chat', pathParameters: [],
@@ -52,6 +58,12 @@ test('curl and response formatting follow endpoint metadata', () => {
   assert.equal(formatDebugResponse({ success: true }), '{\n  "success": true\n}')
 })
 
+test('request body formatting produces readable JSON and rejects invalid input', () => {
+  assert.equal(formatJsonRequestBody('{"messages":[]}'), '{\n  "messages": []\n}')
+  assert.throws(() => formatJsonRequestBody(''), /REQUEST_BODY_REQUIRED/)
+  assert.throws(() => formatJsonRequestBody('{'), /INVALID_JSON/)
+})
+
 test('public route and view enforce guest access and credential safety contracts', async () => {
   const [router, view, login, zh, en] = await Promise.all([
     readFile(new URL('../src/router/index.js', import.meta.url), 'utf8'),
@@ -64,6 +76,14 @@ test('public route and view enforce guest access and credential safety contracts
   assert.match(router, /if \(to\.meta\.guestOnly\)/)
   assert.match(view, /ElMessageBox\.confirm/)
   assert.match(view, /onBeforeUnmount/)
+  assert.match(view, /v-model="activeTab"/)
+  assert.match(view, /name="documentation"/)
+  assert.match(view, /name="debugger"/)
+  assert.match(view, /@keydown\.(?:ctrl|meta)\.enter="sendRequest"/)
+  assert.match(view, /formatRequestBody/)
+  assert.match(view, /resetRequestBody/)
+  assert.match(view, /copyText\(curlExample/)
+  assert.match(view, /copyText\(debugResult\.body/)
   assert.doesNotMatch(view, /localStorage\.setItem\(['"]apiKey/)
   assert.doesNotMatch(view, /sessionStorage/)
   assert.match(login, /to="\/open-platform"/)

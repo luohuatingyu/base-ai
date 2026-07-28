@@ -58,3 +58,14 @@ export function buildCurlExample(endpoint, baseUrl = '<BASE_URL>') {
 export function formatDebugResponse(data) {
   return typeof data === 'string' ? data : JSON.stringify(data, null, 2)
 }
+
+/** 校验并格式化在线调试的 JSON 请求体。 */
+export function formatJsonRequestBody(requestBody) {
+  const value = String(requestBody || '').trim()
+  if (!value) throw new Error('REQUEST_BODY_REQUIRED')
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    throw new Error('INVALID_JSON')
+  }
+}
