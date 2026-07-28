@@ -3,11 +3,11 @@
   <div class="panel">
     <div class="section-head"><div><h2>{{ t('apiTrigger.title') }}</h2><p>{{ t('apiTrigger.description') }}</p></div><el-button v-if="auth.hasPermission('automation:api-trigger:create')" type="primary" @click="open()">{{ t('apiTrigger.add') }}</el-button></div>
     <div class="filter-row"><el-input v-model="query.keyword" clearable :placeholder="t('apiTrigger.nameOrDescription')"/><el-select v-model="query.enabled" clearable :placeholder="t('apiTrigger.enabledStatus')"><el-option :label="t('common.enabled')" :value="true"/><el-option :label="t('common.disabled')" :value="false"/></el-select><el-button type="primary" @click="load">{{ t('common.query') }}</el-button></div>
-    <el-table :data="rows" table-layout="auto">
-      <el-table-column prop="name" :label="t('common.name')" min-width="160"/><el-table-column prop="httpMethod" :label="t('common.method')" width="85"/><el-table-column prop="url" label="URL" min-width="260" show-overflow-tooltip/>
-      <el-table-column prop="cronExpression" label="Cron" min-width="150"><template #default="s">{{s.row.cronExpression||t('apiTrigger.manualOnly')}}</template></el-table-column>
+    <el-table :data="rows" table-layout="fixed">
+      <el-table-column prop="name" :label="t('common.name')"/><el-table-column prop="httpMethod" :label="t('common.method')" width="85"/><el-table-column prop="url" label="URL" show-overflow-tooltip/>
+      <el-table-column prop="cronExpression" label="Cron"><template #default="s">{{s.row.cronExpression||t('apiTrigger.manualOnly')}}</template></el-table-column>
       <el-table-column :label="t('common.status')" width="100"><template #default="s"><el-tag :type="s.row.enabled?'success':'info'">{{s.row.enabled?t('common.enabled'):t('common.disabled')}}</el-tag></template></el-table-column>
-      <el-table-column prop="lastStatus" :label="t('apiTrigger.latestResult')" width="110"/><el-table-column :label="t('common.operation')" fixed="right"><template #default="s">
+      <el-table-column prop="lastStatus" :label="t('apiTrigger.latestResult')" width="110"/><el-table-column :label="t('common.operation')" width="380" fixed="right"><template #default="s">
         <div class="table-actions">
           <el-button v-if="auth.hasPermission('automation:api-trigger:update')" link type="primary" @click="open(s.row)">{{ t('common.edit') }}</el-button>
           <el-button v-if="auth.hasPermission('automation:api-trigger:trigger')" link type="success" @click="trigger(s.row)">{{ t('apiTrigger.execute') }}</el-button>

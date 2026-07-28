@@ -1,13 +1,13 @@
 <template>
   <div class="panel">
     <div class="section-head"><div><h2>{{ t('models.title') }}</h2><p>{{ t('models.description') }}</p></div><el-button type="primary" @click="open()">{{ t('models.add') }}</el-button></div>
-    <el-table :data="rows" table-layout="auto">
+    <el-table :data="rows" table-layout="fixed">
       <el-table-column prop="code" :label="t('common.code')" />
       <el-table-column prop="name" :label="t('common.name')" />
       <el-table-column prop="modelName" :label="t('models.identifier')" />
       <el-table-column :label="t('models.modelType')"><template #default="scope"><el-tag v-for="type in scope.row.supportedModelTypes" :key="type" size="small">{{ localizeModelType(type, modelTypes, t) }}</el-tag></template></el-table-column>
       <el-table-column prop="capabilityLevel" :label="t('models.capability')" />
-      <el-table-column :label="t('models.thinkingLevels')" min-width="260">
+      <el-table-column :label="t('models.thinkingLevels')">
         <template #default="scope">
           <div v-if="mappingEntries(scope.row.thinkingLevels).length" class="thinking-mapping-tags">
             <el-tag v-for="entry in mappingEntries(scope.row.thinkingLevels)" :key="entry.level" size="small" effect="plain">
@@ -17,7 +17,7 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.operation')" fixed="right">
+      <el-table-column :label="t('common.operation')" width="180" fixed="right">
         <template #default="s"><div class="table-actions"><el-button link type="success" @click="startTest(s.row)">{{ t('models.test') }}</el-button><el-button link type="primary" @click="open(s.row)">{{ t('common.edit') }}</el-button></div></template>
       </el-table-column>
     </el-table>

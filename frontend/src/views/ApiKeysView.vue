@@ -42,13 +42,13 @@
       <el-button @click="load">{{ t('common.query') }}</el-button>
     </el-form>
 
-    <el-table v-loading="loading" :data="rows" table-layout="auto">
-      <el-table-column prop="name" :label="t('common.name')" min-width="150" />
-      <el-table-column prop="keyPrefix" :label="t('apiKeys.keyPrefix')" min-width="210" />
-      <el-table-column :label="t('apiKeys.owner')" min-width="150">
+    <el-table v-loading="loading" :data="rows" table-layout="fixed">
+      <el-table-column prop="name" :label="t('common.name')" />
+      <el-table-column prop="keyPrefix" :label="t('apiKeys.keyPrefix')" />
+      <el-table-column :label="t('apiKeys.owner')">
         <template #default="scope">{{ scope.row.ownerDisplayName }} ({{ scope.row.ownerUsername }})</template>
       </el-table-column>
-      <el-table-column :label="t('apiKeys.expiration')" min-width="170">
+      <el-table-column :label="t('apiKeys.expiration')">
         <template #default="scope">
           <el-tag v-if="scope.row.neverExpires" type="warning">{{ t('apiKeys.neverExpires') }}</el-tag>
           <span v-else>{{ scope.row.expiresAt || '-' }}</span>
@@ -57,7 +57,7 @@
       <el-table-column :label="t('apiKeys.endpoints')" width="110">
         <template #default="scope">{{ scope.row.endpointCodes?.length || 0 }}</template>
       </el-table-column>
-      <el-table-column :label="t('apiKeys.rateLimit')" min-width="150">
+      <el-table-column :label="t('apiKeys.rateLimit')">
         <template #default="scope">{{ rateLimitDisplay(scope.row) }}</template>
       </el-table-column>
       <el-table-column :label="t('common.status')" width="100">
@@ -67,8 +67,8 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="lastUsedAt" :label="t('apiKeys.lastUsedAt')" min-width="170" />
-      <el-table-column :label="t('common.operation')" fixed="right">
+      <el-table-column prop="lastUsedAt" :label="t('apiKeys.lastUsedAt')" />
+      <el-table-column :label="t('common.operation')" width="320" fixed="right">
         <template #default="scope">
           <div class="table-actions">
             <el-button v-if="auth.isAdmin" link type="primary" @click="viewSecret(scope.row)">

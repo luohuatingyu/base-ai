@@ -104,9 +104,13 @@ test('新增和编辑弹窗按四类 tab 分隔字段且进度页没有手工输
 })
 
 test('接口触发操作列固定在右侧且所有操作按钮保持单行', () => {
-  assert.match(viewSource, /<el-table :data="rows" table-layout="auto">/)
-  assert.match(viewSource, /:label="t\('common\.operation'\)"\s+fixed="right"/)
-  assert.doesNotMatch(viewSource, /:label="t\('common\.operation'\)"[^>]*(?:width|min-width)=/)
-  assert.match(viewSource, /<div class="table-actions">[\s\S]*?automation:api-trigger:update[\s\S]*?automation:api-trigger:trigger[\s\S]*?automation:api-trigger:logs[\s\S]*?automation:api-trigger:delete[\s\S]*?<\/div>/)
+  const tableStart = viewSource.indexOf('<el-table :data="rows" table-layout="fixed">')
+  assert.notEqual(tableStart, -1)
+  const tableEnd = viewSource.indexOf('</el-table>', tableStart)
+  const mainTable = viewSource.slice(tableStart, tableEnd)
+
+  assert.match(mainTable, /:label="t\('common\.operation'\)" width="380" fixed="right"/)
+  assert.doesNotMatch(mainTable, /<el-table-column[^>]*min-width=/)
+  assert.match(mainTable, /<div class="table-actions">[\s\S]*?automation:api-trigger:update[\s\S]*?automation:api-trigger:trigger[\s\S]*?automation:api-trigger:logs[\s\S]*?automation:api-trigger:delete[\s\S]*?<\/div>/)
   assert.doesNotMatch(viewSource, /api-trigger-actions/)
 })

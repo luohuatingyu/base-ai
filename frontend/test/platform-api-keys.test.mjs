@@ -28,10 +28,10 @@ test('API Key 页面支持绑定用户、接口范围、IP 和限流', () => {
   assert.match(viewSource, /\/system\/api-keys\/endpoints/)
 })
 
-test('API Key 操作列使用自然内容宽度并固定在表格右侧', () => {
-  assert.match(viewSource, /<el-table v-loading="loading" :data="rows" table-layout="auto">/)
-  assert.match(viewSource, /:label="t\('common\.operation'\)" fixed="right"/)
-  assert.doesNotMatch(viewSource, /:label="t\('common\.operation'\)"[^>]*(?:width|min-width)=/)
+test('API Key 操作列固定宽度并固定在表格右侧', () => {
+  assert.match(viewSource, /<el-table v-loading="loading" :data="rows" table-layout="fixed">/)
+  assert.match(viewSource, /:label="t\('common\.operation'\)" width="320" fixed="right"/)
+  assert.doesNotMatch(viewSource, /<el-table-column[^>]*min-width=/)
   assert.match(viewSource, /<div class="table-actions">[\s\S]*?openEdit[\s\S]*?toggle[\s\S]*?rotate[\s\S]*?revoke[\s\S]*?<\/div>/)
 })
 
