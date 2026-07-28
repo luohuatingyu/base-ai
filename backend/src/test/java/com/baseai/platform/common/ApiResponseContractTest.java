@@ -2,6 +2,7 @@ package com.baseai.platform.common;
 
 import com.baseai.platform.config.I18nConfig;
 import com.baseai.platform.trace.TraceCancelledException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -54,6 +55,27 @@ class ApiResponseContractTest {
         assertEquals("Operation successful", response.message());
         assertEquals(Map.of("id", 1), response.data());
         assertEquals("backend-trace-1", response.traceId());
+    }
+
+    /** 序列化成功响应时 traceId 应位于 data 之前。 */
+    @Test
+    void serializedSuccessResponsePlacesTraceIdBeforeData() throws Exception {
+        MDC.put("traceId", "backend-trace-order");
+
+        String json = new ObjectMapper().writeValueAsString(ApiResponse.success(Map.of("id", 1), "ok"));
+
+        assertTrue(json.indexOf("\"traceId\"") < json.indexOf("\"data\""));
+    }
+
+    /** 序列化失败响应时 traceId 应位于 data 之前且 data 保持为空。 */
+    @Test
+    void serializedFailureResponsePlacesTraceIdBeforeNullData() throws Exception {
+        MDC.put("traceId", "backend-trace-error-order");
+
+        String json = new ObjectMapper().writeValueAsString(ApiResponse.failure(400, "bad request"));
+
+        assertTrue(json.indexOf("\"traceId\"") < json.indexOf("\"data\""));
+        assertTrue(json.contains("\"data\":null"));
     }
 
     /** 公开和内部协议应继续保持原始响应结构。 */
