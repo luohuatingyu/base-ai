@@ -2,6 +2,119 @@
 
 ## 📋 Git 基准点
 
+Commit: 4a646531b30676431d01211f6ed31335f1d003e6
+- 提交说明: Add backend-generated trace IDs to API responses
+- 测试日期: 2026-07-28
+- 分支: master
+
+## 🎯 当前变更范围
+
+- 非忽略接口在进入 Spring MVC 控制器链路时由后端生成 32 位 traceId，不采用调用方提交的 `X-Trace-Id`。
+- traceId 统一写入请求属性、MDC 和 `X-Trace-Id` 响应头，并由任务追踪直接复用，避免同一请求重复生成。
+- 统一成功和失败响应增加 `traceId` 字段，业务异常、认证异常、参数异常和未知异常均可返回当前请求 traceId。
+- `@TraceIgnored`、`excluded-methods` 和 `excluded-paths` 共用同一忽略策略；被忽略接口不生成、不返回 traceId，既有原始响应协议保持不变。
+- 保留 `X-Request-Id`、任务预留接口和内部任务追踪能力，不涉及数据库迁移、外部依赖或配置格式变更。
+
+## 📋 当前变更测试结果（2026-07-28）
+
+**变更范围**：后端生成 traceId、请求上下文传播、任务记录复用、统一成功及异常响应返回、忽略接口兼容。
+
+**测试执行结果**：
+- 完整回归测试：294 个，通过 294 个（100%）
+- 后端完整测试：158 个，通过 158 个（100%）
+- 前端现行测试：4 个，通过 4 个（100%）
+- 前端历史完整回归：120 个，通过 120 个（100%）
+- Python Worker 完整测试（Python 3.12）：12 个，通过 12 个（100%）
+- 失败：0 个
+- 错误：0 个
+- 跳过：0 个
+
+**实施验证记录**：
+- 后端 traceId 定向测试执行 18 个，覆盖响应契约、忽略策略、调用方伪造头忽略和任务记录复用，18/18 通过。
+- 后端完整测试在最终代码上执行两次，均为 158/158 通过；最终 `docker compose up --build -d` 构建内再次执行 158 个测试并通过。
+- Python Worker 首次独立测试因容器未设置 `PYTHONPATH` 导致 2 个测试模块收集失败；补充 `PYTHONPATH=/workspace` 后使用 Python 3.12 重跑，12/12 通过，代码未因此修改。
+- 首次 Compose 重建完成镜像后 Backend 健康等待阶段短暂以 143 退出，容器自动恢复后重试成功；最终代码完成后再次重建，Backend、Frontend、Python Worker 均为 healthy。
+- 运行态使用未认证 `POST /api/system/users` 验证 HTTP 401 响应头和响应体 traceId 完全一致、长度为 32，且调用方提交的 `X-Trace-Id` 未被采用。
+- 运行态使用 `GET /api/open/platform` 验证忽略接口 HTTP 200，响应头和响应体均不存在 traceId。
+
+**关键模块测试**：
+- Web traceId 生成与忽略策略：3/3，通过
+- 统一成功和异常响应契约：14/14，通过
+- Service 任务记录复用后端 traceId：1/1，通过
+- 后端完整回归：158/158，通过
+- 前端完整回归：124/124，通过
+- Python Worker 完整回归：12/12，通过
+
+## ✅ 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入/操作 | 预期结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 非忽略接口由后端生成 traceId | Web 单元测试；普通 POST 接口 | 请求携带伪造 `X-Trace-Id` | 生成新的 32 位 traceId，写入请求、MDC 和响应头，不采用调用方值 | 正常、安全 |
+| 任务记录复用请求 traceId | Service 单元测试；已生成请求 traceId | 创建运行任务 | 数据库写入值与请求 traceId 一致，不再次生成 | 正常、兼容性 |
+| 成功响应返回 traceId | 响应契约测试；MDC 已绑定 traceId | 包装普通业务结果 | 统一响应 `traceId` 与当前请求一致 | 正常 |
+| 异常响应返回 traceId | 参数化响应契约测试；业务状态 400/401/403/404/429/502/503 | 调用全局异常处理器 | HTTP 状态、业务 code、消息及 traceId 均正确 | 异常、权限、回归 |
+| 调用方不能控制 traceId | Web 单元及运行态验证 | 提交 `X-Trace-Id: caller-supplied` | 后端返回不同的新 traceId | 安全、边界 |
+| 配置忽略方法不返回 traceId | Web 单元测试；默认排除 GET | 请求普通 GET 接口 | 不创建请求属性、MDC 或响应头 | 兼容性、边界 |
+| 注解忽略接口不返回 traceId | Web 单元测试；控制器声明 `@TraceIgnored` | 请求被忽略控制器 | 不生成或返回 traceId | 兼容性、回归 |
+| 公开忽略接口保持原协议 | 运行态验证；服务 healthy | 请求 `GET /api/open/platform` | HTTP 200，响应头和原始 JSON 均无 traceId | 正常、兼容性 |
+| 认证失败仍返回同一 traceId | 运行态验证；未提交认证凭证 | POST 非忽略管理接口 | HTTP 401，响应头与统一错误体 traceId 一致 | 异常、权限、安全 |
+
+## 📊 当前测试执行记录
+
+| 测试范围 | 执行命令 | 结果 |
+| --- | --- | --- |
+| 后端定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiResponseContractTest,TraceIdInterceptorTest,TaskTraceServiceTraceIdTest test` | 18 通过，0 失败，0 错误，0 跳过 |
+| 后端完整回归 | `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 最终代码 158 通过，0 失败，0 错误，0 跳过 |
+| 前端现行测试 | `cd frontend && npm test` | 4 通过，0 失败 |
+| 前端历史完整回归 | `cd frontend && node --test test/*.test.mjs` | 120 通过，0 失败 |
+| Python Worker 首次执行 | `docker run --rm -v "$PWD/python-worker:/workspace" -w /workspace python:3.12-slim sh -lc 'pip install -q -r requirements.txt && pytest -q'` | 环境缺少 `PYTHONPATH`，2 个模块收集失败；未进入测试执行 |
+| Python Worker 完整回归 | `docker run --rm -e PYTHONPATH=/workspace -v "$PWD/python-worker:/workspace" -w /workspace python:3.12-slim sh -lc 'pip install -q -r requirements.txt && pytest -q'` | 12 通过，0 失败 |
+| 服务重建与启动 | `docker compose up --build -d` | 最终构建内后端 158 个测试通过；三个服务均 healthy |
+| 运行态契约 | Node Fetch 请求非忽略认证失败接口和公开忽略接口 | 非忽略接口头体 traceId 一致且拒绝调用方值；忽略接口无 traceId |
+| 格式与工作区检查 | `git diff --check`、`git status --short`、`git diff --stat` | 格式检查通过；代码和测试已独立提交，无临时调试文件 |
+
+## 🔄 当前覆盖范围与结果
+
+- 正常场景：后端生成、请求上下文传播、统一成功响应和任务记录复用均有测试。
+- 边界场景：调用方提交 traceId、默认 GET 排除、注解排除和空 trace 上下文均保持明确行为。
+- 异常场景：业务异常、认证失败、参数解析失败、任务取消和未知异常均通过统一响应回归覆盖。
+- 权限与安全：调用方不能指定或复用后端 traceId；未认证请求仍获得用于排障的后端 traceId，不泄露内部堆栈。
+- 兼容性：公开、内部、认证、任务查询和默认 GET 等忽略接口保持原协议；`X-Request-Id` 与任务预留能力保留。
+- 回归场景：后端 158 个、前端 124 个、Python Worker 12 个测试全部通过。
+- 运行环境：Backend、Frontend、Python Worker 已由提交 `4a64653` 的源码重新构建并全部 healthy。
+
+## 🔄 当前重测触发条件
+
+- 修改 `ApiResponse`、`ApiResponseAdvice`、`GlobalExceptionHandler` 或统一响应序列化配置。
+- 修改 `TraceIdInterceptor`、`TraceTrackingPolicy`、`TraceTrackingAspect` 或任务追踪创建逻辑。
+- 修改 `trace-tracking-exclusions.yml`、默认排除方法、排除路径或 `@TraceIgnored` 使用范围。
+- 修改认证拦截器顺序、MVC 拦截器注册或请求 MDC 清理逻辑。
+- 用户明确要求重新执行完整覆盖测试。
+
+## ⚠️ 当前已知问题与限制
+
+- 当前默认配置排除所有 `GET` 和 `OPTIONS` 请求，因此这些接口按需求不会生成或返回 traceId；若需覆盖查询接口，应先调整并确认忽略配置范围。
+- 被忽略接口发生异常时统一响应不会包含 traceId，这是“除非被忽略接口”的预期行为。
+- traceId 当前用于应用任务和日志追踪，不替代 `X-Request-Id`；两类标识继续承担不同职责。
+- 前端仓库同时存在 `tests/*.test.js` 和 `test/*.test.mjs` 两套测试入口，`npm test` 只覆盖前者，本次已额外执行后者完整回归。
+- Compose 首次重建曾出现既有的 Backend 健康等待 143 短暂退出，重试及最终重建均成功，三个服务当前 healthy。
+
+## 📝 下次测试建议
+
+1. 若未来取消 GET 排除，补充查询接口成功、404、无权限和大分页响应的 traceId 集成测试。
+2. 在具备专用测试账号时，补充一个无副作用的认证成功 POST 接口，验证响应头、响应体和数据库任务记录三者端到端一致。
+3. 可在后续性能测试中对比启用前后的 P50/P95 延迟，重点观察任务追踪数据库写入，而非 traceId 字符串生成。
+4. 建议后续统一前端两套测试目录和 `npm test` 入口，避免完整回归依赖额外命令。
+
+## ↩️ 回滚方式
+
+- 回滚功能提交 `4a64653` 可移除后端生成 traceId、统一响应字段和共享忽略策略。
+- 本次无数据库迁移、配置格式变化或新增依赖，回滚后恢复原有仅任务接口返回 `X-Trace-Id` 的行为。
+
+## 历史测试记录（API Key 开放平台）
+
+## 📋 Git 基准点
+
 Commit: 29662482c198e28688c7220188ce6531affabae1
 - 提交说明: Add API key open platform documentation
 - 测试日期: 2026-07-28
