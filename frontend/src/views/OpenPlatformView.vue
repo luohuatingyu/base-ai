@@ -52,15 +52,15 @@
 
         <article v-if="selectedEndpoint" class="open-platform-detail">
           <div class="open-platform-endpoint-heading">
-            <div>
+            <div class="open-platform-endpoint-summary">
               <div class="open-platform-badges">
                 <el-tag effect="dark">{{ selectedEndpoint.method }}</el-tag>
                 <el-tag :type="riskTagType(selectedEndpoint.risk)">{{ t(`openPlatform.risks.${selectedEndpoint.risk}`) }}</el-tag>
               </div>
               <h2>{{ t(selectedEndpoint.nameKey) }}</h2>
-              <p>{{ t(selectedEndpoint.descriptionKey) }}</p>
             </div>
             <code class="open-platform-path">{{ selectedEndpoint.path }}</code>
+            <p class="open-platform-endpoint-description">{{ t(selectedEndpoint.descriptionKey) }}</p>
           </div>
 
           <el-tabs :key="locale" v-model="activeTab" class="open-platform-tabs">

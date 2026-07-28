@@ -630,11 +630,12 @@ body { margin: 0; background: var(--app-canvas); }
 .open-platform-endpoint-item code { color: #596579; font-size: 12px; word-break: break-all; }
 .open-platform-endpoint-item em { margin-right: 5px; color: #047857; font-style: normal; font-weight: 800; }
 .open-platform-detail { min-width: 0; overflow: hidden; }
-.open-platform-endpoint-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 32px 32px 28px; border-bottom: 1px solid #e7ebf2; background: linear-gradient(135deg, #fff 0%, #f8faff 100%); }
+.open-platform-endpoint-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "summary path" "description description"; gap: 12px 28px; padding: 32px 32px 28px; border-bottom: 1px solid #e7ebf2; background: linear-gradient(135deg, #fff 0%, #f8faff 100%); }
+.open-platform-endpoint-summary { grid-area: summary; }
 .open-platform-endpoint-heading h2 { margin: 14px 0 8px; font-size: 30px; }
-.open-platform-endpoint-heading p { max-width: 780px; margin: 0; color: #667085; line-height: 1.7; }
+.open-platform-endpoint-description { grid-area: description; max-width: 780px; margin: 0; color: #667085; line-height: 1.7; }
 .open-platform-badges { display: flex; gap: 8px; }
-.open-platform-path { justify-self: end; max-width: 100%; overflow-x: auto; padding: 14px 16px; border-radius: 10px; color: #dbeafe; background: #101827; white-space: nowrap; word-break: normal; }
+.open-platform-path { grid-area: path; align-self: center; justify-self: end; max-width: 100%; overflow-x: auto; padding: 14px 16px; border-radius: 10px; color: #dbeafe; background: #101827; white-space: nowrap; word-break: normal; }
 .open-platform-tabs > .el-tabs__header { margin: 0; padding: 0 32px; background: #fff; }
 .open-platform-tabs > .el-tabs__header .el-tabs__item { height: 58px; padding: 0 24px; color: #667085; font-weight: 700; }
 .open-platform-tabs > .el-tabs__header .el-tabs__item.is-active { color: #1d4ed8; }
@@ -681,6 +682,8 @@ body { margin: 0; background: var(--app-canvas); }
   .open-platform-sidebar { position: static; }
   .open-platform-endpoint-list { display: grid; max-height: none; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .open-platform-endpoint-item:nth-child(odd) { border-right: 1px solid #edf0f5; }
+  .open-platform-endpoint-heading { grid-template-columns: minmax(0, 1fr); grid-template-areas: "summary" "path" "description"; }
+  .open-platform-path { justify-self: stretch; }
 }
 @media (max-width: 640px) {
   .open-platform-header { padding: 12px 4vw; }
@@ -692,7 +695,6 @@ body { margin: 0; background: var(--app-canvas); }
   .open-platform-endpoint-item:nth-child(odd) { border-right: 0; }
   .open-platform-endpoint-heading { padding: 24px 18px; }
   .open-platform-endpoint-heading h2 { font-size: 25px; }
-  .open-platform-path { justify-self: stretch; }
   .open-platform-tabs > .el-tabs__header { padding: 0 18px; }
   .open-platform-tabs > .el-tabs__header .el-tabs__item { padding: 0 14px; }
   .open-platform-documentation, .open-platform-debugger { padding-right: 18px; padding-left: 18px; }
