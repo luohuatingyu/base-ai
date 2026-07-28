@@ -2,7 +2,10 @@
 <template>
   <div class="login-page">
     <el-card class="login-card">
-      <div class="brand-mark">{{ appConfig.shortName }}</div>
+      <div class="login-card-head">
+        <div class="brand-mark">{{ appConfig.shortName }}</div>
+        <LanguageSwitcher />
+      </div>
       <h1>{{ getLocalizedPlatformName(locale.value) }}</h1>
       <p>{{ t('login.description') }}</p>
       <el-form @submit.prevent="submit">
@@ -21,6 +24,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { appConfig, getLocalizedPlatformName } from '../config'
 import { useI18n } from 'vue-i18n'
+import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
 const { locale, t } = useI18n()
 const form = reactive({ username: '', password: '' })
@@ -40,3 +44,16 @@ async function submit() {
   } finally { loading.value = false }
 }
 </script>
+
+<style scoped>
+.login-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.login-card .brand-mark {
+  margin-bottom: 0;
+}
+</style>
