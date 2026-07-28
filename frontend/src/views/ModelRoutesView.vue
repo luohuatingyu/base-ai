@@ -6,11 +6,11 @@
       <el-button v-if="auth.hasPermission('model:route:update')" @click="openSync()">{{ t('routes.syncRoutes') }}</el-button>
     </div>
     <el-alert class="route-sync-notice" :title="routeSyncNotice" :type="routeSyncNoticeType" show-icon :closable="false"/>
-    <el-table :data="rows" table-layout="fixed">
-      <el-table-column prop="featureCode" :label="t('routes.featureCode')"/>
-      <el-table-column :label="t('common.name')"><template #default="scope">{{ localizeRouteName(scope.row, t) }}</template></el-table-column>
-      <el-table-column prop="capabilityLevel" :label="t('models.capability')"/>
-      <el-table-column prop="thinkingLevel" :label="t('routes.thinkingLevel')"/>
+    <el-table :data="rows" table-layout="auto">
+      <el-table-column prop="featureCode" :label="t('routes.featureCode')" min-width="180"/>
+      <el-table-column :label="t('common.name')" min-width="200"><template #default="scope">{{ localizeRouteName(scope.row, t) }}</template></el-table-column>
+      <el-table-column prop="capabilityLevel" :label="t('models.capability')" min-width="160"/>
+      <el-table-column prop="thinkingLevel" :label="t('routes.thinkingLevel')" min-width="160"/>
       <el-table-column :label="t('common.operation')" width="180" fixed="right">
         <template #default="scope">
           <div class="table-actions">

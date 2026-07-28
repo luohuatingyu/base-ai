@@ -306,13 +306,15 @@ body { margin: 0; background: var(--app-canvas); }
 .el-table td.el-table__cell { height: 52px; color: #39465b; }
 
 .el-table .cell {
-  overflow: hidden;
+  overflow: visible;
   overflow-wrap: normal;
   line-height: 1.5;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
   word-break: normal;
 }
+
+.el-table .el-scrollbar__wrap { overflow-x: auto; }
 
 /* 列表操作区：固定列内按钮保持单行，并统一 API Triggers 使用的紧凑间距。 */
 .table-actions {

@@ -58,16 +58,16 @@
     </div>
 
     <!-- 数据表格 -->
-    <el-table :data="rows" v-loading="loading" class="tasks-table" table-layout="fixed">
-      <el-table-column prop="trace_id" :label="t('tasks.traceId')">
+    <el-table :data="rows" v-loading="loading" class="tasks-table" table-layout="auto">
+      <el-table-column prop="trace_id" :label="t('tasks.traceId')" min-width="300">
         <template #default="scope">
           <el-text class="trace-id" truncated>{{ scope.row.trace_id }}</el-text>
         </template>
       </el-table-column>
-      <el-table-column :label="t('tasks.taskType')">
+      <el-table-column :label="t('tasks.taskType')" min-width="160">
         <template #default="scope">{{ localizeTaskType(scope.row.task_type, t) }}</template>
       </el-table-column>
-      <el-table-column prop="trigger_entry" :label="t('tasks.entry')" width="110"/>
+      <el-table-column prop="trigger_entry" :label="t('tasks.entry')" width="120"/>
       <el-table-column :label="t('tasks.status')" width="145">
         <template #default="s">
           <el-tag :type="statusType(s.row.status)" effect="light">
@@ -75,8 +75,8 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" :label="t('tasks.createdAt')"/>
-      <el-table-column prop="finished_at" :label="t('tasks.finishedAt')"/>
+      <el-table-column prop="created_at" :label="t('tasks.createdAt')" min-width="180"/>
+      <el-table-column prop="finished_at" :label="t('tasks.finishedAt')" min-width="180"/>
       <el-table-column :label="t('common.actions')" width="320" fixed="right">
         <template #default="s">
           <div class="table-actions">

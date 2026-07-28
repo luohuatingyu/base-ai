@@ -1,13 +1,13 @@
 <template>
   <div class="panel">
     <div class="section-head"><div><h2>{{ t('models.title') }}</h2><p>{{ t('models.description') }}</p></div><el-button type="primary" @click="open()">{{ t('models.add') }}</el-button></div>
-    <el-table :data="rows" table-layout="fixed">
-      <el-table-column prop="code" :label="t('common.code')" />
-      <el-table-column prop="name" :label="t('common.name')" />
-      <el-table-column prop="modelName" :label="t('models.identifier')" />
-      <el-table-column :label="t('models.modelType')"><template #default="scope"><el-tag v-for="type in scope.row.supportedModelTypes" :key="type" size="small">{{ localizeModelType(type, modelTypes, t) }}</el-tag></template></el-table-column>
-      <el-table-column prop="capabilityLevel" :label="t('models.capability')" />
-      <el-table-column :label="t('models.thinkingLevels')">
+    <el-table :data="rows" table-layout="auto">
+      <el-table-column prop="code" :label="t('common.code')" min-width="160" />
+      <el-table-column prop="name" :label="t('common.name')" min-width="180" />
+      <el-table-column prop="modelName" :label="t('models.identifier')" min-width="240" />
+      <el-table-column :label="t('models.modelType')" min-width="180"><template #default="scope"><el-tag v-for="type in scope.row.supportedModelTypes" :key="type" size="small">{{ localizeModelType(type, modelTypes, t) }}</el-tag></template></el-table-column>
+      <el-table-column prop="capabilityLevel" :label="t('models.capability')" min-width="160" />
+      <el-table-column :label="t('models.thinkingLevels')" min-width="260">
         <template #default="scope">
           <div v-if="mappingEntries(scope.row.thinkingLevels).length" class="thinking-mapping-tags">
             <el-tag v-for="entry in mappingEntries(scope.row.thinkingLevels)" :key="entry.level" size="small" effect="plain">

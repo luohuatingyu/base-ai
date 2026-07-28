@@ -29,9 +29,9 @@ test('API Key 页面支持绑定用户、接口范围、IP 和限流', () => {
 })
 
 test('API Key 操作列固定宽度并固定在表格右侧', () => {
-  assert.match(viewSource, /<el-table v-loading="loading" :data="rows" table-layout="fixed">/)
+  assert.match(viewSource, /<el-table v-loading="loading" :data="rows" table-layout="auto">/)
   assert.match(viewSource, /:label="t\('common\.operation'\)" width="320" fixed="right"/)
-  assert.doesNotMatch(viewSource, /<el-table-column[^>]*min-width=/)
+  assert.match(viewSource, /prop="keyPrefix" :label="t\('apiKeys\.keyPrefix'\)" min-width="220"/)
   assert.match(viewSource, /<div class="table-actions">[\s\S]*?openEdit[\s\S]*?toggle[\s\S]*?rotate[\s\S]*?revoke[\s\S]*?<\/div>/)
 })
 

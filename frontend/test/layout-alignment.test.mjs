@@ -89,19 +89,20 @@ test('英文导航为长名称保留空间且文本不会撑破侧栏', () => {
 test('表格、分页和表单内容遵守统一的对齐与溢出规则', () => {
   assertDeclarations(globalStyles, '.el-table', [/width:\s*100%/, /max-width:\s*100%/])
   assertDeclarations(globalStyles, '.el-table .cell', [
-    /overflow:\s*hidden/,
+    /overflow:\s*visible/,
     /overflow-wrap:\s*normal/,
-    /text-overflow:\s*ellipsis/,
+    /text-overflow:\s*clip/,
     /white-space:\s*nowrap/,
     /word-break:\s*normal/
   ])
+  assertDeclarations(globalStyles, '.el-table .el-scrollbar__wrap', [/overflow-x:\s*auto/])
   assertDeclarations(globalStyles, '.el-pagination', [/flex-wrap:\s*wrap/, /gap:\s*8px/])
   assertDeclarations(globalStyles, '.el-form-item__content', [/min-width:\s*0/])
   assertDeclarations(globalStyles, '.el-dialog__footer', [/display:\s*flex/, /justify-content:\s*flex-end/])
   assertDeclarations(globalStyles, '.el-drawer', [/max-width:\s*100vw/])
 })
 
-test('所有主列表前置列允许收缩，操作列使用固定宽度并固定右侧', () => {
+test('所有主列表前置列保留最小宽度，操作列使用固定宽度并固定右侧', () => {
   for (const [fileName, width, expectedColumns] of actionColumnCases) {
     const source = readFileSync(new URL(`../src/views/${fileName}`, import.meta.url), 'utf8')
     const columns = [...source.matchAll(/<el-table-column\s+:label="t\('common\.(?:operation|actions)'\)"[^>]*>/g)]
@@ -110,15 +111,19 @@ test('所有主列表前置列允许收缩，操作列使用固定宽度并固�
       assert.match(column, /fixed="right"/, `${fileName} 操作列未固定右侧`)
       assert.match(column, new RegExp(`width="${width}"`), `${fileName} 操作列宽度不统一`)
     }
-    assert.equal((source.match(/<el-table\b[^>]*table-layout="fixed"/g) || []).length, expectedColumns, `${fileName} 操作表格未使用固定布局`)
+    assert.equal((source.match(/<el-table\b[^>]*table-layout="auto"/g) || []).length, expectedColumns, `${fileName} 操作表格未使用自动布局`)
     assert.equal((source.match(/class="table-actions"/g) || []).length, expectedColumns, `${fileName} 未使用公共操作按钮容器`)
 
-    const mainTableBlocks = [...source.matchAll(/<el-table\b[^>]*table-layout="fixed"[^>]*>[\s\S]*?<\/el-table>/g)]
+    const mainTableBlocks = [...source.matchAll(/<el-table\b[^>]*table-layout="auto"[^>]*>[\s\S]*?<\/el-table>/g)]
     const actionTableBlocks = mainTableBlocks.filter(([block]) => /<el-table-column\s+:label="t\('common\.(?:operation|actions)'\)"[^>]*fixed="right"/.test(block))
     assert.equal(actionTableBlocks.length, expectedColumns, `${fileName} 操作表格数量不匹配`)
     for (const [block] of actionTableBlocks) {
       const beforeAction = block.split(/<el-table-column\s+:label="t\('common\.(?:operation|actions)'\)"[^>]*fixed="right"/)[0]
-      assert.doesNotMatch(beforeAction, /min-width="/, `${fileName} 操作列前存在阻止收缩的 min-width`)
+      const precedingColumns = [...beforeAction.matchAll(/<el-table-column\b[^>]*>/g)].map(([column]) => column)
+      assert.ok(precedingColumns.length > 0, `${fileName} 操作列前缺少内容列`)
+      for (const column of precedingColumns) {
+        assert.match(column, /(?:min-width|width)="\d+"/, `${fileName} 内容列缺少最小宽度或固定宽度`)
+      }
     }
   }
 
@@ -148,7 +153,7 @@ test('表单标签、输入控件和开关文案使用一致的垂直节奏', ()
 })
 
 test('菜单管理英文弹窗为长标签和选项提供响应式空间', () => {
-  assert.match(menusViewSource, /<el-table :data="treeRows"[^>]*table-layout="fixed"/)
+  assert.match(menusViewSource, /<el-table :data="treeRows"[^>]*table-layout="auto"/)
   assert.match(menusViewSource, /:label="t\('common\.operation'\)" width="240" fixed="right"/)
   assert.match(menusViewSource, /class="menu-editor-dialog"[\s\S]*?width="680px"/)
   assert.match(menusViewSource, /class="menu-editor-form"\s+label-width="120px"/)
