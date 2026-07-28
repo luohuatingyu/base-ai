@@ -111,9 +111,13 @@ test('所有主列表操作列固定右侧并使用按内容分级的公共单�
     /align-items:\s*center/,
     /flex-wrap:\s*nowrap/,
     /gap:\s*4px/,
-    /white-space:\s*nowrap/
+    /white-space:\s*nowrap/,
+    /width:\s*max-content/,
+    /min-width:\s*max-content/,
+    /overflow-wrap:\s*normal/
   ])
   assertDeclarations(globalStyles, '.table-actions > .el-button + .el-button', [/margin-left:\s*0/])
+  assertDeclarations(globalStyles, '.table-actions > .el-button', [/flex:\s*0\s+0\s+auto/, /white-space:\s*nowrap/])
 })
 
 test('表单标签、输入控件和开关文案使用一致的垂直节奏', () => {
