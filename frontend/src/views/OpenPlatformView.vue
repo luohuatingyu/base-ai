@@ -78,7 +78,7 @@
 
                 <section class="open-platform-section">
                   <h3>{{ t('openPlatform.responseParameters') }}</h3>
-                  <FieldTable :fields="selectedEndpoint.responseFields" />
+                  <FieldTable :fields="selectedEndpoint.responseFields" :show-required="false" />
                 </section>
 
                 <div class="open-platform-examples">
@@ -206,16 +206,20 @@ const debugResult = ref(null)
 const localizedPlatformName = computed(() => getLocalizedPlatformName(locale.value))
 const curlExample = computed(() => selectedEndpoint.value ? buildCurlExample(selectedEndpoint.value) : '')
 
+/** 根据字段用途控制是否展示输入必填信息。 */
 const FieldTable = defineComponent({
-  props: { fields: { type: Array, required: true } },
+  props: {
+    fields: { type: Array, required: true },
+    showRequired: { type: Boolean, default: true }
+  },
   setup(props) {
     return () => h(ElTable, { data: props.fields, class: 'open-platform-field-table' }, () => [
       h(ElTableColumn, { prop: 'name', label: t('openPlatform.field'), minWidth: 170 }),
       h(ElTableColumn, { prop: 'type', label: t('openPlatform.fieldType'), width: 130 }),
-      h(ElTableColumn, { label: t('openPlatform.required'), width: 90 }, {
+      props.showRequired ? h(ElTableColumn, { label: t('openPlatform.required'), width: 90 }, {
         default: ({ row }) => h(ElTag, { type: row.required ? 'danger' : 'info', size: 'small' },
           () => row.required ? t('common.yes') : t('common.no'))
-      }),
+      }) : null,
       h(ElTableColumn, { label: t('openPlatform.defaultValue'), minWidth: 110 }, {
         default: ({ row }) => row.defaultValue || '-'
       }),

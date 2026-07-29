@@ -64,6 +64,15 @@ test('request body formatting produces readable JSON and rejects invalid input',
   assert.throws(() => formatJsonRequestBody('{'), /INVALID_JSON/)
 })
 
+test('response fields omit the required column while input fields retain it', async () => {
+  const view = await readFile(new URL('../src/views/OpenPlatformView.vue', import.meta.url), 'utf8')
+
+  assert.match(view, /<FieldTable :fields="selectedEndpoint\.pathParameters"\s*\/>/)
+  assert.match(view, /<FieldTable :fields="selectedEndpoint\.requestFields"\s*\/>/)
+  assert.match(view, /<FieldTable :fields="selectedEndpoint\.responseFields" :show-required="false"\s*\/>/)
+  assert.match(view, /props\.showRequired\s*\?\s*h\(ElTableColumn/)
+})
+
 test('public route and view enforce guest access and credential safety contracts', async () => {
   const [router, view, login, styles, zh, en] = await Promise.all([
     readFile(new URL('../src/router/index.js', import.meta.url), 'utf8'),
