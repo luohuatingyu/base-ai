@@ -103,10 +103,16 @@ public class PlatformProperties {
     public static class Seed {
         private String adminUsername = "admin";
         private String adminPassword;
+        /** 是否在应用启动时将已有管理员密码同步为种子密码。 */
+        private boolean adminPasswordSyncEnabled = false;
         public String getAdminUsername() { return adminUsername; }
         public void setAdminUsername(String adminUsername) { this.adminUsername = adminUsername; }
         public String getAdminPassword() { return adminPassword; }
         public void setAdminPassword(String adminPassword) { this.adminPassword = adminPassword; }
+        public boolean isAdminPasswordSyncEnabled() { return adminPasswordSyncEnabled; }
+        public void setAdminPasswordSyncEnabled(boolean adminPasswordSyncEnabled) {
+            this.adminPasswordSyncEnabled = adminPasswordSyncEnabled;
+        }
     }
 
     public static class PythonWorker {

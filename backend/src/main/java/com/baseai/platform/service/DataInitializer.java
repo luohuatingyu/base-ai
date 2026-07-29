@@ -143,20 +143,30 @@ public class DataInitializer implements ApplicationRunner {
 
         // 第五步：初始化或更新默认管理员账户
         String username = properties.getSeed().getAdminUsername();
-        UserAccount admin = userRepository.findByUsername(username).orElseGet(() -> {
+        UserAccount admin = userRepository.findByUsername(username).orElse(null);
+        boolean creatingAdmin = admin == null;
+        if (creatingAdmin) {
             UserAccount user = new UserAccount();
             user.setUsername(username);
             user.setDisplayName("系统管理员");
-            // 使用 BCrypt 加密管理员密码
-            user.setPasswordHash(passwordEncoder.encode(properties.getSeed().getAdminPassword()));
-            return user;
-        });
+            admin = user;
+        }
+        synchronizeAdminPassword(admin, creatingAdmin);
         // 如果管理员账户还没有所属部门，关联到根部门
         if (admin.getDepartment() == null) admin.setDepartment(rootDepartment);
         // 为管理员账户分配管理员角色
         admin.getRoles().add(adminRole);
         admin.setEnabled(true);
         userRepository.save(admin);
+    }
+
+    /** 首次创建时设置密码，并按显式开关将已有管理员密码同步为种子密码。 */
+    private void synchronizeAdminPassword(UserAccount admin, boolean creatingAdmin) {
+        String seedPassword = properties.getSeed().getAdminPassword();
+        if (creatingAdmin || (properties.getSeed().isAdminPasswordSyncEnabled()
+            && !passwordEncoder.matches(seedPassword, admin.getPasswordHash()))) {
+            admin.setPasswordHash(passwordEncoder.encode(seedPassword));
+        }
     }
 
     /** 初始化首批模型类型，重复启动只补充缺失项且不覆盖管理员配置。 */

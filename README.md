@@ -182,6 +182,7 @@ The repository tracks `.env.example` only. Never commit a populated `.env` file.
    ```dotenv
    APP_TOKEN_SECRET=<at-least-32-random-characters>
    APP_SEED_ADMIN_PASSWORD=<at-least-10-secure-characters>
+   APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED=false
    APP_CONFIG_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
    APP_API_KEY_HASH_SECRET=<at-least-32-random-characters>
    PYTHON_WORKER_INTERNAL_TOKEN=<at-least-24-random-characters>
@@ -196,7 +197,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **PostgreSQL:** `POSTGRES_URL`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_POOL_SIZE`.
 - **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`.
 - **Branding and locale:** `APP_PLATFORM_CODE`, `APP_PLATFORM_NAME_EN`, `APP_PLATFORM_NAME_ZH`, `APP_PLATFORM_SHORT_NAME`, `APP_DEFAULT_LOCALE`.
-- **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_API_KEY_HASH_SECRET`.
+- **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_API_KEY_HASH_SECRET`.
 - **Worker and model calls:** `PYTHON_WORKER_INTERNAL_TOKEN`, `JAVA_INSTANCE_ID`, `PYTHON_WORKER_INSTANCE_ID`, `LLM_TIMEOUT_SECONDS`, `LLM_LOG_CONTENT`.
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
@@ -222,7 +223,9 @@ After all services are healthy:
 - Backend health check: <http://localhost:8080/api/open/health>
 - Frontend health check: <http://localhost/health>
 
-Use the username configured by `APP_SEED_ADMIN_USERNAME` and the password configured by `APP_SEED_ADMIN_PASSWORD`. The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically.
+After the first initialization, use the username configured by `APP_SEED_ADMIN_USERNAME` and the password configured by `APP_SEED_ADMIN_PASSWORD`. The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically.
+
+When `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` is unset or `false`, the seed password is used only to create the initial administrator and never overwrites an existing password. When explicitly set to `true`, the application checks the existing administrator password at every startup and synchronizes it to `APP_SEED_ADMIN_PASSWORD` when they differ. In this mode, a password changed through the administration UI will be replaced by the environment value on the next startup.
 
 To stop the application:
 
