@@ -109,15 +109,24 @@ public class AiChatController {
                 example = "1")
         },
         responseFields = {
-            @ApiKeyField(name = "success", descriptionKey = "openPlatform.fields.success", type = "boolean", required = true),
-            @ApiKeyField(name = "code", descriptionKey = "openPlatform.fields.code", type = "integer", required = true),
-            @ApiKeyField(name = "message", descriptionKey = "openPlatform.fields.message", type = "string", required = true),
-            @ApiKeyField(name = "traceId", descriptionKey = "openPlatform.fields.traceId", type = "string", required = true),
-            @ApiKeyField(name = "data.content", descriptionKey = "openPlatform.fields.content", type = "string", required = true),
-            @ApiKeyField(name = "data.model", descriptionKey = "openPlatform.fields.model", type = "string", required = true),
-            @ApiKeyField(name = "data.inputTokens", descriptionKey = "openPlatform.fields.inputTokens", type = "integer", required = true),
-            @ApiKeyField(name = "data.outputTokens", descriptionKey = "openPlatform.fields.outputTokens", type = "integer", required = true),
-            @ApiKeyField(name = "data.totalTokens", descriptionKey = "openPlatform.fields.totalTokens", type = "integer", required = true)
+            @ApiKeyField(name = "success", descriptionKey = "openPlatform.fields.success", type = "boolean", required = true,
+                example = "true"),
+            @ApiKeyField(name = "code", descriptionKey = "openPlatform.fields.code", type = "integer", required = true,
+                example = "200"),
+            @ApiKeyField(name = "message", descriptionKey = "openPlatform.fields.message", type = "string", required = true,
+                example = "Success"),
+            @ApiKeyField(name = "traceId", descriptionKey = "openPlatform.fields.traceId", type = "string", required = true,
+                example = "trace-id"),
+            @ApiKeyField(name = "data.content", descriptionKey = "openPlatform.fields.content", type = "string", required = true,
+                example = "Hello!"),
+            @ApiKeyField(name = "data.model", descriptionKey = "openPlatform.fields.model", type = "string", required = true,
+                example = "example-model"),
+            @ApiKeyField(name = "data.inputTokens", descriptionKey = "openPlatform.fields.inputTokens", type = "integer", required = true,
+                example = "8"),
+            @ApiKeyField(name = "data.outputTokens", descriptionKey = "openPlatform.fields.outputTokens", type = "integer", required = true,
+                example = "4"),
+            @ApiKeyField(name = "data.totalTokens", descriptionKey = "openPlatform.fields.totalTokens", type = "integer", required = true,
+                example = "12")
         },
         requestExample = "{\n  \"model_type\": \"text_model\",\n  \"featureCode\": \"chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Hello\" }\n  ],\n  \"temperature\": 0.7,\n  \"enableThinking\": false\n}",
         responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"traceId\": \"trace-id\",\n  \"data\": {\n    \"content\": \"Hello!\",\n    \"model\": \"example-model\",\n    \"inputTokens\": 8,\n    \"outputTokens\": 4,\n    \"totalTokens\": 12\n  }\n}")

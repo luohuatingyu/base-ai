@@ -78,7 +78,7 @@
 
                 <section class="open-platform-section">
                   <h3>{{ t('openPlatform.responseParameters') }}</h3>
-                  <FieldTable :fields="selectedEndpoint.responseFields" :show-required="false" />
+                  <FieldTable :fields="selectedEndpoint.responseFields" :show-required="false" value-mode="example" />
                 </section>
 
                 <div class="open-platform-examples">
@@ -183,7 +183,7 @@
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage, ElMessageBox, ElTable, ElTableColumn, ElTag } from 'element-plus'
+import { ElMessage, ElMessageBox, ElTable, ElTableColumn, ElTag, ElTooltip } from 'element-plus'
 import axios from 'axios'
 import { appConfig, getLocalizedPlatformName } from '../config'
 import { LOCALES } from '../locales/registry'
@@ -210,7 +210,8 @@ const curlExample = computed(() => selectedEndpoint.value ? buildCurlExample(sel
 const FieldTable = defineComponent({
   props: {
     fields: { type: Array, required: true },
-    showRequired: { type: Boolean, default: true }
+    showRequired: { type: Boolean, default: true },
+    valueMode: { type: String, default: 'default' }
   },
   setup(props) {
     return () => h(ElTable, { data: props.fields, class: 'open-platform-field-table' }, () => [
@@ -220,8 +221,8 @@ const FieldTable = defineComponent({
         default: ({ row }) => h(ElTag, { type: row.required ? 'danger' : 'info', size: 'small' },
           () => row.required ? t('common.yes') : t('common.no'))
       }) : null,
-      h(ElTableColumn, { label: t('openPlatform.defaultValue'), minWidth: 110 }, {
-        default: ({ row }) => row.defaultValue || '-'
+      h(ElTableColumn, { label: props.valueMode === 'example' ? t('openPlatform.exampleValue') : t('openPlatform.defaultValue'), minWidth: 110 }, {
+        default: ({ row }) => renderFieldValue(row, props.valueMode)
       }),
       h(ElTableColumn, { label: t('common.description'), minWidth: 260 }, {
         default: ({ row }) => t(row.descriptionKey)
@@ -229,6 +230,16 @@ const FieldTable = defineComponent({
     ])
   }
 })
+
+/** 渲染字段默认值或示例值；仅枚举型响应示例提供枚举提示。 */
+function renderFieldValue(row, valueMode) {
+  const value = valueMode === 'example' ? row.example : row.defaultValue
+  if (valueMode !== 'example' || !Array.isArray(row.enumValues) || row.enumValues.length === 0) return value || '-'
+  return h(ElTooltip, {
+    content: t('openPlatform.enumValues', { values: row.enumValues.join(', ') }), effect: 'dark', placement: 'top',
+    enterable: true, popperClass: 'copyable-tooltip'
+  }, { default: () => h('span', { class: 'open-platform-example-with-enum' }, value || '-') })
+}
 
 /** 切换公开页面语言并沿用平台语言持久化规则。 */
 function changeLocale(value) {

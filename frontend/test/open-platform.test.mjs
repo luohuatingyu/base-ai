@@ -69,8 +69,12 @@ test('response fields omit the required column while input fields retain it', as
 
   assert.match(view, /<FieldTable :fields="selectedEndpoint\.pathParameters"\s*\/>/)
   assert.match(view, /<FieldTable :fields="selectedEndpoint\.requestFields"\s*\/>/)
-  assert.match(view, /<FieldTable :fields="selectedEndpoint\.responseFields" :show-required="false"\s*\/>/)
+  assert.match(view, /<FieldTable :fields="selectedEndpoint\.responseFields" :show-required="false" value-mode="example"\s*\/>/)
   assert.match(view, /props\.showRequired\s*\?\s*h\(ElTableColumn/)
+  assert.match(view, /props\.valueMode === 'example' \? t\('openPlatform\.exampleValue'\) : t\('openPlatform\.defaultValue'\)/)
+  assert.match(view, /row\.enumValues\.length/)
+  assert.match(view, /h\(ElTooltip, \{/)
+  assert.match(view, /effect: 'dark'/)
 })
 
 test('public route and view enforce guest access and credential safety contracts', async () => {

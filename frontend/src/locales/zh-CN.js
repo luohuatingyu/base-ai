@@ -91,7 +91,7 @@ export default {
     eyebrow: 'BASE AI OPEN PLATFORM', title: '开放能力，标准接入。', description: '浏览 API Key 可授权的全部开放接口，查看协议并直接发起真实调试请求。',
     authentication: '认证方式', authenticationHelp: 'API Key 的接口范围还需同时满足绑定用户的 RBAC 权限、IP 白名单、有效期和频次限制。',
     endpoints: '开放接口', endpointNavigationHelp: '选择接口查看文档或发起调试', console: '进入控制台', login: '登录控制台', documentationTab: '文档说明', debuggerTab: '接口调试', pathParameters: '路径参数', requestParameters: '请求参数', responseParameters: '响应参数',
-    curlExample: 'curl 调用示例', responseExample: '响应示例', field: '字段', fieldType: '类型', required: '必填', defaultValue: '默认值', copy: '复制', curlCopied: 'curl 示例已复制', responseCopied: '响应内容已复制', copyFailed: '复制失败，请手动复制',
+    curlExample: 'curl 调用示例', responseExample: '响应示例', field: '字段', fieldType: '类型', required: '必填', defaultValue: '默认值', exampleValue: '示例值', enumValues: '枚举值：{values}', copy: '复制', curlCopied: 'curl 示例已复制', responseCopied: '响应内容已复制', copyFailed: '复制失败，请手动复制',
     debugger: '在线调试', debuggerHelp: '调试会向真实业务接口发送请求；API Key 仅保存在当前页面内存中。', requestConfiguration: '请求配置', apiKeyMemoryHelp: '仅用于本次页面会话，刷新或离开页面后清除。', requestBody: 'JSON 请求体', formatJson: '格式化 JSON', resetExample: '恢复示例', resetDebugger: '重置', sendRequest: '发送请求', sendShortcut: 'Ctrl / ⌘ + Enter 发送', debugResult: '调试结果', emptyDebugResult: '等待发送请求', emptyDebugResultHelp: '配置请求参数后发送，响应内容将在此处展示。', jsonFormatted: 'JSON 已格式化', exampleRestored: '已恢复请求示例',
     highRiskWarning: '高风险真实操作', highRiskTitle: '确认高风险调用', highRiskConfirm: '该接口会执行真实业务操作，确认使用当前 API Key 继续调用？',
     pathRequired: '请填写路径参数 {name}', loadFailed: '开放接口目录加载失败',

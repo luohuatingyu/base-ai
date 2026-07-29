@@ -66,12 +66,18 @@ public class ApiTriggerController {
                 required = true, example = "1")
         },
         responseFields = {
-            @ApiKeyField(name = "success", descriptionKey = "openPlatform.fields.success", type = "boolean", required = true),
-            @ApiKeyField(name = "code", descriptionKey = "openPlatform.fields.code", type = "integer", required = true),
-            @ApiKeyField(name = "message", descriptionKey = "openPlatform.fields.message", type = "string", required = true),
-            @ApiKeyField(name = "data.httpStatus", descriptionKey = "openPlatform.fields.httpStatus", type = "integer", required = true),
-            @ApiKeyField(name = "data.durationMs", descriptionKey = "openPlatform.fields.durationMs", type = "integer", required = true),
-            @ApiKeyField(name = "data.responseBody", descriptionKey = "openPlatform.fields.responseBody", type = "string", required = true)
+            @ApiKeyField(name = "success", descriptionKey = "openPlatform.fields.success", type = "boolean", required = true,
+                example = "true"),
+            @ApiKeyField(name = "code", descriptionKey = "openPlatform.fields.code", type = "integer", required = true,
+                example = "200"),
+            @ApiKeyField(name = "message", descriptionKey = "openPlatform.fields.message", type = "string", required = true,
+                example = "Success"),
+            @ApiKeyField(name = "data.httpStatus", descriptionKey = "openPlatform.fields.httpStatus", type = "integer", required = true,
+                example = "200"),
+            @ApiKeyField(name = "data.durationMs", descriptionKey = "openPlatform.fields.durationMs", type = "integer", required = true,
+                example = "126"),
+            @ApiKeyField(name = "data.responseBody", descriptionKey = "openPlatform.fields.responseBody", type = "string", required = true,
+                example = "{\"status\":\"ok\"}")
         },
         responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"data\": {\n    \"httpStatus\": 200,\n    \"durationMs\": 126,\n    \"responseBody\": \"{\\\"status\\\":\\\"ok\\\"}\"\n  }\n}")
     @TraceType(value = "API_TRIGGER_EXECUTE", triggerEntry = "MANUAL", captureRequest = false)

@@ -40,12 +40,28 @@ class ApiKeyEndpointCatalogServiceTest {
         assertTrue(chat.requestFields().stream().anyMatch(field -> field.name().equals("messages") && field.required()));
         assertTrue(chat.responseFields().stream().anyMatch(field -> field.name().equals("traceId")));
         assertFalse(chat.responseFields().stream().anyMatch(field -> field.name().equals("data.traceId")));
+        assertEquals("Hello!", chat.responseFields().stream().filter(field -> field.name().equals("data.content"))
+            .findFirst().orElseThrow().example());
         assertTrue(chat.responseExample().contains("\"traceId\": \"trace-id\""));
         assertFalse(java.util.Arrays.stream(AiChatController.ChatResponse.class.getRecordComponents())
             .anyMatch(component -> component.getName().equals("traceId")));
         ApiKeyEndpointCatalogService.EndpointView trigger = endpoints.get(1);
         assertEquals("id", trigger.pathParameters().get(0).name());
         assertEquals("automation:api-trigger:trigger", trigger.permission());
+    }
+
+    /** 枚举元数据应与示例值一并公开给开放平台页面。 */
+    @Test
+    void catalogsExampleAndEnumValues() throws Exception {
+        EnumFieldController controller = new EnumFieldController();
+        Method method = EnumFieldController.class.getMethod("invoke");
+        Map<RequestMappingInfo, HandlerMethod> handlers = Map.of(
+            mapping("/api/example"), new HandlerMethod(controller, method));
+
+        ApiKeyEndpointCatalogService.FieldView field = service(handlers).catalog().get(0).responseFields().get(0);
+
+        assertEquals("READY", field.example());
+        assertEquals(List.of("READY", "STOPPED"), field.enumValues());
     }
 
     /** 接口路径变量与文档声明不一致时必须拒绝生成目录。 */
@@ -111,6 +127,18 @@ class ApiKeyEndpointCatalogServiceTest {
         @RequiredPermission("example:invoke")
         @ApiKeyEndpoint(code = "example.incomplete", nameKey = "example.name", groupKey = "example.group",
             descriptionKey = "", responseFields = {}, responseExample = "")
+        public void invoke() {}
+    }
+
+    static class EnumFieldController {
+        /** 提供包含枚举值的开放接口文档样例。 */
+        @PostMapping
+        @RequiredPermission("example:invoke")
+        @ApiKeyEndpoint(code = "example.enum-field", nameKey = "example.name", groupKey = "example.group",
+            descriptionKey = "example.description",
+            responseFields = {@ApiKeyField(name = "status", descriptionKey = "example.status", type = "string",
+                example = "READY", enumValues = {"READY", "STOPPED"})},
+            responseExample = "{\"status\":\"READY\"}")
         public void invoke() {}
     }
 }

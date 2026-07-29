@@ -353,6 +353,13 @@ body { margin: 0; background: var(--app-canvas); }
   white-space: pre-wrap;
 }
 
+/* 枚举示例值以轻量虚线提示可悬浮查看完整枚举范围。 */
+.open-platform-example-with-enum {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
 /* 列表操作区：固定列内按钮保持单行，并统一 API Triggers 使用的紧凑间距。 */
 .table-actions {
   display: flex;

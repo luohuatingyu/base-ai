@@ -108,12 +108,12 @@ public class ApiKeyEndpointCatalogService implements ApplicationRunner {
     private List<FieldView> toFields(ApiKeyField[] fields) {
         return java.util.Arrays.stream(fields)
             .map(field -> new FieldView(field.name(), field.descriptionKey(), field.type(), field.required(),
-                field.defaultValue(), field.example()))
+                field.defaultValue(), field.example(), List.of(field.enumValues())))
             .toList();
     }
 
     public record FieldView(String name, String descriptionKey, String type, boolean required,
-                            String defaultValue, String example) {}
+                            String defaultValue, String example, List<String> enumValues) {}
 
     public record EndpointView(String code, String nameKey, String groupKey, String descriptionKey, String risk,
                                String method, String path, String permission, List<FieldView> pathParameters,

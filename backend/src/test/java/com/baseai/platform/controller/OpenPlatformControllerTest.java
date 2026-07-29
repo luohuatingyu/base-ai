@@ -16,7 +16,7 @@ class OpenPlatformControllerTest {
     void returnsPublicDocumentationWithoutPermissionCode() {
         ApiKeyEndpointCatalogService catalog = mock(ApiKeyEndpointCatalogService.class);
         ApiKeyEndpointCatalogService.FieldView field = new ApiKeyEndpointCatalogService.FieldView(
-            "id", "openPlatform.fields.triggerId", "integer", true, "", "1");
+            "id", "openPlatform.fields.triggerId", "integer", true, "", "1", List.of());
         when(catalog.catalog()).thenReturn(List.of(new ApiKeyEndpointCatalogService.EndpointView(
             "automation.api-trigger.execute", "name", "group", "description", "HIGH", "POST", "/api/{id}",
             "internal:permission", List.of(field), List.of(), List.of(field), "", "{}")));

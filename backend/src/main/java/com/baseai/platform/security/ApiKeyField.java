@@ -14,4 +14,5 @@ public @interface ApiKeyField {
     boolean required() default false;
     String defaultValue() default "";
     String example() default "";
+    String[] enumValues() default {};
 }
