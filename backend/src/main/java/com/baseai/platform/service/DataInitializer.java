@@ -224,11 +224,11 @@ public class DataInitializer implements ApplicationRunner {
         // ========== 系统管理模块 ==========
         Menu system = menu(null, "系统管理", "CATALOG", "/system", null, "Setting", "system:catalog", 20, true);
         // 初始化用户管理的页面和 CRUD 权限
-        seedCrud(system, "用户管理", "/users", "UsersView", "User", "system:user", 21);
+        Menu users = seedCrud(system, "用户管理", "/users", "UsersView", "User", "system:user", 21);
         // 初始化角色管理的页面和 CRUD 权限
-        seedCrud(system, "角色管理", "/roles", "RolesView", "Avatar", "system:role", 22);
+        Menu roles = seedCrud(system, "角色管理", "/roles", "RolesView", "Avatar", "system:role", 22);
         // 初始化菜单管理的页面和 CRUD 权限
-        seedCrud(system, "菜单管理", "/menus", "MenusView", "Menu", "system:menu", 23);
+        Menu menus = seedCrud(system, "菜单管理", "/menus", "MenusView", "Menu", "system:menu", 23);
         // 初始化部门管理的页面和 CRUD 权限
         seedCrud(system, "部门管理", "/departments", "DepartmentsView", "OfficeBuilding", "system:department", 24);
         // 初始化岗位管理的页面和 CRUD 权限
@@ -238,17 +238,17 @@ public class DataInitializer implements ApplicationRunner {
         // 初始化系统参数的页面和 CRUD 权限
         seedCrud(system, "系统参数", "/settings", "SettingsView", "Tools", "system:setting", 27);
         // 在线用户管理页面
-        menu(system.getId(), "在线用户", "MENU", "/online-users", "OnlineUsersView", "Connection", "system:session:list", 28, true);
+        Menu onlineUsers = menu(system.getId(), "在线用户", "MENU", "/online-users", "OnlineUsersView", "Connection", "system:session:list", 28, true);
         // 强制下线操作按钮权限
-        menu(system.getId(), "强制下线", "BUTTON", null, null, null, "system:session:terminate", 281, false);
+        menu(onlineUsers.getId(), "强制下线", "BUTTON", null, null, null, "system:session:terminate", 281, false);
         // 操作日志查看页面
         menu(system.getId(), "操作日志", "MENU", "/operation-logs", "OperationLogsView", "Document", "system:audit:operation:list", 29, true);
         // 登录日志查看页面
         menu(system.getId(), "登录日志", "MENU", "/login-logs", "LoginLogsView", "Tickets", "system:audit:login:list", 30, true);
         // 任务调度查看页面
-        menu(system.getId(), "任务调度", "MENU", "/tasks", "TasksView", "List", "system:task:view", 31, true);
+        Menu tasks = menu(system.getId(), "任务调度", "MENU", "/tasks", "TasksView", "List", "system:task:view", 31, true);
         // 任务管理操作按钮权限（包括启动、停止、编辑等）
-        menu(system.getId(), "任务管理", "BUTTON", null, null, null, "system:task:manage", 311, false);
+        menu(tasks.getId(), "任务管理", "BUTTON", null, null, null, "system:task:manage", 311, false);
         // API Key 管理页面和独立操作权限
         Menu apiKeys = menu(system.getId(), "API Key 管理", "MENU", "/api-keys", "ApiKeysView", "Key",
             "system:api-key:list", 32, true);
@@ -284,9 +284,9 @@ public class DataInitializer implements ApplicationRunner {
 
         // ========== 兼容性权限 ==========
         // 以下权限用于兼容旧版本的权限代码，提供统一的管理权限标识
-        menu(system.getId(), "兼容用户管理", "BUTTON", null, null, null, "system:user:manage", 901, false);
-        menu(system.getId(), "兼容角色管理", "BUTTON", null, null, null, "system:role:manage", 902, false);
-        menu(system.getId(), "兼容菜单管理", "BUTTON", null, null, null, "system:menu:manage", 903, false);
+        menu(users.getId(), "兼容用户管理", "BUTTON", null, null, null, "system:user:manage", 901, false);
+        menu(roles.getId(), "兼容角色管理", "BUTTON", null, null, null, "system:role:manage", 902, false);
+        menu(menus.getId(), "兼容菜单管理", "BUTTON", null, null, null, "system:menu:manage", 903, false);
     }
 
     /**
@@ -307,8 +307,9 @@ public class DataInitializer implements ApplicationRunner {
      * @param icon 菜单图标名称（如"User"），对应前端图标库
      * @param prefix 权限前缀（如"system:user"），用于生成完整的权限标识
      * @param sortOrder 排序序号，决定菜单在同级中的显示顺序
+     * @return 创建或更新后的页面菜单
      */
-    private void seedCrud(Menu parent, String name, String path, String component, String icon, String prefix, int sortOrder) {
+    private Menu seedCrud(Menu parent, String name, String path, String component, String icon, String prefix, int sortOrder) {
         // 创建资源的列表页面菜单
         Menu page = menu(parent.getId(), name, "MENU", path, component, icon, prefix + ":list", sortOrder, true);
         // 创建新增操作按钮权限，排序序号为 sortOrder*10+1
@@ -317,6 +318,7 @@ public class DataInitializer implements ApplicationRunner {
         menu(page.getId(), "编辑" + name, "BUTTON", null, null, null, prefix + ":update", sortOrder * 10 + 2, false);
         // 创建删除操作按钮权限，排序序号为 sortOrder*10+3
         menu(page.getId(), "删除" + name, "BUTTON", null, null, null, prefix + ":delete", sortOrder * 10 + 3, false);
+        return page;
     }
 
     /**

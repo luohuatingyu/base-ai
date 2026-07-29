@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 平台管理服务类
@@ -338,14 +339,40 @@ public class PlatformAdminService {
 
     /** 应用角色基础信息、菜单和数据范围。 */
     private void applyRole(Role role, RoleCommand command) {
+        LinkedHashSet<Menu> selectedMenus = load(command.menuIds(), menuRepository::findAllById);
+        validateRoleMenuDependencies(selectedMenus);
         role.setName(require(command.name(), "role.nameRequired"));
         role.setDescription(trim(command.description()));
         role.setEnabled(command.enabled() == null || command.enabled());
         String dataScope = blank(command.dataScope()) ? "ALL" : command.dataScope().toUpperCase(Locale.ROOT);
         if (!DATA_SCOPES.contains(dataScope)) throw new BusinessException("role.dataScopeInvalid");
         role.setDataScope(dataScope);
-        role.setMenus(load(command.menuIds(), menuRepository::findAllById));
+        role.setMenus(selectedMenus);
         role.setCustomDepartments("CUSTOM".equals(dataScope) ? load(command.departmentIds(), departmentRepository::findAllById) : new LinkedHashSet<>());
+    }
+
+    /** 校验每个按钮权限都同时包含其所属页面权限。 */
+    private void validateRoleMenuDependencies(Set<Menu> selectedMenus) {
+        Set<Long> selectedIds = selectedMenus.stream().map(Menu::getId).collect(Collectors.toSet());
+        if (selectedMenus.stream().noneMatch(menu -> "BUTTON".equals(menu.getType()))) return;
+        Map<Long, Menu> menusById = menuRepository.findAll().stream()
+            .collect(Collectors.toMap(Menu::getId, Function.identity()));
+        selectedMenus.forEach(menu -> menusById.putIfAbsent(menu.getId(), menu));
+
+        for (Menu button : selectedMenus) {
+            if (!"BUTTON".equals(button.getType())) continue;
+            Menu parent = menusById.get(button.getParentId());
+            Set<Long> visited = new HashSet<>();
+            boolean pageSelected = false;
+            while (parent != null && visited.add(parent.getId())) {
+                if ("MENU".equals(parent.getType())) {
+                    pageSelected = selectedIds.contains(parent.getId());
+                    break;
+                }
+                parent = menusById.get(parent.getParentId());
+            }
+            if (!pageSelected) throw new BusinessException("role.buttonPageRequired", button.getName());
+        }
     }
 
     /** 校验并应用菜单配置。 */

@@ -1,6 +1,7 @@
 package com.baseai.platform.service;
 
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.domain.Menu;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.repository.DepartmentRepository;
 import com.baseai.platform.repository.DictionaryDataRepository;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
@@ -21,12 +23,16 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,6 +42,7 @@ class DataInitializerTest {
     private static final String SEED_PASSWORD = "configured-password";
 
     private PlatformProperties properties;
+    private MenuRepository menuRepository;
     private UserRepository userRepository;
     private BCryptPasswordEncoder passwordEncoder;
     private DataInitializer initializer;
@@ -44,7 +51,7 @@ class DataInitializerTest {
     @BeforeEach
     void setUp() {
         properties = validProperties();
-        MenuRepository menuRepository = mock(MenuRepository.class);
+        menuRepository = mock(MenuRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         userRepository = mock(UserRepository.class);
         DepartmentRepository departmentRepository = mock(DepartmentRepository.class);
@@ -52,7 +59,12 @@ class DataInitializerTest {
         DictionaryDataRepository dictionaryDataRepository = mock(DictionaryDataRepository.class);
         passwordEncoder = mock(BCryptPasswordEncoder.class);
 
-        when(menuRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        AtomicLong menuId = new AtomicLong();
+        when(menuRepository.save(any())).thenAnswer(invocation -> {
+            Menu menu = invocation.getArgument(0);
+            if (menu.getId() == null) menu.setId(menuId.incrementAndGet());
+            return menu;
+        });
         when(menuRepository.findAll()).thenReturn(List.of());
         when(roleRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(departmentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -144,6 +156,26 @@ class DataInitializerTest {
             .bind("app", Bindable.of(PlatformProperties.class)).orElseThrow(IllegalStateException::new);
 
         assertTrue(bound.getSeed().isAdminPasswordSyncEnabled());
+    }
+
+    /** 所有内置按钮必须直接归属页面，避免产生无法配置的孤立按钮权限。 */
+    @Test
+    void assignsEverySeededButtonToPageMenu() {
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        initializer.run(null);
+
+        ArgumentCaptor<Menu> captor = ArgumentCaptor.forClass(Menu.class);
+        verify(menuRepository, atLeastOnce()).save(captor.capture());
+        Map<Long, Menu> menusById = captor.getAllValues().stream()
+            .collect(Collectors.toMap(Menu::getId, Function.identity(), (first, ignored) -> first));
+        List<Menu> buttons = menusById.values().stream().filter(item -> "BUTTON".equals(item.getType())).toList();
+
+        assertFalse(buttons.isEmpty());
+        assertTrue(buttons.stream().allMatch(item -> {
+            Menu parent = menusById.get(item.getParentId());
+            return parent != null && "MENU".equals(parent.getType());
+        }));
     }
 
     /** 创建满足启动安全校验的测试配置。 */
