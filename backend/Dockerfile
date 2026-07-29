@@ -3,6 +3,11 @@ ARG JRE_IMAGE=eclipse-temurin:17-jre
 
 FROM ${MAVEN_IMAGE} AS build
 WORKDIR /workspace
+ARG MAVEN_MIRROR_URL
+RUN if [ -n "$MAVEN_MIRROR_URL" ]; then \
+      mkdir -p /root/.m2 && \
+      printf '<settings><mirrors><mirror><id>mirror</id><mirrorOf>*</mirrorOf><url>%s</url></mirror></mirrors></settings>' "$MAVEN_MIRROR_URL" > /root/.m2/settings.xml; \
+    fi
 COPY pom.xml ./
 RUN mvn -B -ntp dependency:go-offline
 COPY src ./src
