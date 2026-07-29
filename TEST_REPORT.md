@@ -2,12 +2,103 @@
 
 ## 📋 Git 基准点
 
-Commit: 8fbc1bf3b504f8957e0c143951167634935754de
-- 提交说明: Enforce hierarchical role permissions
+Commit: 66028e36bab6c54e5f8dd7b361ef47270bcbf843
+- 提交说明: Document response field examples
 - 测试日期: 2026-07-29
 - 分支: master
 
 ## 🎯 当前变更范围
+
+- 开放接口字段元数据新增可选枚举值，并由公开接口目录原样透传。
+- 两个现有开放接口的响应字段补充与完整响应 JSON 一致的字段级示例值。
+- 响应参数表以“示例值”替代“默认值”；路径和请求参数继续显示默认值。
+- 仅存在枚举元数据时，示例值以深色、可复制 Tooltip 展示完整枚举范围；说明列保持原有展示方式。
+- 补充中英文文案、样式及后端目录和前端页面契约测试。
+
+## 📋 当前变更测试结果（2026-07-29）
+
+**变更范围**：开放平台响应字段示例值、枚举元数据及响应文档展示。
+
+**测试执行结果**：
+- 完整回归测试：323 个，通过 323 个（100%）
+- 后端完整测试：175 个，通过 175 个（100%）
+- 前端完整测试：136 个，通过 136 个（100%）
+- Python Worker 完整测试（Python 3.12）：12 个，通过 12 个（100%）
+- 后端定向测试：5 个，通过 5 个（100%）
+- 前端开放平台定向测试：8 个，通过 8 个（100%）
+- 失败：0 个；错误：0 个；跳过：0 个
+
+**关键模块测试**：
+- ApiKeyEndpointCatalogService：4/4，通过响应字段示例值、枚举元数据、路径参数一致性和文档完整性校验。
+- OpenPlatformController：1/1，确认公开目录保留字段文档但不泄露内部权限编码。
+- 开放平台前端：8/8，确认响应表显示示例值，枚举仅在示例值上提供深色提示，请求与路径参数保留默认值。
+- Compose 构建：后端构建阶段 175/175 通过，前端生产构建成功，三个服务均健康。
+
+**缺陷复现记录**：
+- 实现前前端定向测试 8 个中 1 个失败：响应参数表仍只配置默认值列，未使用示例值模式或枚举 Tooltip。
+- 实现前后端定向测试在测试编译阶段失败：`ApiKeyField` 和公开目录字段模型均缺少 `enumValues`。
+- 实现后定向、完整三端回归和运行态健康检查均通过。
+
+## ✅ 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入/操作 | 预期结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 响应字段提供示例值 | 后端目录单元测试；AI 对话接口元数据 | 读取 `data.content` 响应字段 | 返回 `Hello!` 示例值 | 正常、兼容性 |
+| 枚举元数据可公开 | 后端目录单元测试；构造含 READY、STOPPED 枚举的开放接口 | 扫描接口目录 | 保留示例值及枚举列表 | 正常、边界 |
+| 响应表使用示例值而非默认值 | 前端页面契约测试；开放平台组件源码 | 检查响应表配置与列标题 | 响应表使用 `example` 模式和“示例值”标题 | 正常、兼容性 |
+| 枚举仅作用于示例值 Tooltip | 前端页面契约测试；枚举字段元数据 | 检查条件渲染及 Tooltip 属性 | 仅有枚举值时渲染深色 Tooltip，说明列不变 | 边界、可用性 |
+| 公开目录不泄露权限编码 | 后端 Controller 测试；模拟目录字段 | 调用公开目录接口 | 返回字段文档且不包含 permission | 安全、回归 |
+| 历史功能保持稳定 | 三端完整回归和 Compose 运行态 | 执行全部测试、重建服务并检查健康端点 | 323 个测试通过，三个服务 healthy | 回归、集成 |
+
+## 📊 当前测试执行记录
+
+| 测试范围 | 执行命令 | 结果 |
+| --- | --- | --- |
+| 前端缺陷复现 | `cd frontend && node --test test/open-platform.test.mjs` | 实现前 7 通过、1 失败，稳定复现响应表未使用示例值和 Tooltip |
+| 后端缺陷复现 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeyEndpointCatalogServiceTest,OpenPlatformControllerTest test` | 实现前测试编译 3 个错误，稳定复现枚举元数据与目录字段模型缺失 |
+| 前端定向测试 | `cd frontend && node --test test/open-platform.test.mjs` | 8 通过，0 失败，0 错误，0 跳过 |
+| 后端定向测试 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=ApiKeyEndpointCatalogServiceTest,OpenPlatformControllerTest test` | 5 通过，0 失败，0 错误，0 跳过 |
+| 后端完整回归 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 175 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `cd frontend && node --test test/*.test.mjs tests/*.test.js` | 136 通过，0 失败，0 错误，0 跳过 |
+| Python Worker 完整回归 | `docker run --rm -e PYTHONPATH=/workspace -v /Users/xyzc/github/base-ai/python-worker:/workspace -w /workspace python:3.12-slim sh -lc 'pip install -q -r requirements.txt && pytest -q'` | 12 通过，0 失败，0 错误，0 跳过 |
+| Compose 配置验证 | `docker compose config --quiet` | 通过 |
+| 服务重建与启动 | `docker compose up --build -d` | 成功；构建阶段后端 175/175 通过，三个服务均 healthy |
+| HTTP 健康检查 | `curl -fsS http://localhost:8080/api/open/health`、`curl -fsS http://localhost/health` | 两个端点均返回 `{"status":"UP"}` |
+
+## 🔄 当前覆盖范围与结果
+
+- 正常场景：响应字段示例值、公开目录透传和中英文示例值标题均已覆盖。
+- 边界场景：无枚举字段不生成 Tooltip；存在多个枚举值时完整透传并展示。
+- 异常场景：缺失枚举元数据时页面安全回退为普通示例文本，不影响字段文档渲染。
+- 权限与安全：公开目录继续移除内部 RBAC 权限编码；Tooltip 仅展示声明的枚举值，不引入敏感运行数据。
+- 兼容性：`enumValues` 为新增可选字段，请求和路径参数仍使用原默认值展示，既有调用不受影响。
+- 回归场景：后端 175 个、前端 136 个、Python Worker 12 个测试全部通过。
+
+## 🔄 当前重测触发条件
+
+- 修改 `ApiKeyField`、开放接口目录映射或公开接口文档结构。
+- 修改开放接口响应字段示例、枚举值或完整响应示例。
+- 修改开放平台字段表的列模式、Tooltip 或本地化文案。
+- 用户明确要求重新验证开放接口文档展示行为。
+
+## ⚠️ 当前已知问题与限制
+
+- 当前两个生产开放接口不存在真实枚举型响应字段，因此页面仅在后续接口显式声明 `enumValues` 时展示 Tooltip；该分支已由目录和页面契约测试覆盖，未虚构业务枚举。
+- 未执行浏览器自动化 E2E；页面行为由源码契约测试、生产构建和运行态健康检查覆盖。
+- 前端生产构建保留既有 runtime-config、第三方 PURE 注释和大包体积警告，构建未失败。
+
+## 📝 下次测试建议
+
+1. 新增枚举型响应字段时，补充对应的端到端接口文档截图或浏览器测试，验证悬浮提示文案和小屏布局。
+2. 开放接口响应结构调整时，同时更新字段级 `example` 与 `responseExample`，保持两类示例一致。
+3. 如需让非枚举补充说明也使用 Tooltip，应新增独立元数据字段，避免复用枚举语义。
+
+## ↩️ 回滚方式
+
+- 回滚提交 `66028e3` 并重新执行 `docker compose up --build -d`，即可恢复响应参数表的默认值展示及原目录模型。
+- 本次不涉及数据库迁移、依赖、配置或文件删除。
+
+## 历史测试记录（角色权限层级）
 
 - 角色新增、编辑由扁平权限多选改为“目录—页面—按钮”树形配置和回显。
 - 权限树采用精确依赖：勾选按钮自动补齐所属页面及目录，取消页面清除按钮，勾选页面不自动授予全部按钮。
