@@ -2,6 +2,114 @@
 
 ## 📋 Git 基准点
 
+Commit: db0adccc1f5137d8b4c051db3845efebdfd3e2ef
+- 提交说明: Add configurable admin password synchronization
+- 测试日期: 2026-07-29
+- 分支: master
+
+## 🎯 当前变更范围
+
+- 新增 `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` 管理员种子密码同步开关。
+- 开关未配置或设置为 `false` 时保留已有管理员密码，保持历史行为。
+- 开关显式设置为 `true` 时，在启动阶段比较已有密码与种子密码，仅在不匹配时使用 BCrypt 更新。
+- 首次创建管理员时不受同步开关影响，始终设置安全校验通过的种子密码。
+- 补充 Compose、Spring 类型安全配置、环境变量示例和中英文使用说明。
+
+## 📋 当前变更测试结果（2026-07-29）
+
+**变更范围**：管理员种子密码同步开关、启动初始化逻辑、配置绑定、部署配置及使用文档。
+
+**测试执行结果**：
+- 完整回归测试：306 个，通过 306 个（100%）
+- 后端完整测试：167 个，通过 167 个（100%）
+- 前端现行测试：4 个，通过 4 个（100%）
+- 前端历史完整回归：123 个，通过 123 个（100%）
+- Python Worker 完整测试（Python 3.12）：12 个，通过 12 个（100%）
+- 新增管理员初始化定向测试：7 个，通过 7 个（100%，已包含在后端完整测试中）
+- 失败：0 个
+- 错误：0 个
+- 跳过：0 个
+
+**关键模块测试**：
+- DataInitializer：7/7，通过默认关闭、显式关闭、开启同步、已一致不重哈希和首次创建场景。
+- Service 层：71/71，通过管理员初始化、认证、模型、API Key、任务追踪和系统配置回归。
+- Controller 层：17/17，通过接口层回归。
+- Security 层：27/27，通过密码认证、Token 拦截和 API Key 安全回归。
+- 配置绑定：默认关闭和显式开启均通过；`docker compose config --quiet` 通过。
+- Repository 层：本次无 Repository 接口变更；定向测试使用 Mock 隔离仓储，运行态启动使用现有 MySQL 验证。
+
+**实施验证记录**：
+- 宿主机未安装 Maven，直接执行定向测试命令返回 `mvn: command not found`；随后使用项目既有 Maven 3.9.9 / Java 17 容器完成全部后端测试。
+- 首次 Compose 启动因主机 8080 端口被 `domestic-trade-backend-1` 占用而失败，按仓库规则停止该容器后重试。
+- 第二次启动因主机 80 端口被 `domestic-trade-frontend-1` 占用而失败，停止该容器后再次重试成功。
+- 最终 `docker compose up --build -d` 成功，Backend、Frontend、Python Worker 均为 healthy。
+- 后端和前端 HTTP 健康检查均返回 `UP`；当前本地环境未显式开启同步开关，已有管理员密码未被启动过程覆盖。
+
+## ✅ 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入/操作 | 预期结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 未配置时默认关闭 | 配置绑定单元测试；使用默认 `PlatformProperties` | 不设置同步属性 | 开关值为 `false` | 边界、兼容性、安全 |
+| 显式关闭时保留密码 | DataInitializer 单元测试；已有管理员 | 设置开关为 `false` 后执行初始化 | 原密码哈希不变，不调用密码匹配和编码 | 正常、兼容性、回归 |
+| 显式开启时同步不同密码 | DataInitializer 单元测试；已有管理员密码不匹配 | 设置开关为 `true` 后执行初始化 | 使用 BCrypt 编码种子密码并保存新哈希 | 正常、安全 |
+| 密码已一致时保持幂等 | DataInitializer 单元测试；已有密码匹配 | 开启同步后重复初始化 | 保留原哈希，不重复编码 | 边界、回归 |
+| 首次创建不受开关影响 | 参数化单元测试；管理员不存在 | 分别使用 `false`、`true` 创建管理员 | 两种状态均保存种子密码哈希 | 正常、边界 |
+| 显式配置可开启 | Spring Binder 单元测试 | 绑定 `app.seed.admin-password-sync-enabled=true` | 类型安全配置值为 `true` | 配置、兼容性 |
+| Compose 正确传递默认值 | Compose 配置验证和运行态重建 | 未设置环境变量并启动服务 | 后端收到默认 `false`，三个服务健康 | 集成、兼容性 |
+| 历史功能保持稳定 | 三端完整回归 | 执行全部测试 | 306 个测试全部通过 | 回归 |
+
+## 📊 当前测试执行记录
+
+| 测试范围 | 执行命令 | 结果 |
+| --- | --- | --- |
+| 宿主机定向测试尝试 | `cd backend && mvn -B -Dtest=DataInitializerTest test` | 环境无 Maven，命令未执行测试；改用容器命令验证 |
+| 后端定向测试 | `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=DataInitializerTest test` | 7 通过，0 失败，0 错误，0 跳过 |
+| 后端完整回归 | `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 167 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `cd frontend && npm test && node --test test/*.test.mjs` | 127 通过，0 失败 |
+| Python Worker 完整回归 | `docker run --rm -e PYTHONPATH=/workspace -v "$PWD/python-worker:/workspace" -w /workspace python:3.12-slim sh -lc 'pip install -q -r requirements.txt && pytest -q'` | 12 通过，0 失败 |
+| Compose 配置验证 | `docker compose config --quiet` | 通过 |
+| 服务重建与启动 | `docker compose up --build -d` | 清理 8080、80 端口占用后最终成功，三个服务均 healthy；构建阶段后端 167/167 通过 |
+| HTTP 健康检查 | `curl -fsS http://localhost:8080/api/open/health`、`curl -fsS http://localhost/health` | 两个端点均返回 `{"status":"UP"}` |
+| 格式与工作区检查 | `git diff --check`、`git status --short` | 格式检查通过；业务变更已提交，无调试文件 |
+
+## 🔄 当前覆盖范围与结果
+
+- 正常场景：开启同步后，已有管理员密码与种子密码不一致时正确更新。
+- 边界场景：开关缺省、显式关闭、密码已一致和管理员不存在均已覆盖。
+- 异常场景：宿主机缺少 Maven 时使用固定版本容器完成测试；端口冲突按仓库规则清理后重试成功。
+- 权限与安全：默认不覆盖生产管理员密码；开启后仅保存 BCrypt 哈希，明文密码不进入数据库和测试输出。
+- 兼容性：默认行为与变更前一致；既有认证、API Key、Controller、前端和 Worker 回归全部通过。
+- 回归场景：后端 167 个、前端 127 个、Python Worker 12 个测试全部通过。
+
+## 🔄 当前重测触发条件
+
+- 修改 `DataInitializer` 管理员初始化或密码同步逻辑。
+- 修改 `PlatformProperties.Seed`、`app.seed` 配置绑定或对应环境变量名称与默认值。
+- 修改用户密码哈希格式、`BCryptPasswordEncoder` 配置、认证逻辑或用户仓储行为。
+- 用户明确要求重新验证管理员密码同步行为。
+
+## ⚠️ 当前已知问题与限制
+
+- 为避免改变现有管理员凭据，运行态 Compose 验证使用默认关闭状态；显式开启后的密码更新由 7 个 DataInitializer 单元测试验证，未在当前数据库执行真实密码重置。
+- 定向测试通过 Mock 隔离仓储；当前数据库上的默认关闭路径由真实 Compose 启动和健康检查覆盖，但未执行浏览器端登录 E2E。
+- 开启同步后，管理页面手动修改的管理员密码会在下一次应用启动时被环境变量值覆盖，这是该开关的预期行为。
+- 本次按规则停止了占用 8080 和 80 端口的 `domestic-trade-backend-1`、`domestic-trade-frontend-1` 容器，未自动恢复它们。
+
+## 📝 下次测试建议
+
+1. 在隔离数据库中补充真实 Repository 集成测试，验证开启同步后数据库哈希更新且可通过认证服务登录。
+2. 若生产环境计划开启该开关，先在预发布环境轮换为新的随机强密码，并验证启动后旧密码失效、新密码生效。
+3. 后续如加入会话强制失效能力，应补充密码同步后现有 Token 是否撤销的安全验收。
+
+## ↩️ 回滚方式
+
+- 将 `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` 设置为 `false` 或移除即可停止后续同步，无需回滚代码。
+- 回滚提交 `db0adcc` 可移除本功能；已被同步过的密码不会自动恢复，需通过用户管理或受控数据库操作重新设置。
+
+## 历史测试记录（AI 对话 Trace ID 回显）
+
+## 📋 Git 基准点
+
 Commit: d96017ea0eadd8ebe02224a8d65cfcedc3d2baa2
 - 提交说明: Preserve chat trace ID after response unwrap
 - 测试日期: 2026-07-28
