@@ -25,7 +25,7 @@ function formatTaskLogField(name, rawValue) {
       compactValue: rawValue,
       displayValue: rawValue,
       isJson: false,
-      isCompact: !rawValue.includes('\n') && rawValue.length <= 40,
+      isCompact: !rawValue.includes('\n') && rawValue.length < 40,
       isCopyable: rawValue.length >= 40
     }
   }

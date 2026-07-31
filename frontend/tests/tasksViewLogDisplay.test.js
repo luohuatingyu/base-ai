@@ -39,11 +39,12 @@ test('结构化日志拆分全部字段并保留带空格内容', () => {
   ])
 })
 
-test('短日志字段紧凑展示，长文本、换行和 JSON 字段独占整行', () => {
-  const boundaryValue = 'x'.repeat(40)
-  const fields = parseTaskLogFields(`event=http_response_body method=POST path=/api/ai/chat boundary=${boundaryValue} long=${boundaryValue}x multiline=line1\nline2 json={"ok":true}`)
+test('少于 40 字符的日志字段紧凑展示，40 字符及以上、换行和 JSON 字段独占整行', () => {
+  const compactBoundaryValue = 'x'.repeat(39)
+  const wideBoundaryValue = 'x'.repeat(40)
+  const fields = parseTaskLogFields(`event=http_response_body method=POST path=/api/ai/chat compact=${compactBoundaryValue} boundary=${wideBoundaryValue} long=${wideBoundaryValue}x multiline=line1\nline2 json={"ok":true}`)
 
-  assert.deepEqual(fields.map(field => field.isCompact), [true, true, true, true, false, false, false])
+  assert.deepEqual(fields.map(field => field.isCompact), [true, true, true, true, false, false, false, false])
   assert.equal(fields.at(-1).isJson, true)
 })
 
@@ -68,7 +69,7 @@ test('空字段可复制且非结构化日志不被错误拆分', () => {
 
 test('任务日志字段和原始消息均提供复制入口且 JSON 默认折叠', () => {
   assert.match(tasksViewSource, /:class="\{ 'log-field--wide': !field\.isCompact \}"/)
-  assert.match(tasksViewSource, /\.log-fields\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(220px,\s*1fr\)\)/s)
+  assert.match(tasksViewSource, /\.log-fields\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(220px,\s*320px\)\)/s)
   assert.match(tasksViewSource, /\.log-field--wide\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s)
   assert.match(tasksViewSource, /<el-button\s+v-if="field\.isCopyable"[\s\S]*class="log-field-copy"/)
   assert.match(tasksViewSource, /class="log-field-copy"/)
