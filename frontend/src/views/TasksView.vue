@@ -192,6 +192,7 @@
               <div class="log-field-head">
                 <span class="log-field-name">{{ field.name }}:</span>
                 <el-button
+                  v-if="field.isCopyable"
                   link
                   type="primary"
                   :icon="CopyDocument"

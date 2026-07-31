@@ -25,7 +25,8 @@ function formatTaskLogField(name, rawValue) {
       compactValue: rawValue,
       displayValue: rawValue,
       isJson: false,
-      isCompact: !rawValue.includes('\n') && rawValue.length <= 40
+      isCompact: !rawValue.includes('\n') && rawValue.length <= 40,
+      isCopyable: rawValue.length >= 40
     }
   }
 
@@ -35,7 +36,8 @@ function formatTaskLogField(name, rawValue) {
     compactValue: JSON.stringify(jsonValue.value),
     displayValue: JSON.stringify(jsonValue.value, null, 2),
     isJson: true,
-    isCompact: false
+    isCompact: false,
+    isCopyable: rawValue.length >= 40
   }
 }
 

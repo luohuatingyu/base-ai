@@ -33,9 +33,9 @@ test('任务日志为空时继续展示空状态', () => {
 
 test('结构化日志拆分全部字段并保留带空格内容', () => {
   assert.deepEqual(parseTaskLogFields('event=llm_user_prompt content=Hello Base AI duration_ms=12.5'), [
-    { name: 'event', rawValue: 'llm_user_prompt', compactValue: 'llm_user_prompt', displayValue: 'llm_user_prompt', isJson: false, isCompact: true },
-    { name: 'content', rawValue: 'Hello Base AI', compactValue: 'Hello Base AI', displayValue: 'Hello Base AI', isJson: false, isCompact: true },
-    { name: 'duration_ms', rawValue: '12.5', compactValue: '12.5', displayValue: '12.5', isJson: false, isCompact: true }
+    { name: 'event', rawValue: 'llm_user_prompt', compactValue: 'llm_user_prompt', displayValue: 'llm_user_prompt', isJson: false, isCompact: true, isCopyable: false },
+    { name: 'content', rawValue: 'Hello Base AI', compactValue: 'Hello Base AI', displayValue: 'Hello Base AI', isJson: false, isCompact: true, isCopyable: false },
+    { name: 'duration_ms', rawValue: '12.5', compactValue: '12.5', displayValue: '12.5', isJson: false, isCompact: true, isCopyable: false }
   ])
 })
 
@@ -45,6 +45,12 @@ test('短日志字段紧凑展示，长文本、换行和 JSON 字段独占整�
 
   assert.deepEqual(fields.map(field => field.isCompact), [true, true, true, true, false, false, false])
   assert.equal(fields.at(-1).isJson, true)
+})
+
+test('少于 40 个字符不显示复制入口，40 个字符及以上显示复制入口', () => {
+  const fields = parseTaskLogFields(`short=${'x'.repeat(39)} exact=${'x'.repeat(40)} long=${'x'.repeat(41)} json_short={"ok":true} json_long={"value":"${'x'.repeat(34)}"}`)
+
+  assert.deepEqual(fields.map(field => field.isCopyable), [false, true, true, false, true])
 })
 
 test('JSON 日志字段默认提供折叠摘要和格式化内容', () => {
@@ -64,6 +70,7 @@ test('任务日志字段和原始消息均提供复制入口且 JSON 默认折�
   assert.match(tasksViewSource, /:class="\{ 'log-field--wide': !field\.isCompact \}"/)
   assert.match(tasksViewSource, /\.log-fields\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(220px,\s*1fr\)\)/s)
   assert.match(tasksViewSource, /\.log-field--wide\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s)
+  assert.match(tasksViewSource, /<el-button\s+v-if="field\.isCopyable"[\s\S]*class="log-field-copy"/)
   assert.match(tasksViewSource, /class="log-field-copy"/)
   assert.match(tasksViewSource, /copyLogValue\(logFieldCopyValue\(field, logFieldKey\(item, fieldIndex\)\)\)/)
   assert.match(tasksViewSource, /<details\s+v-if="field\.isJson"\s+class="log-field-json"/)
