@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { parseTaskLogFields } from '../src/utils/taskLogDisplay.js'
 
 const tasksViewSource = readFileSync(new URL('../src/views/TasksView.vue', import.meta.url), 'utf8')
+const automationStyles = readFileSync(new URL('../src/automation.css', import.meta.url), 'utf8')
 const zhLocaleSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const enLocaleSource = readFileSync(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
 
@@ -12,6 +13,14 @@ function declarations(selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = tasksViewSource.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))
   assert.ok(match, `缺少布局选择器：${selector}`)
+  return match[1]
+}
+
+/** 提取公共自动化布局中的 CSS 声明，验证高优先级宽度约束。 */
+function automationDeclarations(selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = automationStyles.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))
+  assert.ok(match, `缺少公共布局选择器：${selector}`)
   return match[1]
 }
 
@@ -72,6 +81,18 @@ test('任务调度时间范围在桌面端保持紧凑并在窄屏占满整行',
   assert.match(declarations('.log-filter-date'), /min-width:\s*0/)
   assert.match(tasksViewSource, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.filter-item-date\s*\{[^}]*width:\s*100%[^}]*min-width:\s*100%/)
   assert.match(tasksViewSource, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.log-filter-date,[\s\S]*?width:\s*100%/)
+
+  const compactRule = automationDeclarations('.filter-row > .filter-item-date.el-date-editor')
+  assert.match(compactRule, /width:\s*320px/)
+  assert.match(compactRule, /min-width:\s*0/)
+  assert.match(compactRule, /max-width:\s*320px/)
+  assert.match(compactRule, /flex:\s*0\s+0\s+320px/)
+  const compactLogRule = automationDeclarations('.log-filters > .log-filter-date.el-date-editor')
+  assert.match(compactLogRule, /width:\s*320px/)
+  assert.match(compactLogRule, /min-width:\s*0/)
+  assert.match(compactLogRule, /max-width:\s*320px/)
+  assert.match(compactLogRule, /flex:\s*0\s+0\s+320px/)
+  assert.match(automationStyles, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.filter-row\s*>\s*\.filter-item-date\.el-date-editor,[\s\S]*?\.log-filters\s*>\s*\.log-filter-date\.el-date-editor\s*\{[^}]*width:\s*100%\s*!important[^}]*min-width:\s*100%\s*!important[^}]*max-width:\s*none\s*!important[^}]*flex:\s*1\s+1\s+100%\s*!important/)
 })
 
 test('任务日志按级别展示卡片状态和记录上下文', () => {

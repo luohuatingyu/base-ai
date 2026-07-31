@@ -16,6 +16,21 @@
 
 .filter-row > .el-select { flex: 0 1 220px; min-width: 0; max-width: 220px; }
 
+/* 任务时间范围：强制限制桌面宽度，避免日期组件占满筛选行。 */
+.filter-row > .filter-item-date.el-date-editor {
+  width: 320px;
+  min-width: 0;
+  max-width: 320px;
+  flex: 0 0 320px;
+}
+
+.log-filters > .log-filter-date.el-date-editor {
+  width: 320px;
+  min-width: 0;
+  max-width: 320px;
+  flex: 0 0 320px;
+}
+
 .panel > .el-form--inline .el-form-item { flex: 0 1 280px; min-width: 0; margin: 0; }
 
 .panel > .el-form--inline .el-form-item__content { width: 100%; }
@@ -164,6 +179,14 @@
   .filter-row > .el-button,
   .panel > .el-form--inline .el-form-item,
   .panel > .el-form--inline .el-button { width: 100%; max-width: none; flex: 1 1 100%; }
+
+  .filter-row > .filter-item-date.el-date-editor,
+  .log-filters > .log-filter-date.el-date-editor {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: none !important;
+    flex: 1 1 100% !important;
+  }
 
   .form-help { display: flex; flex-basis: 100%; min-height: 0; margin: 8px 0 0; }
 
