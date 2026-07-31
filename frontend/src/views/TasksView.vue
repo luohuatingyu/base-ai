@@ -10,8 +10,19 @@
 
     <!-- 筛选器 -->
     <div class="filter-section">
-      <!-- 第一行：任务状态、任务类型、触发入口、仅显示有日志开关、按钮 -->
+      <!-- 第一行：Trace ID、任务状态、任务类型、触发入口、仅显示有日志开关、按钮 -->
       <div class="filter-row">
+        <el-input
+          v-model="query.traceId"
+          clearable
+          :placeholder="t('tasks.traceId')"
+          class="filter-item-keyword"
+          @keyup.enter="load"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
         <el-select v-model="query.status" clearable :placeholder="t('tasks.taskStatus')" class="filter-item-select">
           <el-option v-for="item in statuses" :key="item" :label="t(`tasks.statuses.${item}`)" :value="item"/>
         </el-select>
@@ -31,19 +42,8 @@
           <el-button @click="reset">{{ t('common.reset') }}</el-button>
         </div>
       </div>
-      <!-- 第二行：Trace ID、关键字和时间 -->
+      <!-- 第二行：关键字和时间 -->
       <div class="filter-row">
-        <el-input
-          v-model="query.traceId"
-          clearable
-          :placeholder="t('tasks.traceId')"
-          class="filter-item-keyword"
-          @keyup.enter="load"
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-        </el-input>
         <el-input
           v-model="query.logKeyword"
           clearable

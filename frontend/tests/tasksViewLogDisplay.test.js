@@ -5,6 +5,13 @@ import { parseTaskLogFields } from '../src/utils/taskLogDisplay.js'
 
 const tasksViewSource = readFileSync(new URL('../src/views/TasksView.vue', import.meta.url), 'utf8')
 
+test('任务筛选首行第一个控件为 Trace ID', () => {
+  const firstFilterRow = tasksViewSource.match(/<div class="filter-row">([\s\S]*?)<\/div>/)?.[1]
+
+  assert.ok(firstFilterRow)
+  assert.match(firstFilterRow, /^\s*<el-input\s+v-model="query\.traceId"/)
+})
+
 test('任务日志按级别展示卡片状态和记录上下文', () => {
   assert.match(tasksViewSource, /:class="`log-entry--\$\{String\(item\.level \|\| 'info'\)\.toLowerCase\(\)\}`"/)
   assert.match(tasksViewSource, /class="log-context"/)
