@@ -164,7 +164,7 @@
           <span>{{ t('tasks.log.title') }}</span>
         </div>
         <div
-          v-for="item in filteredLogs"
+          v-for="item in displayedLogs"
           :key="item.id"
           class="log-entry"
           :class="`log-entry--${String(item.level || 'info').toLowerCase()}`"
@@ -182,7 +182,44 @@
               <span v-if="item.thread_name">{{ item.thread_name }}</span>
             </div>
           </div>
-          <div class="log-message">
+          <div v-if="item.displayFields.length" class="log-fields">
+            <div v-for="(field, fieldIndex) in item.displayFields" :key="`${field.name}-${fieldIndex}`" class="log-field">
+              <div class="log-field-head">
+                <span class="log-field-name">{{ field.name }}:</span>
+                <el-button
+                  link
+                  type="primary"
+                  :icon="CopyDocument"
+                  class="log-field-copy"
+                  @click="copyLogValue(logFieldCopyValue(field, logFieldKey(item, fieldIndex)))"
+                >
+                  {{ t('tasks.log.copy') }}
+                </el-button>
+              </div>
+              <details
+                v-if="field.isJson"
+                class="log-field-json"
+                @toggle="setJsonFieldExpanded(logFieldKey(item, fieldIndex), $event.target.open)"
+              >
+                <summary><code>{{ field.compactValue }}</code></summary>
+                <pre>{{ field.displayValue }}</pre>
+              </details>
+              <code v-else class="log-field-value">{{ field.displayValue || '-' }}</code>
+            </div>
+          </div>
+          <div v-else class="log-message">
+            <div class="log-field-head">
+              <span class="log-field-name">{{ t('tasks.log.rawMessage') }}:</span>
+              <el-button
+                link
+                type="primary"
+                :icon="CopyDocument"
+                class="log-field-copy"
+                @click="copyLogValue(item.message)"
+              >
+                {{ t('tasks.log.copy') }}
+              </el-button>
+            </div>
             <code>{{ item.message }}</code>
           </div>
           <details v-if="item.throwable" class="log-throwable">
@@ -199,11 +236,12 @@
 <script setup>
 import { onMounted, reactive, ref, computed, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { CopyDocument, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { localizeTaskType } from '../utils/localization'
+import { parseTaskLogFields } from '../utils/taskLogDisplay'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -214,6 +252,7 @@ const logVisible = ref(false)
 const detailVisible = ref(false)
 const loading = ref(false)
 const logLoading = ref(false)
+const expandedJsonFields = reactive(new Set())
 
 const taskTypes = ref([])
 const triggerEntries = ref([])
@@ -439,6 +478,54 @@ const filteredLogs = computed(() => {
   return result
 })
 
+/** 为日志记录补充结构化字段，供展示层逐项渲染和复制。 */
+const displayedLogs = computed(() => filteredLogs.value.map(log => ({
+  ...log,
+  displayFields: parseTaskLogFields(log.message)
+})))
+
+/** 生成日志字段在当前抽屉中的稳定状态键。 */
+function logFieldKey(item, fieldIndex) {
+  return `${item.id ?? item.logged_at ?? 'log'}:${fieldIndex}`
+}
+
+/** 记录 JSON 字段当前是否展开，以决定复制紧凑或格式化内容。 */
+function setJsonFieldExpanded(fieldKey, expanded) {
+  if (expanded) expandedJsonFields.add(fieldKey)
+  else expandedJsonFields.delete(fieldKey)
+}
+
+/** 根据 JSON 字段当前展示状态返回对应的复制内容。 */
+function logFieldCopyValue(field, fieldKey) {
+  if (!field.isJson || expandedJsonFields.has(fieldKey)) return field.displayValue
+  return field.compactValue
+}
+
+/** 复制日志字段内容，并在浏览器不支持 Clipboard API 时降级处理。 */
+async function copyLogValue(value) {
+  const text = String(value ?? '')
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      try {
+        textarea.value = text
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        if (!document.execCommand('copy')) throw new Error('COPY_FAILED')
+      } finally {
+        textarea.remove()
+      }
+    }
+    ElMessage.success(t('tasks.log.copySuccess'))
+  } catch {
+    ElMessage.error(t('tasks.log.copyFailed'))
+  }
+}
+
 /** 格式化字段标签 */
 function formatLabel(key) {
   const labelMap = {
@@ -500,6 +587,7 @@ const stopLogRefreshOnClose = () => {
   if (!logVisible.value) {
     stopLogRefresh()
     currentTraceId = null
+    expandedJsonFields.clear()
     resetLogFilter()
   }
 }
@@ -741,6 +829,106 @@ onUnmounted(stopLogRefresh)
   background: #ffffff;
 }
 
+.log-fields {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.log-field {
+  min-width: 0;
+  padding: 12px;
+  background: #f8faff;
+  border: 1px solid #e4eaf4;
+  border-radius: 7px;
+}
+
+.log-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.log-field-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #526079;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.log-field-copy {
+  flex: 0 0 auto;
+}
+
+.log-field-value,
+.log-field-json summary code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #2c3e50;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.log-field-json {
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #dfe6f1;
+  border-radius: 6px;
+}
+
+.log-field-json summary {
+  position: relative;
+  padding: 10px 36px 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.log-field-json summary::-webkit-details-marker {
+  display: none;
+}
+
+.log-field-json summary::after {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  color: var(--app-muted);
+  content: '›';
+  font-size: 18px;
+  transform: translateY(-50%) rotate(90deg);
+  transition: transform 0.2s ease;
+}
+
+.log-field-json[open] summary::after {
+  transform: translateY(-50%) rotate(-90deg);
+}
+
+.log-field-json summary code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-field-json pre {
+  max-height: 360px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: #dce7fa;
+  background: #182338;
+  border-top: 1px solid #dfe6f1;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
 .log-message code {
   display: block;
   font-family: 'Courier New', monospace;
@@ -839,6 +1027,10 @@ onUnmounted(stopLogRefresh)
 
   .log-time {
     min-width: auto;
+  }
+
+  .log-field-head {
+    align-items: flex-start;
   }
 }
 </style>

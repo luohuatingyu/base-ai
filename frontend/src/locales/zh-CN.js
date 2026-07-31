@@ -231,7 +231,11 @@ export default {
       noLogs: '暂无日志',
       level: '级别',
       source: '来源',
-      time: '时间'
+      time: '时间',
+      rawMessage: '原始内容',
+      copy: '复制',
+      copySuccess: '内容已复制',
+      copyFailed: '复制失败'
     }
   },
   departments: { title: '部门管理', description: '部门树用于用户归属和数据权限。', add: '新增部门', addChild: '新增下级', edit: '编辑部门', parent: '上级', root: 'AI平台' },

@@ -205,7 +205,11 @@ export default {
       noLogs: 'No Logs',
       level: 'Level',
       source: 'Source',
-      time: 'Time'
+      time: 'Time',
+      rawMessage: 'Raw Message',
+      copy: 'Copy',
+      copySuccess: 'Content copied',
+      copyFailed: 'Copy failed'
     }
   },
   departments: { title: 'Departments', description: 'The department tree defines user ownership and data scope.', add: 'Add Department', addChild: 'Add Child', edit: 'Edit Department', parent: 'Parent', root: 'AI Platform' },
