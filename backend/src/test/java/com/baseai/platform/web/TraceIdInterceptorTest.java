@@ -4,6 +4,7 @@ import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.trace.TraceIgnored;
 import com.baseai.platform.trace.TraceTrackingAspect;
 import com.baseai.platform.trace.TraceTrackingPolicy;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -14,12 +15,15 @@ import org.springframework.web.method.HandlerMethod;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TraceIdInterceptorTest {
     private final PlatformProperties properties = new PlatformProperties();
-    private final TraceIdInterceptor interceptor = new TraceIdInterceptor(new TraceTrackingPolicy(properties));
+    private final TraceTrackingPolicy trackingPolicy = new TraceTrackingPolicy(properties);
+    private final RequestContextFilter requestContextFilter = new RequestContextFilter(new ObjectMapper(), trackingPolicy);
+    private final TraceIdInterceptor interceptor = new TraceIdInterceptor(trackingPolicy, requestContextFilter);
 
     /** 每个测试结束后清理 MDC，避免线程上下文污染。 */
     @AfterEach
@@ -56,7 +60,7 @@ class TraceIdInterceptorTest {
         assertNull(MDC.get("traceId"));
     }
 
-    /** 控制器注解排除的接口不得生成 traceId。 */
+    /** 控制器注解排除的接口仍需生成 HTTP 日志所需的 traceId。 */
     @Test
     void annotationExclusionRemainsWithoutTraceId() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/sample/ignored");
@@ -64,8 +68,8 @@ class TraceIdInterceptorTest {
 
         assertTrue(interceptor.preHandle(request, response, ignoredHandler()));
 
-        assertNull(request.getAttribute(TraceIdInterceptor.TRACE_ID_ATTRIBUTE));
-        assertFalse(response.containsHeader(TraceTrackingAspect.TRACE_ID_HEADER));
+        assertNotNull(request.getAttribute(TraceIdInterceptor.TRACE_ID_ATTRIBUTE));
+        assertTrue(response.containsHeader(TraceTrackingAspect.TRACE_ID_HEADER));
     }
 
     /** 获取普通测试控制器方法的 HandlerMethod。 */

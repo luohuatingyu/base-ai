@@ -17,6 +17,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -165,22 +167,23 @@ public class ApiTriggerService {
             spec.header(config.authTokenHeader(), config.authTokenPrefix() + token);
         }
         long startedAt = System.nanoTime();
-        ResponseEntity<String> response = hasBody(config.httpMethod(), config.requestBody())
-            ? spec.contentType(MediaType.parseMediaType(config.contentType())).body(config.requestBody()).retrieve().toEntity(String.class)
-            : spec.retrieve().toEntity(String.class);
+        ResponseEntity<byte[]> response = hasBody(config.httpMethod(), config.requestBody())
+            ? spec.contentType(MediaType.parseMediaType(config.contentType())).body(config.requestBody()).retrieve().toEntity(byte[].class)
+            : spec.retrieve().toEntity(byte[].class);
         TraceContextHolder.checkpoint();
         return new ApiTriggerModels.ExecutionResult(response.getStatusCode().value(),
-            Duration.ofNanos(System.nanoTime() - startedAt).toMillis(), response.getBody() == null ? "" : response.getBody());
+            Duration.ofNanos(System.nanoTime() - startedAt).toMillis(),
+            decodeResponseBody(response.getBody(), response.getHeaders().getContentType()));
     }
 
     /** 调用认证地址并按点路径提取 Token。 */
     private String fetchToken(ApiTriggerModels.View config, RestClient client) {
         URI authUri = urlPolicy.validate(config.authUrl());
         RestClient.RequestBodySpec spec = client.method(HttpMethod.valueOf(config.authMethod())).uri(authUri);
-        ResponseEntity<String> response = config.authBody().isBlank() ? spec.retrieve().toEntity(String.class)
-            : spec.contentType(MediaType.parseMediaType(config.authContentType())).body(config.authBody()).retrieve().toEntity(String.class);
+        ResponseEntity<byte[]> response = config.authBody().isBlank() ? spec.retrieve().toEntity(byte[].class)
+            : spec.contentType(MediaType.parseMediaType(config.authContentType())).body(config.authBody()).retrieve().toEntity(byte[].class);
         try {
-            JsonNode node = objectMapper.readTree(response.getBody());
+            JsonNode node = objectMapper.readTree(decodeResponseBody(response.getBody(), response.getHeaders().getContentType()));
             for (String part : config.authTokenPath().split("\\.")) node = node.path(part);
             if (!node.isValueNode() || node.asText().isBlank()) throw new BusinessException("apiTrigger.authTokenMissing");
             return node.asText();
@@ -189,6 +192,13 @@ public class ApiTriggerService {
         } catch (Exception exception) {
             throw new BusinessException("apiTrigger.authResponseInvalidJson");
         }
+    }
+
+    /** 按上游声明字符集解码响应正文，未声明时按 JSON 常用的 UTF-8 处理。 */
+    private String decodeResponseBody(byte[] body, MediaType contentType) {
+        if (body == null || body.length == 0) return "";
+        Charset charset = contentType == null ? null : contentType.getCharset();
+        return new String(body, charset == null ? StandardCharsets.UTF_8 : charset);
     }
 
     /** 保存执行日志并更新配置最近执行摘要。 */

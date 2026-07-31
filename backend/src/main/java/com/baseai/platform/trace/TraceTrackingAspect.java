@@ -22,6 +22,7 @@ import java.util.Locale;
 @Component
 public class TraceTrackingAspect {
     public static final String TRACE_ID_HEADER = "X-Trace-Id";
+    public static final String TRACE_TASK_CREATED_ATTRIBUTE = TraceTrackingAspect.class.getName() + ".taskCreated";
     private final TaskTraceService taskTraceService;
     private final TraceRuntimeRegistry runtimeRegistry;
     private final TraceRequestSnapshotSanitizer sanitizer;
@@ -66,6 +67,7 @@ public class TraceTrackingAspect {
         String traceId = taskTraceService.create(requestTraceId, ownerId,
             taskType, triggerEntry, request == null ? "INTERNAL" : request.getMethod(),
             request == null ? method.toGenericString() : request.getRequestURI(), snapshot);
+        if (request != null) request.setAttribute(TRACE_TASK_CREATED_ATTRIBUTE, Boolean.TRUE);
         HttpServletResponse response = attributes == null ? null : attributes.getResponse();
         if (response != null) response.setHeader(TRACE_ID_HEADER, traceId);
         TraceRuntime runtime = runtimeRegistry.create(traceId);

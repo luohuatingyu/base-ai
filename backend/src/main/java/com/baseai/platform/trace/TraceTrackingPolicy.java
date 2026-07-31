@@ -32,8 +32,8 @@ public class TraceTrackingPolicy {
         return controllerInvocation && request != null && isConfiguredIgnored(request);
     }
 
-    /** 判断 HTTP 方法或路径是否命中外部忽略配置。 */
-    private boolean isConfiguredIgnored(HttpServletRequest request) {
+    /** 判断 HTTP 方法或路径是否命中外部忽略配置，供追踪和 HTTP 日志统一复用。 */
+    public boolean isConfiguredIgnored(HttpServletRequest request) {
         if (properties.getTraceTracking().getExcludedMethods().stream()
             .anyMatch(value -> value.equalsIgnoreCase(request.getMethod()))) return true;
         return properties.getTraceTracking().getExcludedPaths().stream()
