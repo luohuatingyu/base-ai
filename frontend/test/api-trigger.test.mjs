@@ -114,3 +114,10 @@ test('接口触发操作列固定在右侧且所有操作按钮保持单行', ()
   assert.match(mainTable, /<div class="table-actions">[\s\S]*?automation:api-trigger:update[\s\S]*?automation:api-trigger:trigger[\s\S]*?automation:api-trigger:logs[\s\S]*?automation:api-trigger:delete[\s\S]*?<\/div>/)
   assert.doesNotMatch(viewSource, /api-trigger-actions/)
 })
+
+test('接口触发执行日志支持按 Trace ID 精确检索并展示 Trace ID', () => {
+  assert.match(viewSource, /v-model="logFilter\.traceId"/)
+  assert.match(viewSource, /params:\s*\{\s*traceId:/)
+  assert.match(viewSource, /prop="traceId"/)
+  assert.match(viewSource, /logFilter\.traceId\s*=\s*''/)
+})

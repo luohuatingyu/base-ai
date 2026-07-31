@@ -31,8 +31,19 @@
           <el-button @click="reset">{{ t('common.reset') }}</el-button>
         </div>
       </div>
-      <!-- 第二行：关键字和时间 -->
+      <!-- 第二行：Trace ID、关键字和时间 -->
       <div class="filter-row">
+        <el-input
+          v-model="query.traceId"
+          clearable
+          :placeholder="t('tasks.traceId')"
+          class="filter-item-keyword"
+          @keyup.enter="load"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
         <el-input
           v-model="query.logKeyword"
           clearable
@@ -265,6 +276,7 @@ const triggerEntries = ref([])
 const dateRange = ref([])
 
 const query = reactive({
+  traceId: '',
   status: '',
   taskType: '',
   triggerEntry: '',
@@ -299,6 +311,7 @@ async function load() {
     }
 
     // 添加筛选参数
+    if (query.traceId) params.traceId = query.traceId
     if (query.status) params.status = query.status
     if (query.taskType) params.taskType = query.taskType
     if (query.triggerEntry) params.triggerEntry = query.triggerEntry
@@ -333,6 +346,7 @@ async function load() {
 
 function reset() {
   Object.assign(query, {
+    traceId: '',
     status: '',
     taskType: '',
     triggerEntry: '',

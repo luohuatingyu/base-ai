@@ -247,6 +247,7 @@ public class TaskTraceService {
      *
      * @param userId 当前用户ID
      * @param admin 是否为管理员（管理员可查看所有用户的任务）
+     * @param traceId Trace ID 精确过滤
      * @param status 任务状态过滤（RUNNING/SUCCESS/FAILED/CANCELLED等）
      * @param taskType 任务类型过滤
      * @param triggerEntry 触发入口过滤
@@ -258,7 +259,7 @@ public class TaskTraceService {
      * @param pageSize 每页大小（默认20，最大100）
      * @return 包含records（任务列表）、total（总数）、page（当前页）、pageSize（每页大小）的Map
      */
-    public Map<String, Object> traces(Long userId, boolean admin, String status, String taskType, String triggerEntry,
+    public Map<String, Object> traces(Long userId, boolean admin, String traceId, String status, String taskType, String triggerEntry,
                                        String logKeyword, Boolean onlyWithLogs, String startTime, String endTime,
                                        Integer page, Integer pageSize) {
         StringBuilder sql = new StringBuilder("""
@@ -278,6 +279,8 @@ public class TaskTraceService {
 
         // 非管理员只能查看自己的任务
         if (!admin) { sql.append(" AND t.owner_user_id=?"); args.add(userId); }
+        // Trace ID 使用精确匹配，避免误命中其他任务
+        if (hasText(traceId)) { sql.append(" AND t.trace_id=?"); args.add(traceId.trim()); }
         // 状态过滤
         if (hasText(status)) { sql.append(" AND t.status=?"); args.add(status.trim().toUpperCase(Locale.ROOT)); }
         // 任务类型过滤
@@ -318,6 +321,7 @@ public class TaskTraceService {
 
         // 复制所有WHERE条件到count查询
         if (!admin) countSqlBuilder.append(" AND t.owner_user_id=?");
+        if (hasText(traceId)) countSqlBuilder.append(" AND t.trace_id=?");
         if (hasText(status)) countSqlBuilder.append(" AND t.status=?");
         if (hasText(taskType)) countSqlBuilder.append(" AND t.task_type=?");
         if (hasText(triggerEntry)) countSqlBuilder.append(" AND t.trigger_entry=?");
@@ -365,7 +369,7 @@ public class TaskTraceService {
     }
 
     public List<Map<String, Object>> running(Long userId, boolean admin) {
-        Map<String, Object> result = traces(userId, admin, null, null, null, null, null, null, null, 1, 500);
+        Map<String, Object> result = traces(userId, admin, null, null, null, null, null, null, null, null, 1, 500);
         List<Map<String, Object>> records = (List<Map<String, Object>>) result.get("records");
         return records.stream()
                 .filter(row -> List.of("RUNNING", "CANCEL_REQUESTED").contains(String.valueOf(row.get("status"))))

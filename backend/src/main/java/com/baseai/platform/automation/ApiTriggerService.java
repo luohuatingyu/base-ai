@@ -144,15 +144,22 @@ public class ApiTriggerService {
         return call(toTemporaryView(command));
     }
 
-    /** 查询单个配置的最近执行日志。 */
-    public List<ApiTriggerModels.LogView> logs(Long configId) {
+    /** 查询单个配置的最近执行日志，并支持按 Trace ID 精确过滤。 */
+    public List<ApiTriggerModels.LogView> logs(Long configId, String traceId) {
         get(configId);
-        return jdbcTemplate.query("""
-            SELECT * FROM automation_api_trigger_log WHERE config_id=? ORDER BY triggered_at DESC LIMIT 200
-            """, (rs, row) -> new ApiTriggerModels.LogView(rs.getLong("id"), rs.getLong("config_id"), rs.getString("trace_id"),
+        StringBuilder sql = new StringBuilder("SELECT * FROM automation_api_trigger_log WHERE config_id=?");
+        List<Object> args = new ArrayList<>();
+        args.add(configId);
+        if (traceId != null && !traceId.isBlank()) {
+            sql.append(" AND trace_id=?");
+            args.add(traceId.trim());
+        }
+        sql.append(" ORDER BY triggered_at DESC LIMIT 200");
+        return jdbcTemplate.query(sql.toString(), (rs, row) -> new ApiTriggerModels.LogView(
+            rs.getLong("id"), rs.getLong("config_id"), rs.getString("trace_id"),
             rs.getString("trigger_type"), rs.getString("status"), (Integer) rs.getObject("http_status"),
             (Long) rs.getObject("duration_ms"), rs.getString("response_summary"), rs.getString("error_message"),
-            rs.getTimestamp("triggered_at").toLocalDateTime()), configId);
+            rs.getTimestamp("triggered_at").toLocalDateTime()), args.toArray());
     }
 
     /** 发起认证请求和目标 HTTP 请求。 */

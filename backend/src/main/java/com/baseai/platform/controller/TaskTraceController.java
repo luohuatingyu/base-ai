@@ -30,7 +30,8 @@ public class TaskTraceController {
 
     /** 按条件查询当前用户可见任务。 */
     @GetMapping
-    public Map<String, Object> traces(@RequestParam(required = false) String status,
+    public Map<String, Object> traces(@RequestParam(required = false) String traceId,
+                                       @RequestParam(required = false) String status,
                                        @RequestParam(required = false) String taskType,
                                        @RequestParam(required = false) String triggerEntry,
                                        @RequestParam(required = false) String logKeyword,
@@ -40,7 +41,7 @@ public class TaskTraceController {
                                        @RequestParam(required = false, defaultValue = "1") Integer page,
                                        @RequestParam(required = false, defaultValue = "20") Integer pageSize) {
         AuthUser user = AuthContext.require();
-        return service.traces(user.id(), isAdmin(user), status, taskType, triggerEntry,
+        return service.traces(user.id(), isAdmin(user), traceId, status, taskType, triggerEntry,
                              logKeyword, onlyWithLogs, startTime, endTime, page, pageSize);
     }
 

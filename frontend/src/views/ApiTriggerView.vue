@@ -126,7 +126,22 @@
       <template #footer><el-button @click="visible=false">{{ t('common.cancel') }}</el-button><el-button v-if="auth.hasPermission('automation:api-trigger:trigger')" :loading="testing" @click="test">{{ t('apiTrigger.temporaryTest') }}</el-button><el-button type="primary" @click="save">{{ t('apiTrigger.save') }}</el-button></template>
     </el-dialog>
     <el-dialog v-model="resultVisible" :title="t('apiTrigger.result')" width="720px"><el-descriptions :column="3" border><el-descriptions-item :label="t('apiTrigger.http')">{{result.httpStatus}}</el-descriptions-item><el-descriptions-item :label="t('apiTrigger.duration')">{{result.durationMs}} ms</el-descriptions-item></el-descriptions><pre class="response-body">{{result.responseBody}}</pre></el-dialog>
-    <el-drawer v-model="logsVisible" :title="t('apiTrigger.executionLogs')" size="65%"><el-table :data="logs"><el-table-column prop="triggeredAt" :label="t('common.time')" min-width="180"/><el-table-column prop="triggerType" :label="t('apiTrigger.trigger')"/><el-table-column prop="status" :label="t('common.status')"/><el-table-column prop="httpStatus" label="HTTP"/><el-table-column prop="durationMs" :label="t('apiTrigger.duration')"/><el-table-column prop="responseSummary" :label="t('apiTrigger.summary')" min-width="260" show-overflow-tooltip/></el-table></el-drawer>
+    <el-drawer v-model="logsVisible" :title="t('apiTrigger.executionLogs')" size="65%">
+      <div class="filter-row">
+        <el-input v-model="logFilter.traceId" clearable :placeholder="t('tasks.traceId')" @keyup.enter="loadExecutionLogs"/>
+        <el-button type="primary" @click="loadExecutionLogs">{{ t('common.query') }}</el-button>
+        <el-button @click="resetExecutionLogFilter">{{ t('common.reset') }}</el-button>
+      </div>
+      <el-table :data="logs">
+        <el-table-column prop="triggeredAt" :label="t('common.time')" min-width="180"/>
+        <el-table-column prop="traceId" :label="t('tasks.traceId')" min-width="280" show-overflow-tooltip/>
+        <el-table-column prop="triggerType" :label="t('apiTrigger.trigger')"/>
+        <el-table-column prop="status" :label="t('common.status')"/>
+        <el-table-column prop="httpStatus" label="HTTP"/>
+        <el-table-column prop="durationMs" :label="t('apiTrigger.duration')"/>
+        <el-table-column prop="responseSummary" :label="t('apiTrigger.summary')" min-width="260" show-overflow-tooltip/>
+      </el-table>
+    </el-drawer>
   </div>
 </template>
 <script setup>
@@ -138,6 +153,7 @@ import { useI18n } from 'vue-i18n'
 import { extractTraceId, fetchTaskProgress, resolveActiveTab } from '../utils/apiTrigger'
 const { t } = useI18n(); const auth=useAuthStore(),rows=ref([]),visible=ref(false),testing=ref(false),resultVisible=ref(false),logsVisible=ref(false),logs=ref([]),result=ref({})
 const query=reactive({keyword:'',enabled:''}),methods=['GET','POST','PUT','PATCH','DELETE']
+const logFilter=reactive({traceId:''}),executionLogConfigId=ref(null)
 const defaults={id:null,name:'',description:'',httpMethod:'GET',url:'',headers:'{}',queryParams:'{}',requestBody:'',contentType:'application/json',cronExpression:'',timeoutSeconds:30,enabled:true,authEnabled:false,authUrl:'',authMethod:'POST',authBody:'',authContentType:'application/json',authTokenPath:'data.token',authTokenHeader:'Authorization',authTokenPrefix:'Bearer '}
 const form=reactive({...defaults})
 const activeTab=ref('basic'),progressTraceId=ref(''),progressLoading=ref(false),progressDetail=ref(null),progressLogs=ref([]),progressError=ref(''),progressLoadedTraceId=ref('')
@@ -207,8 +223,16 @@ async function queryProgress(){
 function statusType(status){return {SUCCESS:'success',FAILED:'danger',CANCELLED:'info',CANCEL_REQUESTED:'warning',RUNNING:'primary'}[status]||'info'}
 /** 将链路日志级别映射为标签样式。 */
 function logLevelType(level){return {ERROR:'danger',WARN:'warning',INFO:'success',DEBUG:'info'}[level]||'info'}
-/** 查询配置执行日志。 */
-async function showLogs(row){logs.value=(await http.get(`/automation/api-triggers/${row.id}/logs`)).data;logsVisible.value=true}
+/** 查询当前配置的执行日志，并按输入的 Trace ID 精确过滤。 */
+async function loadExecutionLogs(){
+  if(!executionLogConfigId.value)return
+  const traceId=logFilter.traceId.trim()
+  logs.value=(await http.get(`/automation/api-triggers/${executionLogConfigId.value}/logs`,{params:{traceId:traceId||undefined}})).data
+}
+/** 打开配置执行日志并清除上一个配置遗留的筛选条件。 */
+async function showLogs(row){executionLogConfigId.value=row.id;logFilter.traceId='';await loadExecutionLogs();logsVisible.value=true}
+/** 清空执行日志的 Trace ID 筛选并重新查询。 */
+async function resetExecutionLogFilter(){logFilter.traceId='';await loadExecutionLogs()}
 async function disable(row){await ElMessageBox.confirm(t('apiTrigger.disableConfirm',{name:row.name}),t('common.confirm'),{type:'warning'});await http.delete(`/automation/api-triggers/${row.id}`);load()}
 async function voidConfig(row){await ElMessageBox.confirm(t('apiTrigger.voidConfirm',{name:row.name}),t('apiTrigger.voidTitle'),{type:'warning'});await http.post(`/automation/api-triggers/${row.id}/void`);load()}
 watch(()=>form.authEnabled,enabled=>{activeTab.value=resolveActiveTab(enabled,activeTab.value)})

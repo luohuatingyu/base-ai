@@ -88,7 +88,11 @@ public class ApiTriggerController {
     @TraceType(value = "API_TRIGGER_TEST", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.ExecutionResult test(@RequestBody ApiTriggerModels.Command command) { return service.test(command); }
 
+    /** 查询当前接口触发器配置的执行日志，并支持 Trace ID 精确过滤。 */
     @GetMapping("/{id}/logs")
     @RequiredPermission("automation:api-trigger:logs")
-    public List<ApiTriggerModels.LogView> logs(@PathVariable Long id) { return service.logs(id); }
+    public List<ApiTriggerModels.LogView> logs(@PathVariable Long id,
+                                                @RequestParam(required = false) String traceId) {
+        return service.logs(id, traceId);
+    }
 }
