@@ -159,17 +159,36 @@
 
       <!-- 日志时间线 -->
       <div class="log-timeline" v-loading="logLoading">
-        <div v-for="item in filteredLogs" :key="item.id" class="log-entry">
-          <div class="log-meta">
-            <span class="log-time">{{ item.logged_at }}</span>
-            <el-tag :type="levelType(item.level)" size="small" class="log-level">
-              {{ item.level }}
-            </el-tag>
-            <el-tag type="info" size="small" class="log-source">{{ item.source }}</el-tag>
+        <div class="log-list-summary">
+          <span class="log-list-count">{{ filteredLogs.length }}</span>
+          <span>{{ t('tasks.log.title') }}</span>
+        </div>
+        <div
+          v-for="item in filteredLogs"
+          :key="item.id"
+          class="log-entry"
+          :class="`log-entry--${String(item.level || 'info').toLowerCase()}`"
+        >
+          <div class="log-entry-head">
+            <div class="log-meta">
+              <span class="log-time">{{ item.logged_at }}</span>
+              <el-tag :type="levelType(item.level)" size="small" effect="dark" class="log-level">
+                {{ item.level }}
+              </el-tag>
+              <el-tag type="info" size="small" effect="plain" class="log-source">{{ item.source }}</el-tag>
+            </div>
+            <div v-if="item.logger_name || item.thread_name" class="log-context">
+              <span v-if="item.logger_name">{{ item.logger_name }}</span>
+              <span v-if="item.thread_name">{{ item.thread_name }}</span>
+            </div>
           </div>
           <div class="log-message">
             <code>{{ item.message }}</code>
           </div>
+          <details v-if="item.throwable" class="log-throwable">
+            <summary>{{ firstThrowableLine(item.throwable) }}</summary>
+            <pre>{{ item.throwable }}</pre>
+          </details>
         </div>
         <el-empty v-if="!filteredLogs.length" :description="t('tasks.log.noLogs')"/>
       </div>
@@ -301,6 +320,11 @@ function levelType(level) {
     INFO: 'info',
     DEBUG: 'info'
   }[level] || 'info'
+}
+
+/** 提取异常首行作为折叠摘要 */
+function firstThrowableLine(throwable) {
+  return String(throwable).split('\n')[0]
 }
 
 /** 展示任务详情 */
@@ -597,29 +621,87 @@ onUnmounted(stopLogRefresh)
 .log-timeline {
   flex: 1;
   overflow-y: auto;
-  padding: 4px;
+  padding: 4px 8px 4px 4px;
+}
+
+.log-list-summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  color: var(--app-muted);
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid var(--app-border);
+  backdrop-filter: blur(8px);
+}
+
+.log-list-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--app-primary);
+  font-weight: 700;
+  background: #eef4ff;
+  border-radius: 999px;
 }
 
 .log-entry {
-  padding: 16px;
+  position: relative;
+  padding: 0;
   margin-bottom: 12px;
   background: #ffffff;
   border: 1px solid var(--app-border);
+  border-left: 4px solid #909399;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.log-entry--error {
+  border-left-color: #f56c6c;
+}
+
+.log-entry--warn {
+  border-left-color: #e6a23c;
+}
+
+.log-entry--info {
+  border-left-color: #409eff;
+}
+
+.log-entry--debug {
+  border-left-color: #909399;
 }
 
 .log-entry:hover {
-  border-color: var(--app-primary);
+  border-top-color: #b9cdf8;
+  border-right-color: #b9cdf8;
+  border-bottom-color: #b9cdf8;
   box-shadow: 0 4px 12px rgba(53, 106, 230, 0.1);
+}
+
+.log-entry-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  background: #fbfcff;
+  border-bottom: 1px solid #edf0f5;
 }
 
 .log-meta {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
   flex-wrap: wrap;
 }
 
@@ -635,11 +717,28 @@ onUnmounted(stopLogRefresh)
   font-size: 12px;
 }
 
+.log-context {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  min-width: 0;
+  color: var(--app-muted);
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.log-context span {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .log-message {
-  padding: 10px;
-  background: #f5f7fa;
-  border-radius: 6px;
-  border-left: 3px solid var(--app-primary);
+  padding: 14px;
+  background: #ffffff;
 }
 
 .log-message code {
@@ -650,6 +749,37 @@ onUnmounted(stopLogRefresh)
   color: #2c3e50;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.log-throwable {
+  margin: 0 14px 14px;
+  color: #a63d3d;
+  background: #fff6f6;
+  border: 1px solid #f5c2c2;
+  border-radius: 6px;
+}
+
+.log-throwable summary {
+  padding: 10px 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  word-break: break-word;
+}
+
+.log-throwable pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: #7c2d2d;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid #f5c2c2;
 }
 
 /* 响应式优化 */
@@ -692,9 +822,19 @@ onUnmounted(stopLogRefresh)
     width: 100%;
   }
 
+  .log-entry-head,
   .log-meta {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .log-context {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .log-context span {
+    max-width: 100%;
   }
 
   .log-time {
