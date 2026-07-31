@@ -183,7 +183,12 @@
             </div>
           </div>
           <div v-if="item.displayFields.length" class="log-fields">
-            <div v-for="(field, fieldIndex) in item.displayFields" :key="`${field.name}-${fieldIndex}`" class="log-field">
+            <div
+              v-for="(field, fieldIndex) in item.displayFields"
+              :key="`${field.name}-${fieldIndex}`"
+              class="log-field"
+              :class="{ 'log-field--wide': !field.isCompact }"
+            >
               <div class="log-field-head">
                 <span class="log-field-name">{{ field.name }}:</span>
                 <el-button
@@ -831,6 +836,7 @@ onUnmounted(stopLogRefresh)
 
 .log-fields {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
   padding: 14px;
   background: #ffffff;
@@ -842,6 +848,10 @@ onUnmounted(stopLogRefresh)
   background: #f8faff;
   border: 1px solid #e4eaf4;
   border-radius: 7px;
+}
+
+.log-field--wide {
+  grid-column: 1 / -1;
 }
 
 .log-field-head {

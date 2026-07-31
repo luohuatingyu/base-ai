@@ -19,7 +19,14 @@ export function parseTaskLogFields(message) {
 function formatTaskLogField(name, rawValue) {
   const jsonValue = parseJsonValue(rawValue)
   if (!jsonValue.matched) {
-    return { name, rawValue, compactValue: rawValue, displayValue: rawValue, isJson: false }
+    return {
+      name,
+      rawValue,
+      compactValue: rawValue,
+      displayValue: rawValue,
+      isJson: false,
+      isCompact: !rawValue.includes('\n') && rawValue.length <= 40
+    }
   }
 
   return {
@@ -27,7 +34,8 @@ function formatTaskLogField(name, rawValue) {
     rawValue,
     compactValue: JSON.stringify(jsonValue.value),
     displayValue: JSON.stringify(jsonValue.value, null, 2),
-    isJson: true
+    isJson: true,
+    isCompact: false
   }
 }
 

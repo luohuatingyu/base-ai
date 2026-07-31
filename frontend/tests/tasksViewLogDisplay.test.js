@@ -33,10 +33,18 @@ test('任务日志为空时继续展示空状态', () => {
 
 test('结构化日志拆分全部字段并保留带空格内容', () => {
   assert.deepEqual(parseTaskLogFields('event=llm_user_prompt content=Hello Base AI duration_ms=12.5'), [
-    { name: 'event', rawValue: 'llm_user_prompt', compactValue: 'llm_user_prompt', displayValue: 'llm_user_prompt', isJson: false },
-    { name: 'content', rawValue: 'Hello Base AI', compactValue: 'Hello Base AI', displayValue: 'Hello Base AI', isJson: false },
-    { name: 'duration_ms', rawValue: '12.5', compactValue: '12.5', displayValue: '12.5', isJson: false }
+    { name: 'event', rawValue: 'llm_user_prompt', compactValue: 'llm_user_prompt', displayValue: 'llm_user_prompt', isJson: false, isCompact: true },
+    { name: 'content', rawValue: 'Hello Base AI', compactValue: 'Hello Base AI', displayValue: 'Hello Base AI', isJson: false, isCompact: true },
+    { name: 'duration_ms', rawValue: '12.5', compactValue: '12.5', displayValue: '12.5', isJson: false, isCompact: true }
   ])
+})
+
+test('短日志字段紧凑展示，长文本、换行和 JSON 字段独占整行', () => {
+  const boundaryValue = 'x'.repeat(40)
+  const fields = parseTaskLogFields(`event=http_response_body method=POST path=/api/ai/chat boundary=${boundaryValue} long=${boundaryValue}x multiline=line1\nline2 json={"ok":true}`)
+
+  assert.deepEqual(fields.map(field => field.isCompact), [true, true, true, true, false, false, false])
+  assert.equal(fields.at(-1).isJson, true)
 })
 
 test('JSON 日志字段默认提供折叠摘要和格式化内容', () => {
@@ -53,6 +61,9 @@ test('空字段可复制且非结构化日志不被错误拆分', () => {
 })
 
 test('任务日志字段和原始消息均提供复制入口且 JSON 默认折叠', () => {
+  assert.match(tasksViewSource, /:class="\{ 'log-field--wide': !field\.isCompact \}"/)
+  assert.match(tasksViewSource, /\.log-fields\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(220px,\s*1fr\)\)/s)
+  assert.match(tasksViewSource, /\.log-field--wide\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s)
   assert.match(tasksViewSource, /class="log-field-copy"/)
   assert.match(tasksViewSource, /copyLogValue\(logFieldCopyValue\(field, logFieldKey\(item, fieldIndex\)\)\)/)
   assert.match(tasksViewSource, /<details\s+v-if="field\.isJson"\s+class="log-field-json"/)
