@@ -2,102 +2,101 @@
 
 ## 📋 Git 基准点
 
-Commit: 88924e974578ff9eba1b0af2babac98d015534c7
-- 提交说明: Add asynchronous HTTP request trace logging
+Commit: 9e695dc0949848c050cc6b859c473b72ec4de539
+- 提交说明: Add Trace ID filters for task logs
 - 测试日期: 2026-07-31
 - 分支: master
 
 ## 🎯 当前变更范围
 
-- 迁移 `ba23896b` 及其后续 HTTP 请求任务日志逻辑，按请求头、请求体、响应头、响应体分别记录日志并保持业务执行顺序。
-- 文本、JSON、XML、表单、JavaScript 和 GraphQL 正文完整采集，不设置请求体或响应体最大长度。
-- `image/*`、multipart、附件及其他文件或二进制正文不生成正文日志，仅保留请求/响应头、状态和耗时信息。
-- 为未被业务追踪切面接管的已认证 API 请求异步创建 HTTP 兜底任务，并在同一异步执行中顺序标记成功或失败。
-- API 触发器改为按上游声明字符集解码响应，JSON 未声明字符集时默认使用 UTF-8。
+- 系统任务列表新增 Trace ID 精确筛选，并与状态、任务类型、触发入口、日志和时间等既有条件组合使用。
+- 系统任务列表与总数查询使用一致筛选条件，非管理员继续受 `owner_user_id` 数据权限约束。
+- 接口触发器执行日志在当前配置 ID 范围内新增 Trace ID 精确筛选，并展示 Trace ID 列。
+- 两个前端筛选入口均支持查询、回车触发和重置，未传 Trace ID 时保持原有接口行为。
+- 本次不涉及数据库结构、依赖、配置迁移或跨配置数据查询。
 
 ## 📋 当前变更测试结果（2026-07-31）
 
-**变更范围**：HTTP 请求与响应详细日志、异步 HTTP 兜底任务、日志顺序和 API 触发响应解码。
+**变更范围**：系统任务调度与接口触发器执行日志的 Trace ID 精确检索。
 
 **测试执行结果**：
-- 后端定向测试：13 个，通过 13 个（100%）
-- 后端完整测试：185 个，通过 185 个（100%）
-- Compose 后端构建阶段测试：183 个，通过 183 个（100%，新增最后两个纯测试用例前执行）
+- 后端定向测试：9 个，通过 9 个（100%）
+- 前端定向测试：17 个，通过 17 个（100%）
+- 后端完整测试：191 个，通过 191 个（100%）
+- 前端完整测试：148 个，通过 148 个（100%）
+- Compose 后端构建阶段测试：191 个，通过 191 个（100%）
 - 失败：0 个
 - 错误：0 个
 - 跳过：0 个
 
 **关键模块测试**：
-- RequestContextFilter：3/3，通过完整长正文、不记录图片正文、请求和响应日志顺序校验。
-- TraceIdInterceptor：3/3，通过后端 traceId、配置排除和注解排除接口 HTTP 日志上下文校验。
-- HttpRequestTraceInterceptor：3/3，通过认证用户异步提交、已有业务任务去重和未认证请求跳过校验。
-- HttpRequestTraceAsyncWriter：2/2，通过任务创建后成功/失败终态顺序校验。
-- ApiTriggerService 响应解码：2/2，通过缺省 UTF-8 和显式 UTF-16LE 字符集校验。
-- 后端完整回归：185/185，Security、Service、Controller、任务追踪和日志队列等历史功能全部通过。
+- TaskTraceService：4/4，通过 Trace ID 精确命中、无结果、未传参数兼容、组合筛选、用户数据隔离及分页总数校验。
+- ApiTriggerService：5/5，通过当前配置范围内 Trace ID 命中、无结果、未传参数兼容及响应字符集历史用例。
+- 前端定向验证：17/17，通过两个页面参数传递、重置行为和执行日志 Trace ID 列展示。
+- 后端完整回归：191/191，Security、Service、Controller、任务追踪和自动化模块等历史功能全部通过。
+- 前端完整回归：148/148，页面结构、交互契约、本地化和工具函数等历史功能全部通过。
 - Compose 运行态：Backend、Frontend、Python Worker 最终均为 healthy。
 
 **实施验证记录**：
-- 宿主机未安装 Maven，直接执行 `mvn` 返回 `command not found`，随后使用 Maven 3.9.9 / Java 17 Docker 容器完成测试。
-- 第一次定向测试 6 个中 1 个失败：旧测试仍断言 `@TraceIgnored` 接口不生成 traceId；迁移逻辑要求其保留 HTTP 日志 traceId，修正断言后通过。
-- 首次 Compose 启动因 `domestic-trade-backend-1` 占用 8080 失败，停止旧后端容器后重试。
-- 第二次启动因 `domestic-trade-frontend-1` 占用 80 失败，停止旧前端容器后重试。
-- 最终 Backend、Frontend、Python Worker 均完成健康检查。
+- 宿主机未安装 Maven，直接执行 `mvn` 返回 `command not found`；随后使用项目锁定的 Maven 3.9.9 / Java 17 Docker 镜像完成定向和完整测试。
+- 前端测试使用 Node.js 内置测试运行器执行，定向与完整测试均一次通过。
+- `docker compose up --build -d` 一次成功，构建阶段再次运行 191 个后端测试并全部通过。
+- Backend `/api/open/health`、Frontend `/health` 返回 `UP`，三个 Compose 服务均为 healthy。
 
 ## ✅ 验收标准—测试用例映射
 
 | 验收标准 | 测试层级与前置条件 | 输入/操作 | 预期结果 | 场景类型 |
 | --- | --- | --- | --- | --- |
-| 完整记录文本请求和响应 | Filter 单元测试；20,000 字符 JSON | 请求和返回相同长正文 | 请求体和响应体日志包含完整正文且下游可重复读取 | 正常、边界、兼容性 |
-| 图片和文件正文不记录 | Filter 单元测试；`image/png` 请求与响应 | 写入二进制图片字节 | 仅产生请求头和响应头日志，不产生正文日志 | 安全、边界 |
-| HTTP 日志保持业务时序 | Filter 与拦截器单元测试 | 请求日志、业务执行、响应日志 | 请求头/体先于响应头/体，日志均关联 traceId | 正常、回归 |
-| 未接管 API 异步创建任务 | 拦截器和异步写入器单元测试；已认证用户 | 完成无业务任务的 API 请求 | 提交异步任务并按创建、终态顺序写入 | 正常、性能 |
-| 不重复创建任务 | 拦截器单元测试；请求已有任务标记 | 完成请求 | 不调用异步写入器 | 兼容性、回归 |
-| 无归属用户不创建任务 | 拦截器单元测试；未认证请求 | 完成请求 | 不提交兜底任务 | 权限、安全 |
-| HTTP 失败标记任务失败 | 异步写入器单元测试；503 状态摘要 | 执行异步写入 | 创建任务后写入失败状态和原因 | 异常 |
-| 上游响应按正确字符集解码 | Service 单元测试；无 charset JSON 和 UTF-16LE 文本 | 调用响应解码逻辑 | 分别按 UTF-8 和声明字符集还原正文 | 正常、兼容性 |
-| 历史功能保持稳定 | 后端完整测试与 Compose 运行态 | 执行完整测试、重建并启动服务 | 185 个测试通过，三个服务 healthy | 回归、集成 |
+| 系统任务按 Trace ID 精确命中 | Service 单元测试；存在目标任务 | Trace ID 与 `SUCCESS` 状态组合查询 | 列表和总数查询均使用精确条件并返回目标任务 | 正常、兼容性 |
+| 系统任务无匹配时返回空分页 | Service 单元测试；目标 Trace ID 不存在 | 查询第二页、每页 10 条 | 记录为空、总数为 0，分页参数保持一致 | 异常、边界 |
+| 非管理员不能越权定位任务 | Service SQL 单元测试；普通用户 ID 7 | 按 Trace ID 查询 | 列表和总数查询同时包含 `owner_user_id` 与 Trace ID 条件 | 权限、安全 |
+| 未传 Trace ID 保持原行为 | Service 单元测试；空白 Trace ID | 执行任务与日志查询 | SQL 不增加 Trace ID 条件，原列表行为不变 | 兼容性、回归 |
+| 接口日志仅查询当前配置 | Service 单元测试；配置 ID 9 | 按 Trace ID 查询执行日志 | SQL 同时包含配置 ID 与 Trace ID 精确条件 | 权限、安全 |
+| 接口日志 Trace ID 无匹配 | Service 单元测试；目标日志不存在 | 查询缺失 Trace ID | 返回空列表，不扩大到其他配置 | 异常、边界 |
+| 前端正确传参与重置 | Node 静态交互测试；两个 Vue 页面 | 输入、查询并重置 Trace ID | 请求携带参数，重置清空参数并重新查询 | 正常、回归 |
+| 接口日志展示 Trace ID | Node 组件结构测试；执行日志抽屉 | 打开日志抽屉 | 表格包含 Trace ID 列 | 正常、可用性 |
+| 历史功能保持稳定 | 完整前后端测试与 Compose 运行态 | 执行完整测试、重建并启动服务 | 后端 191 个、前端 148 个测试通过，三个服务 healthy | 回归、集成 |
 
 ## 📊 当前测试执行记录
 
 | 测试范围 | 执行命令 | 结果 |
 | --- | --- | --- |
-| 初次定向测试 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=RequestContextFilterTest,TraceIdInterceptorTest test` | 6 个中 5 通过、1 失败；旧注解排除断言与迁移语义不一致 |
-| HTTP 日志与异步任务定向测试 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=RequestContextFilterTest,TraceIdInterceptorTest,HttpRequestTraceAsyncWriterTest,HttpRequestTraceInterceptorTest,ApiTriggerServiceResponseDecodingTest test` | 13 通过，0 失败，0 错误，0 跳过 |
-| 后端完整回归 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 185 通过，0 失败，0 错误，0 跳过 |
-| Compose 构建启动 | `docker compose up --build -d` | 后端构建测试 183/183 通过；处理 8080、80 端口占用后三个服务 healthy |
+| 后端定向测试 | `docker run --rm -v "$PWD":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=TaskTraceServiceTraceIdTest,ApiTriggerServiceResponseDecodingTest test` | 9 通过，0 失败，0 错误，0 跳过 |
+| 前端定向测试 | `node --test test/api-trigger.test.mjs test/system-pagination.test.mjs` | 17 通过，0 失败，0 跳过 |
+| 后端完整回归 | `docker run --rm -v "$PWD":/workspace -v "$HOME/.m2":/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B -ntp` | 191 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `node --test test/*.test.mjs tests/*.test.js` | 148 通过，0 失败，0 跳过 |
+| Compose 构建启动 | `docker compose up --build -d` | 后端构建测试 191/191 通过；三个服务一次启动成功并均为 healthy |
 | Compose 状态检查 | `docker compose ps` | Backend、Frontend、Python Worker 均为 healthy |
 
 ## 📊 测试覆盖范围
 
-- Web Filter：请求体缓存、请求头/体日志、响应头/体日志、内容类型判断、字符集处理和异常隔离。
-- Web Interceptor：traceId 建立、配置排除、业务任务去重和异步兜底任务提交。
-- Trace Service 集成边界：任务创建后成功或失败终态更新顺序。
-- Automation Service：上游响应正文字符集解码。
-- 回归范围：后端全部 185 个自动化测试及 Compose 三服务运行态。
+- Task Trace Controller/Service：可选参数传递、精确 SQL 条件、组合筛选、分页总数和用户数据隔离。
+- API Trigger Controller/Service：当前配置日志边界、精确 Trace ID 条件、空筛选兼容和空结果。
+- Frontend Views：系统任务筛选传参/重置、接口执行日志筛选传参/重置和 Trace ID 列。
+- 回归范围：后端全部 191 个测试、前端全部 148 个测试及 Compose 三服务运行态。
 
 ## 🔄 重测触发条件
 
-- 修改 `RequestContextFilter`、`TraceIdInterceptor`、`HttpRequestTraceInterceptor` 或异步写入器时必须重测。
-- 修改任务追踪创建、终态更新、日志队列、追踪排除配置或认证上下文时必须重测。
-- 修改可记录媒体类型、正文字符集规则或 API 触发 HTTP 调用时必须重测。
+- 修改任务列表筛选、权限条件、分页或总数查询时必须重测。
+- 修改接口触发器配置归属、执行日志查询或日志视图模型时必须重测。
+- 修改两个前端页面的查询参数、重置逻辑或执行日志表格时必须重测。
 - 修改 `backend/src/main/java/` 下其他业务代码时按基准点重新执行后端完整测试。
 
 ## ⚠️ 已知问题
 
-- 按确认要求，请求体和响应体不设置最大采集长度；超大文本正文会增加请求线程内存占用和日志队列压力。
-- 图片、附件和二进制正文不打印，但响应包装器仍需参与响应回写流程。
-- HTTP 兜底任务采用异步最终一致性，接口返回后任务列表可能短暂不可见。
-- 异步线程池满载或服务异常退出时，兜底任务可能提交失败；失败会记录告警但不会影响接口响应。
+- Trace ID 使用精确匹配，输入不完整或大小写不同不会命中，这是本次确认的预期行为。
+- 前端自动化测试为源码交互契约测试，未执行浏览器端登录后的真实页面 E2E 操作。
+- 接口触发器执行日志仍受原有最近 200 条上限约束；指定 Trace ID 的记录若超出当前查询排序范围，SQL 会先筛选再应用该上限。
 
 ## 📝 下次测试建议
 
-1. 增加高并发和超大文本正文压力测试，评估无长度上限时的堆内存、GC 和日志队列压力。
-2. 增加真实数据库集成测试，验证异步任务和任务日志批量落库的最终一致性。
-3. 增加流式响应、压缩响应和更多二进制媒体类型的运行态验证。
+1. 增加基于真实 MySQL 数据的集成测试，验证列表和总数 SQL 在多日志关联下保持一致。
+2. 增加浏览器 E2E 测试，覆盖登录后输入、回车查询、重置和切换接口配置的完整流程。
+3. 监控高频 Trace ID 定位场景的查询耗时；数据量增长后评估现有 Trace ID 索引使用情况。
 
 ## ↩️ 回滚方式
 
-- 回滚提交 `88924e9` 并重新执行 `docker compose up --build -d`，可恢复迁移前的单条 HTTP 摘要日志，并移除 HTTP 兜底任务补齐逻辑。
+- 回滚提交 `9e695dc` 并重新执行 `docker compose up --build -d`，可移除两个 Trace ID 筛选入口并恢复原接口签名。
 - 本次不涉及数据库结构、依赖、配置迁移或文件删除。
 
 # 历史测试记录（开放平台响应示例）
