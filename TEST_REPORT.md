@@ -2,6 +2,108 @@
 
 ## 📋 Git 基准点
 
+Commit: 88924e974578ff9eba1b0af2babac98d015534c7
+- 提交说明: Add asynchronous HTTP request trace logging
+- 测试日期: 2026-07-31
+- 分支: master
+
+## 🎯 当前变更范围
+
+- 迁移 `ba23896b` 及其后续 HTTP 请求任务日志逻辑，按请求头、请求体、响应头、响应体分别记录日志并保持业务执行顺序。
+- 文本、JSON、XML、表单、JavaScript 和 GraphQL 正文完整采集，不设置请求体或响应体最大长度。
+- `image/*`、multipart、附件及其他文件或二进制正文不生成正文日志，仅保留请求/响应头、状态和耗时信息。
+- 为未被业务追踪切面接管的已认证 API 请求异步创建 HTTP 兜底任务，并在同一异步执行中顺序标记成功或失败。
+- API 触发器改为按上游声明字符集解码响应，JSON 未声明字符集时默认使用 UTF-8。
+
+## 📋 当前变更测试结果（2026-07-31）
+
+**变更范围**：HTTP 请求与响应详细日志、异步 HTTP 兜底任务、日志顺序和 API 触发响应解码。
+
+**测试执行结果**：
+- 后端定向测试：13 个，通过 13 个（100%）
+- 后端完整测试：185 个，通过 185 个（100%）
+- Compose 后端构建阶段测试：183 个，通过 183 个（100%，新增最后两个纯测试用例前执行）
+- 失败：0 个
+- 错误：0 个
+- 跳过：0 个
+
+**关键模块测试**：
+- RequestContextFilter：3/3，通过完整长正文、不记录图片正文、请求和响应日志顺序校验。
+- TraceIdInterceptor：3/3，通过后端 traceId、配置排除和注解排除接口 HTTP 日志上下文校验。
+- HttpRequestTraceInterceptor：3/3，通过认证用户异步提交、已有业务任务去重和未认证请求跳过校验。
+- HttpRequestTraceAsyncWriter：2/2，通过任务创建后成功/失败终态顺序校验。
+- ApiTriggerService 响应解码：2/2，通过缺省 UTF-8 和显式 UTF-16LE 字符集校验。
+- 后端完整回归：185/185，Security、Service、Controller、任务追踪和日志队列等历史功能全部通过。
+- Compose 运行态：Backend、Frontend、Python Worker 最终均为 healthy。
+
+**实施验证记录**：
+- 宿主机未安装 Maven，直接执行 `mvn` 返回 `command not found`，随后使用 Maven 3.9.9 / Java 17 Docker 容器完成测试。
+- 第一次定向测试 6 个中 1 个失败：旧测试仍断言 `@TraceIgnored` 接口不生成 traceId；迁移逻辑要求其保留 HTTP 日志 traceId，修正断言后通过。
+- 首次 Compose 启动因 `domestic-trade-backend-1` 占用 8080 失败，停止旧后端容器后重试。
+- 第二次启动因 `domestic-trade-frontend-1` 占用 80 失败，停止旧前端容器后重试。
+- 最终 Backend、Frontend、Python Worker 均完成健康检查。
+
+## ✅ 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入/操作 | 预期结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 完整记录文本请求和响应 | Filter 单元测试；20,000 字符 JSON | 请求和返回相同长正文 | 请求体和响应体日志包含完整正文且下游可重复读取 | 正常、边界、兼容性 |
+| 图片和文件正文不记录 | Filter 单元测试；`image/png` 请求与响应 | 写入二进制图片字节 | 仅产生请求头和响应头日志，不产生正文日志 | 安全、边界 |
+| HTTP 日志保持业务时序 | Filter 与拦截器单元测试 | 请求日志、业务执行、响应日志 | 请求头/体先于响应头/体，日志均关联 traceId | 正常、回归 |
+| 未接管 API 异步创建任务 | 拦截器和异步写入器单元测试；已认证用户 | 完成无业务任务的 API 请求 | 提交异步任务并按创建、终态顺序写入 | 正常、性能 |
+| 不重复创建任务 | 拦截器单元测试；请求已有任务标记 | 完成请求 | 不调用异步写入器 | 兼容性、回归 |
+| 无归属用户不创建任务 | 拦截器单元测试；未认证请求 | 完成请求 | 不提交兜底任务 | 权限、安全 |
+| HTTP 失败标记任务失败 | 异步写入器单元测试；503 状态摘要 | 执行异步写入 | 创建任务后写入失败状态和原因 | 异常 |
+| 上游响应按正确字符集解码 | Service 单元测试；无 charset JSON 和 UTF-16LE 文本 | 调用响应解码逻辑 | 分别按 UTF-8 和声明字符集还原正文 | 正常、兼容性 |
+| 历史功能保持稳定 | 后端完整测试与 Compose 运行态 | 执行完整测试、重建并启动服务 | 185 个测试通过，三个服务 healthy | 回归、集成 |
+
+## 📊 当前测试执行记录
+
+| 测试范围 | 执行命令 | 结果 |
+| --- | --- | --- |
+| 初次定向测试 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=RequestContextFilterTest,TraceIdInterceptorTest test` | 6 个中 5 通过、1 失败；旧注解排除断言与迁移语义不一致 |
+| HTTP 日志与异步任务定向测试 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -Dtest=RequestContextFilterTest,TraceIdInterceptorTest,HttpRequestTraceAsyncWriterTest,HttpRequestTraceInterceptorTest,ApiTriggerServiceResponseDecodingTest test` | 13 通过，0 失败，0 错误，0 跳过 |
+| 后端完整回归 | `docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B` | 185 通过，0 失败，0 错误，0 跳过 |
+| Compose 构建启动 | `docker compose up --build -d` | 后端构建测试 183/183 通过；处理 8080、80 端口占用后三个服务 healthy |
+| Compose 状态检查 | `docker compose ps` | Backend、Frontend、Python Worker 均为 healthy |
+
+## 📊 测试覆盖范围
+
+- Web Filter：请求体缓存、请求头/体日志、响应头/体日志、内容类型判断、字符集处理和异常隔离。
+- Web Interceptor：traceId 建立、配置排除、业务任务去重和异步兜底任务提交。
+- Trace Service 集成边界：任务创建后成功或失败终态更新顺序。
+- Automation Service：上游响应正文字符集解码。
+- 回归范围：后端全部 185 个自动化测试及 Compose 三服务运行态。
+
+## 🔄 重测触发条件
+
+- 修改 `RequestContextFilter`、`TraceIdInterceptor`、`HttpRequestTraceInterceptor` 或异步写入器时必须重测。
+- 修改任务追踪创建、终态更新、日志队列、追踪排除配置或认证上下文时必须重测。
+- 修改可记录媒体类型、正文字符集规则或 API 触发 HTTP 调用时必须重测。
+- 修改 `backend/src/main/java/` 下其他业务代码时按基准点重新执行后端完整测试。
+
+## ⚠️ 已知问题
+
+- 按确认要求，请求体和响应体不设置最大采集长度；超大文本正文会增加请求线程内存占用和日志队列压力。
+- 图片、附件和二进制正文不打印，但响应包装器仍需参与响应回写流程。
+- HTTP 兜底任务采用异步最终一致性，接口返回后任务列表可能短暂不可见。
+- 异步线程池满载或服务异常退出时，兜底任务可能提交失败；失败会记录告警但不会影响接口响应。
+
+## 📝 下次测试建议
+
+1. 增加高并发和超大文本正文压力测试，评估无长度上限时的堆内存、GC 和日志队列压力。
+2. 增加真实数据库集成测试，验证异步任务和任务日志批量落库的最终一致性。
+3. 增加流式响应、压缩响应和更多二进制媒体类型的运行态验证。
+
+## ↩️ 回滚方式
+
+- 回滚提交 `88924e9` 并重新执行 `docker compose up --build -d`，可恢复迁移前的单条 HTTP 摘要日志，并移除 HTTP 兜底任务补齐逻辑。
+- 本次不涉及数据库结构、依赖、配置迁移或文件删除。
+
+# 历史测试记录（开放平台响应示例）
+
+## 📋 Git 基准点
+
 Commit: 66028e36bab6c54e5f8dd7b361ef47270bcbf843
 - 提交说明: Document response field examples
 - 测试日期: 2026-07-29
