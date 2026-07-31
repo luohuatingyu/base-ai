@@ -650,8 +650,9 @@ onUnmounted(stopLogRefresh)
 }
 
 .filter-item-date {
-  flex: 1;
-  min-width: 380px;
+  width: 320px;
+  min-width: 0;
+  flex: 0 1 320px;
 }
 
 .filter-switch {
@@ -717,8 +718,9 @@ onUnmounted(stopLogRefresh)
 }
 
 .log-filter-date {
-  width: 360px;
-  flex-shrink: 0;
+  width: 320px;
+  min-width: 0;
+  flex: 0 1 320px;
 }
 
 .log-filter-input {

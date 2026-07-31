@@ -5,11 +5,30 @@ import { parseTaskLogFields } from '../src/utils/taskLogDisplay.js'
 
 const tasksViewSource = readFileSync(new URL('../src/views/TasksView.vue', import.meta.url), 'utf8')
 
+/** 提取指定选择器的 CSS 声明，验证任务页面布局规则。 */
+function declarations(selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = tasksViewSource.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`))
+  assert.ok(match, `缺少布局选择器：${selector}`)
+  return match[1]
+}
+
 test('任务筛选首行第一个控件为 Trace ID', () => {
   const firstFilterRow = tasksViewSource.match(/<div class="filter-row">([\s\S]*?)<\/div>/)?.[1]
 
   assert.ok(firstFilterRow)
   assert.match(firstFilterRow, /^\s*<el-input\s+v-model="query\.traceId"/)
+})
+
+test('任务调度时间范围在桌面端保持紧凑并在窄屏占满整行', () => {
+  assert.match(declarations('.filter-item-date'), /width:\s*320px/)
+  assert.match(declarations('.filter-item-date'), /flex:\s*0\s+1\s+320px/)
+  assert.match(declarations('.filter-item-date'), /min-width:\s*0/)
+  assert.match(declarations('.log-filter-date'), /width:\s*320px/)
+  assert.match(declarations('.log-filter-date'), /flex:\s*0\s+1\s+320px/)
+  assert.match(declarations('.log-filter-date'), /min-width:\s*0/)
+  assert.match(tasksViewSource, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.filter-item-date\s*\{[^}]*width:\s*100%[^}]*min-width:\s*100%/)
+  assert.match(tasksViewSource, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.log-filter-date,[\s\S]*?width:\s*100%/)
 })
 
 test('任务日志按级别展示卡片状态和记录上下文', () => {
