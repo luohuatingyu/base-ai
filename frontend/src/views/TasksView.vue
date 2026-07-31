@@ -115,20 +115,38 @@
     <el-dialog
       v-model="detailVisible"
       :title="t('tasks.detail')"
-      width="680px"
+      width="min(1080px, 92vw)"
       class="detail-dialog"
     >
-      <el-descriptions :column="1" border size="default">
+      <el-descriptions :column="2" border size="default" class="task-detail-table">
         <el-descriptions-item
-          v-for="(value, key) in detail"
-          :key="key"
-          :label="formatLabel(key)"
+          v-for="field in detailFields"
+          :key="field.key"
+          :label="formatLabel(field.key)"
+          :span="field.wide ? 2 : 1"
           label-align="right"
           label-class-name="detail-label"
         >
-          <pre class="detail-value">{{ formatValue(value) }}</pre>
+          <pre class="detail-value" :class="{ 'detail-value--wide': field.wide }">{{ formatDetailValue(field.key, field.value) }}</pre>
         </el-descriptions-item>
       </el-descriptions>
+
+      <section v-if="pythonTraces.length" class="python-traces-section">
+        <h3>{{ t('tasks.pythonTraces') }}</h3>
+        <el-table :data="pythonTraces" border size="small" table-layout="auto" class="python-traces-table">
+          <el-table-column
+            v-for="column in pythonTraceColumns"
+            :key="column.key"
+            :prop="column.key"
+            :label="formatLabel(column.key)"
+            :min-width="column.minWidth"
+          >
+            <template #default="scope">
+              <pre class="python-trace-value">{{ formatDetailValue(column.key, scope.row[column.key]) }}</pre>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
     </el-dialog>
 
     <!-- 日志抽屉 -->
@@ -297,6 +315,45 @@ const logFilter = reactive({
 })
 
 const statuses = ['RESERVED', 'RUNNING', 'CANCEL_REQUESTED', 'CANCELLED', 'SUCCESS', 'FAILED']
+
+const detailFieldOrder = [
+  'trace_id', 'owner_user_id', 'task_type', 'trigger_entry', 'status', 'version',
+  'request_path', 'request_method', 'java_instance_id', 'python_trace_count',
+  'created_at', 'started_at', 'heartbeat_at', 'finished_at', 'finished_reason',
+  'cancel_requested_at', 'force_terminated_by', 'force_terminated_at',
+  'request_params_json', 'request_headers_json', 'error_message', 'cancellation_reason',
+  'force_terminate_reason'
+]
+const wideDetailFields = new Set([
+  'request_params_json', 'request_headers_json', 'error_message', 'cancellation_reason',
+  'force_terminate_reason'
+])
+const pythonTraceColumns = [
+  { key: 'python_trace_id', minWidth: 220 },
+  { key: 'parent_trace_id', minWidth: 220 },
+  { key: 'worker_endpoint', minWidth: 220 },
+  { key: 'worker_instance_id', minWidth: 160 },
+  { key: 'status', minWidth: 130 },
+  { key: 'heartbeat_at', minWidth: 180 },
+  { key: 'error_message', minWidth: 260 },
+  { key: 'finished_reason', minWidth: 160 },
+  { key: 'cancel_requested_at', minWidth: 180 },
+  { key: 'force_terminated_by', minWidth: 160 },
+  { key: 'force_terminated_at', minWidth: 180 },
+  { key: 'force_terminate_reason', minWidth: 260 },
+  { key: 'created_at', minWidth: 180 },
+  { key: 'started_at', minWidth: 180 },
+  { key: 'finished_at', minWidth: 180 }
+]
+
+/** 按稳定顺序整理父任务详情，并标记需要跨整行展示的长字段。 */
+const detailFields = computed(() => detailFieldOrder
+  .concat(Object.keys(detail.value).filter(key => key !== 'pythonTraces' && !detailFieldOrder.includes(key)))
+  .filter(key => Object.hasOwn(detail.value, key))
+  .map(key => ({ key, value: detail.value[key], wide: wideDetailFields.has(key) })))
+
+/** 提取 Python 子任务列表，避免在父任务详情中显示原始 JSON。 */
+const pythonTraces = computed(() => Array.isArray(detail.value.pythonTraces) ? detail.value.pythonTraces : [])
 
 let refreshTimer = null
 let currentTraceId = null
@@ -550,23 +607,49 @@ async function copyLogValue(value) {
 function formatLabel(key) {
   const labelMap = {
     trace_id: t('tasks.traceId'),
+    owner_user_id: t('tasks.ownerUserId'),
     task_type: t('tasks.taskType'),
     trigger_entry: t('tasks.triggerEntry'),
     status: t('tasks.status'),
+    version: t('tasks.version'),
+    request_path: t('tasks.requestPath'),
+    request_method: t('tasks.requestMethod'),
+    request_params_json: t('tasks.requestParams'),
+    request_headers_json: t('tasks.requestHeaders'),
+    java_instance_id: t('tasks.javaInstanceId'),
+    python_trace_count: t('tasks.pythonTraceCount'),
     started_at: t('tasks.startedAt'),
-    completed_at: t('tasks.completedAt'),
+    heartbeat_at: t('tasks.heartbeatAt'),
     created_at: t('tasks.createdAt'),
-    updated_at: t('tasks.updatedAt'),
+    finished_at: t('tasks.finishedAt'),
+    finished_reason: t('tasks.finishedReason'),
     error_message: t('tasks.errorMessage'),
-    cancel_reason: t('tasks.cancelReason')
+    cancellation_reason: t('tasks.cancelReason'),
+    cancel_requested_at: t('tasks.cancelRequestedAt'),
+    force_terminated_by: t('tasks.forceTerminatedBy'),
+    force_terminated_at: t('tasks.forceTerminatedAt'),
+    force_terminate_reason: t('tasks.forceTerminateReasonLabel'),
+    python_trace_id: t('tasks.pythonTraceId'),
+    parent_trace_id: t('tasks.parentTraceId'),
+    worker_endpoint: t('tasks.workerEndpoint'),
+    worker_instance_id: t('tasks.workerInstanceId')
   }
-  return labelMap[key] || key
+  return labelMap[key] || t('tasks.unknownField', { field: key })
 }
 
-/** 格式化字段值 */
-function formatValue(value) {
+/** 按字段语义格式化详情值，包括任务类型、状态和 JSON 内容。 */
+function formatDetailValue(key, value) {
   if (value === null || value === undefined) return '-'
+  if (key === 'task_type') return localizeTaskType(value, t)
+  if (key === 'status' && statuses.includes(value)) return t(`tasks.statuses.${value}`)
   if (typeof value === 'object') return JSON.stringify(value, null, 2)
+  if (key.endsWith('_json')) {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2)
+    } catch {
+      return value
+    }
+  }
   return value
 }
 
@@ -676,22 +759,44 @@ onUnmounted(stopLogRefresh)
 }
 
 .detail-dialog :deep(.el-descriptions__label) {
-  width: 140px;
+  width: 150px;
   font-weight: 600;
 }
 
 .detail-value {
   margin: 0;
-  padding: 8px;
-  background: #f5f7fa;
-  border-radius: 4px;
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.5;
   white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 300px;
-  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.detail-value--wide {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.python-traces-section {
+  margin-top: 20px;
+}
+
+.python-traces-section h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.python-traces-table {
+  width: 100%;
+}
+
+.python-trace-value {
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .log-drawer :deep(.el-drawer__body) {
@@ -999,6 +1104,19 @@ onUnmounted(stopLogRefresh)
 
 /* 响应式优化 */
 @media (max-width: 900px) {
+  .task-detail-table :deep(.el-descriptions__body),
+  .task-detail-table :deep(.el-descriptions__table),
+  .task-detail-table :deep(.el-descriptions__table tbody),
+  .task-detail-table :deep(.el-descriptions__table tr) {
+    display: block;
+    width: 100%;
+  }
+
+  .task-detail-table :deep(.el-descriptions__cell) {
+    display: block;
+    width: 100% !important;
+  }
+
   .filter-section {
     padding: 12px;
   }

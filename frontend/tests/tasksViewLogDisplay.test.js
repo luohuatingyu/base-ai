@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { parseTaskLogFields } from '../src/utils/taskLogDisplay.js'
 
 const tasksViewSource = readFileSync(new URL('../src/views/TasksView.vue', import.meta.url), 'utf8')
+const zhLocaleSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
+const enLocaleSource = readFileSync(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
 
 /** 提取指定选择器的 CSS 声明，验证任务页面布局规则。 */
 function declarations(selector) {
@@ -18,6 +20,47 @@ test('任务筛选首行第一个控件为 Trace ID', () => {
 
   assert.ok(firstFilterRow)
   assert.match(firstFilterRow, /^\s*<el-input\s+v-model="query\.traceId"/)
+})
+
+test('任务详情桌面端按双列边框表格展示，长字段跨整行', () => {
+  assert.match(tasksViewSource, /<el-descriptions :column="2" border size="default" class="task-detail-table">/)
+  assert.match(tasksViewSource, /:span="field\.wide \? 2 : 1"/)
+  assert.match(tasksViewSource, /const wideDetailFields = new Set\(\[[\s\S]*?'request_params_json'[\s\S]*?'request_headers_json'[\s\S]*?'error_message'[\s\S]*?'cancellation_reason'/)
+  assert.match(tasksViewSource, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.task-detail-table :deep\(\.el-descriptions__cell\)\s*\{[^}]*display:\s*block[^}]*width:\s*100% !important/)
+})
+
+test('任务详情按固定顺序展示父任务字段并兼容未知字段', () => {
+  assert.match(tasksViewSource, /const detailFieldOrder = \[[\s\S]*?'trace_id'[\s\S]*?'owner_user_id'[\s\S]*?'task_type'[\s\S]*?'request_params_json'/)
+  assert.match(tasksViewSource, /Object\.keys\(detail\.value\)\.filter\(key => key !== 'pythonTraces' && !detailFieldOrder\.includes\(key\)\)/)
+  assert.match(tasksViewSource, /t\('tasks\.unknownField', \{ field: key \}\)/)
+})
+
+test('任务详情将多条 Python 子任务展示为独立表格', () => {
+  assert.match(tasksViewSource, /<section v-if="pythonTraces\.length" class="python-traces-section">/)
+  assert.match(tasksViewSource, /<el-table :data="pythonTraces" border size="small" table-layout="auto" class="python-traces-table">/)
+  assert.match(tasksViewSource, /const pythonTraces = computed\(\(\) => Array\.isArray\(detail\.value\.pythonTraces\) \? detail\.value\.pythonTraces : \[\]\)/)
+  assert.match(tasksViewSource, /const pythonTraceColumns = \[[\s\S]*?'python_trace_id'[\s\S]*?'parent_trace_id'[\s\S]*?'worker_endpoint'[\s\S]*?'status'/)
+})
+
+test('任务详情字段在中文和英文环境使用对应语言描述', () => {
+  const localeKeys = [
+    'ownerUserId', 'requestPath', 'requestParams', 'pythonTraceCount', 'finishedReason',
+    'forceTerminateReasonLabel', 'pythonTraces', 'pythonTraceId', 'workerEndpoint', 'unknownField'
+  ]
+
+  for (const key of localeKeys) {
+    assert.match(zhLocaleSource, new RegExp(`\\b${key}:`), `中文缺少字段：${key}`)
+    assert.match(enLocaleSource, new RegExp(`\\b${key}:`), `英文缺少字段：${key}`)
+  }
+  assert.match(zhLocaleSource, /ownerUserId: '所属用户 ID'/)
+  assert.match(enLocaleSource, /ownerUserId: 'Owner User ID'/)
+})
+
+test('任务详情本地化任务类型和状态并格式化 JSON', () => {
+  assert.match(tasksViewSource, /if \(key === 'task_type'\) return localizeTaskType\(value, t\)/)
+  assert.match(tasksViewSource, /if \(key === 'status' && statuses\.includes\(value\)\) return t\(`tasks\.statuses\.\$\{value\}`\)/)
+  assert.match(tasksViewSource, /if \(key\.endsWith\('_json'\)\) \{[\s\S]*?JSON\.parse\(value\)/)
+  assert.match(tasksViewSource, /if \(value === null \|\| value === undefined\) return '-'/)
 })
 
 test('任务调度时间范围在桌面端保持紧凑并在窄屏占满整行', () => {
