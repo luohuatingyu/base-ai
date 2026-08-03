@@ -12,6 +12,7 @@
       <el-table-column :label="t('common.status')" width="110"><template #default="scope">{{ !scope.row.configured ? t('mailRoutes.pendingConfiguration') : (scope.row.enabled ? t('common.enabled') : t('common.disabled')) }}</template></el-table-column>
       <el-table-column :label="t('common.operation')" width="180" fixed="right">
         <template #default="scope"><div class="table-actions">
+          <el-button v-if="auth.hasPermission('mail:route:update')" link type="success" :loading="testingId === scope.row.id" :disabled="!scope.row.configured" @click="testRoute(scope.row)">{{ t('mailRoutes.test') }}</el-button>
           <el-button v-if="auth.hasPermission('mail:route:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
           <el-button v-if="auth.hasPermission('mail:route:delete') && scope.row.businessCode !== 'DEFAULT'" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
         </div></template>
@@ -45,6 +46,7 @@ const auth = useAuthStore()
 const rows = ref([])
 const accounts = ref([])
 const visible = ref(false)
+const testingId = ref(null)
 const form = reactive(defaultForm())
 const toRows = ref([''])
 const ccRows = ref([''])
@@ -85,6 +87,18 @@ async function remove(row) {
     await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm'))
     await http.delete(`/mail/routes/${row.id}`); await load(); ElMessage.success(t('common.successDeleted'))
   } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) }
+}
+/** 向所选路由发送一封使用当前界面语言的固定测试邮件。 */
+async function testRoute(row) {
+  testingId.value = row.id
+  try {
+    await http.post(`/mail/routes/${row.id}/test`, null, { silentError: true })
+    ElMessage.success(t('mailRoutes.testSent'))
+  } catch (error) {
+    showHttpError(error, 'mailRoutes.testFailed')
+  } finally {
+    if (testingId.value === row.id) testingId.value = null
+  }
 }
 /** 创建空邮件路由表单。 */
 function defaultForm() { return { id: null, businessCode: '', name: '', accountId: null, enabled: true } }

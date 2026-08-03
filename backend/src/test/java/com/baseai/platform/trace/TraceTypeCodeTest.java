@@ -44,7 +44,8 @@ class TraceTypeCodeTest {
             "MAIL_ACCOUNT_CREATE",
             "MAIL_ACCOUNT_UPDATE",
             "MAIL_ROUTE_CREATE",
-            "MAIL_ROUTE_UPDATE"
+            "MAIL_ROUTE_UPDATE",
+            "MAIL_ROUTE_TEST"
         ), codes);
         assertFalse(codes.stream().anyMatch(code -> code.startsWith("tasks.")));
     }

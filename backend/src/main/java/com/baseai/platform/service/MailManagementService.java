@@ -172,6 +172,23 @@ public class MailManagementService {
         throw new BusinessException(configuredCandidate ? "mail.account.unavailable" : "mail.route.unavailable");
     }
 
+    /** 精确解析人工测试所选路由，不受启停状态影响且不回退 DEFAULT。 */
+    public ResolvedRoute resolveRoute(Long routeId) {
+        MailRoute route = routeRepository.findById(routeId)
+            .orElseThrow(() -> BusinessException.notFound("mail.route.notFound"));
+        List<String> toAddresses = splitAddresses(route.getToAddresses());
+        if (route.getAccountId() == null || toAddresses.isEmpty()) {
+            throw new BusinessException("mail.route.unavailable");
+        }
+        MailAccount account = accountRepository.findById(route.getAccountId())
+            .filter(item -> Boolean.TRUE.equals(item.getEnabled()))
+            .orElseThrow(() -> new BusinessException("mail.account.unavailable"));
+        return new ResolvedRoute(route.getBusinessCode(), account.getHost(), account.getPort(),
+            account.getUsername(), account.getFromAddress(), account.getTlsMode(),
+            cryptoService.decrypt(account.getPasswordEncrypted()), toAddresses,
+            splitAddresses(route.getCcAddresses()));
+    }
+
     /** 校验并保存邮箱账户字段。 */
     private MailAccount saveAccount(MailAccount account, AccountCommand command, boolean creating) {
         if (command == null) throw new BusinessException("mail.account.requestRequired");

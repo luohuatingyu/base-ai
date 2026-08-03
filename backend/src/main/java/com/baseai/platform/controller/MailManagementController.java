@@ -1,6 +1,7 @@
 package com.baseai.platform.controller;
 
 import com.baseai.platform.security.RequiredPermission;
+import com.baseai.platform.service.MailDeliveryService;
 import com.baseai.platform.service.MailManagementService;
 import com.baseai.platform.trace.TraceType;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -13,16 +14,19 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Locale;
 
 /** SMTP 邮箱账户和业务邮件路由管理接口。 */
 @RestController
 @RequestMapping("/api/mail")
 public class MailManagementController {
     private final MailManagementService service;
+    private final MailDeliveryService deliveryService;
 
-    /** 注入邮件配置管理服务。 */
-    public MailManagementController(MailManagementService service) {
+    /** 注入邮件配置管理和邮件发送服务。 */
+    public MailManagementController(MailManagementService service, MailDeliveryService deliveryService) {
         this.service = service;
+        this.deliveryService = deliveryService;
     }
 
     /** 查询邮箱账户。 */
@@ -84,6 +88,14 @@ public class MailManagementController {
     public MailManagementService.RouteView updateRoute(@PathVariable Long id,
                                                         @RequestBody MailManagementService.RouteCommand command) {
         return service.updateRoute(id, command);
+    }
+
+    /** 使用当前请求语言向所选路由发送固定测试邮件。 */
+    @PostMapping("/routes/{id}/test")
+    @RequiredPermission("mail:route:update")
+    @TraceType(value = "MAIL_ROUTE_TEST", captureRequest = false)
+    public MailDeliveryService.DeliveryResult testRoute(@PathVariable Long id, Locale locale) {
+        return deliveryService.sendTest(id, locale);
     }
 
     /** 删除非默认邮件业务路由。 */

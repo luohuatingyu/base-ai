@@ -3,13 +3,14 @@
 import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from app.config import load_settings, validate_settings
 from app.llm import LlmClient
 from app.logging_config import setup_logging
 from app.middleware import InternalAuthMiddleware
-from app.models import ChatRequest, ChatResponse, LlmTestRequest
+from app.models import ChatRequest, ChatResponse, EmailSendRequest, LlmTestRequest
+from app.services.email_delivery import MailDeliveryError, send_email
 from app.trace_runtime import JavaTraceReporter, TraceRuntimeRegistry
 
 settings = load_settings()
@@ -42,6 +43,15 @@ async def chat(request: ChatRequest):
 async def test_llm(request: LlmTestRequest):
     """测试模型中心下发的单个候选配置。"""
     return await llm_client.test(request.candidate, request.enableThinking)
+
+
+@app.post("/email/send")
+async def email_send(request: EmailSendRequest):
+    """使用 Java 已解析的独立邮件路由配置发送一封内部测试邮件。"""
+    try:
+        return await send_email(request)
+    except MailDeliveryError as exception:
+        raise HTTPException(status_code=exception.status_code, detail=exception.detail) from exception
 
 
 @app.post("/traces/{python_trace_id}/cancel")

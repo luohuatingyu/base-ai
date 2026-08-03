@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ChatMessage(BaseModel):
@@ -89,6 +89,59 @@ class LlmTestRequest(BaseModel):
 
     candidate: LlmCandidate
     enableThinking: bool = False
+
+
+class SmtpConfig(BaseModel):
+    """Java 后端解析后的单次 SMTP 发送配置。"""
+
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(ge=1, le=65535)
+    username: str = Field(min_length=1, max_length=255)
+    fromAddress: str = Field(min_length=3, max_length=255)
+    tlsMode: str = Field(pattern="^(NONE|STARTTLS|SSL)$")
+    password: str = Field(min_length=1, max_length=4096)
+
+    @field_validator("host", "username", "fromAddress")
+    @classmethod
+    def reject_header_injection(cls, value: str) -> str:
+        """拒绝 SMTP 配置字段中的换行注入。"""
+        if "\r" in value or "\n" in value:
+            raise ValueError("invalid smtp field")
+        return value.strip()
+
+
+class EmailSendRequest(BaseModel):
+    """内部邮件发送请求，密码只在本次调用内使用。"""
+
+    smtp: SmtpConfig
+    toAddresses: list[str] = Field(min_length=1, max_length=500)
+    ccAddresses: list[str] = Field(default_factory=list, max_length=500)
+    subject: str = Field(min_length=1, max_length=255)
+    body: str = Field(min_length=1, max_length=1_000_000)
+
+    @field_validator("subject")
+    @classmethod
+    def reject_subject_injection(cls, value: str) -> str:
+        """邮件主题禁止包含换行，避免注入额外头字段。"""
+        if "\r" in value or "\n" in value:
+            raise ValueError("invalid subject")
+        return value.strip()
+
+    @field_validator("toAddresses", "ccAddresses")
+    @classmethod
+    def validate_addresses(cls, values: list[str]) -> list[str]:
+        """校验收件地址基本格式并拒绝邮件头注入。"""
+        normalized: list[str] = []
+        for value in values:
+            address = value.strip()
+            if "\r" in address or "\n" in address or address.count("@") != 1:
+                raise ValueError("invalid email address")
+            local, domain = address.split("@", 1)
+            if not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
+                raise ValueError("invalid email address")
+            if address not in normalized:
+                normalized.append(address)
+        return normalized
 
 
 class ChatResponse(BaseModel):

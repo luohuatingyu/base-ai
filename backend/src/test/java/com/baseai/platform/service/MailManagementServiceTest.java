@@ -188,6 +188,62 @@ class MailManagementServiceTest {
         assertThat(service.resolve("ORDER_FAILURE").businessCode()).isEqualTo("DEFAULT");
     }
 
+    /** 人工测试必须精确解析所选路由，即使路由停用也不得回退 DEFAULT。 */
+    @Test
+    void resolvesSelectedRouteForManualTestWithoutFallback() {
+        MailAccount account = account(true);
+        MailRoute route = route("ORDER_FAILURE", account.getId(), false);
+        setId(route, 12L);
+        when(routeRepository.findById(12L)).thenReturn(Optional.of(route));
+        when(accountRepository.findById(account.getId())).thenReturn(Optional.of(account));
+
+        MailManagementService.ResolvedRoute resolved = service.resolveRoute(12L);
+
+        assertThat(resolved.businessCode()).isEqualTo("ORDER_FAILURE");
+        assertThat(resolved.toAddresses()).containsExactly("ops@example.com");
+        verify(routeRepository, never()).findByBusinessCode("DEFAULT");
+    }
+
+    /** 人工测试待配置路由时必须在调用 Worker 前返回稳定错误。 */
+    @Test
+    void rejectsUnconfiguredSelectedRouteForManualTest() {
+        MailRoute route = route("PENDING", null, true);
+        route.setToAddresses("");
+        setId(route, 13L);
+        when(routeRepository.findById(13L)).thenReturn(Optional.of(route));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.resolveRoute(13L));
+
+        assertThat(exception.getMessageKey()).isEqualTo("mail.route.unavailable");
+        verify(accountRepository, never()).findById(any());
+    }
+
+    /** 人工测试不存在的路由时必须返回资源不存在。 */
+    @Test
+    void rejectsMissingSelectedRouteForManualTest() {
+        when(routeRepository.findById(99L)).thenReturn(Optional.empty());
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.resolveRoute(99L));
+
+        assertThat(exception.getStatus()).isEqualTo(404);
+        assertThat(exception.getMessageKey()).isEqualTo("mail.route.notFound");
+    }
+
+    /** 人工测试不得使用已停用的 SMTP 账户。 */
+    @Test
+    void rejectsDisabledAccountForManualTest() {
+        MailAccount account = account(false);
+        MailRoute route = route("DISABLED_ACCOUNT", account.getId(), true);
+        setId(route, 14L);
+        when(routeRepository.findById(14L)).thenReturn(Optional.of(route));
+        when(accountRepository.findById(account.getId())).thenReturn(Optional.of(account));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.resolveRoute(14L));
+
+        assertThat(exception.getMessageKey()).isEqualTo("mail.account.unavailable");
+        verify(routeRepository, never()).findByBusinessCode("DEFAULT");
+    }
+
     /** 空环境必须创建一个固定身份、始终启用且待配置的 DEFAULT 路由。 */
     @Test
     void createsUnconfiguredEnabledDefaultRoute() {
