@@ -178,6 +178,31 @@ class DataInitializerTest {
         }));
     }
 
+    /** 邮件管理必须位于系统与模型目录之间，并保持账户、路由的独立权限层级。 */
+    @Test
+    void seedsMailManagementBeforeModelManagement() {
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        initializer.run(null);
+
+        ArgumentCaptor<Menu> captor = ArgumentCaptor.forClass(Menu.class);
+        verify(menuRepository, atLeastOnce()).save(captor.capture());
+        Map<String, Menu> menusByPermission = captor.getAllValues().stream()
+            .collect(Collectors.toMap(Menu::getPermission, Function.identity(), (first, ignored) -> first));
+        Menu system = menusByPermission.get("system:catalog");
+        Menu mail = menusByPermission.get("mail:catalog");
+        Menu model = menusByPermission.get("model:catalog");
+
+        assertTrue(system.getSortOrder() < mail.getSortOrder());
+        assertTrue(mail.getSortOrder() < model.getSortOrder());
+        assertEquals(mail.getId(), menusByPermission.get("mail:account:list").getParentId());
+        assertEquals(mail.getId(), menusByPermission.get("mail:route:list").getParentId());
+        assertEquals(menusByPermission.get("mail:account:list").getId(),
+            menusByPermission.get("mail:account:update").getParentId());
+        assertEquals(menusByPermission.get("mail:route:list").getId(),
+            menusByPermission.get("mail:route:update").getParentId());
+    }
+
     /** 创建满足启动安全校验的测试配置。 */
     private static PlatformProperties validProperties() {
         PlatformProperties configured = new PlatformProperties();

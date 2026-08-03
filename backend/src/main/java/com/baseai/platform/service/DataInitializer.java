@@ -257,6 +257,14 @@ public class DataInitializer implements ApplicationRunner {
         menu(apiKeys.getId(), "吊销 API Key", "BUTTON", null, null, null, "system:api-key:delete", 323, false);
         menu(apiKeys.getId(), "轮换 API Key", "BUTTON", null, null, null, "system:api-key:rotate", 324, false);
 
+        // ========== 邮件管理模块（位于系统管理和模型管理之间） ==========
+        Menu mail = menu(null, "邮件管理", "CATALOG", "/mail", null, "Message",
+            "mail:catalog", 35, true);
+        seedCrud(mail, "邮箱配置", "/mail/accounts", "MailAccountsView", "MessageBox",
+            "mail:account", 36);
+        seedCrud(mail, "邮件路由", "/mail/routes", "MailRoutesView", "Promotion",
+            "mail:route", 37);
+
         // ========== 模型管理模块 ==========
         Menu model = menu(null, "模型管理", "CATALOG", "/models", null, "Cpu", "model:catalog", 40, true);
         // 初始化模型供应商的页面和 CRUD 权限

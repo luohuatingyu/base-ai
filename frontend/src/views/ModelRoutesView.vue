@@ -23,8 +23,8 @@
 
     <el-dialog v-model="visible" :title="form.id?t('routes.edit'):t('routes.add')">
       <el-form label-width="110px">
-        <el-form-item :label="t('routes.featureCode')"><el-input v-model="form.featureCode"/></el-form-item>
-        <el-form-item :label="t('common.name')"><el-input v-model="form.name"/></el-form-item>
+        <el-form-item :label="t('routes.featureCode')"><el-input v-model="form.featureCode" :disabled="form.featureCode === 'DEFAULT'"/></el-form-item>
+        <el-form-item :label="t('common.name')"><el-input v-model="form.name" :disabled="form.featureCode === 'DEFAULT'"/></el-form-item>
         <el-form-item :label="t('routes.providerPool')"><el-select v-model="form.providerIds" multiple><el-option v-for="item in providers" :key="item.id" :label="item.name" :value="item.id"/></el-select></el-form-item>
         <el-form-item :label="t('models.capability')"><el-select v-model="form.capabilityLevel"><el-option label="Low" value="LOW"/><el-option label="Medium" value="MIDDLE"/><el-option label="High" value="HIGH"/></el-select></el-form-item>
         <el-form-item :label="t('routes.thinking')"><el-switch v-model="form.enableThinking"/></el-form-item>

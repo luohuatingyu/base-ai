@@ -85,6 +85,7 @@ app:
       - /api/open/**
       - /api/internal/**
       - /api/system/tasks/**
+      - /api/mail/**
   api-trigger:
     scheduler-pool-size: ${API_TRIGGER_SCHEDULER_POOL_SIZE:4}
     lock-seconds: ${API_TRIGGER_LOCK_SECONDS:300}

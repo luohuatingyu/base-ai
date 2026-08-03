@@ -40,6 +40,7 @@ import java.time.LocalDateTime;
 @Service
 public class LlmManagementService {
     public static final String DEFAULT_ROUTE = "DEFAULT";
+    public static final String DEFAULT_ROUTE_NAME = "默认能力路由";
     /** 供应商数据访问接口 */
     private final LlmProviderRepository providerRepository;
 
@@ -289,12 +290,14 @@ public class LlmManagementService {
     /** 确保默认路由存在，并保持其固定业务约束。 */
     @Transactional
     public void ensureDefaultRoute(){
-        ensureDefaultRoute(DEFAULT_ROUTE,"默认能力路由");
+        ensureDefaultRoute(DEFAULT_ROUTE,DEFAULT_ROUTE_NAME);
     }
     private void ensureDefaultRoute(String code,String name){
         LlmRoute route=routeRepository.findByFeatureCode(code).orElseGet(()->{
             LlmRoute item=new LlmRoute();item.setFeatureCode(code);item.setName(name);item.setCandidateModelIds("");item.setProviderIds("");item.setCapabilityLevel("MIDDLE");item.setEnableThinking(false);item.setThinkingLevel(null);item.setEnabled(true);return item;
         });
+        route.setFeatureCode(code);
+        route.setName(name);
         routeRepository.save(route);
     }
 
@@ -567,7 +570,7 @@ public class LlmManagementService {
         if(!providerIds.isEmpty()&&providerRepository.findAllById(providerIds).size()!=providerIds.size())throw BusinessException.notFound("llm.providerNotFound");
 
         route.setFeatureCode(isDefault?DEFAULT_ROUTE:require(command.featureCode(),"llm.featureCodeRequired"));
-        route.setName(require(command.name(),"llm.routeNameRequired"));
+        route.setName(isDefault?DEFAULT_ROUTE_NAME:require(command.name(),"llm.routeNameRequired"));
 
         // 将模型ID列表转换为逗号分隔的字符串
         route.setCandidateModelIds(ids.stream().map(String::valueOf).reduce((a,b)->a+","+b).orElse(""));

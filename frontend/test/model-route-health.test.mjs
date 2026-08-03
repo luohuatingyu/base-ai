@@ -69,6 +69,11 @@ test('capability route actions remain direct children of the section header', ()
   assert.doesNotMatch(routeView, /<div class="route-actions">/)
 })
 
+test('DEFAULT capability route locks its feature code and name fields', () => {
+  assert.match(routeView, /v-model="form\.featureCode" :disabled="form\.featureCode === 'DEFAULT'"/)
+  assert.match(routeView, /v-model="form\.name" :disabled="form\.featureCode === 'DEFAULT'"/)
+})
+
 test('selected capability routes render independent synchronization tabs', () => {
   assert.match(routeView, /<el-tabs[^>]*v-model="activeSyncRouteId"/)
   assert.match(routeView, /v-for="route in selectedRoutes"[^>]*:name="String\(route\.id\)"[^>]*:label="route\.featureCode"/)

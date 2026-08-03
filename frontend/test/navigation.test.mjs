@@ -87,6 +87,8 @@ test('全部内置 BUTTON 权限均使用稳定权限编码翻译', () => {
     'system:setting:create', 'system:setting:update', 'system:setting:delete',
     'system:session:terminate', 'system:task:manage',
     'system:api-key:create', 'system:api-key:update', 'system:api-key:delete', 'system:api-key:rotate',
+    'mail:account:create', 'mail:account:update', 'mail:account:delete',
+    'mail:route:create', 'mail:route:update', 'mail:route:delete',
     'model:provider:create', 'model:provider:update', 'model:provider:delete',
     'model:model:create', 'model:model:update', 'model:model:delete',
     'model:route:create', 'model:route:update', 'model:route:delete',

@@ -148,7 +148,7 @@ public class PlatformProperties {
     public static class TraceTracking {
         private java.util.List<String> excludedMethods = java.util.List.of("GET", "OPTIONS");
         private java.util.List<String> excludedPaths = java.util.List.of(
-            "/api/auth/**", "/api/open/**", "/api/internal/**", "/api/system/tasks/**"
+            "/api/auth/**", "/api/open/**", "/api/internal/**", "/api/system/tasks/**", "/api/mail/**"
         );
         public java.util.List<String> getExcludedMethods() { return excludedMethods; }
         public void setExcludedMethods(java.util.List<String> excludedMethods) { this.excludedMethods = excludedMethods; }

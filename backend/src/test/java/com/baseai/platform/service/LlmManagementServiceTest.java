@@ -484,6 +484,7 @@ class LlmManagementServiceTest {
     void ensureDefaultRoutePreservesDisabledState() {
         LlmRoute route = route("", "");
         route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
+        route.setName("被修改的默认名称");
         route.setCapabilityLevel("HIGH");
         route.setEnabled(false);
         when(routeRepository.findByFeatureCode(LlmManagementService.DEFAULT_ROUTE)).thenReturn(Optional.of(route));
@@ -491,6 +492,7 @@ class LlmManagementServiceTest {
         service.ensureDefaultRoute();
 
         assertEquals(false, route.getEnabled());
+        assertEquals(LlmManagementService.DEFAULT_ROUTE_NAME, route.getName());
         assertEquals("HIGH", route.getCapabilityLevel());
         verify(routeRepository).save(route);
     }
@@ -505,9 +507,27 @@ class LlmManagementServiceTest {
         when(routeRepository.save(route)).thenReturn(route);
 
         LlmManagementService.RouteView updated = service.updateRoute(8L, new LlmManagementService.RouteCommand(
-            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(), List.of(1L), "HIGH", false, null, true));
+            "RENAMED_DEFAULT", "被修改的默认名称", List.of(), List.of(1L), "HIGH", false, null, true));
 
+        assertEquals(LlmManagementService.DEFAULT_ROUTE, updated.featureCode());
+        assertEquals(LlmManagementService.DEFAULT_ROUTE_NAME, updated.name());
         assertEquals("HIGH", updated.capabilityLevel());
+    }
+
+    /** 普通能力路由必须继续允许修改编码和名称。 */
+    @Test
+    void updateRegularRouteAllowsCodeAndNameChanges() {
+        LlmRoute route = route("1", "");
+        route.setName("旧名称");
+        when(routeRepository.findById(9L)).thenReturn(Optional.of(route));
+        when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
+        when(routeRepository.save(route)).thenReturn(route);
+
+        LlmManagementService.RouteView updated = service.updateRoute(9L, new LlmManagementService.RouteCommand(
+            "new-code", "新名称", List.of(), List.of(1L), "HIGH", false, null, true));
+
+        assertEquals("new-code", updated.featureCode());
+        assertEquals("新名称", updated.name());
     }
 
     /** 默认路由应保存用户选择的思考模式和思考级别。 */

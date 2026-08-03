@@ -14,6 +14,8 @@ const menusViewSource = readFileSync(new URL('../src/views/MenusView.vue', impor
 const actionColumnCases = [
   ['ApiTriggerView.vue', 380, 1],
   ['ApiKeysView.vue', 320, 1],
+  ['MailAccountsView.vue', 180, 1],
+  ['MailRoutesView.vue', 180, 1],
   ['TasksView.vue', 320, 1],
   ['UsersView.vue', 180, 1],
   ['RolesView.vue', 180, 1],
@@ -164,12 +166,11 @@ test('所有主列表前置列保留最小宽度，操作列使用固定宽度�
       assert.match(column, /fixed="right"/, `${fileName} 操作列未固定右侧`)
       assert.match(column, new RegExp(`width="${width}"`), `${fileName} 操作列宽度不统一`)
     }
-    assert.equal((source.match(/<el-table\b[^>]*table-layout="auto"/g) || []).length, expectedColumns, `${fileName} 操作表格未使用自动布局`)
     assert.equal((source.match(/class="table-actions"/g) || []).length, expectedColumns, `${fileName} 未使用公共操作按钮容器`)
 
     const mainTableBlocks = [...source.matchAll(/<el-table\b[^>]*table-layout="auto"[^>]*>[\s\S]*?<\/el-table>/g)]
     const actionTableBlocks = mainTableBlocks.filter(([block]) => /<el-table-column\s+:label="t\('common\.(?:operation|actions)'\)"[^>]*fixed="right"/.test(block))
-    assert.equal(actionTableBlocks.length, expectedColumns, `${fileName} 操作表格数量不匹配`)
+    assert.equal(actionTableBlocks.length, expectedColumns, `${fileName} 操作表格未使用自动布局或数量不匹配`)
     for (const [block] of actionTableBlocks) {
       const beforeAction = block.split(/<el-table-column\s+:label="t\('common\.(?:operation|actions)'\)"[^>]*fixed="right"/)[0]
       const precedingColumns = [...beforeAction.matchAll(/<el-table-column\b[^>]*>/g)].map(([column]) => column)

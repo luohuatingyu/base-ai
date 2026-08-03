@@ -22,6 +22,8 @@ import ModelsView from '../views/ModelsView.vue'
 import ModelRoutesView from '../views/ModelRoutesView.vue'
 import ApiKeysView from '../views/ApiKeysView.vue'
 import OpenPlatformView from '../views/OpenPlatformView.vue'
+import MailAccountsView from '../views/MailAccountsView.vue'
+import MailRoutesView from '../views/MailRoutesView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -42,6 +44,8 @@ const router = createRouter({
         { path: 'online-users', component: OnlineUsersView, meta: { permission: 'system:session:list', navigable: true, desc: 'logs.onlineDescription' } },
         { path: 'operation-logs', component: OperationLogsView, meta: { permission: 'system:audit:operation:list', navigable: true, desc: 'logs.operationDescription' } },
         { path: 'login-logs', component: LoginLogsView, meta: { permission: 'system:audit:login:list', navigable: true, desc: 'logs.loginDescription' } },
+        { path: 'mail/accounts', component: MailAccountsView, meta: { permission: 'mail:account:list', navigable: true, desc: 'mailAccounts.description' } },
+        { path: 'mail/routes', component: MailRoutesView, meta: { permission: 'mail:route:list', navigable: true, desc: 'mailRoutes.description' } },
         { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'model:provider:list', navigable: true, desc: 'providers.description' } },
         { path: 'models', component: ModelsView, meta: { permission: 'model:model:list', navigable: true, desc: 'models.description' } },
         { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list', navigable: true, desc: 'routes.description' } },

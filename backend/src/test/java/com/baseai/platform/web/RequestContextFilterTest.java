@@ -107,4 +107,20 @@ class RequestContextFilterTest {
         assertTrue(ordered.get(2).contains("event=http_response_headers"));
         assertTrue(ordered.get(3).contains("event=http_response_body"));
     }
+
+    /** 邮件管理接口必须整体排除 HTTP 明细日志，避免密码和收件人泄漏。 */
+    @Test
+    void excludesMailManagementDetails() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/mail/accounts");
+        request.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        request.setContent("{\"password\":\"must-not-be-logged\"}".getBytes(StandardCharsets.UTF_8));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (wrappedRequest, wrappedResponse) ->
+            wrappedResponse.getWriter().write("mail excluded"));
+
+        assertTrue(appender.list.isEmpty());
+        assertFalse(response.containsHeader("X-Request-Id"));
+        assertEquals("mail excluded", response.getContentAsString());
+    }
 }

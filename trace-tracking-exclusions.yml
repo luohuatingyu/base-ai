@@ -8,3 +8,4 @@ app:
       - /api/open/**
       - /api/internal/**
       - /api/system/tasks/**
+      - /api/mail/**
