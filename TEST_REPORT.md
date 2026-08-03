@@ -43,7 +43,7 @@ Commit: 5ce3be4f9da450e09aad1820ef9a95b2aa8b434f
 - 前端生产构建：通过
 - Compose 服务健康检查：Backend、Frontend、Python Worker 全部 healthy
 
-**Git 基准点**：c1fb4551f1b029095c658706cb1567f0001c01a2
+**Git 基准点**：a992dcaeb8f89dfcdce69d0cf5d6b967410a6710
 
 **新发现的问题**：
 - 首次 Compose 启动时发现旧 `domestic-trade-backend-1` 占用 `8080`，停止旧容器后重试成功。
