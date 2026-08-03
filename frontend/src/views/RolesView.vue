@@ -77,7 +77,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { localizeRoleName, localizeDepartmentName } from '../utils/localization'
 import { localizeMenuName } from '../utils/navigation'
@@ -154,7 +154,7 @@ async function save() {
     await load()
     ElMessage.success(t('common.successSaved'))
   } catch (error) {
-    ElMessage.error(error.response?.data?.message || t('common.saveFailed'))
+    showHttpError(error, 'common.saveFailed')
   }
 }
 

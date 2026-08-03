@@ -61,6 +61,22 @@ export default {
     error: '错误',
     loadingFailed: '加载失败'
   },
+  httpErrors: {
+    badRequest: '请求参数不正确',
+    unauthorized: '登录状态已失效，请重新登录',
+    forbidden: '无权执行此操作',
+    notFound: '请求的资源不存在',
+    conflict: '当前数据状态冲突，请刷新后重试',
+    unprocessable: '提交的数据无法处理',
+    tooManyRequests: '操作过于频繁，请稍后重试',
+    client: '请求未能完成',
+    server: '服务器处理失败，请稍后重试',
+    badGateway: '上游服务响应异常，请稍后重试',
+    serviceUnavailable: '服务暂时不可用，请稍后重试',
+    gatewayTimeout: '上游服务响应超时，请稍后重试',
+    timeout: '请求超时，请稍后重试',
+    network: '网络连接异常，请检查网络后重试'
+  },
   login: {
     description: '统一模型能力与系统管理平台',
     username: '账号',

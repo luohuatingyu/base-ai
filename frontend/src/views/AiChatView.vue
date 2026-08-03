@@ -103,7 +103,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useI18n } from 'vue-i18n'
 import { createAssistantMessage, hasChatResponseMetadata } from '../utils/chatResponse'
 import { localizeModelType } from '../utils/localization'
@@ -298,7 +298,7 @@ async function send() {
 
     const response = await http.post('/ai/chat', payload)
     messages.value.push(createAssistantMessage(response.data, response.traceId))
-  } catch (error) { ElMessage.error(error.response?.data?.message || t('chat.callFailed')) }
+  } catch (error) { showHttpError(error, 'chat.callFailed') }
   finally { loading.value = false }
 }
 </script>

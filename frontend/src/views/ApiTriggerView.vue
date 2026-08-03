@@ -147,7 +147,7 @@
 <script setup>
 import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { useI18n } from 'vue-i18n'
 import { extractTraceId, fetchTaskProgress, resolveActiveTab } from '../utils/apiTrigger'
@@ -169,14 +169,14 @@ function open(row){
 /** 组装保存和临时测试共用的配置参数。 */
 function payload(){const data={...form};delete data.id;return data}
 /** 保存配置并触发后端 Cron 重注册。 */
-async function save(){try{form.id?await http.put(`/automation/api-triggers/${form.id}`,payload()):await http.post('/automation/api-triggers',payload());visible.value=false;await load();ElMessage.success(t('common.successSaved'))}catch(e){ElMessage.error(e.response?.data?.message||t('common.saveFailed'))}}
+async function save(){try{form.id?await http.put(`/automation/api-triggers/${form.id}`,payload()):await http.post('/automation/api-triggers',payload());visible.value=false;await load();ElMessage.success(t('common.successSaved'))}catch(e){showHttpError(e,'common.saveFailed')}}
 /** 使用当前表单执行不落配置的临时调用。 */
 async function test(){
   testing.value=true
   try{
     setExecutionResult((await http.post('/automation/api-triggers/test',payload())).data)
     resultVisible.value=true
-  }catch(e){ElMessage.error(e.response?.data?.message||t('apiTrigger.testFailed'))}
+  }catch(e){showHttpError(e,'apiTrigger.testFailed')}
   finally{testing.value=false}
 }
 /** 立即正式执行并写入任务与执行日志。 */
@@ -185,7 +185,7 @@ async function trigger(row){
     setExecutionResult((await http.post('/automation/api-triggers/'+row.id+'/trigger')).data)
     resultVisible.value=true
     await load()
-  }catch(e){ElMessage.error(e.response?.data?.message||t('apiTrigger.executeFailed'))}
+  }catch(e){showHttpError(e,'apiTrigger.executeFailed')}
 }
 /** 根据目标接口响应重置自动识别的 Trace 进度上下文。 */
 function resetProgress(responseBody){
@@ -216,7 +216,7 @@ async function queryProgress(){
     progressLogs.value=[]
     progressLoadedTraceId.value=''
     progressError.value=e.response?.data?.message||e.message||t('apiTrigger.progressFailed')
-    ElMessage.error(progressError.value)
+    showHttpError(e, 'apiTrigger.progressFailed')
   }finally{progressLoading.value=false}
 }
 /** 将任务状态映射为 Element Plus 标签样式。 */

@@ -170,7 +170,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 
 const { t, te } = useI18n()
@@ -321,7 +321,7 @@ async function viewSecret(row) {
     const { data } = await http.get(`/system/api-keys/${row.id}/secret`)
     showSecret(data.apiKey)
   } catch (error) {
-    ElMessage.error(error.response?.data?.message || t('common.failed'))
+    showHttpError(error)
   }
 }
 

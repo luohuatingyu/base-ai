@@ -36,7 +36,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { normalizeMailAddressRows, toMailAddressRows } from '../utils/mailAddresses'
 
@@ -73,14 +73,18 @@ async function save() {
   if (!payload.businessCode.trim() || !payload.name.trim() || !payload.accountId || !payload.toAddresses.length) {
     ElMessage.warning(t('mailRoutes.required')); return
   }
-  if (form.id) await http.put(`/mail/routes/${form.id}`, payload)
-  else await http.post('/mail/routes', payload)
-  visible.value = false; await load(); ElMessage.success(t('common.successSaved'))
+  try {
+    if (form.id) await http.put(`/mail/routes/${form.id}`, payload)
+    else await http.post('/mail/routes', payload)
+    visible.value = false; await load(); ElMessage.success(t('common.successSaved'))
+  } catch (error) { showHttpError(error, 'common.saveFailed') }
 }
 /** 删除非 DEFAULT 邮件路由。 */
 async function remove(row) {
-  await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm'))
-  await http.delete(`/mail/routes/${row.id}`); await load(); ElMessage.success(t('common.successDeleted'))
+  try {
+    await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm'))
+    await http.delete(`/mail/routes/${row.id}`); await load(); ElMessage.success(t('common.successDeleted'))
+  } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) }
 }
 /** 创建空邮件路由表单。 */
 function defaultForm() { return { id: null, businessCode: '', name: '', accountId: null, enabled: true } }

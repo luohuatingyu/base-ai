@@ -42,7 +42,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -68,14 +68,18 @@ async function save() {
   if (!form.code.trim() || !form.name.trim() || !form.host.trim() || !form.username.trim() || !form.fromAddress.trim() || (!form.id && !form.password)) {
     ElMessage.warning(t('mailAccounts.required')); return
   }
-  if (form.id) await http.put(`/mail/accounts/${form.id}`, form)
-  else await http.post('/mail/accounts', form)
-  visible.value = false; await load(); ElMessage.success(t('common.successSaved'))
+  try {
+    if (form.id) await http.put(`/mail/accounts/${form.id}`, form)
+    else await http.post('/mail/accounts', form)
+    visible.value = false; await load(); ElMessage.success(t('common.successSaved'))
+  } catch (error) { showHttpError(error, 'common.saveFailed') }
 }
 /** 删除未被邮件路由使用的邮箱账户。 */
 async function remove(row) {
-  await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm'))
-  await http.delete(`/mail/accounts/${row.id}`); await load(); ElMessage.success(t('common.successDeleted'))
+  try {
+    await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm'))
+    await http.delete(`/mail/accounts/${row.id}`); await load(); ElMessage.success(t('common.successDeleted'))
+  } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) }
 }
 /** 创建不包含任何已保存密码的空表单。 */
 function defaultForm() { return { id: null, code: '', name: '', host: '', port: 587, username: '', fromAddress: '', tlsMode: 'STARTTLS', password: '', enabled: true } }

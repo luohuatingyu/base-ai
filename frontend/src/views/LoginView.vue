@@ -26,7 +26,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { showHttpError } from '../api/http'
 import { Promotion } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { appConfig, getLocalizedPlatformName } from '../config'
@@ -47,7 +47,7 @@ async function submit() {
     await auth.login(form.username, form.password)
     await router.replace(route.query.redirect || '/dashboard')
   } catch (error) {
-    ElMessage.error(error.response?.data?.message || t('login.loginFailed'))
+    showHttpError(error, 'login.loginFailed')
   } finally { loading.value = false }
 }
 </script>

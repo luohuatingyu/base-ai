@@ -47,9 +47,9 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { createHostRule, createLatestAutoSaver, HOST_RULE_TYPES, normalizeHostRules, toHostRuleRows } from '../utils/hostRules'
 
@@ -154,7 +154,7 @@ async function persistConfiguration(configuration) {
       return
     }
     saveStatus.value = 'error'
-    ElMessage.error(t('apiTriggerSecurity.autoSaveFailed'))
+    showHttpError(error, 'apiTriggerSecurity.autoSaveFailed')
   }
 }
 

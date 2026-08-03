@@ -75,7 +75,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { appConfig } from '../config'
 import { useAuthStore } from '../stores/auth'
 import { localizeRouteName } from '../utils/localization'
@@ -172,7 +172,7 @@ async function syncSelectedRoutes() {
   } catch (error) {
     const message = error.response?.data?.message || error.message || t('routes.syncFailed')
     routesToSync.forEach(route => Object.assign(ensureSyncState(route.id), { completed: true, error: message }))
-    ElMessage.error(message)
+    showHttpError(error, 'routes.syncFailed')
   } finally {
     routesToSync.forEach(route => { ensureSyncState(route.id).syncing = false })
     syncing.value = false

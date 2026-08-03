@@ -273,7 +273,7 @@ import { onMounted, reactive, ref, computed, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { localizeTaskType } from '../utils/localization'
 import { parseTaskLogFields } from '../utils/taskLogDisplay'
@@ -394,7 +394,7 @@ async function load() {
     taskTypes.value = types.data
     triggerEntries.value = entries.data
   } catch (error) {
-    ElMessage.error(t('tasks.loadFailed'))
+    showHttpError(error, 'tasks.loadFailed')
     console.error('加载任务列表错误:', error)
   } finally {
     loading.value = false
@@ -450,7 +450,7 @@ async function showDetail(row) {
     detail.value = response.data
     detailVisible.value = true
   } catch (error) {
-    ElMessage.error(t('tasks.loadDetailFailed'))
+    showHttpError(error, 'tasks.loadDetailFailed')
   }
 }
 
@@ -465,14 +465,14 @@ async function showLogs(traceId) {
     // 启动自动刷新
     startLogRefresh()
   } catch (error) {
-    ElMessage.error(t('tasks.loadLogsFailed'))
+    showHttpError(error, 'tasks.loadLogsFailed')
   } finally {
     logLoading.value = false
   }
 }
 
 /** 加载日志数据 */
-async function loadLogs() {
+async function loadLogs(silentError = false) {
   if (!currentTraceId) return
 
   const params = {}
@@ -483,7 +483,7 @@ async function loadLogs() {
   }
   if (logFilter.keyword) params.keyword = logFilter.keyword
 
-  const response = await http.get(`/system/tasks/${currentTraceId}/logs`, { params })
+  const response = await http.get(`/system/tasks/${currentTraceId}/logs`, { params, silentError })
   // 逆序排列（最新的在前）
   logs.value = (response.data || []).reverse()
 }
@@ -494,7 +494,7 @@ function startLogRefresh() {
   refreshTimer = setInterval(async () => {
     if (logVisible.value && currentTraceId) {
       try {
-        await loadLogs()
+        await loadLogs(true)
       } catch (error) {
         console.error('自动刷新日志失败', error)
       }
@@ -516,7 +516,7 @@ async function filterLogs() {
   try {
     await loadLogs()
   } catch (error) {
-    ElMessage.error(t('tasks.filterFailed'))
+    showHttpError(error, 'tasks.filterFailed')
   } finally {
     logLoading.value = false
   }
@@ -533,7 +533,7 @@ async function resetLogFilter() {
   try {
     await loadLogs()
   } catch (error) {
-    ElMessage.error(t('tasks.resetFilterFailed'))
+    showHttpError(error, 'tasks.resetFilterFailed')
   } finally {
     logLoading.value = false
   }
@@ -664,7 +664,7 @@ async function cancelTrace(traceId) {
     load()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error(t('tasks.cancelFailed'))
+      showHttpError(error, 'tasks.cancelFailed')
     }
   }
 }
@@ -680,7 +680,7 @@ async function forceTrace(traceId) {
     load()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error(t('tasks.forceTerminateFailed'))
+      showHttpError(error, 'tasks.forceTerminateFailed')
     }
   }
 }

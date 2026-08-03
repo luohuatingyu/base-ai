@@ -11,7 +11,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import http from '../api/http'
+import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { localizeUserDisplayName, localizeDepartmentName, localizeRoleName } from '../utils/localization'
 const { t } = useI18n(); const auth = useAuthStore(), rows = ref([]), roles = ref([]), departments = ref([]), positions = ref([]), total = ref(0), visible = ref(false)
@@ -21,7 +21,7 @@ async function loadOptions() { [roles.value, departments.value, positions.value]
 /** 打开用户编辑窗口。 */
 function open(row) { Object.assign(form, row ? { ...row, password: '', roleIds: [...row.roleIds], positionIds: [...row.positionIds] } : { id: null, username: '', displayName: '', password: '', enabled: true, departmentId: null, roleIds: [], positionIds: [] }); visible.value = true }
 /** 保存用户并刷新列表。 */
-async function save() { try { form.id ? await http.put(`/system/users/${form.id}`, form) : await http.post('/system/users', form); visible.value = false; await load(); ElMessage.success(t('common.successSaved')) } catch (e) { ElMessage.error(e.response?.data?.message || t('common.saveFailed')) } }
+async function save() { try { form.id ? await http.put(`/system/users/${form.id}`, form) : await http.post('/system/users', form); visible.value = false; await load(); ElMessage.success(t('common.successSaved')) } catch (e) { showHttpError(e, 'common.saveFailed') } }
 /** 删除用户前进行二次确认。 */
 async function remove(row) { await ElMessageBox.confirm(t('users.confirmDelete', { name: row.username }), t('common.deleteConfirm'), { type: 'warning' }); await http.delete(`/system/users/${row.id}`); await load(); ElMessage.success(t('common.successDeleted')) }
 onMounted(async () => { await loadOptions(); await load() })

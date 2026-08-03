@@ -70,7 +70,7 @@ test('自动保存展示应用状态并在失败时恢复最近生效配置', ()
   assert.match(viewSource, /saveStatus\.value = 'saving'/)
   assert.match(viewSource, /saveStatus\.value = 'saved'/)
   assert.match(viewSource, /saveStatus\.value = 'error'/)
-  assert.match(viewSource, /ElMessage\.error\(t\('apiTriggerSecurity\.autoSaveFailed'\)\)/)
+  assert.match(viewSource, /showHttpError\(error, 'apiTriggerSecurity\.autoSaveFailed'\)/)
   for (const source of [zhSource, enSource]) {
     assert.match(source, /autoSaveFailed:/)
     assert.match(source, /autoSaveStatus: \{ saved:/)

@@ -43,6 +43,22 @@ export default {
     result: 'Result', operation: 'Actions', method: 'Method', interface: 'Endpoint',
     client: 'Client', ip: 'IP', error: 'Error', loadingFailed: 'Failed to load'
   },
+  httpErrors: {
+    badRequest: 'The request parameters are invalid',
+    unauthorized: 'Your session has expired. Please sign in again',
+    forbidden: 'You do not have permission to perform this operation',
+    notFound: 'The requested resource was not found',
+    conflict: 'The data state has changed. Refresh and try again',
+    unprocessable: 'The submitted data could not be processed',
+    tooManyRequests: 'Too many operations. Please try again later',
+    client: 'The request could not be completed',
+    server: 'The server could not process the request. Please try again later',
+    badGateway: 'The upstream service returned an invalid response. Please try again later',
+    serviceUnavailable: 'The service is temporarily unavailable. Please try again later',
+    gatewayTimeout: 'The upstream service timed out. Please try again later',
+    timeout: 'The request timed out. Please try again later',
+    network: 'A network error occurred. Check your connection and try again'
+  },
   login: {
     description: 'Unified Model Capability and System Management Platform',
     username: 'Username', password: 'Password', submit: 'Sign In', loginFailed: 'Login failed', openPlatform: 'Open Platform'
