@@ -19,8 +19,14 @@ public class SystemConfigurationController {
     private final SystemConfigurationService service;
     public SystemConfigurationController(SystemConfigurationService service){this.service=service;}
 
-    /** 查询系统参数。 */
-    @GetMapping("/settings") @RequiredPermission("system:setting:list") public List<SystemConfigurationService.SettingView> settings(){return service.settings();}
+    /** 分页查询系统参数，默认每页返回十条。 */
+    @GetMapping("/settings") @RequiredPermission("system:setting:list")
+    public SystemConfigurationService.SettingPage settings(
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size,
+        @RequestParam(required = false) String configKey) {
+        return service.settingsPage(page, size, configKey);
+    }
     /** 创建系统参数。 */
     @PostMapping("/settings") @RequiredPermission("system:setting:create") public SystemConfigurationService.SettingView createSetting(@RequestBody SystemConfigurationService.SettingCommand command){return service.createSetting(command);}
     /** 更新系统参数。 */

@@ -30,3 +30,14 @@ test('任务调度支持按 Trace ID 检索和重置', () => {
   assert.match(source, /traceId:\s*''/)
   assert.match(source, /Object\.assign\(query,\s*\{[\s\S]*?traceId:\s*''/)
 })
+
+test('系统参数页面支持分页、模糊搜索和托管参数保护', () => {
+  const source = readFileSync(new URL('../src/views/SettingsView.vue', import.meta.url), 'utf8')
+
+  assert.match(source, /query = reactive\(\{ page: 1, size: 10, configKey: '' \}\)/)
+  assert.match(source, /http\.get\('\/system\/settings', \{ params: query \}\)/)
+  assert.match(source, /settings\.keySearchPlaceholder/)
+  assert.match(source, /!scope\.row\.systemManaged/)
+  assert.match(source, /form\.systemManaged/)
+  assert.match(source, /shortKey\(row\)/)
+})

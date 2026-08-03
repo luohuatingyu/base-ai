@@ -6,6 +6,7 @@ import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.domain.*;
 import com.baseai.platform.repository.*;
+import com.baseai.platform.security.AuthContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,11 +76,33 @@ public class SystemConfigurationService {
      * @return 系统参数视图列表，敏感值已屏蔽
      */
     public List<SettingView> settings() {
-        // 查询所有参数，先按分组代码排序，再按参数键排序
+        return sortedSettings().stream().map(this::toView).toList();
+    }
+
+    /** 按参数键模糊检索并分页查询系统参数，页码从一开始且每页最多一百条。 */
+    public SettingPage settingsPage(int page, int size, String configKey) {
+        int normalizedPage = Math.max(page, 1);
+        int normalizedSize = Math.min(Math.max(size, 1), 100);
+        String normalizedKey = configKey == null ? "" : configKey.trim().toLowerCase(Locale.ROOT);
+        List<SystemSetting> settings = sortedSettings().stream()
+            .filter(item -> normalizedKey.isEmpty()
+                || item.getConfigKey().toLowerCase(Locale.ROOT).contains(normalizedKey))
+            .toList();
+        long requestedFromIndex = (long) (normalizedPage - 1) * normalizedSize;
+        int fromIndex = (int) Math.min(requestedFromIndex, settings.size());
+        int toIndex = Math.min(fromIndex + normalizedSize, settings.size());
+        return new SettingPage(settings.subList(fromIndex, toIndex).stream().map(this::toView).toList(),
+            normalizedPage, normalizedSize, settings.size());
+    }
+
+    /** 查询并整理可展示的系统参数，统一全量读取和分页查询的排序规则。 */
+    private List<SystemSetting> sortedSettings() {
         return settingRepository.findAll().stream()
             .filter(item -> !ApiTriggerSecurityConfigurationService.isReservedKey(item.getConfigKey()))
-            .sorted(Comparator.comparing(SystemSetting::getGroupCode).thenComparing(SystemSetting::getConfigKey))
-            .map(this::toView).toList();
+            .sorted(Comparator.comparing(SystemSetting::getGroupCode)
+                .thenComparing(SystemSetting::getSortOrder, Comparator.nullsFirst(Integer::compareTo))
+                .thenComparing(SystemSetting::getConfigKey))
+            .toList();
     }
 
     /**
@@ -116,6 +139,7 @@ public class SystemConfigurationService {
         SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("setting.notFound"));
         rejectReservedKey(setting.getConfigKey());
         rejectReservedKey(command.configKey());
+        rejectSystemManagedMetadata(setting, command);
         return saveSetting(setting, command);
     }
 
@@ -131,6 +155,7 @@ public class SystemConfigurationService {
     public void deleteSetting(Long id) {
         SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("setting.notFound"));
         rejectReservedKey(setting.getConfigKey());
+        if (Boolean.TRUE.equals(setting.getSystemManaged())) throw BusinessException.forbidden("setting.systemManaged");
         // 删除Redis缓存
         redisTemplate.delete(cachePrefix + setting.getConfigKey());
         settingRepository.delete(setting);
@@ -290,6 +315,8 @@ public class SystemConfigurationService {
         setting.setSensitive(sensitive);
         // 默认启用
         setting.setEnabled(command.enabled() == null || command.enabled());
+        if (setting.getSortOrder() == null) setting.setSortOrder(0);
+        if (setting.getSystemManaged() == null) setting.setSystemManaged(false);
         SystemSetting saved = settingRepository.save(setting);
         // 清除缓存，确保下次读取最新值
         redisTemplate.delete(cachePrefix + saved.getConfigKey());
@@ -336,15 +363,22 @@ public class SystemConfigurationService {
     /**
      * 将系统参数实体转换为视图对象（内部方法）
      *
-     * <p>敏感参数的值会被屏蔽显示为 "******"。
+     * <p>敏感参数仅对系统管理员展示真实值，其他用户显示为 "******"。
      *
      * @param item 系统参数实体
      * @return 系统参数视图对象
      */
     private SettingView toView(SystemSetting item) {
-        return new SettingView(item.getId(), item.getGroupCode(), item.getConfigKey(), item.getName(),
-            Boolean.TRUE.equals(item.getSensitive()) ? "******" : item.getConfigValue(),
-            item.getSensitive(), item.getEnabled(), item.getUpdatedAt());
+        String configValue = Boolean.TRUE.equals(item.getSensitive())
+            ? (isAdmin() ? cryptoService.decrypt(item.getConfigValue()) : "******")
+            : item.getConfigValue();
+        return new SettingView(item.getId(), item.getGroupCode(), item.getConfigKey(), item.getName(), configValue,
+            item.getSensitive(), item.getEnabled(), item.getSortOrder(), item.getSystemManaged(), item.getUpdatedAt());
+    }
+
+    /** 判断当前登录用户是否为系统管理员。 */
+    private boolean isAdmin() {
+        return AuthContext.current() != null && AuthContext.current().roles().contains("ADMIN");
     }
 
     /**
@@ -385,6 +419,18 @@ public class SystemConfigurationService {
         }
     }
 
+    /** 系统托管参数只允许修改值和启用状态，防止初始化身份被篡改。 */
+    private void rejectSystemManagedMetadata(SystemSetting setting, SettingCommand command) {
+        if (!Boolean.TRUE.equals(setting.getSystemManaged())) return;
+        if (!Objects.equals(setting.getGroupCode(), command.groupCode())
+            || !Objects.equals(setting.getConfigKey(), command.configKey())
+            || !Objects.equals(setting.getName(), command.name())
+            || !Objects.equals(setting.getSensitive(), command.sensitive())
+            || !Objects.equals(setting.getEnabled(), command.enabled())) {
+            throw BusinessException.forbidden("setting.systemManaged");
+        }
+    }
+
     /**
      * 系统参数命令对象
      *
@@ -409,7 +455,12 @@ public class SystemConfigurationService {
      * @param enabled 是否启用
      * @param updatedAt 更新时间
      */
-    public record SettingView(Long id, String groupCode, String configKey, String name, String configValue, Boolean sensitive, Boolean enabled, java.time.Instant updatedAt) {}
+    public record SettingView(Long id, String groupCode, String configKey, String name, String configValue,
+                              Boolean sensitive, Boolean enabled, Integer sortOrder, Boolean systemManaged,
+                              java.time.Instant updatedAt) {}
+
+    /** 系统参数分页响应，items 为当前页数据，total 为过滤后的总数。 */
+    public record SettingPage(List<SettingView> items, int page, int size, long total) {}
 
     /**
      * 字典类型命令对象

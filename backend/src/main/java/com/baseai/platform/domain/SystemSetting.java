@@ -13,6 +13,8 @@ public class SystemSetting {
     @Column(columnDefinition = "MEDIUMTEXT") private String configValue;
     @Column(name = "`sensitive`", nullable = false) private Boolean sensitive = false;
     @Column(nullable = false) private Boolean enabled = true;
+    @Column(nullable = false) private Integer sortOrder = 0;
+    @Column(nullable = false) private Boolean systemManaged = false;
     @Column(nullable = false) private Instant updatedAt;
     @PrePersist @PreUpdate public void updateTime() { updatedAt = Instant.now(); }
     public Long getId() { return id; } public String getGroupCode() { return groupCode; } public void setGroupCode(String value) { groupCode=value; }
@@ -21,5 +23,7 @@ public class SystemSetting {
     public String getConfigValue() { return configValue; } public void setConfigValue(String value) { configValue=value; }
     public Boolean getSensitive() { return sensitive; } public void setSensitive(Boolean value) { sensitive=value; }
     public Boolean getEnabled() { return enabled; } public void setEnabled(Boolean value) { enabled=value; }
+    public Integer getSortOrder() { return sortOrder; } public void setSortOrder(Integer value) { sortOrder=value; }
+    public Boolean getSystemManaged() { return systemManaged; } public void setSystemManaged(Boolean value) { systemManaged=value; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

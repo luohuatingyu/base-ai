@@ -8,6 +8,9 @@ import com.baseai.platform.domain.SystemSetting;
 import com.baseai.platform.repository.DictionaryDataRepository;
 import com.baseai.platform.repository.DictionaryTypeRepository;
 import com.baseai.platform.repository.SystemSettingRepository;
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +20,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -41,6 +45,12 @@ class SystemConfigurationServiceTest {
         properties.getPlatform().setCode("baseai");
         service = new SystemConfigurationService(settingRepository, typeRepository, dataRepository,
             cryptoService, redisTemplate, properties);
+    }
+
+    /** 清理线程级登录上下文，避免权限测试污染其他用例。 */
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        AuthContext.clear();
     }
 
     /** 通用系统参数列表不得展示接口触发页面专用的安全配置键。 */
@@ -80,6 +90,54 @@ class SystemConfigurationServiceTest {
         verify(settingRepository, never()).delete(org.mockito.ArgumentMatchers.any());
     }
 
+    /** 系统参数支持按 Key 模糊过滤、稳定排序和分页边界归一化。 */
+    @Test
+    void settingsPageFiltersAndNormalizesPagination() {
+        SystemSetting first = setting("business.alpha");
+        first.setSortOrder(20);
+        SystemSetting second = setting("business.beta");
+        second.setSortOrder(10);
+        when(settingRepository.findAll()).thenReturn(List.of(first, second));
+
+        SystemConfigurationService.SettingPage page = service.settingsPage(0, 0, " BETA ");
+
+        assertEquals(1, page.items().size());
+        assertEquals("business.beta", page.items().get(0).configKey());
+        assertEquals(1, page.page());
+        assertEquals(1, page.size());
+        assertEquals(1, page.total());
+    }
+
+    /** 系统管理员可以查看敏感参数的实际值，其他用户只能看到脱敏值。 */
+    @Test
+    void sensitiveValueIsVisibleOnlyToAdmin() {
+        SystemSetting sensitive = setting("business.secret");
+        sensitive.setSensitive(true);
+        sensitive.setConfigValue("encrypted");
+        when(settingRepository.findAll()).thenReturn(List.of(sensitive));
+        when(cryptoService.decrypt("encrypted")).thenReturn("plain-secret");
+
+        assertEquals("******", service.settings().get(0).configValue());
+
+        AuthContext.set(new AuthUser(1L, "admin", Set.of("ADMIN"), Set.of(), AuthenticationType.TOKEN, null, null));
+        assertEquals("plain-secret", service.settings().get(0).configValue());
+    }
+
+    /** 系统托管参数只能更新值或启用状态，不能修改元数据或删除。 */
+    @Test
+    void systemManagedSettingsRejectMetadataChangesAndDeletion() {
+        SystemSetting managed = setting("business.managed");
+        managed.setSystemManaged(true);
+        when(settingRepository.findById(7L)).thenReturn(Optional.of(managed));
+        SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
+            "changed", "business.managed", "托管参数", "value", false, true);
+
+        assertThrows(BusinessException.class, () -> service.updateSetting(7L, command));
+        assertThrows(BusinessException.class, () -> service.deleteSetting(7L));
+        verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        verify(settingRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+    }
+
     /** 创建最小可展示系统参数实体。 */
     private SystemSetting setting(String key) {
         SystemSetting setting = new SystemSetting();
@@ -89,6 +147,8 @@ class SystemConfigurationServiceTest {
         setting.setConfigValue("value");
         setting.setSensitive(false);
         setting.setEnabled(true);
+        setting.setSortOrder(0);
+        setting.setSystemManaged(false);
         return setting;
     }
 }
