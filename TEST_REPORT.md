@@ -2,39 +2,46 @@
 
 ## 📋 Git 基准点
 
-Commit: e35ff794593568fb3649e2eedcf5dddaea49790b
-- 提交说明: Add mail management and route safeguards
+Commit: 5ce3be4f9da450e09aad1820ef9a95b2aa8b434f
+- 提交说明: Add localized mail route testing
 - 测试日期: 2026-08-03
 - 分支: master
-- 上一测试基准点: `9e695dc0949848c050cc6b859c473b72ec4de539`
+- 上一测试基准点: `e35ff794593568fb3649e2eedcf5dddaea49790b`
+- 上一测试报告提交: `9dd6b4a`
 
 ## 🎯 当前变更范围
 
-- 新增独立“邮件管理”目录，位于“系统管理”和“模型管理”之间，包含邮箱配置与邮件路由页面及各自 CRUD 权限。
-- 邮箱账户支持 SMTP 主机、端口、用户名、发件地址、TLS 模式、密码和启停状态管理；密码使用现有 AES-GCM 配置加密能力保存，列表不返回密文或明文。
-- 仅系统管理员可在编辑单个邮箱账户时读取解密密码；非管理员即使拥有更新权限也会在 Service 层被拒绝，关闭弹窗后前端清除密码状态。
-- 邮件路由支持独立维护邮箱账户、主送和抄送地址；具体业务路由缺失或停用时可回退 `DEFAULT`，不可用账户和待配置路由返回稳定业务错误。
-- 启动时幂等创建并纠正邮件 `DEFAULT / 默认邮件路由`，固定编码、名称和启用状态且禁止删除；账户字段允许为空，以支持全新环境先保存待配置 DEFAULT。
-- 模型 `DEFAULT / 默认能力路由` 同步固定编码和名称，启动时纠正历史值，前端锁定编码与名称输入；普通能力路由仍可改编码和名称。
-- `/api/mail/**` 同时加入默认、应用配置和外部追踪排除文件，避免密码、收件人及响应明文进入 HTTP 明细日志。
-- 按当前项目布局规范补充邮件表格列宽；修正历史布局测试只统计包含固定右侧操作列的主表，避免将任务详情子表误判为第二个主操作表。
-- 本次不包含物流恢复、物流失败通知、Java/Python SMTP 投递或真实邮件发送，也未新增依赖。
+- 邮件路由页面增加人工测试功能，使用所选路由自身的 SMTP 账户、主送和抄送配置发送固定测试邮件，不回退 `DEFAULT`。
+- 测试邮件语言跟随当前界面的 `Accept-Language`；无前端上下文的后端业务邮件统一使用 `APP_DEFAULT_LOCALE`。
+- 物流失败通知主题、字段标签和正文由中英文资源生成，不再硬编码中文。
+- 测试接口复用 `mail:route:update` 权限并记录稳定追踪类型 `MAIL_ROUTE_TEST`；待配置路由和停用账户在调用 Worker 前被拒绝。
+- 物流失败状态增加 `ESTIMATE` 与 `PLACE` 阶段，支持确认未下单后恢复至 `WAITING`，以及下单失败后切换当前报价批次中的其他可用渠道继续下单。
+- `UNKNOWN` 明确用于承运商下单请求发生异常且无法确认是否成功的场景，必须人工确认未下单后才能恢复或切换渠道。
+- 订单汇总件数、重量和体积统一依据商品明细在服务端重算并校验；订单列表改为每页固定 10 条。
+- 增加失败订单通知接口，一次汇总当前全部 `FAILED` 和 `UNKNOWN` 订单并通过 Python Worker 发送邮件，不内置定时调度。
+- 保留邮件账户、邮件路由、DEFAULT 身份约束、密码加密与脱敏、邮件管理菜单及 SMTP Worker 能力。
+- 本次未新增依赖、数据库脚本或配置迁移。
 
 ## 📊 当前测试执行结果
 
-- 后端定向测试：75 个，通过 75 个（100%），0 失败，0 错误，0 跳过。
-- 前端定向测试：27 个，通过 27 个（100%），0 失败，0 跳过。
-- 后端完整回归：220 个，通过 220 个（100%），0 失败，0 错误，0 跳过。
-- 前端完整回归：164 个，通过 164 个（100%），0 失败，0 跳过。
-- Python Worker 完整回归（Python 3.12）：12 个，通过 12 个（100%），0 失败，0 错误，0 跳过。
-- Compose 构建阶段：Backend 220/220 通过，Frontend Vite 构建成功，Python Worker 镜像构建成功。
-- Compose 运行态：未通过；外部 MySQL 返回 `Network is unreachable`，Backend 无法建立连接并持续重启，Frontend 因依赖 Backend 健康状态未启动，Python Worker 健康。
-- 运行态邮件表创建、DEFAULT 数据初始化、管理员密码接口及三服务健康状态尚未验证，不能据此判定功能已完成运行态验收。
+- 后端邮件专项：36 个，通过 36 个（100%），0 失败，0 错误，0 跳过。
+- 前端邮件及 HTTP 错误专项：10 个，通过 10 个（100%），0 失败，0 错误，0 跳过。
+- 后端完整回归：232 个，通过 232 个（100%），0 失败，0 错误，0 跳过。
+- 前端完整回归：175 个，通过 175 个（100%），0 失败，0 错误，0 跳过。
+- Python Worker 本次未修改，沿用上一基准完整回归 36/36 通过。
+- 前端生产构建：Vite 构建成功，保留既有非阻断警告。
+- Compose 重建：Backend、Frontend、Python Worker 镜像构建成功，服务均已启动并健康。
+- 运行态接口：新增测试接口未登录访问返回中文 401 且未触发邮件；三个服务均健康。
 
 ## ✅ 验收标准—测试用例映射
 
 | 验收标准 | 测试层级与前置条件 | 输入/操作 | 预期结果 | 场景类型 |
 | --- | --- | --- | --- | --- |
+| 测试邮件跟随当前界面语言 | Delivery Service 参数化测试；中英文资源完整 | 分别传入 zh-CN、en-US 请求语言 | 固定主题和正文按请求语言发送，业务含义一致 | 正常、兼容、国际化 |
+| 人工测试精确使用所选路由 | Management/Delivery Service 测试；具体路由与 DEFAULT 并存 | 测试启用或停用的具体路由 | 使用具体路由的 SMTP、主送和抄送，不查询或回退 DEFAULT | 正常、边界、安全 |
+| 不可用配置阻止测试发送 | Service 测试；路由不存在、待配置或账户停用 | 调用路由测试 | 返回稳定业务错误，不调用 Worker | 异常、边界、安全 |
+| 后端邮件使用系统语言 | Delivery/Logistics Service 测试；线程语言与系统语言不同 | 生成物流失败通知 | 主题、字段和正文均按 APP_DEFAULT_LOCALE 生成 | 正常、兼容、回归 |
+| 测试入口受权限和追踪保护 | Controller、Trace 和前端契约测试 | 无更新权限或未登录访问；有权限点击测试 | 按 mail:route:update 控制入口和接口，记录 MAIL_ROUTE_TEST；未登录返回 401 | 权限、安全、回归 |
 | 邮件菜单位置和权限层级正确 | DataInitializer、前端导航测试；初始化空菜单 | 启动初始化并读取权限树 | 邮件管理位于系统和模型之间，账户/路由页面及按钮归属正确 | 正常、权限、回归 |
 | 邮箱密码安全保存和更新 | Service 单元测试；真实 AES-GCM、模拟仓储 | 新建、空密码编辑、新密码编辑 | 保存密文；列表不泄漏；空值保留旧密文；非空值生成新密文 | 正常、边界、安全、兼容 |
 | 明文密码仅系统管理员可读 | Service、Controller、前端契约测试 | 管理员、未登录用户、普通更新者读取单账户密码 | 管理员成功；未登录 401；非管理员 403；不存在账户 404；弹窗关闭清空 | 正常、异常、权限、安全 |
@@ -44,57 +51,56 @@ Commit: e35ff794593568fb3649e2eedcf5dddaea49790b
 | DEFAULT 模型路由身份固定 | Service、启动初始化器和前端测试 | 启动历史改名数据，提交改编码和名称请求 | 恢复固定编码和名称；普通路由继续可编辑 | 正常、兼容、回归 |
 | 敏感邮件请求不进入明细日志 | Controller、RequestContextFilter 测试 | 提交包含密码的邮件账户请求 | 不生成 Request ID 或 HTTP 请求/响应明细日志 | 安全、回归 |
 | 邮件页面适配现有布局 | 前端布局、页面及工具测试 | 展示多列账户/路由，增删多个收件人 | 主表列宽和操作列符合规范；地址过滤空值并去重 | 正常、边界、可用性 |
-| 历史功能保持稳定 | 三端完整回归和 Compose 构建 | 执行全部自动化测试与镜像构建 | 396 个自动化测试全部通过，三个镜像成功构建 | 回归、集成 |
-| 运行环境应用变更 | Compose 运行态；外部数据库可达 | 重建启动并检查健康端点和 DEFAULT 数据 | 三服务健康，邮件表与 DEFAULT 路由初始化成功 | 集成；当前受阻未验证 |
+| 历史功能保持稳定 | 完整前后端测试与 Compose 运行态 | 执行完整测试、重建并启动服务 | 后端 232 个、前端 175 个测试通过，三个服务 healthy | 回归、集成 |
 
 ## 🧪 当前测试执行记录
 
 | 范围 | 执行命令或方式 | 结果 |
 | --- | --- | --- |
-| 后端定向测试 | Maven 3.9.9 / Temurin 17 容器执行 `mvn -B -ntp -Dtest=MailManagementServiceTest,MailManagementControllerContractTest,MailRouteInitializerTest,LlmDefaultRouteInitializerTest,LlmManagementServiceTest,DataInitializerTest,TraceTypeCodeTest,RequestContextFilterTest test` | 75/75 通过 |
-| 前端定向测试 | `node --test test/mail-management.test.mjs test/mail-routes-contract.test.mjs test/model-route-health.test.mjs test/navigation.test.mjs tests/mailAddresses.test.js` | 27/27 通过 |
-| 后端完整回归 | Maven 3.9.9 / Temurin 17 容器执行 `mvn test -B -ntp` | 220/220 通过 |
-| 前端完整回归（首次） | `node --test test/*.test.mjs tests/*.test.js` | 163/164 通过；历史布局断言将任务详情子表误算为主操作表 |
-| 前端完整回归（修正后） | `node --test test/*.test.mjs tests/*.test.js` | 164/164 通过 |
-| Python Worker 完整回归 | Python 3.12 容器安装既有依赖后执行 `pytest -q` | 12/12 通过 |
-| Compose 统一重建 | `docker compose up --build -d` | 三个镜像构建成功；Backend 构建阶段 220/220 通过；运行态被外部 MySQL 网络阻断 |
-| Compose 启动重试 | `docker compose up -d` | MySQL 仍为 `Network is unreachable`；Backend 不健康，Frontend 未启动，Python Worker 健康 |
+| 后端邮件专项 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=MailManagementServiceTest,MailDeliveryServiceTest,MailManagementControllerContractTest,LogisticsFailureNotificationServiceTest,MessageBundleTest,TraceTypeCodeTest test` | 36/36 通过，0 失败，0 错误，0 跳过 |
+| 前端邮件及 HTTP 错误专项 | `cd frontend && node --test test/logistics-orders.test.mjs test/http-error.test.mjs` | 10/10 通过，0 失败，0 跳过 |
+| 后端完整回归 | `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B -ntp` | 232/232 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `cd frontend && node --test test/*.test.mjs tests/*.test.js` | 175/175 通过，0 失败，0 跳过 |
+| Python Worker | 本次未修改，未重复执行 | 沿用上一基准 36/36 通过结果 |
+| Compose 统一重建 | `docker compose up --build -d` | Backend、Frontend、Python Worker 镜像构建成功并启动 |
+| Compose 状态检查 | `docker compose ps` | Backend、Frontend、Python Worker 均为 healthy |
+| 运行态健康检查 | `curl -fsS http://localhost:8080/api/open/health`、`curl -fsS http://localhost/health` | Backend、Frontend 均返回 `{"status":"UP"}` |
+| 邮件测试接口权限 | 未登录以 `Accept-Language: zh-CN` 调用 `POST /api/mail/routes/1/test` | 返回 HTTP 401 和“请先登录”，未触发 SMTP |
 | 静态变更检查 | `git diff --check`、暂存差异和工作区状态检查 | 无空白错误；功能提交仅包含本次确认范围 |
 
 ## 📊 当前测试覆盖范围
 
 - Domain/Repository：邮件账户、可待配置的邮件路由、唯一编码及账户引用查询。
-- Service：账户 CRUD、AES-GCM 加解密、管理员密码读取、输入校验、账户引用保护、路由解析和 DEFAULT 强约束。
-- Controller/权限：账户和路由独立 CRUD 权限，明文密码的更新权限与 ADMIN 角色双重隔离，敏感写请求不保存快照。
+- Service：账户 CRUD、AES-GCM 加解密、精确测试路由解析、请求/系统邮件语言选择、路由解析和 DEFAULT 强约束。
+- Controller/权限：账户和路由独立 CRUD、邮件路由测试、明文密码的更新权限与 ADMIN 角色双重隔离。
 - 初始化：邮件表字段兼容迁移、邮件 DEFAULT 初始化、模型 DEFAULT 身份纠正及菜单层级。
-- Frontend：路由守卫、导航本地化、账户和路由页面、逐行收件人编辑、管理员密码回显、弹窗清密、DEFAULT 字段锁定和统一表格布局。
-- 回归：后端 220 个、前端 164 个、Python Worker 12 个测试及三镜像生产构建。
+- Frontend：统一 HTTP 错误处理、请求语言、邮件路由测试、逐行收件人编辑、管理员密码回显、DEFAULT 字段锁定和统一表格布局。
+- 回归：后端 232 个、前端 175 个测试；Python Worker 未修改。
 
 ## 🔄 当前重测触发条件
 
 - 修改邮件账户、邮件路由、密码加密/回显、权限或敏感追踪排除规则。
 - 修改邮件或模型 DEFAULT 的固定编码、名称、启用规则及启动初始化逻辑。
 - 修改邮件管理菜单、前端路由、表单、逐行邮箱编辑或表格布局。
-- 外部 MySQL 网络恢复后，必须重新执行 `docker compose up -d`、三服务健康检查及运行态 DEFAULT 路由验证。
+- 修改测试邮件模板、请求语言传递、`APP_DEFAULT_LOCALE` 或后端邮件本地化规则。
 - 当前 Git 基准点之后存在后端业务代码变更，或用户明确要求重新验证。
 
 ## ⚠️ 当前已知问题与限制
 
-- 外部 MySQL 当前从 Backend 容器不可达，报错为 `java.net.SocketException: Network is unreachable`；因此运行态验收尚未完成。
-- Backend 处于自动重启状态，Frontend 因健康依赖保持未启动，Python Worker 健康；数据库网络恢复后仍需重新执行 Compose 启动。
-- 未配置或发送真实 SMTP 邮件；实际投递链路不属于本次同步范围。
+- 未配置或发送真实 SMTP 邮件；SMTP 行为由隔离外部连接的测试覆盖。
+- Compose 构建命中既有镜像缓存；功能代码已通过本次独立完整回归，运行容器已按当前工作区重新创建并健康。
 - 邮箱密码明文接口属于高敏感能力，除 Controller 权限外还强制要求 `ADMIN` 角色，并通过全路径追踪排除防止进入 HTTP 明细日志。
 - JPA 会创建 `sys_mail_account` 和 `sys_mail_route`；代码回滚不会自动删除表或数据。
 
 ## 📝 下次测试建议
 
-1. 恢复外部 MySQL 网络后完成 Compose 健康检查，并确认邮件表、邮件 DEFAULT 和模型 DEFAULT 均成功初始化。
-2. 使用管理员和普通操作员运行接口验收，分别验证单账户密码读取成功、403 隔离以及列表持续脱敏。
-3. 在隔离测试邮箱环境补充 SMTP 账户连通性或实际投递能力时，应作为独立功能重新设计和确认范围。
+1. 在测试邮箱环境中分别使用中英文界面执行真实 STARTTLS/SSL 测试邮件验收。
+2. 使用管理员和普通操作员验证密码读取隔离、测试按钮权限以及列表持续脱敏。
+3. 增加浏览器端 E2E 测试，覆盖邮件路由测试按钮、加载状态和错误反馈。
 
 ## ↩️ 回滚方式
 
-- 回滚功能提交 `e35ff79` 并重新执行 `docker compose up --build -d`，可移除邮件管理和 DEFAULT 路由加固代码。
+- 回滚功能提交 `5ce3be4` 和 `0fbeeae` 并重新执行 `docker compose up --build -d`，可移除本次同步的邮件本地化测试和统一前端错误处理。
 - 代码回滚不会删除新增邮件表或历史配置；如需清理数据库对象和数据，必须另行确认后执行。
 
 ---
