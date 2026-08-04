@@ -10,6 +10,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /** 记录并执行系统配置缓存同步任务，负责处理异常重启后的对账。 */
 @Service
@@ -48,22 +51,41 @@ public class SystemSettingSyncOutboxService {
     @Scheduled(fixedDelayString = "${SYSTEM_SETTING_OUTBOX_DELAY_MS:30000}")
     @Transactional
     public void reconcile() {
-        outboxRepository.findTop100ByProcessedAtIsNullOrderByCreatedAtAsc().forEach(this::reconcileOne);
+        List<SystemSettingSyncOutbox> pendingEvents = outboxRepository.findTop100ByProcessedAtIsNullOrderByCreatedAtAsc();
+        Map<String, List<SystemSettingSyncOutbox>> eventsByKey = new LinkedHashMap<>();
+        pendingEvents.forEach(event -> eventsByKey.computeIfAbsent(event.getConfigKey(), ignored -> new java.util.ArrayList<>()).add(event));
+        eventsByKey.values().forEach(this::reconcileKey);
     }
 
-    /** 对单条任务执行幂等同步，删除操作以数据库不存在为准。 */
-    private void reconcileOne(SystemSettingSyncOutbox event) {
+    /** 合并同一配置键的任务后执行一次同步，并统一更新任务结果。 */
+    private void reconcileKey(List<SystemSettingSyncOutbox> events) {
+        String configKey = events.get(0).getConfigKey();
         try {
-            settingRepository.findByConfigKey(event.getConfigKey())
-                .ifPresentOrElse(cacheService::apply, () -> cacheService.delete(event.getConfigKey()));
-            event.setAttempts(event.getAttempts() + 1);
-            event.setProcessedAt(Instant.now());
-            event.setLastError(null);
+            settingRepository.findByConfigKey(configKey)
+                .ifPresentOrElse(cacheService::apply, () -> cacheService.delete(configKey));
+            markSucceeded(events);
         } catch (RuntimeException exception) {
-            event.setAttempts(event.getAttempts() + 1);
-            event.setLastError(trimError(exception));
+            markFailed(events, trimError(exception));
         }
-        outboxRepository.save(event);
+        outboxRepository.saveAll(events);
+    }
+
+    /** 将同一配置键的所有待处理任务标记为成功。 */
+    private void markSucceeded(List<SystemSettingSyncOutbox> events) {
+        Instant processedAt = Instant.now();
+        events.forEach(event -> {
+            event.setAttempts(event.getAttempts() + 1);
+            event.setProcessedAt(processedAt);
+            event.setLastError(null);
+        });
+    }
+
+    /** 将同一配置键的所有待处理任务保留为可重试失败状态。 */
+    private void markFailed(List<SystemSettingSyncOutbox> events, String error) {
+        events.forEach(event -> {
+            event.setAttempts(event.getAttempts() + 1);
+            event.setLastError(error);
+        });
     }
 
     /** 限制错误文本长度，避免同步异常污染 Outbox 表。 */

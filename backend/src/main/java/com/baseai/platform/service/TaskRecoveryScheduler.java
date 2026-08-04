@@ -13,6 +13,9 @@ import org.springframework.boot.ApplicationRunner;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 /**
  * 任务恢复调度器
@@ -30,6 +33,7 @@ import java.time.Instant;
 @Component
 public class TaskRecoveryScheduler implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(TaskRecoveryScheduler.class);
+    private static final int HEARTBEAT_BATCH_SIZE = 500;
 
     /** MySQL数据库操作模板 */
     private final JdbcTemplate jdbcTemplate;
@@ -78,9 +82,7 @@ public class TaskRecoveryScheduler implements ApplicationRunner {
 
             // 为当前JVM中所有活跃的任务刷新心跳时间
             // 只更新状态为RUNNING或CANCEL_REQUESTED的任务
-            int heartbeatUpdates = runtimeRegistry.activeTraceIds().stream().mapToInt(traceId -> jdbcTemplate.update(
-                "UPDATE task_trace SET heartbeat_at=?, version=version+1 WHERE trace_id=? AND status IN ('RUNNING','CANCEL_REQUESTED')",
-                Timestamp.from(now), traceId)).sum();
+            int heartbeatUpdates = refreshActiveHeartbeats(runtimeRegistry.activeTraceIds(), Timestamp.from(now));
 
             // 计算心跳超时的截止时间点
             Timestamp cutoff = Timestamp.from(now.minusSeconds(timeoutSeconds));
@@ -89,13 +91,13 @@ public class TaskRecoveryScheduler implements ApplicationRunner {
             // 这些任务的heartbeat_at时间早于cutoff，说明已经超时
             int stalePythonTraces = jdbcTemplate.update("""
                 UPDATE task_trace_python SET status='FAILED', finished_reason='HEARTBEAT_TIMEOUT', error_message='Worker 子任务心跳超时', finished_at=?
-                WHERE status IN ('RUNNING','CANCEL_REQUESTED') AND heartbeat_at < ?
+                WHERE status IN ('RUNNING','CANCEL_REQUESTED') AND heartbeat_at IS NOT NULL AND heartbeat_at < ?
                 """, Timestamp.from(now), cutoff);
 
             // 将心跳超时的Java主任务标记为失败
             int staleJavaTraces = jdbcTemplate.update("""
                 UPDATE task_trace SET status='FAILED', finished_reason='HEARTBEAT_TIMEOUT', error_message='任务心跳超时', finished_at=?, version=version+1
-                WHERE status IN ('RUNNING','CANCEL_REQUESTED') AND heartbeat_at < ?
+                WHERE status IN ('RUNNING','CANCEL_REQUESTED') AND heartbeat_at IS NOT NULL AND heartbeat_at < ?
                 """, Timestamp.from(now), cutoff);
 
             // 记录心跳刷新日志
@@ -111,6 +113,24 @@ public class TaskRecoveryScheduler implements ApplicationRunner {
             log.error("event=stale_trace_recovery_failed timeout_seconds={}", timeoutSeconds, exception);
             throw exception;
         }
+    }
+
+    /** 分块批量刷新当前实例的活跃任务，避免逐任务执行数据库更新。 */
+    private int refreshActiveHeartbeats(Set<String> traceIds, Timestamp heartbeatAt) {
+        if (traceIds.isEmpty()) return 0;
+        List<String> ids = new ArrayList<>(traceIds);
+        int updatedRows = 0;
+        for (int start = 0; start < ids.size(); start += HEARTBEAT_BATCH_SIZE) {
+            List<String> batch = ids.subList(start, Math.min(start + HEARTBEAT_BATCH_SIZE, ids.size()));
+            String placeholders = String.join(",", java.util.Collections.nCopies(batch.size(), "?"));
+            String sql = "UPDATE task_trace SET heartbeat_at=?, version=version+1 "
+                + "WHERE trace_id IN (" + placeholders + ") AND status IN ('RUNNING','CANCEL_REQUESTED')";
+            Object[] parameters = new Object[batch.size() + 1];
+            parameters[0] = heartbeatAt;
+            System.arraycopy(batch.toArray(), 0, parameters, 1, batch.size());
+            updatedRows += jdbcTemplate.update(sql, parameters);
+        }
+        return updatedRows;
     }
 
     /**
