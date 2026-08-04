@@ -2,41 +2,41 @@
 
 ## 📋 本次变更测试结果（2026-08-04）
 
-**Git 基准点**：`dff4ace`（Synchronize system settings with cache）
+**Git 基准点**：`9d5e904`（Add repair optimization regression tests）
 
-**变更范围**：同步源仓库基准提交之后的系统参数缓存一致性逻辑，新增系统参数缓存服务、缓存同步 Outbox 及定时对账；创建、更新、删除参数时同步 Redis，失败时恢复旧缓存；应用启动时将数据库系统参数回填运行时缓存。当前项目没有源仓库中的 `BusinessSettingInitializer`，因此启动回填适配到现有 `DataInitializer`。
+**变更范围**：删除 API Key 历史限流迁移、任务表启动期动态补字段和邮件路由启动期 `ALTER TABLE`；将任务表最终索引固化到 Schema；批量刷新活跃任务心跳并过滤空心跳；按配置键合并 Outbox 对账任务，减少重复数据库和 Redis 操作。
 
 **测试执行结果**：
-- 后端完整测试：240 个，通过 240 个（100%），失败 0 个，错误 0 个，跳过 0 个。
-- 系统参数定向测试：20 个，通过 20 个（100%），失败 0 个，错误 0 个，跳过 0 个。
-- Docker Compose 构建启动：通过。
+- 后端定向测试：6 个，通过 6 个（100%），失败 0 个，错误 0 个，跳过 0 个。
+- 后端完整测试：241 个，通过 241 个（100%），失败 0 个，错误 0 个，跳过 0 个。
+- Docker Compose 构建启动：最终通过；期间清理旧容器释放 `8080` 和 `80` 端口后重试。
 - 服务健康检查：Backend、Frontend、Python Worker 全部 healthy。
 
 **关键模块测试**：
-- `SystemConfigurationServiceTest`：9/9 通过，覆盖新增、更新、删除缓存同步及失败回滚。
-- `SystemSettingSyncOutboxServiceTest`：2/2 通过，覆盖更新对账和删除对账。
-- `DataInitializerTest`：9/9 通过，覆盖启动缓存回填副作用及既有初始化回归。
+- `TaskRecoverySchedulerTest`：2/2 通过，覆盖批量心跳、空活跃集合和超时条件。
+- `SystemSettingSyncOutboxServiceTest`：3/3 通过，覆盖更新、删除和重复配置键合并对账。
+- `MailRouteInitializerTest`：1/1 通过，确认启动流程不再执行动态 DDL。
 
 **验收标准—测试映射**：
 
 | 验收标准 | 测试用例 | 场景类型 |
 | --- | --- | --- |
-| 创建系统参数后同步 Redis 并记录 Outbox | `SystemConfigurationServiceTest#createSettingSynchronizesCacheAndOutbox` | 正常、关键副作用 |
-| 更新缓存失败时恢复旧值并返回业务异常 | `SystemConfigurationServiceTest#updateSettingRestoresCacheWhenSynchronizationFails` | 异常、回滚 |
-| 删除缓存失败时恢复旧值且保留数据库记录 | `SystemConfigurationServiceTest#deleteSettingRestoresCacheWhenSynchronizationFails` | 异常、数据一致性 |
-| Outbox 按数据库当前值修复缓存 | `SystemSettingSyncOutboxServiceTest#reconcileAppliesCurrentSetting` | 正常、恢复 |
+| 活跃任务使用批量 SQL 刷新心跳 | `TaskRecoverySchedulerTest#refreshesActiveHeartbeatsInBatchAndRecoversStaleTraces` | 正常、性能 |
+| 没有活跃任务时不生成空 `IN` 条件 | `TaskRecoverySchedulerTest#skipsEmptyHeartbeatBatch` | 边界、兼容 |
+| 超时任务过滤空心跳记录 | `TaskRecoverySchedulerTest#refreshesActiveHeartbeatsInBatchAndRecoversStaleTraces` | 边界、数据安全 |
+| 同一配置键的 Outbox 只同步一次 | `SystemSettingSyncOutboxServiceTest#reconcileDeduplicatesEventsByConfigKey` | 正常、性能 |
 | 数据库参数已删除时清理缓存并完成任务 | `SystemSettingSyncOutboxServiceTest#reconcileDeletesCacheWhenSettingIsMissing` | 边界、恢复 |
-| 服务启动时回填全部系统参数缓存 | `DataInitializerTest#preservesExistingPasswordByDefault` 中的缓存回填断言及完整初始化回归 | 正常、兼容 |
+| 启动流程不再执行历史动态 DDL | `MailRouteInitializerTest#initializesDefaultRouteOnStartup` | 正常、架构约束 |
 
 **已知问题与限制**：
 - 宿主机未安装 Maven，测试通过 Maven Docker 容器执行。
-- 本次未新增真实 MySQL/Redis 集成测试，缓存一致性通过单元测试、容器构建和服务健康检查验证。
+- 本次未新增真实 MySQL/Redis 多实例集成测试；批量 SQL 和 Outbox 去重通过单元测试、容器构建和服务健康检查验证。
 - 前端未修改，未单独重复前端测试；前端镜像在 Compose 构建中成功完成生产构建。
 
 **下次测试建议**：
-1. 增加真实 Redis 故障和事务提交窗口异常的集成测试。
+1. 增加真实 MySQL/Redis 故障注入和事务提交窗口异常的集成测试。
 2. 增加多实例场景下 Outbox 并发对账测试。
-3. 验证数据库自动建表或迁移环境中的 `sys_setting_sync_outbox` 索引及字段映射。
+3. 使用生产数据规模验证任务心跳批量更新的执行计划和索引命中情况。
 
 ## 📋 Git 基准点
 
