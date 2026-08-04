@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS task_trace (
     started_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     finished_at TIMESTAMP(6) NULL,
     INDEX idx_task_trace_owner_started (owner_user_id, started_at),
-    INDEX idx_task_trace_status_started (status, started_at)
+    INDEX idx_task_trace_status_started (status, started_at),
+    INDEX idx_task_trace_status_heartbeat (status, heartbeat_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS task_trace_python (
