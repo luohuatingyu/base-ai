@@ -29,7 +29,7 @@ class SystemSettingSyncOutboxServiceTest {
         new SystemSettingSyncOutboxService(outboxRepository, settingRepository, cacheService).reconcile();
 
         verify(cacheService).apply(setting);
-        verify(outboxRepository).save(event);
+        verify(outboxRepository).saveAll(List.of(event));
         assertNotNull(event.getProcessedAt());
     }
 
@@ -46,8 +46,30 @@ class SystemSettingSyncOutboxServiceTest {
         new SystemSettingSyncOutboxService(outboxRepository, settingRepository, cacheService).reconcile();
 
         verify(cacheService).delete("system.timeout");
-        verify(outboxRepository).save(event);
+        verify(outboxRepository).saveAll(List.of(event));
         assertNotNull(event.getProcessedAt());
+    }
+
+    /** 同一配置键的重复任务只应读取数据库和同步缓存一次。 */
+    @Test
+    void reconcileDeduplicatesEventsByConfigKey() {
+        SystemSettingSyncOutboxRepository outboxRepository = mock(SystemSettingSyncOutboxRepository.class);
+        SystemSettingRepository settingRepository = mock(SystemSettingRepository.class);
+        SystemSettingCacheService cacheService = mock(SystemSettingCacheService.class);
+        SystemSettingSyncOutbox first = event("system.timeout");
+        SystemSettingSyncOutbox second = event("system.timeout");
+        SystemSetting setting = new SystemSetting();
+        setting.setConfigKey("system.timeout");
+        when(outboxRepository.findTop100ByProcessedAtIsNullOrderByCreatedAtAsc()).thenReturn(List.of(first, second));
+        when(settingRepository.findByConfigKey("system.timeout")).thenReturn(Optional.of(setting));
+
+        new SystemSettingSyncOutboxService(outboxRepository, settingRepository, cacheService).reconcile();
+
+        verify(settingRepository).findByConfigKey("system.timeout");
+        verify(cacheService).apply(setting);
+        verify(outboxRepository).saveAll(List.of(first, second));
+        assertNotNull(first.getProcessedAt());
+        assertNotNull(second.getProcessedAt());
     }
 
     /** 构造待处理 Outbox 任务。 */
