@@ -9,6 +9,8 @@ import com.baseai.platform.repository.*;
 import com.baseai.platform.security.AuthContext;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
@@ -44,6 +46,10 @@ public class SystemConfigurationService {
     private final StringRedisTemplate redisTemplate;
     /** Redis缓存键前缀，格式为 "平台代码:setting:" */
     private final String cachePrefix;
+    /** 配置运行时缓存同步服务 */
+    private final SystemSettingCacheService cacheService;
+    /** 配置缓存同步 Outbox 服务 */
+    private final SystemSettingSyncOutboxService outboxService;
 
     /**
      * 构造函数，初始化系统配置服务
@@ -54,15 +60,20 @@ public class SystemConfigurationService {
      * @param cryptoService 配置加密服务
      * @param redisTemplate Redis操作模板
      * @param properties 平台配置属性，用于获取缓存键前缀
+     * @param cacheService 配置运行时缓存同步服务
+     * @param outboxService 配置缓存同步 Outbox 服务
      */
     public SystemConfigurationService(SystemSettingRepository settingRepository, DictionaryTypeRepository typeRepository,
                                       DictionaryDataRepository dataRepository, ConfigCryptoService cryptoService,
-                                      StringRedisTemplate redisTemplate, PlatformProperties properties) {
+                                      StringRedisTemplate redisTemplate, PlatformProperties properties,
+                                      SystemSettingCacheService cacheService, SystemSettingSyncOutboxService outboxService) {
         this.settingRepository = settingRepository;
         this.typeRepository = typeRepository;
         this.dataRepository = dataRepository;
         this.cryptoService = cryptoService;
         this.redisTemplate = redisTemplate;
+        this.cacheService = cacheService;
+        this.outboxService = outboxService;
         // 构建缓存键前缀，例如："baseai:setting:"
         this.cachePrefix = properties.getPlatform().getCode() + ":setting:";
     }
@@ -156,9 +167,17 @@ public class SystemConfigurationService {
         SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("setting.notFound"));
         rejectReservedKey(setting.getConfigKey());
         if (Boolean.TRUE.equals(setting.getSystemManaged())) throw BusinessException.forbidden("setting.systemManaged");
-        // 删除Redis缓存
-        redisTemplate.delete(cachePrefix + setting.getConfigKey());
-        settingRepository.delete(setting);
+        String configKey = setting.getConfigKey();
+        SystemSettingCacheService.CacheSnapshot previousCache = cacheService.snapshot(configKey);
+        SystemSettingSyncOutbox event = outboxService.enqueue(configKey, "DELETE");
+        try {
+            cacheService.delete(configKey);
+            settingRepository.delete(setting);
+            markOutboxProcessedAfterCommit(event);
+        } catch (RuntimeException exception) {
+            restoreCache(configKey, previousCache, exception);
+            throw new BusinessException("setting.syncFailed");
+        }
     }
 
     /**
@@ -303,8 +322,14 @@ public class SystemConfigurationService {
      * @return 保存后的系统参数视图
      */
     private SettingView saveSetting(SystemSetting setting, SettingCommand command) {
+        String previousConfigKey = setting.getConfigKey();
+        String configKey = require(command.configKey(), "setting.keyRequired");
+        String previousKey = previousConfigKey == null ? configKey : previousConfigKey;
+        SystemSettingCacheService.CacheSnapshot previousCache = cacheService.snapshot(previousKey);
+        SystemSettingCacheService.CacheSnapshot replacementCache = previousKey.equals(configKey)
+            ? previousCache : cacheService.snapshot(configKey);
         setting.setGroupCode(require(command.groupCode(), "setting.groupRequired"));
-        setting.setConfigKey(require(command.configKey(), "setting.keyRequired"));
+        setting.setConfigKey(configKey);
         setting.setName(require(command.name(), "setting.nameRequired"));
         boolean sensitive = Boolean.TRUE.equals(command.sensitive());
         // 判断是否需要更新配置值：非敏感参数总是更新；敏感参数在值非空或新建时才更新
@@ -318,9 +343,42 @@ public class SystemConfigurationService {
         if (setting.getSortOrder() == null) setting.setSortOrder(0);
         if (setting.getSystemManaged() == null) setting.setSystemManaged(false);
         SystemSetting saved = settingRepository.save(setting);
-        // 清除缓存，确保下次读取最新值
-        redisTemplate.delete(cachePrefix + saved.getConfigKey());
-        return toView(saved);
+        SystemSettingSyncOutbox replacementEvent = outboxService.enqueue(saved.getConfigKey(), "UPSERT");
+        SystemSettingSyncOutbox removalEvent = previousKey.equals(saved.getConfigKey())
+            ? null : outboxService.enqueue(previousKey, "DELETE");
+        try {
+            cacheService.apply(saved);
+            if (removalEvent != null) cacheService.delete(previousKey);
+            markOutboxProcessedAfterCommit(replacementEvent);
+            markOutboxProcessedAfterCommit(removalEvent);
+            return toView(saved);
+        } catch (RuntimeException exception) {
+            restoreCache(saved.getConfigKey(), replacementCache, exception);
+            if (removalEvent != null) restoreCache(previousKey, previousCache, exception);
+            throw new BusinessException("setting.syncFailed");
+        }
+    }
+
+    /** 恢复缓存旧值并将同步失败转换为统一业务异常。 */
+    private void restoreCache(String configKey, SystemSettingCacheService.CacheSnapshot snapshot, RuntimeException cause) {
+        try {
+            cacheService.restore(configKey, snapshot);
+        } catch (RuntimeException restoreException) {
+            cause.addSuppressed(restoreException);
+        }
+    }
+
+    /** 提交事务后标记 Outbox，进程在提交窗口中退出时保留任务供定时对账。 */
+    private void markOutboxProcessedAfterCommit(SystemSettingSyncOutbox event) {
+        if (event == null || event.getId() == null) return;
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            outboxService.markProcessed(event.getId());
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() { outboxService.markProcessed(event.getId()); }
+        });
     }
 
     /**

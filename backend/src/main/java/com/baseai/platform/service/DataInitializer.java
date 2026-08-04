@@ -7,6 +7,7 @@ import com.baseai.platform.domain.Role;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.domain.DictionaryData;
 import com.baseai.platform.domain.DictionaryType;
+import com.baseai.platform.repository.SystemSettingRepository;
 import com.baseai.platform.repository.DictionaryDataRepository;
 import com.baseai.platform.repository.DictionaryTypeRepository;
 import com.baseai.platform.repository.MenuRepository;
@@ -64,6 +65,12 @@ public class DataInitializer implements ApplicationRunner {
     /** 模型类型字典数据仓储。 */
     private final DictionaryDataRepository dictionaryDataRepository;
 
+    /** 系统参数数据仓库，用于启动时回填运行时缓存。 */
+    private final SystemSettingRepository systemSettingRepository;
+
+    /** 系统参数运行时缓存同步服务。 */
+    private final SystemSettingCacheService systemSettingCacheService;
+
     /** BCrypt 密码编码器，用于加密用户密码 */
     private final BCryptPasswordEncoder passwordEncoder;
 
@@ -80,7 +87,8 @@ public class DataInitializer implements ApplicationRunner {
     public DataInitializer(PlatformProperties properties, MenuRepository menuRepository, RoleRepository roleRepository,
                            UserRepository userRepository, DepartmentRepository departmentRepository,
                            DictionaryTypeRepository dictionaryTypeRepository, DictionaryDataRepository dictionaryDataRepository,
-                           BCryptPasswordEncoder passwordEncoder) {
+                           BCryptPasswordEncoder passwordEncoder, SystemSettingRepository systemSettingRepository,
+                           SystemSettingCacheService systemSettingCacheService) {
         this.properties = properties;
         this.menuRepository = menuRepository;
         this.roleRepository = roleRepository;
@@ -89,6 +97,8 @@ public class DataInitializer implements ApplicationRunner {
         this.dictionaryTypeRepository = dictionaryTypeRepository;
         this.dictionaryDataRepository = dictionaryDataRepository;
         this.passwordEncoder = passwordEncoder;
+        this.systemSettingRepository = systemSettingRepository;
+        this.systemSettingCacheService = systemSettingCacheService;
     }
 
     /**
@@ -158,6 +168,9 @@ public class DataInitializer implements ApplicationRunner {
         admin.getRoles().add(adminRole);
         admin.setEnabled(true);
         userRepository.save(admin);
+
+        // 启动时将数据库中的系统参数完整回填到运行时缓存。
+        systemSettingCacheService.applyAll(systemSettingRepository.findAll());
     }
 
     /** 首次创建时设置密码，并按显式开关将已有管理员密码同步为种子密码。 */

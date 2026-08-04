@@ -5,6 +5,7 @@ import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.domain.SystemSetting;
+import com.baseai.platform.domain.SystemSettingSyncOutbox;
 import com.baseai.platform.repository.DictionaryDataRepository;
 import com.baseai.platform.repository.DictionaryTypeRepository;
 import com.baseai.platform.repository.SystemSettingRepository;
@@ -35,6 +36,8 @@ class SystemConfigurationServiceTest {
     @Mock private DictionaryDataRepository dataRepository;
     @Mock private ConfigCryptoService cryptoService;
     @Mock private StringRedisTemplate redisTemplate;
+    @Mock private SystemSettingCacheService cacheService;
+    @Mock private SystemSettingSyncOutboxService outboxService;
 
     private SystemConfigurationService service;
 
@@ -44,7 +47,7 @@ class SystemConfigurationServiceTest {
         PlatformProperties properties = new PlatformProperties();
         properties.getPlatform().setCode("baseai");
         service = new SystemConfigurationService(settingRepository, typeRepository, dataRepository,
-            cryptoService, redisTemplate, properties);
+            cryptoService, redisTemplate, properties, cacheService, outboxService);
     }
 
     /** 清理线程级登录上下文，避免权限测试污染其他用例。 */
@@ -136,6 +139,63 @@ class SystemConfigurationServiceTest {
         assertThrows(BusinessException.class, () -> service.deleteSetting(7L));
         verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());
         verify(settingRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 创建配置时应同步运行时缓存并记录待处理 Outbox 任务。 */
+    @Test
+    void createSettingSynchronizesCacheAndOutbox() {
+        SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
+            "system", "system.timeout", "超时时间", "30", false, true);
+        SystemSetting saved = setting("system.timeout");
+        saved.setConfigValue("30");
+        when(settingRepository.save(org.mockito.ArgumentMatchers.any(SystemSetting.class))).thenReturn(saved);
+        when(cacheService.snapshot("system.timeout"))
+            .thenReturn(new SystemSettingCacheService.CacheSnapshot(false, null, -2));
+        when(outboxService.enqueue("system.timeout", "UPSERT")).thenReturn(new SystemSettingSyncOutbox());
+
+        SystemConfigurationService.SettingView view = service.createSetting(command);
+
+        assertEquals("system.timeout", view.configKey());
+        verify(cacheService).apply(saved);
+        verify(outboxService).enqueue("system.timeout", "UPSERT");
+    }
+
+    /** 更新缓存失败时应恢复旧缓存并返回统一业务异常。 */
+    @Test
+    void updateSettingRestoresCacheWhenSynchronizationFails() {
+        SystemSetting existing = setting("system.timeout");
+        when(settingRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(settingRepository.save(existing)).thenReturn(existing);
+        SystemSettingCacheService.CacheSnapshot previous =
+            new SystemSettingCacheService.CacheSnapshot(true, "old", 120);
+        when(cacheService.snapshot("system.timeout")).thenReturn(previous);
+        when(outboxService.enqueue("system.timeout", "UPSERT")).thenReturn(new SystemSettingSyncOutbox());
+        org.mockito.Mockito.doThrow(new IllegalStateException("redis unavailable"))
+            .when(cacheService).apply(existing);
+        SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
+            "system", "system.timeout", "超时时间", "60", false, true);
+
+        assertThrows(BusinessException.class, () -> service.updateSetting(7L, command));
+
+        verify(cacheService).restore("system.timeout", previous);
+    }
+
+    /** 删除缓存失败时应恢复旧缓存，且不得删除数据库记录。 */
+    @Test
+    void deleteSettingRestoresCacheWhenSynchronizationFails() {
+        SystemSetting existing = setting("system.timeout");
+        when(settingRepository.findById(7L)).thenReturn(Optional.of(existing));
+        SystemSettingCacheService.CacheSnapshot previous =
+            new SystemSettingCacheService.CacheSnapshot(true, "old", 120);
+        when(cacheService.snapshot("system.timeout")).thenReturn(previous);
+        when(outboxService.enqueue("system.timeout", "DELETE")).thenReturn(new SystemSettingSyncOutbox());
+        org.mockito.Mockito.doThrow(new IllegalStateException("redis unavailable"))
+            .when(cacheService).delete("system.timeout");
+
+        assertThrows(BusinessException.class, () -> service.deleteSetting(7L));
+
+        verify(cacheService).restore("system.timeout", previous);
+        verify(settingRepository, never()).delete(existing);
     }
 
     /** 创建最小可展示系统参数实体。 */

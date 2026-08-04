@@ -8,6 +8,7 @@ import com.baseai.platform.repository.DictionaryDataRepository;
 import com.baseai.platform.repository.DictionaryTypeRepository;
 import com.baseai.platform.repository.MenuRepository;
 import com.baseai.platform.repository.RoleRepository;
+import com.baseai.platform.repository.SystemSettingRepository;
 import com.baseai.platform.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,8 @@ class DataInitializerTest {
     private MenuRepository menuRepository;
     private UserRepository userRepository;
     private BCryptPasswordEncoder passwordEncoder;
+    private SystemSettingRepository systemSettingRepository;
+    private SystemSettingCacheService systemSettingCacheService;
     private DataInitializer initializer;
 
     /** 为每个管理员初始化场景准备有效安全配置和隔离仓储。 */
@@ -57,6 +60,8 @@ class DataInitializerTest {
         DepartmentRepository departmentRepository = mock(DepartmentRepository.class);
         DictionaryTypeRepository dictionaryTypeRepository = mock(DictionaryTypeRepository.class);
         DictionaryDataRepository dictionaryDataRepository = mock(DictionaryDataRepository.class);
+        systemSettingRepository = mock(SystemSettingRepository.class);
+        systemSettingCacheService = mock(SystemSettingCacheService.class);
         passwordEncoder = mock(BCryptPasswordEncoder.class);
 
         AtomicLong menuId = new AtomicLong();
@@ -73,7 +78,8 @@ class DataInitializerTest {
             .thenReturn(List.of());
 
         initializer = new DataInitializer(properties, menuRepository, roleRepository, userRepository,
-            departmentRepository, dictionaryTypeRepository, dictionaryDataRepository, passwordEncoder);
+            departmentRepository, dictionaryTypeRepository, dictionaryDataRepository, passwordEncoder,
+            systemSettingRepository, systemSettingCacheService);
     }
 
     /** 未配置同步开关时必须保留已有管理员密码。 */
@@ -87,6 +93,7 @@ class DataInitializerTest {
         assertEquals("existing-hash", admin.getPasswordHash());
         verify(passwordEncoder, never()).matches(any(), any());
         verify(passwordEncoder, never()).encode(any());
+        verify(systemSettingCacheService).applyAll(any());
     }
 
     /** 显式关闭同步开关时必须保留已有管理员密码。 */
