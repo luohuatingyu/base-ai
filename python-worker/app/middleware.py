@@ -17,6 +17,7 @@ from app.trace_runtime import JavaTraceReporter, TraceRuntimeRegistry, stop_hear
 
 logger = logging.getLogger(__name__)
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+HOST_PATTERN = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$")
 
 
 class InternalAuthMiddleware(BaseHTTPMiddleware):
@@ -31,19 +32,24 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """放行健康检查，其余接口仅允许持有共享令牌的内部调用。"""
         started_at = time.perf_counter()
+        request_path = str(request.scope.get("path") or "")
         request_id = self._identifier(request.headers.get("X-Request-Id"), uuid.uuid4().hex)
         parent_trace_id = self._identifier(request.headers.get("X-Parent-Trace-Id"), "")
         python_trace_id = self._identifier(request.headers.get("X-Python-Trace-Id"), uuid.uuid4().hex)
         context_token = set_context(RequestContext(request_id, parent_trace_id, python_trace_id))
-        tracked = request.url.path.startswith("/llm/")
+        tracked = request_path.startswith("/llm/")
         heartbeat_task = None
         status_code = 500
         try:
-            if request.url.path != "/health":
+            if not self._host_allowed(request):
+                status_code = 400
+                logger.warning("event=worker_host_rejected method=%s path=%s", request.method, request_path)
+                return JSONResponse(status_code=400, content={"detail": "请求 Host 无效"})
+            if request_path != "/health":
                 token = request.headers.get("X-Internal-Token", "")
                 if not hmac.compare_digest(token, self.settings.internal_token):
                     status_code = 401
-                    logger.warning("event=worker_auth_rejected method=%s path=%s", request.method, request.url.path)
+                    logger.warning("event=worker_auth_rejected method=%s path=%s", request.method, request_path)
                     return JSONResponse(status_code=401, content={"detail": "内部令牌无效"})
             if tracked:
                 await self.registry.register(python_trace_id, asyncio.current_task())
@@ -60,21 +66,32 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
             status_code = 499
             if tracked:
                 await self.reporter.report(python_trace_id, "CANCELLED", "任务已取消")
-            logger.warning("event=worker_request_cancelled method=%s path=%s", request.method, request.url.path)
+            logger.warning("event=worker_request_cancelled method=%s path=%s", request.method, request_path)
             raise
         except Exception as exception:
             if tracked:
                 await self.reporter.report(python_trace_id, "FAILED", str(exception))
-            logger.exception("event=worker_request_failed method=%s path=%s", request.method, request.url.path)
+            logger.exception("event=worker_request_failed method=%s path=%s", request.method, request_path)
             raise
         finally:
             await stop_heartbeat(heartbeat_task)
             if tracked:
                 await self.registry.remove(python_trace_id)
-            request_logger = logger.debug if request.url.path == "/health" else logger.info
+            request_logger = logger.debug if request_path == "/health" else logger.info
             request_logger("event=worker_http_request method=%s path=%s status=%d duration_ms=%.2f",
-                           request.method, request.url.path, status_code, (time.perf_counter() - started_at) * 1000)
+                           request.method, request_path, status_code, (time.perf_counter() - started_at) * 1000)
             reset_context(context_token)
+
+    def _host_allowed(self, request: Request) -> bool:
+        """仅接受配置的内部 Host，避免畸形 Host 污染 URL 安全判断。"""
+        raw_host = request.headers.get("host")
+        if not raw_host:
+            server = request.scope.get("server")
+            raw_host = str(server[0]) if server else ""
+        if not raw_host or not HOST_PATTERN.fullmatch(raw_host):
+            return False
+        host = raw_host.rsplit(":", 1)[0].strip("[]").lower()
+        return host in self.settings.allowed_hosts
 
     def _identifier(self, value: str | None, fallback: str) -> str:
         """校验跨服务标识，避免超长或控制字符污染日志。"""

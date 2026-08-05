@@ -22,6 +22,7 @@ class Settings:
     llm_log_content: bool
     persist_level: str
     log_level: str = "INFO"
+    allowed_hosts: tuple[str, ...] = ("python-worker", "localhost", "127.0.0.1")
 
 
 def load_settings() -> Settings:
@@ -34,6 +35,11 @@ def load_settings() -> Settings:
         llm_log_content=_boolean(os.getenv("LLM_LOG_CONTENT", "true")),
         persist_level=os.getenv("TRACE_LOG_PERSIST_LEVEL", "INFO").upper(),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        allowed_hosts=tuple(
+            host.strip().lower()
+            for host in os.getenv("WORKER_ALLOWED_HOSTS", "python-worker,localhost,127.0.0.1").split(",")
+            if host.strip()
+        ),
     )
 
 
@@ -41,6 +47,8 @@ def validate_settings(settings: Settings) -> None:
     """启动时校验内部令牌，模型配置在调用时给出明确错误。"""
     if len(settings.internal_token) < 24 or "replace-with" in settings.internal_token:
         raise RuntimeError("PYTHON_WORKER_INTERNAL_TOKEN 必须设置为安全随机字符串")
+    if not settings.allowed_hosts:
+        raise RuntimeError("WORKER_ALLOWED_HOSTS 必须至少包含一个可信 Host")
 
 
 def _load_group_pools(path: str) -> list[dict]:

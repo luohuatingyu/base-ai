@@ -35,6 +35,7 @@ def settings() -> Settings:
         llm_timeout_seconds=10,
         llm_log_content=False,
         persist_level="INFO",
+        allowed_hosts=("worker", "python-worker", "localhost", "127.0.0.1"),
     )
 
 
@@ -65,6 +66,56 @@ def test_middleware_propagates_request_and_trace_headers():
 
     assert response.headers["X-Request-Id"] == "request-1"
     assert response.headers["X-Python-Trace-Id"] == "python-trace-1"
+
+
+def test_malformed_host_cannot_bypass_internal_authentication():
+    """恶意 Host 即使把 request.url.path 污染成健康路径也不得执行真实业务端点。"""
+    middleware = InternalAuthMiddleware(object(), settings(), registry=object(), reporter=object())
+    request = Request({
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/email/send",
+        "raw_path": b"/email/send",
+        "query_string": b"",
+        "headers": [(b"host", b"example.com/health?ignored=")],
+        "client": ("127.0.0.1", 1234),
+        "server": ("worker", 8000),
+    })
+    called = False
+
+    async def call_next(_: Request) -> Response:
+        """记录业务端点是否被错误执行。"""
+        nonlocal called
+        called = True
+        return Response(status_code=200)
+
+    response = asyncio.run(middleware.dispatch(request, call_next))
+
+    assert response.status_code == 400
+    assert called is False
+
+
+def test_similar_health_path_still_requires_internal_token():
+    """只有精确健康路径可以免认证，相似路径不得扩大公开范围。"""
+    middleware = InternalAuthMiddleware(object(), settings(), registry=object(), reporter=object())
+    request = Request({
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/health/ready",
+        "raw_path": b"/health/ready",
+        "query_string": b"",
+        "headers": [(b"host", b"python-worker:8000")],
+        "client": ("127.0.0.1", 1234),
+        "server": ("worker", 8000),
+    })
+
+    response = asyncio.run(middleware.dispatch(request, lambda _: Response(status_code=200)))
+
+    assert response.status_code == 401
 
 
 def test_structured_and_shipped_logs_only_use_trace_fields():
