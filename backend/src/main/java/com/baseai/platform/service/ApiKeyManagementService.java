@@ -86,14 +86,11 @@ public class ApiKeyManagementService {
         return new CreatedApiKey(toView(credential), generated.rawApiKey());
     }
 
-    /** 仅允许管理员解密查看新建或轮换后保存的完整 API Key。 */
+    /** 仅允许管理员解密查看完整 API Key。 */
     @Transactional(readOnly = true)
     public RevealedApiKey reveal(Long id) {
         AuthContext.requireAdmin();
         ApiKeyCredential credential = requireCredential(id);
-        if (credential.getSecretEncrypted() == null || credential.getSecretEncrypted().isBlank()) {
-            throw new BusinessException(409, "apiKey.secretUnavailable");
-        }
         return new RevealedApiKey(credential.getId(), cryptoService.decrypt(credential.getSecretEncrypted()));
     }
 
@@ -149,7 +146,6 @@ public class ApiKeyManagementService {
         RateLimitConfiguration rateLimit = resolveRateLimit(command);
         credential.setRateLimitType(rateLimit.type());
         credential.setRateLimitCount(rateLimit.count());
-        if (rateLimit.type() == ApiKeyRateLimitType.MINUTE) credential.setRateLimitPerMinute(rateLimit.count());
         credential.setEndpointCodes(resolveEndpointCodes(command.endpointCodes()));
         credential.setAllowedCidrs(resolveCidrs(command.allowedCidrs()));
     }
@@ -164,14 +160,11 @@ public class ApiKeyManagementService {
         return expiresAt;
     }
 
-    /** 校验限流周期和调用次数，兼容历史每分钟字段。 */
+    /** 校验限流周期和调用次数。 */
     private RateLimitConfiguration resolveRateLimit(ApiKeyCommand command) {
         ApiKeyRateLimitType type = command.rateLimitType();
         Integer count = command.rateLimitCount();
-        if (type == null) {
-            type = ApiKeyRateLimitType.MINUTE;
-            count = command.rateLimitPerMinute() == null ? 60 : command.rateLimitPerMinute();
-        }
+        if (type == null) throw new BusinessException("apiKey.rateLimitTypeRequired");
         if (!type.isLimited()) {
             if (count != null) throw new BusinessException("apiKey.unlimitedCountConflict");
             return new RateLimitConfiguration(type, null);
@@ -221,17 +214,16 @@ public class ApiKeyManagementService {
         return new ApiKeyView(credential.getId(), credential.getName(), secretService.displayPrefix(credential.getKeyId()),
             owner.getId(), owner.getUsername(), owner.getDisplayName(), credential.getEnabled(), credential.getExpiresAt() == null,
             credential.getExpiresAt(), credential.getRateLimitType(), credential.getRateLimitCount(),
-            credential.getRateLimitType() == ApiKeyRateLimitType.MINUTE ? credential.getRateLimitCount() : null,
             credential.getEndpointCodes(), credential.getAllowedCidrs(),
             credential.getLastUsedAt(), credential.getLastUsedIp(), credential.getCreatedAt(), credential.getUpdatedAt());
     }
 
     public record ApiKeyCommand(String name, Long ownerUserId, Boolean enabled, Boolean neverExpires, Instant expiresAt,
-                                ApiKeyRateLimitType rateLimitType, Integer rateLimitCount, Integer rateLimitPerMinute,
+                                ApiKeyRateLimitType rateLimitType, Integer rateLimitCount,
                                 Set<String> endpointCodes, Set<String> allowedCidrs) {}
     public record ApiKeyView(Long id, String name, String keyPrefix, Long ownerUserId, String ownerUsername,
                              String ownerDisplayName, Boolean enabled, Boolean neverExpires, Instant expiresAt,
-                             ApiKeyRateLimitType rateLimitType, Integer rateLimitCount, Integer rateLimitPerMinute,
+                             ApiKeyRateLimitType rateLimitType, Integer rateLimitCount,
                              Set<String> endpointCodes, Set<String> allowedCidrs,
                              Instant lastUsedAt, String lastUsedIp, Instant createdAt, Instant updatedAt) {}
     public record CreatedApiKey(ApiKeyView item, String apiKey) {}

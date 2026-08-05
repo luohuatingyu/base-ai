@@ -137,8 +137,7 @@ const providerId = ref(null)
 const modelId = ref(null)
 
 // 根据动态类型目录过滤模型池、供应商和模型
-const legacyTypes = model => String(model?.modelType || '').split(',').map(value => value.trim().toLowerCase()).flatMap(value => value === 'both' ? ['text_model', 'vision_model'] : [value === 'text' ? 'text_model' : value === 'vision' ? 'vision_model' : value])
-const matchesType = model => (Array.isArray(model?.supportedModelTypes) ? model.supportedModelTypes : legacyTypes(model)).includes(modelType.value)
+const matchesType = model => Array.isArray(model?.supportedModelTypes) && model.supportedModelTypes.includes(modelType.value)
 const defaultRouteSupportsType = computed(() => routes.value.some(route => route.featureCode === 'DEFAULT' && route.supportedModelTypes?.includes(modelType.value)))
 const filteredRoutes = computed(() => routes.value.filter(route => route.featureCode !== 'DEFAULT' && route.supportedModelTypes?.includes(modelType.value)))
 const filteredProviders = computed(() => providers.value.filter(provider => provider.models.some(matchesType)))

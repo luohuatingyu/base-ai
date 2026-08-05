@@ -41,7 +41,7 @@ public class ApiKeyCredential {
     @Column(name = "secret_hash", nullable = false, length = 64)
     private String secretHash;
 
-    @Column(name = "secret_encrypted", columnDefinition = "TEXT")
+    @Column(name = "secret_encrypted", nullable = false, columnDefinition = "TEXT")
     private String secretEncrypted;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -54,12 +54,9 @@ public class ApiKeyCredential {
     @Column(name = "expires_at")
     private Instant expiresAt;
 
-    @Column(name = "rate_limit_per_minute", nullable = false)
-    private Integer rateLimitPerMinute = 60;
-
     @Enumerated(EnumType.STRING)
-    @Column(name = "rate_limit_type", length = 20)
-    private ApiKeyRateLimitType rateLimitType;
+    @Column(name = "rate_limit_type", nullable = false, length = 20)
+    private ApiKeyRateLimitType rateLimitType = ApiKeyRateLimitType.MINUTE;
 
     @Column(name = "rate_limit_count")
     private Integer rateLimitCount;
@@ -125,18 +122,10 @@ public class ApiKeyCredential {
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
     public Instant getExpiresAt() { return expiresAt; }
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
-    public Integer getRateLimitPerMinute() { return rateLimitPerMinute; }
-    public void setRateLimitPerMinute(Integer rateLimitPerMinute) { this.rateLimitPerMinute = rateLimitPerMinute; }
-    public ApiKeyRateLimitType getRateLimitType() {
-        return rateLimitType == null ? ApiKeyRateLimitType.MINUTE : rateLimitType;
-    }
+    public ApiKeyRateLimitType getRateLimitType() { return rateLimitType; }
     public void setRateLimitType(ApiKeyRateLimitType rateLimitType) { this.rateLimitType = rateLimitType; }
-    public Integer getRateLimitCount() {
-        return rateLimitType == null ? rateLimitPerMinute : rateLimitCount;
-    }
+    public Integer getRateLimitCount() { return rateLimitCount; }
     public void setRateLimitCount(Integer rateLimitCount) { this.rateLimitCount = rateLimitCount; }
-    /** 判断是否仍使用历史每分钟限流字段。 */
-    public boolean hasLegacyRateLimitConfiguration() { return rateLimitType == null; }
     public Set<String> getEndpointCodes() { return endpointCodes; }
     public void setEndpointCodes(Set<String> endpointCodes) { this.endpointCodes = endpointCodes; }
     public Set<String> getAllowedCidrs() { return allowedCidrs; }

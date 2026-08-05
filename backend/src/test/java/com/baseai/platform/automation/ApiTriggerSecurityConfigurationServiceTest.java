@@ -52,6 +52,7 @@ class ApiTriggerSecurityConfigurationServiceTest {
         assertEquals(List.of(), current.hostRules());
         assertEquals(true, current.allowLoopback());
         assertEquals(false, current.allowPrivateNetwork());
+        assertEquals(false, ApiTriggerSecurityConfigurationService.isReservedKey("api.trigger.allowed-hosts"));
     }
 
     /** 新版 JSON 规则应被规范化、去重并作为当前运行时配置返回。 */
@@ -68,24 +69,6 @@ class ApiTriggerSecurityConfigurationServiceTest {
         assertEquals(List.of(rule("SUFFIX", "factory.ai")), current.hostRules());
         assertEquals(false, current.allowLoopback());
         assertEquals(true, current.allowPrivateNetwork());
-    }
-
-    /** 新键不存在时应兼容旧精确、子域通配和星号规则，并剔除内置回环值。 */
-    @Test
-    void currentMigratesLegacyAllowedHostsInMemory() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenAnswer(invocation -> switch (invocation.getArgument(0, String.class)) {
-            case "baseai:api-trigger-security:api.trigger.allowed-hosts" -> "localhost,api.example.com,*.factory.ai,*";
-            case "baseai:api-trigger-security:api.trigger.allow-loopback" -> "true";
-            case "baseai:api-trigger-security:api.trigger.allow-private-network" -> "false";
-            default -> null;
-        });
-        when(settingRepository.findByConfigKey(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY)).thenReturn(Optional.empty());
-
-        ApiTriggerSecurityConfigurationService.ConfigurationView current = service.current();
-
-        assertEquals(List.of(rule("EXACT", "api.example.com"), rule("SUFFIX", "factory.ai"), rule("ANY", null)),
-            current.hostRules());
     }
 
     /** 保存时应规范化五类规则、忽略 ANY 值并清除全部共享缓存键。 */
@@ -105,7 +88,6 @@ class ApiTriggerSecurityConfigurationServiceTest {
         assertEquals("[{\"type\":\"SUFFIX\",\"value\":\"factory.ai\"},{\"type\":\"CONTAINS\",\"value\":\"factory\"},{\"type\":\"ANY\",\"value\":null}]",
             settingCaptor.getAllValues().get(0).getConfigValue());
         verify(redisTemplate).delete(List.of(cacheKey(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY),
-            cacheKey(ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY),
             cacheKey(ApiTriggerSecurityConfigurationService.ALLOW_LOOPBACK_KEY),
             cacheKey(ApiTriggerSecurityConfigurationService.ALLOW_PRIVATE_NETWORK_KEY)));
     }

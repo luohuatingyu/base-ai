@@ -24,7 +24,8 @@ test('API Key 页面支持绑定用户、接口范围、IP 和限流', () => {
   assert.match(viewSource, /ownerUserId/)
   assert.match(viewSource, /endpointCodes/)
   assert.match(viewSource, /allowedCidrs/)
-  assert.match(viewSource, /rateLimitPerMinute/)
+  assert.match(viewSource, /rateLimitCount/)
+  assert.doesNotMatch(viewSource, /rateLimitPerMinute/)
   assert.match(viewSource, /\/system\/api-keys\/endpoints/)
 })
 

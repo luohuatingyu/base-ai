@@ -10,12 +10,12 @@ import java.util.Map;
 
 @TraceIgnored
 @RestController
-@RequestMapping({"/api/open/platform", "/api/open/branding"})
+@RequestMapping("/api/open/platform")
 public class PlatformController {
     private final PlatformProperties properties;
     public PlatformController(PlatformProperties properties) { this.properties = properties; }
 
-    /** 返回统一平台配置；保留旧路径以兼容既有调用方。 */
+    /** 返回统一平台配置。 */
     @GetMapping
     public Map<String, String> platform() {
         PlatformProperties.Platform platform = properties.getPlatform();

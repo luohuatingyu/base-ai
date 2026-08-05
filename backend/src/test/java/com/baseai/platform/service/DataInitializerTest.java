@@ -24,6 +24,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -183,6 +184,21 @@ class DataInitializerTest {
             Menu parent = menusById.get(item.getParentId());
             return parent != null && "MENU".equals(parent.getType());
         }));
+    }
+
+    /** 初始化菜单不得继续写入旧版统一管理权限。 */
+    @Test
+    void excludesLegacyManagementPermissions() {
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        initializer.run(null);
+
+        ArgumentCaptor<Menu> captor = ArgumentCaptor.forClass(Menu.class);
+        verify(menuRepository, atLeastOnce()).save(captor.capture());
+        Set<String> permissions = captor.getAllValues().stream().map(Menu::getPermission).collect(Collectors.toSet());
+        assertFalse(permissions.contains("system:user:manage"));
+        assertFalse(permissions.contains("system:role:manage"));
+        assertFalse(permissions.contains("system:menu:manage"));
     }
 
     /** 邮件管理必须位于系统与模型目录之间，并保持账户、路由的独立权限层级。 */

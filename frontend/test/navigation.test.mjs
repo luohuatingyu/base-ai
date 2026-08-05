@@ -78,9 +78,9 @@ test('内置菜单按当前语言显示并通过权限区分相同路径', () =>
 test('全部内置 BUTTON 权限均使用稳定权限编码翻译', () => {
   const translateEnglish = translator(enUS)
   const permissions = [
-    'system:user:create', 'system:user:update', 'system:user:delete', 'system:user:manage',
-    'system:role:create', 'system:role:update', 'system:role:delete', 'system:role:manage',
-    'system:menu:create', 'system:menu:update', 'system:menu:delete', 'system:menu:manage',
+    'system:user:create', 'system:user:update', 'system:user:delete',
+    'system:role:create', 'system:role:update', 'system:role:delete',
+    'system:menu:create', 'system:menu:update', 'system:menu:delete',
     'system:department:create', 'system:department:update', 'system:department:delete',
     'system:position:create', 'system:position:update', 'system:position:delete',
     'system:dictionary:create', 'system:dictionary:update', 'system:dictionary:delete',

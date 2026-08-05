@@ -124,18 +124,6 @@ class ApiKeyManagementServiceTest {
         verifyNoInteractions(repository, cryptoService);
     }
 
-    /** 历史 Key 没有可逆密文时继续有效，但必须轮换后才能查看。 */
-    @Test
-    void legacyApiKeyRequiresRotationBeforeReveal() {
-        when(repository.findByIdAndRevokedAtIsNull(7L)).thenReturn(Optional.of(credential(null)));
-
-        BusinessException exception = assertThrows(BusinessException.class, () -> service.reveal(7L));
-
-        assertEquals(409, exception.getStatus());
-        assertEquals("apiKey.secretUnavailable", exception.getMessageKey());
-        verifyNoInteractions(cryptoService);
-    }
-
     /** 支持每秒、每小时和每天限流配置。 */
     @Test
     void createSupportsFlexibleRateLimitPeriods() {
@@ -147,7 +135,6 @@ class ApiKeyManagementServiceTest {
             ApiKeyManagementService.CreatedApiKey created = service.create(command(type, 25));
             assertEquals(type, created.item().rateLimitType());
             assertEquals(25, created.item().rateLimitCount());
-            assertNull(created.item().rateLimitPerMinute());
         }
     }
 
@@ -163,20 +150,16 @@ class ApiKeyManagementServiceTest {
         assertNull(created.item().rateLimitCount());
     }
 
-    /** 历史每分钟字段应继续映射为分钟周期配置。 */
+    /** 限流类型为必填字段。 */
     @Test
-    void createSupportsLegacyPerMinuteField() {
-        when(endpointCatalog.contains("ai.chat.invoke")).thenReturn(true);
-        when(repository.save(any(ApiKeyCredential.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    void createRequiresRateLimitType() {
         ApiKeyManagementService.ApiKeyCommand command = new ApiKeyManagementService.ApiKeyCommand(
-            "integration", 2L, true, true, null, null, null, 90,
+            "integration", 2L, true, true, null, null, 90,
             Set.of("ai.chat.invoke"), Set.of());
 
-        ApiKeyManagementService.CreatedApiKey created = service.create(command);
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.create(command));
 
-        assertEquals(ApiKeyRateLimitType.MINUTE, created.item().rateLimitType());
-        assertEquals(90, created.item().rateLimitCount());
-        assertEquals(90, created.item().rateLimitPerMinute());
+        assertEquals("apiKey.rateLimitTypeRequired", exception.getMessageKey());
     }
 
     /** 受限模式校验次数边界，无限制模式拒绝多余次数。 */
@@ -204,13 +187,13 @@ class ApiKeyManagementServiceTest {
     /** 构造覆盖接口授权、IP 白名单和限流的管理命令。 */
     private ApiKeyManagementService.ApiKeyCommand command(boolean neverExpires, Instant expiresAt) {
         return new ApiKeyManagementService.ApiKeyCommand("integration", 2L, true, neverExpires, expiresAt,
-            ApiKeyRateLimitType.MINUTE, 120, null, Set.of("ai.chat.invoke"), Set.of("10.0.0.0/24"));
+            ApiKeyRateLimitType.MINUTE, 120, Set.of("ai.chat.invoke"), Set.of("10.0.0.0/24"));
     }
 
     /** 构造指定调用周期和次数的管理命令。 */
     private ApiKeyManagementService.ApiKeyCommand command(ApiKeyRateLimitType type, Integer count) {
         return new ApiKeyManagementService.ApiKeyCommand("integration", 2L, true, true, null,
-            type, count, null, Set.of("ai.chat.invoke"), Set.of("10.0.0.0/24"));
+            type, count, Set.of("ai.chat.invoke"), Set.of("10.0.0.0/24"));
     }
 
     /** 构造用于明文查看测试的 API Key 实体。 */

@@ -144,6 +144,18 @@ class ApiResponseContractTest {
         assertEquals("请求参数不完整", chinese.getBody().message());
     }
 
+    /** 已移除接口和不存在资源必须返回标准 404，而不是进入未知异常处理。 */
+    @Test
+    void missingRouteReturnsNotFoundResponse() {
+        LocaleContextHolder.setLocale(Locale.US);
+
+        ResponseEntity<ApiResponse<Void>> entity = exceptionHandler.notFound(null);
+
+        assertEquals(404, entity.getStatusCode().value());
+        assertEquals(404, entity.getBody().code());
+        assertEquals("Resource not found", entity.getBody().message());
+    }
+
     /** 冲突和未知异常也应返回匹配的数字状态码及本地化消息。 */
     @Test
     void conflictAndUnknownErrorsUseNumericCodes() {

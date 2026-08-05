@@ -253,7 +253,7 @@ function openEdit(row) {
     neverExpires: row.neverExpires,
     expiresAt: row.expiresAt,
     rateLimitType: row.rateLimitType || 'MINUTE',
-    rateLimitCount: row.rateLimitCount ?? row.rateLimitPerMinute ?? 60,
+    rateLimitCount: row.rateLimitCount ?? 60,
     endpointCodes: [...row.endpointCodes],
     allowedCidrsText: (row.allowedCidrs || []).join('\n')
   })
@@ -301,7 +301,7 @@ async function save() {
 function rateLimitDisplay(row) {
   const type = row.rateLimitType || 'MINUTE'
   if (type === 'UNLIMITED') return t('apiKeys.rateLimitTypes.UNLIMITED')
-  return `${row.rateLimitCount ?? row.rateLimitPerMinute} ${t(`apiKeys.rateLimitUnits.${type}`)}`
+  return `${row.rateLimitCount} ${t(`apiKeys.rateLimitUnits.${type}`)}`
 }
 
 /** 将逐行 IP 输入规范为去重规则列表。 */

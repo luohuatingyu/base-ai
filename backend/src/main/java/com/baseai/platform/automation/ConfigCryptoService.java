@@ -38,9 +38,10 @@ public class ConfigCryptoService {
         }
     }
 
-    /** 解密 AES-GCM 文本，并兼容未加密的历史值。 */
+    /** 解密使用当前 AES-GCM 格式保存的敏感文本。 */
     public String decrypt(String value) {
-        if (value == null || value.isBlank() || !value.startsWith(PREFIX)) return value == null ? "" : value;
+        if (value == null || value.isBlank()) return "";
+        if (!value.startsWith(PREFIX)) throw new IllegalStateException("接口配置密文格式无效");
         try {
             byte[] payload = Base64.getDecoder().decode(value.substring(PREFIX.length()));
             byte[] iv = java.util.Arrays.copyOfRange(payload, 0, 12);

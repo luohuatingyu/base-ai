@@ -11,9 +11,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class PlatformControllerTest {
 
-    /** 验证平台接口返回平台配置，并同时保留旧公开路径。 */
+    /** 验证平台接口返回平台配置并仅暴露当前公开路径。 */
     @Test
-    void returnsPlatformConfigurationAndKeepsLegacyPath() {
+    void returnsPlatformConfigurationFromCurrentPath() {
         PlatformProperties properties = new PlatformProperties();
         PlatformProperties.Platform platform = new PlatformProperties.Platform();
         platform.setCode("test-platform");
@@ -27,6 +27,6 @@ class PlatformControllerTest {
         RequestMapping mapping = PlatformController.class.getAnnotation(RequestMapping.class);
 
         assertEquals(Map.of("code", "test-platform", "nameEn", "Test Platform", "nameZh", "测试平台", "shortName", "TEST"), response);
-        assertArrayEquals(new String[]{"/api/open/platform", "/api/open/branding"}, mapping.value());
+        assertArrayEquals(new String[]{"/api/open/platform"}, mapping.value());
     }
 }

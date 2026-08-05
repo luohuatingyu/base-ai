@@ -17,5 +17,6 @@ test('API Key 支持秒、分钟、小时、天和无限制周期', () => {
 test('无限制提交空次数，受限模式提交配置次数', () => {
   assert.match(viewSource, /rateLimitType: form\.rateLimitType/)
   assert.match(viewSource, /rateLimitCount: form\.rateLimitType === 'UNLIMITED' \? null : form\.rateLimitCount/)
-  assert.match(viewSource, /row\.rateLimitCount \?\? row\.rateLimitPerMinute \?\? 60/)
+  assert.match(viewSource, /row\.rateLimitCount \?\? 60/)
+  assert.doesNotMatch(viewSource, /rateLimitPerMinute/)
 })

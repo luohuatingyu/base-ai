@@ -23,7 +23,6 @@ public class TraceLogFlusher {
     private long unreportedDropped;
     private long lastDropWarningAt;
     private long lastFlushFailureWarningAt;
-    private String logLevelColumn;
 
     public TraceLogFlusher(@Qualifier("auditJdbcTemplate") JdbcTemplate jdbcTemplate, PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
@@ -44,8 +43,8 @@ public class TraceLogFlusher {
         }
         if (records.isEmpty()) return;
         try {
-            String sql = "INSERT INTO trace_log(trace_id, python_trace_id, source, " + resolveLogLevelColumn()
-                + ", logger_name, message, thread_name, throwable, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            String sql = "INSERT INTO trace_log(trace_id, python_trace_id, source, level, "
+                + "logger_name, message, thread_name, throwable, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             jdbcTemplate.batchUpdate(sql, records, records.size(), (statement, record) -> {
                 statement.setString(1, record.traceId());
                 statement.setString(2, record.pythonTraceId());
@@ -64,17 +63,6 @@ public class TraceLogFlusher {
                 lastFlushFailureWarningAt = currentTime;
             }
         }
-    }
-
-    /** 兼容历史链路日志表使用的 log_level 列名。 */
-    private String resolveLogLevelColumn() {
-        if (logLevelColumn != null) return logLevelColumn;
-        Integer legacyColumnCount = jdbcTemplate.queryForObject("""
-            SELECT COUNT(*) FROM information_schema.columns
-            WHERE table_schema = DATABASE() AND table_name = 'trace_log' AND column_name = 'log_level'
-            """, Integer.class);
-        logLevelColumn = legacyColumnCount != null && legacyColumnCount > 0 ? "log_level" : "level";
-        return logLevelColumn;
     }
 
     /** 每天清理超过保留周期的链路日志。 */

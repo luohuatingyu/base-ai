@@ -303,11 +303,6 @@ public class DataInitializer implements ApplicationRunner {
         menu(triggerSecurity.getId(), "更新接口触发安全配置", "BUTTON", null, null, null,
             "automation:api-trigger-security:update", 521, false);
 
-        // ========== 兼容性权限 ==========
-        // 以下权限用于兼容旧版本的权限代码，提供统一的管理权限标识
-        menu(users.getId(), "兼容用户管理", "BUTTON", null, null, null, "system:user:manage", 901, false);
-        menu(roles.getId(), "兼容角色管理", "BUTTON", null, null, null, "system:role:manage", 902, false);
-        menu(menus.getId(), "兼容菜单管理", "BUTTON", null, null, null, "system:menu:manage", 903, false);
     }
 
     /**

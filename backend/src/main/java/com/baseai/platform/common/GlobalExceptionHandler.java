@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -58,6 +59,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({MissingServletRequestPartException.class, MissingServletRequestParameterException.class, MultipartException.class})
     public ResponseEntity<ApiResponse<Void>> missing(Exception exception) {
         return ResponseEntity.badRequest().body(ApiResponse.failure(400, message("error.missingParameter")));
+    }
+
+    /** 将未匹配到控制器或静态资源的请求映射为标准 404 响应。 */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> notFound(NoResourceFoundException exception) {
+        return ResponseEntity.status(404).body(ApiResponse.failure(404, message("error.notFound")));
     }
 
     /** 记录未知异常且不向客户端泄露内部堆栈。 */

@@ -59,7 +59,7 @@ class SystemConfigurationServiceTest {
     /** 通用系统参数列表不得展示接口触发页面专用的安全配置键。 */
     @Test
     void settingsHideApiTriggerSecurityKeys() {
-        SystemSetting reserved = setting(ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY);
+        SystemSetting reserved = setting(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY);
         SystemSetting normal = setting("system.timezone");
         when(settingRepository.findAll()).thenReturn(List.of(reserved, normal));
 
@@ -82,7 +82,7 @@ class SystemConfigurationServiceTest {
     /** 通用更新和删除入口不得修改已经存在的专用安全配置。 */
     @Test
     void updateAndDeleteRejectApiTriggerSecuritySettings() {
-        SystemSetting reserved = setting(ApiTriggerSecurityConfigurationService.ALLOWED_HOSTS_KEY);
+        SystemSetting reserved = setting(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY);
         when(settingRepository.findById(7L)).thenReturn(Optional.of(reserved));
         SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
             "api-trigger", "normal.key", "普通参数", "value", false, true);

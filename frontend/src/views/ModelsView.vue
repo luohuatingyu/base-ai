@@ -76,11 +76,9 @@ const thinkingLevels = THINKING_LEVELS
 const form = reactive({ id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: ['text_model'], capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true })
 const thinkingMapping = reactive({})
 
-/** 将后端旧版单值或新版集合统一转换为类型编码数组。 */
+/** 复制后端返回的模型类型集合，避免编辑状态直接修改列表数据。 */
 function normalizeTypes(row) {
-  if (Array.isArray(row?.supportedModelTypes) && row.supportedModelTypes.length) return [...row.supportedModelTypes]
-  const legacy = String(row?.modelType || '').split(',').map(value => value.trim().toLowerCase()).flatMap(value => value === 'both' ? ['text_model', 'vision_model'] : [value === 'text' ? 'text_model' : value === 'vision' ? 'vision_model' : value]).filter(Boolean)
-  return legacy.length ? legacy : ['text_model']
+  return Array.isArray(row?.supportedModelTypes) ? [...row.supportedModelTypes] : []
 }
 /** 获取思考等级的本地化名称，并保留标准编码便于识别配置。 */
 function thinkingLevelLabel(level) { return `${t(`models.thinkingLevelLabels.${level}`)} (${level})` }
@@ -100,7 +98,7 @@ function open(row) {
   Object.assign(thinkingMapping, Object.fromEntries(thinkingLevels.map(level => [level, ''])), parseThinkingMappings(form.thinkingLevels))
   visible.value = true
 }
-/** 按后端兼容格式保存模型及其思考等级映射。 */
+/** 按当前模型接口格式保存类型集合及思考等级映射。 */
 async function save() { form.thinkingLevels = serializeThinkingMappings(thinkingMapping); form.id ? await http.put(`/models/${form.id}`, form) : await http.post('/models', form); visible.value = false; await load(); ElMessage.success(t('common.successSaved')) }
 /** 打开模型测试窗口，并仅提供当前模型已配置的思考等级。 */
 function startTest(row) { testModel.value = row; testLevels.value = thinkingMappingEntries(row.thinkingLevels).map(entry => entry.level); testThinkingLevel.value = ''; if (testLevels.value.length) testVisible.value = true; else runTest() }

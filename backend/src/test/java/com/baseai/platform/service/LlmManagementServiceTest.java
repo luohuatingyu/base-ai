@@ -122,19 +122,18 @@ class LlmManagementServiceTest {
         when(modelRepository.findByCode("AUDIO")).thenReturn(Optional.empty());
         when(modelRepository.save(any(LlmModel.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        LlmModel saved=service.createModel(new LlmManagementService.ModelCommand("AUDIO","音频",1L,"audio-v1",List.of("audio_model"),null,"MIDDLE","",true));
+        LlmModel saved=service.createModel(new LlmManagementService.ModelCommand("AUDIO","音频",1L,"audio-v1",List.of("audio_model"),"MIDDLE","",true));
 
         assertEquals(List.of("audio_model"), saved.getSupportedModelTypes());
     }
 
-    /** 旧版 BOTH 应兼容展开为文本和视觉两个能力编码。 */
+    /** 当前模型类型编码应统一小写、去重并保留扩展类型。 */
     @Test
-    void legacyBothModelTypeExpandsToTwoCapabilities() {
+    void canonicalModelTypesAreNormalizedAndDeduplicated() {
         LlmModel model = new LlmModel();
-        model.setModelType("BOTH");
+        model.setSupportedModelTypes(List.of("TEXT_MODEL", "vision_model", "text_model", "audio_model"));
 
-        assertEquals(List.of("text_model", "vision_model"), model.getSupportedModelTypes());
-        assertEquals("BOTH", model.getModelType());
+        assertEquals(List.of("text_model", "vision_model", "audio_model"), model.getSupportedModelTypes());
     }
 
     /** 单模型直连必须在后端拒绝不支持所选类型的模型。 */
@@ -142,7 +141,7 @@ class LlmManagementServiceTest {
     void directModelRejectsUnsupportedType() {
         LlmModel model = new LlmModel();
         model.setEnabled(true);
-        model.setModelType("TEXT");
+        model.setSupportedModelTypes(List.of("text_model"));
         when(modelRepository.findById(9L)).thenReturn(Optional.of(model));
 
         assertThrows(BusinessException.class, () -> service.resolveModel(9L, "vision_model", false, null));
@@ -152,16 +151,18 @@ class LlmManagementServiceTest {
     /** 路由类型应从启用模型的能力集合动态推导，支持未来类型。 */
     @Test
     void routeModelTypesAreDerivedFromConfiguredModels() {
-        LlmRoute route = new LlmRoute();
+        LlmRoute route = route("9");
         route.setFeatureCode("audio");
-        route.setCandidateModelIds("9");
         route.setEnabled(true);
         LlmModel model = new LlmModel();
+        model.setProviderId(9L);
         model.setEnabled(true);
-        model.setModelType("audio_model");
+        model.setSupportedModelTypes(List.of("audio_model"));
+        LlmProvider provider = provider("encrypted");
+        ReflectionTestUtils.setField(provider, "id", 9L);
         when(routeRepository.findByFeatureCode("audio")).thenReturn(Optional.of(route));
-        when(modelRepository.findById(9L)).thenReturn(Optional.of(model));
-        when(providerRepository.findAll()).thenReturn(List.of(provider("encrypted")));
+        when(modelRepository.findAll()).thenReturn(List.of(model));
+        when(providerRepository.findAll()).thenReturn(List.of(provider));
 
         assertEquals(List.of("audio_model"), service.routeModelTypes("audio"));
     }
@@ -169,7 +170,7 @@ class LlmManagementServiceTest {
     /** 路由同步应忽略旧请求筛选，并自动移除没有匹配模型能力的供应商。 */
     @Test
     void syncRouteIgnoresRequestedSelectionAndRemovesCapabilityMismatch() {
-        LlmRoute route = route("1,2", "");
+        LlmRoute route = route("1,2");
         LlmModel first = model(1L, "MIDDLE");
         LlmModel second = model(2L, "HIGH");
         LlmManagementService routeService = spy(service);
@@ -190,7 +191,7 @@ class LlmManagementServiceTest {
     /** 路由同步未选择供应商时，应检查当前路由供应商池中的全部模型。 */
     @Test
     void syncRouteChecksAllConfiguredProvidersWhenSelectionIsEmpty() {
-        LlmRoute route = route("1,2", "");
+        LlmRoute route = route("1,2");
         LlmModel first = model(1L, "MIDDLE");
         LlmModel second = model(2L, "MIDDLE");
         LlmManagementService routeService = spy(service);
@@ -209,8 +210,8 @@ class LlmManagementServiceTest {
     /** 批量同步相同模型且均未启用思考时，应只执行一次模型测试并复用结果。 */
     @Test
     void batchSyncDeduplicatesSameModelWithoutThinking() {
-        LlmRoute firstRoute = route("1", "");
-        LlmRoute secondRoute = route("1", "");
+        LlmRoute firstRoute = route("1");
+        LlmRoute secondRoute = route("1");
         LlmModel sharedModel = model(1L, "MIDDLE");
         ReflectionTestUtils.setField(sharedModel, "id", 10L);
         LlmManagementService routeService = spy(service);
@@ -234,14 +235,14 @@ class LlmManagementServiceTest {
     /** 批量同步应复用相同思考等级，并区分未启用思考和不同思考等级。 */
     @Test
     void batchSyncUsesThinkingConfigurationAsDeduplicationKey() {
-        LlmRoute noThinkingRoute = route("1", "");
-        LlmRoute firstHighRoute = route("1", "");
+        LlmRoute noThinkingRoute = route("1");
+        LlmRoute firstHighRoute = route("1");
         firstHighRoute.setEnableThinking(true);
         firstHighRoute.setThinkingLevel("HIGH");
-        LlmRoute secondHighRoute = route("1", "");
+        LlmRoute secondHighRoute = route("1");
         secondHighRoute.setEnableThinking(true);
         secondHighRoute.setThinkingLevel("HIGH");
-        LlmRoute extraHighRoute = route("1", "");
+        LlmRoute extraHighRoute = route("1");
         extraHighRoute.setEnableThinking(true);
         extraHighRoute.setThinkingLevel("EXTRA_HIGH");
         LlmModel sharedModel = model(1L, "MIDDLE");
@@ -270,7 +271,7 @@ class LlmManagementServiceTest {
     /** 开启思考模式时，只保留同时匹配能力和思考级别的供应商。 */
     @Test
     void syncRouteRemovesProviderWithoutMatchingThinkingLevel() {
-        LlmRoute route = route("1,2", "");
+        LlmRoute route = route("1,2");
         route.setEnableThinking(true);
         route.setThinkingLevel("HIGH");
         LlmModel matching = model(1L, "MIDDLE");
@@ -295,7 +296,7 @@ class LlmManagementServiceTest {
     /** 所有供应商均无有效匹配模型时，应跳过检查、清空供应商池并停用路由。 */
     @Test
     void syncRouteDisablesRouteWhenAllProvidersAreUnmatched() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setEnabled(true);
         LlmModel mismatched = model(1L, "HIGH");
         LlmManagementService routeService = spy(service);
@@ -316,7 +317,7 @@ class LlmManagementServiceTest {
     /** 空供应商池和空候选模型不应测试全局模型，并应直接同步成功。 */
     @Test
     void syncRouteTreatsEmptyConfigurationAsSuccessfulEmptyRoute() {
-        LlmRoute route = route("", "");
+        LlmRoute route = route("");
         LlmModel matching = model(1L, "MIDDLE");
         LlmModel mismatched = model(2L, "HIGH");
         LlmManagementService routeService = spy(service);
@@ -334,7 +335,7 @@ class LlmManagementServiceTest {
     /** 模型检查失败但未删除时，数据库路由中的模型仍应同步到运行时内存。 */
     @Test
     void failedModelRemainsInActiveRouteUntilProviderIsRemoved() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setFeatureCode("summarize");
         route.setEnabled(true);
         LlmModel failed = model(1L, "MIDDLE");
@@ -363,7 +364,7 @@ class LlmManagementServiceTest {
     /** 模型配置修改后，运行时路由应保持旧快照，直到再次执行同步。 */
     @Test
     void modelChangesTakeEffectOnlyAfterNextRouteSync() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setFeatureCode("summarize");
         route.setEnabled(true);
         LlmModel model = model(1L, "MIDDLE");
@@ -395,7 +396,7 @@ class LlmManagementServiceTest {
     /** 删除路由模型供应后，应清理数据库关联和内存候选，但保留供应商与模型主数据。 */
     @Test
     void removeProviderUpdatesRouteAndMemoryWithoutDeletingMasterData() {
-        LlmRoute route = route("1,2", "");
+        LlmRoute route = route("1,2");
         route.setFeatureCode("summarize");
         route.setEnabled(true);
         LlmModel first = model(1L, "MIDDLE");
@@ -431,29 +432,24 @@ class LlmManagementServiceTest {
         verify(modelRepository, never()).deleteById(anyLong());
     }
 
-    /** 删除路由供应商时，应同时清理供应商池和旧候选模型并刷新内存。 */
+    /** 删除路由供应商时，应只更新当前供应商池并刷新内存。 */
     @Test
-    void removeProviderClearsRoutePoolAndLegacyCandidates() {
-        LlmRoute route = route("1,2", "10,11");
-        LlmModel first = model(1L, "MIDDLE");
-        LlmModel second = model(2L, "MIDDLE");
+    void removeProviderUpdatesCurrentRoutePool() {
+        LlmRoute route = route("1,2");
         route.setEnabled(false);
         when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
         when(routeRepository.findAll()).thenReturn(List.of(route));
-        when(modelRepository.findById(10L)).thenReturn(Optional.of(first));
-        when(modelRepository.findById(11L)).thenReturn(Optional.of(second));
 
         service.removeProviderFromRoute(8L, 1L);
 
         assertEquals("2", route.getProviderIds());
-        assertEquals("11", route.getCandidateModelIds());
         verify(routeRepository).save(route);
     }
 
     /** 空路由不代表全部供应商，删除请求不得把全局供应商反向写入路由。 */
     @Test
     void removeProviderFromEmptyRouteDoesNotExpandProviderPool() {
-        LlmRoute route = route("", "");
+        LlmRoute route = route("");
         when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
         when(routeRepository.findAll()).thenReturn(List.of(route));
 
@@ -468,7 +464,7 @@ class LlmManagementServiceTest {
     /** 删除路由最后一个模型供应后应停用路由，避免空池被重新解释为全部供应商。 */
     @Test
     void removeLastProviderDisablesRoute() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setEnabled(true);
         when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
         when(routeRepository.findAll()).thenReturn(List.of(route));
@@ -482,7 +478,7 @@ class LlmManagementServiceTest {
     /** 已因删除最后供应商而停用的默认路由，不应被后续定时同步重新启用。 */
     @Test
     void ensureDefaultRoutePreservesDisabledState() {
-        LlmRoute route = route("", "");
+        LlmRoute route = route("");
         route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
         route.setName("被修改的默认名称");
         route.setCapabilityLevel("HIGH");
@@ -500,14 +496,14 @@ class LlmManagementServiceTest {
     /** 默认路由保存时应接受用户选择的能力级别，而不是强制重置为中级。 */
     @Test
     void updateDefaultRoutePreservesSelectedCapabilityLevel() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
         when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
         when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
         when(routeRepository.save(route)).thenReturn(route);
 
         LlmManagementService.RouteView updated = service.updateRoute(8L, new LlmManagementService.RouteCommand(
-            "RENAMED_DEFAULT", "被修改的默认名称", List.of(), List.of(1L), "HIGH", false, null, true));
+            "RENAMED_DEFAULT", "被修改的默认名称", List.of(1L), "HIGH", false, null, true));
 
         assertEquals(LlmManagementService.DEFAULT_ROUTE, updated.featureCode());
         assertEquals(LlmManagementService.DEFAULT_ROUTE_NAME, updated.name());
@@ -517,14 +513,14 @@ class LlmManagementServiceTest {
     /** 普通能力路由必须继续允许修改编码和名称。 */
     @Test
     void updateRegularRouteAllowsCodeAndNameChanges() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setName("旧名称");
         when(routeRepository.findById(9L)).thenReturn(Optional.of(route));
         when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
         when(routeRepository.save(route)).thenReturn(route);
 
         LlmManagementService.RouteView updated = service.updateRoute(9L, new LlmManagementService.RouteCommand(
-            "new-code", "新名称", List.of(), List.of(1L), "HIGH", false, null, true));
+            "new-code", "新名称", List.of(1L), "HIGH", false, null, true));
 
         assertEquals("new-code", updated.featureCode());
         assertEquals("新名称", updated.name());
@@ -533,14 +529,14 @@ class LlmManagementServiceTest {
     /** 默认路由应保存用户选择的思考模式和思考级别。 */
     @Test
     void updateDefaultRoutePreservesThinkingConfiguration() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
         when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
         when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
         when(routeRepository.save(route)).thenReturn(route);
 
         LlmManagementService.RouteView updated = service.updateRoute(8L, new LlmManagementService.RouteCommand(
-            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(), List.of(1L), "HIGH", true, "EXTRA_HIGH", true));
+            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(1L), "HIGH", true, "EXTRA_HIGH", true));
 
         assertEquals(true, updated.enableThinking());
         assertEquals("EXTRA_HIGH", updated.thinkingLevel());
@@ -549,7 +545,7 @@ class LlmManagementServiceTest {
     /** 关闭默认路由思考模式时，应清空已保存的思考级别。 */
     @Test
     void disablingDefaultRouteThinkingClearsThinkingLevel() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
         route.setEnableThinking(true);
         route.setThinkingLevel("HIGH");
@@ -558,7 +554,7 @@ class LlmManagementServiceTest {
         when(routeRepository.save(route)).thenReturn(route);
 
         LlmManagementService.RouteView updated = service.updateRoute(8L, new LlmManagementService.RouteCommand(
-            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(), List.of(1L), "HIGH", false, "HIGH", true));
+            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(1L), "HIGH", false, "HIGH", true));
 
         assertEquals(false, updated.enableThinking());
         assertEquals(null, updated.thinkingLevel());
@@ -567,19 +563,19 @@ class LlmManagementServiceTest {
     /** 开启默认路由思考模式但未选择级别时，应拒绝保存。 */
     @Test
     void enablingDefaultRouteThinkingRequiresThinkingLevel() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
         when(routeRepository.findById(8L)).thenReturn(Optional.of(route));
         when(providerRepository.findAllById(List.of(1L))).thenReturn(List.of(mock(LlmProvider.class)));
 
         assertThrows(BusinessException.class, () -> service.updateRoute(8L, new LlmManagementService.RouteCommand(
-            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(), List.of(1L), "HIGH", true, null, true)));
+            LlmManagementService.DEFAULT_ROUTE, "默认能力路由", List.of(1L), "HIGH", true, null, true)));
     }
 
     /** 默认路由同步前置检查不应覆盖已保存的思考配置。 */
     @Test
     void ensureDefaultRoutePreservesThinkingConfiguration() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setFeatureCode(LlmManagementService.DEFAULT_ROUTE);
         route.setEnableThinking(true);
         route.setThinkingLevel("HIGH");
@@ -595,7 +591,7 @@ class LlmManagementServiceTest {
     /** 健康检查可测试不同能力模型，但真实路由候选仍只能包含匹配能力的模型。 */
     @Test
     void routeCandidatesStillFilterByCapabilityLevel() {
-        LlmRoute route = route("1", "");
+        LlmRoute route = route("1");
         route.setEnabled(true);
         LlmModel matching = model(1L, "MIDDLE");
         matching.setHealthStatus("HEALTHY");
@@ -622,11 +618,10 @@ class LlmManagementServiceTest {
     }
 
     /** 创建用于路由同步测试的路由实体。 */
-    private LlmRoute route(String providerIds, String candidateModelIds) {
+    private LlmRoute route(String providerIds) {
         LlmRoute route = new LlmRoute();
         route.setFeatureCode("chat");
         route.setProviderIds(providerIds);
-        route.setCandidateModelIds(candidateModelIds);
         route.setCapabilityLevel("MIDDLE");
         route.setEnabled(false);
         return route;

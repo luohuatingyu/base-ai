@@ -132,7 +132,8 @@ class ApiKeyAuthenticationServiceTest {
         result.setSecretHash(value.secretHash());
         result.setOwner(owner);
         result.setEnabled(true);
-        result.setRateLimitPerMinute(60);
+        result.setRateLimitType(ApiKeyRateLimitType.MINUTE);
+        result.setRateLimitCount(60);
         result.setEndpointCodes(new LinkedHashSet<>(java.util.Set.of("test.allowed")));
         result.setAllowedCidrs(new LinkedHashSet<>());
         return result;

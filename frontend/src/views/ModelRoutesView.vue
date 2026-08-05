@@ -92,7 +92,7 @@ const selectedRouteIds = ref([])
 const activeSyncRouteId = ref('')
 const syncStates = reactive({})
 const levels = ['LOW', 'MEDIUM', 'HIGH', 'EXTRA_HIGH', 'MAX', 'ULTRA']
-const form = reactive({ id: null, featureCode: '', name: '', candidateModelIds: [], providerIds: [], capabilityLevel: 'MIDDLE', enableThinking: false, thinkingLevel: 'MEDIUM', enabled: true })
+const form = reactive({ id: null, featureCode: '', name: '', providerIds: [], capabilityLevel: 'MIDDLE', enableThinking: false, thinkingLevel: 'MEDIUM', enabled: true })
 
 /** 按用户选择顺序返回待同步的能力路由。 */
 const selectedRoutes = computed(() => selectedRouteIds.value.map(routeId => rows.value.find(route => route.id === routeId)).filter(Boolean))
@@ -123,7 +123,7 @@ async function load() {
 
 /** 打开路由编辑窗口并复制数组字段。 */
 function open(row) {
-  Object.assign(form, row ? { ...row, providerIds: [...(row.providerIds || [])] } : { id: null, featureCode: '', name: '', candidateModelIds: [], providerIds: [], capabilityLevel: 'MIDDLE', enableThinking: false, thinkingLevel: 'MEDIUM', enabled: true })
+  Object.assign(form, row ? { ...row, providerIds: [...(row.providerIds || [])] } : { id: null, featureCode: '', name: '', providerIds: [], capabilityLevel: 'MIDDLE', enableThinking: false, thinkingLevel: 'MEDIUM', enabled: true })
   visible.value = true
 }
 
