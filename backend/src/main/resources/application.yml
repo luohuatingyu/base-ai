@@ -16,8 +16,10 @@ spring:
     fallback-to-system-locale: false
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     open-in-view: false
+  flyway:
+    enabled: false
   jackson:
     time-zone: Asia/Shanghai
     date-format: yyyy-MM-dd HH:mm:ss
@@ -30,11 +32,6 @@ spring:
       timeout: ${REDIS_TIMEOUT:5s}
       repositories:
         enabled: false
-  sql:
-    init:
-      mode: always
-      schema-locations: classpath:system-schema.sql
-
 app:
   logging:
     root-level: ${LOG_LEVEL:INFO}

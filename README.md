@@ -62,11 +62,11 @@ MySQL is the primary platform database. It contains:
 - External API key metadata, HMAC-SHA256 digests, and encrypted copies for administrator-only reveal.
 - System tasks, Java/Python trace records, operation logs, and login logs.
 
-JPA manages platform entities, while `backend/src/main/resources/system-schema.sql` initializes the task and log tables. Create the target database before starting the application and grant the configured account schema-management privileges.
+Flyway manages the complete MySQL schema, including JPA platform entities, task traces, and logs. Existing non-empty databases are baselined at version 0 and then receive all idempotent migrations; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application and grant the configured account schema-management privileges.
 
 ### PostgreSQL business database
 
-PostgreSQL is reserved for subordinate business modules. The current platform stores API-trigger configurations and execution logs there. The backend runs `backend/src/main/resources/api-trigger-schema.sql` idempotently at startup, so the configured account requires DDL privileges.
+PostgreSQL is reserved for subordinate business modules. The current platform stores API-trigger configurations and execution logs there, and a separate Flyway migration chain updates that schema automatically. The configured account therefore requires DDL privileges during startup.
 
 Future business modules can access PostgreSQL through the `postgresqlJdbcTemplate` Spring bean and should maintain their schemas independently.
 

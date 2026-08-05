@@ -1,6 +1,7 @@
 package com.baseai.platform.config;
 
 import com.zaxxer.hikari.HikariDataSource;
+import org.flywaydb.core.Flyway;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -23,7 +24,9 @@ public class DatabaseConfig {
     @Bean("mysqlDataSource")
     @Primary
     public DataSource mysqlDataSource(PlatformProperties properties) {
-        return createDataSource("mysql", properties.getMysqlDatabase());
+        HikariDataSource dataSource = createDataSource("mysql", properties.getMysqlDatabase());
+        migrate(dataSource, "classpath:db/migration/mysql");
+        return dataSource;
     }
 
     /** 按数据库类型暴露 MySQL JDBC 入口。 */
@@ -50,7 +53,9 @@ public class DatabaseConfig {
     /** 创建从属业务 PostgreSQL 数据源，业务模块不得访问系统库。 */
     @Bean("postgresqlDataSource")
     public DataSource postgresqlDataSource(PlatformProperties properties) {
-        return createDataSource("postgresql", properties.getPostgresqlDatabase());
+        HikariDataSource dataSource = createDataSource("postgresql", properties.getPostgresqlDatabase());
+        migrate(dataSource, "classpath:db/migration/postgresql");
+        return dataSource;
     }
 
     /** 按数据库类型暴露 PostgreSQL JDBC 入口。 */
@@ -70,5 +75,17 @@ public class DatabaseConfig {
         dataSource.setMaximumPoolSize(properties.getMaximumPoolSize());
         dataSource.setMinimumIdle((properties.getMaximumPoolSize() + 1) / 2);
         return dataSource;
+    }
+
+    /** 在数据源暴露给 JPA 或业务 JDBC 前执行对应数据库的版本化迁移。 */
+    private void migrate(HikariDataSource dataSource, String location) {
+        try {
+            Flyway.configure().dataSource(dataSource).locations(location)
+                .baselineOnMigrate(true).baselineVersion("0").validateMigrationNaming(true)
+                .load().migrate();
+        } catch (RuntimeException exception) {
+            dataSource.close();
+            throw exception;
+        }
     }
 }
