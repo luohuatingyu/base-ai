@@ -1,51 +1,62 @@
 # 最近分支覆盖测试报告
 
-## 📋 本次变更测试结果（2026-08-04）
+## 📋 本次变更测试结果（2026-08-05）
 
-**Git 基准点**：`9d5e904`（Add repair optimization regression tests）
+**Git 基准点**：`666fe85a9ee78f35af2a00891df2b41e80d491fe`（Remove legacy compatibility logic）
 
-**变更范围**：删除 API Key 历史限流迁移、任务表启动期动态补字段和邮件路由启动期 `ALTER TABLE`；将任务表最终索引固化到 Schema；批量刷新活跃任务心跳并过滤空心跳；按配置键合并 Outbox 对账任务，减少重复数据库和 Redis 操作。
+**变更范围**：按当前数据模型删除接口触发旧 Host 配置、明文密钥、API Key 旧限流字段、模型单值类型、路由候选模型、旧管理权限和链路日志旧列名兼容；能力路由统一使用供应商池；公开品牌接口仅保留 `/api/open/platform`，旧 `/api/open/branding` 返回标准 404；不执行历史数据迁移、回填或删除。
 
 **测试执行结果**：
-- 后端定向测试：6 个，通过 6 个（100%），失败 0 个，错误 0 个，跳过 0 个。
-- 后端完整测试：241 个，通过 241 个（100%），失败 0 个，错误 0 个，跳过 0 个。
-- Docker Compose 构建启动：最终通过；期间清理旧容器释放 `8080` 和 `80` 端口后重试。
+- 后端定向测试：首次 64 个通过；404 修复后 11 个通过，均为 100%，失败 0 个，错误 0 个，跳过 0 个。
+- 后端完整测试：最终 245 个，通过 245 个（100%），失败 0 个，错误 0 个，跳过 0 个。
+- 前端完整测试：176 个，通过 176 个（100%），失败 0 个，错误 0 个，跳过 0 个。
+- 总计：421 个当前测试用例通过（后端 245、前端 176）。
+- Docker Compose 构建启动：通过；镜像构建阶段再次执行后端 245 个测试并全部通过。
 - 服务健康检查：Backend、Frontend、Python Worker 全部 healthy。
+- 运行时接口：`/api/open/platform` 返回 200，`/api/open/branding` 返回 404，`/api/open/platform/endpoints` 返回 200。
 
 **关键模块测试**：
-- `TaskRecoverySchedulerTest`：2/2 通过，覆盖批量心跳、空活跃集合和超时条件。
-- `SystemSettingSyncOutboxServiceTest`：3/3 通过，覆盖更新、删除和重复配置键合并对账。
-- `MailRouteInitializerTest`：1/1 通过，确认启动流程不再执行动态 DDL。
+- `PlatformControllerTest`：1/1 通过，确认控制器仅映射 `/api/open/platform`。
+- `ApiResponseContractTest`：10/10 通过，确认已移除路径和不存在资源返回统一 404。
+- `ApiTriggerSecurityConfigurationServiceTest`：4/4 通过，确认仅读取当前结构化 Host 规则。
+- `ConfigCryptoServiceTest`：3/3 通过，确认当前 AES-GCM 密文可解密，明文和非法密文被拒绝。
+- `ApiKeyManagementServiceTest`：10/10 通过，确认仅使用当前限流类型与次数字段。
+- `LlmManagementServiceTest`：35/35 通过，确认模型类型集合和供应商池路由逻辑。
+- `DataInitializerTest`：10/10 通过，确认不再生成旧 `system:*:manage` 权限。
+- `TraceLogFlusherTest`：1/1 通过，确认 SQL 固定写入当前 `level` 列且不再探测旧列。
 
 **验收标准—测试映射**：
 
 | 验收标准 | 测试用例 | 场景类型 |
 | --- | --- | --- |
-| 活跃任务使用批量 SQL 刷新心跳 | `TaskRecoverySchedulerTest#refreshesActiveHeartbeatsInBatchAndRecoversStaleTraces` | 正常、性能 |
-| 没有活跃任务时不生成空 `IN` 条件 | `TaskRecoverySchedulerTest#skipsEmptyHeartbeatBatch` | 边界、兼容 |
-| 超时任务过滤空心跳记录 | `TaskRecoverySchedulerTest#refreshesActiveHeartbeatsInBatchAndRecoversStaleTraces` | 边界、数据安全 |
-| 同一配置键的 Outbox 只同步一次 | `SystemSettingSyncOutboxServiceTest#reconcileDeduplicatesEventsByConfigKey` | 正常、性能 |
-| 数据库参数已删除时清理缓存并完成任务 | `SystemSettingSyncOutboxServiceTest#reconcileDeletesCacheWhenSettingIsMissing` | 边界、恢复 |
-| 启动流程不再执行历史动态 DDL | `MailRouteInitializerTest#initializesDefaultRouteOnStartup` | 正常、架构约束 |
+| 公开平台配置仅保留 `/api/open/platform` | `PlatformControllerTest#returnsPlatformConfigurationFromCurrentPath`、运行时 HTTP 验证 | 正常、兼容 |
+| 已移除 `/api/open/branding` 并返回标准 404 | `ApiResponseContractTest#missingRouteReturnsNotFoundResponse`、运行时 HTTP 验证 | 异常、兼容、安全 |
+| Host 安全配置不再读取旧逗号字段 | `ApiTriggerSecurityConfigurationServiceTest` | 正常、边界、回归 |
+| 敏感配置只接受当前 AES-GCM 密文 | `ConfigCryptoServiceTest` | 正常、异常、安全 |
+| API Key 只使用当前限流模型 | `ApiKeyManagementServiceTest`、`ApiKeyAuthenticationServiceTest`、前端 API Key 测试 | 正常、边界、兼容、回归 |
+| 模型仅使用类型集合，路由仅使用供应商池 | `LlmManagementServiceTest`、前端模型路由测试 | 正常、边界、异常、回归 |
+| 内置权限不再包含旧 manage 权限 | `DataInitializerTest#excludesLegacyManagementPermissions`、`navigation.test.mjs` | 权限、安全、回归 |
+| 链路日志 SQL 只写当前 level 列 | `TraceLogFlusherTest#flushUsesCurrentLevelColumn` | 正常、SQL、回归 |
 
 **已知问题与限制**：
-- 宿主机未安装 Maven，测试通过 Maven Docker 容器执行。
-- 本次未新增真实 MySQL/Redis 多实例集成测试；批量 SQL 和 Outbox 去重通过单元测试、容器构建和服务健康检查验证。
-- 前端未修改，未单独重复前端测试；前端镜像在 Compose 构建中成功完成生产构建。
+- 宿主机未安装 Maven，后端测试通过 Maven Docker 容器执行。
+- 当前本地数据库仍存在历史 `sys_api_key.secret_encrypted IS NULL` 记录，Hibernate 尝试收紧 `NOT NULL` 时记录 DDL 警告；本次根据“不考虑之前数据影响”的范围未执行数据回填、迁移或删除，服务仍正常启动并通过健康检查。
+- 前端生产构建继续提示主包超过 500 kB；该既有性能提示不影响本次功能验收。
+- 未执行真实多实例、故障注入或生产数据规模压测。
 
 **下次测试建议**：
-1. 增加真实 MySQL/Redis 故障注入和事务提交窗口异常的集成测试。
-2. 增加多实例场景下 Outbox 并发对账测试。
-3. 使用生产数据规模验证任务心跳批量更新的执行计划和索引命中情况。
+1. 在全新数据库上执行完整启动验收，确认所有当前实体约束一次性创建成功。
+2. 如需复用历史数据库，单独制定 API Key 空密文数据清理方案并人工确认后执行。
+3. 增加公开接口 404 的 MockMvc 集成测试及数据库 Schema 约束集成测试。
 
 ## 📋 Git 基准点
 
-Commit: 5ce3be4f9da450e09aad1820ef9a95b2aa8b434f
-- 提交说明: Add localized mail route testing
-- 测试日期: 2026-08-03
+Commit: 666fe85a9ee78f35af2a00891df2b41e80d491fe
+- 提交说明: Remove legacy compatibility logic
+- 测试日期: 2026-08-05
 - 分支: master
-- 上一测试基准点: `e35ff794593568fb3649e2eedcf5dddaea49790b`
-- 上一测试报告提交: `9dd6b4a`
+- 上一测试基准点: `9d5e904`
+- 上一测试报告提交: `0c39891`
 
 ## 🎯 当前变更范围
 
