@@ -109,7 +109,7 @@ Set `LLM_LOG_CONTENT=false` in environments where prompts and model responses mu
 External systems can call endpoints explicitly annotated as API-key accessible. Create, authorize, rotate, disable, or revoke keys from **System Management > API Key Management**.
 
 ```bash
-curl -X POST http://localhost/api/ai/chat \
+curl --cacert local-caddy-root.crt -X POST https://localhost/api/ai/chat \
   -H 'X-API-Key: sk-<your-api-key>' \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"hello"}]}'
@@ -202,7 +202,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
-- **Ports and images:** `BACKEND_PORT`, `FRONTEND_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`.
+- **TLS ingress and images:** `CADDY_SITE_ADDRESS`, `CADDY_TLS_DIRECTIVE`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
 
@@ -218,10 +218,12 @@ docker compose ps
 
 After all services are healthy:
 
-- Web console: <http://localhost>
-- Backend API: <http://localhost:8080>
-- Backend health check: <http://localhost:8080/api/open/health>
-- Frontend health check: <http://localhost/health>
+- Web console: <https://localhost>
+- Backend API and open platform: <https://localhost/api>
+- Unified health check: <https://localhost/api/open/health>
+- Caddy health check: <https://localhost/health>
+
+The default `tls internal` mode uses Caddy's local CA. Export `/data/caddy/pki/authorities/local/root.crt` from the Caddy container and trust it on internal clients. For a public open-platform deployment, point `CADDY_SITE_ADDRESS` to the public DNS name, set `CADDY_TLS_DIRECTIVE` to an ACME contact such as `tls ops@example.com`, and expose ports 80/443; Caddy will obtain a publicly trusted certificate automatically.
 
 After the first initialization, use the username configured by `APP_SEED_ADMIN_USERNAME` and the password configured by `APP_SEED_ADMIN_PASSWORD`. The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically.
 

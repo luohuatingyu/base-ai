@@ -1,0 +1,32 @@
+{
+	admin off
+}
+
+{$CADDY_SITE_ADDRESS:https://localhost} {
+	{$CADDY_TLS_DIRECTIVE:tls internal}
+
+	encode zstd gzip
+	request_body {
+		max_size {$APP_MAX_REQUEST_BYTES:20971520}
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+	}
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+}
