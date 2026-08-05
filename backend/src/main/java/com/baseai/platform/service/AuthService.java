@@ -9,6 +9,7 @@ import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.TokenClaims;
 import com.baseai.platform.security.TokenService;
 import com.baseai.platform.security.SessionService;
+import com.baseai.platform.security.LoginAttemptService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +48,7 @@ public class AuthService {
 
     /** 登录审计服务，记录登录行为和结果 */
     private final LoginAuditService loginAuditService;
+    private final LoginAttemptService loginAttemptService;
 
     /**
      * 构造函数，通过Spring依赖注入初始化所需的服务组件
@@ -58,12 +60,14 @@ public class AuthService {
      * @param loginAuditService 登录审计服务
      */
     public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, TokenService tokenService,
-                       SessionService sessionService, LoginAuditService loginAuditService) {
+                       SessionService sessionService, LoginAuditService loginAuditService,
+                       LoginAttemptService loginAttemptService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.sessionService = sessionService;
         this.loginAuditService = loginAuditService;
+        this.loginAttemptService = loginAttemptService;
     }
 
     /**
@@ -92,7 +96,11 @@ public class AuthService {
     public LoginResult login(String username, String password, LoginMetadata metadata) {
         // 标准化用户名（去除前后空格），用于审计日志记录
         String normalized = username == null ? "" : username.trim();
+        boolean attemptChecked = false;
+        boolean passwordVerified = false;
         try {
+            loginAttemptService.checkAllowed(normalized, metadata.ipAddress());
+            attemptChecked = true;
             // 查询用户账号，验证用户名格式并检查用户是否存在
             UserAccount user = userRepository.findByUsername(requireText(username, "auth.username.required"))
                 .orElseThrow(() -> BusinessException.unauthorized("auth.invalidCredentials"));
@@ -101,9 +109,13 @@ public class AuthService {
             if (!passwordEncoder.matches(requireText(password, "auth.password.required"), user.getPasswordHash())) {
                 throw BusinessException.unauthorized("auth.invalidCredentials");
             }
+            passwordVerified = true;
 
             // 检查账号是否已启用
             if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("auth.accountDisabled");
+
+            // 在签发令牌前清除账号来源失败状态，避免缓存故障遗留不可见的有效会话
+            loginAttemptService.clearAccountFailures(normalized, metadata.ipAddress());
 
             // 创建JWT令牌
             String token = tokenService.createToken(user.getId(), user.getUsername());
@@ -120,12 +132,20 @@ public class AuthService {
             // 返回登录结果，包含令牌、过期时间和用户信息
             return new LoginResult(token, claims.expiresAt(), toCurrentUser(user));
         } catch (RuntimeException exception) {
+            RuntimeException reportedException = exception;
+            if (attemptChecked && !passwordVerified) {
+                try {
+                    loginAttemptService.recordFailure(normalized, metadata.ipAddress());
+                } catch (RuntimeException limiterException) {
+                    reportedException = limiterException;
+                }
+            }
             // 捕获所有运行时异常，记录登录失败的审计日志
-            String messageKey = exception instanceof BusinessException businessException
+            String messageKey = reportedException instanceof BusinessException businessException
                 ? businessException.getMessageKey()
                 : "auth.loginFailed";
             loginAuditService.save(normalized, metadata, false, messageKey);
-            throw exception;
+            throw reportedException;
         }
     }
 

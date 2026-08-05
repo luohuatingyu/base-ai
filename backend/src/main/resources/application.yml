@@ -60,6 +60,14 @@ app:
     expire-minutes: ${APP_TOKEN_EXPIRE_MINUTES:720}
   api-key:
     hash-secret: ${APP_API_KEY_HASH_SECRET:${APP_CONFIG_ENCRYPTION_KEY}}
+  proxy:
+    trusted-cidrs: ${APP_TRUSTED_PROXY_CIDRS:}
+  login-security:
+    account-ip-failures: ${APP_LOGIN_ACCOUNT_IP_FAILURES:5}
+    ip-failures: ${APP_LOGIN_IP_FAILURES:20}
+    window-minutes: ${APP_LOGIN_WINDOW_MINUTES:5}
+    block-minutes: ${APP_LOGIN_BLOCK_MINUTES:15}
+    password-min-length: ${APP_PASSWORD_MIN_LENGTH:12}
   seed:
     admin-username: ${APP_SEED_ADMIN_USERNAME:admin}
     admin-password: ${APP_SEED_ADMIN_PASSWORD}

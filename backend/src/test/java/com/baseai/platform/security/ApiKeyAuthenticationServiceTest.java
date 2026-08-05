@@ -48,8 +48,9 @@ class ApiKeyAuthenticationServiceTest {
         secretService = new ApiKeySecretService(properties);
         generated = secretService.generate();
         credential = credential(generated);
+        PlatformProperties proxyProperties = new PlatformProperties();
         service = new ApiKeyAuthenticationService(repository, secretService, endpointCatalog, new ApiKeyCidrMatcher(),
-            rateLimiter, new AuthUserFactory(), new ClientIpResolver());
+            rateLimiter, new AuthUserFactory(), new ClientIpResolver(new ApiKeyCidrMatcher(), proxyProperties));
     }
 
     /** 有效 Key 调用已开放且已授权接口时建立 API_KEY 身份并记录使用信息。 */
@@ -58,7 +59,6 @@ class ApiKeyAuthenticationServiceTest {
         HandlerMethod handler = handler("allowed");
         when(endpointCatalog.resolveAnnotation(handler)).thenReturn(handler.getMethodAnnotation(ApiKeyEndpoint.class));
         when(repository.findByKeyIdAndRevokedAtIsNull(generated.keyId())).thenReturn(Optional.of(credential));
-        when(request.getHeader("X-Forwarded-For")).thenReturn(null);
         when(request.getRemoteAddr()).thenReturn("10.0.0.8");
 
         AuthUser user = service.authenticate(generated.rawApiKey(), request, handler);
@@ -98,7 +98,6 @@ class ApiKeyAuthenticationServiceTest {
         HandlerMethod handler = handler("allowed");
         when(endpointCatalog.resolveAnnotation(handler)).thenReturn(handler.getMethodAnnotation(ApiKeyEndpoint.class));
         when(repository.findByKeyIdAndRevokedAtIsNull(generated.keyId())).thenReturn(Optional.of(credential));
-        when(request.getHeader("X-Forwarded-For")).thenReturn(null);
         when(request.getRemoteAddr()).thenReturn("10.0.0.8");
 
         credential.setExpiresAt(Instant.now().minusSeconds(1));

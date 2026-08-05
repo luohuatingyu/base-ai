@@ -4,6 +4,7 @@ import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.repository.UserRepository;
 import com.baseai.platform.security.SessionService;
+import com.baseai.platform.security.LoginAttemptService;
 import com.baseai.platform.security.TokenClaims;
 import com.baseai.platform.security.TokenService;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +24,7 @@ class AuthServiceTest {
     private TokenService tokenService;
     private SessionService sessionService;
     private LoginAuditService loginAuditService;
+    private LoginAttemptService loginAttemptService;
     private AuthService service;
     private AuthService.LoginMetadata metadata;
 
@@ -34,7 +36,9 @@ class AuthServiceTest {
         tokenService = mock(TokenService.class);
         sessionService = mock(SessionService.class);
         loginAuditService = mock(LoginAuditService.class);
-        service = new AuthService(userRepository, passwordEncoder, tokenService, sessionService, loginAuditService);
+        loginAttemptService = mock(LoginAttemptService.class);
+        service = new AuthService(userRepository, passwordEncoder, tokenService, sessionService, loginAuditService,
+            loginAttemptService);
         metadata = new AuthService.LoginMetadata("127.0.0.1", "test-agent");
     }
 
@@ -51,6 +55,8 @@ class AuthServiceTest {
         AuthService.LoginResult result = service.login("admin", "secret", metadata);
 
         assertEquals("token", result.token());
+        verify(loginAttemptService).checkAllowed("admin", "127.0.0.1");
+        verify(loginAttemptService).clearAccountFailures("admin", "127.0.0.1");
         verify(loginAuditService).save("admin", metadata, true, "auth.loginSuccess");
     }
 
@@ -62,6 +68,7 @@ class AuthServiceTest {
         assertThrows(BusinessException.class, () -> service.login(" missing ", "secret", metadata));
 
         verify(loginAuditService).save("missing", metadata, false, "auth.invalidCredentials");
+        verify(loginAttemptService).recordFailure("missing", "127.0.0.1");
     }
 
     /** 非预期内部异常只能记录通用失败键，不能把内部异常正文暴露到登录日志。 */
@@ -76,6 +83,22 @@ class AuthServiceTest {
 
         verify(loginAuditService).save("admin", metadata, false, "auth.loginFailed");
         verify(loginAuditService, never()).save("admin", metadata, false, "sensitive internal detail");
+        verify(loginAttemptService, never()).recordFailure(anyString(), anyString());
+    }
+
+    /** 已处于封禁期的来源必须在查询账号前被拒绝。 */
+    @Test
+    void rateLimitedLoginDoesNotQueryCredentials() {
+        doThrow(new BusinessException(429, "auth.loginRateLimited"))
+            .when(loginAttemptService).checkAllowed("admin", "127.0.0.1");
+
+        BusinessException exception = assertThrows(BusinessException.class,
+            () -> service.login("admin", "secret", metadata));
+
+        assertEquals(429, exception.getStatus());
+        verify(userRepository, never()).findByUsername(anyString());
+        verify(loginAttemptService, never()).recordFailure(anyString(), anyString());
+        verify(loginAuditService).save("admin", metadata, false, "auth.loginRateLimited");
     }
 
     /** 创建可通过密码和状态校验的最小用户实体。 */

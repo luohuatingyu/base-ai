@@ -33,6 +33,10 @@ public class PlatformProperties {
     private ApiTrigger apiTrigger = new ApiTrigger();
     /** API Key 认证配置。 */
     private ApiKey apiKey = new ApiKey();
+    /** 可信反向代理配置。 */
+    private Proxy proxy = new Proxy();
+    /** 登录与密码安全配置。 */
+    private LoginSecurity loginSecurity = new LoginSecurity();
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }
     public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
@@ -61,6 +65,10 @@ public class PlatformProperties {
     public void setApiTrigger(ApiTrigger apiTrigger) { this.apiTrigger = apiTrigger; }
     public ApiKey getApiKey() { return apiKey; }
     public void setApiKey(ApiKey apiKey) { this.apiKey = apiKey; }
+    public Proxy getProxy() { return proxy; }
+    public void setProxy(Proxy proxy) { this.proxy = proxy; }
+    public LoginSecurity getLoginSecurity() { return loginSecurity; }
+    public void setLoginSecurity(LoginSecurity loginSecurity) { this.loginSecurity = loginSecurity; }
 
     public static class Token {
         private String secret;
@@ -75,6 +83,30 @@ public class PlatformProperties {
         private String hashSecret;
         public String getHashSecret() { return hashSecret; }
         public void setHashSecret(String hashSecret) { this.hashSecret = hashSecret; }
+    }
+
+    public static class Proxy {
+        private java.util.List<String> trustedCidrs = java.util.List.of();
+        public java.util.List<String> getTrustedCidrs() { return trustedCidrs; }
+        public void setTrustedCidrs(java.util.List<String> trustedCidrs) { this.trustedCidrs = trustedCidrs; }
+    }
+
+    public static class LoginSecurity {
+        private int accountIpFailures = 5;
+        private int ipFailures = 20;
+        private int windowMinutes = 5;
+        private int blockMinutes = 15;
+        private int passwordMinLength = 12;
+        public int getAccountIpFailures() { return accountIpFailures; }
+        public void setAccountIpFailures(int value) { accountIpFailures = value; }
+        public int getIpFailures() { return ipFailures; }
+        public void setIpFailures(int value) { ipFailures = value; }
+        public int getWindowMinutes() { return windowMinutes; }
+        public void setWindowMinutes(int value) { windowMinutes = value; }
+        public int getBlockMinutes() { return blockMinutes; }
+        public void setBlockMinutes(int value) { blockMinutes = value; }
+        public int getPasswordMinLength() { return passwordMinLength; }
+        public void setPasswordMinLength(int value) { passwordMinLength = value; }
     }
 
     public static class Platform {

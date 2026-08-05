@@ -4,6 +4,7 @@ import com.baseai.platform.domain.OperationLog;
 import com.baseai.platform.trace.TraceRequestSnapshotSanitizer;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -22,10 +23,13 @@ public class OperationAuditAspect {
     private static final Set<String> MUTATING = Set.of("POST", "PUT", "PATCH", "DELETE");
     private final SystemAuditAsyncWriter writer;
     private final TraceRequestSnapshotSanitizer sanitizer;
+    private final ClientIpResolver clientIpResolver;
 
-    public OperationAuditAspect(SystemAuditAsyncWriter writer, TraceRequestSnapshotSanitizer sanitizer) {
+    public OperationAuditAspect(SystemAuditAsyncWriter writer, TraceRequestSnapshotSanitizer sanitizer,
+                                ClientIpResolver clientIpResolver) {
         this.writer = writer;
         this.sanitizer = sanitizer;
+        this.clientIpResolver = clientIpResolver;
     }
 
     /** 对登录以外的控制器写操作记录脱敏审计日志。 */
@@ -67,7 +71,7 @@ public class OperationAuditAspect {
             log.setController(signature.getDeclaringType().getSimpleName());
             log.setAction(signature.getName());
             log.setRequestData(sanitizer.sanitize(request, signature.getParameterNames(), point.getArgs()).paramsJson());
-            log.setIpAddress(clientIp(request));
+            log.setIpAddress(clientIpResolver.resolve(request));
             log.setDurationMs((System.nanoTime() - started) / 1_000_000);
             log.setSuccess(failure == null);
             log.setErrorMessage(failure == null ? null : limit(failure.getMessage(), 1000));
@@ -79,6 +83,5 @@ public class OperationAuditAspect {
         }
     }
 
-    private String clientIp(HttpServletRequest request) { String forwarded = request.getHeader("X-Forwarded-For"); return forwarded == null ? request.getRemoteAddr() : forwarded.split(",")[0].trim(); }
     private String limit(String value, int length) { if (value == null) return null; return value.substring(0, Math.min(length, value.length())); }
 }

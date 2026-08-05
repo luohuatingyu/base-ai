@@ -1,6 +1,7 @@
 package com.baseai.platform.controller;
 
 import com.baseai.platform.service.AuthService;
+import com.baseai.platform.security.ClientIpResolver;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,14 +11,18 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthService authService;
+    private final ClientIpResolver clientIpResolver;
 
-    public AuthController(AuthService authService) { this.authService = authService; }
+    public AuthController(AuthService authService, ClientIpResolver clientIpResolver) {
+        this.authService = authService;
+        this.clientIpResolver = clientIpResolver;
+    }
 
     /** 使用账号密码登录平台。 */
     @PostMapping("/login")
     public AuthService.LoginResult login(@Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest) {
         return authService.login(request.username(), request.password(), new AuthService.LoginMetadata(
-            clientIp(servletRequest), servletRequest.getHeader("User-Agent")));
+            clientIpResolver.resolve(servletRequest), servletRequest.getHeader("User-Agent")));
     }
 
     /** 获取当前用户权限快照。 */
@@ -32,10 +37,4 @@ public class AuthController {
 
     public record LoginRequest(@NotBlank(message = "{auth.username.required}") String username,
                                @NotBlank(message = "{auth.password.required}") String password) {}
-
-    /** 优先读取反向代理传播的客户端地址。 */
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        return forwarded == null ? request.getRemoteAddr() : forwarded.split(",")[0].trim();
-    }
 }

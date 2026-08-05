@@ -51,10 +51,26 @@ public class ApiKeyCidrMatcher {
         if (!normalized.matches("[0-9a-fA-F:.]+") || (!normalized.contains(".") && !normalized.contains(":"))) {
             throw new BusinessException(messageKey);
         }
+        if (normalized.contains(".")) validateIpv4Literal(normalized, messageKey);
         try {
             return InetAddress.getByName(normalized).getAddress();
         } catch (Exception exception) {
             throw new BusinessException(messageKey);
+        }
+    }
+
+    /** 严格校验点分十进制 IPv4，拒绝 Java 地址解析器接受的非标准数字形式。 */
+    private void validateIpv4Literal(String value, String messageKey) {
+        if (value.contains(":")) throw new BusinessException(messageKey);
+        String[] octets = value.split("\\.", -1);
+        if (octets.length != 4) throw new BusinessException(messageKey);
+        for (String octet : octets) {
+            if (!octet.matches("0|[1-9][0-9]{0,2}")) throw new BusinessException(messageKey);
+            try {
+                if (Integer.parseInt(octet) > 255) throw new BusinessException(messageKey);
+            } catch (NumberFormatException exception) {
+                throw new BusinessException(messageKey);
+            }
         }
     }
 

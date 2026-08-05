@@ -1,14 +1,18 @@
 package com.baseai.platform.service;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.domain.*;
 import com.baseai.platform.repository.*;
 import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.SessionService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -55,6 +59,12 @@ public class PlatformAdminService {
     /** 密码加密编码器 */
     private final BCryptPasswordEncoder passwordEncoder;
 
+    /** 在线会话服务，用于在敏感账号变更后撤销存量会话。 */
+    private final SessionService sessionService;
+
+    /** 密码安全策略配置。 */
+    private final PlatformProperties properties;
+
     /**
      * 构造函数，注入所需的依赖
      *
@@ -64,16 +74,21 @@ public class PlatformAdminService {
      * @param departmentRepository 部门仓储
      * @param positionRepository 岗位仓储
      * @param passwordEncoder 密码编码器
+     * @param sessionService 在线会话服务
+     * @param properties 平台安全配置
      */
     public PlatformAdminService(UserRepository userRepository, RoleRepository roleRepository, MenuRepository menuRepository,
                                 DepartmentRepository departmentRepository, PositionRepository positionRepository,
-                                BCryptPasswordEncoder passwordEncoder) {
+                                BCryptPasswordEncoder passwordEncoder, SessionService sessionService,
+                                PlatformProperties properties) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.menuRepository = menuRepository;
         this.departmentRepository = departmentRepository;
         this.positionRepository = positionRepository;
         this.passwordEncoder = passwordEncoder;
+        this.sessionService = sessionService;
+        this.properties = properties;
     }
 
     /**
@@ -136,15 +151,25 @@ public class PlatformAdminService {
      */
     @Transactional
     public UserView updateUser(Long id, UserCommand command) {
+        // 串行化账号权限变更，使最后管理员校验在并发请求下仍然成立
+        userRepository.findAllForAdminGuard();
         UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("user.notFound"));
+        validateTargetControl(user);
         // 如果用户名发生变化，校验新用户名的唯一性
         if (!user.getUsername().equals(command.username()) && userRepository.existsByUsername(require(command.username(), "user.usernameRequired"))) {
             throw new BusinessException("user.usernameExists");
         }
         user.setUsername(require(command.username(), "user.usernameRequired"));
         // 应用用户属性和关系（更新模式）
+        Set<Long> previousRoleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
+        boolean previouslyEnabled = Boolean.TRUE.equals(user.getEnabled());
+        boolean passwordChanged = !blank(command.password());
         applyUser(user, command, false);
-        return toUserView(userRepository.save(user));
+        UserAccount saved = userRepository.save(user);
+        Set<Long> currentRoleIds = saved.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
+        if (passwordChanged || previouslyEnabled != Boolean.TRUE.equals(saved.getEnabled())
+            || !previousRoleIds.equals(currentRoleIds)) sessionService.terminateUser(saved.getId());
+        return toUserView(saved);
     }
 
     /**
@@ -158,13 +183,18 @@ public class PlatformAdminService {
      */
     @Transactional
     public void deleteUser(Long id) {
+        // 删除前锁定账号集合，避免并发删除或停用同时穿透最后管理员保护
+        userRepository.findAllForAdminGuard();
         // 防止删除当前登录用户
         if (Objects.equals(AuthContext.require().id(), id)) throw new BusinessException("user.deleteCurrentForbidden");
         UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("user.notFound"));
+        validateTargetControl(user);
+        validateLastAdmin(user, Set.of(), false);
         // 清除用户的角色和岗位关联关系
         user.getRoles().clear();
         user.getPositions().clear();
         userRepository.delete(user);
+        sessionService.terminateUser(id);
     }
 
     /**
@@ -193,6 +223,7 @@ public class PlatformAdminService {
     @Transactional
     public RoleView createRole(RoleCommand command) {
         String code = require(command.code(), "role.codeRequired").toUpperCase(Locale.ROOT);
+        validateRoleCodeDelegation(code);
         // 校验角色编码唯一性
         if (roleRepository.findByCode(code).isPresent()) throw new BusinessException("role.codeExists");
         Role role = new Role();
@@ -206,10 +237,16 @@ public class PlatformAdminService {
     @Transactional
     public RoleView updateRole(Long id, RoleCommand command) {
         Role role = roleRepository.findById(id).orElseThrow(() -> BusinessException.notFound("role.notFound"));
-        if (!role.getCode().equalsIgnoreCase(command.code()) && roleRepository.findByCode(require(command.code(), "role.codeRequired").toUpperCase(Locale.ROOT)).isPresent()) {
+        validateRoleControl(role);
+        String updatedCode = require(command.code(), "role.codeRequired").toUpperCase(Locale.ROOT);
+        if ("ADMIN".equals(role.getCode()) && (!"ADMIN".equals(updatedCode) || Boolean.FALSE.equals(command.enabled()))) {
+            throw new BusinessException("role.builtinImmutable");
+        }
+        if (!role.getCode().equalsIgnoreCase(updatedCode) && roleRepository.findByCode(updatedCode).isPresent()) {
             throw new BusinessException("role.codeExists");
         }
-        role.setCode(require(command.code(), "role.codeRequired").toUpperCase(Locale.ROOT));
+        validateRoleCodeDelegation(updatedCode);
+        role.setCode(updatedCode);
         applyRole(role, command);
         return toRoleView(roleRepository.save(role));
     }
@@ -218,6 +255,7 @@ public class PlatformAdminService {
     @Transactional
     public void deleteRole(Long id) {
         Role role = roleRepository.findById(id).orElseThrow(() -> BusinessException.notFound("role.notFound"));
+        validateRoleControl(role);
         if ("ADMIN".equals(role.getCode())) throw new BusinessException("role.deleteBuiltinForbidden");
         boolean used = userRepository.findAll().stream().anyMatch(user -> user.getRoles().stream().anyMatch(item -> item.getId().equals(id)));
         if (used) throw new BusinessException("role.inUse");
@@ -328,19 +366,85 @@ public class PlatformAdminService {
 
     /** 应用用户表单字段和关系。 */
     private void applyUser(UserAccount user, UserCommand command, boolean creating) {
+        boolean enabled = command.enabled() == null || command.enabled();
+        LinkedHashSet<Role> selectedRoles = loadRoles(command.roleIds());
+        validateRoleDelegation(selectedRoles);
+        if (!creating) validateLastAdmin(user, selectedRoles, enabled);
         user.setDisplayName(require(command.displayName(), "user.displayNameRequired"));
-        user.setEnabled(command.enabled() == null || command.enabled());
-        if (creating || !blank(command.password())) user.setPasswordHash(passwordEncoder.encode(require(command.password(), "auth.password.required")));
-        user.setRoles(load(command.roleIds(), roleRepository::findAllById));
+        user.setEnabled(enabled);
+        if (creating || !blank(command.password())) {
+            String password = require(command.password(), "auth.password.required");
+            validatePassword(password);
+            user.setPasswordHash(passwordEncoder.encode(password));
+        }
+        user.setRoles(selectedRoles);
         user.setPositions(load(command.positionIds(), positionRepository::findAllById));
         user.setDepartment(command.departmentId() == null ? null : departmentRepository.findById(command.departmentId())
             .orElseThrow(() -> BusinessException.notFound("department.notFound")));
     }
 
+    /** 精确解析角色 ID，防止无效 ID 被静默忽略后产生非预期授权结果。 */
+    private LinkedHashSet<Role> loadRoles(List<Long> roleIds) {
+        LinkedHashSet<Long> requested = new LinkedHashSet<>(roleIds == null ? List.of() : roleIds);
+        if (requested.contains(null)) throw BusinessException.notFound("role.notFound");
+        LinkedHashSet<Role> roles = load(new ArrayList<>(requested), roleRepository::findAllById);
+        Set<Long> loadedIds = roles.stream().map(Role::getId).collect(Collectors.toSet());
+        if (!loadedIds.equals(requested)) throw BusinessException.notFound("role.notFound");
+        return roles;
+    }
+
+    /** 限制非管理员只能委派自己已经拥有的权限，且永远不能授予管理员角色。 */
+    private void validateRoleDelegation(Set<Role> selectedRoles) {
+        AuthUser actor = AuthContext.require();
+        if (isAdmin(actor)) return;
+        if (hasAdminRole(selectedRoles)) throw BusinessException.forbidden("user.adminDelegationForbidden");
+        boolean exceedsActor = effectivePermissions(selectedRoles).stream().anyMatch(permission -> !actor.hasPermission(permission));
+        if (exceedsActor) throw BusinessException.forbidden("user.permissionDelegationForbidden");
+    }
+
+    /** 阻止非管理员操作管理员或权限高于自身的账号。 */
+    private void validateTargetControl(UserAccount target) {
+        AuthUser actor = AuthContext.require();
+        if (isAdmin(actor)) return;
+        if (hasAdminRole(target.getRoles())) throw BusinessException.forbidden("user.adminTargetForbidden");
+        boolean exceedsActor = effectivePermissions(target.getRoles()).stream().anyMatch(permission -> !actor.hasPermission(permission));
+        if (exceedsActor) throw BusinessException.forbidden("user.targetPermissionForbidden");
+    }
+
+    /** 防止停用、删除或移除系统最后一个可登录管理员。 */
+    private void validateLastAdmin(UserAccount target, Set<Role> selectedRoles, boolean enabled) {
+        if (!Boolean.TRUE.equals(target.getEnabled()) || !hasAdminRole(target.getRoles())) return;
+        if (enabled && hasAdminRole(selectedRoles)) return;
+        long enabledAdmins = userRepository.findAllForAdminGuard().stream()
+            .filter(user -> Boolean.TRUE.equals(user.getEnabled()) && hasAdminRole(user.getRoles())).count();
+        if (enabledAdmins <= 1) throw new BusinessException("user.lastAdminRequired");
+    }
+
+    /** 校验 BCrypt 可安全处理的字符下限和 UTF-8 字节上限。 */
+    private void validatePassword(String password) {
+        int minimum = Math.max(1, properties.getLoginSecurity().getPasswordMinLength());
+        if (password.length() < minimum) throw new BusinessException("auth.passwordTooShort", minimum);
+        if (password.getBytes(StandardCharsets.UTF_8).length > 72) throw new BusinessException("auth.passwordTooLong");
+    }
+
+    /** 汇总启用角色和菜单中的实际权限编码。 */
+    private Set<String> effectivePermissions(Set<Role> roles) {
+        return roles.stream().filter(role -> Boolean.TRUE.equals(role.getEnabled()))
+            .flatMap(role -> role.getMenus().stream()).filter(menu -> Boolean.TRUE.equals(menu.getEnabled()))
+            .map(Menu::getPermission).filter(permission -> !blank(permission)).collect(Collectors.toSet());
+    }
+
+    private boolean hasAdminRole(Set<Role> roles) {
+        return roles.stream().anyMatch(role -> "ADMIN".equalsIgnoreCase(role.getCode()) && Boolean.TRUE.equals(role.getEnabled()));
+    }
+
+    private boolean isAdmin(AuthUser user) { return user.roles().contains("ADMIN"); }
+
     /** 应用角色基础信息、菜单和数据范围。 */
     private void applyRole(Role role, RoleCommand command) {
         LinkedHashSet<Menu> selectedMenus = load(command.menuIds(), menuRepository::findAllById);
         validateRoleMenuDependencies(selectedMenus);
+        validatePermissionDelegation(selectedMenus);
         role.setName(require(command.name(), "role.nameRequired"));
         role.setDescription(trim(command.description()));
         role.setEnabled(command.enabled() == null || command.enabled());
@@ -373,6 +477,31 @@ public class PlatformAdminService {
             }
             if (!pageSelected) throw new BusinessException("role.buttonPageRequired", button.getName());
         }
+    }
+
+    /** 非管理员不能创建或重命名为系统管理员角色。 */
+    private void validateRoleCodeDelegation(String code) {
+        if ("ADMIN".equals(code) && !isAdmin(AuthContext.require())) {
+            throw BusinessException.forbidden("user.adminDelegationForbidden");
+        }
+    }
+
+    /** 非管理员不能修改管理员角色或权限集合高于自身的角色。 */
+    private void validateRoleControl(Role role) {
+        AuthUser actor = AuthContext.require();
+        if (isAdmin(actor)) return;
+        if ("ADMIN".equalsIgnoreCase(role.getCode())) throw BusinessException.forbidden("role.adminTargetForbidden");
+        boolean exceedsActor = effectivePermissions(Set.of(role)).stream().anyMatch(permission -> !actor.hasPermission(permission));
+        if (exceedsActor) throw BusinessException.forbidden("role.targetPermissionForbidden");
+    }
+
+    /** 非管理员编辑角色时只能选择自己已经拥有的菜单权限。 */
+    private void validatePermissionDelegation(Set<Menu> selectedMenus) {
+        AuthUser actor = AuthContext.require();
+        if (isAdmin(actor)) return;
+        boolean exceedsActor = selectedMenus.stream().filter(menu -> Boolean.TRUE.equals(menu.getEnabled()))
+            .map(Menu::getPermission).filter(permission -> !blank(permission)).anyMatch(permission -> !actor.hasPermission(permission));
+        if (exceedsActor) throw BusinessException.forbidden("role.permissionDelegationForbidden");
     }
 
     /** 校验并应用菜单配置。 */

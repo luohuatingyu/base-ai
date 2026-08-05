@@ -398,8 +398,10 @@ public class DataInitializer implements ApplicationRunner {
         if (internalToken == null || internalToken.length() < 24 || internalToken.contains("replace-with")) {
             throw new IllegalStateException("PYTHON_WORKER_INTERNAL_TOKEN 必须设置为随机字符串");
         }
-        if (adminPassword == null || adminPassword.length() < 10 || adminPassword.contains("replace")) {
-            throw new IllegalStateException("APP_SEED_ADMIN_PASSWORD 必须设置为安全密码");
+        int minimumPasswordLength = Math.max(1, properties.getLoginSecurity().getPasswordMinLength());
+        if (adminPassword == null || adminPassword.length() < minimumPasswordLength
+            || adminPassword.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72 || adminPassword.contains("replace")) {
+            throw new IllegalStateException("APP_SEED_ADMIN_PASSWORD 必须为 " + minimumPasswordLength + " 至 72 字节的安全密码");
         }
         try {
             if (encryptionKey == null || java.util.Base64.getDecoder().decode(encryptionKey).length != 32) {
