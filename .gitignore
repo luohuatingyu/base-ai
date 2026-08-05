@@ -233,5 +233,6 @@ __marimo__/
 # IDE / OS
 .idea/
 .vscode/
+.claude/
 *.iml
 .DS_Store
