@@ -473,7 +473,7 @@ public class LlmManagementService {
     private LlmProvider saveProvider(LlmProvider provider,ProviderCommand command){
         provider.setCode(require(command.code(),"llm.providerCodeRequired"));
         provider.setName(require(command.name(),"llm.providerNameRequired"));
-        provider.setBaseUrl(require(command.baseUrl(),"llm.serviceUrlRequired").replaceAll("/+$","")); // 去除末尾的斜杠
+        provider.setBaseUrl(validateProviderUrl(require(command.baseUrl(),"llm.serviceUrlRequired"))); // 去除末尾的斜杠
 
         // 仅在新建或提供了新密钥时才更新加密的API密钥
         if(provider.getId()==null||!blank(command.apiKeys()))
@@ -486,6 +486,19 @@ public class LlmManagementService {
         provider.setEnabled(command.enabled()==null||command.enabled()); // 默认启用
 
         return providerRepository.save(provider);
+    }
+
+    /** 校验模型供应商为无内嵌凭证和片段的绝对 HTTP(S) 地址。 */
+    private String validateProviderUrl(String value){
+        try{
+            if(value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>2048)throw new BusinessException("llm.serviceUrlInvalid");
+            java.net.URI uri=java.net.URI.create(value);
+            if(!Set.of("http","https").contains(String.valueOf(uri.getScheme()).toLowerCase(Locale.ROOT))
+                ||uri.getHost()==null||uri.getRawUserInfo()!=null||uri.getRawFragment()!=null||uri.getPort()==0)
+                throw new BusinessException("llm.serviceUrlInvalid");
+            return value.replaceAll("/+$","");
+        }catch(BusinessException exception){throw exception;}
+        catch(RuntimeException exception){throw new BusinessException("llm.serviceUrlInvalid");}
     }
     /**
      * 保存模型信息（内部方法）

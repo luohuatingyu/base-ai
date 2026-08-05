@@ -20,6 +20,7 @@ def settings() -> Settings:
         llm_timeout_seconds=10,
         llm_log_content=False,
         persist_level="INFO",
+        llm_response_max_bytes=1024,
     )
 
 
@@ -167,3 +168,20 @@ def test_invoke_reports_missing_openai_choice_content():
 
     with pytest.raises(RuntimeError, match=r"缺少 choices\[0\]\.message\.content"):
         asyncio.run(invoke_with(response))
+
+
+def test_invoke_rejects_oversized_provider_response():
+    """供应商响应超过配置上限时不得继续缓冲或解析。"""
+    response = httpx.Response(200, content=b"x" * 1025, headers={"content-type": "application/json"})
+
+    with pytest.raises(RuntimeError, match="响应超过大小限制"):
+        asyncio.run(invoke_with(response))
+
+
+@pytest.mark.parametrize("base_url", ["file:///etc/passwd", "https://user:secret@example.com", "https://example.com/path#part"])
+def test_candidate_rejects_unsafe_provider_url(base_url):
+    """模型供应商地址不得使用非 HTTP 协议、内嵌凭证或 URL 片段。"""
+    payload = candidate().model_dump()
+    payload["baseUrl"] = base_url
+    with pytest.raises(ValueError):
+        LlmCandidate(**payload)

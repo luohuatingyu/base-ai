@@ -9,7 +9,7 @@ from starlette.responses import Response
 from app.config import Settings, load_settings
 from app.context import RequestContext, reset_context, set_context
 from app.logging_config import ContextFilter, JavaLogShipHandler, JsonLogFormatter
-from app.middleware import InternalAuthMiddleware
+from app.middleware import InternalAuthMiddleware, RequestSizeLimitMiddleware
 
 
 class InspectableTraceHandler(JavaLogShipHandler):
@@ -116,6 +116,33 @@ def test_similar_health_path_still_requires_internal_token():
     response = asyncio.run(middleware.dispatch(request, lambda _: Response(status_code=200)))
 
     assert response.status_code == 401
+
+
+def test_request_size_middleware_rejects_chunked_body_over_limit():
+    """即使没有 Content-Length，累计正文超限也必须在进入应用前返回 413。"""
+    called = False
+    sent = []
+    messages = [
+        {"type": "http.request", "body": b"1234", "more_body": True},
+        {"type": "http.request", "body": b"5", "more_body": False},
+    ]
+
+    async def downstream(scope, receive, send):
+        nonlocal called
+        called = True
+
+    async def receive():
+        return messages.pop(0)
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": "POST", "path": "/llm/chat", "headers": []}
+    middleware = RequestSizeLimitMiddleware(downstream, max_bytes=4)
+    asyncio.run(middleware(scope, receive, send))
+
+    assert called is False
+    assert sent[0]["status"] == 413
 
 
 def test_structured_and_shipped_logs_only_use_trace_fields():

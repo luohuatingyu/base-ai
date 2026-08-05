@@ -1,6 +1,7 @@
 """Worker 请求、响应和追踪数据模型定义。"""
 
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -70,6 +71,17 @@ class LlmCandidate(BaseModel):
     timeoutSeconds: int = Field(default=60, ge=1, le=600)
     thinkingParameter: str | None = Field(default=None, max_length=64)
     thinkingValue: str | None = Field(default=None, max_length=100)
+
+    @field_validator("baseUrl")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        """仅允许无凭证和片段的绝对 HTTP(S) 供应商地址。"""
+        parsed = urlsplit(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("模型供应商地址必须是安全的 HTTP(S) URL")
+        if parsed.port == 0:
+            raise ValueError("模型供应商地址端口无效")
+        return value.strip().rstrip("/")
 
 
 class ChatRequest(BaseModel):

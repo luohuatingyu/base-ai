@@ -1,5 +1,9 @@
 server:
   port: 8080
+  max-http-request-header-size: ${APP_MAX_REQUEST_HEADER_SIZE:16KB}
+  tomcat:
+    max-http-form-post-size: ${APP_MAX_REQUEST_BYTES:20971520}
+    max-swallow-size: ${APP_MAX_REQUEST_BYTES:20971520}
 
 spring:
   application:
@@ -68,6 +72,8 @@ app:
     window-minutes: ${APP_LOGIN_WINDOW_MINUTES:5}
     block-minutes: ${APP_LOGIN_BLOCK_MINUTES:15}
     password-min-length: ${APP_PASSWORD_MIN_LENGTH:12}
+  resource-limits:
+    request-max-bytes: ${APP_MAX_REQUEST_BYTES:20971520}
   seed:
     admin-username: ${APP_SEED_ADMIN_USERNAME:admin}
     admin-password: ${APP_SEED_ADMIN_PASSWORD}
@@ -98,3 +104,6 @@ app:
     scheduler-pool-size: ${API_TRIGGER_SCHEDULER_POOL_SIZE:4}
     lock-seconds: ${API_TRIGGER_LOCK_SECONDS:300}
     result-max-length: ${API_TRIGGER_RESULT_MAX_LENGTH:2000}
+    response-max-bytes: ${API_TRIGGER_RESPONSE_MAX_BYTES:2097152}
+    request-body-max-bytes: ${API_TRIGGER_REQUEST_BODY_MAX_BYTES:1048576}
+    metadata-max-length: ${API_TRIGGER_METADATA_MAX_LENGTH:65536}

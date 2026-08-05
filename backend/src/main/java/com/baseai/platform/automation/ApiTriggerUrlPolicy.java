@@ -22,6 +22,9 @@ public class ApiTriggerUrlPolicy {
             if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) || uri.getHost() == null) {
                 throw new BusinessException("apiTrigger.urlAbsoluteRequired");
             }
+            if (uri.getRawUserInfo() != null || uri.getRawFragment() != null || uri.getPort() == 0) {
+                throw new BusinessException("apiTrigger.urlUnsafeComponent");
+            }
             String host = uri.getHost().toLowerCase(Locale.ROOT);
             ApiTriggerSecurityConfigurationService.ConfigurationView configuration = configurationService.current();
             boolean literalLoopback = isLiteralLoopbackHost(host);
@@ -72,7 +75,10 @@ public class ApiTriggerUrlPolicy {
     private boolean isNonLoopbackPrivateAddress(InetAddress address) {
         byte[] bytes = address.getAddress();
         boolean uniqueLocalIpv6 = bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
+        boolean sharedIpv4 = bytes.length == 4 && (bytes[0] & 0xff) == 100 && (bytes[1] & 0xc0) == 64;
+        boolean currentNetworkIpv4 = bytes.length == 4 && (bytes[0] & 0xff) == 0;
         return address.isAnyLocalAddress() || address.isLinkLocalAddress()
-            || address.isSiteLocalAddress() || address.isMulticastAddress() || uniqueLocalIpv6;
+            || address.isSiteLocalAddress() || address.isMulticastAddress() || uniqueLocalIpv6
+            || sharedIpv4 || currentNetworkIpv4;
     }
 }

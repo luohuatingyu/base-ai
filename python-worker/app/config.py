@@ -23,6 +23,8 @@ class Settings:
     persist_level: str
     log_level: str = "INFO"
     allowed_hosts: tuple[str, ...] = ("python-worker", "localhost", "127.0.0.1")
+    max_request_bytes: int = 20 * 1024 * 1024
+    llm_response_max_bytes: int = 10 * 1024 * 1024
 
 
 def load_settings() -> Settings:
@@ -40,6 +42,8 @@ def load_settings() -> Settings:
             for host in os.getenv("WORKER_ALLOWED_HOSTS", "python-worker,localhost,127.0.0.1").split(",")
             if host.strip()
         ),
+        max_request_bytes=_positive_int(os.getenv("WORKER_MAX_REQUEST_BYTES"), 20 * 1024 * 1024),
+        llm_response_max_bytes=_positive_int(os.getenv("LLM_RESPONSE_MAX_BYTES"), 10 * 1024 * 1024),
     )
 
 
@@ -49,6 +53,8 @@ def validate_settings(settings: Settings) -> None:
         raise RuntimeError("PYTHON_WORKER_INTERNAL_TOKEN 必须设置为安全随机字符串")
     if not settings.allowed_hosts:
         raise RuntimeError("WORKER_ALLOWED_HOSTS 必须至少包含一个可信 Host")
+    if settings.max_request_bytes > 100 * 1024 * 1024 or settings.llm_response_max_bytes > 100 * 1024 * 1024:
+        raise RuntimeError("Worker 请求和响应上限不能超过 100 MiB")
 
 
 def _load_group_pools(path: str) -> list[dict]:

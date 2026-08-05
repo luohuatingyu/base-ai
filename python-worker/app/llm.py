@@ -70,14 +70,19 @@ class LlmClient:
             if enable_thinking and candidate.thinkingParameter and candidate.thinkingValue:
                 payload[candidate.thinkingParameter] = candidate.thinkingValue
             started_at = time.perf_counter()
-            response = await self.client.post(
-                f"{candidate.baseUrl.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=payload,
+            async with self.client.stream(
+                "POST", f"{candidate.baseUrl.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"}, json=payload,
                 timeout=candidate.timeoutSeconds,
-            )
-            response.raise_for_status()
-            data = self._parse_response(response, candidate)
+            ) as response:
+                response.raise_for_status()
+                response_body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    response_body.extend(chunk)
+                    if len(response_body) > self.settings.llm_response_max_bytes:
+                        raise RuntimeError(f"供应商 {candidate.providerCode} 响应超过大小限制")
+                data = self._parse_response(bytes(response_body), response.status_code,
+                                            response.headers.get("content-type", "未提供"), candidate)
             content = self._extract_content(data, candidate)
             usage = data.get("usage", {})
             input_tokens = int(usage.get("prompt_tokens", 0) or 0)
@@ -134,15 +139,14 @@ class LlmClient:
             "thinking_level": configured.get("thinking_level"),
         }
 
-    def _parse_response(self, response: httpx.Response, candidate: LlmCandidate) -> dict:
+    def _parse_response(self, body: bytes, status_code: int, content_type: str, candidate: LlmCandidate) -> dict:
         """校验供应商响应为 JSON 对象，避免空响应被误报为 Worker 内部异常。"""
         try:
-            data = response.json()
-        except json.JSONDecodeError as exception:
-            content_type = response.headers.get("content-type", "未提供")
+            data = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exception:
             raise RuntimeError(
                 f"供应商 {candidate.providerCode} 返回非 JSON 或空响应"
-                f"（HTTP {response.status_code}，Content-Type: {content_type}）"
+                f"（HTTP {status_code}，Content-Type: {content_type}）"
             ) from exception
         if not isinstance(data, dict):
             raise RuntimeError(f"供应商 {candidate.providerCode} 返回的 JSON 根节点不是对象")

@@ -100,6 +100,18 @@ class ApiTriggerUrlPolicyTest {
 
         assertThrows(BusinessException.class, () -> policy.validate("file:///etc/passwd"));
         assertThrows(BusinessException.class, () -> policy.validate("localhost:8080/path"));
+        assertThrows(BusinessException.class, () -> policy.validate("https://user:secret@example.com/path"));
+        assertThrows(BusinessException.class, () -> policy.validate("https://example.com/path#fragment"));
+        assertThrows(BusinessException.class, () -> policy.validate("https://example.com:0/path"));
+    }
+
+    /** 共享地址空间和非标准数字回环写法不得绕过私网限制。 */
+    @Test
+    void blocksAlternativePrivateAddressForms() {
+        configure(List.of(rule("ANY", null)), false, false);
+
+        assertThrows(BusinessException.class, () -> policy.validate("http://100.64.0.1/internal"));
+        assertThrows(BusinessException.class, () -> policy.validate("http://2130706433/internal"));
     }
 
     /** 配置当前测试使用的规则和两个网络开关。 */

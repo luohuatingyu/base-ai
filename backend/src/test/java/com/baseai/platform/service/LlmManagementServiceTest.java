@@ -76,6 +76,22 @@ class LlmManagementServiceTest {
         assertEquals("key-one\nkey-two\nkey-three", service.providerApiKeys(3L).apiKeys());
     }
 
+    /** 创建供应商时必须拒绝非 HTTP 协议、内嵌凭证和 URL 片段。 */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "file:///etc/passwd", "https://user:secret@example.com", "https://example.com/path#part"
+    })
+    void rejectsUnsafeProviderUrls(String baseUrl) {
+        when(providerRepository.findByCode("TEST")).thenReturn(Optional.empty());
+        LlmManagementService.ProviderCommand command = new LlmManagementService.ProviderCommand(
+            "TEST", "Test", baseUrl, "key", 4, "PROVIDER", 60, null, true);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.createProvider(command));
+
+        assertEquals("llm.serviceUrlInvalid", exception.getMessageKey());
+        verify(providerRepository, never()).save(any());
+    }
+
     /** 具备供应商更新权限但没有 ADMIN 角色时仍不得读取明文密钥。 */
     @Test
     void nonAdminCannotViewProviderApiKeys() {

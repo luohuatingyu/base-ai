@@ -20,6 +20,54 @@ IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 HOST_PATTERN = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$")
 
 
+class RequestSizeLimitMiddleware:
+    """在进入 FastAPI 解析前缓存并限制完整 ASGI 请求体。"""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max(1, max_bytes)
+
+    async def __call__(self, scope, receive, send):
+        """同时处理声明长度和分块传输，超限时返回 413。"""
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        declared = headers.get(b"content-length")
+        if declared:
+            try:
+                if int(declared) > self.max_bytes:
+                    await self._reject(scope, receive, send)
+                    return
+            except ValueError:
+                await self._reject(scope, receive, send)
+                return
+        messages = []
+        total = 0
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message.get("type") != "http.request":
+                break
+            total += len(message.get("body", b""))
+            if total > self.max_bytes:
+                await self._reject(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        async def replay_receive():
+            """依次重放已验证的 ASGI 消息供下游正常解析。"""
+            return messages.pop(0) if messages else {"type": "http.disconnect"}
+
+        await self.app(scope, replay_receive, send)
+
+    async def _reject(self, scope, receive, send):
+        """返回不包含请求内容的固定超限响应。"""
+        response = JSONResponse(status_code=413, content={"detail": "请求体超过大小限制"})
+        await response(scope, receive, send)
+
+
 class InternalAuthMiddleware(BaseHTTPMiddleware):
     """统一校验 Java 内部令牌并建立跨服务日志上下文。"""
 

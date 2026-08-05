@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from app.config import load_settings, validate_settings
 from app.llm import LlmClient
 from app.logging_config import setup_logging
-from app.middleware import InternalAuthMiddleware
+from app.middleware import InternalAuthMiddleware, RequestSizeLimitMiddleware
 from app.models import ChatRequest, ChatResponse, EmailSendRequest, LlmTestRequest
 from app.services.email_delivery import MailDeliveryError, send_email
 from app.trace_runtime import JavaTraceReporter, TraceRuntimeRegistry
@@ -23,6 +23,7 @@ trace_reporter = JavaTraceReporter(settings)
 
 app = FastAPI(title=f"{os.getenv('APP_PLATFORM_NAME_EN', 'AI Platform')} Worker", version="0.0.1")
 app.add_middleware(InternalAuthMiddleware, settings=settings, registry=trace_registry, reporter=trace_reporter)
+app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.max_request_bytes)
 
 
 @app.get("/health")

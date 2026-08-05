@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.support.CronExpression;
@@ -16,6 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +38,9 @@ public class ApiTriggerService {
     private final ConfigCryptoService cryptoService;
     private final ApiTriggerUrlPolicy urlPolicy;
     private final int resultMaxLength;
+    private final int responseMaxBytes;
+    private final int requestBodyMaxBytes;
+    private final int metadataMaxLength;
 
     public ApiTriggerService(@Qualifier("postgresqlJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                              ConfigCryptoService cryptoService, ApiTriggerUrlPolicy urlPolicy, PlatformProperties properties) {
@@ -44,6 +49,9 @@ public class ApiTriggerService {
         this.cryptoService = cryptoService;
         this.urlPolicy = urlPolicy;
         this.resultMaxLength = properties.getApiTrigger().getResultMaxLength();
+        this.responseMaxBytes = positive(properties.getApiTrigger().getResponseMaxBytes(), 2 * 1024 * 1024);
+        this.requestBodyMaxBytes = positive(properties.getApiTrigger().getRequestBodyMaxBytes(), 1024 * 1024);
+        this.metadataMaxLength = positive(properties.getApiTrigger().getMetadataMaxLength(), 64 * 1024);
     }
 
     /** 按关键字和状态查询未作废接口配置。 */
@@ -174,23 +182,25 @@ public class ApiTriggerService {
             spec.header(config.authTokenHeader(), config.authTokenPrefix() + token);
         }
         long startedAt = System.nanoTime();
-        ResponseEntity<byte[]> response = hasBody(config.httpMethod(), config.requestBody())
-            ? spec.contentType(MediaType.parseMediaType(config.contentType())).body(config.requestBody()).retrieve().toEntity(byte[].class)
-            : spec.retrieve().toEntity(byte[].class);
+        RestClient.RequestHeadersSpec<?> request = hasBody(config.httpMethod(), config.requestBody())
+            ? spec.contentType(MediaType.parseMediaType(config.contentType())).body(config.requestBody())
+            : spec;
+        LimitedResponse response = exchange(request);
         TraceContextHolder.checkpoint();
-        return new ApiTriggerModels.ExecutionResult(response.getStatusCode().value(),
+        return new ApiTriggerModels.ExecutionResult(response.status(),
             Duration.ofNanos(System.nanoTime() - startedAt).toMillis(),
-            decodeResponseBody(response.getBody(), response.getHeaders().getContentType()));
+            decodeResponseBody(response.body(), response.contentType()));
     }
 
     /** 调用认证地址并按点路径提取 Token。 */
     private String fetchToken(ApiTriggerModels.View config, RestClient client) {
         URI authUri = urlPolicy.validate(config.authUrl());
         RestClient.RequestBodySpec spec = client.method(HttpMethod.valueOf(config.authMethod())).uri(authUri);
-        ResponseEntity<byte[]> response = config.authBody().isBlank() ? spec.retrieve().toEntity(byte[].class)
-            : spec.contentType(MediaType.parseMediaType(config.authContentType())).body(config.authBody()).retrieve().toEntity(byte[].class);
+        RestClient.RequestHeadersSpec<?> request = config.authBody().isBlank() ? spec
+            : spec.contentType(MediaType.parseMediaType(config.authContentType())).body(config.authBody());
+        LimitedResponse response = exchange(request);
         try {
-            JsonNode node = objectMapper.readTree(decodeResponseBody(response.getBody(), response.getHeaders().getContentType()));
+            JsonNode node = objectMapper.readTree(decodeResponseBody(response.body(), response.contentType()));
             for (String part : config.authTokenPath().split("\\.")) node = node.path(part);
             if (!node.isValueNode() || node.asText().isBlank()) throw new BusinessException("apiTrigger.authTokenMissing");
             return node.asText();
@@ -224,6 +234,12 @@ public class ApiTriggerService {
     /** 校验方法、URL、JSON 和 Cron 表达式。 */
     private void validate(ApiTriggerModels.Command command) {
         if (command == null || text(command.name()).isBlank()) throw new BusinessException("apiTrigger.nameRequired");
+        validateLength(command.url(), 2048, "apiTrigger.urlTooLong");
+        validateLength(command.authUrl(), 2048, "apiTrigger.urlTooLong");
+        validateLength(command.headers(), metadataMaxLength, "apiTrigger.metadataTooLarge");
+        validateLength(command.queryParams(), metadataMaxLength, "apiTrigger.metadataTooLarge");
+        validateLength(command.requestBody(), requestBodyMaxBytes, "apiTrigger.requestBodyTooLarge");
+        validateLength(command.authBody(), requestBodyMaxBytes, "apiTrigger.requestBodyTooLarge");
         method(command.httpMethod());
         urlPolicy.validate(command.url());
         parseMap(command.headers());
@@ -233,10 +249,44 @@ public class ApiTriggerService {
     }
 
     private RestClient buildClient(int timeoutSeconds) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        SimpleClientHttpRequestFactory factory = new NoRedirectRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
         factory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
-        return RestClient.builder().requestFactory(factory).build();
+        return RestClient.builder().requestFactory(factory)
+            .requestInterceptor((request, body, execution) -> {
+                // 连接前再次解析和校验 DNS，缩小首次校验与实际连接之间的重绑定窗口
+                urlPolicy.validate(request.getURI().toString());
+                return execution.execute(request, body);
+            }).build();
+    }
+
+    /** 禁止自动重定向并以固定上限读取响应，避免跳转绕过和内存耗尽。 */
+    private LimitedResponse exchange(RestClient.RequestHeadersSpec<?> request) {
+        return request.exchange((clientRequest, clientResponse) -> {
+            int status = clientResponse.getStatusCode().value();
+            if (clientResponse.getStatusCode().is3xxRedirection()) {
+                throw new BusinessException(502, "apiTrigger.redirectForbidden");
+            }
+            byte[] body = readLimitedBody(clientResponse.getBody());
+            if (clientResponse.getStatusCode().isError()) {
+                throw new BusinessException(502, "apiTrigger.remoteError", status);
+            }
+            return new LimitedResponse(status, body, clientResponse.getHeaders().getContentType());
+        });
+    }
+
+    /** 最多读取配置上限再多一个字节，以识别未声明长度的超大响应。 */
+    private byte[] readLimitedBody(InputStream input) throws IOException {
+        byte[] body = input.readNBytes(responseMaxBytes + 1);
+        if (body.length > responseMaxBytes) throw new BusinessException(502, "apiTrigger.responseTooLarge");
+        return body;
+    }
+
+    /** 按 UTF-8 字节数限制可持久化或发送的外部配置内容。 */
+    private void validateLength(String value, int maximum, String messageKey) {
+        if (value != null && value.getBytes(StandardCharsets.UTF_8).length > maximum) {
+            throw new BusinessException(messageKey, maximum);
+        }
     }
 
     private URI buildUri(URI base, String queryParams) {
@@ -294,6 +344,7 @@ public class ApiTriggerService {
         catch (IllegalArgumentException exception) { throw new BusinessException("apiTrigger.cronInvalid"); }
     }
     private int timeout(Integer value) { return value == null ? 30 : Math.max(1, Math.min(300, value)); }
+    private int positive(int value, int fallback) { return Math.min(100 * 1024 * 1024, value > 0 ? value : fallback); }
     private boolean enabled(Boolean value) { return value == null || value; }
     private String contentType(String value) { return defaultText(value, "application/json"); }
     private boolean hasBody(String method, String body) { return !Set.of("GET", "DELETE").contains(method) && body != null && !body.isBlank(); }
@@ -307,4 +358,15 @@ public class ApiTriggerService {
         return text.substring(0, Math.min(resultMaxLength, text.length()));
     }
     private LocalDateTime local(java.sql.Timestamp value) { return value == null ? null : value.toLocalDateTime(); }
+
+    private record LimitedResponse(int status, byte[] body, MediaType contentType) {}
+
+    /** 显式关闭 JDK 对 GET 请求的自动跳转行为。 */
+    private static final class NoRedirectRequestFactory extends SimpleClientHttpRequestFactory {
+        @Override
+        protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
+            super.prepareConnection(connection, httpMethod);
+            connection.setInstanceFollowRedirects(false);
+        }
+    }
 }

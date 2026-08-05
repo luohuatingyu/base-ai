@@ -33,6 +33,8 @@ public class PlatformProperties {
     private ApiTrigger apiTrigger = new ApiTrigger();
     /** API Key 认证配置。 */
     private ApiKey apiKey = new ApiKey();
+    /** HTTP 入口资源限制。 */
+    private ResourceLimits resourceLimits = new ResourceLimits();
     /** 可信反向代理配置。 */
     private Proxy proxy = new Proxy();
     /** 登录与密码安全配置。 */
@@ -65,6 +67,8 @@ public class PlatformProperties {
     public void setApiTrigger(ApiTrigger apiTrigger) { this.apiTrigger = apiTrigger; }
     public ApiKey getApiKey() { return apiKey; }
     public void setApiKey(ApiKey apiKey) { this.apiKey = apiKey; }
+    public ResourceLimits getResourceLimits() { return resourceLimits; }
+    public void setResourceLimits(ResourceLimits resourceLimits) { this.resourceLimits = resourceLimits; }
     public Proxy getProxy() { return proxy; }
     public void setProxy(Proxy proxy) { this.proxy = proxy; }
     public LoginSecurity getLoginSecurity() { return loginSecurity; }
@@ -107,6 +111,12 @@ public class PlatformProperties {
         public void setBlockMinutes(int value) { blockMinutes = value; }
         public int getPasswordMinLength() { return passwordMinLength; }
         public void setPasswordMinLength(int value) { passwordMinLength = value; }
+    }
+
+    public static class ResourceLimits {
+        private int requestMaxBytes = 20 * 1024 * 1024;
+        public int getRequestMaxBytes() { return requestMaxBytes; }
+        public void setRequestMaxBytes(int value) { requestMaxBytes = value; }
     }
 
     public static class Platform {
@@ -192,11 +202,20 @@ public class PlatformProperties {
         private int schedulerPoolSize = 4;
         private int lockSeconds = 300;
         private int resultMaxLength = 2000;
+        private int responseMaxBytes = 2 * 1024 * 1024;
+        private int requestBodyMaxBytes = 1024 * 1024;
+        private int metadataMaxLength = 64 * 1024;
         public int getSchedulerPoolSize() { return schedulerPoolSize; }
         public void setSchedulerPoolSize(int schedulerPoolSize) { this.schedulerPoolSize = schedulerPoolSize; }
         public int getLockSeconds() { return lockSeconds; }
         public void setLockSeconds(int lockSeconds) { this.lockSeconds = lockSeconds; }
         public int getResultMaxLength() { return resultMaxLength; }
         public void setResultMaxLength(int resultMaxLength) { this.resultMaxLength = resultMaxLength; }
+        public int getResponseMaxBytes() { return responseMaxBytes; }
+        public void setResponseMaxBytes(int value) { responseMaxBytes = value; }
+        public int getRequestBodyMaxBytes() { return requestBodyMaxBytes; }
+        public void setRequestBodyMaxBytes(int value) { requestBodyMaxBytes = value; }
+        public int getMetadataMaxLength() { return metadataMaxLength; }
+        public void setMetadataMaxLength(int value) { metadataMaxLength = value; }
     }
 }
