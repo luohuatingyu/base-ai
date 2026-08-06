@@ -1,5 +1,86 @@
 # 最近分支覆盖测试报告
 
+## 📋 浏览器会话与服务就绪加固测试结果（2026-08-06）
+
+### Git 基准点
+
+Commit: ae3cea9a8692c2ab6917cbe52191eeb3d250107f
+- 提交说明: Harden browser sessions and service readiness
+- 测试日期: 2026-08-06
+- 分支: master
+- 上一测试基准点: `a7d7edb3a1a7fe2400f26f3680be88f98ecac829`
+
+### 变更范围
+
+- 浏览器登录态改用按平台编码隔离的 Secure、SameSite=Strict、Host-only HttpOnly Cookie，并使用与 JWT 绑定的签名双提交 CSRF Token；现有 Bearer Token 客户端保持兼容。
+- 前端不再读取或保存 Bearer Token，启动时通过 Cookie 恢复会话，并自动为 Cookie 写请求附加 CSRF 请求头；启动时清除旧版本遗留的本地 Token。
+- 新增独立存活与就绪检查；就绪检查覆盖 MySQL、PostgreSQL、Redis 和 Python Worker，失败时仅向客户端返回 DOWN 与 HTTP 503。
+- 公网 Caddy 入口对 `/api/internal` 及其子路径返回 404；新增可配置的 HTTPS 跳转目标，支持当前服务使用 81/444 等非标准端口。
+- 数据库健康探测使用 5 秒默认连接等待上限，Worker 健康探测使用 3 秒连接及读取超时。
+- 按用户确认不新增“每用户 20 次/分钟、200 次/天”或其他用户级 AI 调用额度限制；既有 API Key 限流和登录失败保护保持原行为。
+
+### 测试执行结果
+
+- 后端完整测试：286/286 通过，失败 0，错误 0，跳过 0。
+- 前端完整测试：184/184 通过，失败 0，错误 0，跳过 0。
+- Python Worker 完整测试（Python 3.12.13）：26/26 通过，失败 0，错误 0，跳过 0。
+- 自动化用例合计：496/496 通过（100%）。
+- Docker Compose：使用 81/444 端口完整构建并启动成功；Backend、Python Worker、Frontend、Caddy 全部 healthy。
+- 端口运行态：原服务已恢复并在 80/443 healthy；当前服务在 81/444 healthy，HTTP 81 正确 308 跳转到 HTTPS 444。
+- 健康与入口：当前服务 liveness、readiness 均返回 200；公网 `/api/internal/health` 返回 404；Caddy 配置校验通过。
+- 认证运行态：Bearer 认证 200、Cookie 认证 200、Cookie 写请求缺少 CSRF 返回 403、有效 CSRF 登出返回 200、已撤销 Bearer Token 返回 401。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 浏览器 Token 不再暴露给脚本存储 | 前端契约测试；检查 HTTP 客户端和认证 Store | 不读写 localStorage Token，仅清理旧值；通过 Cookie 恢复用户 | 正常、安全、兼容、回归 |
+| Cookie 会话具备安全属性且平台间隔离 | 后端单元测试；平台编码包含合法字符，登录签发有效 JWT | 会话 Cookie 为 HttpOnly/Secure/SameSite=Strict/Path=/api，CSRF Cookie 可供页面读取且名称包含平台编码 | 正常、边界、安全 |
+| Cookie 写请求必须通过签名 CSRF 校验 | Interceptor、Token、Cookie Service 测试及运行态请求；缺失、错误和正确 Token | 缺失或不匹配返回 403，正确双提交 Token 通过，Token 与 JWT 不可替换使用 | 正常、异常、安全 |
+| Bearer Token 与 API Key 保持兼容 | Interceptor 完整回归与运行态 Bearer 请求；显式 API Key 与会话 Cookie 并存 | Bearer 无需 CSRF；显式 API Key 使用其自身身份；混合 Authorization 与 API Key 仍返回 401 | 正常、权限、兼容、回归 |
+| 登出同时撤销令牌并清除 Cookie | Controller/Cookie Service 测试与运行态请求 | 有效 CSRF 登出成功，Cookie 清除，原令牌后续返回 401 | 正常、安全、关键副作用 |
+| 就绪检查真实覆盖四项依赖 | Health Service/Controller 测试；依赖正常、数据库异常、Redis 异常、Worker 异常 | 全部正常返回 200 UP；任一失败返回 503 DOWN 且不向客户端泄露依赖细节 | 正常、异常、安全、集成 |
+| 存活检查不被外部依赖故障拖累 | Health Controller 测试及运行态请求 | Java 进程可响应时固定返回 200 UP | 正常、故障恢复 |
+| 内部接口不可从公网入口访问 | Caddy 部署契约、配置校验和运行态 curl | `/api/internal` 及子路径由入口直接返回 404，普通 `/api` 路由不受影响 | 权限、安全、兼容 |
+| 非标准端口跳转准确且原服务恢复 | Compose 重建、容器状态及 curl；原服务 80/443、当前服务 81/444 | 两套服务同时 healthy；81 跳转到 `https://localhost:444`，原服务 HTTPS 返回 200 | 正常、兼容、集成、回归 |
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 后端完整回归 | Backend Docker 构建中的 Maven `test` 阶段 | 286/286 通过，0 失败，0 错误，0 跳过 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 184/184 通过，0 失败，0 跳过 |
+| Worker 完整回归 | Python 3.12.13 执行 `python -m pytest -p no:cacheprovider` | 26/26 通过，0 失败，0 错误，0 跳过 |
+| Compose 统一重建 | `HTTP_PORT=81 HTTPS_PORT=444 CADDY_HTTPS_ORIGIN=https://localhost:444 docker compose up --build -d` | 四镜像构建成功；构建阶段后端 286/286 通过，四服务 healthy |
+| Caddy 配置校验 | 容器内执行 `caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` | 配置有效 |
+| 健康、跳转和入口验证 | curl 请求 81、444 的 live/ready/internal 路径，并检查原服务 443 | 308、200、200、404 符合设计；原服务 HTTPS 200 |
+| 认证运行态验证 | 使用短时签名测试 JWT 分别执行 Bearer、Cookie、缺失/有效 CSRF 及撤销后请求 | 状态依次为 200、200、403、200、401；测试令牌未落盘或输出 |
+| 静态变更检查 | `git diff --check`、变更范围搜索及提交前状态检查 | 无空白错误；未新增用户级调用限流；无临时调试文件 |
+
+### 已知问题与限制
+
+- 运行环境中的既有管理员密码与当前种子密码不一致，因此未使用真实账号密码重复登录；Cookie 属性已由单元测试验证，Cookie/CSRF/撤销链路使用同一密钥生成的短时测试 JWT 完成运行态验证，未修改管理员凭据。
+- 当前服务的 81/444 端口通过本次启动命令的环境变量覆盖，未修改被忽略的本地 `.env`；后续重建必须继续携带相同三个环境变量，或由运维自行持久化对应配置。
+- 原 80/443 服务恢复时使用了一次性合规种子密码覆盖其启动环境，未覆盖既有管理员密码；若其自身配置仍保留不合规种子密码，未来单独重建仍可能启动失败。
+- 前端生产构建仍提示主包超过 500 kB，该既有性能问题不影响本次安全验收。
+- 敏感日志内容治理仍在本次确认范围之外，是尚未处理的高风险项。
+- 未执行浏览器 E2E、真实依赖故障注入、多实例切换、生产域名证书或外部渗透测试。
+
+### 下次测试建议
+
+1. 使用真实测试账号增加浏览器 E2E，验证登录响应 Cookie、刷新恢复、跨标签页、超时及登出清除行为。
+2. 在预生产环境逐项中断 MySQL、PostgreSQL、Redis 和 Worker，验证 readiness 503、容器恢复与告警联动。
+3. 将 81/444 外部端口配置持久化到部署系统，并为并行运行的两套服务配置不同正式域名，进一步隔离 Cookie 与证书。
+4. 单独制定并确认敏感日志脱敏与访问治理方案。
+
+### 回滚方式
+
+- 回滚功能提交 `ae3cea9` 后，使用原端口及 HTTPS 跳转配置重新执行 `docker compose up --build -d`。
+- 回滚会恢复前端 localStorage Bearer Token 行为，可能重新引入脚本读取 Token 的风险；执行前应清理浏览器旧登录态并评估兼容影响。
+- 本次没有数据库迁移、数据回填或删除操作，无需数据库逆向处理。
+
+---
+
 ## 📋 本次安全加固测试结果（2026-08-06）
 
 ### Git 基准点
