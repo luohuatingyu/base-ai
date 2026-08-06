@@ -259,15 +259,20 @@ test('Caddy 在公网入口拒绝内部服务接口', async () => {
   assert.ok(caddyfile.indexOf('handle @internal') < caddyfile.indexOf('handle @api'))
 })
 
-test('Caddy 构建使用可配置的 Go 模块代理', async () => {
+test('Caddy 构建使用可配置的 Go 模块代理和 Alpine 镜像', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
   const caddyDockerfile = await readFile(new URL('caddy/Dockerfile', root), 'utf8')
   const environmentExample = await readFile(new URL('.env.example', root), 'utf8')
 
   assert.match(caddyDockerfile, /^ARG GOPROXY=https:\/\/goproxy\.cn,direct$/m)
   assert.match(caddyDockerfile, /^ENV GOPROXY=\$\{GOPROXY\}$/m)
+  assert.match(caddyDockerfile, /^ARG ALPINE_MIRROR=https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine$/m)
+  assert.match(caddyDockerfile, /dl-cdn\.alpinelinux\.org\/alpine#\$\{ALPINE_MIRROR\}/)
+  assert.match(caddyDockerfile, /apk upgrade --no-cache c-ares curl libcurl/)
   assert.match(compose, /^\s+GOPROXY: \$\{GOPROXY:-https:\/\/goproxy\.cn,direct\}$/m)
+  assert.match(compose, /^\s+ALPINE_MIRROR: \$\{ALPINE_MIRROR:-https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine\}$/m)
   assert.match(environmentExample, /^GOPROXY=https:\/\/goproxy\.cn,direct$/m)
+  assert.match(environmentExample, /^ALPINE_MIRROR=https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine$/m)
 })
 
 test('全部运行时镜像使用非 root 用户和最小 Linux 权限', async () => {

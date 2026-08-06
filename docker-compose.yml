@@ -169,6 +169,7 @@ services:
       args:
         CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        ALPINE_MIRROR: ${ALPINE_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/alpine}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy
     restart: unless-stopped

@@ -379,7 +379,7 @@ TEST_REPORT.md                  测试基准和执行历史
 - 为 `APP_API_KEY_HASH_SECRET` 配置独立密钥，不要依赖加密密钥回退机制。
 - 检查 `LLM_LOG_CONTENT`；配置模板默认开启内容日志，可能不适合处理敏感数据的环境。
 - 执行 Schema 或应用升级前，备份 MySQL 任务与日志数据以及 PostgreSQL 自动化日志。
-- 无法访问公共镜像仓库或模块代理时，可覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE`、`PYTHON_IMAGE`、`GOPROXY` 或 Python 软件包镜像源配置。Caddy 构建默认使用 `https://goproxy.cn,direct`。
+- 无法访问公共镜像仓库或软件包代理时，可覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE`、`PYTHON_IMAGE`、`GOPROXY`、`ALPINE_MIRROR` 或 Python 软件包镜像源配置。Caddy 构建默认使用 `https://goproxy.cn,direct` 获取 Go 模块，并使用 `https://mirrors.tuna.tsinghua.edu.cn/alpine` 获取 Alpine 软件包。
 
 ## 许可证
 

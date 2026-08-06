@@ -381,7 +381,7 @@ TEST_REPORT.md                  Test baseline and execution history
 - Use a dedicated `APP_API_KEY_HASH_SECRET` instead of relying on the encryption-key fallback.
 - Review `LLM_LOG_CONTENT`; the provided template enables content logging, which may be inappropriate for sensitive workloads.
 - Back up MySQL task/log data and PostgreSQL automation logs before schema or application upgrades.
-- Override `MAVEN_IMAGE`, `JRE_IMAGE`, `NODE_IMAGE`, `PYTHON_IMAGE`, `GOPROXY`, or Python package-mirror settings when public registries and module proxies are unavailable. Caddy builds use `https://goproxy.cn,direct` by default.
+- Override `MAVEN_IMAGE`, `JRE_IMAGE`, `NODE_IMAGE`, `PYTHON_IMAGE`, `GOPROXY`, `ALPINE_MIRROR`, or Python package-mirror settings when public registries and package proxies are unavailable. Caddy builds use `https://goproxy.cn,direct` for Go modules and `https://mirrors.tuna.tsinghua.edu.cn/alpine` for Alpine packages by default.
 
 ## License
 
