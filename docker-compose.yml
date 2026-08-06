@@ -11,11 +11,15 @@ services:
     build:
       context: ./backend
       args:
-        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9.9-eclipse-temurin-17}
-        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre}
+        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876}
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend:latest
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging: *default-logging
     environment:
       MYSQL_URL: ${MYSQL_URL:?Set MYSQL_URL}
@@ -89,11 +93,15 @@ services:
     build:
       context: ./python-worker
       args:
-        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker:latest
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging: *default-logging
     environment:
       BACKEND_URL: http://backend:8080
@@ -120,9 +128,13 @@ services:
     build:
       context: ./frontend
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine}
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend:latest
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     logging: *default-logging
     depends_on:
       backend:
@@ -136,9 +148,9 @@ services:
       APP_DEFAULT_LOCALE: ${APP_DEFAULT_LOCALE:-en-US}
       LLM_ROUTE_HEALTH_CHECK_ENABLED: ${LLM_ROUTE_HEALTH_CHECK_ENABLED:-true}
       LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS: ${LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS:-3600000}
-      PORT: 80
+      PORT: 8080
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -146,8 +158,19 @@ services:
       - app-network
 
   caddy:
-    image: ${CADDY_IMAGE:-caddy:2.11.2-alpine}
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+      args:
+        CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648}
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy:latest
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     logging: *default-logging
     depends_on:
       frontend:

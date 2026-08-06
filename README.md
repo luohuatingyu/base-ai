@@ -181,7 +181,7 @@ The repository tracks `.env.example` only. Never commit a populated `.env` file.
 
    ```dotenv
    APP_TOKEN_SECRET=<at-least-32-random-characters>
-   APP_SEED_ADMIN_PASSWORD=<at-least-10-secure-characters>
+   APP_SEED_ADMIN_PASSWORD=<at-least-12-secure-characters>
    APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED=false
    APP_CONFIG_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
    APP_API_KEY_HASH_SECRET=<at-least-32-random-characters>
@@ -224,6 +224,8 @@ After all services are healthy:
 - Caddy health check: <https://localhost/health>
 
 The default `tls internal` mode uses Caddy's local CA. Export `/data/caddy/pki/authorities/local/root.crt` from the Caddy container and trust it on internal clients. For a public open-platform deployment, point `CADDY_SITE_ADDRESS` to the public DNS name, set `CADDY_TLS_DIRECTIVE` to an ACME contact such as `tls ops@example.com`, and expose ports 80/443; Caddy will obtain a publicly trusted certificate automatically.
+
+All four runtime containers use non-root users. Linux capabilities are removed from the backend, frontend, and Worker; Caddy retains only `NET_BIND_SERVICE` for ports 80/443. Base images are digest-pinned, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
 
 After the first initialization, use the username configured by `APP_SEED_ADMIN_USERNAME` and the password configured by `APP_SEED_ADMIN_PASSWORD`. The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically.
 

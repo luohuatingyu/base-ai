@@ -19,7 +19,7 @@ test('仅 Caddy 暴露 HTTP 和 HTTPS 端口', async () => {
   assert.match(serviceBlock(compose, 'caddy', null), /HTTP_PORT/)
   assert.match(serviceBlock(compose, 'caddy', null), /HTTPS_PORT/)
   assert.match(compose, /APP_TRUSTED_PROXY_CIDRS:.*CADDY_INTERNAL_IP/)
-  assert.match(compose, /caddy:2\.11\.2-alpine/)
+  assert.match(compose, /caddy:2\.11\.4-alpine/)
 })
 
 test('Caddy 为控制台和开放 API 提供 TLS 与安全响应头', async () => {
@@ -32,4 +32,41 @@ test('Caddy 为控制台和开放 API 提供 TLS 与安全响应头', async () =
   assert.match(caddyfile, /X-Frame-Options/)
   assert.match(caddyfile, /@api path \/api\/\*/)
   assert.match(caddyfile, /reverse_proxy backend:8080/)
+  assert.match(caddyfile, /reverse_proxy frontend:8080/)
+})
+
+test('全部运行时镜像使用非 root 用户和最小 Linux 权限', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const backendDockerfile = await readFile(new URL('backend/Dockerfile', root), 'utf8')
+  const workerDockerfile = await readFile(new URL('python-worker/Dockerfile', root), 'utf8')
+  const frontendDockerfile = await readFile(new URL('frontend/Dockerfile', root), 'utf8')
+  const caddyDockerfile = await readFile(new URL('caddy/Dockerfile', root), 'utf8')
+
+  for (const dockerfile of [backendDockerfile, workerDockerfile, frontendDockerfile, caddyDockerfile]) {
+    assert.match(dockerfile, /^USER\s+\S+/m)
+  }
+  for (const [service, nextService] of [
+    ['backend', 'python-worker'],
+    ['python-worker', 'frontend'],
+    ['frontend', 'caddy'],
+    ['caddy', null],
+  ]) {
+    const block = serviceBlock(compose, service, nextService)
+    assert.match(block, /cap_drop:\s*\n\s+- ALL/)
+    assert.match(block, /no-new-privileges:true/)
+  }
+  assert.match(serviceBlock(compose, 'caddy', null), /cap_add:\s*\n\s+- NET_BIND_SERVICE/)
+})
+
+test('供应链扫描固定 Action 提交并覆盖源码与容器镜像', async () => {
+  const workflow = await readFile(new URL('.github/workflows/security-scan.yml', root), 'utf8')
+  const dependabot = await readFile(new URL('.github/dependabot.yml', root), 'utf8')
+
+  assert.doesNotMatch(workflow, /uses:\s+[^\s]+@v\d/)
+  assert.match(workflow, /scanners: vuln,misconfig,secret/)
+  assert.match(workflow, /scan-type: image/)
+  assert.match(workflow, /severity: HIGH,CRITICAL/)
+  for (const ecosystem of ['maven', 'npm', 'pip', 'docker', 'github-actions']) {
+    assert.match(dependabot, new RegExp(`package-ecosystem: ${ecosystem}`))
+  }
 })

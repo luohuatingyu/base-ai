@@ -1,5 +1,5 @@
-ARG MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-17
-ARG JRE_IMAGE=eclipse-temurin:17-jre
+ARG MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc
+ARG JRE_IMAGE=eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876
 
 FROM ${MAVEN_IMAGE} AS build
 WORKDIR /workspace
@@ -9,9 +9,8 @@ RUN if [ -n "$MAVEN_MIRROR_URL" ]; then \
       printf '<settings><mirrors><mirror><id>mirror</id><mirrorOf>*</mirrorOf><url>%s</url></mirror></mirrors></settings>' "$MAVEN_MIRROR_URL" > /root/.m2/settings.xml; \
     fi
 COPY pom.xml ./
-RUN mvn -B -ntp dependency:go-offline
 COPY src ./src
-RUN mvn -B -ntp package
+RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package
 
 FROM ${JRE_IMAGE}
 WORKDIR /app
