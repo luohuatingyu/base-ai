@@ -31,27 +31,27 @@ test('容器名称使用平台简称的小写项目名前缀', async () => {
   }
 })
 
-test('仅 Caddy 暴露 HTTP 和 HTTPS 端口', async () => {
+test('仅 Caddy 暴露 HTTP 端口', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
 
   assert.doesNotMatch(serviceBlock(compose, 'backend', 'python-worker'), /\n\s+ports:/)
   assert.doesNotMatch(serviceBlock(compose, 'frontend', 'caddy'), /\n\s+ports:/)
-  assert.match(serviceBlock(compose, 'caddy', null), /HTTP_PORT/)
-  assert.match(serviceBlock(compose, 'caddy', null), /HTTPS_PORT/)
+  assert.match(serviceBlock(compose, 'caddy', null), /HTTP_PORT:-81/)
+  assert.doesNotMatch(serviceBlock(compose, 'caddy', null), /HTTPS_PORT/)
   assert.match(compose, /APP_TRUSTED_PROXY_CIDRS:.*CADDY_INTERNAL_IP/)
   assert.match(compose, /caddy:2\.11\.4-alpine/)
 })
 
-test('Caddy 为控制台和开放 API 提供 TLS 与安全响应头', async () => {
+test('Caddy 为控制台和开放 API 提供 HTTP 与安全响应头', async () => {
   const caddyfile = await readFile(new URL('Caddyfile', root), 'utf8')
 
-  assert.match(caddyfile, /tls internal/)
-  assert.match(caddyfile, /Strict-Transport-Security/)
+  assert.match(caddyfile, /:80/)
+  assert.doesNotMatch(caddyfile, /tls internal/)
+  assert.doesNotMatch(caddyfile, /Strict-Transport-Security/)
   assert.match(caddyfile, /Content-Security-Policy/)
   assert.match(caddyfile, /X-Content-Type-Options/)
   assert.match(caddyfile, /X-Frame-Options/)
-  assert.match(caddyfile, /auto_https disable_redirects/)
-  assert.match(caddyfile, /redir \{\$CADDY_HTTPS_ORIGIN:https:\/\/localhost\}\{uri\} 308/)
+  assert.doesNotMatch(caddyfile, /redir /)
   assert.match(caddyfile, /@api path \/api\/\*/)
   assert.match(caddyfile, /reverse_proxy backend:8080/)
   assert.match(caddyfile, /reverse_proxy frontend:8080/)

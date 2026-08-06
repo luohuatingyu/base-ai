@@ -1,16 +1,8 @@
 {
 	admin off
-	skip_install_trust
-	auto_https disable_redirects
 }
 
 :80 {
-	redir {$CADDY_HTTPS_ORIGIN:https://localhost}{uri} 308
-}
-
-{$CADDY_SITE_ADDRESS:https://localhost} {
-	{$CADDY_TLS_DIRECTIVE:tls internal}
-
 	encode zstd gzip
 	request_body {
 		max_size {$APP_MAX_REQUEST_BYTES:20971520}
@@ -18,7 +10,6 @@
 
 	header {
 		-Server
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"

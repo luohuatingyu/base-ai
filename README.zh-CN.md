@@ -109,7 +109,7 @@ Vue -> Java /api/ai/chat -> Python /llm/chat -> 兼容 OpenAI 的 API
 外部系统可以调用代码中明确标记为支持 API Key 的接口。管理员可在**系统管理 > API Key 管理**中创建、授权、轮换、停用或吊销 Key。
 
 ```bash
-curl -X POST http://localhost/api/ai/chat \
+curl -X POST http://localhost:81/api/ai/chat \
   -H 'X-API-Key: sk-<your-api-key>' \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"hello"}]}'
@@ -196,12 +196,12 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **PostgreSQL：** `POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`、`POSTGRES_POOL_SIZE`。
 - **Redis：** `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`、`REDIS_TIMEOUT`。
 - **品牌与语言：** `APP_PLATFORM_CODE`、`APP_PLATFORM_NAME_EN`、`APP_PLATFORM_NAME_ZH`、`APP_PLATFORM_SHORT_NAME`、`APP_DEFAULT_LOCALE`。
-- **认证与加密：** `APP_TOKEN_SECRET`、`APP_TOKEN_EXPIRE_MINUTES`、`APP_SEED_ADMIN_USERNAME`、`APP_SEED_ADMIN_PASSWORD`、`APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`、`APP_CONFIG_ENCRYPTION_KEY`、`APP_API_KEY_HASH_SECRET`。
+- **认证与加密：** `APP_TOKEN_SECRET`、`APP_TOKEN_EXPIRE_MINUTES`、`APP_SESSION_COOKIE_SECURE`、`APP_SEED_ADMIN_USERNAME`、`APP_SEED_ADMIN_PASSWORD`、`APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`、`APP_CONFIG_ENCRYPTION_KEY`、`APP_API_KEY_HASH_SECRET`。
 - **Worker 与模型调用：** `PYTHON_WORKER_INTERNAL_TOKEN`、`JAVA_INSTANCE_ID`、`PYTHON_WORKER_INSTANCE_ID`、`LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
-- **TLS 入口、端口和镜像：** `CADDY_SITE_ADDRESS`、`CADDY_TLS_DIRECTIVE`、`CADDY_HTTPS_ORIGIN`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。`CADDY_HTTPS_ORIGIN` 必须填写客户端实际访问的 HTTPS 地址，使用非标准端口时需包含端口。
+- **HTTP 入口、端口和镜像：** `HTTP_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
 Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
@@ -218,14 +218,16 @@ docker compose ps
 
 所有服务进入健康状态后，可访问：
 
-- Web 控制台：<https://localhost>
-- 后端 API 和开放平台：<https://localhost/api>
-- 统一健康检查：<https://localhost/api/open/health>
-- 后端存活检查：<https://localhost/api/open/health/live>
-- 后端就绪检查：<https://localhost/api/open/health/ready>
-- Caddy 健康检查：<https://localhost/health>
+- Web 控制台：<http://localhost:81>
+- 后端 API 和开放平台：<http://localhost:81/api>
+- 统一健康检查：<http://localhost:81/api/open/health>
+- 后端存活检查：<http://localhost:81/api/open/health/live>
+- 后端就绪检查：<http://localhost:81/api/open/health/ready>
+- Caddy 健康检查：<http://localhost:81/health>
 
 统一健康检查和就绪检查仅在 MySQL、PostgreSQL、Redis 与 Python Worker 全部可用时返回 HTTP 200，否则返回 HTTP 503。公网入口对 `/api/internal` 路径统一返回 HTTP 404，Java 与 Worker 之间仍通过 Docker 内部网络直连。
+
+当前部署使用明文 HTTP，仅适用于可信网络。密码、会话 Cookie、Bearer Token、API Key 和请求数据不会获得传输加密。如由上游代理终止 TLS，应设置 `APP_SESSION_COOKIE_SECURE=true`，并确保客户端仅访问 HTTPS 入口。
 
 首次初始化后，使用 `APP_SEED_ADMIN_USERNAME` 配置的用户名和 `APP_SEED_ADMIN_PASSWORD` 配置的密码登录。初始管理员、角色、权限树、根部门和模型类型字典会自动创建。
 

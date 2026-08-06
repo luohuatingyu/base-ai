@@ -109,7 +109,7 @@ Set `LLM_LOG_CONTENT=false` in environments where prompts and model responses mu
 External systems can call endpoints explicitly annotated as API-key accessible. Create, authorize, rotate, disable, or revoke keys from **System Management > API Key Management**.
 
 ```bash
-curl --cacert local-caddy-root.crt -X POST https://localhost/api/ai/chat \
+curl -X POST http://localhost:81/api/ai/chat \
   -H 'X-API-Key: sk-<your-api-key>' \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"hello"}]}'
@@ -196,12 +196,12 @@ The API key hash secret is optional only because it falls back to the encryption
 - **PostgreSQL:** `POSTGRES_URL`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_POOL_SIZE`.
 - **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`.
 - **Branding and locale:** `APP_PLATFORM_CODE`, `APP_PLATFORM_NAME_EN`, `APP_PLATFORM_NAME_ZH`, `APP_PLATFORM_SHORT_NAME`, `APP_DEFAULT_LOCALE`.
-- **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_API_KEY_HASH_SECRET`.
+- **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SESSION_COOKIE_SECURE`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_API_KEY_HASH_SECRET`.
 - **Worker and model calls:** `PYTHON_WORKER_INTERNAL_TOKEN`, `JAVA_INSTANCE_ID`, `PYTHON_WORKER_INSTANCE_ID`, `LLM_TIMEOUT_SECONDS`, `LLM_LOG_CONTENT`.
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
-- **TLS ingress and images:** `CADDY_SITE_ADDRESS`, `CADDY_TLS_DIRECTIVE`, `CADDY_HTTPS_ORIGIN`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Set `CADDY_HTTPS_ORIGIN` to the externally reachable HTTPS origin, including a non-standard port when used. Backend port 8080 and Worker port 8000 are internal-only.
+- **HTTP ingress and images:** `HTTP_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
 Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normalizes it to lowercase, and names the four runtime containers `<short-name>-backend`, `<short-name>-python-worker`, `<short-name>-frontend`, and `<short-name>-caddy`. For example, `APP_PLATFORM_SHORT_NAME=AI` produces `ai-backend`, `ai-python-worker`, `ai-frontend`, and `ai-caddy`.
@@ -218,18 +218,18 @@ docker compose ps
 
 After all services are healthy:
 
-- Web console: <https://localhost>
-- Backend API and open platform: <https://localhost/api>
-- Unified health check: <https://localhost/api/open/health>
-- Backend liveness check: <https://localhost/api/open/health/live>
-- Backend readiness check: <https://localhost/api/open/health/ready>
-- Caddy health check: <https://localhost/health>
+- Web console: <http://localhost:81>
+- Backend API and open platform: <http://localhost:81/api>
+- Unified health check: <http://localhost:81/api/open/health>
+- Backend liveness check: <http://localhost:81/api/open/health/live>
+- Backend readiness check: <http://localhost:81/api/open/health/ready>
+- Caddy health check: <http://localhost:81/health>
 
 The unified and readiness checks return HTTP 503 unless MySQL, PostgreSQL, Redis, and the Python Worker are all available. Public ingress returns HTTP 404 for `/api/internal` paths; internal Java-to-Worker traffic continues directly over the Docker network.
 
-The default `tls internal` mode uses Caddy's local CA. Export `/data/caddy/pki/authorities/local/root.crt` from the Caddy container and trust it on internal clients. For a public open-platform deployment, point `CADDY_SITE_ADDRESS` to the public DNS name, set `CADDY_TLS_DIRECTIVE` to an ACME contact such as `tls ops@example.com`, and expose ports 80/443; Caddy will obtain a publicly trusted certificate automatically.
+This deployment uses plain HTTP and is intended only for a trusted network. Passwords, session cookies, Bearer tokens, API keys, and request data are not encrypted in transit. When TLS terminates at an upstream proxy, set `APP_SESSION_COOKIE_SECURE=true` and ensure clients access only the HTTPS endpoint.
 
-All four runtime containers use non-root users. Linux capabilities are removed from the backend, frontend, and Worker; Caddy retains only `NET_BIND_SERVICE` for ports 80/443. Base images are digest-pinned, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
+All four runtime containers use non-root users. Linux capabilities are removed from the backend, frontend, and Worker; Caddy retains only `NET_BIND_SERVICE` for port 80. Base images are digest-pinned, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
 
 After the first initialization, use the username configured by `APP_SEED_ADMIN_USERNAME` and the password configured by `APP_SEED_ADMIN_PASSWORD`. The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically.
 

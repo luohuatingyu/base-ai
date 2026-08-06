@@ -21,12 +21,14 @@ public class SessionCookieService {
     private final TokenService tokenService;
     private final String sessionCookie;
     private final String csrfCookie;
+    private final boolean secure;
 
     public SessionCookieService(TokenService tokenService, PlatformProperties properties) {
         this.tokenService = tokenService;
         String platformCode = properties.getPlatform().getCode().replaceAll("[^A-Za-z0-9_-]", "_");
         this.sessionCookie = "BAI_" + platformCode + "_SESSION";
         this.csrfCookie = "BAI_" + platformCode + "_CSRF";
+        this.secure = properties.getSessionCookie().isSecure();
     }
 
     /** 写入不可被脚本读取的会话 Cookie 和可供双提交的 CSRF Cookie。 */
@@ -75,7 +77,7 @@ public class SessionCookieService {
 
     /** 创建具有统一安全属性的 Host-only Cookie。 */
     private ResponseCookie cookie(String name, String value, Duration maxAge, boolean httpOnly, String path) {
-        return ResponseCookie.from(name, value).httpOnly(httpOnly).secure(true).sameSite("Strict")
+        return ResponseCookie.from(name, value).httpOnly(httpOnly).secure(secure).sameSite("Strict")
             .path(path).maxAge(maxAge).build();
     }
 

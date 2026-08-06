@@ -21,6 +21,8 @@ public class PlatformProperties {
     private DatabaseProperties postgresqlDatabase = new DatabaseProperties();
     /** 认证令牌配置。 */
     private Token token = new Token();
+    /** 浏览器会话 Cookie 配置。 */
+    private SessionCookie sessionCookie = new SessionCookie();
     /** 初始化种子数据配置。 */
     private Seed seed = new Seed();
     /** Python Worker 连接配置。 */
@@ -55,6 +57,10 @@ public class PlatformProperties {
     public void setPostgresqlDatabase(DatabaseProperties postgresqlDatabase) { this.postgresqlDatabase = postgresqlDatabase; }
     public Token getToken() { return token; }
     public void setToken(Token token) { this.token = token; }
+    /** 返回浏览器会话 Cookie 配置。 */
+    public SessionCookie getSessionCookie() { return sessionCookie; }
+    /** 设置浏览器会话 Cookie 配置。 */
+    public void setSessionCookie(SessionCookie sessionCookie) { this.sessionCookie = sessionCookie; }
     public Seed getSeed() { return seed; }
     public void setSeed(Seed seed) { this.seed = seed; }
     public PythonWorker getPythonWorker() { return pythonWorker; }
@@ -81,6 +87,15 @@ public class PlatformProperties {
         public void setSecret(String secret) { this.secret = secret; }
         public long getExpireMinutes() { return expireMinutes; }
         public void setExpireMinutes(long expireMinutes) { this.expireMinutes = expireMinutes; }
+    }
+
+    /** 控制浏览器会话 Cookie 的传输安全属性。 */
+    public static class SessionCookie {
+        private boolean secure = false;
+        /** 返回是否仅允许通过 HTTPS 发送 Cookie。 */
+        public boolean isSecure() { return secure; }
+        /** 设置是否仅允许通过 HTTPS 发送 Cookie。 */
+        public void setSecure(boolean secure) { this.secure = secure; }
     }
 
     public static class ApiKey {
