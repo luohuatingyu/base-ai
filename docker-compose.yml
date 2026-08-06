@@ -1,4 +1,4 @@
-name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}
+name: ${APP_PLATFORM_SHORT_NAME:?Set APP_PLATFORM_SHORT_NAME}
 
 x-logging: &default-logging
   driver: json-file
@@ -15,6 +15,7 @@ services:
         JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876}
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend
     restart: unless-stopped
     cap_drop:
       - ALL
@@ -97,6 +98,7 @@ services:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker
     restart: unless-stopped
     cap_drop:
       - ALL
@@ -130,6 +132,7 @@ services:
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend
     restart: unless-stopped
     cap_drop:
       - ALL
@@ -164,6 +167,7 @@ services:
       args:
         CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy
     restart: unless-stopped
     cap_drop:
       - ALL

@@ -192,7 +192,6 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 
 ### 环境变量分组
 
-- **Compose：** `COMPOSE_PROJECT_NAME`。
 - **MySQL：** `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
 - **PostgreSQL：** `POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`、`POSTGRES_POOL_SIZE`。
 - **Redis：** `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`、`REDIS_TIMEOUT`。
@@ -205,6 +204,7 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **端口和镜像：** `BACKEND_PORT`、`FRONTEND_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
+Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
 
 ## 使用 Docker Compose 启动
 

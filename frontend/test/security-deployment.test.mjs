@@ -11,6 +11,26 @@ function serviceBlock(compose, name, nextName) {
   return compose.slice(start, end)
 }
 
+/** 验证平台简称经 Compose 规范化后统一用于运行时容器名称。 */
+test('容器名称使用平台简称的小写项目名前缀', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const envExample = await readFile(new URL('.env.example', root), 'utf8')
+
+  assert.match(compose, /^name: \$\{APP_PLATFORM_SHORT_NAME:\?Set APP_PLATFORM_SHORT_NAME\}$/m)
+  assert.doesNotMatch(envExample, /^COMPOSE_PROJECT_NAME=/m)
+  for (const [service, nextService] of [
+    ['backend', 'python-worker'],
+    ['python-worker', 'frontend'],
+    ['frontend', 'caddy'],
+    ['caddy', null],
+  ]) {
+    assert.match(
+      serviceBlock(compose, service, nextService),
+      new RegExp(`container_name: \\$\\{COMPOSE_PROJECT_NAME:\\?Set COMPOSE_PROJECT_NAME\\}-${service}`),
+    )
+  }
+})
+
 test('仅 Caddy 暴露 HTTP 和 HTTPS 端口', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
 

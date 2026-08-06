@@ -192,7 +192,6 @@ The API key hash secret is optional only because it falls back to the encryption
 
 ### Environment variable groups
 
-- **Compose:** `COMPOSE_PROJECT_NAME`.
 - **MySQL:** `MYSQL_URL`, `MYSQL_USERNAME`, `MYSQL_PASSWORD`.
 - **PostgreSQL:** `POSTGRES_URL`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_POOL_SIZE`.
 - **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`.
@@ -205,6 +204,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **TLS ingress and images:** `CADDY_SITE_ADDRESS`, `CADDY_TLS_DIRECTIVE`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
+Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normalizes it to lowercase, and names the four runtime containers `<short-name>-backend`, `<short-name>-python-worker`, `<short-name>-frontend`, and `<short-name>-caddy`. For example, `APP_PLATFORM_SHORT_NAME=AI` produces `ai-backend`, `ai-python-worker`, `ai-frontend`, and `ai-caddy`.
 
 ## Start with Docker Compose
 
