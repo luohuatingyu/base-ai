@@ -1,5 +1,101 @@
 # 最近分支覆盖测试报告
 
+## 📋 本次安全加固测试结果（2026-08-06）
+
+### Git 基准点
+
+Commit: a7d7edb3a1a7fe2400f26f3680be88f98ecac829
+- 提交说明: Harden runtime supply chain
+- 测试日期: 2026-08-06
+- 分支: master
+- 上一测试基准点: `666fe85a9ee78f35af2a00891df2b41e80d491fe`
+
+### 变更范围
+
+- 修复 Python Worker 内部鉴权绕过，限制可信 Host，并固定 Python 3.12 依赖及哈希。
+- 加固登录失败计数、可信代理解析、RBAC 委派边界、最后管理员保护、12 位密码和 BCrypt 72 字节限制。
+- 为入口请求、接口触发请求/响应和 Worker LLM 响应增加资源上限；对接口触发及模型供应商 URL 执行 DNS 重绑定防护、私网阻断和禁用重定向。
+- 使用 Caddy 提供 TLS、HTTP 到 HTTPS 跳转和前端安全响应头；仅暴露 80/443，保留开放平台入口。
+- 使用 Flyway 分别管理 MySQL 和 PostgreSQL 自动 DDL，已有非空库从版本 0 建立基线，Hibernate 改为 `validate`。
+- 升级 Spring Boot 3.5.14、Spring Framework 6.2.19、Spring Data 3.5.12、Tomcat 10.1.55、Jackson 2.21.4、Netty 4.1.136.Final 和 PostgreSQL JDBC 42.7.12。
+- Caddy 升级至 2.11.4，并使用 Go 1.26.5、修复版 x/text 与 gRPC 重建；前端生产镜像移除 npm、Corepack 和 Yarn。
+- 四个运行时镜像全部使用非 root 用户、移除多余 capabilities 并启用 `no-new-privileges`；基础镜像固定摘要。
+- 新增 Dependabot 周期更新以及 Trivy 仓库、配置、密钥和四镜像扫描；GitHub Actions 使用完整提交 SHA。
+- 按确认范围暂不处理敏感日志内容治理。
+
+### 测试执行结果
+
+- 后端完整测试：270/270 通过，失败 0，错误 0，跳过 0。
+- 前端完整测试：180/180 通过，失败 0，跳过 0。
+- Python Worker 完整测试：26/26 通过，失败 0，错误 0，跳过 0。
+- 自动化用例合计：476/476 通过（100%）。
+- npm 依赖审计：0 个漏洞。
+- Trivy 仓库扫描：Maven、npm、pip、Dockerfile、配置及密钥中高危/严重可修复发现 0 个。
+- Trivy 镜像扫描：Backend、Python Worker、Frontend、Caddy 高危/严重可修复发现均为 0 个。
+- Docker Compose：完整构建并启动成功；Backend、Python Worker、Frontend、Caddy 全部 healthy。
+- TLS 运行态：HTTPS 健康接口返回 200，HTTP 返回 308；HSTS、CSP、X-Content-Type-Options、X-Frame-Options、Referrer-Policy 和 Permissions-Policy 生效。
+- 端口与权限：仅 Caddy 发布 80/443；其他服务无宿主端口；四个服务均以非 root 用户运行，仅 Caddy 保留 `NET_BIND_SERVICE`。
+- 数据库迁移：现有 MySQL/PostgreSQL Flyway 历史校验通过；空 MySQL 执行 V1/V2 并创建抽查的 4 张表，空 PostgreSQL 执行 V1 并创建 2 张触发表，空库后端健康返回 200。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| Worker 仅接受合法内部凭证和 Host | Pytest：缺失、错误、合法令牌及非法 Host | 未授权请求被拒绝，合法内部调用通过 | 正常、异常、权限、安全 |
+| 登录、代理和 RBAC 不可绕过 | 后端 Security/Service 全量测试 | Redis 失败关闭、可信代理从右向左解析、越权委派及最后管理员变更被拒绝 | 正常、异常、权限、安全、回归 |
+| SSRF 与资源上限生效 | API Trigger、LLM、请求过滤器及 Worker 测试 | 私网/重绑定/重定向被阻断，超限请求或响应稳定失败 | 边界、异常、安全、回归 |
+| TLS、响应头与端口收敛 | 前端部署契约、Caddy 校验、curl、容器检查 | HTTPS 200、HTTP 308、安全头存在，仅发布 80/443 | 正常、安全、兼容、集成 |
+| 自动 DDL 同时兼容历史库和空库 | Flyway 资源测试、现有库启动、临时空 MySQL/PostgreSQL | 历史迁移校验通过，空库自动建表，Hibernate validate 成功 | 正常、兼容、边界、集成 |
+| 依赖升级不破坏历史功能 | 后端 270、前端 180、Worker 26 项完整回归 | 476 项全部通过，四服务健康 | 兼容、回归、集成 |
+| 运行时最小权限 | 部署契约与 Docker inspect | 四服务非 root，capabilities 最小化，内部服务无宿主端口 | 权限、安全 |
+| 供应链风险可持续发现 | npm audit、Trivy、Dependabot/Workflow 契约测试 | 当前可修复高危/严重发现为 0，CI 定期阻断新增问题 | 安全、回归 |
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Compose 重建及后端完整测试 | `MAVEN_MIRROR_URL= docker compose up --build -d` | 构建阶段后端 270/270 通过，四服务启动成功 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 180/180 通过 |
+| Worker 完整回归 | Python 3.12 运行镜像安装哈希锁定的测试依赖后执行 `python -m pytest -p no:cacheprovider` | 26/26 通过 |
+| 前端依赖审计 | `npm audit --audit-level=moderate` | 0 个漏洞 |
+| 配置校验 | `docker compose config -q`、`caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` | 均通过 |
+| Trivy 仓库扫描 | Trivy 0.70.0，扫描 vuln、misconfig、secret，级别 HIGH/CRITICAL | 0 个可修复发现 |
+| Trivy 镜像扫描 | Trivy 0.70.0 扫描四个最终运行镜像，级别 HIGH/CRITICAL | 四镜像均为 0 个可修复发现 |
+| 历史数据库启动 | Compose 后端启动并校验 Flyway 与 Hibernate 日志 | MySQL V2、PostgreSQL V1 均为最新，服务 healthy |
+| 空库数据库验收 | 临时 MySQL 8.4、PostgreSQL 17、Redis 7 与最终后端镜像 | MySQL V1/V2、PostgreSQL V1 成功，健康接口 200；临时资源已删除 |
+| TLS 与最小权限 | curl、`docker compose ps`、`docker inspect` | HTTPS 200、HTTP 308；非 root、端口和 capabilities 符合设计 |
+
+### 重测触发条件
+
+- 修改 `backend/src/main/java/`、Domain、Repository、Service、Controller 或影响业务的核心配置。
+- 修改认证授权、可信代理、Worker 内部协议、SSRF 策略或任何请求/响应资源上限。
+- 新增或修改 Flyway 迁移、JPA 实体及数据库连接配置。
+- 修改基础镜像、依赖版本、Dockerfile、Compose、Caddyfile 或 GitHub Actions 供应链策略。
+- 修改开放平台路由、TLS 模式、端口发布或前端安全响应头。
+
+### 已知问题与限制
+
+- Trivy 门禁设置为 HIGH/CRITICAL 且 `ignore-unfixed=true`，用于阻断已有修复版本但尚未升级的问题；无上游修复的问题仍需结合后续数据库更新持续观察。
+- 内部 CA 模式需要管理员在客户端显式信任 Caddy 根证书；公网开放平台应配置真实域名和 ACME 邮箱。
+- 前端生产构建仍提示主包超过 500 kB，该既有性能问题不影响本次安全验收。
+- 未执行真实多实例故障注入、生产数据规模压测、浏览器 E2E 或外部渗透测试。
+- 敏感日志内容治理按用户确认暂不处理。
+
+### 下次测试建议
+
+1. 在预生产公网域名下验证 ACME 证书签发、续期、HSTS 和开放平台 API Key 调用。
+2. 增加 Testcontainers 数据库迁移测试，使 MySQL/PostgreSQL 空库建表在 CI 中自动执行。
+3. 增加浏览器 E2E、并发限流、DNS 重绑定和大响应流式攻击场景。
+4. 定期复核 Trivy 未修复项，并在上游发布修复后立即升级固定摘要。
+
+### 回滚方式
+
+- 运行时和供应链变更可回滚提交 `a7d7edb` 后重新执行 `docker compose up --build -d`。
+- 其他安全能力分别位于 `c0c8ab1`、`e4a9661`、`8a4a7ec`、`f5343b5` 和 `5dedcd2`，应按依赖关系逆序回滚。
+- Flyway 已记录数据库版本；代码回滚不会自动删除表或迁移历史。如需数据库逆向 DDL 或数据恢复，必须另行制定并确认迁移方案。
+
+---
+
 ## 📋 本次变更测试结果（2026-08-05）
 
 **Git 基准点**：`666fe85a9ee78f35af2a00891df2b41e80d491fe`（Remove legacy compatibility logic）
