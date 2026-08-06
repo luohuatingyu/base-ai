@@ -1,5 +1,98 @@
 # 最近分支覆盖测试报告
 
+## 📋 全站 HTTP 入口测试结果（2026-08-06）
+
+### Git 基准点
+
+Commit: 370b4b8cbc001087bb865e2a1404c2a5cf692176
+- 提交说明: Use HTTP ingress for service access
+- 测试日期: 2026-08-06
+- 分支: master
+- 上一测试基准点: `ae3cea9a8692c2ab6917cbe52191eeb3d250107f`
+
+### 变更范围
+
+- Caddy 改为仅监听容器 80 端口，移除 TLS、HTTP 到 HTTPS 跳转、HSTS 以及证书数据卷；保留其他安全响应头、请求体限制、前后端反向代理和 `/api/internal/**` 入口隔离。
+- Compose 默认仅发布宿主机 `81 -> 80`，Caddy 健康检查改用 HTTP；后端 8080、前端 8080 和 Worker 8000 继续仅在 Compose 内部网络开放。
+- 新增 `APP_SESSION_COOKIE_SECURE` 配置，纯 HTTP 默认值为 `false`；会话 Cookie 继续保留 HttpOnly、SameSite=Strict、Host-only 和签名双提交 CSRF 防护，上游 TLS 终止场景可显式设为 `true`。
+- 中英文部署文档和 API Key 调用示例统一使用 `http://localhost:81`，并明确明文 HTTP 仅适用于可信网络。
+
+### 测试执行结果
+
+- 后端完整测试：287/287 通过，失败 0，错误 0，跳过 0。
+- 前端完整测试：184/184 通过，失败 0，错误 0，跳过 0。
+- Python Worker 完整测试（Python 3.12.13）：26/26 通过，失败 0，错误 0，跳过 0。
+- 自动化用例合计：497/497 通过（100%）。
+- 后端定向测试：`SessionCookieServiceTest` 4/4 通过；HTTP 默认 Cookie 和显式 Secure Cookie 分支均已覆盖。
+- 部署定向测试：`security-deployment.test.mjs` 6/6 通过；覆盖 HTTP 单端口、反向代理、安全响应头和内部接口隔离。
+- Docker Compose：完整构建并启动成功；Backend、Python Worker、Frontend、Caddy 全部 healthy，构建阶段再次执行后端 287 项测试并全部通过。
+- HTTP 运行态：liveness 和 readiness 均返回 200，无 HTTPS 重定向或 HSTS；公网 `/api/internal/health` 返回 404。
+- 跨项目访问：独立默认 bridge 网络中的 Python 3.12 容器通过 `http://host.docker.internal:81/api/open/health/live` 访问成功并返回 200。
+
+### 关键模块测试
+
+- Security/会话 Cookie：4/4 定向通过，完整 Security 回归全部通过。
+- Backend：287/287 通过，覆盖 Controller、Service、Repository、认证授权、健康检查和历史回归。
+- Frontend：184/184 通过，覆盖部署契约、Cookie 会话客户端、路由及页面回归。
+- Python Worker：26/26 通过，覆盖 LLM、邮件投递和链路上下文。
+- Deployment：Compose 配置校验、Caddy 配置校验、容器健康、端口发布及跨容器 HTTP 访问全部通过。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 控制台和 API 使用纯 HTTP 且不重定向 | 部署契约、Caddy 校验及运行态 curl；请求 81 端口健康接口 | HTTP 直接返回 200，无 Location、TLS 和 HSTS；符合预期 | 正常、兼容、集成 |
+| 仅发布宿主机 81 端口 | Compose 契约及 `docker compose ps` | 仅 Caddy 发布 `81 -> 80`，443 不再发布，内部服务端口不对宿主机开放；符合预期 | 安全、兼容、回归 |
+| HTTP 下浏览器会话 Cookie 可用 | 后端单元测试；默认配置签发会话和 CSRF Cookie | Cookie 不含 Secure，仍保留 HttpOnly、SameSite=Strict、路径隔离及 CSRF；符合预期 | 正常、安全、兼容 |
+| 上游 TLS 终止仍可启用 Secure Cookie | 后端单元测试；设置 `APP_SESSION_COOKIE_SECURE=true` | 会话与 CSRF Cookie 均携带 Secure；符合预期 | 分支、兼容、安全 |
+| 内部接口不因入口改造而暴露 | 部署契约及运行态请求 `/api/internal/health` | Caddy 返回 404，普通公开健康接口返回 200；符合预期 | 权限、安全、回归 |
+| 其他 Docker 项目可通过宿主机 HTTP 访问 | 独立 bridge 网络 Python 3.12 容器请求 `host.docker.internal:81` | liveness 返回 200；符合预期 | 集成、兼容 |
+| 历史业务功能不回归 | 后端、前端和 Worker 完整测试 | 497 项全部通过；符合预期 | 回归、异常、边界、权限 |
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Compose 静态校验 | `docker compose config --quiet` | 通过 |
+| 后端 Cookie 定向测试 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp -Dtest=SessionCookieServiceTest test` | 4/4 通过 |
+| 后端完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 287/287 通过 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 184/184 通过 |
+| Worker 完整回归 | Python 3.12.13 容器安装锁定开发依赖后执行 `python -m pytest -p no:cacheprovider` | 26/26 通过 |
+| Compose 统一重建 | `docker compose up --build -d` | 四镜像构建成功，后端构建测试 287/287 通过，四服务 healthy |
+| Caddy 配置校验 | 容器内执行 `caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` | 配置有效，仅 HTTP 监听 |
+| HTTP 与入口隔离 | curl 请求 81 端口 live、ready 和 internal 路径 | 状态依次为 200、200、404，无重定向及 HSTS |
+| 跨容器访问 | 独立 Python 3.12 容器通过 `host.docker.internal:81` 请求 live | 返回 200 |
+| 静态变更检查 | `git diff --check`、`git status`、`git diff` | 无空白错误，无临时调试文件，实现提交仅含确认范围的 10 个文件 |
+
+### 重测触发条件
+
+- 修改 `backend/src/main/java/`、认证会话、Cookie 属性、CSRF 或其他安全策略。
+- 修改 Caddyfile、Compose 端口、反向代理路由、HTTP/HTTPS 协议或上游 TLS 终止方式。
+- 修改 Controller、Service、Repository、Domain、核心业务配置或开放 API 认证方式。
+- 修改前端 Cookie 会话客户端、API 请求凭据处理或运行时访问地址。
+
+### 已知问题与限制
+
+- 纯 HTTP 会明文传输密码、会话 Cookie、Bearer Token、API Key 和业务请求数据，仅适用于用户确认的可信网络；公网或不可信网络必须增加上游 HTTPS。
+- 曾访问旧 HTTPS 入口的浏览器可能缓存 localhost HSTS，需要清理浏览器 HSTS/站点数据，或改用 `http://127.0.0.1:81`。
+- 宿主机 Python 3.12.13 未安装 pytest，首次宿主机测试命令因 `No module named pytest` 未进入用例执行；随后在固定 Python 3.12.13 容器中完成 26/26 测试，未修改宿主机环境。
+- 未使用真实管理员密码执行浏览器登录 E2E；Cookie 属性及 CSRF 分支由后端单元测试覆盖，HTTP 入口、前端会话契约和服务健康已分别验证。
+- 前端生产构建仍提示主包超过 500 kB，该既有性能问题不影响本次验收。
+
+### 下次测试建议
+
+1. 使用专用测试账号增加浏览器 E2E，覆盖 HTTP 登录、刷新恢复、CSRF 写请求、超时及登出清理。
+2. 若部署到其他物理主机，验证主机防火墙放行 81、调用方到宿主机的路由以及 API Key IP 白名单。
+3. 若未来恢复 HTTPS 或增加上游 TLS，设置 `APP_SESSION_COOKIE_SECURE=true` 并完整复测 Cookie、代理头、证书和 HSTS 行为。
+
+### 回滚方式
+
+- 回滚实现提交 `370b4b8`，恢复 TLS、443 发布、HTTP 跳转和默认 Secure Cookie 后重新执行 `docker compose up --build -d`。
+- 恢复 80/443 前需先处理当前由 `domestic-trade-caddy-1` 占用的端口，或通过环境变量指定不冲突的宿主机端口。
+- 本次没有数据库迁移、数据回填或删除操作，无需数据库逆向处理。
+
+---
+
 ## 📋 浏览器会话与服务就绪加固测试结果（2026-08-06）
 
 ### Git 基准点
