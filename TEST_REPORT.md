@@ -1,5 +1,83 @@
 # 最近分支覆盖测试报告
 
+## 📋 任务追踪排除配置迁移测试结果（2026-08-06）
+
+### Git 基准点
+
+Commit: be5c89e41204529d28a16b57ff8278c8e38c8344
+- 提交说明: Relocate trace tracking configuration
+- 测试日期: 2026-08-06
+- 分支: master
+- 上一测试基准点: `92d65da884384c51dfeb64715142d95c5c7fa537`
+
+### 变更范围
+
+- 默认任务追踪排除配置从仓库根目录迁移到 `backend/config/trace-tracking-exclusions.yml`。
+- Compose 默认宿主机挂载源同步到新位置，容器内 `/app/config/trace-tracking-exclusions.yml` 和 `TRACE_TRACKING_EXCLUSIONS_FILE` 外部覆盖能力保持不变。
+- 中英文文档同步更新配置说明和仓库结构。
+- 本地未跟踪 `.env` 的旧相对路径覆盖同步到新位置，仅用于本机重建，不纳入 Git 提交。
+- 未修改配置内容、`backend/src/main/java/`、数据库结构、业务逻辑、前端业务逻辑或 Python Worker。
+
+### 测试执行结果
+
+- 自动化测试：189 个唯一前端用例全部通过（100%），失败 0，错误 0，跳过 0；其中部署定向套件 11 个用例先独立执行，再随完整套件复测通过。
+- Compose 静态解析：通过；Backend 挂载源解析为 `backend/config/trace-tracking-exclusions.yml`。
+- 容器挂载验证：容器内配置可读，且与宿主机新位置文件的 SHA-256 一致。
+- Docker Compose：`docker compose up --build -d` 完整构建和启动成功，Backend、Python Worker、Frontend、Caddy 全部 healthy。
+- 后端 Maven、Python Worker 和 Caddy Go 独立测试本次未执行；本次没有修改对应业务代码，且 Docker 构建和运行态健康检查已覆盖配置装载。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 配置不再位于仓库顶层 | 文件结构与 Git rename 检查；迁移提交 | 根目录文件删除，新文件位于 Backend 配置目录；符合预期 | 正常、结构 |
+| Compose 默认使用新位置 | Compose 静态解析；本地环境变量同步为新相对路径 | Backend 挂载源解析到新文件；符合预期 | 正常、集成 |
+| 容器继续使用原内部路径 | 运行态挂载检查；读取容器内配置并比对 SHA-256 | 内部路径可读且内容一致；符合预期 | 兼容、回归 |
+| 外部路径覆盖能力不变 | 配置审查；保留 `TRACE_TRACKING_EXCLUSIONS_FILE` 插值 | 自定义宿主机文件仍可覆盖默认源；符合预期 | 兼容 |
+| 配置迁移不影响服务启动 | Compose 完整重建和健康检查 | 四个服务均构建成功并进入 healthy；符合预期 | 集成、回归 |
+| 部署及前端历史行为不回归 | 部署定向测试和前端完整套件 | 11/11、189/189 通过；符合预期 | 回归、安全 |
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Compose 静态解析 | `docker compose config --quiet` 及 JSON 挂载源断言 | 通过，挂载源为新位置 |
+| 部署定向测试 | `node --test frontend/test/security-deployment.test.mjs` | 11/11 通过 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 189/189 通过 |
+| Compose 统一重建 | `docker compose up --build -d` | 四镜像构建成功，四服务 healthy |
+| 运行态挂载 | 容器内可读性检查及宿主机/容器 SHA-256 比对 | 通过，内容一致 |
+| 差异格式 | `git diff --check`、`git diff --cached --check` | 通过 |
+
+### 测试过程问题与处理
+
+- 首次 Compose 挂载源断言失败：本地未跟踪 `.env` 仍显式覆盖旧根目录相对路径。将该本地覆盖同步为新位置后，Compose 静态解析、定向测试、完整测试、重建和挂载校验全部通过；仓库默认配置本身无解析错误。
+- Docker 前端构建继续报告既有的 runtime-config、第三方 PURE 注释和主包超过 500 kB 警告，不影响构建成功或服务健康。
+- 未创建临时测试或调试文件，无需额外清理。
+
+### 重测触发条件
+
+- 修改 `backend/config/trace-tracking-exclusions.yml` 的默认排除方法、排除路径或配置结构。
+- 修改 Compose 的 `TRACE_TRACKING_EXCLUSIONS_FILE` 插值、宿主机挂载源或容器内配置路径。
+- 修改 Spring 配置导入路径、`TraceTrackingPolicy` 或 `@TraceIgnored` 使用范围。
+- 用户明确要求重新执行完整覆盖测试。
+
+### 已知问题与限制
+
+- 生产环境若显式配置了旧仓库根目录相对路径，需要在部署环境中同步更新；绝对外部配置路径不受影响。
+- 本次没有改变排除规则内容，因此没有重新执行后端任务追踪业务测试；最近业务基准中的后端覆盖结论保持不变。
+
+### 下次测试建议
+
+1. 后续修改排除规则内容时，执行后端任务追踪定向测试和 Maven 完整测试，并覆盖正常、忽略、异常和权限场景。
+2. 发布前检查目标环境的 `TRACE_TRACKING_EXCLUSIONS_FILE` 是否仍引用旧仓库相对位置。
+
+### 回滚方式
+
+- 回滚提交 `be5c89e`，恢复根目录配置和 Compose 默认挂载路径，然后执行 `docker compose up --build -d`。
+- 本次没有数据库迁移或业务数据修改，无需数据回滚。
+
+---
+
 ## 📋 YAML 多域名 HTTPS 入口测试结果（2026-08-06）
 
 ### Git 基准点
@@ -1371,7 +1449,7 @@ Commit: 4a646531b30676431d01211f6ed31335f1d003e6
 
 - 修改 `ApiResponse`、`ApiResponseAdvice`、`GlobalExceptionHandler` 或统一响应序列化配置。
 - 修改 `TraceIdInterceptor`、`TraceTrackingPolicy`、`TraceTrackingAspect` 或任务追踪创建逻辑。
-- 修改 `trace-tracking-exclusions.yml`、默认排除方法、排除路径或 `@TraceIgnored` 使用范围。
+- 修改 `backend/config/trace-tracking-exclusions.yml`、默认排除方法、排除路径或 `@TraceIgnored` 使用范围。
 - 修改认证拦截器顺序、MVC 拦截器注册或请求 MDC 清理逻辑。
 - 用户明确要求重新执行完整覆盖测试。
 
