@@ -201,7 +201,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
-- **HTTPS ingress and images:** `APP_DOMAIN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `HOST_IP_CHECK_INTERVAL_SECONDS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
+- **HTTPS ingress and images:** `APP_DOMAIN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_CERT_CHECK_INTERVAL_SECONDS`, `IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`, `IP_CERT_MAX_LEARNED_HOSTS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
 Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normalizes it to lowercase, and names the four runtime containers `<short-name>-backend`, `<short-name>-python-worker`, `<short-name>-frontend`, and `<short-name>-caddy`. For example, `APP_PLATFORM_SHORT_NAME=AI` produces `ai-backend`, `ai-python-worker`, `ai-frontend`, and `ai-caddy`.
@@ -211,7 +211,7 @@ Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normaliz
 Caddy selects exactly one ingress mode from the environment:
 
 - **Domain certificate mode:** `APP_DOMAIN`, `TLS_CERT_FILE`, and `TLS_KEY_FILE` must all be configured. The certificate must be a PEM full chain including intermediates, and the key must be an unencrypted PEM file. A partial configuration fails startup instead of downgrading to HTTP.
-- **IP internal-CA mode:** active when all three domain-certificate variables are empty. The project always includes `localhost` and `127.0.0.1`, while a host-side tracker automatically discovers the default interface IPv4 address without manual IP configuration. The persisted Caddy CA signs one multi-SAN certificate containing every current address. Every client must trust the Caddy root CA.
+- **IP internal-CA mode:** active when all three domain-certificate variables are empty. The project always includes `localhost` and `127.0.0.1`; other IPv4 addresses are learned when a client first reaches them over HTTP, without configuring or probing host IPs. The persisted Caddy CA and learned-address state produce one multi-SAN certificate containing every current address. Every client must trust the Caddy root CA.
 
 Example for a domain on standard ports:
 
@@ -224,21 +224,25 @@ HTTPS_PORT=443
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-Example for automatic IP discovery:
+Example for request-driven IP certificates:
 
 ```dotenv
 APP_DOMAIN=
 TLS_CERT_FILE=
 TLS_KEY_FILE=
-HOST_IP_CHECK_INTERVAL_SECONDS=60
+TLS_CERT_CHECK_INTERVAL_SECONDS=3600
+IP_CERT_MIN_ISSUE_INTERVAL_SECONDS=5
+IP_CERT_MAX_LEARNED_HOSTS=32
 HTTP_PORT=81
 HTTPS_PORT=444
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-The host tracker selects usable IPv4 addresses only from the current default-route interface. It excludes Docker, loopback, link-local, and benchmarking ranges. Addresses are atomically written under the local `.runtime` directory, and Caddy rereads them at `HOST_IP_CHECK_INTERVAL_SECONDS`; DHCP renewals and default-interface changes therefore trigger certificate renewal and a hot reload. An external address behind NAT is not assigned to a host interface, so use domain certificate mode for public access through NAT.
+IP mode runs no host-side detector and invokes no operating-system networking commands such as `uname`, `route`, `ifconfig`, or `ip`. A new address must first be opened as `http://<IPv4>:<HTTP_PORT>`; after Caddy validates the HTTP Host, issues a certificate, atomically persists the address, and hot reloads successfully, it returns a 308 redirect to `https://<IPv4>:<HTTPS_PORT>`. This learns canonical loopback, private, directly assigned public, and NAT-mapped IPv4 addresses. A first direct HTTPS connection to an address that has not yet been learned cannot complete its TLS handshake.
 
-The IP certificate targets a 30-day lifetime without exceeding the remaining lifetime of the Caddy intermediate. Changes to address SANs, the intermediate CA, or the renewal window trigger a new certificate and a hot reload through an admin endpoint bound only to the container loopback address. That endpoint is not published to the host or the Compose network. Initial issuance failures stop Caddy; background renewal failures keep the current certificate and retry during the next cycle.
+The learning service listens only on the Caddy container loopback and accepts only GET and HEAD. Non-IP hosts, IPv6, non-canonical, link-local, multicast, and unusable addresses never trigger issuance. By default, at most 32 addresses are learned, with at least five seconds between new-address issuances; once full, the service returns HTTP 429 and does not evict an existing address. Because a non-browser client can forge an HTTP Host header, this mechanism provides zero-configuration service access rather than proof of IP ownership. Never put passwords, tokens, or sensitive query values in the initial HTTP request.
+
+The IP certificate targets a 30-day lifetime without exceeding the remaining lifetime of the Caddy intermediate. Changes to address SANs, the intermediate CA, or the renewal window trigger a new certificate and a hot reload through an admin endpoint bound only to the container loopback address. Issuance, persistence, or reload failures return HTTP 503 and restore the previous state. Background renewal checks run at `TLS_CERT_CHECK_INTERVAL_SECONDS`; failures retain the current certificate and retry on the next cycle.
 
 The domain certificate and key are mounted read-only, while Caddy runs as container UID `10001`. On Linux, grant that UID access with a dedicated group or ACL, including traversal permission on parent directories; do not make the private key world-readable. Verify access before startup with:
 
@@ -255,11 +259,11 @@ Validate the resolved configuration before starting the stack. Be aware that `do
 
 ```bash
 docker compose config --quiet
-./scripts/base-ai.sh up --build -d
-./scripts/base-ai.sh ps
+docker compose up --build -d
+docker compose ps
 ```
 
-Automatic IP discovery depends on the launcher above keeping a tracker on the host. Running `docker compose up` directly still serves `localhost` and `127.0.0.1`, but does not continuously discover LAN address changes.
+IP learning and renewal run entirely inside the Caddy container. Standard Docker Compose commands are sufficient; no host-side script or additional runtime is required.
 
 After all services are healthy:
 
@@ -306,7 +310,7 @@ When `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` is unset or `false`, the seed passwo
 To stop the application:
 
 ```bash
-./scripts/base-ai.sh down
+docker compose down
 ```
 
 ## Development and Tests
@@ -334,7 +338,7 @@ node --test frontend/test/*.test.mjs frontend/tests/*.test.js
 Rebuild the Docker environment after code changes:
 
 ```bash
-./scripts/base-ai.sh up --build -d
+docker compose up --build -d
 ```
 
 ## Repository Layout

@@ -25,7 +25,7 @@
 	}
 
 	handle {
-		respond "Not Found" 404
+		{$CADDY_HTTP_FALLBACK}
 	}
 }
 

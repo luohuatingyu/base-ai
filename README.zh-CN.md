@@ -201,7 +201,7 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
-- **HTTPS 入口、端口和镜像：** `APP_DOMAIN`、`TLS_CERT_FILE`、`TLS_KEY_FILE`、`HOST_IP_CHECK_INTERVAL_SECONDS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
+- **HTTPS 入口、端口和镜像：** `APP_DOMAIN`、`TLS_CERT_FILE`、`TLS_KEY_FILE`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
 Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
@@ -211,7 +211,7 @@ Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范�
 Caddy 根据配置自动选择一种入口模式：
 
 - **域名证书模式：** `APP_DOMAIN`、`TLS_CERT_FILE` 和 `TLS_KEY_FILE` 必须同时配置。证书应为包含中间证书的 PEM 完整链，私钥应为无交互密码的 PEM 文件。三项只配置一部分时 Caddy 会拒绝启动，不会降级到 HTTP。
-- **IP 内部 CA 模式：** 上述三项全部留空后生效。项目始终将 `localhost` 和 `127.0.0.1` 加入证书，并由宿主机跟踪器自动发现默认网卡 IPv4，无需手工填写 IP。Caddy 持久化内部 CA 签发包含全部当前地址的多 SAN 证书，访问设备必须信任 Caddy 根证书。
+- **IP 内部 CA 模式：** 上述三项全部留空后生效。项目始终将 `localhost` 和 `127.0.0.1` 加入证书；其他 IPv4 在客户端首次通过 HTTP 访问时自动学习，无需填写或探测宿主机 IP。Caddy 持久化内部 CA 和已学习地址，签发包含全部当前地址的多 SAN 证书，访问设备必须信任 Caddy 根证书。
 
 域名使用标准端口的示例：
 
@@ -224,21 +224,25 @@ HTTPS_PORT=443
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-IP 自动发现模式的示例：
+IP 请求驱动签发模式的示例：
 
 ```dotenv
 APP_DOMAIN=
 TLS_CERT_FILE=
 TLS_KEY_FILE=
-HOST_IP_CHECK_INTERVAL_SECONDS=60
+TLS_CERT_CHECK_INTERVAL_SECONDS=3600
+IP_CERT_MIN_ISSUE_INTERVAL_SECONDS=5
+IP_CERT_MAX_LEARNED_HOSTS=32
 HTTP_PORT=81
 HTTPS_PORT=444
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-宿主机跟踪器仅选择当前默认路由网卡的可用 IPv4，不会把 Docker、回环、链路本地或基准测试网段写入证书。它将地址原子写入本地 `.runtime` 目录，Caddy 按 `HOST_IP_CHECK_INTERVAL_SECONDS` 重读；DHCP 续租或默认网卡切换后会自动重签证书并热加载。当主机位于 NAT 后时，外部公网地址不属于本机网卡，应使用域名证书模式。
+IP 模式不运行宿主机探测器，也不调用 `uname`、`route`、`ifconfig` 或 `ip` 等系统命令。新地址第一次必须访问 `http://<IPv4>:<HTTP_PORT>`；Caddy 校验 HTTP Host、签发证书、原子保存地址并热加载成功后，返回指向 `https://<IPv4>:<HTTPS_PORT>` 的 308 跳转。该方式可学习回环、内网、直接公网及 NAT 映射后的规范 IPv4；首次直接访问尚未学习地址的 HTTPS 无法完成 TLS 握手。
 
-IP 证书目标有效期为 30 天，且不会超过 Caddy 中间 CA 的剩余有效期。地址 SAN、中间 CA 或有效期需要更新时会自动重新签发，并通过只监听容器回环地址的管理接口热加载。该管理接口不会发布到宿主机或 Compose 网络。首次签发失败会阻止 Caddy 启动，后台续期失败则保留当前证书并在下一周期重试。
+学习服务仅监听 Caddy 容器回环地址，只接受 GET 和 HEAD 请求。非 IP Host、IPv6、非规范、链路本地、组播及不可用地址不会触发签发。默认最多学习 32 个地址，新地址签发间隔至少 5 秒；达到上限后返回 HTTP 429，不会自动移除已有地址。HTTP Host 可由非浏览器客户端伪造，因此该机制用于无配置的服务接入，不构成 IP 所有权证明。首次 HTTP 请求不得携带密码、令牌或敏感查询参数。
+
+IP 证书目标有效期为 30 天，且不会超过 Caddy 中间 CA 的剩余有效期。地址 SAN、中间 CA 或有效期需要更新时会自动重新签发，并通过只监听容器回环地址的管理接口热加载。签发、地址持久化或热加载失败时返回 HTTP 503 并恢复旧状态；后台按 `TLS_CERT_CHECK_INTERVAL_SECONDS` 检查续期，失败时保留当前证书并在下一周期重试。
 
 域名证书和私钥以只读文件挂载，Caddy 使用容器 UID `10001`。Linux 主机应通过专用组或 ACL 授予该 UID 读取文件及遍历父目录的权限，不要将私钥设置为所有用户可读。可在启动前验证容器用户权限：
 
@@ -255,11 +259,11 @@ docker compose run --rm --entrypoint sh caddy -c \
 
 ```bash
 docker compose config --quiet
-./scripts/base-ai.sh up --build -d
-./scripts/base-ai.sh ps
+docker compose up --build -d
+docker compose ps
 ```
 
-IP 自动发现依赖上述启动脚本在宿主机运行跟踪器。直接执行 `docker compose up` 仍可以使用 `localhost` 和 `127.0.0.1`，但不会持续发现局域网地址变化。
+IP 学习和续期全部在 Caddy 容器中完成，直接使用标准 Docker Compose 命令即可，不需要宿主机脚本或额外运行时。
 
 所有服务进入健康状态后，可访问：
 
@@ -304,7 +308,7 @@ Firefox 等使用独立证书库的客户端可能仍需在浏览器设置中导
 停止应用：
 
 ```bash
-./scripts/base-ai.sh down
+docker compose down
 ```
 
 ## 开发与测试
@@ -332,7 +336,7 @@ node --test frontend/test/*.test.mjs frontend/tests/*.test.js
 代码变更后重新构建 Docker 环境：
 
 ```bash
-./scripts/base-ai.sh up --build -d
+docker compose up --build -d
 ```
 
 ## 仓库结构

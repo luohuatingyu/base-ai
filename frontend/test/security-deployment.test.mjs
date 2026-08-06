@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +9,6 @@ import test from 'node:test'
 
 const root = new URL('../../', import.meta.url)
 const caddyEntrypoint = fileURLToPath(new URL('caddy/caddy-entrypoint.sh', root))
-const hostIpTracker = fileURLToPath(new URL('scripts/base-ai.sh', root))
 
 /** 执行 Caddy 入口诊断模式，返回不包含证书路径的解析结果。 */
 function resolveIngress(overrides) {
@@ -43,23 +42,16 @@ function rejectIngress(overrides) {
   })
 }
 
-/** 使用临时宿主机地址文件执行断言，并在完成后清理测试数据。 */
-function withDiscoveredHosts(contents, assertion) {
-  const directory = mkdtempSync(join(tmpdir(), 'base-ai-hosts-'))
-  const hostsFile = join(directory, 'host-ips')
+/** 使用临时已学习地址文件执行断言，并在完成后清理测试数据。 */
+function withLearnedHosts(contents, assertion) {
+  const directory = mkdtempSync(join(tmpdir(), 'base-ai-learned-hosts-'))
+  const hostsFile = join(directory, 'learned-hosts')
   writeFileSync(hostsFile, contents)
   try {
     return assertion(hostsFile)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
-}
-
-/** 写入可执行的命令替身，用于隔离宿主机网络检测。 */
-function writeCommand(directory, name, source) {
-  const path = join(directory, name)
-  writeFileSync(path, `#!/bin/sh\n${source}\n`)
-  chmodSync(path, 0o755)
 }
 
 /** 截取 Compose 中单个服务配置，避免跨服务字段造成误判。 */
@@ -98,8 +90,10 @@ test('仅 Caddy 暴露 HTTP 和 HTTPS 端口并持久化内部 CA', async () => 
   assert.match(serviceBlock(compose, 'caddy', null), /HTTPS_PORT:-444/)
   assert.match(serviceBlock(compose, 'caddy', null), /caddy-data:\/data/)
   assert.match(serviceBlock(compose, 'caddy', null), /caddy-config:\/config/)
-  assert.match(serviceBlock(compose, 'caddy', null), /\.runtime:\/run\/base-ai:ro/)
-  assert.match(serviceBlock(compose, 'caddy', null), /CADDY_DISCOVERED_HOSTS_FILE:\s*\/run\/base-ai\/host-ips/)
+  assert.doesNotMatch(serviceBlock(compose, 'caddy', null), /\.runtime|CADDY_DISCOVERED_HOSTS_FILE|HOST_IP_CHECK_INTERVAL_SECONDS/)
+  assert.match(serviceBlock(compose, 'caddy', null), /CADDY_LEARNED_HOSTS_FILE:\s*\/data\/base-ai-tls\/learned-hosts/)
+  assert.match(serviceBlock(compose, 'caddy', null), /IP_CERT_MAX_LEARNED_HOSTS:-32/)
+  assert.match(serviceBlock(compose, 'caddy', null), /IP_CERT_MIN_ISSUE_INTERVAL_SECONDS:-5/)
   assert.match(serviceBlock(compose, 'caddy', null), /tls-placeholder\.pem.*fullchain\.pem:ro/)
   assert.match(serviceBlock(compose, 'caddy', null), /tls-placeholder\.pem.*privkey\.pem:ro/)
   assert.match(serviceBlock(compose, 'backend', 'python-worker'), /APP_SESSION_COOKIE_SECURE: \$\{APP_SESSION_COOKIE_SECURE:-true\}/)
@@ -122,6 +116,7 @@ test('Caddy 将允许的 HTTP Host 跳转到 HTTPS 并保留安全响应头', as
   assert.match(caddyfile, /X-Frame-Options/)
   assert.match(caddyfile, /@allowedHost host \{\$CADDY_ALLOWED_HOSTS\}/)
   assert.match(caddyfile, /redir https:\/\/\{host\}\{\$CADDY_HTTPS_PORT_SUFFIX\}\{uri\} 308/)
+  assert.match(caddyfile, /\{\$CADDY_HTTP_FALLBACK\}/)
   assert.match(caddyfile, /@api path \/api\/\*/)
   assert.match(caddyfile, /reverse_proxy backend:8080/)
   assert.match(caddyfile, /reverse_proxy frontend:8080/)
@@ -136,9 +131,9 @@ test('Caddy IP 模式始终覆盖 localhost 和 IPv4 回环地址', () => {
   assert.match(config, /^default_sni=localhost$/m)
 })
 
-test('Caddy 入口在域名证书与自动发现 IPv4 模式间严格切换', () => {
-  const ipConfig = withDiscoveredHosts('203.0.113.10\n192.168.1.10\n', hostsFile => resolveIngress({
-    CADDY_DISCOVERED_HOSTS_FILE: hostsFile,
+test('Caddy 入口在域名证书与请求学习 IPv4 模式间严格切换', () => {
+  const ipConfig = withLearnedHosts('203.0.113.10\n192.168.1.10\n', hostsFile => resolveIngress({
+    CADDY_LEARNED_HOSTS_FILE: hostsFile,
   }))
   assert.match(ipConfig, /^mode=ip$/m)
   assert.match(ipConfig, /^hosts=localhost 127\.0\.0\.1 203\.0\.113\.10 192\.168\.1\.10$/m)
@@ -147,8 +142,8 @@ test('Caddy 入口在域名证书与自动发现 IPv4 模式间严格切换', ()
   assert.match(ipConfig, /^default_sni=localhost$/m)
   assert.match(ipConfig, /^hsts=disabled$/m)
 
-  const domainConfig = withDiscoveredHosts('192.168.1.10\n', hostsFile => resolveIngress({
-    CADDY_DISCOVERED_HOSTS_FILE: hostsFile,
+  const domainConfig = withLearnedHosts('192.168.1.10\n', hostsFile => resolveIngress({
+    CADDY_LEARNED_HOSTS_FILE: hostsFile,
     APP_DOMAIN: 'ai.example.com',
     TLS_CERT_FILE: '/srv/tls/fullchain.pem',
     TLS_KEY_FILE: '/srv/tls/privkey.pem',
@@ -163,37 +158,20 @@ test('Caddy 入口在域名证书与自动发现 IPv4 模式间严格切换', ()
   assert.match(domainConfig, /^hsts=enabled$/m)
 })
 
-test('宿主机跟踪器自动识别默认网卡 IPv4 并避免写入虚拟隧道', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'base-ai-network-'))
-  const commands = join(directory, 'bin')
-  const runtime = join(directory, 'runtime')
-  mkdirSync(commands)
-  try {
-    writeCommand(commands, 'uname', 'printf "Darwin\\n"')
-    writeCommand(commands, 'route', 'printf "   interface: en7\\n"')
-    writeCommand(commands, 'ifconfig', `cat <<'EOF'\ninet 192.168.0.44 netmask 0xffffff00 broadcast 192.168.0.255\ninet 198.18.0.1 netmask 0xffffff00\nEOF`)
-    const environment = {
-      ...process.env,
-      BASE_AI_RUNTIME_DIR: runtime,
-      PATH: `${commands}:/usr/bin:/bin:/usr/sbin:/sbin`,
-    }
-    const output = execFileSync('/bin/sh', [hostIpTracker, 'detect'], {
-      encoding: 'utf8',
-      env: environment,
-    })
-    assert.equal(output, '192.168.0.44\n')
+test('IP 学习完全位于 Caddy 容器且不调用宿主机网络命令', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const entrypoint = await readFile(new URL('caddy/caddy-entrypoint.sh', root), 'utf8')
+  const helper = await readFile(new URL('caddy/ip-cert-helper.go', root), 'utf8')
 
-    execFileSync('/bin/sh', [hostIpTracker, 'refresh'], { env: environment })
-    assert.equal(readFileSync(join(runtime, 'host-ips'), 'utf8'), '192.168.0.44\n')
-    writeCommand(commands, 'ifconfig', 'printf "inet 192.168.0.45 netmask 0xffffff00\\n"')
-    execFileSync('/bin/sh', [hostIpTracker, 'refresh'], { env: environment })
-    assert.equal(readFileSync(join(runtime, 'host-ips'), 'utf8'), '192.168.0.45\n')
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
+  assert.doesNotMatch(`${compose}\n${entrypoint}`, /uname|ifconfig|route -n|ip -4|host-ips|\.runtime/)
+  assert.match(entrypoint, /--serve/)
+  assert.match(entrypoint, /--mode "\$CADDY_INGRESS_MODE"/)
+  assert.match(helper, /127\.0\.0\.1:2020/)
+  assert.match(helper, /StatusPermanentRedirect/)
+  assert.match(helper, /StatusTooManyRequests/)
 })
 
-test('Caddy 入口拒绝不完整证书、非法发现地址和越界端口', () => {
+test('Caddy 入口拒绝不完整证书、非法学习地址和越界端口', () => {
   for (const [overrides, message] of [
     [{ APP_DOMAIN: 'ai.example.com' }, 'must be configured together'],
     [{ CADDY_EXTERNAL_HTTPS_PORT: '65536' }, 'must be between 1 and 65535'],
@@ -204,11 +182,11 @@ test('Caddy 入口拒绝不完整证书、非法发现地址和越界端口', ()
   }
 
   for (const address of ['192.168.1.256', '192.168.001.10', 'host.example']) {
-    const result = withDiscoveredHosts(`${address}\n`, hostsFile => rejectIngress({
-      CADDY_DISCOVERED_HOSTS_FILE: hostsFile,
+    const result = withLearnedHosts(`${address}\n`, hostsFile => rejectIngress({
+      CADDY_LEARNED_HOSTS_FILE: hostsFile,
     }))
     assert.notEqual(result.status, 0)
-    assert.match(result.stderr, /discovered host address must be a valid IPv4 address/)
+    assert.match(result.stderr, /learned host address must be a valid IPv4 address/)
   }
 })
 
@@ -235,6 +213,7 @@ test('全部运行时镜像使用非 root 用户和最小 Linux 权限', async (
   assert.match(caddyDockerfile, /^ENTRYPOINT \["\/usr\/local\/bin\/base-ai-caddy-entrypoint"\]$/m)
   assert.match(caddyDockerfile, /^CMD \["run", "--config", "\/etc\/caddy\/Caddyfile", "--adapter", "caddyfile"\]$/m)
   assert.match(caddyDockerfile, /base-ai-ip-cert/)
+  assert.match(caddyEntrypointSource, /base-ai-ip-cert.*\\?\s*--serve/s)
   assert.match(caddyEntrypointSource, /caddy reload --force.*--address 127\.0\.0\.1:2019/)
   assert.match(ipCertificateHelper, /ExtKeyUsageServerAuth/)
   for (const [service, nextService] of [
