@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -23,67 +24,113 @@ import (
 	"time"
 )
 
-// 验证完整 YAML 语法、大小写规范化、锚点和重复域名去重。
-func TestReadDomainConfig(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "domains.yml")
-	contents := `domains:
-  - &primary "AI.Example.COM"
-  - *primary
-  - 'api.example.com'
+// 验证多个站点分组分别加载证书、规范化域名并生成仅当前用户可读的 PEM 包。
+func TestPrepareHTTPSSites(t *testing.T) {
+	directory := t.TempDir()
+	tlsRoot := filepath.Join(directory, "tls")
+	createTestDomainKeyPair(t, tlsRoot, "site-a", []string{"ai.example.com", "api.example.com"})
+	createTestDomainKeyPair(t, tlsRoot, "site-b", []string{"console.example.net"})
+	configPath := filepath.Join(directory, "https-sites.yml")
+	contents := `sites:
+  - domains: [&primary "AI.Example.COM", *primary, api.example.com]
+    tls_cert_file: site-a/fullchain.pem
+    tls_key_file: site-a/privkey.pem
+  - domains:
+      - console.example.net
+    tls_cert_file: site-b/fullchain.pem
+    tls_key_file: site-b/privkey.pem
 `
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	domains, err := readDomainConfig(path)
+	bundleDir := filepath.Join(directory, "bundles")
+	hosts, err := prepareHTTPSSites(configPath, tlsRoot, bundleDir)
 	if err != nil {
-		t.Fatalf("read domain configuration: %v", err)
+		t.Fatalf("prepare HTTPS sites: %v", err)
 	}
-	if got, want := strings.Join(domains, " "), "ai.example.com api.example.com"; got != want {
-		t.Fatalf("domains = %q, want %q", got, want)
+	if got, want := strings.Join(hosts, " "), "ai.example.com api.example.com console.example.net"; got != want {
+		t.Fatalf("hosts = %q, want %q", got, want)
+	}
+	entries, err := os.ReadDir(bundleDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(entries), 2; got != want {
+		t.Fatalf("bundle count = %d, want %d", got, want)
+	}
+	for _, entry := range entries {
+		path := filepath.Join(bundleDir, entry.Name())
+		bundle, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if _, parseErr := tls.X509KeyPair(bundle, bundle); parseErr != nil {
+			t.Fatalf("parse generated bundle %s: %v", entry.Name(), parseErr)
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("bundle mode = %v, err=%v", info.Mode().Perm(), statErr)
+		}
 	}
 }
 
-// 参数化验证空列表、未知字段、多文档和非法域名均拒绝启动。
-func TestReadDomainConfigRejectsInvalidConfiguration(t *testing.T) {
+// 参数化验证非法 schema、重复域名、路径越界、SAN 不匹配和密钥不匹配均被拒绝。
+func TestPrepareHTTPSSitesRejectsInvalidConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	tlsRoot := filepath.Join(directory, "tls")
+	createTestDomainKeyPair(t, tlsRoot, "site-a", []string{"ai.example.com"})
+	createTestDomainKeyPair(t, tlsRoot, "site-b", []string{"api.example.com"})
+	outsideCertificate := filepath.Join(directory, "outside.pem")
+	certificate, err := os.ReadFile(filepath.Join(tlsRoot, "site-a", "fullchain.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outsideCertificate, certificate, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideCertificate, filepath.Join(tlsRoot, "site-a", "escape.pem")); err != nil {
+		t.Fatal(err)
+	}
 	tests := map[string]string{
-		"empty list":      "domains: []\n",
-		"unknown field":   "domains: [ai.example.com]\nredirect: true\n",
-		"multiple docs":   "domains: [ai.example.com]\n---\ndomains: [api.example.com]\n",
-		"wildcard":        "domains: ['*.example.com']\n",
-		"scheme":          "domains: ['https://ai.example.com']\n",
-		"port":            "domains: ['ai.example.com:443']\n",
-		"empty item":      "domains: ['']\n",
-		"invalid label":   "domains: ['-ai.example.com']\n",
-		"non-string item": "domains: [42]\n",
+		"empty sites":       "sites: []\n",
+		"unknown field":     "sites: [{domains: [ai.example.com], tls_cert_file: site-a/fullchain.pem, tls_key_file: site-a/privkey.pem, redirect: true}]\n",
+		"multiple docs":     "sites: []\n---\nsites: []\n",
+		"non-string domain": "sites: [{domains: [42], tls_cert_file: site-a/fullchain.pem, tls_key_file: site-a/privkey.pem}]\n",
+		"wildcard":          "sites: [{domains: ['*.example.com'], tls_cert_file: site-a/fullchain.pem, tls_key_file: site-a/privkey.pem}]\n",
+		"path traversal":    "sites: [{domains: [ai.example.com], tls_cert_file: ../fullchain.pem, tls_key_file: site-a/privkey.pem}]\n",
+		"symlink traversal": "sites: [{domains: [ai.example.com], tls_cert_file: site-a/escape.pem, tls_key_file: site-a/privkey.pem}]\n",
+		"duplicate domain":  "sites: [{domains: [ai.example.com], tls_cert_file: site-a/fullchain.pem, tls_key_file: site-a/privkey.pem}, {domains: [AI.EXAMPLE.COM], tls_cert_file: site-b/fullchain.pem, tls_key_file: site-b/privkey.pem}]\n",
+		"SAN mismatch":      "sites: [{domains: [other.example.com], tls_cert_file: site-a/fullchain.pem, tls_key_file: site-a/privkey.pem}]\n",
+		"key mismatch":      "sites: [{domains: [ai.example.com], tls_cert_file: site-a/fullchain.pem, tls_key_file: site-b/privkey.pem}]\n",
 	}
 	for name, contents := range tests {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "domains.yml")
-			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			configPath := filepath.Join(t.TempDir(), "https-sites.yml")
+			if err := os.WriteFile(configPath, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := readDomainConfig(path); err == nil {
-				t.Fatal("invalid domain configuration unexpectedly succeeded")
+			if _, err := prepareHTTPSSites(configPath, tlsRoot, filepath.Join(t.TempDir(), "bundles")); err == nil {
+				t.Fatal("invalid HTTPS sites configuration unexpectedly succeeded")
 			}
 		})
 	}
 }
 
-// 验证域名清单的文件大小和条目数量上限。
-func TestReadDomainConfigRejectsResourceLimits(t *testing.T) {
+// 验证 HTTPS 站点配置的文件大小、分组数量和域名总数上限。
+func TestPrepareHTTPSSitesRejectsResourceLimits(t *testing.T) {
 	oversizedPath := filepath.Join(t.TempDir(), "oversized.yml")
-	if err := os.WriteFile(oversizedPath, []byte("domains: []\n#"+strings.Repeat("x", maxDomainConfigBytes)), 0o600); err != nil {
+	if err := os.WriteFile(oversizedPath, []byte("sites: []\n#"+strings.Repeat("x", maxHTTPSitesConfigBytes)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readDomainConfig(oversizedPath); err == nil {
-		t.Fatal("oversized domain configuration unexpectedly succeeded")
+	if _, err := prepareHTTPSSites(oversizedPath, t.TempDir(), filepath.Join(t.TempDir(), "bundles")); err == nil {
+		t.Fatal("oversized HTTPS sites configuration unexpectedly succeeded")
 	}
 
-	domains := make([]string, maxConfiguredDomains+1)
-	for index := range domains {
-		domains[index] = fmt.Sprintf("host-%d.example.com", index)
+	values := make([]string, maxConfiguredDomains+1)
+	for index := range values {
+		values[index] = fmt.Sprintf("host-%d.example.com", index)
 	}
-	if _, err := normalizeDomains(domains); err == nil {
+	if _, err := normalizeDomains(values); err == nil {
 		t.Fatal("domain count above limit unexpectedly succeeded")
 	}
 }
@@ -413,6 +460,40 @@ type testAuthorityPaths struct {
 	rootKey          string
 	intermediateCert string
 	intermediateKey  string
+}
+
+// 创建覆盖指定 DNS 名称的短期自签测试证书与匹配私钥。
+func createTestDomainKeyPair(t *testing.T, root, name string, domains []string) {
+	t.Helper()
+	directory := filepath.Join(root, name)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 6, 8, 0, 0, 0, time.UTC)
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(now.UnixNano() + int64(len(domains))),
+		Subject:      pkix.Name{CommonName: domains[0]},
+		DNSNames:     domains,
+		NotBefore:    now.Add(-time.Hour),
+		NotAfter:     now.Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	certificateDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCertificateAndKey(
+		t,
+		filepath.Join(directory, "fullchain.pem"),
+		filepath.Join(directory, "privkey.pem"),
+		certificateDER,
+		key,
+	)
 }
 
 // 创建仅供单元测试使用的根 CA 和中间 CA 文件。

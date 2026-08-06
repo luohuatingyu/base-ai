@@ -105,36 +105,41 @@ configure_ip_bootstrap_limits() {
 	export CADDY_CERT_CHECK_INTERVAL_SECONDS CADDY_IP_MIN_ISSUE_INTERVAL_SECONDS CADDY_IP_MAX_LEARNED_HOSTS
 }
 
-# 根据完整的 YAML 域名证书配置或 IP 配置选择唯一入口模式。
+# 根据完整的 YAML HTTPS 站点配置或 IP 配置选择唯一入口模式。
 configure_ingress() {
-	domain_file=${APP_DOMAIN_FILE:-}
-	cert_file=${TLS_CERT_FILE:-}
-	key_file=${TLS_KEY_FILE:-}
+	https_sites_file=${APP_HTTPS_SITES_FILE:-}
+	tls_certs_dir=${TLS_CERTS_DIR:-}
 	domain_config_count=0
-	is_set "$domain_file" && domain_config_count=$((domain_config_count + 1))
-	is_set "$cert_file" && domain_config_count=$((domain_config_count + 1))
-	is_set "$key_file" && domain_config_count=$((domain_config_count + 1))
+	is_set "$https_sites_file" && domain_config_count=$((domain_config_count + 1))
+	is_set "$tls_certs_dir" && domain_config_count=$((domain_config_count + 1))
 
-	if [ "$domain_config_count" -eq 3 ]; then
-		mounted_domain_file=${CADDY_DOMAIN_FILE:-/etc/caddy/domains.yml}
+	if [ "$domain_config_count" -eq 2 ]; then
+		mounted_sites_file=${CADDY_HTTPS_SITES_FILE:-/etc/caddy/https-sites.yml}
+		mounted_tls_root=${CADDY_TLS_ROOT:-/etc/caddy/tls}
 		ingress_helper=${CADDY_INGRESS_HELPER:-/usr/local/bin/base-ai-ip-cert}
-		[ -f "$mounted_domain_file" ] && [ -r "$mounted_domain_file" ] \
-			|| fail "APP_DOMAIN_FILE must reference a readable regular YAML file"
-		resolved_domains=$("$ingress_helper" --resolve-domain-file "$mounted_domain_file") \
-			|| fail "APP_DOMAIN_FILE contains an invalid domain configuration"
-		[ -n "$resolved_domains" ] || fail "APP_DOMAIN_FILE must contain at least one domain"
+		[ -f "$mounted_sites_file" ] && [ -r "$mounted_sites_file" ] \
+			|| fail "APP_HTTPS_SITES_FILE must reference a readable regular YAML file"
+		[ -d "$mounted_tls_root" ] && [ -r "$mounted_tls_root" ] \
+			|| fail "TLS_CERTS_DIR must reference a readable directory"
+		resolved_domains=$("$ingress_helper" \
+			--prepare-https-sites "$mounted_sites_file" \
+			--tls-root "$mounted_tls_root") \
+			|| fail "APP_HTTPS_SITES_FILE contains an invalid HTTPS sites configuration"
+		[ -n "$resolved_domains" ] || fail "APP_HTTPS_SITES_FILE must contain at least one domain"
 		CADDY_INGRESS_MODE=domain
 		CADDY_ALLOWED_HOSTS=''
 		CADDY_HTTPS_SITE_ADDRESSES=''
 		for domain in $resolved_domains; do
 			append_host "$domain"
 		done
-		CADDY_TLS_DIRECTIVE='tls /etc/caddy/tls/fullchain.pem /etc/caddy/tls/privkey.pem'
+		CADDY_TLS_DIRECTIVE='tls {
+		load /tmp/base-ai-https-tls
+	}'
 		CADDY_ADMIN_OPTION='admin off'
 		CADDY_DEFAULT_SNI_OPTION=''
 		CADDY_HTTP_FALLBACK='respond "Not Found" 404'
 	elif [ "$domain_config_count" -ne 0 ]; then
-		fail "APP_DOMAIN_FILE, TLS_CERT_FILE, and TLS_KEY_FILE must be configured together"
+		fail "APP_HTTPS_SITES_FILE and TLS_CERTS_DIR must be configured together"
 	else
 		CADDY_INGRESS_MODE=ip
 		CADDY_ALLOWED_HOSTS=''
@@ -183,7 +188,7 @@ serve_ip_bootstrap_forever() {
 # 启动前确认非 root Caddy 进程能够读取当前模式所需的有效证书文件。
 validate_certificate_files() {
 	if [ "$CADDY_INGRESS_MODE" = domain ]; then
-		certificate_files='/etc/caddy/tls/fullchain.pem /etc/caddy/tls/privkey.pem'
+		certificate_files='/tmp/base-ai-https-tls/*.pem'
 	else
 		certificate_files='/data/base-ai-tls/ip-fullchain.pem /data/base-ai-tls/ip-privkey.pem'
 	fi

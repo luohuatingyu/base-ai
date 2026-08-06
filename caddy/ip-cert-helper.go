@@ -7,6 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -42,12 +43,30 @@ const (
 	defaultCaddyConfig      = "/etc/caddy/Caddyfile"
 	defaultCaddyAdmin       = "127.0.0.1:2019"
 	defaultMaxLearnedHosts  = 32
-	maxDomainConfigBytes    = 64 * 1024
+	defaultHTTPSTLSRoot     = "/etc/caddy/tls"
+	defaultHTTPSBundleDir   = "/tmp/base-ai-https-tls"
+	maxHTTPSitesConfigBytes = 64 * 1024
+	maxConfiguredSites      = 64
 	maxConfiguredDomains    = 256
+	maxTLSFileBytes         = 4 * 1024 * 1024
 )
 
-type domainFileConfig struct {
-	Domains []yaml.Node `yaml:"domains"`
+type yamlString string
+
+type httpsSitesFileConfig struct {
+	Sites []httpsSiteFileEntry `yaml:"sites"`
+}
+
+type httpsSiteFileEntry struct {
+	Domains     []yamlString `yaml:"domains"`
+	TLSCertFile yamlString   `yaml:"tls_cert_file"`
+	TLSKeyFile  yamlString   `yaml:"tls_key_file"`
+}
+
+type httpsSiteConfig struct {
+	domains     []string
+	tlsCertFile string
+	tlsKeyFile  string
 }
 
 type certificateManager struct {
@@ -88,7 +107,8 @@ type fileSnapshot struct {
 // 主入口解析域名 YAML、回环主机名和 IP 列表，并确保入口证书可继续安全使用。
 func main() {
 	hostsValue := flag.String("hosts", "", "comma or whitespace separated localhost and IPv4 addresses")
-	domainFile := flag.String("resolve-domain-file", "", "parse and print domains from a YAML configuration file")
+	httpsSitesFile := flag.String("prepare-https-sites", "", "validate HTTPS sites YAML and prepare TLS bundles")
+	tlsRoot := flag.String("tls-root", defaultHTTPSTLSRoot, "root directory for HTTPS site certificate paths")
 	force := flag.Bool("force", false, "force certificate renewal")
 	serve := flag.Bool("serve", false, "serve request-driven IP certificate bootstrap requests")
 	resolveLearnedHosts := flag.Bool("resolve-learned-hosts", false, "print validated base and learned hosts")
@@ -126,8 +146,8 @@ func main() {
 		fmt.Println(formatCertificateHosts(names))
 		return
 	}
-	if *domainFile != "" {
-		domains, err := readDomainConfig(*domainFile)
+	if *httpsSitesFile != "" {
+		domains, err := prepareHTTPSSites(*httpsSitesFile, *tlsRoot, defaultHTTPSBundleDir)
 		if err != nil {
 			fatal(err)
 		}
@@ -162,63 +182,201 @@ func main() {
 	}
 }
 
-// 读取完整 YAML 语法的域名清单，并限制文件大小、字段、数量和文档个数。
-func readDomainConfig(path string) ([]string, error) {
+// 将 YAML 标量严格解析为字符串，禁止数字和布尔值隐式转换并支持锚点别名。
+func (value *yamlString) UnmarshalYAML(node *yaml.Node) error {
+	aliasDepth := 0
+	for node.Kind == yaml.AliasNode && node.Alias != nil {
+		node = node.Alias
+		aliasDepth++
+		if aliasDepth > maxConfiguredDomains {
+			return errors.New("HTTPS sites configuration contains an invalid YAML alias cycle")
+		}
+	}
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
+		return errors.New("HTTPS site values must be YAML strings")
+	}
+	*value = yamlString(node.Value)
+	return nil
+}
+
+// 读取完整 YAML 语法的 HTTPS 站点分组，并限制字段、数量、路径和文档个数。
+func readHTTPSSitesConfig(path string) ([]httpsSiteConfig, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open domain configuration: %w", err)
+		return nil, fmt.Errorf("open HTTPS sites configuration: %w", err)
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("inspect domain configuration: %w", err)
+		return nil, fmt.Errorf("inspect HTTPS sites configuration: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, errors.New("domain configuration must be a regular file")
+		return nil, errors.New("HTTPS sites configuration must be a regular file")
 	}
-	if info.Size() > maxDomainConfigBytes {
-		return nil, fmt.Errorf("domain configuration exceeds %d bytes", maxDomainConfigBytes)
+	if info.Size() > maxHTTPSitesConfigBytes {
+		return nil, fmt.Errorf("HTTPS sites configuration exceeds %d bytes", maxHTTPSitesConfigBytes)
 	}
 
-	decoder := yaml.NewDecoder(io.LimitReader(file, maxDomainConfigBytes+1))
+	decoder := yaml.NewDecoder(io.LimitReader(file, maxHTTPSitesConfigBytes+1))
 	decoder.KnownFields(true)
-	config := domainFileConfig{}
+	config := httpsSitesFileConfig{}
 	if err := decoder.Decode(&config); err != nil {
-		return nil, fmt.Errorf("parse domain configuration: %w", err)
+		return nil, fmt.Errorf("parse HTTPS sites configuration: %w", err)
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err != nil {
-			return nil, fmt.Errorf("parse domain configuration: %w", err)
+			return nil, fmt.Errorf("parse HTTPS sites configuration: %w", err)
 		}
-		return nil, errors.New("domain configuration must contain exactly one YAML document")
+		return nil, errors.New("HTTPS sites configuration must contain exactly one YAML document")
 	}
-	values, err := domainNodeValues(config.Domains)
+	if len(config.Sites) == 0 {
+		return nil, errors.New("HTTPS sites configuration must contain at least one site")
+	}
+	if len(config.Sites) > maxConfiguredSites {
+		return nil, fmt.Errorf("HTTPS sites configuration cannot contain more than %d sites", maxConfiguredSites)
+	}
+
+	result := make([]httpsSiteConfig, 0, len(config.Sites))
+	seenDomains := make(map[string]struct{})
+	totalDomains := 0
+	for index, entry := range config.Sites {
+		values := make([]string, 0, len(entry.Domains))
+		for _, domain := range entry.Domains {
+			values = append(values, string(domain))
+		}
+		domains, normalizeErr := normalizeDomains(values)
+		if normalizeErr != nil {
+			return nil, fmt.Errorf("HTTPS site %d: %w", index+1, normalizeErr)
+		}
+		totalDomains += len(domains)
+		if totalDomains > maxConfiguredDomains {
+			return nil, fmt.Errorf("HTTPS sites configuration cannot contain more than %d total domains", maxConfiguredDomains)
+		}
+		for _, domain := range domains {
+			if _, exists := seenDomains[domain]; exists {
+				return nil, fmt.Errorf("domain %q is configured in more than one HTTPS site", domain)
+			}
+			seenDomains[domain] = struct{}{}
+		}
+		certFile, pathErr := normalizeTLSRelativePath(string(entry.TLSCertFile))
+		if pathErr != nil {
+			return nil, fmt.Errorf("HTTPS site %d tls_cert_file: %w", index+1, pathErr)
+		}
+		keyFile, pathErr := normalizeTLSRelativePath(string(entry.TLSKeyFile))
+		if pathErr != nil {
+			return nil, fmt.Errorf("HTTPS site %d tls_key_file: %w", index+1, pathErr)
+		}
+		if certFile == keyFile {
+			return nil, fmt.Errorf("HTTPS site %d certificate and key paths must differ", index+1)
+		}
+		result = append(result, httpsSiteConfig{domains: domains, tlsCertFile: certFile, tlsKeyFile: keyFile})
+	}
+	return result, nil
+}
+
+// 规范化证书根目录下的相对路径，禁止绝对路径和父目录逃逸。
+func normalizeTLSRelativePath(value string) (string, error) {
+	path := strings.TrimSpace(value)
+	if path == "" {
+		return "", errors.New("path must not be empty")
+	}
+	if filepath.IsAbs(path) || !filepath.IsLocal(path) || strings.Contains(path, "\\") {
+		return "", errors.New("path must stay relative to TLS_CERTS_DIR")
+	}
+	return filepath.Clean(path), nil
+}
+
+// 校验证书分组并生成供 Caddy 按 SNI 选择的临时证书私钥合并包。
+func prepareHTTPSSites(configPath, tlsRoot, bundleDir string) ([]string, error) {
+	sites, err := readHTTPSSitesConfig(configPath)
 	if err != nil {
 		return nil, err
 	}
-	return normalizeDomains(values)
-}
-
-// 提取显式 YAML 字符串节点，并安全解析锚点别名，禁止数字和布尔值隐式转型。
-func domainNodeValues(nodes []yaml.Node) ([]string, error) {
-	values := make([]string, 0, len(nodes))
-	for index := range nodes {
-		node := &nodes[index]
-		aliasDepth := 0
-		for node.Kind == yaml.AliasNode && node.Alias != nil {
-			node = node.Alias
-			aliasDepth++
-			if aliasDepth > maxConfiguredDomains {
-				return nil, errors.New("domain configuration contains an invalid YAML alias cycle")
+	hosts := make([]string, 0)
+	bundles := make([][]byte, 0, len(sites))
+	for index, site := range sites {
+		certificatePEM, readErr := readTLSRootFile(tlsRoot, site.tlsCertFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("HTTPS site %d certificate: %w", index+1, readErr)
+		}
+		keyPEM, readErr := readTLSRootFile(tlsRoot, site.tlsKeyFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("HTTPS site %d private key: %w", index+1, readErr)
+		}
+		keyPair, pairErr := tls.X509KeyPair(certificatePEM, keyPEM)
+		if pairErr != nil {
+			return nil, fmt.Errorf("HTTPS site %d certificate and key: %w", index+1, pairErr)
+		}
+		leaf, parseErr := x509.ParseCertificate(keyPair.Certificate[0])
+		if parseErr != nil {
+			return nil, fmt.Errorf("HTTPS site %d leaf certificate: %w", index+1, parseErr)
+		}
+		for _, domain := range site.domains {
+			if verifyErr := leaf.VerifyHostname(domain); verifyErr != nil {
+				return nil, fmt.Errorf("HTTPS site %d certificate does not cover %q: %w", index+1, domain, verifyErr)
 			}
 		}
-		if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
-			return nil, errors.New("domain configuration entries must be YAML strings")
-		}
-		values = append(values, node.Value)
+		bundle := append([]byte{}, bytes.TrimSpace(certificatePEM)...)
+		bundle = append(bundle, '\n')
+		bundle = append(bundle, bytes.TrimSpace(keyPEM)...)
+		bundle = append(bundle, '\n')
+		bundles = append(bundles, bundle)
+		hosts = append(hosts, site.domains...)
 	}
-	return values, nil
+	if err := writeTLSBundles(bundleDir, bundles); err != nil {
+		return nil, err
+	}
+	return hosts, nil
+}
+
+// 在已挂载证书根目录内解析真实路径，阻止符号链接逃逸并限制文件类型和大小。
+func readTLSRootFile(root, relativePath string) ([]byte, error) {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve TLS_CERTS_DIR: %w", err)
+	}
+	rootInfo, err := os.Stat(resolvedRoot)
+	if err != nil || !rootInfo.IsDir() {
+		return nil, errors.New("TLS_CERTS_DIR must be a readable directory")
+	}
+	resolvedPath, err := filepath.EvalSymlinks(filepath.Join(resolvedRoot, relativePath))
+	if err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", relativePath, err)
+	}
+	relativeToRoot, err := filepath.Rel(resolvedRoot, resolvedPath)
+	if err != nil || !filepath.IsLocal(relativeToRoot) {
+		return nil, fmt.Errorf("path %q escapes TLS_CERTS_DIR", relativePath)
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("path %q must be a readable regular file", relativePath)
+	}
+	if info.Size() == 0 || info.Size() > maxTLSFileBytes {
+		return nil, fmt.Errorf("path %q must contain between 1 and %d bytes", relativePath, maxTLSFileBytes)
+	}
+	contents, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("read %q: %w", relativePath, err)
+	}
+	return contents, nil
+}
+
+// 清理旧临时包并以最小权限写入本次验证通过的全部证书包。
+func writeTLSBundles(directory string, bundles [][]byte) error {
+	if err := os.RemoveAll(directory); err != nil {
+		return fmt.Errorf("clear HTTPS TLS bundle directory: %w", err)
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return fmt.Errorf("create HTTPS TLS bundle directory: %w", err)
+	}
+	for index, bundle := range bundles {
+		path := filepath.Join(directory, fmt.Sprintf("site-%03d.pem", index+1))
+		if err := os.WriteFile(path, bundle, 0o600); err != nil {
+			return fmt.Errorf("write HTTPS TLS bundle %d: %w", index+1, err)
+		}
+	}
+	return nil
 }
 
 // 规范化并去重域名，确保生成的 Caddy 地址和 Host 匹配值不含配置注入内容。
@@ -279,7 +437,7 @@ type bootstrapServerConfig struct {
 
 // 输出不含密钥内容的错误并以失败状态退出。
 func fatal(err error) {
-	fmt.Fprintf(os.Stderr, "IP certificate error: %v\n", err)
+	fmt.Fprintf(os.Stderr, "Caddy ingress helper error: %v\n", err)
 	os.Exit(1)
 }
 

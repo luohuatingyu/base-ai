@@ -1,0 +1,37 @@
+# Caddy HTTPS 站点与证书分组占位文件。
+#
+# APP_HTTPS_SITES_FILE 和 TLS_CERTS_DIR 留空时，Docker Compose 会挂载本文件
+# 和空 TLS 目录。入口脚本在 IP 模式下不会解析本配置，因此必须保留空列表，
+# 避免示例域名和证书意外生效。
+#
+# 启用域名证书模式时：
+# 1. 将本文件复制到仓库外，例如 /etc/base-ai/https-sites.yml。
+# 2. 将 sites: [] 替换为文件末尾注释中的站点分组。
+# 3. 将所有证书和私钥放在同一个宿主机根目录下。
+# 4. 在 .env 中同时配置 APP_HTTPS_SITES_FILE 和 TLS_CERTS_DIR。
+# 5. YAML 中的证书路径必须相对于 TLS_CERTS_DIR，且不能使用 .. 越界。
+# 6. 修改配置或更新证书后，执行 docker compose restart caddy。
+#
+# 配置约束：
+# - 顶层只允许 sites；每组只允许 domains、tls_cert_file、tls_key_file。
+# - 每组 domains 可包含多个具体域名，并绑定一对匹配的证书和私钥。
+# - 同一域名不能出现在不同分组；域名不接受协议、端口、路径或通配符。
+# - 证书 SAN 必须覆盖所属分组内的全部域名，证书与私钥必须匹配。
+# - 最多 64 个分组、合计 256 个域名，文件最大 64 KiB，且仅允许一个文档。
+sites: []
+
+# 完整双证书示例（复制文件后取消注释，并删除上面的 sites: []）：
+#
+# sites:
+#   # 第一张证书同时覆盖 Web 与 API 域名。
+#   - domains:
+#       - ai.example.com
+#       - api.example.com
+#     tls_cert_file: site-a/fullchain.pem
+#     tls_key_file: site-a/privkey.pem
+#
+#   # 第二张证书仅覆盖另一个控制台域名。
+#   - domains:
+#       - console.example.net
+#     tls_cert_file: site-b/fullchain.pem
+#     tls_key_file: site-b/privkey.pem

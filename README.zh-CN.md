@@ -201,7 +201,7 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
-- **HTTPS 入口、端口和镜像：** `APP_DOMAIN_FILE`、`TLS_CERT_FILE`、`TLS_KEY_FILE`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
+- **HTTPS 入口、端口和镜像：** `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
 Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
@@ -210,25 +210,34 @@ Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范�
 
 Caddy 根据配置自动选择一种入口模式：
 
-- **域名证书模式：** `APP_DOMAIN_FILE`、`TLS_CERT_FILE` 和 `TLS_KEY_FILE` 必须同时配置。YAML 清单可包含一个或多个域名；同一张证书必须覆盖清单内全部域名，并使用包含中间证书的 PEM 完整链。私钥应为无交互密码的 PEM 文件。三项只配置一部分时 Caddy 会拒绝启动，不会降级到 HTTP。
-- **IP 内部 CA 模式：** 上述三项全部留空后生效。项目始终将 `localhost` 和 `127.0.0.1` 加入证书；其他 IPv4 在客户端首次通过 HTTP 访问时自动学习，无需填写或探测宿主机 IP。Caddy 持久化内部 CA 和已学习地址，签发包含全部当前地址的多 SAN 证书，访问设备必须信任 Caddy 根证书。
+- **域名证书模式：** `APP_HTTPS_SITES_FILE` 和 `TLS_CERTS_DIR` 必须同时配置。YAML 中每个 `sites` 分组包含一个或多个 `domains`，并绑定自己的 `tls_cert_file` 和 `tls_key_file`。证书应为包含中间证书的 PEM 完整链，私钥应为无交互密码的 PEM 文件。两项只配置一部分时 Caddy 会拒绝启动，不会降级到 HTTP。
+- **IP 内部 CA 模式：** 上述两项全部留空后生效。项目始终将 `localhost` 和 `127.0.0.1` 加入证书；其他 IPv4 在客户端首次通过 HTTP 访问时自动学习，无需填写或探测宿主机 IP。Caddy 持久化内部 CA 和已学习地址，签发包含全部当前地址的多 SAN 证书，访问设备必须信任 Caddy 根证书。
 
-创建域名清单，例如 `/absolute/path/domains.yml`：
+创建 HTTPS 站点清单，例如 `/absolute/path/https-sites.yml`：
 
 ```yaml
-domains:
-  - ai.example.com
-  - api.example.com
+sites:
+  - domains:
+      - ai.example.com
+      - api.example.com
+    tls_cert_file: site-a/fullchain.pem
+    tls_key_file: site-a/privkey.pem
+
+  - domains:
+      - console.example.net
+    tls_cert_file: site-b/fullchain.pem
+    tls_key_file: site-b/privkey.pem
 ```
 
-配置支持完整 YAML 语法，包括块列表、行内列表、引号、注释和锚点，但顶层只允许 `domains` 字段。文件最大 64 KiB、最多 256 项，域名会转为小写并去重。每项必须是不含协议、端口、路径和通配符的 ASCII DNS 主机名；空清单、未知字段、多 YAML 文档或非法域名会导致 Caddy 拒绝启动。
+证书目录可按 `site-a/`、`site-b/` 分组；YAML 中的路径相对于 `TLS_CERTS_DIR`，不能使用绝对路径或 `..` 越界。启动时会验证证书与私钥匹配，并验证证书 SAN 覆盖所属分组的全部域名。同一域名不能跨组重复。
+
+配置支持完整 YAML 语法，包括块/行内列表、引号、注释和锚点，但顶层只允许 `sites`，每组只允许 `domains`、`tls_cert_file` 和 `tls_key_file`。文件最大 64 KiB、最多 64 个分组和 256 个域名；域名会转为小写并在组内去重。域名必须是不含协议、端口、路径和通配符的 ASCII DNS 主机名。
 
 多域名使用标准端口的示例：
 
 ```dotenv
-APP_DOMAIN_FILE=/absolute/path/domains.yml
-TLS_CERT_FILE=/absolute/path/fullchain.pem
-TLS_KEY_FILE=/absolute/path/privkey.pem
+APP_HTTPS_SITES_FILE=/absolute/path/https-sites.yml
+TLS_CERTS_DIR=/absolute/path/tls
 HTTP_PORT=80
 HTTPS_PORT=443
 APP_SESSION_COOKIE_SECURE=true
@@ -237,9 +246,8 @@ APP_SESSION_COOKIE_SECURE=true
 IP 请求驱动签发模式的示例：
 
 ```dotenv
-APP_DOMAIN_FILE=
-TLS_CERT_FILE=
-TLS_KEY_FILE=
+APP_HTTPS_SITES_FILE=
+TLS_CERTS_DIR=
 TLS_CERT_CHECK_INTERVAL_SECONDS=3600
 IP_CERT_MIN_ISSUE_INTERVAL_SECONDS=5
 IP_CERT_MAX_LEARNED_HOSTS=32
@@ -254,14 +262,14 @@ IP 模式不运行宿主机探测器，也不调用 `uname`、`route`、`ifconfi
 
 IP 证书目标有效期为 30 天，且不会超过 Caddy 中间 CA 的剩余有效期。地址 SAN、中间 CA 或有效期需要更新时会自动重新签发，并通过只监听容器回环地址的管理接口热加载。签发、地址持久化或热加载失败时返回 HTTP 503 并恢复旧状态；后台按 `TLS_CERT_CHECK_INTERVAL_SECONDS` 检查续期，失败时保留当前证书并在下一周期重试。
 
-域名清单、证书和私钥以只读文件挂载，Caddy 使用容器 UID `10001`。Linux 主机应通过专用组或 ACL 授予该 UID 读取文件及遍历父目录的权限，不要将私钥设置为所有用户可读。可在启动前验证容器用户权限：
+站点清单和证书根目录以只读方式挂载，Caddy 使用容器 UID `10001`。Linux 主机应通过专用组或 ACL 授予该 UID 读取文件及遍历目录的权限，不要将私钥设置为所有用户可读。可在启动前验证容器用户权限：
 
 ```bash
 docker compose run --rm --entrypoint sh caddy -c \
-  'test -r /etc/caddy/domains.yml && test -r /etc/caddy/tls/fullchain.pem && test -r /etc/caddy/tls/privkey.pem'
+  'test -r /etc/caddy/https-sites.yml && test -r /etc/caddy/tls/site-a/fullchain.pem && test -r /etc/caddy/tls/site-a/privkey.pem'
 ```
 
-修改域名清单或替换续期后的域名证书文件后，执行 `docker compose restart caddy` 重新加载。项目不会修改清单，也不会自动续期宿主机上的证书。
+修改站点清单或替换续期后的域名证书文件后，执行 `docker compose restart caddy` 重新验证并加载全部分组。项目不会修改清单，也不会自动续期宿主机上的证书。
 
 ## 使用 Docker Compose 启动
 
