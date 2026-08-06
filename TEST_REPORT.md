@@ -1,5 +1,108 @@
 # 最近分支覆盖测试报告
 
+## 📋 YAML 多域名 HTTPS 入口测试结果（2026-08-06）
+
+### Git 基准点
+
+Commit: 92d65da884384c51dfeb64715142d95c5c7fa537
+- 提交说明: Support YAML domain lists for HTTPS ingress
+- 测试日期: 2026-08-06
+- 分支: master
+- 上一测试基准点: `9fa8f2e8031572e94342dc5a164dda7498a77198`
+
+### 变更范围
+
+- 域名证书模式由单值 `APP_DOMAIN` 改为 `APP_DOMAIN_FILE`，通过只读挂载的 YAML 文件维护一个或多个域名；原 `APP_DOMAIN` 配置入口已移除。
+- YAML 使用固定的 `gopkg.in/yaml.v3 v3.0.1` 完整解析器，schema 只接受顶层 `domains` 字符串列表；支持块/行内列表、引号、注释和锚点。
+- 域名统一转为小写并去重，逐项拒绝协议、端口、路径、通配符、非 ASCII、非法标签和隐式数字/布尔值；同时限制单文件 64 KiB、最多 256 项、仅一个 YAML 文档。
+- Caddy 为全部规范化域名生成 HTTPS site 地址及 HTTP Host 白名单；每个允许域名均重定向到自身 HTTPS 地址，未知 Host 和内部接口继续返回 404。
+- Compose 新增域名清单只读挂载和 IP 模式占位文件；域名清单、完整证书链和私钥仍必须同时配置，一张证书必须覆盖清单内全部域名。
+- 未修改 `backend/src/main/java/`、数据库结构、业务数据或前端业务行为。
+
+### 测试执行结果
+
+- 自动化测试合计：514/514 通过（100%），失败 0，错误 0，跳过 0。
+- 后端完整测试：287/287 通过，Maven BUILD SUCCESS。
+- 前端完整测试：189/189 通过，其中 Caddy 部署契约 11/11 通过。
+- Python Worker 完整测试：26/26 通过，使用 Python 3.12.13 和锁定开发依赖。
+- Caddy Go 单元测试：12/12 通过，Go vet 通过。
+- Docker Compose：`docker compose up --build -d` 完整构建成功，Backend、Python Worker、Frontend、Caddy 全部 healthy。
+- 双域名运行态：`ai.test` 与 `api.test` 的 HTTPS 均返回 200，HTTP 均返回保留路径和查询参数的 308；未知 Host 与内部接口均返回 404。
+
+### 关键模块测试
+
+- YAML 域名解析：3 个新增 Go 用例覆盖完整 YAML 语法、锚点、大小写规范化、重复项、未知字段、多文档、非字符串标量、非法域名、文件大小和条目数量限制；Caddy Go 合计 12/12 通过。
+- Caddy 入口契约：11/11 通过，覆盖 `APP_DOMAIN` 移除、YAML 挂载、多域名转换、缺失/空白/解析失败配置、IP 模式兼容、端口和安全边界。
+- 运行态入口：临时双 SAN 证书和含大小写重复项的 YAML 清单验证两个域名的 TLS、HTTP 跳转、Host 白名单及内部接口隔离。
+- 完整回归：Backend 287/287、Frontend 189/189、Python Worker 26/26，无历史功能回归。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| YAML 维护一个或多个域名 | Go 单元、入口契约；块列表、引号、锚点、单域名和双域名 | 完整解析并输出稳定域名顺序；符合预期 | 正常、兼容 |
+| 全部域名同时响应 | 运行态；双 SAN 临时证书，`ai.test`、`api.test` | 两个 HTTPS 健康检查均 200；符合预期 | 正常、集成 |
+| HTTP 按请求域名安全跳转 | 运行态；两个域名请求 `/probe?x=1` | 均返回 308，目标保留对应 Host、路径和查询；符合预期 | 正常、安全 |
+| 域名规范化和去重 | Go 单元及运行态；`AI.TEST`、`ai.test`、`api.test` | 解析为 `ai.test api.test`，无重复 site；符合预期 | 边界、兼容 |
+| 非法 YAML 和域名拒绝启动 | 参数化 Go/入口测试；空列表、未知字段、多文档、数字、通配符、URL、端口、非法标签 | 全部失败并返回明确错误；符合预期 | 异常、安全 |
+| 资源上限有效 | Go 单元；超过 64 KiB 和超过 256 项 | 均拒绝解析；符合预期 | 边界、安全 |
+| 域名配置必须完整 | 入口契约；仅配置清单路径或缺失挂载文件 | 拒绝启动，不降级到 IP 模式；符合预期 | 异常、安全 |
+| 未知 Host 与内部接口保持隔离 | 运行态；未知域名及 `/api/internal/health` | 均返回 404；符合预期 | 权限、安全、回归 |
+| IP 模式保持兼容 | 入口契约及 Compose 重建；域名三项留空 | localhost、127.0.0.1 和已学习 IP 行为不变；符合预期 | 兼容、回归 |
+| 历史业务功能不回归 | Backend、Frontend、Worker 完整套件 | 502 项业务与前端自动化测试全部通过；符合预期 | 回归、异常、权限 |
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Caddy Go 单元与静态检查 | 固定 Go 1.26.5 容器执行 `gofmt`、`go test`、`go vet` | 12/12 通过，vet 通过 |
+| 部署定向测试 | `node --test frontend/test/security-deployment.test.mjs` | 11/11 通过 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 189/189 通过 |
+| 后端完整回归 | 固定 Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 287/287 通过，BUILD SUCCESS |
+| Worker 完整回归 | Python 3.12.13 容器安装 `requirements-dev.txt` 后执行 pytest | 26/26 通过 |
+| Compose 静态与 Shell 校验 | `docker compose config --quiet`、`sh -n caddy/caddy-entrypoint.sh`、`git diff --check` | 全部通过 |
+| Compose 统一重建 | `docker compose up --build -d` | 首次因 80/443 被占用失败；停止占用容器后重试成功，四服务 healthy |
+| YAML 解析运行态 | 含 `AI.TEST`、`api.test`、`ai.test` 的完整 YAML | 输出 `ai.test api.test`；符合预期 |
+| 双域名 TLS | 临时双 SAN 自签证书及 curl `--cacert --resolve` | 两个域名 HTTPS 均 200 |
+| HTTP 跳转和入口隔离 | 两个允许域名、未知 Host、内部接口 | 结果依次为 308、308、404、404 |
+| 测试资源清理 | 停止临时容器并删除 `/tmp/base-ai-domain-runtime-test` | 临时容器、YAML、证书和私钥均已清理 |
+
+### 测试过程问题与处理
+
+- 宿主机未安装 Maven，按既有固定版本改用 Maven 3.9.9 / Java 17 容器运行完整后端测试，287/287 通过。
+- YAML 库会把未加引号的数字标量转换成字符串；首次 Go 测试通过 `domains: [42]` 稳定发现该边界。实现改为检查 YAML 节点必须显式为字符串，重跑后 12/12 通过。
+- 首次 Compose 启动因 `domestic-trade-caddy` 占用宿主机 80/443 失败；按仓库规则停止该容器后重新执行完整命令，四个本项目服务全部 healthy。该外部容器当前保持停止，避免再次争用端口。
+- 首次两条 HTTP 跳转 curl 命令因 zsh 将未加引号 URL 中的 `?` 解析为通配符而未发出请求；修正 URL 引号后两项均返回预期 308，不属于服务失败。
+- 临时运行态测试使用自签双 SAN 证书，没有改动 `.env`、系统信任库、业务数据或 Caddy 命名卷；测试文件及容器已清理。
+
+### 重测触发条件
+
+- 修改 `APP_DOMAIN_FILE` schema、YAML 解析依赖、域名规范化/校验、资源上限或错误处理。
+- 修改 Caddyfile、入口脚本、Compose 域名/证书挂载、Host 白名单、HTTPS site 或 HTTP 跳转行为。
+- 修改证书格式、域名清单加载/重启流程、IP 学习模式或入口安全边界。
+- 修改 `backend/src/main/java/`、Controller、Service、Repository、Domain、认证授权或核心业务配置。
+
+### 已知问题
+
+- 未使用真实公网 DNS、生产 CA 证书、外部负载均衡器或浏览器执行验收；运行态使用两个本地域名和临时双 SAN 自签证书完成等价 TLS/路由验证。
+- YAML 或证书文件变化不会自动热加载，维护后必须执行 `docker compose restart caddy`。
+- YAML 域名项不接受通配符；证书本身可以使用覆盖全部具体清单域名的 SAN 或通配符证书。
+- 前端生产构建仍提示主包超过 500 kB，该既有性能告警与本次入口变更无关。
+
+### 下次测试建议
+
+1. 在目标 Linux 主机使用真实域名和生产多 SAN/通配符证书，验证文件 ACL、DNS、外部 80/443、防火墙及续期重启流程。
+2. 增加受控浏览器 E2E，覆盖两个域名的登录 Cookie、CSRF、HSTS 和跨域名会话隔离预期。
+3. 如未来需要自动加载 YAML 或证书变化，设计文件监听、失败回滚和不中断 reload 测试后再扩展。
+
+### 回滚方式
+
+- 回滚实现提交 `92d65da`，恢复 `APP_DOMAIN` 单域名配置，并执行 `docker compose up --build -d`。
+- 回滚前将部署环境从 `APP_DOMAIN_FILE` 改回单个 `APP_DOMAIN`；证书和私钥路径保持不变。
+- 本次没有数据库迁移、数据回填或业务数据修改，无需数据库逆向处理；Caddy data/config 命名卷可以保留。
+
+---
+
 ## 📋 请求驱动 IP 证书签发测试结果（2026-08-06）
 
 ### Git 基准点
