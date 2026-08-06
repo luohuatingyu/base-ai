@@ -11,13 +11,15 @@ import {
   silenceHttpError
 } from '../utils/httpError'
 
-const tokenKey = `${appConfig.code}-token`
-
 const http = axios.create({ baseURL: '/api', timeout: 65000 })
+const csrfCookieName = `BAI_${appConfig.code.replace(/[^A-Za-z0-9_-]/g, '_')}_CSRF`
 
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem(tokenKey)
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  const csrfToken = document.cookie.split(';').map(value => value.trim())
+    .find(value => value.startsWith(`${csrfCookieName}=`))?.slice(csrfCookieName.length + 1)
+  if (csrfToken && !['get', 'head', 'options'].includes(String(config.method || 'get').toLowerCase())) {
+    config.headers['X-CSRF-Token'] = decodeURIComponent(csrfToken)
+  }
   // 每次请求读取当前界面语言，切换语言后无需刷新页面。
   config.headers['Accept-Language'] = i18n.global.locale.value
   return config
@@ -28,8 +30,7 @@ http.interceptors.response.use(
   async (error) => {
     await normalizeHttpErrorResponse(error)
     if (error.response?.status === 401) {
-      localStorage.removeItem(tokenKey)
-      if (location.pathname !== '/login') {
+      if (!error.config?.skipAuthRedirect && location.pathname !== '/login') {
         silenceHttpError(error)
         const redirect = `${location.pathname}${location.search}${location.hash}`
         location.href = `/login?redirect=${encodeURIComponent(redirect)}`

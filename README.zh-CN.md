@@ -12,7 +12,7 @@ Base AI 是一个可扩展的管理与 AI 集成平台，由 Vue 管理控制台
 - 支持英文和简体中文界面，以及本地化 API 消息。
 - 可在管理控制台中管理模型供应商、模型和能力路由。
 - 通过兼容 OpenAI 的供应商提供文本及多模态对话，支持候选模型故障切换、并发限制和 Token 统计。
-- 支持 Bearer Token 会话，以及带有效期、吊销、IP 白名单和限流能力的 `X-API-Key` 凭据。
+- 浏览器会话使用带签名 CSRF 防护的 HttpOnly Cookie，同时兼容 Bearer Token 客户端，并提供带有效期、吊销、IP 白名单和限流能力的 `X-API-Key` 凭据。
 - 支持跨服务任务追踪、任务取消、任务恢复、操作日志和登录日志。
 - 支持手动和基于 Cron 的 HTTP 自动化，并提供加密请求配置与目标 Host 访问控制。
 - 支持运行时平台品牌和语言配置。
@@ -123,7 +123,7 @@ curl -X POST http://localhost/api/ai/chat \
 - 实际访问范围是 Key 选中的接口与绑定用户 RBAC 权限的交集。
 - 绑定用户和 Key 都必须保持启用，同时还会校验有效期、吊销状态、IP 白名单和调用频率限制。
 - 请求不得同时携带 `Authorization` 和 `X-API-Key`；混合凭据会返回 HTTP 401。
-- API Key 管理接口本身仅接受 Bearer Token。
+- API Key 管理接口接受浏览器登录态或 Bearer Token，但不接受 API Key 自身认证。
 - `APP_API_KEY_HASH_SECRET` 建议使用独立密钥；未设置时会复用 `APP_CONFIG_ENCRYPTION_KEY`。
 
 当前支持 API Key 的接口包括 AI 对话调用和正式的接口触发执行。
@@ -201,7 +201,7 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
-- **端口和镜像：** `BACKEND_PORT`、`FRONTEND_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。
+- **TLS 入口、端口和镜像：** `CADDY_SITE_ADDRESS`、`CADDY_TLS_DIRECTIVE`、`CADDY_HTTPS_ORIGIN`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。`CADDY_HTTPS_ORIGIN` 必须填写客户端实际访问的 HTTPS 地址，使用非标准端口时需包含端口。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
 Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
@@ -218,10 +218,14 @@ docker compose ps
 
 所有服务进入健康状态后，可访问：
 
-- Web 控制台：<http://localhost>
-- 后端 API：<http://localhost:8080>
-- 后端健康检查：<http://localhost:8080/api/open/health>
-- 前端健康检查：<http://localhost/health>
+- Web 控制台：<https://localhost>
+- 后端 API 和开放平台：<https://localhost/api>
+- 统一健康检查：<https://localhost/api/open/health>
+- 后端存活检查：<https://localhost/api/open/health/live>
+- 后端就绪检查：<https://localhost/api/open/health/ready>
+- Caddy 健康检查：<https://localhost/health>
+
+统一健康检查和就绪检查仅在 MySQL、PostgreSQL、Redis 与 Python Worker 全部可用时返回 HTTP 200，否则返回 HTTP 503。公网入口对 `/api/internal` 路径统一返回 HTTP 404，Java 与 Worker 之间仍通过 Docker 内部网络直连。
 
 首次初始化后，使用 `APP_SEED_ADMIN_USERNAME` 配置的用户名和 `APP_SEED_ADMIN_PASSWORD` 配置的密码登录。初始管理员、角色、权限树、根部门和模型类型字典会自动创建。
 

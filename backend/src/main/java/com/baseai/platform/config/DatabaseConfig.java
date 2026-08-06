@@ -73,6 +73,7 @@ public class DatabaseConfig {
         dataSource.setPassword(properties.getPassword());
         dataSource.setDriverClassName(properties.getDriverClassName());
         dataSource.setMaximumPoolSize(properties.getMaximumPoolSize());
+        dataSource.setConnectionTimeout(properties.getConnectionTimeoutMs());
         dataSource.setMinimumIdle((properties.getMaximumPoolSize() + 1) / 2);
         return dataSource;
     }

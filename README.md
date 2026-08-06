@@ -12,7 +12,7 @@ The platform provides identity and access management, OpenAI-compatible model ro
 - English and Simplified Chinese interfaces and localized API messages.
 - Model provider, model, and capability-route management from the administration console.
 - Text and multimodal chat through OpenAI-compatible providers, with candidate failover, concurrency limits, and token accounting.
-- Bearer-token sessions and scoped `X-API-Key` credentials with expiry, revocation, IP allowlists, and rate limits.
+- HttpOnly-cookie browser sessions with signed CSRF protection, compatible Bearer-token clients, and scoped `X-API-Key` credentials with expiry, revocation, IP allowlists, and rate limits.
 - Cross-service task tracing, cancellation, recovery, operation logs, and login logs.
 - Manual and Cron-based HTTP automation with encrypted request configuration and outbound-host controls.
 - Runtime platform branding and language configuration.
@@ -123,7 +123,7 @@ Important rules:
 - Effective access is the intersection of the endpoints selected for the key and the bound user's RBAC permissions.
 - The bound user and key must both remain enabled. Expiry, revocation, IP allowlists, and rate limits are also enforced.
 - A request must not contain both `Authorization` and `X-API-Key`; mixed credentials return HTTP 401.
-- API key management endpoints themselves accept Bearer tokens only.
+- API key management endpoints accept authenticated browser sessions or Bearer tokens, but never API keys.
 - `APP_API_KEY_HASH_SECRET` should be a dedicated secret. If omitted, the application reuses `APP_CONFIG_ENCRYPTION_KEY`.
 
 The currently exposed API-key endpoints are AI chat invocation and production API-trigger execution.
@@ -201,7 +201,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
-- **TLS ingress and images:** `CADDY_SITE_ADDRESS`, `CADDY_TLS_DIRECTIVE`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
+- **TLS ingress and images:** `CADDY_SITE_ADDRESS`, `CADDY_TLS_DIRECTIVE`, `CADDY_HTTPS_ORIGIN`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Set `CADDY_HTTPS_ORIGIN` to the externally reachable HTTPS origin, including a non-standard port when used. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
 Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normalizes it to lowercase, and names the four runtime containers `<short-name>-backend`, `<short-name>-python-worker`, `<short-name>-frontend`, and `<short-name>-caddy`. For example, `APP_PLATFORM_SHORT_NAME=AI` produces `ai-backend`, `ai-python-worker`, `ai-frontend`, and `ai-caddy`.
@@ -221,7 +221,11 @@ After all services are healthy:
 - Web console: <https://localhost>
 - Backend API and open platform: <https://localhost/api>
 - Unified health check: <https://localhost/api/open/health>
+- Backend liveness check: <https://localhost/api/open/health/live>
+- Backend readiness check: <https://localhost/api/open/health/ready>
 - Caddy health check: <https://localhost/health>
+
+The unified and readiness checks return HTTP 503 unless MySQL, PostgreSQL, Redis, and the Python Worker are all available. Public ingress returns HTTP 404 for `/api/internal` paths; internal Java-to-Worker traffic continues directly over the Docker network.
 
 The default `tls internal` mode uses Caddy's local CA. Export `/data/caddy/pki/authorities/local/root.crt` from the Caddy container and trust it on internal clients. For a public open-platform deployment, point `CADDY_SITE_ADDRESS` to the public DNS name, set `CADDY_TLS_DIRECTIVE` to an ACME contact such as `tls ops@example.com`, and expose ports 80/443; Caddy will obtain a publicly trusted certificate automatically.
 

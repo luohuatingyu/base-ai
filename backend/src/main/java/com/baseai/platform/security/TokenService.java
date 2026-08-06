@@ -80,6 +80,18 @@ public class TokenService {
         if (!ttl.isNegative() && !ttl.isZero()) redisTemplate.opsForValue().set(revokedKey(tokenId), "1", ttl);
     }
 
+    /** 生成与当前 JWT 绑定的签名 CSRF Token。 */
+    public String createCsrfToken(String token) {
+        return sign("csrf:" + token);
+    }
+
+    /** 使用常量时间比较校验签名 CSRF Token。 */
+    public boolean matchesCsrfToken(String token, String csrfToken) {
+        if (token == null || csrfToken == null) return false;
+        return MessageDigest.isEqual(createCsrfToken(token).getBytes(StandardCharsets.UTF_8),
+            csrfToken.getBytes(StandardCharsets.UTF_8));
+    }
+
     /** 使用可配置平台编码隔离不同平台的 Redis Token 状态。 */
     private String revokedKey(String tokenId) {
         return properties.getPlatform().getCode() + ":auth:revoked:" + tokenId;

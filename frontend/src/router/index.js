@@ -60,12 +60,12 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  if (!auth.initialized) {
+    try { await auth.fetchMe(true) } catch { /* 未登录访客保持匿名状态。 */ }
+  }
   if (to.meta.guestOnly) return auth.isLoggedIn ? '/dashboard' : true
   if (to.meta.public) return true
   if (!auth.isLoggedIn) return `/login?redirect=${encodeURIComponent(to.fullPath)}`
-  if (!auth.user) {
-    try { await auth.fetchMe() } catch { return '/login' }
-  }
   return auth.hasPermission(to.meta.permission) ? true : '/dashboard'
 })
 

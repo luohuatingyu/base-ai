@@ -16,14 +16,17 @@ public class AuthInterceptor implements HandlerInterceptor {
     private final SessionService sessionService;
     private final ApiKeyAuthenticationService apiKeyAuthenticationService;
     private final AuthUserFactory authUserFactory;
+    private final SessionCookieService sessionCookieService;
 
     public AuthInterceptor(TokenService tokenService, UserRepository userRepository, SessionService sessionService,
-                           ApiKeyAuthenticationService apiKeyAuthenticationService, AuthUserFactory authUserFactory) {
+                           ApiKeyAuthenticationService apiKeyAuthenticationService, AuthUserFactory authUserFactory,
+                           SessionCookieService sessionCookieService) {
         this.tokenService = tokenService;
         this.userRepository = userRepository;
         this.sessionService = sessionService;
         this.apiKeyAuthenticationService = apiKeyAuthenticationService;
         this.authUserFactory = authUserFactory;
+        this.sessionCookieService = sessionCookieService;
     }
 
     /** 在控制器执行前完成登录态和 RBAC 权限校验。 */
@@ -46,7 +49,11 @@ public class AuthInterceptor implements HandlerInterceptor {
         boolean hasApiKey = apiKey != null && !apiKey.isBlank();
         if (hasToken && hasApiKey) throw BusinessException.unauthorized("auth.multipleCredentials");
         if (hasApiKey) return apiKeyAuthenticationService.authenticate(apiKey.trim(), request, handler);
-        TokenClaims claims = tokenService.parseToken(resolveToken(authorization));
+        String cookieToken = sessionCookieService.sessionToken(request);
+        String token = hasToken ? resolveToken(authorization) : cookieToken;
+        if (token == null || token.isBlank()) throw BusinessException.unauthorized("auth.required");
+        TokenClaims claims = tokenService.parseToken(token);
+        if (!hasToken && requiresCsrf(request.getMethod())) sessionCookieService.validateCsrf(request, token);
         UserAccount user = userRepository.findById(claims.userId())
             .orElseThrow(() -> BusinessException.unauthorized("auth.userNotFound"));
         if (!Boolean.TRUE.equals(user.getEnabled())) throw BusinessException.forbidden("auth.accountDisabled");
@@ -64,6 +71,12 @@ public class AuthInterceptor implements HandlerInterceptor {
     private String resolveToken(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) throw BusinessException.unauthorized("auth.required");
         return authorization.substring(7).trim();
+    }
+
+    /** 仅对会改变服务端状态的 Cookie 认证请求执行 CSRF 校验。 */
+    private boolean requiresCsrf(String method) {
+        return !("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method)
+            || "OPTIONS".equalsIgnoreCase(method) || "TRACE".equalsIgnoreCase(method));
     }
 
     /** 读取方法或控制器类上的权限声明。 */

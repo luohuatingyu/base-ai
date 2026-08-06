@@ -2,33 +2,43 @@ import { defineStore } from 'pinia'
 import http from '../api/http'
 import { appConfig } from '../config'
 
-const tokenKey = `${appConfig.code}-token`
+/** 清理旧版本遗留的可被脚本读取的 JWT，存储不可用时不阻断页面启动。 */
+function clearLegacyToken() {
+  try { localStorage.removeItem(`${appConfig.code}-token`) } catch { /* 浏览器禁用存储时无需迁移。 */ }
+}
+
+clearLegacyToken()
 
 export const useAuthStore = defineStore('auth', {
-  state: () => ({ token: localStorage.getItem(tokenKey) || '', user: null }),
+  state: () => ({ user: null, initialized: false }),
   getters: {
-    isLoggedIn: (state) => Boolean(state.token),
+    isLoggedIn: (state) => Boolean(state.user),
     isAdmin: (state) => state.user?.roles?.includes('ADMIN') || false
   },
   actions: {
     /** 登录后保存令牌和用户权限快照。 */
     async login(username, password) {
       const { data } = await http.post('/auth/login', { username, password })
-      this.token = data.token
       this.user = data.user
-      localStorage.setItem(tokenKey, data.token)
+      this.initialized = true
     },
     /** 从后端刷新当前用户权限。 */
-    async fetchMe() {
-      const { data } = await http.get('/auth/me')
-      this.user = data
+    async fetchMe(silent = false) {
+      try {
+        const { data } = await http.get('/auth/me', { skipAuthRedirect: silent, silentError: silent })
+        this.user = data
+      } catch (error) {
+        this.user = null
+        throw error
+      } finally {
+        this.initialized = true
+      }
     },
     /** 撤销服务端令牌并清理本地状态。 */
     async logout() {
       try { await http.post('/auth/logout') } finally {
-        this.token = ''
         this.user = null
-        localStorage.removeItem(tokenKey)
+        this.initialized = true
       }
     },
     /** 判断当前用户是否拥有页面权限。 */

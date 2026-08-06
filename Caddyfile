@@ -1,6 +1,11 @@
 {
 	admin off
 	skip_install_trust
+	auto_https disable_redirects
+}
+
+:80 {
+	redir {$CADDY_HTTPS_ORIGIN:https://localhost}{uri} 308
 }
 
 {$CADDY_SITE_ADDRESS:https://localhost} {
@@ -20,6 +25,11 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 		Cross-Origin-Opener-Policy "same-origin"
+	}
+
+	@internal path /api/internal /api/internal/*
+	handle @internal {
+		respond "Not Found" 404
 	}
 
 	@api path /api/*

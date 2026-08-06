@@ -16,6 +16,8 @@ public class DatabaseProperties {
     private String driverClassName;
     /** 连接池最大连接数。 */
     private int maximumPoolSize = 10;
+    /** 获取数据库连接的最长等待时间。 */
+    private long connectionTimeoutMs = 5000;
 
     public String getUrl() { return url; }
     public void setUrl(String url) { this.url = url; }
@@ -27,4 +29,6 @@ public class DatabaseProperties {
     public void setDriverClassName(String driverClassName) { this.driverClassName = driverClassName; }
     public int getMaximumPoolSize() { return maximumPoolSize; }
     public void setMaximumPoolSize(int maximumPoolSize) { this.maximumPoolSize = maximumPoolSize; }
+    public long getConnectionTimeoutMs() { return connectionTimeoutMs; }
+    public void setConnectionTimeoutMs(long connectionTimeoutMs) { this.connectionTimeoutMs = connectionTimeoutMs; }
 }
