@@ -3,6 +3,8 @@ ARG CADDY_IMAGE=caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497
 
 FROM ${GO_IMAGE} AS build
 ARG CADDY_VERSION=v2.11.4
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 WORKDIR /workspace
 COPY ip-cert-helper.go ./
 RUN --mount=type=cache,target=/go/pkg/mod \
