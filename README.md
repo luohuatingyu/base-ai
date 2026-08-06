@@ -109,7 +109,7 @@ Set `LLM_LOG_CONTENT=false` in environments where prompts and model responses mu
 External systems can call endpoints explicitly annotated as API-key accessible. Create, authorize, rotate, disable, or revoke keys from **System Management > API Key Management**.
 
 ```bash
-curl -X POST http://localhost:81/api/ai/chat \
+curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
   -H 'X-API-Key: sk-<your-api-key>' \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"hello"}]}'
@@ -201,10 +201,56 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
-- **HTTP ingress and images:** `HTTP_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
+- **HTTPS ingress and images:** `APP_DOMAIN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `APP_PUBLIC_IP`, `APP_PRIVATE_IP`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
 Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normalizes it to lowercase, and names the four runtime containers `<short-name>-backend`, `<short-name>-python-worker`, `<short-name>-frontend`, and `<short-name>-caddy`. For example, `APP_PLATFORM_SHORT_NAME=AI` produces `ai-backend`, `ai-python-worker`, `ai-frontend`, and `ai-caddy`.
+
+### HTTPS ingress modes
+
+Caddy selects exactly one ingress mode from the environment:
+
+- **Domain certificate mode:** `APP_DOMAIN`, `TLS_CERT_FILE`, and `TLS_KEY_FILE` must all be configured. The certificate must be a PEM full chain including intermediates, and the key must be an unencrypted PEM file. A partial configuration fails startup instead of downgrading to HTTP.
+- **IP internal-CA mode:** active when all three domain-certificate variables are empty. `APP_PUBLIC_IP` and `APP_PRIVATE_IP` may both be configured; at least one valid IPv4 address is required, with `127.0.0.1` as the default. The persisted Caddy CA signs one certificate containing every configured IP SAN, so clients without SNI can still validate TLS through either IP. Every client must trust the Caddy root CA.
+
+Example for a domain on standard ports:
+
+```dotenv
+APP_DOMAIN=ai.example.com
+TLS_CERT_FILE=/absolute/path/fullchain.pem
+TLS_KEY_FILE=/absolute/path/privkey.pem
+APP_PUBLIC_IP=
+APP_PRIVATE_IP=
+HTTP_PORT=80
+HTTPS_PORT=443
+APP_SESSION_COOKIE_SECURE=true
+```
+
+Example with both public and private IP addresses:
+
+```dotenv
+APP_DOMAIN=
+TLS_CERT_FILE=
+TLS_KEY_FILE=
+APP_PUBLIC_IP=203.0.113.10
+APP_PRIVATE_IP=192.168.1.10
+HTTP_PORT=81
+HTTPS_PORT=444
+APP_SESSION_COOKIE_SECURE=true
+```
+
+When the public IP is behind a router or NAT, forward the selected TCP HTTP and HTTPS ports to this host; forward the HTTPS UDP port as well to enable HTTP/3. Update the environment and restart Caddy whenever a dynamic public IP changes.
+
+The IP certificate targets a 30-day lifetime without exceeding the remaining lifetime of the Caddy intermediate. The container checks it hourly. Changes to the IP SANs, intermediate CA, or renewal window trigger a new certificate and a hot reload through an admin endpoint bound only to the container loopback address. That endpoint is not published to the host or the Compose network. Initial issuance failures stop Caddy; background renewal failures keep the current certificate and retry during the next cycle.
+
+The domain certificate and key are mounted read-only, while Caddy runs as container UID `10001`. On Linux, grant that UID access with a dedicated group or ACL, including traversal permission on parent directories; do not make the private key world-readable. Verify access before startup with:
+
+```bash
+docker compose run --rm --entrypoint sh caddy -c \
+  'test -r /etc/caddy/tls/fullchain.pem && test -r /etc/caddy/tls/privkey.pem'
+```
+
+After replacing renewed domain certificate files, run `docker compose restart caddy` to reload them. This project does not modify or renew host certificate files.
 
 ## Start with Docker Compose
 
@@ -218,16 +264,39 @@ docker compose ps
 
 After all services are healthy:
 
-- Web console: <http://localhost:81>
-- Backend API and open platform: <http://localhost:81/api>
-- Unified health check: <http://localhost:81/api/open/health>
-- Backend liveness check: <http://localhost:81/api/open/health/live>
-- Backend readiness check: <http://localhost:81/api/open/health/ready>
-- Caddy health check: <http://localhost:81/health>
+- Web console: <https://127.0.0.1:444>
+- Backend API and open platform: <https://127.0.0.1:444/api>
+- Unified health check: <https://127.0.0.1:444/api/open/health>
+- Backend liveness check: <https://127.0.0.1:444/api/open/health/live>
+- Backend readiness check: <https://127.0.0.1:444/api/open/health/ready>
+- Caddy health check: <https://127.0.0.1:444/health>
 
 The unified and readiness checks return HTTP 503 unless MySQL, PostgreSQL, Redis, and the Python Worker are all available. Public ingress returns HTTP 404 for `/api/internal` paths; internal Java-to-Worker traffic continues directly over the Docker network.
 
-This deployment uses plain HTTP and is intended only for a trusted network. Passwords, session cookies, Bearer tokens, API keys, and request data are not encrypted in transit. When TLS terminates at an upstream proxy, set `APP_SESSION_COOKIE_SECURE=true` and ensure clients access only the HTTPS endpoint.
+The HTTP listener only returns 308 redirects; application pages and APIs are served over HTTPS. Ports 81/444 are the defaults to avoid conflicts with other local projects. Use 80/443 for a public domain that should work without explicit ports. HSTS is enabled only for standard 80/443 deployments so browsers do not upgrade a non-standard HTTP port to the wrong HTTPS port.
+
+After the first IP-mode startup, export the public root certificate of the internal CA:
+
+```bash
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+```
+
+Install only `root.crt`; never copy or distribute the root private key from the Caddy data volume. Common system trust commands are shown below. Restart browsers after installation.
+
+```bash
+# macOS
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain caddy-root.crt
+
+# Windows (administrator command prompt)
+certutil -addstore -f Root caddy-root.crt
+
+# Debian/Ubuntu
+sudo cp caddy-root.crt /usr/local/share/ca-certificates/base-ai-caddy.crt
+sudo update-ca-certificates
+```
+
+Clients such as Firefox may use a separate trust store and require browser-level import. The Caddy CA and automatically-issued multi-SAN IP certificate are persisted in a named volume, so ordinary container rebuilds retain the root. Changing `APP_PLATFORM_SHORT_NAME`, running `docker compose down -v`, or deleting the Caddy data volume creates a new CA that every client must trust again.
 
 All four runtime containers use non-root users. Linux capabilities are removed from the backend, frontend, and Worker; Caddy retains only `NET_BIND_SERVICE` for port 80. Base images are digest-pinned, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
 

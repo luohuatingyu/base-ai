@@ -109,7 +109,7 @@ Vue -> Java /api/ai/chat -> Python /llm/chat -> 兼容 OpenAI 的 API
 外部系统可以调用代码中明确标记为支持 API Key 的接口。管理员可在**系统管理 > API Key 管理**中创建、授权、轮换、停用或吊销 Key。
 
 ```bash
-curl -X POST http://localhost:81/api/ai/chat \
+curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
   -H 'X-API-Key: sk-<your-api-key>' \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"hello"}]}'
@@ -201,10 +201,56 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
-- **HTTP 入口、端口和镜像：** `HTTP_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
+- **HTTPS 入口、端口和镜像：** `APP_DOMAIN`、`TLS_CERT_FILE`、`TLS_KEY_FILE`、`APP_PUBLIC_IP`、`APP_PRIVATE_IP`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
 Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
+
+### HTTPS 入口模式
+
+Caddy 根据配置自动选择一种入口模式：
+
+- **域名证书模式：** `APP_DOMAIN`、`TLS_CERT_FILE` 和 `TLS_KEY_FILE` 必须同时配置。证书应为包含中间证书的 PEM 完整链，私钥应为无交互密码的 PEM 文件。三项只配置一部分时 Caddy 会拒绝启动，不会降级到 HTTP。
+- **IP 内部 CA 模式：** 上述三项全部留空后生效。`APP_PUBLIC_IP` 和 `APP_PRIVATE_IP` 可以同时配置；至少需要一个有效 IPv4，默认使用 `127.0.0.1`。项目使用 Caddy 持久化内部 CA 签发一张包含全部已配置 IP SAN 的证书，因此不发送 SNI 的客户端也能通过任一 IP 完成 TLS 校验。访问设备必须信任 Caddy 根证书。
+
+域名使用标准端口的示例：
+
+```dotenv
+APP_DOMAIN=ai.example.com
+TLS_CERT_FILE=/absolute/path/fullchain.pem
+TLS_KEY_FILE=/absolute/path/privkey.pem
+APP_PUBLIC_IP=
+APP_PRIVATE_IP=
+HTTP_PORT=80
+HTTPS_PORT=443
+APP_SESSION_COOKIE_SECURE=true
+```
+
+IP 同时支持公网和内网地址的示例：
+
+```dotenv
+APP_DOMAIN=
+TLS_CERT_FILE=
+TLS_KEY_FILE=
+APP_PUBLIC_IP=203.0.113.10
+APP_PRIVATE_IP=192.168.1.10
+HTTP_PORT=81
+HTTPS_PORT=444
+APP_SESSION_COOKIE_SECURE=true
+```
+
+公网 IP 位于路由器或 NAT 后方时，需要把对应 TCP 80/443 或 81/444 转发到部署主机；启用 HTTP/3 时还需转发 HTTPS 端口的 UDP 流量。公网 IP 变化后需要更新配置并重启 Caddy。
+
+IP 证书目标有效期为 30 天，且不会超过 Caddy 中间 CA 的剩余有效期。容器每小时检查一次证书；IP SAN、中间 CA 或有效期需要更新时会自动重新签发，并通过只监听容器回环地址的管理接口热加载。该管理接口不会发布到宿主机或 Compose 网络。首次签发失败会阻止 Caddy 启动，后台续期失败则保留当前证书并在下一周期重试。
+
+域名证书和私钥以只读文件挂载，Caddy 使用容器 UID `10001`。Linux 主机应通过专用组或 ACL 授予该 UID 读取文件及遍历父目录的权限，不要将私钥设置为所有用户可读。可在启动前验证容器用户权限：
+
+```bash
+docker compose run --rm --entrypoint sh caddy -c \
+  'test -r /etc/caddy/tls/fullchain.pem && test -r /etc/caddy/tls/privkey.pem'
+```
+
+替换续期后的域名证书文件后，执行 `docker compose restart caddy` 重新加载。项目不会修改或自动续期宿主机上的证书。
 
 ## 使用 Docker Compose 启动
 
@@ -218,16 +264,39 @@ docker compose ps
 
 所有服务进入健康状态后，可访问：
 
-- Web 控制台：<http://localhost:81>
-- 后端 API 和开放平台：<http://localhost:81/api>
-- 统一健康检查：<http://localhost:81/api/open/health>
-- 后端存活检查：<http://localhost:81/api/open/health/live>
-- 后端就绪检查：<http://localhost:81/api/open/health/ready>
-- Caddy 健康检查：<http://localhost:81/health>
+- Web 控制台：<https://127.0.0.1:444>
+- 后端 API 和开放平台：<https://127.0.0.1:444/api>
+- 统一健康检查：<https://127.0.0.1:444/api/open/health>
+- 后端存活检查：<https://127.0.0.1:444/api/open/health/live>
+- 后端就绪检查：<https://127.0.0.1:444/api/open/health/ready>
+- Caddy 健康检查：<https://127.0.0.1:444/health>
 
 统一健康检查和就绪检查仅在 MySQL、PostgreSQL、Redis 与 Python Worker 全部可用时返回 HTTP 200，否则返回 HTTP 503。公网入口对 `/api/internal` 路径统一返回 HTTP 404，Java 与 Worker 之间仍通过 Docker 内部网络直连。
 
-当前部署使用明文 HTTP，仅适用于可信网络。密码、会话 Cookie、Bearer Token、API Key 和请求数据不会获得传输加密。如由上游代理终止 TLS，应设置 `APP_SESSION_COOKIE_SECURE=true`，并确保客户端仅访问 HTTPS 入口。
+HTTP 入口仅用于 308 跳转，业务页面和 API 统一通过 HTTPS 提供。默认 81/444 端口避免与其他本地项目冲突；无需显式端口的公网域名应使用 80/443。HSTS 仅在标准 80/443 模式启用，避免浏览器在非标准端口下升级到错误端口。
+
+IP 模式首次启动后，导出内部 CA 的公开根证书：
+
+```bash
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+```
+
+只安装 `root.crt`，绝不要从 Caddy 数据卷复制或分发根私钥。常见系统信任方式如下，安装完成后应重启浏览器：
+
+```bash
+# macOS
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain caddy-root.crt
+
+# Windows（管理员命令提示符）
+certutil -addstore -f Root caddy-root.crt
+
+# Debian/Ubuntu
+sudo cp caddy-root.crt /usr/local/share/ca-certificates/base-ai-caddy.crt
+sudo update-ca-certificates
+```
+
+Firefox 等使用独立证书库的客户端可能仍需在浏览器设置中导入。Caddy CA 和自动签发的多 SAN IP 证书保存在命名卷中；普通容器重建不会更换根 CA。修改 `APP_PLATFORM_SHORT_NAME`、执行 `docker compose down -v` 或手动删除 Caddy data 卷会生成新的根 CA，届时所有访问设备必须重新信任。
 
 首次初始化后，使用 `APP_SEED_ADMIN_USERNAME` 配置的用户名和 `APP_SEED_ADMIN_PASSWORD` 配置的密码登录。初始管理员、角色、权限树、根部门和模型类型字典会自动创建。
 

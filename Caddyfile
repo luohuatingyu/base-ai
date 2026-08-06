@@ -1,8 +1,37 @@
 {
-	admin off
+	{$CADDY_ADMIN_OPTION}
+	skip_install_trust
+	auto_https disable_redirects
+	{$CADDY_DEFAULT_SNI_OPTION}
+	pki {
+		ca local {
+			intermediate_lifetime 397d
+		}
+	}
 }
 
 :80 {
+	@localHealth {
+		host 127.0.0.1 localhost
+		path /health
+	}
+	handle @localHealth {
+		respond "OK" 200
+	}
+
+	@allowedHost host {$CADDY_ALLOWED_HOSTS}
+	handle @allowedHost {
+		redir https://{host}{$CADDY_HTTPS_PORT_SUFFIX}{uri} 308
+	}
+
+	handle {
+		respond "Not Found" 404
+	}
+}
+
+{$CADDY_HTTPS_SITE_ADDRESSES} {
+	{$CADDY_TLS_DIRECTIVE}
+
 	encode zstd gzip
 	request_body {
 		max_size {$APP_MAX_REQUEST_BYTES:20971520}
@@ -10,6 +39,7 @@
 
 	header {
 		-Server
+		{$CADDY_HSTS_HEADER}
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"

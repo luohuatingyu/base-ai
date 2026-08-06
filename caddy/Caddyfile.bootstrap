@@ -1,0 +1,13 @@
+{
+	admin off
+	skip_install_trust
+	pki {
+		ca local {
+			intermediate_lifetime 397d
+		}
+	}
+}
+
+http://127.0.0.1 {
+	respond "PKI ready" 200
+}

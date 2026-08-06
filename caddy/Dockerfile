@@ -4,6 +4,7 @@ ARG CADDY_IMAGE=caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497
 FROM ${GO_IMAGE} AS build
 ARG CADDY_VERSION=v2.11.4
 WORKDIR /workspace
+COPY ip-cert-helper.go ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go mod init base-ai/caddy-build \
@@ -11,11 +12,16 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     && go get golang.org/x/text@v0.39.0 google.golang.org/grpc@v1.82.1 \
     && CGO_ENABLED=0 go build -trimpath \
         -ldflags="-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=${CADDY_VERSION}" \
-        -o /out/caddy github.com/caddyserver/caddy/v2/cmd/caddy
+        -o /out/caddy github.com/caddyserver/caddy/v2/cmd/caddy \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+        -o /out/base-ai-ip-cert ip-cert-helper.go
 
 FROM ${CADDY_IMAGE}
 
 COPY --from=build /out/caddy /usr/bin/caddy
+COPY --from=build /out/base-ai-ip-cert /usr/local/bin/base-ai-ip-cert
+COPY --chmod=0555 caddy-entrypoint.sh /usr/local/bin/base-ai-caddy-entrypoint
+COPY --chmod=0444 Caddyfile.bootstrap /etc/caddy/Caddyfile.bootstrap
 RUN apk upgrade --no-cache \
     && setcap cap_net_bind_service=+ep /usr/bin/caddy \
     && addgroup -S -g 10001 appuser \
@@ -23,3 +29,5 @@ RUN apk upgrade --no-cache \
     && chown -R appuser:appuser /data /config
 
 USER appuser
+ENTRYPOINT ["/usr/local/bin/base-ai-caddy-entrypoint"]
+CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

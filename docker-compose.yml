@@ -37,7 +37,7 @@ services:
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_TIMEOUT: ${REDIS_TIMEOUT:-5s}
       APP_TOKEN_SECRET: ${APP_TOKEN_SECRET:?Set APP_TOKEN_SECRET}
-      APP_SESSION_COOKIE_SECURE: ${APP_SESSION_COOKIE_SECURE:-false}
+      APP_SESSION_COOKIE_SECURE: ${APP_SESSION_COOKIE_SECURE:-true}
       APP_PLATFORM_CODE: ${APP_PLATFORM_CODE:-ai-platform}
       APP_PLATFORM_NAME_EN: ${APP_PLATFORM_NAME_EN:-AI Platform}
       APP_PLATFORM_NAME_ZH: ${APP_PLATFORM_NAME_ZH:-AI平台}
@@ -182,13 +182,26 @@ services:
       frontend:
         condition: service_healthy
     environment:
+      APP_DOMAIN: ${APP_DOMAIN:-}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-}
+      APP_PUBLIC_IP: ${APP_PUBLIC_IP:-}
+      APP_PRIVATE_IP: ${APP_PRIVATE_IP-127.0.0.1}
+      CADDY_EXTERNAL_HTTP_PORT: ${HTTP_PORT:-81}
+      CADDY_EXTERNAL_HTTPS_PORT: ${HTTPS_PORT:-444}
       APP_MAX_REQUEST_BYTES: ${APP_MAX_REQUEST_BYTES:-20971520}
     ports:
       - "${HTTP_PORT:-81}:80"
+      - "${HTTPS_PORT:-444}:443"
+      - "${HTTPS_PORT:-444}:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${TLS_CERT_FILE:-./caddy/tls-placeholder.pem}:/etc/caddy/tls/fullchain.pem:ro
+      - ${TLS_KEY_FILE:-./caddy/tls-placeholder.pem}:/etc/caddy/tls/privkey.pem:ro
+      - caddy-data:/data
+      - caddy-config:/config
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -204,3 +217,7 @@ networks:
     ipam:
       config:
         - subnet: ${APP_NETWORK_SUBNET:-172.30.0.0/24}
+
+volumes:
+  caddy-data:
+  caddy-config:
