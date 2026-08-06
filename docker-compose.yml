@@ -78,7 +78,7 @@ services:
       API_TRIGGER_REQUEST_BODY_MAX_BYTES: ${API_TRIGGER_REQUEST_BODY_MAX_BYTES:-1048576}
       API_TRIGGER_METADATA_MAX_LENGTH: ${API_TRIGGER_METADATA_MAX_LENGTH:-65536}
     volumes:
-      - ${TRACE_TRACKING_EXCLUSIONS_FILE:-./trace-tracking-exclusions.yml}:/app/config/trace-tracking-exclusions.yml:ro
+      - ${TRACE_TRACKING_EXCLUSIONS_FILE:-./backend/config/trace-tracking-exclusions.yml}:/app/config/trace-tracking-exclusions.yml:ro
     depends_on:
       python-worker:
         condition: service_healthy

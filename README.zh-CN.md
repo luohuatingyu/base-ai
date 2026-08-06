@@ -139,7 +139,7 @@ curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
 - 启动恢复和定时检查会在心跳超时后将遗留任务标记为失败。
 - 操作日志和登录日志与任务链路分开管理。
 
-`trace-tracking-exclusions.yml` 用于定义不自动创建任务的 HTTP 方法和路径。
+`backend/config/trace-tracking-exclusions.yml` 用于定义不自动创建任务的 HTTP 方法和路径。
 
 ## HTTP 自动化
 
@@ -353,12 +353,12 @@ docker compose up --build -d
 
 ```text
 backend/                        Spring Boot API 和平台服务
+backend/config/                 默认后端运行时配置
 database/postgresql/            PostgreSQL Schema 参考脚本
 frontend/                       Vue 管理控制台和 API 代理
 python-worker/                  FastAPI LLM Worker
 .env.example                    环境变量模板
 docker-compose.yml              应用容器定义
-trace-tracking-exclusions.yml   默认任务追踪排除项
 TEST_REPORT.md                  测试基准和执行历史
 ```
 

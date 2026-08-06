@@ -139,7 +139,7 @@ The currently exposed API-key endpoints are AI chat invocation and production AP
 - Startup recovery and scheduled checks mark abandoned tasks as failed after the heartbeat timeout.
 - Operation and login logs are managed separately from task traces.
 
-`trace-tracking-exclusions.yml` defines HTTP methods and paths excluded from automatic task creation.
+`backend/config/trace-tracking-exclusions.yml` defines HTTP methods and paths excluded from automatic task creation.
 
 ## HTTP Automation
 
@@ -355,12 +355,12 @@ docker compose up --build -d
 
 ```text
 backend/                        Spring Boot API and platform services
+backend/config/                 Default backend runtime configuration
 database/postgresql/            Reference PostgreSQL schema scripts
 frontend/                       Vue administration console and API proxy
 python-worker/                  FastAPI LLM worker
 .env.example                    Environment variable template
 docker-compose.yml              Application container definitions
-trace-tracking-exclusions.yml   Default task-tracking exclusions
 TEST_REPORT.md                  Test baseline and execution history
 ```
 
