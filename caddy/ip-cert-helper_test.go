@@ -9,17 +9,84 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// 验证完整 YAML 语法、大小写规范化、锚点和重复域名去重。
+func TestReadDomainConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "domains.yml")
+	contents := `domains:
+  - &primary "AI.Example.COM"
+  - *primary
+  - 'api.example.com'
+`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	domains, err := readDomainConfig(path)
+	if err != nil {
+		t.Fatalf("read domain configuration: %v", err)
+	}
+	if got, want := strings.Join(domains, " "), "ai.example.com api.example.com"; got != want {
+		t.Fatalf("domains = %q, want %q", got, want)
+	}
+}
+
+// 参数化验证空列表、未知字段、多文档和非法域名均拒绝启动。
+func TestReadDomainConfigRejectsInvalidConfiguration(t *testing.T) {
+	tests := map[string]string{
+		"empty list":      "domains: []\n",
+		"unknown field":   "domains: [ai.example.com]\nredirect: true\n",
+		"multiple docs":   "domains: [ai.example.com]\n---\ndomains: [api.example.com]\n",
+		"wildcard":        "domains: ['*.example.com']\n",
+		"scheme":          "domains: ['https://ai.example.com']\n",
+		"port":            "domains: ['ai.example.com:443']\n",
+		"empty item":      "domains: ['']\n",
+		"invalid label":   "domains: ['-ai.example.com']\n",
+		"non-string item": "domains: [42]\n",
+	}
+	for name, contents := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "domains.yml")
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readDomainConfig(path); err == nil {
+				t.Fatal("invalid domain configuration unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+// 验证域名清单的文件大小和条目数量上限。
+func TestReadDomainConfigRejectsResourceLimits(t *testing.T) {
+	oversizedPath := filepath.Join(t.TempDir(), "oversized.yml")
+	if err := os.WriteFile(oversizedPath, []byte("domains: []\n#"+strings.Repeat("x", maxDomainConfigBytes)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readDomainConfig(oversizedPath); err == nil {
+		t.Fatal("oversized domain configuration unexpectedly succeeded")
+	}
+
+	domains := make([]string, maxConfiguredDomains+1)
+	for index := range domains {
+		domains[index] = fmt.Sprintf("host-%d.example.com", index)
+	}
+	if _, err := normalizeDomains(domains); err == nil {
+		t.Fatal("domain count above limit unexpectedly succeeded")
+	}
+}
 
 // 验证 localhost 和双 IPv4 规范化、顺序保持和重复地址去重。
 func TestParseCertificateNames(t *testing.T) {

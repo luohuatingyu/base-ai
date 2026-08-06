@@ -1,0 +1,2 @@
+# Domain mode is disabled while APP_DOMAIN_FILE is empty.
+domains: []

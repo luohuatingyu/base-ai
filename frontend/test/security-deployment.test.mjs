@@ -16,7 +16,7 @@ function resolveIngress(overrides) {
     encoding: 'utf8',
     env: {
       ...process.env,
-      APP_DOMAIN: '',
+      APP_DOMAIN_FILE: '',
       TLS_CERT_FILE: '',
       TLS_KEY_FILE: '',
       CADDY_EXTERNAL_HTTP_PORT: '81',
@@ -32,7 +32,7 @@ function rejectIngress(overrides) {
     encoding: 'utf8',
     env: {
       ...process.env,
-      APP_DOMAIN: '',
+      APP_DOMAIN_FILE: '',
       TLS_CERT_FILE: '',
       TLS_KEY_FILE: '',
       CADDY_EXTERNAL_HTTP_PORT: '81',
@@ -54,6 +54,26 @@ function withLearnedHosts(contents, assertion) {
   }
 }
 
+/** 使用隔离的 YAML 文件和解析器替身验证入口脚本消费规范化域名的方式。 */
+function withDomainResolver(resolvedDomains, assertion) {
+  const directory = mkdtempSync(join(tmpdir(), 'base-ai-domain-config-'))
+  const domainFile = join(directory, 'domains.yml')
+  const resolver = join(directory, 'resolve-domains.sh')
+  writeFileSync(domainFile, `domains: [${resolvedDomains.split(' ').join(', ')}]\n`)
+  writeFileSync(resolver, `#!/bin/sh
+if [ "\${CADDY_TEST_RESOLVER_FAIL:-}" = 1 ]; then
+  echo "invalid domain configuration" >&2
+  exit 1
+fi
+printf '%s\\n' "\${CADDY_TEST_RESOLVED_DOMAINS:-}"
+`, { mode: 0o700 })
+  try {
+    return assertion({ domainFile, resolver })
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
 /** 截取 Compose 中单个服务配置，避免跨服务字段造成误判。 */
 function serviceBlock(compose, name, nextName) {
   const start = compose.indexOf(`  ${name}:`)
@@ -68,6 +88,9 @@ test('容器名称使用平台简称的小写项目名前缀', async () => {
 
   assert.match(compose, /^name: \$\{APP_PLATFORM_SHORT_NAME:\?Set APP_PLATFORM_SHORT_NAME\}$/m)
   assert.doesNotMatch(envExample, /^COMPOSE_PROJECT_NAME=/m)
+  assert.match(envExample, /^APP_DOMAIN_FILE=$/m)
+  assert.doesNotMatch(envExample, /^APP_DOMAIN=$/m)
+  assert.doesNotMatch(compose, /^\s+APP_DOMAIN:/m)
   for (const [service, nextService] of [
     ['backend', 'python-worker'],
     ['python-worker', 'frontend'],
@@ -94,6 +117,7 @@ test('仅 Caddy 暴露 HTTP 和 HTTPS 端口并持久化内部 CA', async () => 
   assert.match(serviceBlock(compose, 'caddy', null), /CADDY_LEARNED_HOSTS_FILE:\s*\/data\/base-ai-tls\/learned-hosts/)
   assert.match(serviceBlock(compose, 'caddy', null), /IP_CERT_MAX_LEARNED_HOSTS:-32/)
   assert.match(serviceBlock(compose, 'caddy', null), /IP_CERT_MIN_ISSUE_INTERVAL_SECONDS:-5/)
+  assert.match(serviceBlock(compose, 'caddy', null), /APP_DOMAIN_FILE:-\.\/caddy\/domains-placeholder\.yml.*\/etc\/caddy\/domains\.yml:ro/)
   assert.match(serviceBlock(compose, 'caddy', null), /tls-placeholder\.pem.*fullchain\.pem:ro/)
   assert.match(serviceBlock(compose, 'caddy', null), /tls-placeholder\.pem.*privkey\.pem:ro/)
   assert.match(serviceBlock(compose, 'backend', 'python-worker'), /APP_SESSION_COOKIE_SECURE: \$\{APP_SESSION_COOKIE_SECURE:-true\}/)
@@ -142,17 +166,22 @@ test('Caddy 入口在域名证书与请求学习 IPv4 模式间严格切换', ()
   assert.match(ipConfig, /^default_sni=localhost$/m)
   assert.match(ipConfig, /^hsts=disabled$/m)
 
-  const domainConfig = withLearnedHosts('192.168.1.10\n', hostsFile => resolveIngress({
-    CADDY_LEARNED_HOSTS_FILE: hostsFile,
-    APP_DOMAIN: 'ai.example.com',
-    TLS_CERT_FILE: '/srv/tls/fullchain.pem',
-    TLS_KEY_FILE: '/srv/tls/privkey.pem',
-    CADDY_EXTERNAL_HTTP_PORT: '80',
-    CADDY_EXTERNAL_HTTPS_PORT: '443',
-  }))
+  const domainConfig = withDomainResolver('ai.example.com api.example.com', ({ domainFile, resolver }) => (
+    withLearnedHosts('192.168.1.10\n', hostsFile => resolveIngress({
+      CADDY_LEARNED_HOSTS_FILE: hostsFile,
+      APP_DOMAIN_FILE: '/srv/tls/domains.yml',
+      CADDY_DOMAIN_FILE: domainFile,
+      CADDY_INGRESS_HELPER: resolver,
+      CADDY_TEST_RESOLVED_DOMAINS: 'ai.example.com api.example.com',
+      TLS_CERT_FILE: '/srv/tls/fullchain.pem',
+      TLS_KEY_FILE: '/srv/tls/privkey.pem',
+      CADDY_EXTERNAL_HTTP_PORT: '80',
+      CADDY_EXTERNAL_HTTPS_PORT: '443',
+    }))
+  ))
   assert.match(domainConfig, /^mode=domain$/m)
-  assert.match(domainConfig, /^hosts=ai\.example\.com$/m)
-  assert.match(domainConfig, /^https_sites=https:\/\/ai\.example\.com$/m)
+  assert.match(domainConfig, /^hosts=ai\.example\.com api\.example\.com$/m)
+  assert.match(domainConfig, /^https_sites=https:\/\/ai\.example\.com, https:\/\/api\.example\.com$/m)
   assert.match(domainConfig, /^https_port_suffix=$/m)
   assert.match(domainConfig, /^default_sni=$/m)
   assert.match(domainConfig, /^hsts=enabled$/m)
@@ -173,7 +202,7 @@ test('IP 学习完全位于 Caddy 容器且不调用宿主机网络命令', asyn
 
 test('Caddy 入口拒绝不完整证书、非法学习地址和越界端口', () => {
   for (const [overrides, message] of [
-    [{ APP_DOMAIN: 'ai.example.com' }, 'must be configured together'],
+    [{ APP_DOMAIN_FILE: '/srv/tls/domains.yml' }, 'must be configured together'],
     [{ CADDY_EXTERNAL_HTTPS_PORT: '65536' }, 'must be between 1 and 65535'],
   ]) {
     const result = rejectIngress(overrides)
@@ -187,6 +216,36 @@ test('Caddy 入口拒绝不完整证书、非法学习地址和越界端口', ()
     }))
     assert.notEqual(result.status, 0)
     assert.match(result.stderr, /learned host address must be a valid IPv4 address/)
+  }
+})
+
+test('Caddy 入口拒绝缺失、空白或解析失败的域名 YAML', () => {
+  const missing = rejectIngress({
+    APP_DOMAIN_FILE: '/srv/tls/domains.yml',
+    CADDY_DOMAIN_FILE: '/missing/domains.yml',
+    TLS_CERT_FILE: '/srv/tls/fullchain.pem',
+    TLS_KEY_FILE: '/srv/tls/privkey.pem',
+  })
+  assert.notEqual(missing.status, 0)
+  assert.match(missing.stderr, /readable regular YAML file/)
+
+  for (const [resolvedDomains, fail, message] of [
+    ['', false, 'at least one domain'],
+    ['ai.example.com', true, 'invalid domain configuration'],
+  ]) {
+    withDomainResolver(resolvedDomains, ({ domainFile, resolver }) => {
+      const result = rejectIngress({
+        APP_DOMAIN_FILE: '/srv/tls/domains.yml',
+        CADDY_DOMAIN_FILE: domainFile,
+        CADDY_INGRESS_HELPER: resolver,
+        CADDY_TEST_RESOLVED_DOMAINS: resolvedDomains,
+        CADDY_TEST_RESOLVER_FAIL: fail ? '1' : '',
+        TLS_CERT_FILE: '/srv/tls/fullchain.pem',
+        TLS_KEY_FILE: '/srv/tls/privkey.pem',
+      })
+      assert.notEqual(result.status, 0)
+      assert.match(result.stderr, new RegExp(message))
+    })
   }
 })
 

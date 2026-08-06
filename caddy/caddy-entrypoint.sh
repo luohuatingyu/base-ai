@@ -29,25 +29,6 @@ is_ipv4() {
 	done
 }
 
-# 校验单个 DNS 域名，仅接受不含协议、端口和通配符的主机名。
-is_domain() {
-	domain=$1
-	[ "${#domain}" -le 253 ] || return 1
-	case "$domain" in
-		''|.*|*.|*..*|*[!A-Za-z0-9.-]*) return 1 ;;
-	esac
-	old_ifs=$IFS
-	IFS=.
-	set -- $domain
-	IFS=$old_ifs
-	for label in "$@"; do
-		[ "${#label}" -le 63 ] || return 1
-		case "$label" in
-			''|-*|*-) return 1 ;;
-		esac
-	done
-}
-
 # 校验宿主机发布端口并生成 HTTPS 跳转端口后缀。
 configure_ports() {
 	http_port=${CADDY_EXTERNAL_HTTP_PORT:-81}
@@ -124,27 +105,36 @@ configure_ip_bootstrap_limits() {
 	export CADDY_CERT_CHECK_INTERVAL_SECONDS CADDY_IP_MIN_ISSUE_INTERVAL_SECONDS CADDY_IP_MAX_LEARNED_HOSTS
 }
 
-# 根据完整的域名证书配置或 IP 配置选择唯一入口模式。
+# 根据完整的 YAML 域名证书配置或 IP 配置选择唯一入口模式。
 configure_ingress() {
-	domain=${APP_DOMAIN:-}
+	domain_file=${APP_DOMAIN_FILE:-}
 	cert_file=${TLS_CERT_FILE:-}
 	key_file=${TLS_KEY_FILE:-}
-	domain_count=0
-	is_set "$domain" && domain_count=$((domain_count + 1))
-	is_set "$cert_file" && domain_count=$((domain_count + 1))
-	is_set "$key_file" && domain_count=$((domain_count + 1))
+	domain_config_count=0
+	is_set "$domain_file" && domain_config_count=$((domain_config_count + 1))
+	is_set "$cert_file" && domain_config_count=$((domain_config_count + 1))
+	is_set "$key_file" && domain_config_count=$((domain_config_count + 1))
 
-	if [ "$domain_count" -eq 3 ]; then
-		is_domain "$domain" || fail "APP_DOMAIN must be a single valid DNS name without scheme or port"
+	if [ "$domain_config_count" -eq 3 ]; then
+		mounted_domain_file=${CADDY_DOMAIN_FILE:-/etc/caddy/domains.yml}
+		ingress_helper=${CADDY_INGRESS_HELPER:-/usr/local/bin/base-ai-ip-cert}
+		[ -f "$mounted_domain_file" ] && [ -r "$mounted_domain_file" ] \
+			|| fail "APP_DOMAIN_FILE must reference a readable regular YAML file"
+		resolved_domains=$("$ingress_helper" --resolve-domain-file "$mounted_domain_file") \
+			|| fail "APP_DOMAIN_FILE contains an invalid domain configuration"
+		[ -n "$resolved_domains" ] || fail "APP_DOMAIN_FILE must contain at least one domain"
 		CADDY_INGRESS_MODE=domain
-		CADDY_ALLOWED_HOSTS=$domain
-		CADDY_HTTPS_SITE_ADDRESSES=https://$domain
+		CADDY_ALLOWED_HOSTS=''
+		CADDY_HTTPS_SITE_ADDRESSES=''
+		for domain in $resolved_domains; do
+			append_host "$domain"
+		done
 		CADDY_TLS_DIRECTIVE='tls /etc/caddy/tls/fullchain.pem /etc/caddy/tls/privkey.pem'
 		CADDY_ADMIN_OPTION='admin off'
 		CADDY_DEFAULT_SNI_OPTION=''
 		CADDY_HTTP_FALLBACK='respond "Not Found" 404'
-	elif [ "$domain_count" -ne 0 ]; then
-		fail "APP_DOMAIN, TLS_CERT_FILE, and TLS_KEY_FILE must be configured together"
+	elif [ "$domain_config_count" -ne 0 ]; then
+		fail "APP_DOMAIN_FILE, TLS_CERT_FILE, and TLS_KEY_FILE must be configured together"
 	else
 		CADDY_INGRESS_MODE=ip
 		CADDY_ALLOWED_HOSTS=''

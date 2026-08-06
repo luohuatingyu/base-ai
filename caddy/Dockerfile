@@ -9,6 +9,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go mod init base-ai/caddy-build \
     && go get github.com/caddyserver/caddy/v2/cmd/caddy@${CADDY_VERSION} \
+    && go get gopkg.in/yaml.v3@v3.0.1 \
     && go get golang.org/x/text@v0.39.0 google.golang.org/grpc@v1.82.1 \
     && CGO_ENABLED=0 go build -trimpath \
         -ldflags="-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=${CADDY_VERSION}" \

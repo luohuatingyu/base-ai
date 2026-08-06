@@ -182,7 +182,8 @@ services:
       frontend:
         condition: service_healthy
     environment:
-      APP_DOMAIN: ${APP_DOMAIN:-}
+      APP_DOMAIN_FILE: ${APP_DOMAIN_FILE:-}
+      CADDY_DOMAIN_FILE: /etc/caddy/domains.yml
       TLS_CERT_FILE: ${TLS_CERT_FILE:-}
       TLS_KEY_FILE: ${TLS_KEY_FILE:-}
       CADDY_LEARNED_HOSTS_FILE: /data/base-ai-tls/learned-hosts
@@ -198,6 +199,7 @@ services:
       - "${HTTPS_PORT:-444}:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${APP_DOMAIN_FILE:-./caddy/domains-placeholder.yml}:/etc/caddy/domains.yml:ro
       - ${TLS_CERT_FILE:-./caddy/tls-placeholder.pem}:/etc/caddy/tls/fullchain.pem:ro
       - ${TLS_KEY_FILE:-./caddy/tls-placeholder.pem}:/etc/caddy/tls/privkey.pem:ro
       - caddy-data:/data

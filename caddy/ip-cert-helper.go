@@ -14,6 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -25,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -39,7 +42,13 @@ const (
 	defaultCaddyConfig      = "/etc/caddy/Caddyfile"
 	defaultCaddyAdmin       = "127.0.0.1:2019"
 	defaultMaxLearnedHosts  = 32
+	maxDomainConfigBytes    = 64 * 1024
+	maxConfiguredDomains    = 256
 )
+
+type domainFileConfig struct {
+	Domains []yaml.Node `yaml:"domains"`
+}
 
 type certificateManager struct {
 	rootCertPath         string
@@ -76,9 +85,10 @@ type fileSnapshot struct {
 	exists bool
 }
 
-// 主入口解析回环主机名和 IP 列表，并确保多 SAN 证书可继续安全使用。
+// 主入口解析域名 YAML、回环主机名和 IP 列表，并确保入口证书可继续安全使用。
 func main() {
 	hostsValue := flag.String("hosts", "", "comma or whitespace separated localhost and IPv4 addresses")
+	domainFile := flag.String("resolve-domain-file", "", "parse and print domains from a YAML configuration file")
 	force := flag.Bool("force", false, "force certificate renewal")
 	serve := flag.Bool("serve", false, "serve request-driven IP certificate bootstrap requests")
 	resolveLearnedHosts := flag.Bool("resolve-learned-hosts", false, "print validated base and learned hosts")
@@ -116,6 +126,14 @@ func main() {
 		fmt.Println(formatCertificateHosts(names))
 		return
 	}
+	if *domainFile != "" {
+		domains, err := readDomainConfig(*domainFile)
+		if err != nil {
+			fatal(err)
+		}
+		fmt.Println(strings.Join(domains, " "))
+		return
+	}
 	if *serve {
 		if err := runBootstrapServer(bootstrapServerConfig{
 			mode: *mode, listen: *listen, statePath: *stateFile,
@@ -142,6 +160,107 @@ func main() {
 	} else {
 		fmt.Println("unchanged")
 	}
+}
+
+// 读取完整 YAML 语法的域名清单，并限制文件大小、字段、数量和文档个数。
+func readDomainConfig(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open domain configuration: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("inspect domain configuration: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("domain configuration must be a regular file")
+	}
+	if info.Size() > maxDomainConfigBytes {
+		return nil, fmt.Errorf("domain configuration exceeds %d bytes", maxDomainConfigBytes)
+	}
+
+	decoder := yaml.NewDecoder(io.LimitReader(file, maxDomainConfigBytes+1))
+	decoder.KnownFields(true)
+	config := domainFileConfig{}
+	if err := decoder.Decode(&config); err != nil {
+		return nil, fmt.Errorf("parse domain configuration: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("parse domain configuration: %w", err)
+		}
+		return nil, errors.New("domain configuration must contain exactly one YAML document")
+	}
+	values, err := domainNodeValues(config.Domains)
+	if err != nil {
+		return nil, err
+	}
+	return normalizeDomains(values)
+}
+
+// 提取显式 YAML 字符串节点，并安全解析锚点别名，禁止数字和布尔值隐式转型。
+func domainNodeValues(nodes []yaml.Node) ([]string, error) {
+	values := make([]string, 0, len(nodes))
+	for index := range nodes {
+		node := &nodes[index]
+		aliasDepth := 0
+		for node.Kind == yaml.AliasNode && node.Alias != nil {
+			node = node.Alias
+			aliasDepth++
+			if aliasDepth > maxConfiguredDomains {
+				return nil, errors.New("domain configuration contains an invalid YAML alias cycle")
+			}
+		}
+		if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
+			return nil, errors.New("domain configuration entries must be YAML strings")
+		}
+		values = append(values, node.Value)
+	}
+	return values, nil
+}
+
+// 规范化并去重域名，确保生成的 Caddy 地址和 Host 匹配值不含配置注入内容。
+func normalizeDomains(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, errors.New("domain configuration must contain at least one domain")
+	}
+	if len(values) > maxConfiguredDomains {
+		return nil, fmt.Errorf("domain configuration cannot contain more than %d domains", maxConfiguredDomains)
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		domain := strings.ToLower(strings.TrimSpace(value))
+		if !isDNSDomain(domain) {
+			return nil, fmt.Errorf("domain configuration contains invalid DNS name %q", value)
+		}
+		if _, exists := seen[domain]; exists {
+			continue
+		}
+		seen[domain] = struct{}{}
+		result = append(result, domain)
+	}
+	return result, nil
+}
+
+// 校验不含协议、端口、路径或通配符的单个 ASCII DNS 主机名。
+func isDNSDomain(domain string) bool {
+	if domain == "" || len(domain) > 253 || strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") || strings.Contains(domain, "..") {
+		return false
+	}
+	for _, character := range domain {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '.' && character != '-' {
+			return false
+		}
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return false
+		}
+	}
+	return true
 }
 
 type bootstrapServerConfig struct {
