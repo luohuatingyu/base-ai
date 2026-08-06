@@ -1,5 +1,102 @@
 # 最近分支覆盖测试报告
 
+## 📋 HTTPS 站点分组与多证书 SNI 测试结果（2026-08-06）
+
+### Git 基准点
+
+Commit: 1a2f15dae635a024c892a05d59f97b764f3cac3b
+- 提交说明: Support per-site TLS certificate groups
+- 测试日期: 2026-08-06
+- 分支: master
+- 上一测试基准点: `be5c89e41204529d28a16b57ff8278c8e38c8344`
+
+### 变更范围
+
+- 修正上一版“全部域名共用一张证书”的模型，改为 `sites` 分组；每组 `domains` 独立绑定 `tls_cert_file` 和 `tls_key_file`。
+- 配置入口重命名为 `APP_HTTPS_SITES_FILE`，占位文件重命名为 `caddy/https-sites-placeholder.yml`；证书通过 `TLS_CERTS_DIR` 根目录统一只读挂载。
+- YAML 证书路径仅允许 `TLS_CERTS_DIR` 下的相对路径，拒绝绝对路径、`..` 和符号链接越界；同一域名不能跨分组重复。
+- 启动时验证证书与私钥匹配，并用叶证书 SAN 验证所属组全部域名；验证成功后生成权限为 0600 的临时合并 PEM 包，Caddy 按 SNI 选择匹配证书。
+- 配置限制为 64 KiB、最多 64 个站点分组和合计 256 个域名；IP 内部 CA 模式、Host 白名单、HTTP 跳转和内部接口隔离保持不变。
+- 未修改 Backend 业务代码、数据库结构、业务数据或前端业务逻辑。
+
+### 测试执行结果
+
+- 自动化测试合计：514/514 通过（100%），失败 0，错误 0，跳过 0。
+- 后端完整测试：287/287 通过，Maven BUILD SUCCESS。
+- 前端完整测试：189/189 通过，其中 Caddy 部署契约 11/11 通过。
+- Python Worker 完整测试：26/26 通过，运行于 Python 3.12.13。
+- Caddy Go 单元测试：12/12 通过，Go vet 通过。
+- Docker Compose：`docker compose up --build -d` 成功，四个服务全部 healthy。
+- 双证书运行态：`ai.test`、`api.test` 使用第一张双 SAN 证书，`console.test` 使用第二张证书，三者受各自证书校验的 HTTPS 均返回 200。
+- HTTP 运行态：允许域名返回保留 Host、路径和查询参数的 308；未知 Host 和 `/api/internal/**` 均返回 404。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 每组 domains 绑定独立证书和私钥 | Go 单元与运行态；两组域名、两对不同密钥 | 生成两个 PEM 包，Caddy 按 SNI 返回对应证书；符合预期 | 正常、集成 |
+| 同组支持多个域名 | Go 单元与运行态；`ai.test`、`api.test` 共用双 SAN 证书 | 两域名均通过同一证书校验并返回 200；符合预期 | 正常、兼容 |
+| 不同组使用不同证书 | 运行态；`console.test` 使用第二张独立证书 | 使用第二张 CA 文件验证成功并返回 200；符合预期 | 正常、安全 |
+| 证书和域名必须匹配 | 参数化 Go 单元；SAN 不覆盖配置域名 | 启动准备失败，不生成可用入口；符合预期 | 异常、安全 |
+| 证书和私钥必须匹配 | 参数化 Go 单元；第一张证书搭配第二张私钥 | 解析失败并拒绝配置；符合预期 | 异常、安全 |
+| 证书路径不能逃逸根目录 | 参数化 Go 单元；`..` 和指向根目录外的符号链接 | 两类路径均拒绝；符合预期 | 权限、安全 |
+| 域名不能跨组重复 | 参数化 Go 单元；不同大小写的相同域名位于两组 | 规范化后检测冲突并拒绝；符合预期 | 冲突、边界 |
+| 非法 YAML 和资源超限被拒绝 | Go 单元；未知字段、多文档、非字符串、空列表、超大文件/列表 | 全部拒绝；符合预期 | 异常、边界、安全 |
+| IP 模式与入口隔离不回归 | 部署契约、Compose 重建及运行态请求 | IP 模式 healthy，未知 Host 和内部接口 404；符合预期 | 兼容、权限、回归 |
+| 历史业务功能不回归 | Backend、Frontend、Worker 完整套件 | 502 项业务与前端自动化测试全部通过；符合预期 | 回归、异常、权限 |
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Caddy Go 单元与静态检查 | 固定 Go 1.26.5 容器执行 `gofmt`、`go test`、`go vet` | 12/12 通过，vet 通过 |
+| 部署定向测试 | `node --test frontend/test/security-deployment.test.mjs` | 11/11 通过 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 189/189 通过 |
+| 后端完整回归 | 固定 Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 287/287 通过，BUILD SUCCESS |
+| Worker 完整回归 | Python 3.12.13 容器安装锁定依赖后执行 pytest | 26/26 通过 |
+| Compose 与 Shell 校验 | `docker compose config --quiet`、`sh -n caddy/caddy-entrypoint.sh`、`git diff --check` | 全部通过 |
+| Compose 统一重建 | `docker compose up --build -d` | 四镜像成功构建，四服务 healthy |
+| 双证书 SNI | 两张临时自签证书、三个域名及 curl `--cacert --resolve` | 三个 HTTPS 请求均 200，且各自证书校验正确 |
+| HTTP 和安全边界 | 两个允许 Host 跳转、未知 Host、内部接口 | 结果依次为 308、308、404、404 |
+| 临时包权限 | 容器内检查 `/tmp/base-ai-https-tls/*.pem` | 两个文件均为 0600 |
+| 测试资源清理 | 停止测试容器并删除 `/tmp/base-ai-multi-cert-test` | 临时 YAML、证书、私钥和容器全部清理 |
+
+### 测试过程问题与处理
+
+- 本次需求澄清了“每个 domains 分组对应一对证书/私钥”，因此用向前提交替代上一版全局证书模型，没有改写已存在的提交历史。
+- 实现过程中另一个已授权任务并发提交了 trace 配置迁移及其测试报告；本任务使用路径限定提交，未夹带或覆盖其改动，最终 Compose 重建同时覆盖两边工作树并通过。
+- 宿主机未安装 Maven，使用项目固定的 Maven 3.9.9 / Java 17 容器完成 287 项后端测试。
+- 临时运行态证书仅用于本地 SNI 验收，没有修改 `.env`、系统信任库、业务数据或 Caddy 命名卷，测试结束后已清理。
+
+### 重测触发条件
+
+- 修改 `sites` schema、域名分组、证书字段、路径规范化、SAN/密钥校验或临时 PEM 生成。
+- 修改 `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR`、Compose 挂载、Caddy TLS loader 或 SNI 行为。
+- 修改 Host 白名单、HTTP 跳转、IP 学习模式、内部接口边界或 Caddy 证书生命周期。
+- 修改 Backend 业务代码、认证授权、Controller、Service、Repository、Domain 或核心配置。
+
+### 已知问题与限制
+
+- 未使用真实公网 DNS、生产 CA 证书或外部负载均衡器；运行态使用两张本地自签证书完成等价 SNI 和 TLS 校验。
+- YAML 或宿主机证书变化不会自动热加载；修改后必须执行 `docker compose restart caddy`，启动流程会重新验证全部分组。
+- YAML 的 `domains` 不接受通配符，但某组证书可以使用能够覆盖该组具体域名的通配符 SAN。
+- Caddy 使用的合并 PEM 位于容器临时目录，权限为 0600，容器重建后会由只读挂载源重新生成。
+- 前端生产构建仍有主包超过 500 kB 的既有性能告警，与本次入口改造无关。
+
+### 下次测试建议
+
+1. 在目标 Linux 主机使用真实多 SAN/通配符证书，验证 UID 10001 的目录遍历权限、证书续期替换和重启加载。
+2. 使用真实 DNS 和独立客户端验证多域名 SNI、HTTP/2、HTTP/3、防火墙及外部 80/443。
+3. 如需自动热加载，需另行设计文件监听、全组原子验证、失败回滚和不中断 reload。
+
+### 回滚方式
+
+- 回滚实现提交 `1a2f15d`，恢复上一版单证书 YAML 模型，并重新执行 `docker compose up --build -d`。
+- 回滚前将 `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR` 转换回上一版 `APP_DOMAIN_FILE`、`TLS_CERT_FILE`、`TLS_KEY_FILE`。
+- 本次无数据库迁移和业务数据修改；Caddy data/config 命名卷可以保留。
+
+---
+
 ## 📋 任务追踪排除配置迁移测试结果（2026-08-06）
 
 ### Git 基准点
