@@ -201,7 +201,7 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
-- **HTTPS 入口、端口和镜像：** `APP_DOMAIN`、`TLS_CERT_FILE`、`TLS_KEY_FILE`、`APP_PUBLIC_IP`、`APP_PRIVATE_IP`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
+- **HTTPS 入口、端口和镜像：** `APP_DOMAIN`、`TLS_CERT_FILE`、`TLS_KEY_FILE`、`HOST_IP_CHECK_INTERVAL_SECONDS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
 Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
@@ -211,7 +211,7 @@ Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范�
 Caddy 根据配置自动选择一种入口模式：
 
 - **域名证书模式：** `APP_DOMAIN`、`TLS_CERT_FILE` 和 `TLS_KEY_FILE` 必须同时配置。证书应为包含中间证书的 PEM 完整链，私钥应为无交互密码的 PEM 文件。三项只配置一部分时 Caddy 会拒绝启动，不会降级到 HTTP。
-- **IP 内部 CA 模式：** 上述三项全部留空后生效。`APP_PUBLIC_IP` 和 `APP_PRIVATE_IP` 可以同时配置；至少需要一个有效 IPv4，默认使用 `127.0.0.1`。项目使用 Caddy 持久化内部 CA 签发一张包含全部已配置 IP SAN 的证书，因此不发送 SNI 的客户端也能通过任一 IP 完成 TLS 校验。访问设备必须信任 Caddy 根证书。
+- **IP 内部 CA 模式：** 上述三项全部留空后生效。项目始终将 `localhost` 和 `127.0.0.1` 加入证书，并由宿主机跟踪器自动发现默认网卡 IPv4，无需手工填写 IP。Caddy 持久化内部 CA 签发包含全部当前地址的多 SAN 证书，访问设备必须信任 Caddy 根证书。
 
 域名使用标准端口的示例：
 
@@ -219,29 +219,26 @@ Caddy 根据配置自动选择一种入口模式：
 APP_DOMAIN=ai.example.com
 TLS_CERT_FILE=/absolute/path/fullchain.pem
 TLS_KEY_FILE=/absolute/path/privkey.pem
-APP_PUBLIC_IP=
-APP_PRIVATE_IP=
 HTTP_PORT=80
 HTTPS_PORT=443
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-IP 同时支持公网和内网地址的示例：
+IP 自动发现模式的示例：
 
 ```dotenv
 APP_DOMAIN=
 TLS_CERT_FILE=
 TLS_KEY_FILE=
-APP_PUBLIC_IP=203.0.113.10
-APP_PRIVATE_IP=192.168.1.10
+HOST_IP_CHECK_INTERVAL_SECONDS=60
 HTTP_PORT=81
 HTTPS_PORT=444
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-公网 IP 位于路由器或 NAT 后方时，需要把对应 TCP 80/443 或 81/444 转发到部署主机；启用 HTTP/3 时还需转发 HTTPS 端口的 UDP 流量。公网 IP 变化后需要更新配置并重启 Caddy。
+宿主机跟踪器仅选择当前默认路由网卡的可用 IPv4，不会把 Docker、回环、链路本地或基准测试网段写入证书。它将地址原子写入本地 `.runtime` 目录，Caddy 按 `HOST_IP_CHECK_INTERVAL_SECONDS` 重读；DHCP 续租或默认网卡切换后会自动重签证书并热加载。当主机位于 NAT 后时，外部公网地址不属于本机网卡，应使用域名证书模式。
 
-IP 证书目标有效期为 30 天，且不会超过 Caddy 中间 CA 的剩余有效期。容器每小时检查一次证书；IP SAN、中间 CA 或有效期需要更新时会自动重新签发，并通过只监听容器回环地址的管理接口热加载。该管理接口不会发布到宿主机或 Compose 网络。首次签发失败会阻止 Caddy 启动，后台续期失败则保留当前证书并在下一周期重试。
+IP 证书目标有效期为 30 天，且不会超过 Caddy 中间 CA 的剩余有效期。地址 SAN、中间 CA 或有效期需要更新时会自动重新签发，并通过只监听容器回环地址的管理接口热加载。该管理接口不会发布到宿主机或 Compose 网络。首次签发失败会阻止 Caddy 启动，后台续期失败则保留当前证书并在下一周期重试。
 
 域名证书和私钥以只读文件挂载，Caddy 使用容器 UID `10001`。Linux 主机应通过专用组或 ACL 授予该 UID 读取文件及遍历父目录的权限，不要将私钥设置为所有用户可读。可在启动前验证容器用户权限：
 
@@ -258,9 +255,11 @@ docker compose run --rm --entrypoint sh caddy -c \
 
 ```bash
 docker compose config --quiet
-docker compose up --build -d
-docker compose ps
+./scripts/base-ai.sh up --build -d
+./scripts/base-ai.sh ps
 ```
+
+IP 自动发现依赖上述启动脚本在宿主机运行跟踪器。直接执行 `docker compose up` 仍可以使用 `localhost` 和 `127.0.0.1`，但不会持续发现局域网地址变化。
 
 所有服务进入健康状态后，可访问：
 
@@ -305,7 +304,7 @@ Firefox 等使用独立证书库的客户端可能仍需在浏览器设置中导
 停止应用：
 
 ```bash
-docker compose down
+./scripts/base-ai.sh down
 ```
 
 ## 开发与测试
@@ -333,7 +332,7 @@ node --test frontend/test/*.test.mjs frontend/tests/*.test.js
 代码变更后重新构建 Docker 环境：
 
 ```bash
-docker compose up --build -d
+./scripts/base-ai.sh up --build -d
 ```
 
 ## 仓库结构

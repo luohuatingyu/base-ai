@@ -201,7 +201,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
-- **HTTPS ingress and images:** `APP_DOMAIN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `APP_PUBLIC_IP`, `APP_PRIVATE_IP`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
+- **HTTPS ingress and images:** `APP_DOMAIN`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `HOST_IP_CHECK_INTERVAL_SECONDS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
 Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normalizes it to lowercase, and names the four runtime containers `<short-name>-backend`, `<short-name>-python-worker`, `<short-name>-frontend`, and `<short-name>-caddy`. For example, `APP_PLATFORM_SHORT_NAME=AI` produces `ai-backend`, `ai-python-worker`, `ai-frontend`, and `ai-caddy`.
@@ -211,7 +211,7 @@ Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normaliz
 Caddy selects exactly one ingress mode from the environment:
 
 - **Domain certificate mode:** `APP_DOMAIN`, `TLS_CERT_FILE`, and `TLS_KEY_FILE` must all be configured. The certificate must be a PEM full chain including intermediates, and the key must be an unencrypted PEM file. A partial configuration fails startup instead of downgrading to HTTP.
-- **IP internal-CA mode:** active when all three domain-certificate variables are empty. `APP_PUBLIC_IP` and `APP_PRIVATE_IP` may both be configured; at least one valid IPv4 address is required, with `127.0.0.1` as the default. The persisted Caddy CA signs one certificate containing every configured IP SAN, so clients without SNI can still validate TLS through either IP. Every client must trust the Caddy root CA.
+- **IP internal-CA mode:** active when all three domain-certificate variables are empty. The project always includes `localhost` and `127.0.0.1`, while a host-side tracker automatically discovers the default interface IPv4 address without manual IP configuration. The persisted Caddy CA signs one multi-SAN certificate containing every current address. Every client must trust the Caddy root CA.
 
 Example for a domain on standard ports:
 
@@ -219,29 +219,26 @@ Example for a domain on standard ports:
 APP_DOMAIN=ai.example.com
 TLS_CERT_FILE=/absolute/path/fullchain.pem
 TLS_KEY_FILE=/absolute/path/privkey.pem
-APP_PUBLIC_IP=
-APP_PRIVATE_IP=
 HTTP_PORT=80
 HTTPS_PORT=443
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-Example with both public and private IP addresses:
+Example for automatic IP discovery:
 
 ```dotenv
 APP_DOMAIN=
 TLS_CERT_FILE=
 TLS_KEY_FILE=
-APP_PUBLIC_IP=203.0.113.10
-APP_PRIVATE_IP=192.168.1.10
+HOST_IP_CHECK_INTERVAL_SECONDS=60
 HTTP_PORT=81
 HTTPS_PORT=444
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-When the public IP is behind a router or NAT, forward the selected TCP HTTP and HTTPS ports to this host; forward the HTTPS UDP port as well to enable HTTP/3. Update the environment and restart Caddy whenever a dynamic public IP changes.
+The host tracker selects usable IPv4 addresses only from the current default-route interface. It excludes Docker, loopback, link-local, and benchmarking ranges. Addresses are atomically written under the local `.runtime` directory, and Caddy rereads them at `HOST_IP_CHECK_INTERVAL_SECONDS`; DHCP renewals and default-interface changes therefore trigger certificate renewal and a hot reload. An external address behind NAT is not assigned to a host interface, so use domain certificate mode for public access through NAT.
 
-The IP certificate targets a 30-day lifetime without exceeding the remaining lifetime of the Caddy intermediate. The container checks it hourly. Changes to the IP SANs, intermediate CA, or renewal window trigger a new certificate and a hot reload through an admin endpoint bound only to the container loopback address. That endpoint is not published to the host or the Compose network. Initial issuance failures stop Caddy; background renewal failures keep the current certificate and retry during the next cycle.
+The IP certificate targets a 30-day lifetime without exceeding the remaining lifetime of the Caddy intermediate. Changes to address SANs, the intermediate CA, or the renewal window trigger a new certificate and a hot reload through an admin endpoint bound only to the container loopback address. That endpoint is not published to the host or the Compose network. Initial issuance failures stop Caddy; background renewal failures keep the current certificate and retry during the next cycle.
 
 The domain certificate and key are mounted read-only, while Caddy runs as container UID `10001`. On Linux, grant that UID access with a dedicated group or ACL, including traversal permission on parent directories; do not make the private key world-readable. Verify access before startup with:
 
@@ -258,9 +255,11 @@ Validate the resolved configuration before starting the stack. Be aware that `do
 
 ```bash
 docker compose config --quiet
-docker compose up --build -d
-docker compose ps
+./scripts/base-ai.sh up --build -d
+./scripts/base-ai.sh ps
 ```
+
+Automatic IP discovery depends on the launcher above keeping a tracker on the host. Running `docker compose up` directly still serves `localhost` and `127.0.0.1`, but does not continuously discover LAN address changes.
 
 After all services are healthy:
 
@@ -307,7 +306,7 @@ When `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` is unset or `false`, the seed passwo
 To stop the application:
 
 ```bash
-docker compose down
+./scripts/base-ai.sh down
 ```
 
 ## Development and Tests
@@ -335,7 +334,7 @@ node --test frontend/test/*.test.mjs frontend/tests/*.test.js
 Rebuild the Docker environment after code changes:
 
 ```bash
-docker compose up --build -d
+./scripts/base-ai.sh up --build -d
 ```
 
 ## Repository Layout

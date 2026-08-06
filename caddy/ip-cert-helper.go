@@ -42,13 +42,18 @@ type certificateManager struct {
 	now                  func() time.Time
 }
 
-// 主入口解析 IP 列表并确保磁盘上的多 SAN 证书可继续安全使用。
+type certificateNames struct {
+	dnsNames    []string
+	ipAddresses []net.IP
+}
+
+// 主入口解析回环主机名和 IP 列表，并确保多 SAN 证书可继续安全使用。
 func main() {
-	ipsValue := flag.String("ips", "", "comma or whitespace separated IPv4 addresses")
+	hostsValue := flag.String("hosts", "", "comma or whitespace separated localhost and IPv4 addresses")
 	force := flag.Bool("force", false, "force certificate renewal")
 	flag.Parse()
 
-	ips, err := parseIPv4List(*ipsValue)
+	names, err := parseCertificateNames(*hostsValue)
 	if err != nil {
 		fatal(err)
 	}
@@ -62,7 +67,7 @@ func main() {
 		renewBefore:          48 * time.Hour,
 		now:                  time.Now,
 	}
-	changed, err := manager.ensureCertificate(ips, *force)
+	changed, err := manager.ensureCertificate(names, *force)
 	if err != nil {
 		fatal(err)
 	}
@@ -79,36 +84,41 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-// 解析、规范化并去重 IPv4，保持用户配置的首个地址作为默认 SNI。
-func parseIPv4List(value string) ([]net.IP, error) {
+// 解析、规范化并去重 localhost 和 IPv4，拒绝将任意 DNS 名注入内部证书。
+func parseCertificateNames(value string) (certificateNames, error) {
 	parts := strings.FieldsFunc(value, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\t' || r == '\r' || r == '\n'
 	})
 	if len(parts) == 0 {
-		return nil, errors.New("at least one IPv4 address is required")
+		return certificateNames{}, errors.New("at least one local host name or IPv4 address is required")
 	}
 	seen := make(map[string]struct{}, len(parts))
-	ips := make([]net.IP, 0, len(parts))
+	names := certificateNames{}
 	for _, part := range parts {
+		if _, exists := seen[part]; exists {
+			continue
+		}
+		if part == "localhost" {
+			seen[part] = struct{}{}
+			names.dnsNames = append(names.dnsNames, part)
+			continue
+		}
 		parsed := net.ParseIP(part)
 		if parsed == nil || parsed.To4() == nil || strings.Contains(part, ":") {
-			return nil, fmt.Errorf("%q is not a valid IPv4 address", part)
+			return certificateNames{}, fmt.Errorf("%q is not localhost or a valid IPv4 address", part)
 		}
 		canonical := parsed.To4().String()
 		if canonical != part {
-			return nil, fmt.Errorf("%q is not a canonical IPv4 address", part)
-		}
-		if _, exists := seen[canonical]; exists {
-			continue
+			return certificateNames{}, fmt.Errorf("%q is not a canonical IPv4 address", part)
 		}
 		seen[canonical] = struct{}{}
-		ips = append(ips, parsed.To4())
+		names.ipAddresses = append(names.ipAddresses, parsed.To4())
 	}
-	return ips, nil
+	return names, nil
 }
 
 // 校验 Caddy CA，复用仍有效的证书，或原子写入新签发的证书与私钥。
-func (m certificateManager) ensureCertificate(ips []net.IP, force bool) (bool, error) {
+func (m certificateManager) ensureCertificate(names certificateNames, force bool) (bool, error) {
 	root, _, err := readFirstCertificate(m.rootCertPath)
 	if err != nil {
 		return false, fmt.Errorf("read Caddy root CA: %w", err)
@@ -134,11 +144,11 @@ func (m certificateManager) ensureCertificate(ips []net.IP, force bool) (bool, e
 	if now.Before(intermediate.NotBefore) || !now.Before(intermediate.NotAfter) {
 		return false, errors.New("Caddy intermediate CA is not currently valid")
 	}
-	if !force && m.currentCertificateReusable(ips, intermediate, now) {
+	if !force && m.currentCertificateReusable(names, intermediate, now) {
 		return false, nil
 	}
 
-	leafPEM, keyPEM, err := createLeafCertificate(ips, intermediate, intermediateKey, now, m.lifetime)
+	leafPEM, keyPEM, err := createLeafCertificate(names, intermediate, intermediateKey, now, m.lifetime)
 	if err != nil {
 		return false, err
 	}
@@ -153,7 +163,7 @@ func (m certificateManager) ensureCertificate(ips []net.IP, force bool) (bool, e
 }
 
 // 检查现有证书的 SAN、签发者、密钥及剩余有效期是否全部满足复用条件。
-func (m certificateManager) currentCertificateReusable(ips []net.IP, intermediate *x509.Certificate, now time.Time) bool {
+func (m certificateManager) currentCertificateReusable(names certificateNames, intermediate *x509.Certificate, now time.Time) bool {
 	chain, err := readCertificates(m.outputCertPath)
 	if err != nil || len(chain) < 2 {
 		return false
@@ -169,11 +179,11 @@ func (m certificateManager) currentCertificateReusable(ips []net.IP, intermediat
 	if now.Before(leaf.NotBefore) || leaf.NotAfter.Sub(now) <= m.renewBefore {
 		return false
 	}
-	return equalIPSets(leaf.IPAddresses, ips)
+	return equalStringSets(leaf.DNSNames, names.dnsNames) && equalIPSets(leaf.IPAddresses, names.ipAddresses)
 }
 
 // 创建由 Caddy 中间 CA 签发的 ECDSA 叶证书，证书有效期不会超过签发者。
-func createLeafCertificate(ips []net.IP, issuer *x509.Certificate, issuerKey crypto.Signer, now time.Time, lifetime time.Duration) ([]byte, []byte, error) {
+func createLeafCertificate(names certificateNames, issuer *x509.Certificate, issuerKey crypto.Signer, now time.Time, lifetime time.Duration) ([]byte, []byte, error) {
 	notAfter := now.Add(lifetime)
 	issuerLimit := issuer.NotAfter.Add(-time.Hour)
 	if issuerLimit.Before(notAfter) {
@@ -206,7 +216,8 @@ func createLeafCertificate(ips []net.IP, issuer *x509.Certificate, issuerKey cry
 		BasicConstraintsValid: true,
 		SubjectKeyId:          keyID[:20],
 		AuthorityKeyId:        issuer.SubjectKeyId,
-		IPAddresses:           cloneIPs(ips),
+		DNSNames:              append([]string(nil), names.dnsNames...),
+		IPAddresses:           cloneIPs(names.ipAddresses),
 	}
 	certificateDER, err := x509.CreateCertificate(rand.Reader, template, issuer, &key.PublicKey, issuerKey)
 	if err != nil {
@@ -304,6 +315,18 @@ func equalIPSets(left, right []net.IP) bool {
 	for index := range right {
 		rightValues[index] = right[index].String()
 	}
+	sort.Strings(leftValues)
+	sort.Strings(rightValues)
+	return strings.Join(leftValues, ",") == strings.Join(rightValues, ",")
+}
+
+// 比较 DNS SAN 集合，忽略证书编码顺序但不忽略缺失或额外名称。
+func equalStringSets(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	leftValues := append([]string(nil), left...)
+	rightValues := append([]string(nil), right...)
 	sort.Strings(leftValues)
 	sort.Strings(rightValues)
 	return strings.Join(leftValues, ",") == strings.Join(rightValues, ",")

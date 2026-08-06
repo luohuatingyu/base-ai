@@ -15,28 +15,34 @@ import (
 	"time"
 )
 
-// 验证双 IPv4 规范化、顺序保持和重复地址去重。
-func TestParseIPv4List(t *testing.T) {
-	ips, err := parseIPv4List("203.0.113.10, 192.168.1.10 203.0.113.10")
+// 验证 localhost 和双 IPv4 规范化、顺序保持和重复地址去重。
+func TestParseCertificateNames(t *testing.T) {
+	names, err := parseCertificateNames("localhost 203.0.113.10, 192.168.1.10 203.0.113.10 localhost")
 	if err != nil {
-		t.Fatalf("parse valid IPv4 list: %v", err)
+		t.Fatalf("parse valid certificate names: %v", err)
 	}
-	if got, want := len(ips), 2; got != want {
+	if got, want := len(names.dnsNames), 1; got != want {
+		t.Fatalf("DNS name count = %d, want %d", got, want)
+	}
+	if got, want := names.dnsNames[0], "localhost"; got != want {
+		t.Fatalf("DNS name = %s, want %s", got, want)
+	}
+	if got, want := len(names.ipAddresses), 2; got != want {
 		t.Fatalf("IP count = %d, want %d", got, want)
 	}
-	if got, want := ips[0].String(), "203.0.113.10"; got != want {
+	if got, want := names.ipAddresses[0].String(), "203.0.113.10"; got != want {
 		t.Fatalf("first IP = %s, want %s", got, want)
 	}
-	if got, want := ips[1].String(), "192.168.1.10"; got != want {
+	if got, want := names.ipAddresses[1].String(), "192.168.1.10"; got != want {
 		t.Fatalf("second IP = %s, want %s", got, want)
 	}
 }
 
-// 验证空值、IPv6、越界值和非规范前导零都被拒绝。
-func TestParseIPv4ListRejectsInvalidValues(t *testing.T) {
+// 验证空值、IPv6、越界值、非规范前导零和任意 DNS 名都被拒绝。
+func TestParseCertificateNamesRejectsInvalidValues(t *testing.T) {
 	for _, value := range []string{"", "2001:db8::1", "192.168.1.256", "192.168.001.10", "host.example"} {
-		if _, err := parseIPv4List(value); err == nil {
-			t.Fatalf("parseIPv4List(%q) unexpectedly succeeded", value)
+		if _, err := parseCertificateNames(value); err == nil {
+			t.Fatalf("parseCertificateNames(%q) unexpectedly succeeded", value)
 		}
 	}
 }
@@ -56,23 +62,23 @@ func TestCertificateLifecycle(t *testing.T) {
 		renewBefore:          48 * time.Hour,
 		now:                  func() time.Time { return current },
 	}
-	ips, _ := parseIPv4List("203.0.113.10 192.168.1.10")
+	names, _ := parseCertificateNames("localhost 203.0.113.10 192.168.1.10")
 
-	changed, err := manager.ensureCertificate(ips, false)
+	changed, err := manager.ensureCertificate(names, false)
 	if err != nil || !changed {
 		t.Fatalf("initial certificate changed=%v err=%v", changed, err)
 	}
 	first := readLeaf(t, manager.outputCertPath)
-	if !equalIPSets(first.IPAddresses, ips) {
-		t.Fatalf("initial SANs = %v, want %v", first.IPAddresses, ips)
+	if !equalStringSets(first.DNSNames, names.dnsNames) || !equalIPSets(first.IPAddresses, names.ipAddresses) {
+		t.Fatalf("initial SANs = DNS %v IP %v, want DNS %v IP %v", first.DNSNames, first.IPAddresses, names.dnsNames, names.ipAddresses)
 	}
 
-	changed, err = manager.ensureCertificate(ips, false)
+	changed, err = manager.ensureCertificate(names, false)
 	if err != nil || changed {
 		t.Fatalf("stable certificate changed=%v err=%v", changed, err)
 	}
 
-	changed, err = manager.ensureCertificate(ips, true)
+	changed, err = manager.ensureCertificate(names, true)
 	if err != nil || !changed {
 		t.Fatalf("forced certificate changed=%v err=%v", changed, err)
 	}
@@ -82,18 +88,18 @@ func TestCertificateLifecycle(t *testing.T) {
 	}
 
 	current = current.Add(29 * 24 * time.Hour)
-	changed, err = manager.ensureCertificate(ips, false)
+	changed, err = manager.ensureCertificate(names, false)
 	if err != nil || !changed {
 		t.Fatalf("expiring certificate changed=%v err=%v", changed, err)
 	}
 
-	oneIP, _ := parseIPv4List("192.168.1.10")
-	changed, err = manager.ensureCertificate(oneIP, false)
+	loopbackOnly, _ := parseCertificateNames("localhost 127.0.0.1")
+	changed, err = manager.ensureCertificate(loopbackOnly, false)
 	if err != nil || !changed {
 		t.Fatalf("changed SAN certificate changed=%v err=%v", changed, err)
 	}
-	if leaf := readLeaf(t, manager.outputCertPath); !equalIPSets(leaf.IPAddresses, oneIP) {
-		t.Fatalf("renewed SANs = %v, want %v", leaf.IPAddresses, oneIP)
+	if leaf := readLeaf(t, manager.outputCertPath); !equalStringSets(leaf.DNSNames, loopbackOnly.dnsNames) || !equalIPSets(leaf.IPAddresses, loopbackOnly.ipAddresses) {
+		t.Fatalf("renewed SANs = DNS %v IP %v, want DNS %v IP %v", leaf.DNSNames, leaf.IPAddresses, loopbackOnly.dnsNames, loopbackOnly.ipAddresses)
 	}
 }
 
@@ -112,8 +118,8 @@ func TestIntermediateRotationRenewsCertificate(t *testing.T) {
 		renewBefore:          48 * time.Hour,
 		now:                  func() time.Time { return current },
 	}
-	ips, _ := parseIPv4List("127.0.0.1 127.0.0.2")
-	if changed, err := manager.ensureCertificate(ips, false); err != nil || !changed {
+	names, _ := parseCertificateNames("localhost 127.0.0.1 127.0.0.2")
+	if changed, err := manager.ensureCertificate(names, false); err != nil || !changed {
 		t.Fatalf("initial certificate changed=%v err=%v", changed, err)
 	}
 	firstChain, _ := readCertificates(manager.outputCertPath)
@@ -121,7 +127,7 @@ func TestIntermediateRotationRenewsCertificate(t *testing.T) {
 	rootKey, _ := readPrivateKey(paths.rootKey)
 	writeIntermediate(t, paths, root, rootKey, current.Add(time.Hour))
 
-	changed, err := manager.ensureCertificate(ips, false)
+	changed, err := manager.ensureCertificate(names, false)
 	if err != nil || !changed {
 		t.Fatalf("rotated issuer certificate changed=%v err=%v", changed, err)
 	}

@@ -237,6 +237,9 @@ __marimo__/
 *.iml
 .DS_Store
 
+# Host IP tracking runtime state
+.runtime/
+
 # Local TLS material and exported Caddy trust roots
 caddy-root*.crt
 caddy/*.crt

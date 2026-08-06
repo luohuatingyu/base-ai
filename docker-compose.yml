@@ -185,8 +185,8 @@ services:
       APP_DOMAIN: ${APP_DOMAIN:-}
       TLS_CERT_FILE: ${TLS_CERT_FILE:-}
       TLS_KEY_FILE: ${TLS_KEY_FILE:-}
-      APP_PUBLIC_IP: ${APP_PUBLIC_IP:-}
-      APP_PRIVATE_IP: ${APP_PRIVATE_IP-127.0.0.1}
+      CADDY_DISCOVERED_HOSTS_FILE: /run/base-ai/host-ips
+      CADDY_IP_CHECK_INTERVAL_SECONDS: ${HOST_IP_CHECK_INTERVAL_SECONDS:-60}
       CADDY_EXTERNAL_HTTP_PORT: ${HTTP_PORT:-81}
       CADDY_EXTERNAL_HTTPS_PORT: ${HTTPS_PORT:-444}
       APP_MAX_REQUEST_BYTES: ${APP_MAX_REQUEST_BYTES:-20971520}
@@ -198,6 +198,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ${TLS_CERT_FILE:-./caddy/tls-placeholder.pem}:/etc/caddy/tls/fullchain.pem:ro
       - ${TLS_KEY_FILE:-./caddy/tls-placeholder.pem}:/etc/caddy/tls/privkey.pem:ro
+      - ./.runtime:/run/base-ai:ro
       - caddy-data:/data
       - caddy-config:/config
     healthcheck:
