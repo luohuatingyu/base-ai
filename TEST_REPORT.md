@@ -1,5 +1,119 @@
 # 最近分支覆盖测试报告
 
+## 📋 自适应 HTTPS 与双 IP 多 SAN 入口测试结果（2026-08-06）
+
+### Git 基准点
+
+Commit: 3d44128efeed8c1ebc009125baee9de991e66abe
+- 提交说明: Add adaptive HTTPS ingress modes
+- 测试日期: 2026-08-06
+- 分支: master
+- 上一测试基准点: `370b4b8cbc001087bb865e2a1404c2a5cf692176`
+
+### 变更范围
+
+- Caddy 支持域名证书与 IP 内部 CA 两种互斥模式；域名、完整证书链和私钥必须同时配置，部分配置会拒绝启动。
+- IP 模式支持同时配置公网与内网 IPv4，由 Caddy 持久化内部 CA 签发一张覆盖全部 IP SAN 的证书，并通过默认 SNI 兼容不发送 SNI 的 IP 客户端。
+- 新增 Go 1.26 标准库证书辅助程序：校验 Caddy 根/中间 CA、规范化和去重 IPv4、签发 ECDSA 多 SAN 证书、复用有效证书，并在 SAN、签发者或有效期变化时续期。
+- IP 证书每小时检查一次，目标有效期 30 天、提前 48 小时续期；续期后通过仅监听容器回环地址的 Caddy 管理接口强制热加载。域名模式继续关闭管理接口。
+- Compose 发布默认 81/444 TCP 与 444 UDP，持久化 Caddy data/config，默认启用 Secure Cookie；HTTP 仅对允许的 Host 执行 308 跳转，未知 Host 返回 404。
+- 标准 80/443 模式启用一年 HSTS；非标准端口不发送 HSTS，避免浏览器把 HTTP 非标准端口升级到错误的 HTTPS 端口。
+- 中英文文档补充域名/IP 配置、双 IP、证书权限、根 CA 导出安装、NAT、证书续期和命名卷生命周期说明。
+
+### 测试执行结果
+
+- 自动化测试合计：503/503 通过（100%），失败 0，错误 0，跳过 0。
+- 后端完整测试：287/287 通过；`SessionCookieServiceTest` 4/4 通过，覆盖默认与显式 Secure Cookie 分支。
+- 前端完整测试：186/186 通过；部署契约测试 8/8 通过，较上一基准新增域名/IP模式解析与非法配置测试。
+- Python Worker 完整测试：26/26 通过，使用 Python 3.12.13 与锁定开发依赖。
+- Caddy IP 证书辅助程序：4/4 Go 单元测试通过，Go vet 通过。
+- Docker Compose：`docker compose up --build -d` 成功；Backend、Python Worker、Frontend、Caddy 全部 healthy。
+- IP 运行态：两个 IP 的无 SNI TLS 校验均通过，HTTP 308 保留 Host、路径和查询参数，内部接口 404，未知 Host 404。
+- 证书生命周期：强制续期后磁盘证书指纹变化；强制 reload 前服务保持旧证书，reload 后切换新证书；普通 Caddy 重建前后根 CA 文件及 SHA-256 指纹一致。
+- 域名运行态：临时 `base-ai.test` 完整证书和私钥加载成功，HTTPS 200、HTTP 308、内部接口 404，回环管理接口不可访问。
+- 标准端口配置：80/443 域名 Caddyfile 校验通过；非标准 81/444 响应确认不包含 HSTS。
+
+### 关键模块测试
+
+- Caddy 多 SAN PKI：4/4，通过双 IP、重复 IP去重、非法地址、稳定复用、强制续期、临期续期、SAN 变化和中间 CA轮换测试。
+- Caddy 入口契约：8/8，通过端口发布、CA 持久化、Host 白名单、TLS 模式切换、配置拒绝、内部接口隔离和非 root 权限检查。
+- Security/会话 Cookie：4/4 定向通过，后端完整 Security 回归全部通过。
+- Backend：287/287，通过 Controller、Service、Repository、认证授权、健康检查和历史回归。
+- Frontend：186/186，通过页面、路由、API 客户端、Cookie 会话和部署契约回归。
+- Python Worker：26/26，通过 LLM、邮件投递和链路上下文回归。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 域名配置完整时使用已有证书 | 运行态集成；`base-ai.test`、临时完整链和私钥 | HTTPS 200，HTTP 308 到同 Host 的 444，内部接口 404；符合预期 | 正常、安全、集成 |
+| 域名配置不完整时禁止降级 | 入口契约；分别缺少域名、证书或私钥 | 启动配置解析失败并输出明确错误；符合预期 | 异常、安全 |
+| 未配置域名证书时进入 IP 模式 | 入口契约和 Compose；清空域名三项，提供两个 IPv4 | 解析为 IP 模式，使用内部多 SAN 证书；符合预期 | 正常、兼容 |
+| 公网与内网 IP 同时支持无 SNI HTTPS | 运行态集成；`127.0.0.1`、`127.0.0.2`，宿主机 LibreSSL/curl 不发送 IP SNI | 两个 URL 均使用受根 CA验证的同一张证书并返回 200；符合预期 | 正常、边界、兼容 |
+| 多 SAN 证书只包含配置地址 | Go 单元及运行态 OpenSSL；双 IP和重复 IP | SAN 精确包含两个去重 IPv4，无额外 DNS/IP；符合预期 | 边界、安全 |
+| 非法 IPv4 和端口被拒绝 | 参数化入口测试；越界、前导零、IPv6、主机名、0/65536 端口 | 均失败且不生成有效入口配置；符合预期 | 异常、安全 |
+| 证书自动复用与续期 | Go 单元；未变化、强制、剩余不足 48 小时、SAN/中间 CA变化 | 稳定配置复用；四类变化重新签发；符合预期 | 正常、边界、回归 |
+| 续期后热加载且不中断旧证书 | 运行态指纹；强制签发后执行回环管理 reload | reload 前呈现旧指纹，reload 后呈现新指纹，服务持续返回 200；符合预期 | 集成、故障恢复 |
+| 普通重建不更换根 CA | 运行态；导出根 CA、强制重建 Caddy、再次导出并比较 | 文件完全一致、SHA-256 指纹一致，双 IP仍返回 200；符合预期 | 兼容、回归 |
+| HTTP 仅跳转允许的 Host | 运行态 curl；两个配置 IP、临时域名和未知 Host | 已配置 Host 308 并保留路径/查询，未知 Host 404；符合预期 | 正常、安全 |
+| Secure Cookie 默认开启 | Compose 契约和后端 Cookie 测试 | Compose 默认 true，会话与 CSRF Cookie Secure 分支通过；符合预期 | 安全、兼容 |
+| 内部接口继续隔离 | 域名与双 IP运行态请求 `/api/internal/health` | 均返回 404，公开健康接口返回 200；符合预期 | 权限、安全、回归 |
+| 历史功能不回归 | 后端、前端、Worker 完整测试 | 499 项历史与部署测试全部通过；符合预期 | 回归、异常、边界、权限 |
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Compose 静态校验 | 双 IP变量执行 `docker compose config --quiet` | 通过 |
+| Caddy Go 单元测试 | Go 1.26.5 容器执行 `go test ip-cert-helper.go ip-cert-helper_test.go` | 4/4 通过 |
+| Caddy Go 静态检查 | Go 1.26.5 容器执行 `go vet ip-cert-helper.go ip-cert-helper_test.go` | 通过 |
+| Shell 与空白检查 | `sh -n caddy/caddy-entrypoint.sh`、`git diff --check` | 通过 |
+| 后端完整回归 | `docker compose build --no-cache backend` 中 Maven 3.9.9 / Java 17 执行 `mvn -B -ntp package` | 287/287 通过 |
+| 前端完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 186/186 通过 |
+| Worker 完整回归 | Python 3.12.13 临时容器安装锁定开发依赖后执行 `python -m pytest -p no:cacheprovider` | 26/26 通过 |
+| Compose 统一重建 | 双 IP、81/444 环境执行 `docker compose up --build -d` | 四镜像构建成功，四服务 healthy |
+| IP Caddy 配置校验 | 经入口脚本执行 `caddy validate` | 多 SAN证书复用，配置有效 |
+| 双 IP TLS | 根 CA `--cacert`，第二 IP使用 `--resolve` 绕过 Docker Desktop 回环转发限制 | 两个 IP均 TLS 验证通过并返回 200 |
+| HTTP 和入口隔离 | curl 请求两个 IP的 HTTP、未知 Host和 `/api/internal/health` | 308、308、404、404，路径与查询参数保留 |
+| 热加载 | 强制签发、比较磁盘/服务指纹、`caddy reload --force`、再次比较 | 服务证书切换到新指纹，第二 IP继续 200 |
+| CA 持久化 | 重建前后导出根 CA并执行文件比较和 SHA-256 指纹检查 | 完全一致 |
+| 域名模式 | 临时 RSA 证书、`base-ai.test` 和 `--resolve` 运行态请求 | HTTPS 200、HTTP 308、内部接口 404、管理接口关闭 |
+| 标准端口 HSTS配置 | 临时域名证书以 80/443 执行 Caddy validate | 配置有效；非标准运行态无 HSTS |
+| 提交前检查 | `git status --short`、暂存 diff、文件范围检查 | 仅包含当前任务文件，无调试文件或真实证书 |
+
+### 重测触发条件
+
+- 修改 Caddyfile、证书辅助程序、入口脚本、PKI生命周期、HTTP/HTTPS端口、Host 跳转或根 CA数据卷。
+- 修改域名/IP环境变量规则、Compose 证书挂载、Secure Cookie 默认值或代理边界。
+- 修改 `backend/src/main/java/`、认证会话、Controller、Service、Repository、Domain 或核心业务配置。
+- 修改前端 Cookie 会话客户端、开放 API访问地址或 Python Worker通信路径。
+
+### 已知问题与限制
+
+- 未使用真实公网/内网地址、真实公网 DNS、生产证书、防火墙或 NAT执行外部网络验证；双 IP通过两个回环测试地址和证书 SAN完成等价验证。
+- Docker Desktop 不直接转发 `127.0.0.2` 的发布端口，因此第二 IP运行态通过 curl `--resolve` 保留 URL/Host/证书校验目标，同时把 TCP连接定向到 `127.0.0.1`；Linux 实机仍建议使用真实双网卡地址复测。
+- 未把测试根 CA安装到宿主机系统或浏览器信任库；TLS 信任使用 curl `--cacert` 验证，避免测试修改宿主机安全状态。
+- 域名模式使用短期自签测试证书，没有使用用户的真实域名证书；完整链加载、Host 路由和管理接口边界已验证。
+- 当前命名卷中若存在旧 7 天中间 CA，会继续使用到 Caddy 自动轮换；叶证书有效期自动限制在中间 CA剩余有效期内，轮换后辅助程序会检测签发者变化并重新签发。
+- 本地 `.env` 未被修改；当前运行服务通过命令行覆盖使用双回环 IP和 81/444。正式部署需把真实域名/证书或公网/内网 IP持久化到部署环境。
+- 直接启动的 Maven 临时容器因未配置项目 Maven 镜像停在项目扫描阶段，已终止；随后使用 Docker 构建中配置的镜像完成 287/287，不存在未验证的后端用例。
+- 前端生产构建仍提示主包超过 500 kB，该既有性能问题不影响本次 HTTPS 验收。
+
+### 下次测试建议
+
+1. 在目标 Linux 主机配置真实公网与内网 IPv4，验证双网卡、路由器端口转发、安全组及外部客户端访问。
+2. 在受控客户端实际安装 Caddy 根 CA，增加 Chrome、Edge、Safari 和 Firefox 浏览器登录 E2E。
+3. 使用真实生产域名证书验证证书权限、续期文件替换和 Caddy 重启加载。
+4. 通过时间加速或专用测试环境验证一小时后台检查、中间 CA自动轮换和失败重试日志告警。
+
+### 回滚方式
+
+- 回滚实现提交 `3d44128`，恢复纯 HTTP Caddy入口后执行 `docker compose up --build -d`。
+- Caddy data/config 命名卷可保留，回滚后的纯 HTTP模式不会读取内部 CA；如需删除命名卷会导致根 CA永久变化，必须另行确认并通知所有客户端。
+- 本次没有数据库迁移、数据回填、第三方运行时依赖或业务数据变更，无需数据库逆向处理。
+
+---
+
 ## 📋 全站 HTTP 入口测试结果（2026-08-06）
 
 ### Git 基准点
