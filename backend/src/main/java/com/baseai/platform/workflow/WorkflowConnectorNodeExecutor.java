@@ -180,12 +180,12 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         String command = config.path("command").asText("GET").toUpperCase(Locale.ROOT);
         Set<String> writes = Set.of("SET", "DEL", "HSET", "LPUSH", "RPUSH", "PUBLISH");
         if (writes.contains(command) && !secret.path("allowWrite").asBoolean(false)) throw new BusinessException("workflow.redisWriteForbidden");
+        if (!config.path("arguments").isArray()) throw new BusinessException("workflow.dataInputInvalid");
+        ArrayNode args = (ArrayNode) config.path("arguments");
         RedisURI uri = RedisURI.create(secret.path("uri").asText());
         try (RedisClient client = RedisClient.create(uri); StatefulRedisConnection<String, String> state = client.connect()) {
             RedisCommands<String, String> sync = state.sync();
             String prefix = secret.path("keyPrefix").asText("");
-            if (!config.path("arguments").isArray()) throw new BusinessException("workflow.dataInputInvalid");
-            ArrayNode args = (ArrayNode) config.path("arguments");
             Object value = switch (command) {
                 case "GET" -> sync.get(key(prefix, args, 0));
                 case "SET" -> sync.set(key(prefix, args, 0), argument(args, 1));
