@@ -201,17 +201,18 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
-- **HTTPS 入口、端口和镜像：** `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
+- **HTTPS 入口、端口和镜像：** `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR`、`APP_HTTPS_IPS`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
 Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
 
 ### HTTPS 入口模式
 
-Caddy 根据配置自动选择一种入口模式：
+Caddy 可同时提供外部域名证书、预配置 IP 内部证书和请求驱动的 IP 动态学习：
 
-- **域名证书模式：** `APP_HTTPS_SITES_FILE` 和 `TLS_CERTS_DIR` 必须同时配置。YAML 中每个 `sites` 分组包含一个或多个 `domains`，并绑定自己的 `tls_cert_file` 和 `tls_key_file`。证书应为包含中间证书的 PEM 完整链，私钥应为无交互密码的 PEM 文件。两项只配置一部分时 Caddy 会拒绝启动，不会降级到 HTTP。
-- **IP 内部 CA 模式：** 上述两项全部留空后生效。项目始终将 `localhost` 和 `127.0.0.1` 加入证书；其他 IPv4 在客户端首次通过 HTTP 访问时自动学习，无需填写或探测宿主机 IP。Caddy 持久化内部 CA 和已学习地址，签发包含全部当前地址的多 SAN 证书，访问设备必须信任 Caddy 根证书。
+- **域名证书：** `APP_HTTPS_SITES_FILE` 和 `TLS_CERTS_DIR` 必须同时配置。YAML 中每个 `sites` 分组包含一个或多个 `domains`，并绑定自己的 `tls_cert_file` 和 `tls_key_file`。证书应为包含中间证书的 PEM 完整链，私钥应为无交互密码的 PEM 文件。两项只配置一部分时 Caddy 会拒绝启动，不会降级到 HTTP。
+- **预配置 IP：** `APP_HTTPS_IPS` 接受逗号或空白分隔的规范 IPv4。Caddy 启动时即将这些地址加入内部 CA 证书，因此首次可直接使用 HTTPS；删除配置并重启后会移除对应 SAN，除非该地址也已被动态学习。
+- **动态学习 IP：** 无论是否配置域名证书，新 IPv4 都可在客户端首次通过 HTTP 访问时自动学习。项目始终包含 `localhost` 和 `127.0.0.1`，并持久化内部 CA 和已学习地址。预配置与已学习 IP 共用一张多 SAN 证书，访问设备必须信任 Caddy 根证书。
 
 创建 HTTPS 站点清单，例如 `/absolute/path/https-sites.yml`：
 
@@ -238,6 +239,7 @@ sites:
 ```dotenv
 APP_HTTPS_SITES_FILE=/absolute/path/https-sites.yml
 TLS_CERTS_DIR=/absolute/path/tls
+APP_HTTPS_IPS=192.168.1.20,203.0.113.10
 HTTP_PORT=80
 HTTPS_PORT=443
 APP_SESSION_COOKIE_SECURE=true
@@ -248,6 +250,7 @@ IP 请求驱动签发模式的示例：
 ```dotenv
 APP_HTTPS_SITES_FILE=
 TLS_CERTS_DIR=
+APP_HTTPS_IPS=192.168.1.20,203.0.113.10
 TLS_CERT_CHECK_INTERVAL_SECONDS=3600
 IP_CERT_MIN_ISSUE_INTERVAL_SECONDS=5
 IP_CERT_MAX_LEARNED_HOSTS=32
@@ -256,9 +259,9 @@ HTTPS_PORT=444
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-IP 模式不运行宿主机探测器，也不调用 `uname`、`route`、`ifconfig` 或 `ip` 等系统命令。新地址第一次必须访问 `http://<IPv4>:<HTTP_PORT>`；Caddy 校验 HTTP Host、签发证书、原子保存地址并热加载成功后，返回指向 `https://<IPv4>:<HTTPS_PORT>` 的 308 跳转。该方式可学习回环、内网、直接公网及 NAT 映射后的规范 IPv4；首次直接访问尚未学习地址的 HTTPS 无法完成 TLS 握手。
+IP 签发不运行宿主机探测器，也不调用 `uname`、`route`、`ifconfig` 或 `ip` 等系统命令。`APP_HTTPS_IPS` 中的地址在启动完成后可直接访问 `https://<IPv4>:<HTTPS_PORT>`；未预配置的新地址第一次必须访问 `http://<IPv4>:<HTTP_PORT>`。Caddy 校验 HTTP Host、签发证书、原子保存地址并热加载成功后，返回指向 HTTPS 的 308 跳转。该方式可覆盖回环、内网、直接公网及 NAT 映射后的规范 IPv4；首次直接访问既未预配置也未学习地址的 HTTPS 无法完成 TLS 握手。
 
-学习服务仅监听 Caddy 容器回环地址，只接受 GET 和 HEAD 请求。非 IP Host、IPv6、非规范、链路本地、组播及不可用地址不会触发签发。默认最多学习 32 个地址，新地址签发间隔至少 5 秒；达到上限后返回 HTTP 429，不会自动移除已有地址。HTTP Host 可由非浏览器客户端伪造，因此该机制用于无配置的服务接入，不构成 IP 所有权证明。首次 HTTP 请求不得携带密码、令牌或敏感查询参数。
+学习服务仅监听 Caddy 容器回环地址，只接受 GET 和 HEAD 请求。预配置和动态地址都拒绝 IPv6、非规范、未指定、链路本地、组播及不可用地址。内部证书最多包含 256 个非固定回环 IPv4，默认最多动态学习 32 个地址，新地址签发间隔至少 5 秒；达到任一上限后返回 HTTP 429，不会自动移除已有地址。HTTP Host 可由非浏览器客户端伪造，因此该机制用于无配置的服务接入，不构成 IP 所有权证明。首次 HTTP 请求不得携带密码、令牌或敏感查询参数。
 
 IP 证书目标有效期为 30 天，且不会超过 Caddy 中间 CA 的剩余有效期。地址 SAN、中间 CA 或有效期需要更新时会自动重新签发，并通过只监听容器回环地址的管理接口热加载。签发、地址持久化或热加载失败时返回 HTTP 503 并恢复旧状态；后台按 `TLS_CERT_CHECK_INTERVAL_SECONDS` 检查续期，失败时保留当前证书并在下一周期重试。
 

@@ -201,17 +201,18 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
-- **HTTPS ingress and images:** `APP_HTTPS_SITES_FILE`, `TLS_CERTS_DIR`, `TLS_CERT_CHECK_INTERVAL_SECONDS`, `IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`, `IP_CERT_MAX_LEARNED_HOSTS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
+- **HTTPS ingress and images:** `APP_HTTPS_SITES_FILE`, `TLS_CERTS_DIR`, `APP_HTTPS_IPS`, `TLS_CERT_CHECK_INTERVAL_SECONDS`, `IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`, `IP_CERT_MAX_LEARNED_HOSTS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
 Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normalizes it to lowercase, and names the four runtime containers `<short-name>-backend`, `<short-name>-python-worker`, `<short-name>-frontend`, and `<short-name>-caddy`. For example, `APP_PLATFORM_SHORT_NAME=AI` produces `ai-backend`, `ai-python-worker`, `ai-frontend`, and `ai-caddy`.
 
 ### HTTPS ingress modes
 
-Caddy selects exactly one ingress mode from the environment:
+Caddy can serve external domain certificates, preconfigured internal-CA IP certificates, and request-driven IP learning at the same time:
 
-- **Domain certificate mode:** `APP_HTTPS_SITES_FILE` and `TLS_CERTS_DIR` must both be configured. Each YAML `sites` entry contains one or more `domains` and binds its own `tls_cert_file` and `tls_key_file`. Certificates must be PEM full chains including intermediates, and keys must be unencrypted PEM files. A partial configuration fails startup instead of downgrading to HTTP.
-- **IP internal-CA mode:** active when both domain-certificate variables are empty. The project always includes `localhost` and `127.0.0.1`; other IPv4 addresses are learned when a client first reaches them over HTTP, without configuring or probing host IPs. The persisted Caddy CA and learned-address state produce one multi-SAN certificate containing every current address. Every client must trust the Caddy root CA.
+- **Domain certificates:** `APP_HTTPS_SITES_FILE` and `TLS_CERTS_DIR` must both be configured. Each YAML `sites` entry contains one or more `domains` and binds its own `tls_cert_file` and `tls_key_file`. Certificates must be PEM full chains including intermediates, and keys must be unencrypted PEM files. A partial configuration fails startup instead of downgrading to HTTP.
+- **Preconfigured IPs:** `APP_HTTPS_IPS` accepts comma- or whitespace-separated canonical IPv4 addresses. Caddy adds them to its internal-CA certificate during startup, so their first request may use HTTPS directly. Removing an address and restarting removes its SAN unless the same address was also learned dynamically.
+- **Dynamically learned IPs:** new IPv4 addresses can be learned on their first HTTP request whether or not domain certificates are configured. The project always includes `localhost` and `127.0.0.1` and persists both its internal CA and learned addresses. Preconfigured and learned IPs share one multi-SAN certificate, and every client must trust the Caddy root CA.
 
 Create an HTTPS sites list such as `/absolute/path/https-sites.yml`:
 
@@ -238,6 +239,7 @@ Example for multiple domains on standard ports:
 ```dotenv
 APP_HTTPS_SITES_FILE=/absolute/path/https-sites.yml
 TLS_CERTS_DIR=/absolute/path/tls
+APP_HTTPS_IPS=192.168.1.20,203.0.113.10
 HTTP_PORT=80
 HTTPS_PORT=443
 APP_SESSION_COOKIE_SECURE=true
@@ -248,6 +250,7 @@ Example for request-driven IP certificates:
 ```dotenv
 APP_HTTPS_SITES_FILE=
 TLS_CERTS_DIR=
+APP_HTTPS_IPS=192.168.1.20,203.0.113.10
 TLS_CERT_CHECK_INTERVAL_SECONDS=3600
 IP_CERT_MIN_ISSUE_INTERVAL_SECONDS=5
 IP_CERT_MAX_LEARNED_HOSTS=32
@@ -256,9 +259,9 @@ HTTPS_PORT=444
 APP_SESSION_COOKIE_SECURE=true
 ```
 
-IP mode runs no host-side detector and invokes no operating-system networking commands such as `uname`, `route`, `ifconfig`, or `ip`. A new address must first be opened as `http://<IPv4>:<HTTP_PORT>`; after Caddy validates the HTTP Host, issues a certificate, atomically persists the address, and hot reloads successfully, it returns a 308 redirect to `https://<IPv4>:<HTTPS_PORT>`. This learns canonical loopback, private, directly assigned public, and NAT-mapped IPv4 addresses. A first direct HTTPS connection to an address that has not yet been learned cannot complete its TLS handshake.
+IP issuance runs no host-side detector and invokes no operating-system networking commands such as `uname`, `route`, `ifconfig`, or `ip`. Addresses in `APP_HTTPS_IPS` can be opened directly as `https://<IPv4>:<HTTPS_PORT>` after startup. An unconfigured address must first be opened as `http://<IPv4>:<HTTP_PORT>`; after Caddy validates the HTTP Host, issues a certificate, atomically persists the address, and hot reloads successfully, it returns a 308 redirect to HTTPS. This covers canonical loopback, private, directly assigned public, and NAT-mapped IPv4 addresses. A first direct HTTPS connection to an address that is neither configured nor learned cannot complete its TLS handshake.
 
-The learning service listens only on the Caddy container loopback and accepts only GET and HEAD. Non-IP hosts, IPv6, non-canonical, link-local, multicast, and unusable addresses never trigger issuance. By default, at most 32 addresses are learned, with at least five seconds between new-address issuances; once full, the service returns HTTP 429 and does not evict an existing address. Because a non-browser client can forge an HTTP Host header, this mechanism provides zero-configuration service access rather than proof of IP ownership. Never put passwords, tokens, or sensitive query values in the initial HTTP request.
+The learning service listens only on the Caddy container loopback and accepts only GET and HEAD. Both configured and dynamic addresses reject IPv6, non-canonical, unspecified, link-local, multicast, and unusable values. The internal certificate contains at most 256 non-fixed-loopback IPv4 addresses; by default, at most 32 of those may be learned dynamically, with at least five seconds between new-address issuances. Reaching either limit returns HTTP 429 without evicting an existing address. Because a non-browser client can forge an HTTP Host header, this mechanism provides zero-configuration service access rather than proof of IP ownership. Never put passwords, tokens, or sensitive query values in the initial HTTP request.
 
 The IP certificate targets a 30-day lifetime without exceeding the remaining lifetime of the Caddy intermediate. Changes to address SANs, the intermediate CA, or the renewal window trigger a new certificate and a hot reload through an admin endpoint bound only to the container loopback address. Issuance, persistence, or reload failures return HTTP 503 and restore the previous state. Background renewal checks run at `TLS_CERT_CHECK_INTERVAL_SECONDS`; failures retain the current certificate and retry on the next cycle.
 

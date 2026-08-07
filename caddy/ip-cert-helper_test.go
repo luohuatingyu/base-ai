@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -167,6 +168,36 @@ func TestParseCertificateNamesRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+// 验证预配置 IP 支持逗号和空白分隔、稳定去重，并复用动态学习的地址安全边界。
+func TestParseConfiguredIPs(t *testing.T) {
+	addresses, err := parseConfiguredIPs("192.168.1.20, 203.0.113.10\n192.168.1.20 127.0.0.1")
+	if err != nil {
+		t.Fatalf("parse configured IPs: %v", err)
+	}
+	if got, want := strings.Join(addresses, " "), "192.168.1.20 203.0.113.10"; got != want {
+		t.Fatalf("configured IPs = %q, want %q", got, want)
+	}
+	for _, value := range []string{"2001:db8::1", "192.168.001.10", "0.0.0.0", "169.254.1.1", "224.0.0.1", "host.example"} {
+		if _, parseErr := parseConfiguredIPs(value); parseErr == nil {
+			t.Fatalf("parseConfiguredIPs(%q) unexpectedly succeeded", value)
+		}
+	}
+}
+
+// 验证预配置和动态地址共同受 IP 证书 SAN 总量保护，重复地址只计数一次。
+func TestNamesForIPHostsEnforcesCombinedLimit(t *testing.T) {
+	configured := make([]string, maxIPCertificateHosts)
+	for index := range configured {
+		configured[index] = fmt.Sprintf("10.0.%d.%d", index/254, index%254+1)
+	}
+	if _, err := namesForIPHosts(configured, []string{configured[0]}); err != nil {
+		t.Fatalf("deduplicated address limit: %v", err)
+	}
+	if _, err := namesForIPHosts(configured, []string{"192.168.1.20"}); err == nil {
+		t.Fatal("combined address limit unexpectedly accepted an extra learned IP")
+	}
+}
+
 // 参数化验证回环、内网和公网 IPv4 可学习，其他 Host 类别被拒绝。
 func TestCanonicalBootstrapIPv4(t *testing.T) {
 	for _, value := range []string{"127.0.0.2", "10.20.30.40:81", "192.168.1.20", "8.8.8.8"} {
@@ -215,6 +246,72 @@ func TestBootstrapLearnsHostAndRedirects(t *testing.T) {
 	service.ServeHTTP(duplicate, request)
 	if duplicate.Code != http.StatusPermanentRedirect || reloads.Load() != 1 {
 		t.Fatalf("duplicate status=%d reloads=%d", duplicate.Code, reloads.Load())
+	}
+}
+
+// 验证混合模式下预配置 IP 无需写入学习状态即可跳转，未知 IP 仍能动态签发。
+func TestBootstrapMixedModeUsesConfiguredAndLearnedIPs(t *testing.T) {
+	service, manager := createTestBootstrapService(t)
+	service.mode = "mixed"
+	service.configuredIPs = []string{"192.168.1.20"}
+	configuredNames, err := namesForIPHosts(service.configuredIPs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.ensureCertificate(configuredNames, false); err != nil {
+		t.Fatal(err)
+	}
+
+	configuredRequest := httptest.NewRequest(http.MethodGet, "http://192.168.1.20/", nil)
+	configuredRequest.Host = "192.168.1.20"
+	configuredResponse := httptest.NewRecorder()
+	service.ServeHTTP(configuredResponse, configuredRequest)
+	if configuredResponse.Code != http.StatusPermanentRedirect {
+		t.Fatalf("configured status = %d", configuredResponse.Code)
+	}
+	if _, err := os.Stat(service.statePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("configured IP was unexpectedly persisted: %v", err)
+	}
+
+	learnedRequest := httptest.NewRequest(http.MethodGet, "http://192.168.1.21/", nil)
+	learnedRequest.Host = "192.168.1.21"
+	learnedResponse := httptest.NewRecorder()
+	service.ServeHTTP(learnedResponse, learnedRequest)
+	if learnedResponse.Code != http.StatusPermanentRedirect {
+		t.Fatalf("learned status = %d, body = %s", learnedResponse.Code, learnedResponse.Body.String())
+	}
+	leaf := readLeaf(t, manager.outputCertPath)
+	for _, address := range []string{"192.168.1.20", "192.168.1.21"} {
+		if !containsString(stringsForIPs(leaf.IPAddresses), address) {
+			t.Fatalf("certificate SANs %v do not contain %s", leaf.IPAddresses, address)
+		}
+	}
+}
+
+// 验证动态 IP 热加载时继续向 Caddy 传递外部证书覆盖的域名和全部 IP 地址。
+func TestCaddyReloaderRetainsDomainAndIPHosts(t *testing.T) {
+	directory := t.TempDir()
+	outputPath := filepath.Join(directory, "reload-environment")
+	commandPath := filepath.Join(directory, "capture-reload.sh")
+	command := "#!/bin/sh\nprintf '%s\\n%s\\n' \"$CADDY_ALLOWED_HOSTS\" \"$CADDY_HTTPS_SITE_ADDRESSES\" > \"$CADDY_TEST_RELOAD_OUTPUT\"\n"
+	if err := os.WriteFile(commandPath, []byte(command), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CADDY_TEST_RELOAD_OUTPUT", outputPath)
+	names, err := parseCertificateNames("localhost 127.0.0.1 192.168.1.20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reload := newCaddyReloader(commandPath, "/tmp/Caddyfile", "127.0.0.1:2019", []string{"ai.example.com"})
+	if err := reload(names); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(readFileText(t, outputPath)), "\n")
+	if got, want := lines[0], "ai.example.com localhost 127.0.0.1 192.168.1.20"; got != want {
+		t.Fatalf("allowed hosts = %q, want %q", got, want)
+	}
+	if got, want := lines[1], "https://ai.example.com, https://localhost, https://127.0.0.1, https://192.168.1.20"; got != want {
+		t.Fatalf("HTTPS sites = %q, want %q", got, want)
 	}
 }
 
@@ -325,11 +422,12 @@ func createTestBootstrapService(t *testing.T) (*bootstrapService, certificateMan
 		intermediateKeyPath:  paths.intermediateKey,
 		outputCertPath:       filepath.Join(directory, "out", "fullchain.pem"),
 		outputKeyPath:        filepath.Join(directory, "out", "privkey.pem"),
+		outputBundlePath:     filepath.Join(directory, "bundles", "ip-internal.pem"),
 		lifetime:             30 * 24 * time.Hour,
 		renewBefore:          48 * time.Hour,
 		now:                  func() time.Time { return current },
 	}
-	baseNames, _ := namesForLearnedHosts(nil)
+	baseNames, _ := namesForIPHosts(nil, nil)
 	if changed, err := manager.ensureCertificate(baseNames, false); err != nil || !changed {
 		t.Fatalf("create initial certificate changed=%v err=%v", changed, err)
 	}
@@ -376,6 +474,7 @@ func TestCertificateLifecycle(t *testing.T) {
 		intermediateKeyPath:  paths.intermediateKey,
 		outputCertPath:       filepath.Join(directory, "out", "fullchain.pem"),
 		outputKeyPath:        filepath.Join(directory, "out", "privkey.pem"),
+		outputBundlePath:     filepath.Join(directory, "bundles", "ip-internal.pem"),
 		lifetime:             30 * 24 * time.Hour,
 		renewBefore:          48 * time.Hour,
 		now:                  func() time.Time { return current },
@@ -387,6 +486,9 @@ func TestCertificateLifecycle(t *testing.T) {
 		t.Fatalf("initial certificate changed=%v err=%v", changed, err)
 	}
 	first := readLeaf(t, manager.outputCertPath)
+	if bundle, readErr := os.ReadFile(manager.outputBundlePath); readErr != nil || !bytes.Contains(bundle, []byte("PRIVATE KEY")) {
+		t.Fatalf("IP certificate bundle missing key: err=%v", readErr)
+	}
 	if !equalStringSets(first.DNSNames, names.dnsNames) || !equalIPSets(first.IPAddresses, names.ipAddresses) {
 		t.Fatalf("initial SANs = DNS %v IP %v, want DNS %v IP %v", first.DNSNames, first.IPAddresses, names.dnsNames, names.ipAddresses)
 	}
@@ -432,6 +534,7 @@ func TestIntermediateRotationRenewsCertificate(t *testing.T) {
 		intermediateKeyPath:  paths.intermediateKey,
 		outputCertPath:       filepath.Join(directory, "out", "fullchain.pem"),
 		outputKeyPath:        filepath.Join(directory, "out", "privkey.pem"),
+		outputBundlePath:     filepath.Join(directory, "bundles", "ip-internal.pem"),
 		lifetime:             30 * 24 * time.Hour,
 		renewBefore:          48 * time.Hour,
 		now:                  func() time.Time { return current },

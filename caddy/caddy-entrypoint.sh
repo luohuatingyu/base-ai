@@ -29,6 +29,14 @@ is_ipv4() {
 	done
 }
 
+# 判断 IPv4 是否可用于服务证书，拒绝未指定、链路本地、组播和受限广播地址。
+is_usable_ipv4() {
+	is_ipv4 "$1" || return 1
+	case "$1" in
+		0.0.0.0|169.254.*|22[4-9].*|23[0-9].*|255.255.255.255) return 1 ;;
+	esac
+}
+
 # 校验宿主机发布端口并生成 HTTPS 跳转端口后缀。
 configure_ports() {
 	http_port=${CADDY_EXTERNAL_HTTP_PORT:-81}
@@ -68,6 +76,41 @@ append_host() {
 	fi
 }
 
+# 追加一个内部 CA 覆盖的去重 IPv4，并限制证书 SAN 总量。
+append_ip_host() {
+	host=$1
+	source=$2
+	is_usable_ipv4 "$host" || fail "$source must contain canonical usable IPv4 addresses"
+	case " ${CADDY_IP_HOSTS:-} " in
+		*" $host "*) return 0 ;;
+	esac
+	if [ "$host" != 127.0.0.1 ]; then
+		CADDY_IP_HOST_COUNT=$((CADDY_IP_HOST_COUNT + 1))
+		[ "$CADDY_IP_HOST_COUNT" -le 256 ] \
+			|| fail "configured and learned HTTPS IP address limit exceeded"
+	fi
+	if [ -n "${CADDY_IP_HOSTS:-}" ]; then
+		CADDY_IP_HOSTS="$CADDY_IP_HOSTS $host"
+	else
+		CADDY_IP_HOSTS=$host
+	fi
+	append_host "$host"
+}
+
+# 解析逗号或空白分隔的预配置 IPv4，生成供续期服务复用的规范列表。
+append_configured_ips() {
+	configured_value=$(printf '%s' "${APP_HTTPS_IPS:-}" | tr ',\t\r\n' '    ')
+	for configured_ip in $configured_value; do
+		append_ip_host "$configured_ip" APP_HTTPS_IPS
+		if [ "$configured_ip" != 127.0.0.1 ]; then
+			case " ${CADDY_CONFIGURED_IPS:-} " in
+				*" $configured_ip "*) ;;
+				*) CADDY_CONFIGURED_IPS="${CADDY_CONFIGURED_IPS:+$CADDY_CONFIGURED_IPS }$configured_ip" ;;
+			esac
+		fi
+	done
+}
+
 # 读取容器数据卷中请求驱动学习的 IPv4，拒绝损坏、超限或注入内容。
 append_learned_hosts() {
 	hosts_file=${CADDY_LEARNED_HOSTS_FILE:-/data/base-ai-tls/learned-hosts}
@@ -77,12 +120,12 @@ append_learned_hosts() {
 	count=0
 	while IFS= read -r learned_host || [ -n "$learned_host" ]; do
 		[ -n "$learned_host" ] || continue
-		is_ipv4 "$learned_host" \
-			|| fail "learned host address must be a valid IPv4 address"
+		is_usable_ipv4 "$learned_host" \
+			|| fail "learned host address must be a canonical usable IPv4 address"
 		count=$((count + 1))
 		[ "$count" -le "$CADDY_IP_MAX_LEARNED_HOSTS" ] \
 			|| fail "learned host address limit exceeded"
-		append_host "$learned_host"
+		append_ip_host "$learned_host" "learned host address"
 	done < "$hosts_file"
 }
 
@@ -113,6 +156,13 @@ configure_ingress() {
 	is_set "$https_sites_file" && domain_config_count=$((domain_config_count + 1))
 	is_set "$tls_certs_dir" && domain_config_count=$((domain_config_count + 1))
 
+	CADDY_ALLOWED_HOSTS=''
+	CADDY_HTTPS_SITE_ADDRESSES=''
+	CADDY_DOMAIN_HOSTS=''
+	CADDY_IP_HOSTS=''
+	CADDY_CONFIGURED_IPS=''
+	CADDY_IP_HOST_COUNT=0
+	CADDY_INGRESS_MODE=ip
 	if [ "$domain_config_count" -eq 2 ]; then
 		mounted_sites_file=${CADDY_HTTPS_SITES_FILE:-/etc/caddy/https-sites.yml}
 		mounted_tls_root=${CADDY_TLS_ROOT:-/etc/caddy/tls}
@@ -126,44 +176,39 @@ configure_ingress() {
 			--tls-root "$mounted_tls_root") \
 			|| fail "APP_HTTPS_SITES_FILE contains an invalid HTTPS sites configuration"
 		[ -n "$resolved_domains" ] || fail "APP_HTTPS_SITES_FILE must contain at least one domain"
-		CADDY_INGRESS_MODE=domain
-		CADDY_ALLOWED_HOSTS=''
-		CADDY_HTTPS_SITE_ADDRESSES=''
+		CADDY_INGRESS_MODE=mixed
 		for domain in $resolved_domains; do
 			append_host "$domain"
+			CADDY_DOMAIN_HOSTS="${CADDY_DOMAIN_HOSTS:+$CADDY_DOMAIN_HOSTS }$domain"
 		done
-		CADDY_TLS_DIRECTIVE='tls {
-		load /tmp/base-ai-https-tls
-	}'
-		CADDY_ADMIN_OPTION='admin off'
-		CADDY_DEFAULT_SNI_OPTION=''
-		CADDY_HTTP_FALLBACK='respond "Not Found" 404'
 	elif [ "$domain_config_count" -ne 0 ]; then
 		fail "APP_HTTPS_SITES_FILE and TLS_CERTS_DIR must be configured together"
-	else
-		CADDY_INGRESS_MODE=ip
-		CADDY_ALLOWED_HOSTS=''
-		CADDY_HTTPS_SITE_ADDRESSES=''
-		append_host localhost
-		append_host 127.0.0.1
-		append_learned_hosts
-		CADDY_TLS_DIRECTIVE='tls /data/base-ai-tls/ip-fullchain.pem /data/base-ai-tls/ip-privkey.pem'
-		CADDY_ADMIN_OPTION='admin 127.0.0.1:2019'
-		CADDY_DEFAULT_SNI_OPTION="default_sni ${CADDY_ALLOWED_HOSTS%% *}"
-		CADDY_HTTP_FALLBACK='reverse_proxy 127.0.0.1:2020'
 	fi
+	append_host localhost
+	append_ip_host 127.0.0.1 "fixed loopback address"
+	append_configured_ips
+	append_learned_hosts
+	CADDY_TLS_DIRECTIVE='tls {
+		load /tmp/base-ai-https-tls
+	}'
+	CADDY_ADMIN_OPTION='admin 127.0.0.1:2019'
+	CADDY_DEFAULT_SNI_OPTION='default_sni localhost'
+	CADDY_HTTP_FALLBACK='reverse_proxy 127.0.0.1:2020'
 	export CADDY_INGRESS_MODE CADDY_ALLOWED_HOSTS CADDY_HTTPS_SITE_ADDRESSES CADDY_TLS_DIRECTIVE
 	export CADDY_ADMIN_OPTION CADDY_DEFAULT_SNI_OPTION CADDY_HTTP_FALLBACK
+	export CADDY_DOMAIN_HOSTS CADDY_IP_HOSTS CADDY_CONFIGURED_IPS
 }
 
-# 首次 IP 模式启动时初始化 Caddy CA 并签发包含全部 IP SAN 的证书。
+# 每次启动时初始化 Caddy CA，并签发包含预配置和已学习地址的全部 IP SAN。
 ensure_ip_certificate() {
-	[ "$CADDY_INGRESS_MODE" = ip ] || return 0
 	/usr/bin/caddy validate --config /etc/caddy/Caddyfile.bootstrap --adapter caddyfile >/dev/null \
 		|| fail "Caddy internal CA bootstrap failed"
-	result=$(/usr/local/bin/base-ai-ip-cert --hosts "$CADDY_ALLOWED_HOSTS") \
+	if [ "$CADDY_INGRESS_MODE" = ip ]; then
+		rm -rf /tmp/base-ai-https-tls
+	fi
+	result=$(/usr/local/bin/base-ai-ip-cert --hosts "localhost $CADDY_IP_HOSTS") \
 		|| fail "initial multi-SAN IP certificate issuance failed"
-	echo "event=ip_certificate status=$result hosts=$CADDY_ALLOWED_HOSTS"
+	echo "event=ip_certificate status=$result hosts=localhost $CADDY_IP_HOSTS"
 }
 
 # 启动容器内请求驱动签发服务；异常退出后重启，不读取任何宿主机网络信息。
@@ -172,6 +217,8 @@ serve_ip_bootstrap_forever() {
 		if /usr/local/bin/base-ai-ip-cert \
 			--serve \
 			--mode "$CADDY_INGRESS_MODE" \
+			--configured-ips "$CADDY_CONFIGURED_IPS" \
+			--additional-hosts "$CADDY_DOMAIN_HOSTS" \
 			--state-file "${CADDY_LEARNED_HOSTS_FILE:-/data/base-ai-tls/learned-hosts}" \
 			--https-port-suffix "$CADDY_HTTPS_PORT_SUFFIX" \
 			--check-interval "${CADDY_CERT_CHECK_INTERVAL_SECONDS}s" \
@@ -187,11 +234,7 @@ serve_ip_bootstrap_forever() {
 
 # 启动前确认非 root Caddy 进程能够读取当前模式所需的有效证书文件。
 validate_certificate_files() {
-	if [ "$CADDY_INGRESS_MODE" = domain ]; then
-		certificate_files='/tmp/base-ai-https-tls/*.pem'
-	else
-		certificate_files='/data/base-ai-tls/ip-fullchain.pem /data/base-ai-tls/ip-privkey.pem'
-	fi
+	certificate_files='/data/base-ai-tls/ip-fullchain.pem /data/base-ai-tls/ip-privkey.pem /tmp/base-ai-https-tls/*.pem'
 	for file in $certificate_files; do
 		[ -f "$file" ] && [ -s "$file" ] && [ -r "$file" ] \
 			|| fail "TLS certificate files must be non-empty and readable by container UID 10001"
@@ -201,6 +244,8 @@ validate_certificate_files() {
 # 诊断模式只输出非敏感的解析结果，供部署契约测试和运维排查使用。
 print_resolved_config() {
 	echo "mode=$CADDY_INGRESS_MODE"
+	echo "domains=$CADDY_DOMAIN_HOSTS"
+	echo "configured_ips=$CADDY_CONFIGURED_IPS"
 	echo "hosts=$CADDY_ALLOWED_HOSTS"
 	echo "https_sites=$CADDY_HTTPS_SITE_ADDRESSES"
 	echo "https_port_suffix=$CADDY_HTTPS_PORT_SUFFIX"

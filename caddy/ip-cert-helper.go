@@ -37,6 +37,7 @@ const (
 	defaultIntermediateKey  = "/data/caddy/pki/authorities/local/intermediate.key"
 	defaultOutputCert       = "/data/base-ai-tls/ip-fullchain.pem"
 	defaultOutputKey        = "/data/base-ai-tls/ip-privkey.pem"
+	defaultOutputBundle     = "/tmp/base-ai-https-tls/ip-internal.pem"
 	defaultLearnedHosts     = "/data/base-ai-tls/learned-hosts"
 	defaultBootstrapListen  = "127.0.0.1:2020"
 	defaultCaddyCommand     = "/usr/bin/caddy"
@@ -48,6 +49,7 @@ const (
 	maxHTTPSitesConfigBytes = 64 * 1024
 	maxConfiguredSites      = 64
 	maxConfiguredDomains    = 256
+	maxIPCertificateHosts   = 256
 	maxTLSFileBytes         = 4 * 1024 * 1024
 )
 
@@ -75,6 +77,7 @@ type certificateManager struct {
 	intermediateKeyPath  string
 	outputCertPath       string
 	outputKeyPath        string
+	outputBundlePath     string
 	lifetime             time.Duration
 	renewBefore          time.Duration
 	now                  func() time.Time
@@ -95,6 +98,8 @@ type bootstrapService struct {
 	lastIssue        time.Time
 	now              func() time.Time
 	manager          certificateManager
+	configuredIPs    []string
+	additionalHosts  []string
 	reload           func(certificateNames) error
 }
 
@@ -112,7 +117,9 @@ func main() {
 	force := flag.Bool("force", false, "force certificate renewal")
 	serve := flag.Bool("serve", false, "serve request-driven IP certificate bootstrap requests")
 	resolveLearnedHosts := flag.Bool("resolve-learned-hosts", false, "print validated base and learned hosts")
-	mode := flag.String("mode", "ip", "ingress mode: ip or domain")
+	configuredIPsValue := flag.String("configured-ips", "", "comma or whitespace separated configured IPv4 addresses")
+	additionalHostsValue := flag.String("additional-hosts", "", "validated DNS hosts retained during Caddy reloads")
+	mode := flag.String("mode", "ip", "ingress mode: ip or mixed")
 	listen := flag.String("listen", defaultBootstrapListen, "bootstrap HTTP listen address")
 	stateFile := flag.String("state-file", defaultLearnedHosts, "persisted learned IPv4 file")
 	httpsPortSuffix := flag.String("https-port-suffix", ":444", "HTTPS redirect port suffix")
@@ -130,16 +137,25 @@ func main() {
 		intermediateKeyPath:  defaultIntermediateKey,
 		outputCertPath:       defaultOutputCert,
 		outputKeyPath:        defaultOutputKey,
+		outputBundlePath:     defaultOutputBundle,
 		lifetime:             30 * 24 * time.Hour,
 		renewBefore:          48 * time.Hour,
 		now:                  time.Now,
+	}
+	configuredIPs, err := parseConfiguredIPs(*configuredIPsValue)
+	if err != nil {
+		fatal(err)
+	}
+	additionalHosts, err := parseAdditionalHosts(*additionalHostsValue)
+	if err != nil {
+		fatal(err)
 	}
 	if *resolveLearnedHosts {
 		learned, err := readLearnedHosts(*stateFile, *maxLearnedHosts)
 		if err != nil {
 			fatal(err)
 		}
-		names, err := namesForLearnedHosts(learned)
+		names, err := namesForIPHosts(configuredIPs, learned)
 		if err != nil {
 			fatal(err)
 		}
@@ -160,7 +176,7 @@ func main() {
 			httpsPortSuffix: *httpsPortSuffix, checkInterval: *checkInterval,
 			minIssueInterval: *minIssueInterval, maxLearnedHosts: *maxLearnedHosts,
 			caddyCommand: *caddyCommand, caddyConfig: *caddyConfig, caddyAdmin: *caddyAdmin,
-			manager: manager,
+			manager: manager, configuredIPs: configuredIPs, additionalHosts: additionalHosts,
 		}); err != nil {
 			fatal(err)
 		}
@@ -433,6 +449,8 @@ type bootstrapServerConfig struct {
 	caddyConfig      string
 	caddyAdmin       string
 	manager          certificateManager
+	configuredIPs    []string
+	additionalHosts  []string
 }
 
 // 输出不含密钥内容的错误并以失败状态退出。
@@ -441,10 +459,10 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-// 启动仅供同容器 Caddy 调用的引导服务，并在 IP 模式定期检查证书续期。
+// 启动仅供同容器 Caddy 调用的引导服务，并在纯 IP 或混合模式定期检查证书续期。
 func runBootstrapServer(config bootstrapServerConfig) error {
-	if config.mode != "ip" && config.mode != "domain" {
-		return errors.New("bootstrap mode must be ip or domain")
+	if config.mode != "ip" && config.mode != "mixed" {
+		return errors.New("bootstrap mode must be ip or mixed")
 	}
 	if config.maxLearnedHosts < 1 || config.maxLearnedHosts > 256 {
 		return errors.New("max learned hosts must be between 1 and 256")
@@ -463,11 +481,14 @@ func runBootstrapServer(config bootstrapServerConfig) error {
 		minIssueInterval: config.minIssueInterval,
 		now:              time.Now,
 		manager:          config.manager,
+		configuredIPs:    append([]string(nil), config.configuredIPs...),
+		additionalHosts:  append([]string(nil), config.additionalHosts...),
 	}
-	service.reload = newCaddyReloader(config.caddyCommand, config.caddyConfig, config.caddyAdmin)
-	if config.mode == "ip" {
-		go service.renewForever(config.checkInterval)
+	if _, err := namesForIPHosts(service.configuredIPs, nil); err != nil {
+		return err
 	}
+	service.reload = newCaddyReloader(config.caddyCommand, config.caddyConfig, config.caddyAdmin, service.additionalHosts)
+	go service.renewForever(config.checkInterval)
 	server := &http.Server{
 		Addr:              config.listen,
 		Handler:           service,
@@ -488,7 +509,7 @@ func (s *bootstrapService) ServeHTTP(response http.ResponseWriter, request *http
 		_, _ = response.Write([]byte("OK"))
 		return
 	}
-	if s.mode != "ip" {
+	if s.mode != "ip" && s.mode != "mixed" {
 		http.NotFound(response, request)
 		return
 	}
@@ -525,11 +546,14 @@ func (s *bootstrapService) learnHost(host string) (int, time.Duration, error) {
 	if err != nil {
 		return http.StatusServiceUnavailable, 0, err
 	}
-	if containsString(learned, host) || host == "127.0.0.1" {
+	if containsString(s.configuredIPs, host) || containsString(learned, host) || host == "127.0.0.1" {
 		return http.StatusPermanentRedirect, 0, nil
 	}
 	if len(learned) >= s.maxLearnedHosts {
 		return http.StatusTooManyRequests, time.Minute, errors.New("learned IP address limit reached")
+	}
+	if uniqueIPHostCount(s.configuredIPs, learned) >= maxIPCertificateHosts {
+		return http.StatusTooManyRequests, time.Minute, errors.New("IP certificate address limit reached")
 	}
 	now := s.now()
 	if wait := s.minIssueInterval - now.Sub(s.lastIssue); !s.lastIssue.IsZero() && wait > 0 {
@@ -544,26 +568,34 @@ func (s *bootstrapService) learnHost(host string) (int, time.Duration, error) {
 	if err != nil {
 		return http.StatusServiceUnavailable, 0, err
 	}
+	previousBundle, err := snapshotFile(s.manager.outputBundlePath)
+	if err != nil {
+		return http.StatusServiceUnavailable, 0, err
+	}
 	previousState, err := snapshotFile(s.statePath)
 	if err != nil {
 		return http.StatusServiceUnavailable, 0, err
 	}
 	candidate := append(append([]string(nil), learned...), host)
-	names, err := namesForLearnedHosts(candidate)
+	names, err := namesForIPHosts(s.configuredIPs, candidate)
 	if err != nil {
 		return http.StatusServiceUnavailable, 0, err
 	}
 	if _, err := s.manager.ensureCertificate(names, false); err != nil {
+		_ = restoreSnapshot(s.manager.outputCertPath, previousCert)
+		_ = restoreSnapshot(s.manager.outputKeyPath, previousKey)
+		_ = restoreSnapshot(s.manager.outputBundlePath, previousBundle)
 		return http.StatusServiceUnavailable, 0, err
 	}
 	if err := writeLearnedHosts(s.statePath, candidate); err != nil {
 		_ = restoreSnapshot(s.manager.outputCertPath, previousCert)
 		_ = restoreSnapshot(s.manager.outputKeyPath, previousKey)
+		_ = restoreSnapshot(s.manager.outputBundlePath, previousBundle)
 		return http.StatusServiceUnavailable, 0, err
 	}
 	if err := s.reload(names); err != nil {
-		rollbackErr := restoreBootstrapState(s.manager, s.statePath, previousCert, previousKey, previousState)
-		previousNames, namesErr := namesForLearnedHosts(learned)
+		rollbackErr := restoreBootstrapState(s.manager, s.statePath, previousCert, previousKey, previousBundle, previousState)
+		previousNames, namesErr := namesForIPHosts(s.configuredIPs, learned)
 		if namesErr == nil {
 			_ = s.reload(previousNames)
 		}
@@ -596,7 +628,7 @@ func (s *bootstrapService) renewCurrentCertificate() error {
 	if err != nil {
 		return err
 	}
-	names, err := namesForLearnedHosts(learned)
+	names, err := namesForIPHosts(s.configuredIPs, learned)
 	if err != nil {
 		return err
 	}
@@ -608,6 +640,10 @@ func (s *bootstrapService) renewCurrentCertificate() error {
 	if err != nil {
 		return err
 	}
+	previousBundle, err := snapshotFile(s.manager.outputBundlePath)
+	if err != nil {
+		return err
+	}
 	changed, err := s.manager.ensureCertificate(names, false)
 	if err != nil || !changed {
 		return err
@@ -615,6 +651,7 @@ func (s *bootstrapService) renewCurrentCertificate() error {
 	if err := s.reload(names); err != nil {
 		_ = restoreSnapshot(s.manager.outputCertPath, previousCert)
 		_ = restoreSnapshot(s.manager.outputKeyPath, previousKey)
+		_ = restoreSnapshot(s.manager.outputBundlePath, previousBundle)
 		return fmt.Errorf("reload renewed certificate: %w", err)
 	}
 	fmt.Printf("event=ip_certificate_renewal status=success hosts=%s\n", formatCertificateHosts(names))
@@ -678,18 +715,24 @@ func writeLearnedHosts(path string, hosts []string) error {
 	return writeAtomic(path, []byte(content), 0o600)
 }
 
-// 组合固定回环主机与持久化地址，保持证书、Host 匹配和站点列表一致。
-func namesForLearnedHosts(learned []string) (certificateNames, error) {
-	values := append([]string{"localhost", "127.0.0.1"}, learned...)
+// 组合固定回环、预配置和持久化地址，保持证书、Host 匹配和站点列表一致。
+func namesForIPHosts(configured, learned []string) (certificateNames, error) {
+	if uniqueIPHostCount(configured, learned) > maxIPCertificateHosts {
+		return certificateNames{}, fmt.Errorf("IP certificate cannot contain more than %d configured and learned addresses", maxIPCertificateHosts)
+	}
+	values := append([]string{"localhost", "127.0.0.1"}, configured...)
+	values = append(values, learned...)
 	return parseCertificateNames(strings.Join(values, " "))
 }
 
-// 构造隔离宿主环境的 Caddy reload 调用，只覆盖入口解析所需变量。
-func newCaddyReloader(command, config, admin string) func(certificateNames) error {
+// 构造隔离宿主环境的 Caddy reload 调用，并保留外部证书覆盖的域名入口。
+func newCaddyReloader(command, config, admin string, additionalHosts []string) func(certificateNames) error {
 	return func(names certificateNames) error {
-		hosts := formatCertificateHosts(names)
-		sites := make([]string, 0, len(names.dnsNames)+len(names.ipAddresses))
-		for _, host := range strings.Fields(hosts) {
+		ipHosts := strings.Fields(formatCertificateHosts(names))
+		hostValues := append(append([]string(nil), additionalHosts...), ipHosts...)
+		hosts := strings.Join(hostValues, " ")
+		sites := make([]string, 0, len(hostValues))
+		for _, host := range hostValues {
 			sites = append(sites, "https://"+host)
 		}
 		process := exec.Command(command, "reload", "--force", "--config", config, "--adapter", "caddyfile", "--address", admin)
@@ -761,12 +804,13 @@ func restoreSnapshot(path string, snapshot fileSnapshot) error {
 }
 
 // 恢复证书、私钥和学习状态，并合并报告所有恢复错误。
-func restoreBootstrapState(manager certificateManager, statePath string, cert, key, state fileSnapshot) error {
+func restoreBootstrapState(manager certificateManager, statePath string, cert, key, bundle, state fileSnapshot) error {
 	var failures []string
 	for path, snapshot := range map[string]fileSnapshot{
-		manager.outputCertPath: cert,
-		manager.outputKeyPath:  key,
-		statePath:              state,
+		manager.outputCertPath:   cert,
+		manager.outputKeyPath:    key,
+		manager.outputBundlePath: bundle,
+		statePath:                state,
 	} {
 		if err := restoreSnapshot(path, snapshot); err != nil {
 			failures = append(failures, path+": "+err.Error())
@@ -788,11 +832,55 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
-// 解析、规范化并去重 localhost 和 IPv4，拒绝将任意 DNS 名注入内部证书。
-func parseCertificateNames(value string) (certificateNames, error) {
-	parts := strings.FieldsFunc(value, func(r rune) bool {
+// 解析、校验并去重部署者预配置的可服务 IPv4，空配置表示仅使用回环和动态地址。
+func parseConfiguredIPs(value string) ([]string, error) {
+	parts := splitHostValues(value)
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		canonical, err := canonicalBootstrapIPv4(part)
+		if err != nil {
+			return nil, fmt.Errorf("configured HTTPS IP %q is invalid: %w", part, err)
+		}
+		if canonical != "127.0.0.1" && !containsString(result, canonical) {
+			result = append(result, canonical)
+		}
+	}
+	if len(result) > maxIPCertificateHosts {
+		return nil, fmt.Errorf("APP_HTTPS_IPS cannot contain more than %d addresses", maxIPCertificateHosts)
+	}
+	return result, nil
+}
+
+// 校验 reload 时必须保留的外部证书域名，避免环境变量内容进入 Caddyfile。
+func parseAdditionalHosts(value string) ([]string, error) {
+	parts := splitHostValues(value)
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	return normalizeDomains(parts)
+}
+
+// 统计预配置和已学习地址的去重并集，不将固定回环地址计入资源上限。
+func uniqueIPHostCount(configured, learned []string) int {
+	seen := make(map[string]struct{}, len(configured)+len(learned))
+	for _, host := range append(append([]string(nil), configured...), learned...) {
+		if host != "127.0.0.1" {
+			seen[host] = struct{}{}
+		}
+	}
+	return len(seen)
+}
+
+// 按环境变量支持的逗号和空白分隔规则拆分主机值。
+func splitHostValues(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\t' || r == '\r' || r == '\n'
 	})
+}
+
+// 解析、规范化并去重 localhost 和 IPv4，拒绝将任意 DNS 名注入内部证书。
+func parseCertificateNames(value string) (certificateNames, error) {
+	parts := splitHostValues(value)
 	if len(parts) == 0 {
 		return certificateNames{}, errors.New("at least one local host name or IPv4 address is required")
 	}
@@ -849,7 +937,16 @@ func (m certificateManager) ensureCertificate(names certificateNames, force bool
 		return false, errors.New("Caddy intermediate CA is not currently valid")
 	}
 	if !force && m.currentCertificateReusable(names, intermediate, now) {
-		return false, nil
+		certificatePEM, certErr := os.ReadFile(m.outputCertPath)
+		if certErr != nil {
+			return false, fmt.Errorf("read reusable IP certificate chain: %w", certErr)
+		}
+		keyPEM, keyErr := os.ReadFile(m.outputKeyPath)
+		if keyErr != nil {
+			return false, fmt.Errorf("read reusable IP certificate key: %w", keyErr)
+		}
+		changed, bundleErr := m.ensureBundle(certificatePEM, keyPEM)
+		return changed, bundleErr
 	}
 
 	leafPEM, keyPEM, err := createLeafCertificate(names, intermediate, intermediateKey, now, m.lifetime)
@@ -862,6 +959,28 @@ func (m certificateManager) ensureCertificate(names certificateNames, force bool
 	}
 	if err := writeAtomic(m.outputCertPath, fullchain, 0o600); err != nil {
 		return false, fmt.Errorf("write IP certificate chain: %w", err)
+	}
+	if _, err := m.ensureBundle(fullchain, keyPEM); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// 将内部 IP 完整链和私钥合并为 Caddy 文件夹加载器使用的最小权限证书包。
+func (m certificateManager) ensureBundle(certificatePEM, keyPEM []byte) (bool, error) {
+	bundle := append([]byte{}, bytes.TrimSpace(certificatePEM)...)
+	bundle = append(bundle, '\n')
+	bundle = append(bundle, bytes.TrimSpace(keyPEM)...)
+	bundle = append(bundle, '\n')
+	current, err := os.ReadFile(m.outputBundlePath)
+	if err == nil && bytes.Equal(current, bundle) {
+		return false, nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("read IP certificate bundle: %w", err)
+	}
+	if err := writeAtomic(m.outputBundlePath, bundle, 0o600); err != nil {
+		return false, fmt.Errorf("write IP certificate bundle: %w", err)
 	}
 	return true, nil
 }

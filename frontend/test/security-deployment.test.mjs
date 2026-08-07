@@ -18,6 +18,7 @@ function resolveIngress(overrides) {
       ...process.env,
       APP_HTTPS_SITES_FILE: '',
       TLS_CERTS_DIR: '',
+      APP_HTTPS_IPS: '',
       CADDY_EXTERNAL_HTTP_PORT: '81',
       CADDY_EXTERNAL_HTTPS_PORT: '444',
       ...overrides,
@@ -33,6 +34,7 @@ function rejectIngress(overrides) {
       ...process.env,
       APP_HTTPS_SITES_FILE: '',
       TLS_CERTS_DIR: '',
+      APP_HTTPS_IPS: '',
       CADDY_EXTERNAL_HTTP_PORT: '81',
       CADDY_EXTERNAL_HTTPS_PORT: '444',
       ...overrides,
@@ -91,6 +93,7 @@ test('容器名称使用平台简称的小写项目名前缀', async () => {
   assert.doesNotMatch(envExample, /^COMPOSE_PROJECT_NAME=/m)
   assert.match(envExample, /^APP_HTTPS_SITES_FILE=$/m)
   assert.match(envExample, /^TLS_CERTS_DIR=$/m)
+  assert.match(envExample, /^APP_HTTPS_IPS=$/m)
   assert.doesNotMatch(envExample, /^APP_DOMAIN(_FILE)?=$/m)
   assert.doesNotMatch(envExample, /^TLS_(CERT|KEY)_FILE=$/m)
   assert.doesNotMatch(compose, /^\s+APP_DOMAIN(_FILE)?:/m)
@@ -118,6 +121,7 @@ test('仅 Caddy 暴露 HTTP 和 HTTPS 端口并持久化内部 CA', async () => 
   assert.match(serviceBlock(compose, 'caddy', null), /caddy-config:\/config/)
   assert.doesNotMatch(serviceBlock(compose, 'caddy', null), /\.runtime|CADDY_DISCOVERED_HOSTS_FILE|HOST_IP_CHECK_INTERVAL_SECONDS/)
   assert.match(serviceBlock(compose, 'caddy', null), /CADDY_LEARNED_HOSTS_FILE:\s*\/data\/base-ai-tls\/learned-hosts/)
+  assert.match(serviceBlock(compose, 'caddy', null), /APP_HTTPS_IPS: \$\{APP_HTTPS_IPS:-\}/)
   assert.match(serviceBlock(compose, 'caddy', null), /IP_CERT_MAX_LEARNED_HOSTS:-32/)
   assert.match(serviceBlock(compose, 'caddy', null), /IP_CERT_MIN_ISSUE_INTERVAL_SECONDS:-5/)
   assert.match(serviceBlock(compose, 'caddy', null), /APP_HTTPS_SITES_FILE:-\.\/caddy\/https-sites-placeholder\.yml.*\/etc\/caddy\/https-sites\.yml:ro/)
@@ -157,13 +161,15 @@ test('Caddy IP 模式始终覆盖 localhost 和 IPv4 回环地址', () => {
   assert.match(config, /^default_sni=localhost$/m)
 })
 
-test('Caddy 入口在域名证书与请求学习 IPv4 模式间严格切换', () => {
+test('Caddy 域名证书、预配置 IPv4 与动态学习地址可以同时使用', () => {
   const ipConfig = withLearnedHosts('203.0.113.10\n192.168.1.10\n', hostsFile => resolveIngress({
     CADDY_LEARNED_HOSTS_FILE: hostsFile,
+    APP_HTTPS_IPS: '10.0.0.20, 192.168.1.10',
   }))
   assert.match(ipConfig, /^mode=ip$/m)
-  assert.match(ipConfig, /^hosts=localhost 127\.0\.0\.1 203\.0\.113\.10 192\.168\.1\.10$/m)
-  assert.match(ipConfig, /^https_sites=https:\/\/localhost, https:\/\/127\.0\.0\.1, https:\/\/203\.0\.113\.10, https:\/\/192\.168\.1\.10$/m)
+  assert.match(ipConfig, /^configured_ips=10\.0\.0\.20 192\.168\.1\.10$/m)
+  assert.match(ipConfig, /^hosts=localhost 127\.0\.0\.1 10\.0\.0\.20 192\.168\.1\.10 203\.0\.113\.10$/m)
+  assert.match(ipConfig, /^https_sites=https:\/\/localhost, https:\/\/127\.0\.0\.1, https:\/\/10\.0\.0\.20, https:\/\/192\.168\.1\.10, https:\/\/203\.0\.113\.10$/m)
   assert.match(ipConfig, /^https_port_suffix=:444$/m)
   assert.match(ipConfig, /^default_sni=localhost$/m)
   assert.match(ipConfig, /^hsts=disabled$/m)
@@ -177,15 +183,18 @@ test('Caddy 入口在域名证书与请求学习 IPv4 模式间严格切换', ()
       CADDY_TLS_ROOT: tlsRoot,
       CADDY_INGRESS_HELPER: resolver,
       CADDY_TEST_RESOLVED_DOMAINS: 'ai.example.com api.example.com console.example.net',
+      APP_HTTPS_IPS: '10.0.0.20',
       CADDY_EXTERNAL_HTTP_PORT: '80',
       CADDY_EXTERNAL_HTTPS_PORT: '443',
     }))
   ))
-  assert.match(domainConfig, /^mode=domain$/m)
-  assert.match(domainConfig, /^hosts=ai\.example\.com api\.example\.com console\.example\.net$/m)
-  assert.match(domainConfig, /^https_sites=https:\/\/ai\.example\.com, https:\/\/api\.example\.com, https:\/\/console\.example\.net$/m)
+  assert.match(domainConfig, /^mode=mixed$/m)
+  assert.match(domainConfig, /^domains=ai\.example\.com api\.example\.com console\.example\.net$/m)
+  assert.match(domainConfig, /^configured_ips=10\.0\.0\.20$/m)
+  assert.match(domainConfig, /^hosts=ai\.example\.com api\.example\.com console\.example\.net localhost 127\.0\.0\.1 10\.0\.0\.20 192\.168\.1\.10$/m)
+  assert.match(domainConfig, /^https_sites=https:\/\/ai\.example\.com, https:\/\/api\.example\.com, https:\/\/console\.example\.net, https:\/\/localhost, https:\/\/127\.0\.0\.1, https:\/\/10\.0\.0\.20, https:\/\/192\.168\.1\.10$/m)
   assert.match(domainConfig, /^https_port_suffix=$/m)
-  assert.match(domainConfig, /^default_sni=$/m)
+  assert.match(domainConfig, /^default_sni=localhost$/m)
   assert.match(domainConfig, /^hsts=enabled$/m)
 })
 
@@ -206,6 +215,8 @@ test('Caddy 入口拒绝不完整证书、非法学习地址和越界端口', ()
   for (const [overrides, message] of [
     [{ APP_HTTPS_SITES_FILE: '/srv/config/https-sites.yml' }, 'must be configured together'],
     [{ CADDY_EXTERNAL_HTTPS_PORT: '65536' }, 'must be between 1 and 65535'],
+    [{ APP_HTTPS_IPS: '2001:db8::1' }, 'APP_HTTPS_IPS must contain canonical usable IPv4 addresses'],
+    [{ APP_HTTPS_IPS: '169.254.1.10' }, 'APP_HTTPS_IPS must contain canonical usable IPv4 addresses'],
   ]) {
     const result = rejectIngress(overrides)
     assert.notEqual(result.status, 0)
@@ -217,7 +228,7 @@ test('Caddy 入口拒绝不完整证书、非法学习地址和越界端口', ()
       CADDY_LEARNED_HOSTS_FILE: hostsFile,
     }))
     assert.notEqual(result.status, 0)
-    assert.match(result.stderr, /learned host address must be a valid IPv4 address/)
+    assert.match(result.stderr, /learned host address must be a canonical usable IPv4 address/)
   }
 })
 

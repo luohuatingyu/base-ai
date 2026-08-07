@@ -186,6 +186,7 @@ services:
     environment:
       APP_HTTPS_SITES_FILE: ${APP_HTTPS_SITES_FILE:-}
       TLS_CERTS_DIR: ${TLS_CERTS_DIR:-}
+      APP_HTTPS_IPS: ${APP_HTTPS_IPS:-}
       CADDY_HTTPS_SITES_FILE: /etc/caddy/https-sites.yml
       CADDY_TLS_ROOT: /etc/caddy/tls
       CADDY_LEARNED_HOSTS_FILE: /data/base-ai-tls/learned-hosts
