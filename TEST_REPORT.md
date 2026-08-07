@@ -34,17 +34,17 @@ Commit: 75d130c480f00c9bc5d09393a1c3e641e325f480
 | 公共 CA 信任不回归 | TLS 组合信任单元与正式运行态 | API Trigger 请求 `https://example.com/` | JVM 公共 CA 校验成功并返回 200；符合预期 | 兼容、回归 |
 | Backend 不接触 Caddy 私钥 | 部署契约、容器挂载与文件校验 | 检查 Compose、Backend Mounts、卷内证书权限和 SHA-256 | Backend 仅有只读公共 CA 卷且无 `/app/caddy-data`；公开证书与 Caddy 源根证书一致、权限 0444；符合预期 | 权限、安全、部署 |
 | CA 文件异常时安全失败 | Backend TLS 单元测试 | 缺失、延迟出现、目录、符号链接、非法 PEM、DER、超大文件、非 CA 叶证书、超量证书 | 缺失的可选 Caddy 根证书兼容启动；出现后即时加载；其他非法配置拒绝；符合预期 | 异常、边界、安全 |
-| 现有功能不回归 | Backend、Frontend、Worker、Caddy Go 完整套件 | 当前分支全部自动化测试 | 549/549 通过，失败 0、错误 0、跳过 0；符合预期 | 回归、权限、安全 |
+| 现有功能不回归 | Backend、Frontend、Worker、Caddy Go 完整套件 | 当前分支全部自动化测试 | 547/547 通过，失败 0、错误 0、跳过 0；符合预期 | 回归、权限、安全 |
 | 统一重建后服务可运行 | Docker Compose 完整构建与健康检查 | `docker compose up --build -d` | 四个镜像构建成功，四个服务最终全部 healthy，HTTPS 健康检查为 200 | 构建、部署、回归 |
 
 ### 测试执行结果
 
-- 自动化测试合计：549/549 通过（Backend 317、Frontend 190、Python Worker 26、Caddy Go 16），失败 0，错误 0，跳过 0。
-- Backend 定向测试：39/39 通过，其中重定向与响应 25、TLS 信任 11、消息资源 3；这些用例已包含在 Backend 完整 317 项中，不重复计入总数。
+- 自动化测试合计：547/547 通过（Backend 315、Frontend 190、Python Worker 26、Caddy Go 16），失败 0，错误 0，跳过 0。
+- Backend 定向测试：39/39 通过，其中重定向与响应 25、TLS 信任 11、消息资源 3；这些用例已包含在 Backend 完整 315 项中，不重复计入总数。
 - Caddy 部署契约：12/12 通过；该套件已包含在 Frontend 190 项中，不重复计数。
 - Caddy Go：16/16 通过；`gofmt` 无差异，`go vet` 通过。
 - 静态检查：`docker compose config --quiet`、Shell 语法、`git diff --check` 全部通过。
-- 规定统一重建：`docker compose up --build -d` 在释放被另一项目占用的 80/443 端口后成功；Backend 镜像构建阶段再次执行 317/317 测试，最终四服务均 healthy。
+- 规定统一重建：`docker compose up --build -d` 在释放被另一项目占用的 80/443 端口后成功；最终代码再次重建时 Backend 镜像构建阶段执行 315/315 测试，最终四服务均 healthy。
 - 运行态验收：HTTPS 直连、HTTP GET 308、认证 POST 308 加目标 GET 308、公有 CA HTTPS 四项均返回 200；临时 API Trigger 安全策略已恢复原值。
 - 隔离验收：Backend 的挂载中不存在 `caddy-data`，公共根证书可读且哈希一致；Caddy 私钥不可由 Backend 访问。
 - 清理恢复：临时目录 `/tmp/base-ai-api-trigger-redirect-test` 已删除；Caddy 已恢复空 `APP_HTTPS_IPS` 的常规配置，`domestic-trade-caddy` 原 `unless-stopped` 重启策略已恢复并保持停止，当前项目四服务均 healthy。
@@ -54,7 +54,7 @@ Commit: 75d130c480f00c9bc5d09393a1c3e641e325f480
 | 范围 | 执行命令或方式 | 结果 |
 | --- | --- | --- |
 | Backend 缺陷复现 | 定向执行 `ApiTriggerServiceResponseDecodingTest`、`ApiTriggerTlsTrustTest`、`MessageBundleTest` | 实现前因缺少 TLS 信任类稳定失败；实现后 39/39 通过 |
-| Backend 完整回归 | Maven 3.9.9 / Eclipse Temurin 17 固定容器执行 `mvn -B -ntp test` | 317/317 通过，BUILD SUCCESS |
+| Backend 完整回归 | Maven 3.9.9 / Eclipse Temurin 17 固定容器执行 `mvn -B -ntp test` | 315/315 通过，BUILD SUCCESS |
 | Caddy 部署契约 | `node --test frontend/test/security-deployment.test.mjs` | 12/12 通过 |
 | Frontend 完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 190/190 通过 |
 | Worker 完整回归 | Python 3.12 环境执行 `python -m pytest -q -p no:cacheprovider` | 26/26 通过 |
@@ -68,7 +68,7 @@ Commit: 75d130c480f00c9bc5d09393a1c3e641e325f480
 
 ### 测试过程问题与处理
 
-- 首次定向测试按“先失败再修复”执行，因 `ApiTriggerTlsTrust` 尚不存在而编译失败；实现后相同测试 39/39 通过，没有删除、跳过或弱化测试。
+- 首次定向测试按“先失败再修复”执行，因 `ApiTriggerTlsTrust` 尚不存在而编译失败；初版曾包含额外私有 CA 目录。用户确认项目只使用一套 Caddy 私有 CA 后，移除目录能力及仅适用于该能力的目录扫描测试，最终 39/39 通过，没有跳过或弱化仍有效的测试。
 - 首次部署契约 12 项中 3 项因公共 CA 环境变量、卷和镜像目录尚未实现而失败；A 方案实现后 12/12 通过。
 - 首次 `docker compose up --build -d` 完成镜像构建和 Backend 317 项测试后，80/443 被 `domestic-trade-caddy` 占用；按项目规则临时关闭该容器并禁用自动重启后重试成功。
 - 运行态验收期间该外部容器曾再次自动启动并抢占端口；再次停止后完成验收，最后恢复其 `unless-stopped` 策略并保持停止，未修改其镜像、卷或项目文件。
