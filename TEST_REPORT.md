@@ -1,5 +1,96 @@
 # 最近分支覆盖测试报告
 
+## 📋 APP_HTTPS_IPS 与混合 HTTPS 入口测试结果（2026-08-07）
+
+### Git 基准点
+
+Commit: e17167958253ef876b1e9c273f92044b570a616d
+- 提交说明: Support preconfigured HTTPS IP addresses
+- 测试日期: 2026-08-07
+- 分支: master
+- 上一测试报告基准点: `1a2f15dae635a024c892a05d59f97b764f3cac3b`
+- 对应上游功能提交: `domestic-trade/master` 的 `0f2facbd42e5b1dc0a1a2e4bfa6f77540746671f`
+- Backend 业务代码差异: `git diff 1a2f15dae635a024c892a05d59f97b764f3cac3b HEAD -- backend/src/main/java/` 无输出；本次未修改 Backend 业务代码，仍按确认范围完成三端完整回归。
+
+### 变更范围
+
+- 新增 `APP_HTTPS_IPS`，支持逗号或空白分隔的规范 IPv4；启动时将预配置地址加入 Caddy 内部 CA 证书，使对应地址首次可直接使用 HTTPS。
+- 外部域名证书、预配置 IP 和动态学习 IP 可同时启用；域名继续使用部署者提供的证书，IP 共用内部 CA 多 SAN 证书。
+- 域名证书启用后仍支持 HTTP 请求驱动的 IPv4 动态学习；动态签发、续期和 Caddy reload 会保留全部域名、预配置 IP 与已学习 IP。
+- Caddy 文件夹证书加载器同时加载外部域名 PEM 包和内部 IP PEM 包；内部证书、私钥、合并包及学习状态在签发、持久化或 reload 失败时一并回滚。
+- 预配置和动态地址统一拒绝 IPv6、非规范、未指定、链路本地、组播与不可用地址；内部证书最多包含 256 个非固定回环 IPv4，动态地址仍受 `IP_CERT_MAX_LEARNED_HOSTS` 独立限制。
+- 同步 Compose 环境传递、环境模板、中英文部署文档、Go 单元测试和 Caddy 部署契约；未新增依赖，未修改数据库、Backend 业务代码、前端业务逻辑或 Python Worker 业务逻辑。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 预配置 IP 首次可直接 HTTPS | 正式 Compose 运行态；Caddy 根 CA 已存在 | `APP_HTTPS_IPS=127.0.0.2`，不发送首次 HTTP，直接请求 HTTPS | HTTPS `/health` 返回 200；证书 SAN 包含 `127.0.0.2`，学习状态未写入该地址；符合预期 | 正常、集成、兼容 |
+| 域名证书、预配置 IP 与动态学习同时可用 | 临时 `ai.test` 自签证书、预配置 `127.0.0.2`、未知 `127.0.0.4` | 先验证域名和预置 IP，再通过 HTTP 业务路径学习新 IP | 域名和预置 IP 均为 200；新 IP 返回保留路径与查询参数的 308，随后可信 HTTPS 为 200；符合预期 | 正常、集成、混合入口 |
+| 动态 reload 不丢失既有入口 | Go reloader 单元与混合运行态 | 新 IP 签发并触发 Caddy reload 后重新请求 `ai.test` 和 `127.0.0.2` | 外部域名证书、预置 IP 和新增 IP 全部继续返回 200；符合预期 | 回归、状态变化 |
+| 配置与学习状态稳定合并 | Go 参数化单元与 Shell 入口诊断 | 逗号、空白、重复配置、配置与学习重复、空配置 | 地址规范化并稳定去重；空变量保持 `localhost` 和 `127.0.0.1` 兼容行为；符合预期 | 边界、兼容 |
+| 非法地址和资源超限被拒绝 | Go 单元与部署契约 | IPv6、前导零、`0.0.0.0`、链路本地、组播、DNS 名和超过 256 个地址 | 非法配置拒绝启动或签发；达到运行上限返回 HTTP 429；符合预期 | 异常、安全、资源保护 |
+| 证书更新失败可恢复 | Go 证书生命周期、reload 失败和状态回滚测试 | 签发、续期、bundle 生成或 reload 失败 | 证书、私钥、内部 PEM 包和学习状态恢复旧版本；符合预期 | 异常、故障恢复 |
+| 现有域名/IP 入口和应用功能不回归 | Caddy 契约、Go 单元及三端完整套件 | 当前分支全部既有自动化测试 | Go 16/16、部署契约 12/12、Backend 287/287、Frontend 190/190、Worker 26/26 全部通过 | 兼容、回归、权限、安全 |
+| 统一重建后服务可运行 | Docker Compose 构建、健康检查和 HTTPS curl | 执行规定的统一重建并恢复默认空入口配置 | 四个镜像构建成功，四个服务均 healthy，默认 HTTPS 健康检查为 200 | 构建、部署、回归 |
+
+### 测试执行结果
+
+- 自动化测试合计：519/519 通过（Backend 287、Frontend 190、Python Worker 26、Caddy Go 16），失败 0，错误 0，跳过 0。
+- Caddy 部署契约：12/12 通过；该 12 项包含在 Frontend 190 项完整测试中，不重复计数。
+- Caddy Go：16/16 通过；`gofmt` 无差异，`go vet` 通过。
+- 静态检查：Shell 语法、`docker compose config --quiet`、`git diff --check` 全部通过。
+- 规定统一重建：`docker compose up --build -d` 成功，Backend、Python Worker、Frontend、Caddy 全部 healthy。
+- 纯 IP 运行态：`127.0.0.2` 未经 HTTP 学习即可完成受根 CA 信任的 HTTPS 请求，证书 SAN 正确且未写入动态学习状态。
+- 混合入口运行态：`ai.test` 外部证书、`127.0.0.2` 预配置内部证书与 `127.0.0.4` 动态内部证书同时工作；动态 reload 前后域名和预置 IP 均保持可用。
+- 清理恢复：临时证书、YAML、OpenSSL 配置、测试镜像和动态学习地址已删除；Caddy 已恢复为空域名、空预配置 IP 的默认运行态，最终四服务均 healthy。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Caddy Go 单元与静态检查 | 固定 Go 1.26.5 Alpine 容器执行 `gofmt -d`、`go test -v ip-cert-helper.go ip-cert-helper_test.go`、`go vet` | 16/16 通过，格式与 vet 通过 |
+| Caddy 部署契约 | `node --test frontend/test/security-deployment.test.mjs` | 12/12 通过 |
+| Frontend 完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 190/190 通过 |
+| Backend 完整回归 | Maven 3.9.9 / Eclipse Temurin 17 固定容器执行 `mvn -B -ntp test` | 287/287 通过，BUILD SUCCESS |
+| Worker 完整回归 | Python 3.12 固定容器按哈希安装开发依赖后执行 `python -m pytest -q -p no:cacheprovider` | 26/26 通过 |
+| Compose 与 Shell 静态检查 | `docker compose config --quiet`、`sh -n caddy/caddy-entrypoint.sh`、`git diff --check` | 全部通过 |
+| 规定统一重建 | `docker compose up --build -d` | 四个镜像构建成功，四个服务启动并进入 healthy |
+| 预配置 IP 运行态 | 以 `APP_HTTPS_IPS=127.0.0.2` 重建 Caddy，在容器内直接请求 HTTPS 并读取 SAN | 首次 HTTPS 200；SAN 包含预置地址；学习状态未写入该地址 |
+| 混合 TLS 运行态 | 临时 `ai.test` 域名证书、预置 IP、未知 IP HTTP 学习、reload 后重复请求 | 域名/预置/动态入口全部通过；HTTP 308 保留路径和查询参数 |
+| 清理与恢复 | 删除临时目录、测试镜像和动态学习状态，以空入口变量重建 Caddy | 无调试文件或学习地址遗留；默认四服务 healthy |
+
+### 测试过程问题与处理
+
+- 首次 Go 容器命令使用登录 Shell 后重置了镜像 `PATH`，导致 `go` 和 `gofmt` 未找到，测试未进入执行；改为显式传递 Go 工具链路径后 16/16 通过，`go vet` 通过。
+- 首次读取证书 SAN 时宿主机 LibreSSL 不支持 `openssl x509 -ext`；改用 `openssl x509 -text` 后确认 SAN 正确，不影响先前已通过的 HTTPS 和状态断言。
+- 首次混合入口健康等待脚本使用了 zsh 只读变量 `status`，请求尚未执行即退出；改名为 `health_state` 后完整混合入口流程通过。
+- 纯 IP 验证后 Caddy 曾收到一次外部 `SIGTERM` 并以状态 0 退出，日志无应用错误；后续混合入口重建、默认配置恢复及最终健康检查均持续通过。
+- 测试临时目录 `/tmp/base-ai-https-ip-sync-test`、临时构建镜像和动态学习地址均已清理，未创建或遗留仓库调试文件。
+
+### 已知问题与限制
+
+- IP 证书仍由 Caddy 内部 CA 签发，客户端必须安装项目根证书；`APP_HTTPS_IPS` 不会让证书自动获得公共 CA 信任。
+- `APP_HTTPS_IPS` 仅支持规范 IPv4，不支持 IPv6；配置变更需要重启或重建 Caddy 后才会更新 SAN。
+- 内部 IP 证书最多包含 256 个非固定回环地址；动态地址还受 `IP_CERT_MAX_LEARNED_HOSTS` 和最小签发间隔限制。
+- 未预配置且未学习的 IP 首次仍需通过非 `/health` 的 HTTP 路径触发学习；首次直接 HTTPS 无法获得匹配证书。
+- 本次使用回环 IPv4 和临时自签域名证书完成等价混合验证，未使用真实公网 IP、生产域名证书、外部负载均衡器或真实浏览器信任库。
+- 前端生产构建仍有 runtime-config、第三方 PURE 注释和大 Chunk 的既有警告，不影响构建与运行结果。
+
+### 下次测试建议
+
+1. 在预生产主机配置真实内网、公网或 NAT 映射 IPv4，分别验证启动时直连、地址变更、移除配置和重启后的 SAN 收敛。
+2. 使用生产域名证书与多客户端根证书信任库验证域名/IP 并发访问、HTTP/2、HTTP/3、Cookie、CSRF 和 HSTS。
+3. 在接近 256 个 IP SAN 和动态学习上限的隔离环境执行证书大小、握手性能、429 恢复和续期压力测试。
+
+### 重测触发条件与回滚
+
+- 修改 `APP_HTTPS_IPS` 语法、地址安全边界、SAN 总量、域名 PEM 加载、IP 签发/续期、动态学习、Caddy reload、入口 Host 白名单、Compose 传递或相关文档契约时，必须重跑 Caddy Go、部署契约、混合运行态和统一重建。
+- 修改 Backend 业务代码、前端业务逻辑或 Python Worker 时，按项目规则执行对应完整测试。
+- 可回滚功能提交 `e17167958253ef876b1e9c273f92044b570a616d` 后重新执行 `docker compose up --build -d`；没有数据库迁移、数据回填、业务数据变更或需要删除的命名卷。
+
+---
+
 ## 📋 HTTPS 站点分组与多证书 SNI 测试结果（2026-08-06）
 
 ### Git 基准点
