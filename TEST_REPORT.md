@@ -1,5 +1,101 @@
 # 最近分支覆盖测试报告
 
+## 📋 工作流管理与 MySQL 执行引擎测试结果（2026-08-07）
+
+### Git 基准点
+
+Commit: 14c27e253ead1fb785de7a711ffe4c93da441664
+- 提交说明: Add executable workflow management
+- 测试日期: 2026-08-07
+- 分支: master
+- 上一测试报告基准点: `75d130c480f00c9bc5d09393a1c3e641e325f480`
+- Backend 业务代码差异: `git diff 75d130c480f00c9bc5d09393a1c3e641e325f480 14c27e253ead1fb785de7a711ffe4c93da441664 -- backend/src/main/java/` 包含工作流管理、校验、执行、开放接口、任务追踪和资源限制，因此已执行定向、完整、部署及真实 MySQL 运行态测试。
+
+### 变更范围
+
+- 新增与“自动化”平级的“工作流”目录，以及“节点管理”“画布管理”页面和对应按钮权限；管理员可维护复用节点模板、拖拽画布、撤销重做、编辑嵌套子画布、发布版本、手动运行及查看逐节点日志。
+- 支持 START、END、LLM、HTTP、工具调用 AGENT、CONDITION、数组 ITERATION 和条件 LOOP；普通图必须为可达 DAG，循环只能通过受限控制节点表达。
+- 工作流定义、不可变版本、节点模板、工作流运行和节点运行日志全部作为框架层数据存入 MySQL；配置、输入和输出使用既有 AES-GCM 能力加密。
+- 新增已发布工作流的 API Key 开放执行与运行查询接口；有效权限是 API Key 端点范围与绑定用户 RBAC 权限的交集。
+- Python 3.12 Worker 新增一次 Agent 工具选择协议；具体 HTTP 或子工作流工具仍由 Java 执行器在既有 SSRF、TLS、权限和资源边界内执行。
+- 新增 MySQL V4 工作流 Schema，以及 V5 历史 API Key 列兼容迁移。V5 只在旧列存在时将其调整为可空，不删除旧列或历史数据；PostgreSQL 未增加工作流表。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 工作流与自动化平级且包含两个页面 | Backend 初始化单元、Frontend 路由/导航完整套件 | 初始化菜单并以不同权限生成导航 | 顶层工作流目录、节点管理和画布管理均存在，按钮权限独立；符合预期 | 正常、权限、兼容 |
+| 节点模板可复用且类型完整 | MySQL 迁移资源测试、运行库检查 | 应用 V4，查询内置模板和五张工作流表 | 八类内置节点及五张表全部存在；模板实例保留快照；符合预期 | 正常、数据、回归 |
+| 画布拒绝非法结构 | Backend 图校验单元 | 最小 DAG、悬空边、普通循环、无边界、不可达节点、Vue Flow `data.config` 嵌套循环、超深子画布 | 合法图通过；非法图及超限嵌套被明确拒绝；符合预期 | 边界、异常、安全 |
+| 条件、变量和 UI 配置可执行 | 表达式单元及正式 Compose 运行态 | `data.config` 条件 `input.value >= 10`，输入 12，真假两条分支 | 状态 SUCCESS，输出 `approved=true,value=12`，仅执行命中路径的 3 个节点；符合预期 | 正常、分支、集成 |
+| 迭代、循环、Agent 和递归受限 | Backend 校验/配置测试、Python Agent 协议测试 | 节点数、迭代数、Agent 步数、子画布/子工作流深度和负载配置；重复或非法工具参数 | 配置硬上限生效；非法 Agent 消息、工具及参数被拒绝；符合预期 | 边界、异常、资源保护 |
+| 手动运行保留版本和逐节点日志 | 正式 Compose 运行态及 MySQL 查询 | 创建草稿、提交对象输入、轮询运行详情 | 使用不可变版本异步执行，运行及 3 条节点日志持久化，输入输出可解密返回；符合预期 | 正常、数据副作用、集成 |
+| API Key 可执行已发布工作流 | 正式 Compose 运行态；临时管理员 Key 只授权两个工作流端点 | 发布 START→END 工作流，API Key 输入 `value=42`，轮询结果后吊销 | 创建 Key、异步执行、结果查询和吊销全部成功；状态 SUCCESS，2 个节点，输出值 42；符合预期 | 正常、权限、安全 |
+| 历史 API Key Schema 可继续创建 Key | MySQL Flyway 运行态与 Schema 查询 | 历史库保留非空 `rate_limit_per_minute`，应用 V5 后创建新 Key | 旧列变为可空，V4/V5 均成功，API Key 创建恢复；符合预期 | 兼容、迁移、回归 |
+| 工作流数据不进入 PostgreSQL | Git 变更、Flyway 路径及运行库检查 | 检查迁移目录和 MySQL 表 | 工作流迁移仅存在于 MySQL，PostgreSQL 迁移链保持原范围；符合预期 | 架构、兼容 |
+| 现有功能不回归 | Backend、Frontend、Worker、Caddy Go 完整套件 | 当前基准点全部自动化测试 | 565/565 通过，失败 0、错误 0、跳过 0；符合预期 | 回归、权限、安全 |
+| 统一重建后服务可运行 | Docker Compose 完整构建与健康检查 | `docker compose up --build -d` | 四个镜像构建成功，Backend 构建阶段 329/329，通过后四服务全部 healthy | 构建、部署、回归 |
+
+### 测试执行结果
+
+- 自动化测试合计：565/565 通过（Backend 329、Frontend 192、Python Worker 28、Caddy Go 16），失败 0，错误 0，跳过 0。
+- 工作流 Backend 定向覆盖：表达式 6、图结构 5、Schema 2、菜单初始化 11、API Key 端点目录 4；均包含在 Backend 完整 329 项中，不重复计数。
+- Frontend 工作流定向覆盖：最小画布、唯一 ID、悬空边和普通循环；包含在 Frontend 完整 192 项中。
+- Python Agent 定向覆盖：有效工具调用解析和非法非对象参数拒绝；包含在 Worker 完整 28 项中。
+- 静态检查：`docker compose config --quiet`、`git diff --check` 和 `git diff --cached --check` 全部通过。
+- 数据库迁移：真实 MySQL 的 Flyway V4、V5 均为成功状态；五张工作流表存在，历史 `rate_limit_per_minute` 已变为可空。
+- 运行态验收：会话手动运行和 API Key 开放运行均成功，条件分支、UI `data.config`、节点日志、结果查询及 Key 吊销均符合预期。
+- 清理恢复：临时工作流、版本、运行、节点日志、任务链路、API Key 及 Cookie 文件均已删除；两类临时工作流和临时 Key 的 MySQL 残留计数均为 0。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整回归与构建 | `docker compose up --build -d` 内 Maven 3.9.9 / Java 17 执行 `mvn -B -ntp package` | 329/329 通过，BUILD SUCCESS |
+| Frontend 完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 192/192 通过 |
+| Frontend 工作流快捷套件 | `npm test -- --runInBand` | 26/26 通过，其中工作流 2/2 |
+| Worker 完整回归 | Python 3.12.13 隔离容器按哈希安装开发依赖后执行 `python -m pytest` | 28/28 通过 |
+| Caddy Go 回归 | Go 1.26.5 隔离容器复制源码到临时目录后执行 `go test` | 16/16 通过 |
+| Compose 静态校验 | `docker compose config --quiet` | 通过 |
+| 规定统一重建 | `docker compose up --build -d` | 最终构建成功，四个项目服务均 healthy |
+| MySQL 迁移验证 | 查询 `flyway_schema_history`、`information_schema.COLUMNS` 和工作流表 | V4/V5 成功；旧限流列可空；五张工作流表存在 |
+| API Key 端到端 | 创建、发布、创建受限 Key、开放执行、轮询查询、吊销并清理 | SUCCESS；输出值 42；2 条节点日志；Key 生命周期验证通过 |
+| UI 配置端到端 | 以 Vue Flow `data.config` 创建条件工作流并手动执行 | SUCCESS；`approved=true,value=12`；仅 3 个命中节点执行 |
+| 变更和清理检查 | `git status`、暂存差异、格式检查、MySQL 临时前缀计数 | 功能提交只含确认范围；无调试文件或临时业务数据 |
+
+### 测试过程问题与处理
+
+- API Key 首次运行验收发现历史 MySQL 仍保留 `rate_limit_per_minute NOT NULL`，而当前实体已使用 `rate_limit_type/rate_limit_count`，导致新 Key 插入失败。经用户再次批准后新增条件式 V5 兼容迁移，仅放宽旧列空值约束；重建后 Key 创建、执行、查询和吊销全部通过。
+- 首次统一重建时宿主机 80/443 被 `domestic-trade-caddy` 占用；按项目规则只停止该占用容器后重试。最终当前项目按本机配置发布 81/444，四服务均 healthy；外部容器随后按自身重启策略恢复在 80/443 运行，两项目不再冲突。
+- 宿主机 Python 3.12.13 未安装 pytest；改用只读挂载源码的 Python 3.12 隔离容器安装锁定开发依赖，28/28 通过。只读挂载使 pytest 缓存写入产生一条非测试失败警告，仓库未产生缓存文件。
+- 首次 Caddy Go 隔离命令使用登录 Shell，镜像 PATH 被重置而未找到 Go；改用普通 Shell 并在容器临时目录初始化 module 后测试通过，未修改仓库。
+- UI 运行态脚本最初使用默认 443，而当前 Compose 实际映射为 444，请求未进入项目；改为从容器端口映射动态读取后完整验收通过。失败尝试未创建工作流或 Key。
+- 审查发现 Vue Flow 把实例配置保存在 `data.config`，初版嵌套校验只读取顶层 `config`；补充覆盖用例后统一兼容两种格式，并增加子画布深度校验与执行深度递增，最终 Backend 329/329 通过。
+
+### 已知问题与限制
+
+- 本次未调用真实外部 LLM 供应商或真实外部 HTTP 服务；Agent 协议、候选解析和 HTTP 安全复用由自动化测试覆盖，但生产模型能力路由、供应商 tool-calling 兼容性和目标网络仍需环境验收。
+- 未执行浏览器自动化；画布交互通过前端单元、生产构建和真实 HTTP API 等价验证，拖拽手感及复杂大图性能仍需人工体验测试。
+- 工作流异步任务由单进程线程池执行；服务重启会将遗留 QUEUED/RUNNING 记录标记失败，当前版本不支持断点续跑或分布式抢占。
+- ITERATION 和 LOOP 按顺序执行，尚不提供并行迭代；定义删除为软删除，历史版本和运行记录继续保留。
+- V5 为兼容历史库保留旧限流列并改为可空，没有物理删除该列；待所有部署确认不再运行旧版本后，可另行规划清理迁移。
+
+### 下次测试建议
+
+1. 在预生产配置真实模型能力路由，分别验证 LLM 直答、Agent 单/多工具调用、工具失败、候选切换、超时和 Token 统计。
+2. 使用受控 HTTP 测试服务验证工作流 HTTP 节点的各方法、模板变量、JSON/文本响应、重定向、SSRF 拒绝和超时。
+3. 增加浏览器 E2E，覆盖模板拖入、节点配置、条件连线、嵌套画布、撤销重做、并发编辑冲突、发布和日志抽屉。
+4. 在大图和上限输入下执行容量测试，验证线程池排队、取消、100 次迭代/循环、深度上限和 1 MiB 负载限制。
+
+### 重测触发条件与回滚
+
+- 修改任一工作流 Domain/Service/Controller、节点执行语义、表达式、图校验、加密字段、MySQL Schema、API Key 端点、Worker Agent 协议或资源上限时，必须重跑 Backend、Worker、Frontend 完整套件及相应运行态验收。
+- 修改菜单权限、Vue Flow 依赖、路由、画布序列化或页面交互时，必须重跑 Frontend 完整套件、生产构建和浏览器/HTTP 等价验收。
+- 应用回滚可回退功能提交 `14c27e253ead1fb785de7a711ffe4c93da441664` 后重新执行 `docker compose up --build -d`。为避免破坏已产生的工作流历史数据，V4/V5 表和兼容列应保留；旧应用会忽略这些额外表和可空旧列。
+- 如必须物理回滚数据库，应先停止工作流写入并备份五张工作流表，再按外键顺序删除节点运行、运行、版本、定义和模板表；V5 只有在确认旧列不存在空值时才能恢复非空约束。
+
+---
+
 ## 📋 API Trigger 安全重定向与 Caddy 公共 CA 测试结果（2026-08-07）
 
 ### Git 基准点
