@@ -1,6 +1,33 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { createWorkflowGraph, validateWorkflowGraph } from '../src/utils/workflowGraph.js'
+import { reactive } from 'vue'
+import { cloneWorkflowData, createWorkflowGraph, validateWorkflowGraph } from '../src/utils/workflowGraph.js'
+
+const canvasViewSource = readFileSync(new URL('../src/views/WorkflowCanvasView.vue', import.meta.url), 'utf8')
+const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
+
+test('工作流 JSON 数据可安全复制 Vue 响应式对象', () => {
+  const workflow = reactive({
+    id: 1,
+    graph: { nodes: [{ id: 'llm', data: { config: { prompt: 'original' } } }], edges: [] },
+    inputSchema: { properties: { name: { type: 'string' } } }
+  })
+
+  assert.throws(() => structuredClone(workflow), error => error.name === 'DataCloneError')
+  const copy = cloneWorkflowData(workflow)
+  copy.graph.nodes[0].data.config.prompt = 'changed'
+  copy.inputSchema.properties.name.type = 'number'
+
+  assert.equal(workflow.graph.nodes[0].data.config.prompt, 'original')
+  assert.equal(workflow.inputSchema.properties.name.type, 'string')
+})
+
+test('工作流选择和节点模板配置统一使用响应式安全复制', () => {
+  assert.match(canvasViewSource, /selected\.value\s*=\s*item\s*\?\s*cloneWorkflowData\(item\)\s*:\s*null/)
+  assert.match(graphEditorSource, /config:\s*cloneWorkflowData\(template\.config\s*\|\|\s*\{\}\)/)
+  assert.doesNotMatch(`${canvasViewSource}\n${graphEditorSource}`, /structuredClone\(/)
+})
 
 test('工作流画布初始化唯一开始和结束节点', () => {
   const graph = createWorkflowGraph()

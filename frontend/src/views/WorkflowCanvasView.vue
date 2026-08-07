@@ -55,7 +55,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import WorkflowGraphEditor from '../components/WorkflowGraphEditor.vue'
-import { createWorkflowGraph, serializeWorkflowGraph, validateWorkflowGraph } from '../utils/workflowGraph'
+import { cloneWorkflowData, createWorkflowGraph, serializeWorkflowGraph, validateWorkflowGraph } from '../utils/workflowGraph'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -71,7 +71,7 @@ const runAlertType = computed(() => activeRun.value?.status === 'SUCCESS' ? 'suc
 /** 并行加载工作流和模板目录。 */
 async function load() { const [workflowResponse, templateResponse] = await Promise.all([http.get('/workflow/canvases'), http.get('/workflow/nodes')]); rows.value = workflowResponse.data || []; templates.value = templateResponse.data || []; if (selected.value) select(rows.value.find(item => item.id === selected.value.id) || null) }
 /** 选择工作流并复制当前草稿，避免编辑列表缓存。 */
-function select(item) { selected.value = item ? structuredClone(item) : null; graph.value = serializeWorkflowGraph(item?.graph || createWorkflowGraph()); inputSchemaText.value = JSON.stringify(item?.inputSchema || {}, null, 0) }
+function select(item) { selected.value = item ? cloneWorkflowData(item) : null; graph.value = serializeWorkflowGraph(item?.graph || createWorkflowGraph()); inputSchemaText.value = JSON.stringify(item?.inputSchema || {}, null, 0) }
 /** 打开空的新建窗口。 */
 function openCreate() { Object.assign(createForm, { code: '', name: '', description: '' }); createVisible.value = true }
 /** 创建带最小开始结束节点的首个版本。 */

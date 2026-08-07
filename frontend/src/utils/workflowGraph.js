@@ -46,7 +46,12 @@ export function validateWorkflowGraph(graph, maxNodes = 100) {
   return ''
 }
 
+/** 深复制来自 JSON 接口的工作流数据，并兼容 Vue 响应式代理。 */
+export function cloneWorkflowData(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
 /** 深复制画布，避免 Vue Flow 运行态字段污染保存版本。 */
 export function serializeWorkflowGraph(graph) {
-  return JSON.parse(JSON.stringify({ nodes: graph?.nodes || [], edges: graph?.edges || [] }))
+  return cloneWorkflowData({ nodes: graph?.nodes || [], edges: graph?.edges || [] })
 }

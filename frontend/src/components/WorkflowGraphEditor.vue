@@ -53,7 +53,7 @@ import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import WorkflowNode from './WorkflowNode.vue'
-import { createWorkflowGraph, serializeWorkflowGraph, workflowElementId } from '../utils/workflowGraph'
+import { cloneWorkflowData, createWorkflowGraph, serializeWorkflowGraph, workflowElementId } from '../utils/workflowGraph'
 
 defineOptions({ name: 'WorkflowGraphEditor' })
 const props = defineProps({ modelValue: { type: Object, required: true }, templates: { type: Array, default: () => [] }, height: { type: Number, default: 620 } })
@@ -97,7 +97,7 @@ function drop(event) {
 /** 用模板快照创建独立画布实例。 */
 function addNode(template, position) {
   nodes.value.push({ id: workflowElementId('node'), type: template.nodeType, templateId: template.id, position,
-    data: { label: template.name, nodeType: template.nodeType, config: structuredClone(template.config || {}) } })
+    data: { label: template.name, nodeType: template.nodeType, config: cloneWorkflowData(template.config || {}) } })
   remember()
 }
 /** 接受用户连线并生成稳定 ID。 */
