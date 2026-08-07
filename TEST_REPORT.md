@@ -1,5 +1,101 @@
 # 最近分支覆盖测试报告
 
+## 📋 API Trigger 安全重定向与 Caddy 公共 CA 测试结果（2026-08-07）
+
+### Git 基准点
+
+Commit: 75d130c480f00c9bc5d09393a1c3e641e325f480
+- 提交说明: Support secure API trigger redirects
+- 测试日期: 2026-08-07
+- 分支: master
+- 上一测试报告基准点: `e17167958253ef876b1e9c273f92044b570a616d`
+- 对应上游功能提交: `domestic-trade/master` 的 `820b2b5d5b33839e22aa4b83e7b68d9b0256b9db`
+- Backend 业务代码差异: `git diff e17167958253ef876b1e9c273f92044b570a616d 75d130c480f00c9bc5d09393a1c3e641e325f480 -- backend/src/main/java/` 包含接口触发重定向与 TLS 信任逻辑，因此已执行定向、完整、部署和运行态测试。
+
+### 变更范围
+
+- API Trigger 改为显式处理远端重定向：每一跳重新校验 URL、Host 和网络地址，最多跟随五次，并检测循环。
+- GET 支持 301、302、303、307、308；POST、PUT、PATCH、DELETE 仅支持保持方法及正文的 307、308。跨 Host、HTTPS 降级 HTTP、缺失或非法 `Location`、不受支持状态和超限跳转均被拒绝。
+- 保留 JVM 默认公共 CA，同时加载 Caddy 发布的公共根证书；公共 CA 域名与项目内部 CA HTTPS 地址可同时访问，Caddy 根证书出现后无需重启 Backend。
+- 采用已确认的 A 方案：Caddy 通过独立 `caddy-public-ca` 卷原子发布权限为 0444 的 `root.crt`，Backend 只读挂载该公开证书卷，不挂载含 CA 私钥和站点私钥的 `caddy-data`。
+- Caddy 和 Backend 镜像均为 UID 10001 准备公共证书目录，避免命名卷首次初始化的权限问题。
+- 同步中英文错误消息、部署文档和部署契约；未新增依赖、数据库迁移、数据回填或前端/Python Worker 业务逻辑。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| GET 可安全跟随标准重定向 | Backend 参数化单元测试 | 301、302、303、307、308，同 Host 相对或绝对 `Location` | 五种状态均到达目标，最终正文和状态正确；符合预期 | 正常、兼容 |
+| 非 GET 仅跟随保留语义的跳转 | Backend 参数化单元与运行态认证 | POST 307/308；POST 301/302/303；HTTP 认证登录后请求目标 | 307/308 保留方法和 JSON 正文；301/302/303 被拒；认证与目标两次 308 后最终 200；符合预期 | 正常、边界、回归 |
+| 每一跳保持 SSRF 安全边界 | Backend 单元测试 | 跨 Host、HTTPS→HTTP、无效或缺失 `Location`、不支持的 305 | 分别以明确业务错误拒绝，未访问不安全下一跳；符合预期 | 权限、安全、异常 |
+| 重定向次数和循环受限 | Backend 单元测试 | 恰好五跳、超过五跳、循环地址 | 五跳成功；超限和循环均拒绝；符合预期 | 边界、资源保护 |
+| Caddy 内部 CA HTTPS 可访问 | TLS 单元、部署契约与正式 Compose 运行态 | `https://172.30.0.10/api/open/health/live` | Backend 只读加载公共根证书，API Trigger 返回 200 和 `UP`；符合预期 | 正常、TLS、集成 |
+| HTTP 地址可经 Caddy 访问 HTTPS | 正式 Compose 运行态 | `http://172.30.0.10/api/open/health/live` | Caddy 返回 308，API Trigger 保持 Host 并跟随后以 HTTPS 返回 200；符合预期 | 正常、重定向、兼容 |
+| 公共 CA 信任不回归 | TLS 组合信任单元与正式运行态 | API Trigger 请求 `https://example.com/` | JVM 公共 CA 校验成功并返回 200；符合预期 | 兼容、回归 |
+| Backend 不接触 Caddy 私钥 | 部署契约、容器挂载与文件校验 | 检查 Compose、Backend Mounts、卷内证书权限和 SHA-256 | Backend 仅有只读公共 CA 卷且无 `/app/caddy-data`；公开证书与 Caddy 源根证书一致、权限 0444；符合预期 | 权限、安全、部署 |
+| CA 文件异常时安全失败 | Backend TLS 单元测试 | 缺失、延迟出现、目录、符号链接、非法 PEM、DER、超大文件、非 CA 叶证书、超量证书 | 缺失的可选 Caddy 根证书兼容启动；出现后即时加载；其他非法配置拒绝；符合预期 | 异常、边界、安全 |
+| 现有功能不回归 | Backend、Frontend、Worker、Caddy Go 完整套件 | 当前分支全部自动化测试 | 549/549 通过，失败 0、错误 0、跳过 0；符合预期 | 回归、权限、安全 |
+| 统一重建后服务可运行 | Docker Compose 完整构建与健康检查 | `docker compose up --build -d` | 四个镜像构建成功，四个服务最终全部 healthy，HTTPS 健康检查为 200 | 构建、部署、回归 |
+
+### 测试执行结果
+
+- 自动化测试合计：549/549 通过（Backend 317、Frontend 190、Python Worker 26、Caddy Go 16），失败 0，错误 0，跳过 0。
+- Backend 定向测试：39/39 通过，其中重定向与响应 25、TLS 信任 11、消息资源 3；这些用例已包含在 Backend 完整 317 项中，不重复计入总数。
+- Caddy 部署契约：12/12 通过；该套件已包含在 Frontend 190 项中，不重复计数。
+- Caddy Go：16/16 通过；`gofmt` 无差异，`go vet` 通过。
+- 静态检查：`docker compose config --quiet`、Shell 语法、`git diff --check` 全部通过。
+- 规定统一重建：`docker compose up --build -d` 在释放被另一项目占用的 80/443 端口后成功；Backend 镜像构建阶段再次执行 317/317 测试，最终四服务均 healthy。
+- 运行态验收：HTTPS 直连、HTTP GET 308、认证 POST 308 加目标 GET 308、公有 CA HTTPS 四项均返回 200；临时 API Trigger 安全策略已恢复原值。
+- 隔离验收：Backend 的挂载中不存在 `caddy-data`，公共根证书可读且哈希一致；Caddy 私钥不可由 Backend 访问。
+- 清理恢复：临时目录 `/tmp/base-ai-api-trigger-redirect-test` 已删除；Caddy 已恢复空 `APP_HTTPS_IPS` 的常规配置，`domestic-trade-caddy` 原 `unless-stopped` 重启策略已恢复并保持停止，当前项目四服务均 healthy。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 缺陷复现 | 定向执行 `ApiTriggerServiceResponseDecodingTest`、`ApiTriggerTlsTrustTest`、`MessageBundleTest` | 实现前因缺少 TLS 信任类稳定失败；实现后 39/39 通过 |
+| Backend 完整回归 | Maven 3.9.9 / Eclipse Temurin 17 固定容器执行 `mvn -B -ntp test` | 317/317 通过，BUILD SUCCESS |
+| Caddy 部署契约 | `node --test frontend/test/security-deployment.test.mjs` | 12/12 通过 |
+| Frontend 完整回归 | `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` | 190/190 通过 |
+| Worker 完整回归 | Python 3.12 环境执行 `python -m pytest -q -p no:cacheprovider` | 26/26 通过 |
+| Caddy Go 单元与静态检查 | 固定 Go 环境执行 `gofmt`、`go test`、`go vet` | 16/16 通过，格式与 vet 通过 |
+| Compose 与 Shell 静态检查 | `docker compose config --quiet`、`sh -n caddy/caddy-entrypoint.sh`、`git diff --check` | 全部通过 |
+| 规定统一重建 | `docker compose up --build -d` | 四镜像成功构建，四服务最终 healthy |
+| 公共 CA 隔离 | `docker inspect` 挂载检查、容器内可读性/不存在性断言、根证书 SHA-256 和权限比对 | 仅公开根证书共享；Backend 无 Caddy 私钥卷访问能力 |
+| API Trigger HTTP/HTTPS | 调用 `/api/automation/api-triggers/test` 请求内部 HTTP、内部 HTTPS 和 `example.com` | 三类目标均返回 HTTP 200，内部响应为 `{"status":"UP"}` |
+| 认证重定向 | 认证 URL 和目标 URL 均使用内部 HTTP；Caddy 分别返回 308 | 登录 POST 方法和 JSON 正文保持，Token 提取成功，目标 GET 最终返回 200 |
+| 清理与恢复 | 恢复安全策略、删除临时目录、空配置重建 Caddy、恢复外部容器重启策略 | 无调试文件或临时策略遗留，当前四服务 healthy |
+
+### 测试过程问题与处理
+
+- 首次定向测试按“先失败再修复”执行，因 `ApiTriggerTlsTrust` 尚不存在而编译失败；实现后相同测试 39/39 通过，没有删除、跳过或弱化测试。
+- 首次部署契约 12 项中 3 项因公共 CA 环境变量、卷和镜像目录尚未实现而失败；A 方案实现后 12/12 通过。
+- 首次 `docker compose up --build -d` 完成镜像构建和 Backend 317 项测试后，80/443 被 `domestic-trade-caddy` 占用；按项目规则临时关闭该容器并禁用自动重启后重试成功。
+- 运行态验收期间该外部容器曾再次自动启动并抢占端口；再次停止后完成验收，最后恢复其 `unless-stopped` 策略并保持停止，未修改其镜像、卷或项目文件。
+- 临时 API Trigger 安全策略只增加内部 Caddy IP 和 `example.com` 白名单，验收后已恢复为原配置；管理员凭证和 Token 未写入仓库或测试报告。
+
+### 已知问题与限制
+
+- Caddy 内部 IP 证书仍由项目内部 CA 签发；浏览器或项目外客户端仍需单独安装根证书。A 方案只解决 Backend API Trigger 的信任，不改变外部客户端信任库。
+- A 方案只向 Backend 暴露项目 Caddy 的公开根证书，不提供任意自定义私有 CA 目录；如未来需要访问其他私有 PKI，需另行设计最小权限证书挂载。
+- 非 GET 请求不会跟随可能改变方法或丢失正文的 301、302、303；跨 Host 跳转和 HTTPS→HTTP 降级始终拒绝，这是预期安全限制。
+- HTTP 认证 URL 的首跳仍以明文发送凭证和正文；生产配置应直接使用最终 HTTPS URL。
+- Caddy 根证书首次生成前，Backend 仍可使用 JVM 公共 CA，但内部 CA HTTPS 需等待 Caddy 发布公开根证书。
+
+### 下次测试建议
+
+1. 在预生产网络使用真实内网 IP、反向代理链和生产 Host 白名单验证多跳 307/308、超时和连接中断。
+2. 在 Caddy 根 CA 轮换演练中验证公开证书卷原子替换、Backend 下一次触发即时加载和并发请求行为。
+3. 若引入其他企业私有 CA，先设计每个 CA 的只读最小挂载、文件上限和轮换流程，再扩展组合信任测试。
+
+### 重测触发条件与回滚
+
+- 修改重定向状态、跳数、方法/正文保留、Host 比较、协议降级或逐跳 URL 安全策略时，必须重跑 Backend 定向及完整套件。
+- 修改 Caddy 根 CA 发布、公共卷权限、Backend TLS 信任、Compose 挂载、Caddy/Backend 镜像用户时，必须重跑 TLS、部署契约、Compose 重建、挂载隔离及 HTTP/HTTPS 运行态测试。
+- 可回滚功能提交 `75d130c480f00c9bc5d09393a1c3e641e325f480` 后重新执行 `docker compose up --build -d`；本次没有数据库迁移或业务数据变更，新增的 `caddy-public-ca` 命名卷可保留，也可在确认无其他容器使用后手工删除。
+
+---
+
 ## 📋 APP_HTTPS_IPS 与混合 HTTPS 入口测试结果（2026-08-07）
 
 ### Git 基准点
