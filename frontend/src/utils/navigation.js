@@ -71,7 +71,19 @@ const menuKeysByPermission = Object.freeze({
   'automation:api-trigger:trigger': 'menus.buttons.executeTrigger',
   'automation:api-trigger:logs': 'menus.buttons.triggerLogs',
   'automation:api-trigger-security:view': 'nav.items.apiTriggerSecurity',
-  'automation:api-trigger-security:update': 'menus.buttons.updateTriggerSecurity'
+  'automation:api-trigger-security:update': 'menus.buttons.updateTriggerSecurity',
+  'workflow:catalog': 'nav.items.workflow',
+  'workflow:node:list': 'nav.items.workflowNodes',
+  'workflow:node:create': 'workflowNodes.add',
+  'workflow:node:update': 'workflowNodes.edit',
+  'workflow:node:delete': 'common.delete',
+  'workflow:canvas:list': 'nav.items.workflowCanvas',
+  'workflow:canvas:create': 'workflowCanvas.add',
+  'workflow:canvas:update': 'common.edit',
+  'workflow:canvas:delete': 'common.delete',
+  'workflow:canvas:publish': 'workflowCanvas.publish',
+  'workflow:canvas:execute': 'workflowCanvas.run',
+  'workflow:canvas:logs': 'workflowCanvas.logs'
 })
 
 const menuKeysByPath = Object.freeze({
@@ -98,7 +110,10 @@ const menuKeysByPath = Object.freeze({
   '/model-routes': 'nav.items.routes',
   '/automation': 'nav.items.automation',
   '/automation/api-triggers': 'nav.items.apiTriggers',
-  '/automation/api-trigger-security': 'nav.items.apiTriggerSecurity'
+  '/automation/api-trigger-security': 'nav.items.apiTriggerSecurity',
+  '/workflow': 'nav.items.workflow',
+  '/workflow/nodes': 'nav.items.workflowNodes',
+  '/workflow/canvases': 'nav.items.workflowCanvas'
 })
 
 /** 根据内置菜单权限或路径解析当前语言名称，自定义菜单回退后台原始名称。 */

@@ -226,6 +226,28 @@ class DataInitializerTest {
             menusByPermission.get("mail:route:update").getParentId());
     }
 
+    /** 工作流必须作为独立一级目录，并包含节点管理和画布管理页面。 */
+    @Test
+    void seedsWorkflowCatalogWithNodeAndCanvasPages() {
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        initializer.run(null);
+
+        ArgumentCaptor<Menu> captor = ArgumentCaptor.forClass(Menu.class);
+        verify(menuRepository, atLeastOnce()).save(captor.capture());
+        Map<String, Menu> menusByPermission = captor.getAllValues().stream()
+            .collect(Collectors.toMap(Menu::getPermission, Function.identity(), (first, ignored) -> first));
+        Menu workflow = menusByPermission.get("workflow:catalog");
+
+        assertEquals("CATALOG", workflow.getType());
+        assertEquals(workflow.getId(), menusByPermission.get("workflow:node:list").getParentId());
+        assertEquals(workflow.getId(), menusByPermission.get("workflow:canvas:list").getParentId());
+        assertEquals(menusByPermission.get("workflow:node:list").getId(),
+            menusByPermission.get("workflow:node:update").getParentId());
+        assertEquals(menusByPermission.get("workflow:canvas:list").getId(),
+            menusByPermission.get("workflow:canvas:execute").getParentId());
+    }
+
     /** 创建满足启动安全校验的测试配置。 */
     private static PlatformProperties validProperties() {
         PlatformProperties configured = new PlatformProperties();

@@ -109,3 +109,10 @@ app:
     request-body-max-bytes: ${API_TRIGGER_REQUEST_BODY_MAX_BYTES:1048576}
     metadata-max-length: ${API_TRIGGER_METADATA_MAX_LENGTH:65536}
     caddy-ca-file: ${API_TRIGGER_CADDY_CA_FILE:}
+  workflow:
+    executor-pool-size: ${WORKFLOW_EXECUTOR_POOL_SIZE:4}
+    max-nodes: ${WORKFLOW_MAX_NODES:100}
+    max-iterations: ${WORKFLOW_MAX_ITERATIONS:100}
+    max-agent-steps: ${WORKFLOW_MAX_AGENT_STEPS:20}
+    max-recursion-depth: ${WORKFLOW_MAX_RECURSION_DEPTH:5}
+    max-payload-bytes: ${WORKFLOW_MAX_PAYLOAD_BYTES:1048576}

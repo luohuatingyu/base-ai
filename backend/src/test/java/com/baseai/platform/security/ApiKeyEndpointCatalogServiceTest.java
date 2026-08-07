@@ -2,6 +2,8 @@ package com.baseai.platform.security;
 
 import com.baseai.platform.automation.ApiTriggerController;
 import com.baseai.platform.controller.AiChatController;
+import com.baseai.platform.workflow.WorkflowModels;
+import com.baseai.platform.workflow.WorkflowOpenController;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,10 +32,14 @@ class ApiKeyEndpointCatalogServiceTest {
         handlers.put(mapping("/api/ai/chat"), handler(AiChatController.class, "chat", AiChatController.ChatRequest.class));
         handlers.put(mapping("/api/automation/api-triggers/{id}/trigger"),
             handler(ApiTriggerController.class, "trigger", Long.class));
+        handlers.put(mapping("/api/workflows/{code}/runs"),
+            handler(WorkflowOpenController.class, "execute", String.class, WorkflowModels.RunCommand.class));
+        handlers.put(mapping("/api/workflows/runs/{runId}", RequestMethod.GET),
+            handler(WorkflowOpenController.class, "result", String.class));
 
         List<ApiKeyEndpointCatalogService.EndpointView> endpoints = service(handlers).catalog();
 
-        assertEquals(List.of("ai.chat.invoke", "automation.api-trigger.execute"),
+        assertEquals(List.of("ai.chat.invoke", "automation.api-trigger.execute", "workflow.execute", "workflow.run.read"),
             endpoints.stream().map(ApiKeyEndpointCatalogService.EndpointView::code).toList());
         ApiKeyEndpointCatalogService.EndpointView chat = endpoints.get(0);
         assertEquals("openPlatform.endpointDescriptions.aiChatInvoke", chat.descriptionKey());
@@ -48,6 +54,11 @@ class ApiKeyEndpointCatalogServiceTest {
         ApiKeyEndpointCatalogService.EndpointView trigger = endpoints.get(1);
         assertEquals("id", trigger.pathParameters().get(0).name());
         assertEquals("automation:api-trigger:trigger", trigger.permission());
+        ApiKeyEndpointCatalogService.EndpointView workflow = endpoints.get(2);
+        assertEquals("code", workflow.pathParameters().get(0).name());
+        assertEquals("workflow:canvas:execute", workflow.permission());
+        assertTrue(workflow.requestFields().stream().anyMatch(field -> field.name().equals("inputs") && field.required()));
+        assertEquals("workflow:canvas:logs", endpoints.get(3).permission());
     }
 
     /** 枚举元数据应与示例值一并公开给开放平台页面。 */
@@ -101,7 +112,12 @@ class ApiKeyEndpointCatalogServiceTest {
 
     /** 构造单一路径和 POST 方法的 Spring MVC 映射。 */
     private static RequestMappingInfo mapping(String path) {
-        return RequestMappingInfo.paths(path).methods(RequestMethod.POST).build();
+        return mapping(path, RequestMethod.POST);
+    }
+
+    /** 构造指定 HTTP 方法的 Spring MVC 映射。 */
+    private static RequestMappingInfo mapping(String path, RequestMethod method) {
+        return RequestMappingInfo.paths(path).methods(method).build();
     }
 
     /** 构造实际控制器方法处理器且不执行其依赖构造逻辑。 */

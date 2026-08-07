@@ -9,7 +9,7 @@ from app.config import load_settings, validate_settings
 from app.llm import LlmClient
 from app.logging_config import setup_logging
 from app.middleware import InternalAuthMiddleware, RequestSizeLimitMiddleware
-from app.models import ChatRequest, ChatResponse, EmailSendRequest, LlmTestRequest
+from app.models import AgentStepRequest, AgentStepResponse, ChatRequest, ChatResponse, EmailSendRequest, LlmTestRequest
 from app.services.email_delivery import MailDeliveryError, send_email
 from app.trace_runtime import JavaTraceReporter, TraceRuntimeRegistry
 
@@ -44,6 +44,15 @@ async def chat(request: ChatRequest):
 async def test_llm(request: LlmTestRequest):
     """测试模型中心下发的单个候选配置。"""
     return await llm_client.test(request.candidate, request.enableThinking)
+
+
+@app.post("/llm/agent-step", response_model=AgentStepResponse)
+async def agent_step(request: AgentStepRequest):
+    """执行一次受控工具选择，工具本身仍由 Java 工作流执行器调用。"""
+    logger.info("event=worker_agent_step_started message_count=%d tool_count=%d",
+                len(request.messages), len(request.tools))
+    return await llm_client.agent_step(request.messages, request.tools, request.candidates,
+                                       request.temperature, request.enableThinking)
 
 
 @app.post("/email/send")

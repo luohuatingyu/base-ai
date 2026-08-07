@@ -9,7 +9,8 @@ import httpx
 
 from app.config import Settings
 from app.logging_config import sanitize_log_text
-from app.models import ChatMessage, ChatResponse, LlmCandidate
+from app.models import (AgentMessage, AgentStepResponse, AgentToolCall, ChatMessage,
+                        ChatResponse, LlmCandidate, ToolDefinition)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,25 @@ class LlmClient:
         result = await self.chat([ChatMessage(role="user", content="reply OK")], 0, [candidate], enable_thinking, route_configured=True)
         return {"success": True, "model": result.model, "durationMs": round(self._elapsed(started), 2)}
 
+    async def agent_step(self, messages: list[AgentMessage], tools: list[ToolDefinition],
+                         candidates: list[LlmCandidate], temperature: float = 0,
+                         enable_thinking: bool = False) -> AgentStepResponse:
+        """依次尝试候选模型，返回内容或结构化工具调用而不在 Worker 执行工具。"""
+        failures: list[str] = []
+        for candidate in candidates:
+            for api_key in await self._ordered_keys(candidate):
+                try:
+                    return await self._invoke_agent(candidate, api_key, messages, tools,
+                                                    temperature, enable_thinking)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exception:
+                    failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
+                    logger.warning("event=agent_candidate_failed provider=%s model=%s error=%s",
+                                   candidate.providerCode, candidate.model,
+                                   sanitize_log_text(exception, 1000), exc_info=True)
+        raise RuntimeError("全部 Agent 候选模型调用失败: " + "; ".join(failures[-10:]))
+
     async def close(self) -> None:
         """关闭共享 HTTP 连接池。"""
         await self.client.aclose()
@@ -91,6 +111,63 @@ class LlmClient:
             self._log_success(candidate.model, messages, content, input_tokens, output_tokens, total_tokens, started_at)
             return ChatResponse(content=content, model=candidate.model, inputTokens=input_tokens,
                                 outputTokens=output_tokens, totalTokens=total_tokens)
+
+    async def _invoke_agent(self, candidate: LlmCandidate, api_key: str,
+                            messages: list[AgentMessage], tools: list[ToolDefinition],
+                            temperature: float, enable_thinking: bool) -> AgentStepResponse:
+        """发送 OpenAI-compatible tools 请求并严格解析首个消息。"""
+        semaphore = await self._semaphore(candidate, api_key)
+        async with semaphore:
+            payload = {
+                "model": candidate.model,
+                "temperature": temperature,
+                "messages": [message.model_dump(exclude_none=True) for message in messages],
+                "tools": [{"type": "function", "function": tool.model_dump()} for tool in tools],
+                "tool_choice": "auto",
+                "enable_thinking": enable_thinking,
+                "stream": False,
+            }
+            if enable_thinking and candidate.thinkingParameter and candidate.thinkingValue:
+                payload[candidate.thinkingParameter] = candidate.thinkingValue
+            async with self.client.stream(
+                "POST", f"{candidate.baseUrl.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"}, json=payload,
+                timeout=candidate.timeoutSeconds,
+            ) as response:
+                response.raise_for_status()
+                response_body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    response_body.extend(chunk)
+                    if len(response_body) > self.settings.llm_response_max_bytes:
+                        raise RuntimeError(f"供应商 {candidate.providerCode} 响应超过大小限制")
+                data = self._parse_response(bytes(response_body), response.status_code,
+                                            response.headers.get("content-type", "未提供"), candidate)
+            try:
+                message = data["choices"][0]["message"]
+            except (IndexError, KeyError, TypeError) as exception:
+                raise RuntimeError("Agent 响应缺少 choices[0].message") from exception
+            content = message.get("content") or ""
+            if not isinstance(content, str):
+                raise RuntimeError("Agent 响应 content 不是字符串")
+            calls: list[AgentToolCall] = []
+            raw_calls = message.get("tool_calls") or []
+            if not isinstance(raw_calls, list) or len(raw_calls) > 20:
+                raise RuntimeError("Agent 工具调用格式或数量无效")
+            for raw_call in raw_calls:
+                try:
+                    call_id = str(raw_call["id"])
+                    function = raw_call["function"]
+                    name = str(function["name"])
+                    arguments = json.loads(function.get("arguments") or "{}")
+                except (KeyError, TypeError, json.JSONDecodeError) as exception:
+                    raise RuntimeError("Agent 工具调用参数无效") from exception
+                if not isinstance(arguments, dict):
+                    raise RuntimeError("Agent 工具调用参数必须是对象")
+                calls.append(AgentToolCall(id=call_id, name=name, arguments=arguments))
+            if not content and not calls:
+                raise RuntimeError("Agent 响应既无内容也无工具调用")
+            logger.info("event=agent_step_succeeded model=%s tool_call_count=%d", candidate.model, len(calls))
+            return AgentStepResponse(content=content, toolCalls=calls, model=candidate.model)
 
     async def _ordered_keys(self, candidate: LlmCandidate) -> list[str]:
         """并发安全地轮换候选供应商的 API Key 起点。"""

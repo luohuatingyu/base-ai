@@ -4,7 +4,7 @@
 
 Base AI is an extensible administration and AI integration platform. It combines a Vue management console, a Spring Boot system service, and a Python LLM worker behind a Docker Compose deployment.
 
-The platform provides identity and access management, OpenAI-compatible model routing, API key access, task tracing, audit logs, and scheduled HTTP automation. MySQL stores platform data, PostgreSQL stores automation data, and Redis stores disposable session state.
+The platform provides identity and access management, OpenAI-compatible model routing, API key access, executable visual workflows, task tracing, audit logs, and scheduled HTTP automation. MySQL stores platform data and workflows, PostgreSQL stores automation data, and Redis stores disposable session state.
 
 ## Features
 
@@ -15,6 +15,7 @@ The platform provides identity and access management, OpenAI-compatible model ro
 - HttpOnly-cookie browser sessions with signed CSRF protection, compatible Bearer-token clients, and scoped `X-API-Key` credentials with expiry, revocation, IP allowlists, and rate limits.
 - Cross-service task tracing, cancellation, recovery, operation logs, and login logs.
 - Manual and Cron-based HTTP automation with encrypted request configuration and outbound-host controls.
+- Versioned visual workflows with reusable node templates, conditional branches, iteration, loops, tool-calling agents, manual runs, and API-key invocation.
 - Runtime platform branding and language configuration.
 
 ## Technology Stack
@@ -37,7 +38,7 @@ Vue frontend (port 80)
   v
 Spring Boot backend (port 8080)
   |                  |
-  |                  +--> MySQL: identity, configuration, models, tasks, and logs
+  |                  +--> MySQL: identity, configuration, models, workflows, tasks, and logs
   |                  +--> PostgreSQL: automation configurations and execution logs
   |                  +--> Redis: sessions, revoked tokens, locks, and rate-limit state
   |
@@ -60,6 +61,7 @@ MySQL is the primary platform database. It contains:
 - Users, roles, menus, permissions, departments, positions, dictionaries, and system settings.
 - Model providers, encrypted provider credentials, models, and capability routes.
 - External API key metadata, HMAC-SHA256 digests, and encrypted copies for administrator-only reveal.
+- Workflow node templates, definitions, immutable published versions, workflow runs, and per-node execution logs.
 - System tasks, Java/Python trace records, operation logs, and login logs.
 
 Flyway manages the complete MySQL schema, including JPA platform entities, task traces, and logs. Existing non-empty databases are baselined at version 0 and then receive all idempotent migrations; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application and grant the configured account schema-management privileges.
@@ -126,7 +128,16 @@ Important rules:
 - API key management endpoints accept authenticated browser sessions or Bearer tokens, but never API keys.
 - `APP_API_KEY_HASH_SECRET` should be a dedicated secret. If omitted, the application reuses `APP_CONFIG_ENCRYPTION_KEY`.
 
-The currently exposed API-key endpoints are AI chat invocation and production API-trigger execution.
+The currently exposed API-key endpoints are AI chat invocation, production API-trigger execution, and published workflow execution/status queries.
+
+## Workflow Management
+
+The top-level **Workflow** section contains reusable **Node Management** and visual **Canvas Management** pages. A canvas supports start/end, LLM, HTTP, tool-calling agent, condition, array iteration, and condition-loop nodes. Draft graphs can be validated and published as immutable versions before execution.
+
+- Manual runs require workflow execution permission; external runs use a scoped `X-API-Key` and the workflow code.
+- Agent nodes can call the controlled HTTP tool or another published workflow. Recursion depth, iteration count, loop count, node count, and payload size are bounded by platform configuration.
+- Workflow inputs, outputs, and node outputs are AES-GCM encrypted at rest. Definitions, versions, runs, and node logs remain framework-level data in MySQL.
+- Open execution uses `POST /api/workflows/{code}/runs`; status and decrypted results are read from `GET /api/workflows/runs/{runId}`.
 
 ## Task Tracing and Audit Logs
 

@@ -303,6 +303,22 @@ public class DataInitializer implements ApplicationRunner {
         menu(triggerSecurity.getId(), "更新接口触发安全配置", "BUTTON", null, null, null,
             "automation:api-trigger-security:update", 521, false);
 
+        // ========== 工作流模块（与自动化平级） ==========
+        Menu workflow = menu(null, "工作流", "CATALOG", "/workflow", null, "Operation", "workflow:catalog", 60, true);
+        Menu node = menu(workflow.getId(), "节点管理", "MENU", "/workflow/nodes", "WorkflowNodesView", "List",
+            "workflow:node:list", 61, true);
+        menu(node.getId(), "新增节点模板", "BUTTON", null, null, null, "workflow:node:create", 611, false);
+        menu(node.getId(), "更新节点模板", "BUTTON", null, null, null, "workflow:node:update", 612, false);
+        menu(node.getId(), "删除节点模板", "BUTTON", null, null, null, "workflow:node:delete", 613, false);
+        Menu canvas = menu(workflow.getId(), "画布管理", "MENU", "/workflow/canvases", "WorkflowCanvasView", "Connection",
+            "workflow:canvas:list", 62, true);
+        menu(canvas.getId(), "新增工作流", "BUTTON", null, null, null, "workflow:canvas:create", 621, false);
+        menu(canvas.getId(), "更新工作流", "BUTTON", null, null, null, "workflow:canvas:update", 622, false);
+        menu(canvas.getId(), "删除工作流", "BUTTON", null, null, null, "workflow:canvas:delete", 623, false);
+        menu(canvas.getId(), "发布工作流", "BUTTON", null, null, null, "workflow:canvas:publish", 624, false);
+        menu(canvas.getId(), "执行工作流", "BUTTON", null, null, null, "workflow:canvas:execute", 625, false);
+        menu(canvas.getId(), "工作流日志", "BUTTON", null, null, null, "workflow:canvas:logs", 626, false);
+
     }
 
     /**

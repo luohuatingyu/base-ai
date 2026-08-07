@@ -1,6 +1,6 @@
 """Worker 请求、响应和追踪数据模型定义。"""
 
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -94,6 +94,76 @@ class ChatRequest(BaseModel):
     candidates: list[LlmCandidate] = Field(default_factory=list, max_length=20)
     enableThinking: bool | None = None
     routeConfigured: bool = False
+
+
+class AgentMessage(BaseModel):
+    """Agent 对话消息，允许 OpenAI-compatible 工具调用结果角色。"""
+
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | None = Field(default=None, max_length=100000)
+    tool_calls: list[dict[str, Any]] | None = Field(default=None, max_length=20)
+    tool_call_id: str | None = Field(default=None, max_length=128)
+    name: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_agent_message(self):
+        """保证普通消息有内容、助手可携带调用、工具结果关联调用 ID。"""
+        if self.role in {"system", "user"} and not (self.content or "").strip():
+            raise ValueError("Agent 系统和用户消息不能为空")
+        if self.role == "assistant" and not (self.content or "").strip() and not self.tool_calls:
+            raise ValueError("Agent 助手消息必须包含内容或工具调用")
+        if self.role == "tool" and (not self.tool_call_id or self.content is None):
+            raise ValueError("Agent 工具结果必须包含调用 ID 和内容")
+        return self
+
+
+class ToolDefinition(BaseModel):
+    """由 Java 执行器授权给模型的单个工具定义。"""
+
+    name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
+    description: str = Field(min_length=1, max_length=1000)
+    parameters: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_parameters(self):
+        """工具参数必须是对象 JSON Schema。"""
+        if self.parameters.get("type", "object") != "object":
+            raise ValueError("工具参数 Schema 顶层类型必须是 object")
+        return self
+
+
+class AgentStepRequest(BaseModel):
+    """执行一次模型工具选择的内部请求。"""
+
+    messages: list[AgentMessage] = Field(min_length=1, max_length=100)
+    tools: list[ToolDefinition] = Field(min_length=1, max_length=20)
+    candidates: list[LlmCandidate] = Field(min_length=1, max_length=20)
+    temperature: float = Field(default=0, ge=0, le=2)
+    enableThinking: bool = False
+
+    @model_validator(mode="after")
+    def unique_tools(self):
+        """拒绝重复工具名，避免模型选择结果产生歧义。"""
+        names = [tool.name for tool in self.tools]
+        if len(names) != len(set(names)):
+            raise ValueError("Agent 工具名称不能重复")
+        return self
+
+
+class AgentToolCall(BaseModel):
+    """模型返回的单个工具调用。"""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+class AgentStepResponse(BaseModel):
+    """一次 Agent 模型决策结果。"""
+
+    content: str = ""
+    toolCalls: list[AgentToolCall] = Field(default_factory=list)
+    model: str
 
 
 class LlmTestRequest(BaseModel):

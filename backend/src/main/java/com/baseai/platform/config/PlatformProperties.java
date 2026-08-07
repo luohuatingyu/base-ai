@@ -33,6 +33,8 @@ public class PlatformProperties {
     private TraceTracking traceTracking = new TraceTracking();
     /** API 触发器配置。 */
     private ApiTrigger apiTrigger = new ApiTrigger();
+    /** 工作流执行安全和资源配置。 */
+    private Workflow workflow = new Workflow();
     /** API Key 认证配置。 */
     private ApiKey apiKey = new ApiKey();
     /** HTTP 入口资源限制。 */
@@ -71,6 +73,10 @@ public class PlatformProperties {
     public void setTraceTracking(TraceTracking traceTracking) { this.traceTracking = traceTracking; }
     public ApiTrigger getApiTrigger() { return apiTrigger; }
     public void setApiTrigger(ApiTrigger apiTrigger) { this.apiTrigger = apiTrigger; }
+    /** 读取工作流资源限制。 */
+    public Workflow getWorkflow() { return workflow; }
+    /** 设置工作流资源限制。 */
+    public void setWorkflow(Workflow workflow) { this.workflow = workflow; }
     public ApiKey getApiKey() { return apiKey; }
     public void setApiKey(ApiKey apiKey) { this.apiKey = apiKey; }
     public ResourceLimits getResourceLimits() { return resourceLimits; }
@@ -235,5 +241,39 @@ public class PlatformProperties {
         public void setMetadataMaxLength(int value) { metadataMaxLength = value; }
         public String getCaddyCaFile() { return caddyCaFile; }
         public void setCaddyCaFile(String caddyCaFile) { this.caddyCaFile = caddyCaFile; }
+    }
+
+    /** 限制画布和执行器资源占用，所有循环和 Agent 调用均有硬上限。 */
+    public static class Workflow {
+        private int executorPoolSize = 4;
+        private int maxNodes = 100;
+        private int maxIterations = 100;
+        private int maxAgentSteps = 20;
+        private int maxRecursionDepth = 5;
+        private int maxPayloadBytes = 1024 * 1024;
+        /** 读取执行线程数量。 */
+        public int getExecutorPoolSize() { return executorPoolSize; }
+        /** 设置执行线程数量。 */
+        public void setExecutorPoolSize(int value) { executorPoolSize = value; }
+        /** 读取单层画布节点上限。 */
+        public int getMaxNodes() { return maxNodes; }
+        /** 设置单层画布节点上限。 */
+        public void setMaxNodes(int value) { maxNodes = value; }
+        /** 读取迭代和循环次数上限。 */
+        public int getMaxIterations() { return maxIterations; }
+        /** 设置迭代和循环次数上限。 */
+        public void setMaxIterations(int value) { maxIterations = value; }
+        /** 读取 Agent 决策步数上限。 */
+        public int getMaxAgentSteps() { return maxAgentSteps; }
+        /** 设置 Agent 决策步数上限。 */
+        public void setMaxAgentSteps(int value) { maxAgentSteps = value; }
+        /** 读取子画布和子工作流递归深度上限。 */
+        public int getMaxRecursionDepth() { return maxRecursionDepth; }
+        /** 设置子画布和子工作流递归深度上限。 */
+        public void setMaxRecursionDepth(int value) { maxRecursionDepth = value; }
+        /** 读取输入输出负载字节上限。 */
+        public int getMaxPayloadBytes() { return maxPayloadBytes; }
+        /** 设置输入输出负载字节上限。 */
+        public void setMaxPayloadBytes(int value) { maxPayloadBytes = value; }
     }
 }

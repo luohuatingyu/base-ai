@@ -486,6 +486,30 @@ body { margin: 0; background: var(--app-canvas); }
 
 .full { width: 100%; }
 
+/* 工作流页面：列表与大画布并排，窄屏允许横向滚动而不压缩节点。 */
+.workflow-canvas-page { min-height: calc(100vh - 118px); display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; }
+.workflow-list-panel { min-width: 0; padding: 16px; }
+.workflow-list-heading, .workflow-toolbar, .workflow-toolbar-actions, .workflow-metadata { display: flex; align-items: center; gap: 10px; }
+.workflow-list-heading { justify-content: space-between; margin-bottom: 12px; }
+.workflow-list { display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 230px); margin-top: 12px; overflow: auto; }
+.workflow-list > button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; padding: 11px; border: 1px solid var(--app-border); border-radius: 9px; background: #fff; color: var(--app-text); text-align: left; cursor: pointer; }
+.workflow-list > button strong, .workflow-list > button small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-list > button small { color: var(--app-muted); }
+.workflow-list > button .el-tag { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+.workflow-list > button.active { border-color: var(--app-primary); background: #f2f6ff; }
+.workflow-design-panel { min-width: 0; padding: 16px; }
+.workflow-toolbar { justify-content: space-between; margin-bottom: 12px; }
+.workflow-toolbar > div:first-child { display: flex; flex-direction: column; }
+.workflow-toolbar small { color: var(--app-muted); }
+.workflow-toolbar-actions { justify-content: flex-end; flex-wrap: wrap; }
+.workflow-metadata { margin-bottom: 12px; }
+.workflow-metadata > * { flex: 1; }
+.workflow-empty { display: grid; place-items: center; }
+.workflow-run-alert { margin-top: 14px; }
+.workflow-run-detail { margin-top: 20px; }
+.workflow-run-detail pre, .workflow-canvas-page pre { max-height: 280px; overflow: auto; padding: 12px; border-radius: 8px; background: #111827; color: #dbeafe; }
+@media (max-width: 1000px) { .workflow-canvas-page { grid-template-columns: 200px minmax(760px, 1fr); overflow-x: auto; } }
+
 .chat-panel {
   display: flex;
   flex-direction: column;
