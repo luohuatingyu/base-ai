@@ -14,6 +14,8 @@
       <div class="workflow-toolbar">
         <div><strong>{{ selected.name }}</strong><small>{{ selected.code }} · v{{ selected.currentVersion }}</small></div>
         <div class="workflow-toolbar-actions">
+          <el-button :disabled="!graphEditor?.canUndo" @click="graphEditor?.undo()">{{ t('workflowCanvas.undo') }}</el-button>
+          <el-button :disabled="!graphEditor?.canRedo" @click="graphEditor?.redo()">{{ t('workflowCanvas.redo') }}</el-button>
           <el-button v-if="auth.hasPermission('workflow:canvas:update')" @click="save">{{ t('common.save') }}</el-button>
           <el-button v-if="auth.hasPermission('workflow:canvas:publish')" type="success" @click="publish">{{ t('workflowCanvas.publish') }}</el-button>
           <el-button v-if="auth.hasPermission('workflow:canvas:execute')" type="primary" @click="runVisible=true">{{ t('workflowCanvas.run') }}</el-button>
@@ -26,7 +28,7 @@
         <el-input v-model="selected.description" :placeholder="t('common.description')" />
         <el-input v-model="inputSchemaText" :placeholder="t('workflowCanvas.inputSchema')" />
       </div>
-      <WorkflowGraphEditor v-model="graph" :templates="templates" />
+      <WorkflowGraphEditor ref="graphEditor" v-model="graph" :templates="templates" />
     </section>
     <section v-else class="panel workflow-empty"><el-empty :description="t('workflowCanvas.empty')" /></section>
 
@@ -61,6 +63,7 @@ import { useAuthStore } from '../stores/auth'
 const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([]), templates = ref([]), selected = ref(null), graph = ref(createWorkflowGraph())
+const graphEditor = ref(null)
 const keyword = ref(''), inputSchemaText = ref('{}'), createVisible = ref(false), runVisible = ref(false), runsVisible = ref(false)
 const runInputText = ref('{}'), activeRun = ref(null), running = ref(false), runs = ref([]), runDetail = ref(null)
 const createForm = reactive({ code: '', name: '', description: '' })

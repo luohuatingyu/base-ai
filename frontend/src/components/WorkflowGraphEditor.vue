@@ -6,10 +6,6 @@
               @dragstart="startDrag($event, template)" @click="addTemplate(template)">
         <span>{{ template.name }}</span><small>{{ template.nodeType }}</small>
       </button>
-      <div class="workflow-history-actions">
-        <el-button size="small" :disabled="historyIndex <= 0" @click="undo">{{ t('workflowCanvas.undo') }}</el-button>
-        <el-button size="small" :disabled="historyIndex >= history.length - 1" @click="redo">{{ t('workflowCanvas.redo') }}</el-button>
-      </div>
     </aside>
     <div class="workflow-flow" @drop="drop" @dragover.prevent>
       <VueFlow :id="editorId" v-model:nodes="nodes" v-model:edges="edges" :node-types="nodeTypes"
@@ -36,8 +32,10 @@
     </aside>
 
     <el-dialog v-model="subgraphVisible" :title="t('workflowCanvas.subgraph')" width="min(1180px, 96vw)" append-to-body>
-      <WorkflowGraphEditor v-if="subgraphVisible" v-model="subgraph" :templates="templates" :height="430" />
+      <WorkflowGraphEditor v-if="subgraphVisible" ref="subgraphEditor" v-model="subgraph" :templates="templates" :height="430" />
       <template #footer>
+        <el-button :disabled="!subgraphEditor?.canUndo" @click="subgraphEditor?.undo()">{{ t('workflowCanvas.undo') }}</el-button>
+        <el-button :disabled="!subgraphEditor?.canRedo" @click="subgraphEditor?.redo()">{{ t('workflowCanvas.redo') }}</el-button>
         <el-button @click="subgraphVisible=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="saveSubgraph">{{ t('common.save') }}</el-button>
       </template>
@@ -68,11 +66,14 @@ const selectedId = ref('')
 const configText = ref('{}')
 const subgraphVisible = ref(false)
 const subgraph = ref(createWorkflowGraph())
+const subgraphEditor = ref(null)
 const history = ref([serializeWorkflowGraph(initial)])
 const historyIndex = ref(0)
 const { addEdges, screenToFlowCoordinate } = useVueFlow({ id: editorId })
 const selected = computed(() => nodes.value.find(node => node.id === selectedId.value))
 const enabledTemplates = computed(() => props.templates.filter(template => template.enabled))
+const canUndo = computed(() => historyIndex.value > 0)
+const canRedo = computed(() => historyIndex.value < history.value.length - 1)
 
 watch(() => props.modelValue, value => {
   const next = serializeWorkflowGraph(value)
@@ -129,11 +130,12 @@ function remember() {
   historyIndex.value = history.value.length - 1
 }
 /** 恢复上一个画布快照。 */
-function undo() { if (historyIndex.value > 0) restore(historyIndex.value - 1) }
+function undo() { if (canUndo.value) restore(historyIndex.value - 1) }
 /** 恢复下一个画布快照。 */
-function redo() { if (historyIndex.value < history.value.length - 1) restore(historyIndex.value + 1) }
+function redo() { if (canRedo.value) restore(historyIndex.value + 1) }
 /** 替换运行态节点和连线。 */
 function restore(index) { historyIndex.value = index; const graph = serializeWorkflowGraph(history.value[index]); nodes.value = graph.nodes; edges.value = graph.edges; selectedId.value = '' }
+defineExpose({ canUndo, canRedo, undo, redo })
 </script>
 
 <style scoped>
@@ -146,6 +148,5 @@ function restore(index) { historyIndex.value = index; const graph = serializeWor
 .workflow-palette small { color: var(--app-muted); }
 .workflow-flow { min-width: 0; min-height: 0; background: #f8fafc; }
 .workflow-properties-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.workflow-history-actions { display: flex; gap: 4px; margin-top: 14px; }
 @media (max-width: 900px) { .workflow-editor-shell { grid-template-columns: 130px minmax(500px, 1fr); overflow: auto; } .workflow-properties { position: absolute; right: 16px; z-index: 4; width: 280px; height: 500px; box-shadow: var(--app-shadow); } }
 </style>
