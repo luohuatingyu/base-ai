@@ -77,8 +77,10 @@ services:
       API_TRIGGER_RESPONSE_MAX_BYTES: ${API_TRIGGER_RESPONSE_MAX_BYTES:-2097152}
       API_TRIGGER_REQUEST_BODY_MAX_BYTES: ${API_TRIGGER_REQUEST_BODY_MAX_BYTES:-1048576}
       API_TRIGGER_METADATA_MAX_LENGTH: ${API_TRIGGER_METADATA_MAX_LENGTH:-65536}
+      API_TRIGGER_CADDY_CA_FILE: /app/caddy-public-ca/root.crt
     volumes:
       - ${TRACE_TRACKING_EXCLUSIONS_FILE:-./backend/config/trace-tracking-exclusions.yml}:/app/config/trace-tracking-exclusions.yml:ro
+      - caddy-public-ca:/app/caddy-public-ca:ro
     depends_on:
       python-worker:
         condition: service_healthy
@@ -206,6 +208,7 @@ services:
       - ${TLS_CERTS_DIR:-./caddy/tls-placeholder}:/etc/caddy/tls:ro
       - caddy-data:/data
       - caddy-config:/config
+      - caddy-public-ca:/public-ca
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null && wget -qO- http://127.0.0.1:2020/health >/dev/null"]
       interval: 15s
@@ -227,3 +230,4 @@ networks:
 volumes:
   caddy-data:
   caddy-config:
+  caddy-public-ca:

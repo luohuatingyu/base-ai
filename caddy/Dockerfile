@@ -31,7 +31,8 @@ RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR}#g" /etc/apk
     && setcap cap_net_bind_service=+ep /usr/bin/caddy \
     && addgroup -S -g 10001 appuser \
     && adduser -S -D -H -u 10001 -G appuser appuser \
-    && chown -R appuser:appuser /data /config
+    && mkdir -p /public-ca \
+    && chown -R appuser:appuser /data /config /public-ca
 
 USER appuser
 ENTRYPOINT ["/usr/local/bin/base-ai-caddy-entrypoint"]

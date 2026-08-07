@@ -220,6 +220,7 @@ public class PlatformProperties {
         private int responseMaxBytes = 2 * 1024 * 1024;
         private int requestBodyMaxBytes = 1024 * 1024;
         private int metadataMaxLength = 64 * 1024;
+        private String caddyCaFile = "";
         public int getSchedulerPoolSize() { return schedulerPoolSize; }
         public void setSchedulerPoolSize(int schedulerPoolSize) { this.schedulerPoolSize = schedulerPoolSize; }
         public int getLockSeconds() { return lockSeconds; }
@@ -232,5 +233,7 @@ public class PlatformProperties {
         public void setRequestBodyMaxBytes(int value) { requestBodyMaxBytes = value; }
         public int getMetadataMaxLength() { return metadataMaxLength; }
         public void setMetadataMaxLength(int value) { metadataMaxLength = value; }
+        public String getCaddyCaFile() { return caddyCaFile; }
+        public void setCaddyCaFile(String caddyCaFile) { this.caddyCaFile = caddyCaFile; }
     }
 }

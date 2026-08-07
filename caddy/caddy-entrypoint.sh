@@ -211,6 +211,24 @@ ensure_ip_certificate() {
 	echo "event=ip_certificate status=$result hosts=localhost $CADDY_IP_HOSTS"
 }
 
+# 将公开根证书原子发布到专用卷，避免 Backend 接触 Caddy CA 和站点私钥。
+publish_public_root_certificate() {
+	source_file=/data/caddy/pki/authorities/local/root.crt
+	target_file=/public-ca/root.crt
+	temporary_file="$target_file.tmp.$$"
+	[ -f "$source_file" ] && [ -s "$source_file" ] && [ -r "$source_file" ] \
+		|| fail "Caddy public root certificate must be a readable non-empty file"
+	[ -d /public-ca ] && [ -w /public-ca ] \
+		|| fail "Caddy public CA volume must be a writable directory"
+	rm -f "$temporary_file"
+	if ! cp "$source_file" "$temporary_file" \
+		|| ! chmod 0444 "$temporary_file" \
+		|| ! mv -f "$temporary_file" "$target_file"; then
+		rm -f "$temporary_file"
+		fail "Caddy public root certificate publication failed"
+	fi
+}
+
 # 启动容器内请求驱动签发服务；异常退出后重启，不读取任何宿主机网络信息。
 serve_ip_bootstrap_forever() {
 	while :; do
@@ -267,6 +285,7 @@ if [ "${1:-}" = "--resolve-ingress" ]; then
 fi
 
 ensure_ip_certificate
+publish_public_root_certificate
 validate_certificate_files
 
 if [ "${1:-}" = "--reload-ingress" ]; then

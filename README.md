@@ -214,6 +214,10 @@ Caddy can serve external domain certificates, preconfigured internal-CA IP certi
 - **Preconfigured IPs:** `APP_HTTPS_IPS` accepts comma- or whitespace-separated canonical IPv4 addresses. Caddy adds them to its internal-CA certificate during startup, so their first request may use HTTPS directly. Removing an address and restarting removes its SAN unless the same address was also learned dynamically.
 - **Dynamically learned IPs:** new IPv4 addresses can be learned on their first HTTP request whether or not domain certificates are configured. The project always includes `localhost` and `127.0.0.1` and persists both its internal CA and learned addresses. Preconfigured and learned IPs share one multi-SAN certificate, and every client must trust the Caddy root CA.
 
+API triggers retain the JVM default public CAs and automatically load the Caddy root certificate from the dedicated read-only `caddy-public-ca` mount. Caddy atomically publishes only its public root certificate to that volume; its CA and site private keys remain unavailable to Backend. Triggers can therefore directly reach public-CA domains, IPs configured through `APP_HTTPS_IPS`, and dynamically learned IPs. Newly learned IPs continue to use the same root CA and require neither per-IP trust configuration nor a Backend restart.
+
+API triggers support ordinary HTTP and controlled remote redirects. Every hop is revalidated against the Host and network-address policy, at most five redirects are followed, cross-Host redirects are rejected, and HTTPS cannot downgrade to HTTP. GET may follow 301, 302, 303, 307, and 308; other methods only follow 307 and 308 so their method and body remain unchanged. An HTTP authentication URL still sends its password and request body over a plaintext connection, so production configurations should use the final HTTPS URL directly.
+
 Create an HTTPS sites list such as `/absolute/path/https-sites.yml`:
 
 ```yaml

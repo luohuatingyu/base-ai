@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSocketFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -25,6 +27,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -33,6 +36,8 @@ import java.util.Set;
 @Service
 public class ApiTriggerService {
     private static final Set<String> METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE");
+    private static final Set<Integer> REDIRECT_STATUSES = Set.of(301, 302, 303, 307, 308);
+    private static final int MAX_REDIRECTS = 5;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ConfigCryptoService cryptoService;
@@ -41,6 +46,7 @@ public class ApiTriggerService {
     private final int responseMaxBytes;
     private final int requestBodyMaxBytes;
     private final int metadataMaxLength;
+    private final ApiTriggerTlsTrust tlsTrust;
 
     public ApiTriggerService(@Qualifier("postgresqlJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                              ConfigCryptoService cryptoService, ApiTriggerUrlPolicy urlPolicy, PlatformProperties properties) {
@@ -52,6 +58,7 @@ public class ApiTriggerService {
         this.responseMaxBytes = positive(properties.getApiTrigger().getResponseMaxBytes(), 2 * 1024 * 1024);
         this.requestBodyMaxBytes = positive(properties.getApiTrigger().getRequestBodyMaxBytes(), 1024 * 1024);
         this.metadataMaxLength = positive(properties.getApiTrigger().getMetadataMaxLength(), 64 * 1024);
+        this.tlsTrust = new ApiTriggerTlsTrust(properties.getApiTrigger().getCaddyCaFile());
     }
 
     /** 按关键字和状态查询未作废接口配置。 */
@@ -175,17 +182,17 @@ public class ApiTriggerService {
         TraceContextHolder.checkpoint();
         URI targetUri = buildUri(urlPolicy.validate(config.url()), config.queryParams());
         RestClient client = buildClient(config.timeoutSeconds());
-        RestClient.RequestBodySpec spec = client.method(HttpMethod.valueOf(config.httpMethod())).uri(targetUri);
-        parseMap(config.headers()).forEach(spec::header);
+        Map<String, List<String>> headers = new LinkedHashMap<>();
+        parseMap(config.headers()).forEach((name, value) -> headers.put(name, new ArrayList<>(List.of(value))));
         if (config.authEnabled()) {
             String token = fetchToken(config, client);
-            spec.header(config.authTokenHeader(), config.authTokenPrefix() + token);
+            headers.computeIfAbsent(config.authTokenHeader(), ignored -> new ArrayList<>())
+                .add(config.authTokenPrefix() + token);
         }
         long startedAt = System.nanoTime();
-        RestClient.RequestHeadersSpec<?> request = hasBody(config.httpMethod(), config.requestBody())
-            ? spec.contentType(MediaType.parseMediaType(config.contentType())).body(config.requestBody())
-            : spec;
-        LimitedResponse response = exchange(request);
+        OutboundRequest request = new OutboundRequest(config.httpMethod(), targetUri, headers,
+            hasBody(config.httpMethod(), config.requestBody()) ? config.requestBody() : null, config.contentType());
+        LimitedResponse response = exchange(client, request);
         TraceContextHolder.checkpoint();
         return new ApiTriggerModels.ExecutionResult(response.status(),
             Duration.ofNanos(System.nanoTime() - startedAt).toMillis(),
@@ -195,10 +202,9 @@ public class ApiTriggerService {
     /** 调用认证地址并按点路径提取 Token。 */
     private String fetchToken(ApiTriggerModels.View config, RestClient client) {
         URI authUri = urlPolicy.validate(config.authUrl());
-        RestClient.RequestBodySpec spec = client.method(HttpMethod.valueOf(config.authMethod())).uri(authUri);
-        RestClient.RequestHeadersSpec<?> request = config.authBody().isBlank() ? spec
-            : spec.contentType(MediaType.parseMediaType(config.authContentType())).body(config.authBody());
-        LimitedResponse response = exchange(request);
+        OutboundRequest request = new OutboundRequest(config.authMethod(), authUri, Map.of(),
+            config.authBody().isBlank() ? null : config.authBody(), config.authContentType());
+        LimitedResponse response = exchange(client, request);
         try {
             JsonNode node = objectMapper.readTree(decodeResponseBody(response.body(), response.contentType()));
             for (String part : config.authTokenPath().split("\\.")) node = node.path(part);
@@ -249,7 +255,7 @@ public class ApiTriggerService {
     }
 
     private RestClient buildClient(int timeoutSeconds) {
-        SimpleClientHttpRequestFactory factory = new NoRedirectRequestFactory();
+        SimpleClientHttpRequestFactory factory = new NoRedirectRequestFactory(tlsTrust.socketFactory());
         factory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
         factory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
         return RestClient.builder().requestFactory(factory)
@@ -260,19 +266,69 @@ public class ApiTriggerService {
             }).build();
     }
 
-    /** 禁止自动重定向并以固定上限读取响应，避免跳转绕过和内存耗尽。 */
-    private LimitedResponse exchange(RestClient.RequestHeadersSpec<?> request) {
-        return request.exchange((clientRequest, clientResponse) -> {
+    /** 手动跟随受控重定向，并在每一跳重新执行 URL 安全策略。 */
+    private LimitedResponse exchange(RestClient client, OutboundRequest initial) {
+        OutboundRequest current = initial;
+        Set<String> visited = new LinkedHashSet<>();
+        visited.add(current.uri().normalize().toString());
+        for (int redirects = 0; ; redirects++) {
+            RemoteResponse response = execute(client, current);
+            if (response.status() < 300 || response.status() >= 400) {
+                if (response.status() >= 400) {
+                    throw new BusinessException(502, "apiTrigger.remoteError", response.status());
+                }
+                return new LimitedResponse(response.status(), response.body(), response.contentType());
+            }
+            if (redirects >= MAX_REDIRECTS) {
+                throw new BusinessException(502, "apiTrigger.redirectLimitExceeded");
+            }
+            current = redirectedRequest(current, response.status(), response.location());
+            if (!visited.add(current.uri().normalize().toString())) {
+                throw new BusinessException(502, "apiTrigger.redirectLimitExceeded");
+            }
+        }
+    }
+
+    /** 执行单次请求，保留重定向地址但不让 JDK 自动访问下一跳。 */
+    private RemoteResponse execute(RestClient client, OutboundRequest request) {
+        RestClient.RequestBodySpec spec = client.method(HttpMethod.valueOf(request.method())).uri(request.uri());
+        request.headers().forEach((name, values) -> values.forEach(value -> spec.header(name, value)));
+        RestClient.RequestHeadersSpec<?> prepared = request.body() == null ? spec
+            : spec.contentType(MediaType.parseMediaType(request.contentType())).body(request.body());
+        return prepared.exchange((clientRequest, clientResponse) -> {
             int status = clientResponse.getStatusCode().value();
             if (clientResponse.getStatusCode().is3xxRedirection()) {
-                throw new BusinessException(502, "apiTrigger.redirectForbidden");
+                return new RemoteResponse(status, new byte[0], clientResponse.getHeaders().getContentType(),
+                    clientResponse.getHeaders().getFirst("Location"));
             }
-            byte[] body = readLimitedBody(clientResponse.getBody());
-            if (clientResponse.getStatusCode().isError()) {
-                throw new BusinessException(502, "apiTrigger.remoteError", status);
-            }
-            return new LimitedResponse(status, body, clientResponse.getHeaders().getContentType());
+            return new RemoteResponse(status, readLimitedBody(clientResponse.getBody()),
+                clientResponse.getHeaders().getContentType(), null);
         });
+    }
+
+    /** 校验下一跳 Host、协议、状态码与方法语义，并保留 307/308 的请求内容。 */
+    private OutboundRequest redirectedRequest(OutboundRequest current, int status, String location) {
+        if (!REDIRECT_STATUSES.contains(status) || location == null || location.isBlank()) {
+            throw new BusinessException(502, "apiTrigger.redirectLocationInvalid");
+        }
+        URI redirectUri;
+        try {
+            redirectUri = current.uri().resolve(URI.create(location.trim()));
+        } catch (Exception exception) {
+            throw new BusinessException(502, "apiTrigger.redirectLocationInvalid");
+        }
+        URI validated = urlPolicy.validate(redirectUri.toString());
+        if (!current.uri().getHost().equalsIgnoreCase(validated.getHost())) {
+            throw new BusinessException(502, "apiTrigger.redirectHostForbidden");
+        }
+        if ("https".equalsIgnoreCase(current.uri().getScheme())
+            && "http".equalsIgnoreCase(validated.getScheme())) {
+            throw new BusinessException(502, "apiTrigger.redirectDowngradeForbidden");
+        }
+        if (!"GET".equals(current.method()) && status != 307 && status != 308) {
+            throw new BusinessException(502, "apiTrigger.redirectMethodForbidden");
+        }
+        return new OutboundRequest(current.method(), validated, current.headers(), current.body(), current.contentType());
     }
 
     /** 最多读取配置上限再多一个字节，以识别未声明长度的超大响应。 */
@@ -359,14 +415,28 @@ public class ApiTriggerService {
     }
     private LocalDateTime local(java.sql.Timestamp value) { return value == null ? null : value.toLocalDateTime(); }
 
+    private record OutboundRequest(String method, URI uri, Map<String, List<String>> headers,
+                                   String body, String contentType) {}
+
+    private record RemoteResponse(int status, byte[] body, MediaType contentType, String location) {}
+
     private record LimitedResponse(int status, byte[] body, MediaType contentType) {}
 
     /** 显式关闭 JDK 对 GET 请求的自动跳转行为。 */
     private static final class NoRedirectRequestFactory extends SimpleClientHttpRequestFactory {
+        private final SSLSocketFactory sslSocketFactory;
+
+        private NoRedirectRequestFactory(SSLSocketFactory sslSocketFactory) {
+            this.sslSocketFactory = sslSocketFactory;
+        }
+
         @Override
         protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
             super.prepareConnection(connection, httpMethod);
             connection.setInstanceFollowRedirects(false);
+            if (sslSocketFactory != null && connection instanceof HttpsURLConnection httpsConnection) {
+                httpsConnection.setSSLSocketFactory(sslSocketFactory);
+            }
         }
     }
 }

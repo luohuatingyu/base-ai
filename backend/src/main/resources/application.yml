@@ -108,3 +108,4 @@ app:
     response-max-bytes: ${API_TRIGGER_RESPONSE_MAX_BYTES:2097152}
     request-body-max-bytes: ${API_TRIGGER_REQUEST_BODY_MAX_BYTES:1048576}
     metadata-max-length: ${API_TRIGGER_METADATA_MAX_LENGTH:65536}
+    caddy-ca-file: ${API_TRIGGER_CADDY_CA_FILE:}
