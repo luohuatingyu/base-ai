@@ -84,6 +84,7 @@ services:
       WORKFLOW_MAX_AGENT_STEPS: ${WORKFLOW_MAX_AGENT_STEPS:-20}
       WORKFLOW_MAX_RECURSION_DEPTH: ${WORKFLOW_MAX_RECURSION_DEPTH:-5}
       WORKFLOW_MAX_PAYLOAD_BYTES: ${WORKFLOW_MAX_PAYLOAD_BYTES:-1048576}
+      WORKFLOW_MAX_WAIT_SECONDS: ${WORKFLOW_MAX_WAIT_SECONDS:-3600}
     volumes:
       - ${TRACE_TRACKING_EXCLUSIONS_FILE:-./backend/config/trace-tracking-exclusions.yml}:/app/config/trace-tracking-exclusions.yml:ro
       - caddy-public-ca:/app/caddy-public-ca:ro

@@ -77,6 +77,10 @@ const menuKeysByPermission = Object.freeze({
   'workflow:node:create': 'workflowNodes.add',
   'workflow:node:update': 'workflowNodes.edit',
   'workflow:node:delete': 'common.delete',
+  'workflow:connection:list': 'nav.items.workflowConnections',
+  'workflow:connection:create': 'workflowConnections.add',
+  'workflow:connection:update': 'common.edit',
+  'workflow:connection:delete': 'common.delete',
   'workflow:canvas:list': 'nav.items.workflowCanvas',
   'workflow:canvas:create': 'workflowCanvas.add',
   'workflow:canvas:update': 'common.edit',
@@ -113,6 +117,7 @@ const menuKeysByPath = Object.freeze({
   '/automation/api-trigger-security': 'nav.items.apiTriggerSecurity',
   '/workflow': 'nav.items.workflow',
   '/workflow/nodes': 'nav.items.workflowNodes',
+  '/workflow/connections': 'nav.items.workflowConnections',
   '/workflow/canvases': 'nav.items.workflowCanvas'
 })
 

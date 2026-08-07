@@ -149,7 +149,19 @@ public class TaskTraceService {
      * @param traceId 任务追踪ID
      */
     public void markSuccess(String traceId) {
-        jdbcTemplate.update("UPDATE task_trace SET status='SUCCESS', finished_reason='COMPLETED', finished_at=?, heartbeat_at=?, version=version+1 WHERE trace_id=? AND status='RUNNING'", now(), now(), traceId);
+        jdbcTemplate.update("UPDATE task_trace SET status='SUCCESS', finished_reason='COMPLETED', finished_at=?, heartbeat_at=?, version=version+1 WHERE trace_id=? AND status IN ('RUNNING','WAITING')", now(), now(), traceId);
+    }
+
+    /** 将工作流追踪标记为持久化等待，避免恢复检查误判为遗留任务。 */
+    public void markWaiting(String traceId) {
+        jdbcTemplate.update("UPDATE task_trace SET status='WAITING',heartbeat_at=?,version=version+1 WHERE trace_id=? AND status='RUNNING'",
+            now(), traceId);
+    }
+
+    /** 恢复等待中的工作流追踪。 */
+    public void resumeWaiting(String traceId) {
+        jdbcTemplate.update("UPDATE task_trace SET status='RUNNING',heartbeat_at=?,version=version+1 WHERE trace_id=? AND status='WAITING'",
+            now(), traceId);
     }
 
     /**
@@ -164,7 +176,7 @@ public class TaskTraceService {
     public void markFailed(String traceId, String message) {
         jdbcTemplate.update("""
             UPDATE task_trace SET status='FAILED', error_message=?, finished_reason='EXECUTION_FAILED', finished_at=?, heartbeat_at=?, version=version+1
-            WHERE trace_id=? AND status IN ('RUNNING','CANCEL_REQUESTED')
+            WHERE trace_id=? AND status IN ('RUNNING','WAITING','CANCEL_REQUESTED')
             """, truncate(message, 1000), now(), now(), traceId);
     }
 
@@ -180,7 +192,7 @@ public class TaskTraceService {
     public void completeCancellation(String traceId) {
         jdbcTemplate.update("""
             UPDATE task_trace SET status='CANCELLED', finished_reason='CANCELLED', finished_at=?, heartbeat_at=?, version=version+1
-            WHERE trace_id=? AND status IN ('RUNNING','CANCEL_REQUESTED')
+            WHERE trace_id=? AND status IN ('RUNNING','WAITING','CANCEL_REQUESTED')
             """, now(), now(), traceId);
     }
 
@@ -427,7 +439,7 @@ public class TaskTraceService {
     public Map<String, Object> cancel(String traceId, Long userId, boolean admin, String reason) {
         Map<String, Object> trace = get(traceId, userId, admin);
         String status = String.valueOf(value(trace, "status"));
-        if (!List.of("RUNNING", "CANCEL_REQUESTED").contains(status)) throw new BusinessException("trace.notCancellable");
+        if (!List.of("RUNNING", "WAITING", "CANCEL_REQUESTED").contains(status)) throw new BusinessException("trace.notCancellable");
         jdbcTemplate.update("UPDATE task_trace SET status='CANCEL_REQUESTED', cancellation_reason=?, cancel_requested_at=?, version=version+1 WHERE trace_id=?", truncate(reason, 500), now(), traceId);
         runtimeRegistry.cancel(traceId);
         cancelPythonTraces(traceId, false, userId, reason);

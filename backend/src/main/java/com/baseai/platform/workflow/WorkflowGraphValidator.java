@@ -19,9 +19,6 @@ import java.util.Set;
 /** 校验工作流画布结构，拒绝悬空边、不可达节点和未受控循环。 */
 @Component
 public class WorkflowGraphValidator {
-    private static final Set<String> TYPES = Set.of(
-        "START", "END", "LLM", "HTTP", "AGENT", "CONDITION", "ITERATION", "LOOP"
-    );
     private final ObjectMapper objectMapper;
     private final int maxNodes;
     private final int maxDepth;
@@ -76,13 +73,15 @@ public class WorkflowGraphValidator {
         for (JsonNode node : nodes) {
             String id = text(node, "id");
             String type = nodeType(node);
-            if (id.isBlank() || !TYPES.contains(type) || byId.putIfAbsent(id, node) != null) {
+            if (id.isBlank() || !WorkflowNodeTypes.ALL.contains(type) || byId.putIfAbsent(id, node) != null) {
                 throw new BusinessException("workflow.graphInvalid");
             }
-            if ("START".equals(type)) startCount++;
+            if ("START".equals(type) || WorkflowNodeTypes.TRIGGERS.contains(type)) startCount++;
+            if (depth > 0 && WorkflowNodeTypes.TRIGGERS.contains(type)) throw new BusinessException("workflow.graphInvalid");
+            if (depth > 0 && "WAIT".equals(type)) throw new BusinessException("workflow.waitNestedForbidden");
             if ("END".equals(type)) endCount++;
             JsonNode config = nodeConfig(node);
-            if (("ITERATION".equals(type) || "LOOP".equals(type)) && config.has("bodyGraph")) {
+            if (WorkflowNodeTypes.NESTED_GRAPH.contains(type) && config.has("bodyGraph")) {
                 validateGraph(config.path("bodyGraph"), true, depth + 1);
             }
         }
@@ -124,7 +123,10 @@ public class WorkflowGraphValidator {
 
     /** 保证每个节点都能从唯一开始节点到达。 */
     private void ensureReachable(Map<String, JsonNode> byId, Map<String, Set<String>> outgoing) {
-        String start = byId.entrySet().stream().filter(entry -> "START".equals(nodeType(entry.getValue())))
+        String start = byId.entrySet().stream().filter(entry -> {
+                String type = nodeType(entry.getValue());
+                return "START".equals(type) || WorkflowNodeTypes.TRIGGERS.contains(type);
+            })
             .map(Map.Entry::getKey).findFirst().orElseThrow(() -> new BusinessException("workflow.graphBoundaryRequired"));
         Set<String> reached = new HashSet<>();
         ArrayDeque<String> queue = new ArrayDeque<>();
@@ -147,7 +149,7 @@ public class WorkflowGraphValidator {
     /** 兼容节点 type 和 data.nodeType 两种画布序列化结构。 */
     public static String nodeType(JsonNode node) {
         String type = text(node, "type").toUpperCase(java.util.Locale.ROOT);
-        if (TYPES.contains(type)) return type;
+        if (WorkflowNodeTypes.ALL.contains(type)) return type;
         return text(node.path("data"), "nodeType").toUpperCase(java.util.Locale.ROOT);
     }
 

@@ -20,6 +20,24 @@ class WorkflowGraphValidatorTest {
             """)));
     }
 
+    /** 主图可以使用一个原生触发节点替代手动开始节点。 */
+    @Test
+    void acceptsSingleTriggerAsWorkflowEntry() throws Exception {
+        assertDoesNotThrow(() -> validator.validate(objectMapper.readTree("""
+            {"nodes":[{"id":"trigger","type":"WEBHOOK_TRIGGER"},{"id":"end","type":"END"}],
+             "edges":[{"id":"edge-1","source":"trigger","target":"end"}]}
+            """)));
+    }
+
+    /** 手动开始节点和触发节点不能同时存在，避免一次定义拥有多个入口。 */
+    @Test
+    void rejectsMultipleWorkflowEntries() throws Exception {
+        assertThrows(BusinessException.class, () -> validator.validate(objectMapper.readTree("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"trigger","type":"SCHEDULE_TRIGGER"},{"id":"end","type":"END"}],
+             "edges":[{"id":"a","source":"start","target":"end"},{"id":"b","source":"trigger","target":"end"}]}
+            """)));
+    }
+
     /** 普通主图中的循环边必须被拒绝，防止绕过受控循环节点。 */
     @Test
     void rejectsUncontrolledCycle() throws Exception {
@@ -66,6 +84,18 @@ class WorkflowGraphValidatorTest {
                     "edges":[{"id":"deep-edge","source":"deep-start","target":"deep-end"}]
                 }}},{"id":"inner-end","type":"END"}],
                 "edges":[{"id":"inner-a","source":"inner-start","target":"inner-loop"},{"id":"inner-b","source":"inner-loop","target":"inner-end"}]
+            }}},{"id":"end","type":"END"}],
+             "edges":[{"id":"a","source":"start","target":"loop"},{"id":"b","source":"loop","target":"end"}]}
+            """)));
+    }
+
+    /** 持久等待只能出现在主图，嵌套执行不能保存不完整的子图检查点。 */
+    @Test
+    void rejectsWaitInsideNestedGraph() throws Exception {
+        assertThrows(BusinessException.class, () -> validator.validate(objectMapper.readTree("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"loop","type":"LOOP","config":{"bodyGraph":{
+                "nodes":[{"id":"inner-start","type":"START"},{"id":"wait","type":"WAIT"},{"id":"inner-end","type":"END"}],
+                "edges":[{"id":"inner-a","source":"inner-start","target":"wait"},{"id":"inner-b","source":"wait","target":"inner-end"}]
             }}},{"id":"end","type":"END"}],
              "edges":[{"id":"a","source":"start","target":"loop"},{"id":"b","source":"loop","target":"end"}]}
             """)));

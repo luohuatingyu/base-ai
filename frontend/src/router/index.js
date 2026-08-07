@@ -26,6 +26,7 @@ import MailAccountsView from '../views/MailAccountsView.vue'
 import MailRoutesView from '../views/MailRoutesView.vue'
 import WorkflowNodesView from '../views/WorkflowNodesView.vue'
 import WorkflowCanvasView from '../views/WorkflowCanvasView.vue'
+import WorkflowConnectionsView from '../views/WorkflowConnectionsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -56,6 +57,7 @@ const router = createRouter({
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
         { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } },
         { path: 'workflow/nodes', component: WorkflowNodesView, meta: { permission: 'workflow:node:list', navigable: true, desc: 'workflowNodes.description' } },
+        { path: 'workflow/connections', component: WorkflowConnectionsView, meta: { permission: 'workflow:connection:list', navigable: true, desc: 'workflowConnections.description' } },
         { path: 'workflow/canvases', component: WorkflowCanvasView, meta: { permission: 'workflow:canvas:list', navigable: true, desc: 'workflowCanvas.description' } }
       ]
     }

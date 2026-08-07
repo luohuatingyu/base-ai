@@ -14,8 +14,6 @@
       <div class="workflow-toolbar">
         <div><strong>{{ selected.name }}</strong><small>{{ selected.code }} · v{{ selected.currentVersion }}</small></div>
         <div class="workflow-toolbar-actions">
-          <el-button :disabled="!graphEditor?.canUndo" @click="graphEditor?.undo()">{{ t('workflowCanvas.undo') }}</el-button>
-          <el-button :disabled="!graphEditor?.canRedo" @click="graphEditor?.redo()">{{ t('workflowCanvas.redo') }}</el-button>
           <el-button v-if="auth.hasPermission('workflow:canvas:update')" @click="save">{{ t('common.save') }}</el-button>
           <el-button v-if="auth.hasPermission('workflow:canvas:publish')" type="success" @click="publish">{{ t('workflowCanvas.publish') }}</el-button>
           <el-button v-if="auth.hasPermission('workflow:canvas:execute')" type="primary" @click="runVisible=true">{{ t('workflowCanvas.run') }}</el-button>
@@ -28,7 +26,7 @@
         <el-input v-model="selected.description" :placeholder="t('common.description')" />
         <el-input v-model="inputSchemaText" :placeholder="t('workflowCanvas.inputSchema')" />
       </div>
-      <WorkflowGraphEditor ref="graphEditor" v-model="graph" :templates="templates" />
+      <WorkflowGraphEditor v-model="graph" :templates="templates" />
     </section>
     <section v-else class="panel workflow-empty"><el-empty :description="t('workflowCanvas.empty')" /></section>
 
@@ -41,7 +39,7 @@
       <el-input v-model="runInputText" type="textarea" :rows="10" spellcheck="false" />
       <el-alert v-if="activeRun" class="workflow-run-alert" :title="`${activeRun.status} · ${activeRun.id}`" :type="runAlertType" show-icon :closable="false" />
       <pre v-if="activeRun?.output"><code>{{ JSON.stringify(activeRun.output, null, 2) }}</code></pre>
-      <template #footer><el-button v-if="activeRun && ['QUEUED','RUNNING'].includes(activeRun.status)" type="danger" @click="cancelRun">{{ t('workflowCanvas.cancel') }}</el-button><el-button type="primary" :loading="running" @click="startRun">{{ t('workflowCanvas.start') }}</el-button></template>
+      <template #footer><el-button v-if="activeRun && ['QUEUED','RUNNING','WAITING'].includes(activeRun.status)" type="danger" @click="cancelRun">{{ t('workflowCanvas.cancel') }}</el-button><el-button type="primary" :loading="running" @click="startRun">{{ t('workflowCanvas.start') }}</el-button></template>
     </el-dialog>
 
     <el-drawer v-model="runsVisible" :title="t('workflowCanvas.logs')" size="min(900px, 96vw)">
@@ -63,7 +61,6 @@ import { useAuthStore } from '../stores/auth'
 const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([]), templates = ref([]), selected = ref(null), graph = ref(createWorkflowGraph())
-const graphEditor = ref(null)
 const keyword = ref(''), inputSchemaText = ref('{}'), createVisible = ref(false), runVisible = ref(false), runsVisible = ref(false)
 const runInputText = ref('{}'), activeRun = ref(null), running = ref(false), runs = ref([]), runDetail = ref(null)
 const createForm = reactive({ code: '', name: '', description: '' })
@@ -92,7 +89,7 @@ async function remove() { try { await ElMessageBox.confirm(t('common.confirmDele
 /** 提交异步调试运行并开始轮询。 */
 async function startRun() { let inputs; try { inputs = JSON.parse(runInputText.value || '{}') } catch { return ElMessage.warning(t('workflowCanvas.invalidJson')) } running.value = true; try { const response = await http.post(`/workflow/canvases/${selected.value.id}/runs`, { inputs }); activeRun.value = { id: response.data.runId, status: response.data.status }; schedulePoll() } catch (error) { showHttpError(error) } finally { running.value = false } }
 /** 每秒查询一次运行状态，终态自动停止。 */
-function schedulePoll() { clearInterval(pollTimer); pollTimer = setInterval(async () => { if (!activeRun.value?.id) return; const response = await http.get(`/workflow/runs/${activeRun.value.id}`); activeRun.value = response.data; if (!['QUEUED', 'RUNNING'].includes(response.data.status)) clearInterval(pollTimer) }, 1000) }
+function schedulePoll() { clearInterval(pollTimer); pollTimer = setInterval(async () => { if (!activeRun.value?.id) return; const response = await http.get(`/workflow/runs/${activeRun.value.id}`); activeRun.value = response.data; if (!['QUEUED', 'RUNNING', 'WAITING'].includes(response.data.status)) clearInterval(pollTimer) }, 1000) }
 /** 取消当前排队或运行任务。 */
 async function cancelRun() { const response = await http.post(`/workflow/runs/${activeRun.value.id}/cancel`); activeRun.value = response.data; clearInterval(pollTimer) }
 /** 打开运行列表。 */

@@ -12,9 +12,10 @@ public final class WorkflowModels {
     private WorkflowModels() {}
 
     public record NodeTemplateCommand(String code, String name, String nodeType, String description,
-                                      JsonNode config, Boolean enabled) {}
+                                      JsonNode config, Boolean enabled, String source, String functionalCategory) {}
     public record NodeTemplateView(Long id, String code, String name, String nodeType, String description,
-                                   JsonNode config, boolean systemTemplate, boolean enabled,
+                                   JsonNode config, boolean systemTemplate, String source, String functionalCategory,
+                                   boolean enabled,
                                    LocalDateTime createdAt, LocalDateTime updatedAt) {}
     public record WorkflowCommand(String code, String name, String description, JsonNode graph,
                                   JsonNode inputSchema, Long revision) {}
@@ -35,5 +36,10 @@ public final class WorkflowModels {
                           boolean cancelRequested, LocalDateTime startedAt, LocalDateTime finishedAt,
                           LocalDateTime createdAt, List<NodeRunView> nodes) {}
     public record StoredVersion(Long id, Long workflowId, String workflowCode, int versionNumber,
-                                JsonNode graph, JsonNode inputSchema, JsonNode templateSnapshots) {}
+                                JsonNode graph, JsonNode inputSchema, JsonNode templateSnapshots, Long workflowOwnerId) {}
+    public record ConnectionCommand(String code, String name, String connectionType, JsonNode config, Boolean enabled) {}
+    public record ConnectionView(Long id, String code, String name, String connectionType, JsonNode config,
+                                 boolean enabled, Long ownerUserId, LocalDateTime createdAt, LocalDateTime updatedAt) {}
+    public record TriggerDefinition(Long workflowId, String workflowCode, Long versionId, Long ownerUserId,
+                                    String nodeId, String nodeType, JsonNode config) {}
 }

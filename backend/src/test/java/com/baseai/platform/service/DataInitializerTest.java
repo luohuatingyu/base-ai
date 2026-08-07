@@ -226,7 +226,7 @@ class DataInitializerTest {
             menusByPermission.get("mail:route:update").getParentId());
     }
 
-    /** 工作流必须作为独立一级目录，并包含节点管理和画布管理页面。 */
+    /** 工作流必须作为独立一级目录，并包含节点、连接和画布管理页面。 */
     @Test
     void seedsWorkflowCatalogWithNodeAndCanvasPages() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
@@ -241,9 +241,12 @@ class DataInitializerTest {
 
         assertEquals("CATALOG", workflow.getType());
         assertEquals(workflow.getId(), menusByPermission.get("workflow:node:list").getParentId());
+        assertEquals(workflow.getId(), menusByPermission.get("workflow:connection:list").getParentId());
         assertEquals(workflow.getId(), menusByPermission.get("workflow:canvas:list").getParentId());
         assertEquals(menusByPermission.get("workflow:node:list").getId(),
             menusByPermission.get("workflow:node:update").getParentId());
+        assertEquals(menusByPermission.get("workflow:connection:list").getId(),
+            menusByPermission.get("workflow:connection:update").getParentId());
         assertEquals(menusByPermission.get("workflow:canvas:list").getId(),
             menusByPermission.get("workflow:canvas:execute").getParentId());
     }

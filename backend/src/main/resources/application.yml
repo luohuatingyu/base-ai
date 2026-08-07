@@ -101,6 +101,7 @@ app:
       - /api/internal/**
       - /api/system/tasks/**
       - /api/mail/**
+      - /api/workflow-hooks/**
   api-trigger:
     scheduler-pool-size: ${API_TRIGGER_SCHEDULER_POOL_SIZE:4}
     lock-seconds: ${API_TRIGGER_LOCK_SECONDS:300}
@@ -116,3 +117,4 @@ app:
     max-agent-steps: ${WORKFLOW_MAX_AGENT_STEPS:20}
     max-recursion-depth: ${WORKFLOW_MAX_RECURSION_DEPTH:5}
     max-payload-bytes: ${WORKFLOW_MAX_PAYLOAD_BYTES:1048576}
+    max-wait-seconds: ${WORKFLOW_MAX_WAIT_SECONDS:3600}

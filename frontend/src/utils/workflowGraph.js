@@ -16,12 +16,13 @@ export function validateWorkflowGraph(graph, maxNodes = 100) {
   if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) return 'graph invalid'
   if (graph.nodes.length < 2 || graph.nodes.length > maxNodes) return 'node limit exceeded'
   const ids = new Set()
+  const triggerTypes = new Set(['WEBHOOK_TRIGGER', 'SCHEDULE_TRIGGER', 'KAFKA_TRIGGER', 'RABBITMQ_TRIGGER'])
   let starts = 0
   let ends = 0
   for (const node of graph.nodes) {
     if (!node?.id || ids.has(node.id)) return 'node id invalid'
     ids.add(node.id)
-    if (node.type === 'START') starts += 1
+    if (node.type === 'START' || triggerTypes.has(node.type)) starts += 1
     if (node.type === 'END') ends += 1
   }
   if (starts !== 1 || ends < 1) return 'start/end boundary invalid'

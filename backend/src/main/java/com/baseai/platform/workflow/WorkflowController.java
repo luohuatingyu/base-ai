@@ -19,12 +19,47 @@ import java.util.List;
 public class WorkflowController {
     private final WorkflowService workflowService;
     private final WorkflowExecutionService executionService;
+    private final WorkflowConnectionService connectionService;
+    private final WorkflowConnectionTester connectionTester;
 
     /** 注入工作流配置和执行服务。 */
-    public WorkflowController(WorkflowService workflowService, WorkflowExecutionService executionService) {
+    public WorkflowController(WorkflowService workflowService, WorkflowExecutionService executionService,
+                              WorkflowConnectionService connectionService, WorkflowConnectionTester connectionTester) {
         this.workflowService = workflowService;
         this.executionService = executionService;
+        this.connectionService = connectionService;
+        this.connectionTester = connectionTester;
     }
+
+    /** 查询当前用户可见的脱敏连接配置。 */
+    @GetMapping("/connections")
+    @RequiredPermission("workflow:connection:list")
+    public List<WorkflowModels.ConnectionView> connections() { return connectionService.connections(); }
+
+    /** 创建工作流外部连接。 */
+    @PostMapping("/connections")
+    @RequiredPermission("workflow:connection:create")
+    public WorkflowModels.ConnectionView createConnection(@RequestBody WorkflowModels.ConnectionCommand command) {
+        return connectionService.create(command);
+    }
+
+    /** 更新当前用户拥有的连接。 */
+    @PutMapping("/connections/{id}")
+    @RequiredPermission("workflow:connection:update")
+    public WorkflowModels.ConnectionView updateConnection(@PathVariable Long id,
+                                                           @RequestBody WorkflowModels.ConnectionCommand command) {
+        return connectionService.update(id, command);
+    }
+
+    /** 软删除未被工作流版本引用的连接。 */
+    @DeleteMapping("/connections/{id}")
+    @RequiredPermission("workflow:connection:delete")
+    public void deleteConnection(@PathVariable Long id) { connectionService.delete(id); }
+
+    /** 测试当前用户拥有的连接并只返回脱敏结果。 */
+    @PostMapping("/connections/{id}/test")
+    @RequiredPermission("workflow:connection:update")
+    public java.util.Map<String, Object> testConnection(@PathVariable Long id) { return connectionTester.test(id); }
 
     /** 查询可复用节点模板。 */
     @GetMapping("/nodes")

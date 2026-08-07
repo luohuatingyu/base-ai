@@ -4,26 +4,35 @@
       <div><h2>{{ t('workflowNodes.title') }}</h2><p>{{ t('workflowNodes.description') }}</p></div>
       <el-button v-if="auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
     </div>
-    <el-table :data="rows" table-layout="auto">
-      <el-table-column prop="code" :label="t('common.code')" min-width="130" />
-      <el-table-column prop="name" :label="t('common.name')" min-width="150" />
-      <el-table-column prop="nodeType" :label="t('common.type')" width="130" />
-      <el-table-column prop="description" :label="t('common.description')" min-width="220" />
-      <el-table-column :label="t('workflowNodes.source')" width="110"><template #default="scope">{{ scope.row.systemTemplate ? t('workflowNodes.system') : t('workflowNodes.custom') }}</template></el-table-column>
-      <el-table-column :label="t('common.status')" width="100"><template #default="scope">{{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}</template></el-table-column>
-      <el-table-column :label="t('common.operation')" width="170" fixed="right"><template #default="scope"><div class="table-actions">
-        <el-button v-if="auth.hasPermission('workflow:node:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
-        <el-button v-if="!scope.row.systemTemplate && auth.hasPermission('workflow:node:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
-      </div></template></el-table-column>
-    </el-table>
+    <section v-for="group in groups" :key="group.key" class="node-template-group">
+      <div class="node-template-group-head"><div><h3>{{ group.title }}</h3><p>{{ group.description }}</p></div><el-tag round>{{ group.items.length }}</el-tag></div>
+      <div v-if="group.items.length" class="node-template-grid">
+        <article v-for="row in group.items" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
+          <button type="button" class="node-template-card-main" :disabled="!auth.hasPermission('workflow:node:update')" @click="open(row)">
+            <span class="node-template-icon">{{ row.nodeType.slice(0, 2) }}</span>
+            <span class="node-template-summary"><strong>{{ row.name }}</strong><code>{{ row.code }}</code></span>
+            <el-tag size="small" :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag>
+            <span class="node-template-type">{{ row.nodeType }} · {{ t(`workflowCatalog.categories.${row.functionalCategory}`) }} · {{ t(`workflowCatalog.sources.${row.source}`) }}</span>
+            <small>{{ row.description || t('workflowNodes.noDescription') }}</small>
+          </button>
+          <div class="node-template-actions">
+            <el-button v-if="auth.hasPermission('workflow:node:update')" link type="primary" @click="open(row)">{{ t('common.edit') }}</el-button>
+            <el-button v-if="!row.systemTemplate && auth.hasPermission('workflow:node:delete')" link type="danger" @click="remove(row)">{{ t('common.delete') }}</el-button>
+          </div>
+        </article>
+      </div>
+      <el-empty v-else :description="t('workflowNodes.emptyGroup')" :image-size="56" />
+    </section>
 
-    <el-dialog v-model="visible" :title="form.id ? t('workflowNodes.edit') : t('workflowNodes.add')" width="min(680px, 94vw)">
+    <el-dialog v-model="visible" :title="form.id ? t('workflowNodes.edit') : t('workflowNodes.add')" width="min(980px, 94vw)" top="5vh">
       <el-form label-width="120px">
         <el-form-item :label="t('common.code')"><el-input v-model="form.code" :disabled="form.systemTemplate" /></el-form-item>
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item :label="t('common.type')"><el-select v-model="form.nodeType" class="full" :disabled="form.systemTemplate"><el-option v-for="type in nodeTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+        <el-form-item :label="t('common.type')"><el-select v-model="form.nodeType" class="full" :disabled="form.systemTemplate" @change="syncDefaultCategory"><el-option v-for="type in nodeTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+        <el-form-item :label="t('workflowNodes.source')"><el-tag>{{ t(`workflowCatalog.sources.${form.source}`) }}</el-tag></el-form-item>
+        <el-form-item :label="t('workflowNodes.category')"><el-select v-model="form.functionalCategory" class="full"><el-option v-for="category in categories" :key="category" :label="t(`workflowCatalog.categories.${category}`)" :value="category" /></el-select></el-form-item>
         <el-form-item :label="t('common.description')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item :label="t('workflowNodes.defaultConfig')"><el-input v-model="form.configText" type="textarea" :rows="12" spellcheck="false" /></el-form-item>
+        <el-form-item :label="t('workflowNodes.defaultConfig')"><WorkflowNodeConfigEditor v-model="form.config" :node-type="form.nodeType" /></el-form-item>
         <el-form-item :label="t('common.status')"><el-switch v-model="form.enabled" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="visible=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="save">{{ t('common.save') }}</el-button></template>
@@ -32,29 +41,41 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
+import WorkflowNodeConfigEditor from '../components/WorkflowNodeConfigEditor.vue'
+import { cloneConfig, WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
+import { defaultTemplateCategory, normalizeTemplateMetadata, WORKFLOW_TEMPLATE_CATEGORIES } from '../utils/workflowTemplateCatalog'
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
 const visible = ref(false)
-const nodeTypes = ['LLM', 'HTTP', 'AGENT', 'CONDITION', 'ITERATION', 'LOOP']
+const nodeTypes = WORKFLOW_NODE_TYPES
+const categories = WORKFLOW_TEMPLATE_CATEGORIES
 const form = reactive(emptyForm())
+const groups = computed(() => {
+  const normalized = rows.value.map(normalizeTemplateMetadata)
+  return [
+    { key: 'system', title: t('workflowNodes.system'), description: t('workflowNodes.systemDescription'), items: normalized.filter(row => row.systemTemplate) },
+    { key: 'custom', title: t('workflowNodes.custom'), description: t('workflowNodes.customDescription'), items: normalized.filter(row => !row.systemTemplate) }
+  ]
+})
 
 /** 加载未作废节点模板。 */
 async function load() { rows.value = (await http.get('/workflow/nodes')).data || [] }
-/** 打开新增或编辑表单，并格式化默认配置。 */
-function open(row) { Object.assign(form, emptyForm(), row || {}, { configText: JSON.stringify(row?.config || {}, null, 2) }); visible.value = true }
-/** 校验 JSON 并保存模板。 */
+/** 打开新增或编辑表单，并隔离默认配置副本。 */
+function open(row) { Object.assign(form, emptyForm(), normalizeTemplateMetadata(row), { config: cloneConfig(row?.config) }); visible.value = true }
+/** 节点类型变化时切换到该原生能力的推荐功能分类。 */
+function syncDefaultCategory(nodeType) { form.functionalCategory = defaultTemplateCategory(nodeType) }
+/** 校验必填字段并保存模板。 */
 async function save() {
-  let config
-  try { config = JSON.parse(form.configText || '{}') } catch { ElMessage.warning(t('workflowNodes.invalidJson')); return }
   if (!form.name.trim() || !form.code.trim()) { ElMessage.warning(t('workflowNodes.required')); return }
-  const command = { code: form.code, name: form.name, nodeType: form.nodeType, description: form.description, config, enabled: form.enabled }
+  const command = { code: form.code, name: form.name, nodeType: form.nodeType, description: form.description,
+    config: cloneConfig(form.config), enabled: form.enabled, source: form.source, functionalCategory: form.functionalCategory }
   try {
     if (form.id) await http.put(`/workflow/nodes/${form.id}`, command)
     else await http.post('/workflow/nodes', command)
@@ -69,6 +90,32 @@ async function remove(row) {
   } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) }
 }
 /** 创建隔离的空表单。 */
-function emptyForm() { return { id: null, code: '', name: '', nodeType: 'LLM', description: '', configText: '{}', enabled: true, systemTemplate: false } }
+function emptyForm() { return { id: null, code: '', name: '', nodeType: 'LLM', description: '', config: {}, enabled: true,
+  systemTemplate: false, source: 'CUSTOM', functionalCategory: defaultTemplateCategory('LLM') } }
 onMounted(load)
 </script>
+
+<style scoped>
+.node-template-group + .node-template-group { margin-top: 30px; }
+.node-template-group-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.node-template-group-head h3 { margin: 0 0 5px; }
+.node-template-group-head p { margin: 0; color: var(--app-muted); }
+.node-template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.node-template-card { overflow: hidden; border: 1px solid #dfe6f0; border-radius: 14px; background: #fff; box-shadow: 0 7px 20px rgb(31 53 91 / 7%); transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease; }
+.node-template-card:hover { border-color: #9eb8ef; transform: translateY(-2px); box-shadow: 0 12px 26px rgb(31 53 91 / 12%); }
+.node-template-card.disabled { opacity: .68; }
+.node-template-card-main { display: grid; width: 100%; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 16px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.node-template-card-main:disabled { cursor: default; }
+.node-template-icon { display: grid; grid-row: span 2; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: #315ea8; background: #eaf1ff; font-size: 12px; font-weight: 800; }
+.node-template-card--agent .node-template-icon, .node-template-card--llm .node-template-icon, .node-template-card--question_classifier .node-template-icon, .node-template-card--parameter_extractor .node-template-icon { color: #6d4cc7; background: #f0ebff; }
+.node-template-card--condition .node-template-icon, .node-template-card--switch .node-template-icon, .node-template-card--loop .node-template-icon, .node-template-card--iteration .node-template-icon { color: #9a6700; background: #fff5d6; }
+.node-template-summary { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.node-template-summary strong, .node-template-summary code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-template-summary code, .node-template-type, .node-template-card-main small { color: var(--app-muted); font-size: 12px; }
+.node-template-type { grid-column: 2 / -1; }
+.node-template-card-main small { grid-column: 1 / -1; min-height: 36px; line-height: 1.5; }
+.node-template-actions { display: flex; justify-content: flex-end; gap: 4px; padding: 8px 14px; border-top: 1px solid #edf1f6; }
+:deep(.el-dialog__body) { max-height: 76vh; overflow-y: auto; }
+:deep(.workflow-config-editor) { width: 100%; }
+@media (max-width: 600px) { .node-template-grid { grid-template-columns: 1fr; } }
+</style>

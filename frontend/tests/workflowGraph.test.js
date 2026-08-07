@@ -29,14 +29,12 @@ test('工作流选择和节点模板配置统一使用响应式安全复制', ()
   assert.doesNotMatch(`${canvasViewSource}\n${graphEditorSource}`, /structuredClone\(/)
 })
 
-test('撤销重做位于画布主操作区并复用编辑器历史状态', () => {
-  assert.match(canvasViewSource, /workflow-toolbar-actions[\s\S]*workflowCanvas\.undo[\s\S]*workflowCanvas\.redo[\s\S]*common\.save/)
-  assert.match(canvasViewSource, /ref="graphEditor"/)
-  assert.match(graphEditorSource, /ref="subgraphEditor"[\s\S]*#footer[\s\S]*workflowCanvas\.undo[\s\S]*workflowCanvas\.redo[\s\S]*common\.save/)
+test('撤销重做作为画布悬浮操作并复用编辑器历史状态', () => {
+  assert.doesNotMatch(canvasViewSource, /ref="graphEditor"|workflow-toolbar-actions[\s\S]*workflowCanvas\.undo/)
+  assert.match(graphEditorSource, /workflow-history-actions[\s\S]*workflowCanvas\.undo[\s\S]*workflowCanvas\.redo/)
   assert.match(graphEditorSource, /const canUndo = computed\(\(\) => historyIndex\.value > 0\)/)
   assert.match(graphEditorSource, /const canRedo = computed\(\(\) => historyIndex\.value < history\.value\.length - 1\)/)
   assert.match(graphEditorSource, /defineExpose\(\{ canUndo, canRedo, undo, redo \}\)/)
-  assert.doesNotMatch(graphEditorSource, /workflow-history-actions/)
 })
 
 test('工作流画布初始化唯一开始和结束节点', () => {

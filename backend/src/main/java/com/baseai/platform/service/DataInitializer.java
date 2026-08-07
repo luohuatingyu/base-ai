@@ -310,14 +310,19 @@ public class DataInitializer implements ApplicationRunner {
         menu(node.getId(), "新增节点模板", "BUTTON", null, null, null, "workflow:node:create", 611, false);
         menu(node.getId(), "更新节点模板", "BUTTON", null, null, null, "workflow:node:update", 612, false);
         menu(node.getId(), "删除节点模板", "BUTTON", null, null, null, "workflow:node:delete", 613, false);
+        Menu connection = menu(workflow.getId(), "连接配置", "MENU", "/workflow/connections", "WorkflowConnectionsView", "Link",
+            "workflow:connection:list", 62, true);
+        menu(connection.getId(), "新增连接配置", "BUTTON", null, null, null, "workflow:connection:create", 621, false);
+        menu(connection.getId(), "更新连接配置", "BUTTON", null, null, null, "workflow:connection:update", 622, false);
+        menu(connection.getId(), "删除连接配置", "BUTTON", null, null, null, "workflow:connection:delete", 623, false);
         Menu canvas = menu(workflow.getId(), "画布管理", "MENU", "/workflow/canvases", "WorkflowCanvasView", "Connection",
-            "workflow:canvas:list", 62, true);
-        menu(canvas.getId(), "新增工作流", "BUTTON", null, null, null, "workflow:canvas:create", 621, false);
-        menu(canvas.getId(), "更新工作流", "BUTTON", null, null, null, "workflow:canvas:update", 622, false);
-        menu(canvas.getId(), "删除工作流", "BUTTON", null, null, null, "workflow:canvas:delete", 623, false);
-        menu(canvas.getId(), "发布工作流", "BUTTON", null, null, null, "workflow:canvas:publish", 624, false);
-        menu(canvas.getId(), "执行工作流", "BUTTON", null, null, null, "workflow:canvas:execute", 625, false);
-        menu(canvas.getId(), "工作流日志", "BUTTON", null, null, null, "workflow:canvas:logs", 626, false);
+            "workflow:canvas:list", 63, true);
+        menu(canvas.getId(), "新增工作流", "BUTTON", null, null, null, "workflow:canvas:create", 631, false);
+        menu(canvas.getId(), "更新工作流", "BUTTON", null, null, null, "workflow:canvas:update", 632, false);
+        menu(canvas.getId(), "删除工作流", "BUTTON", null, null, null, "workflow:canvas:delete", 633, false);
+        menu(canvas.getId(), "发布工作流", "BUTTON", null, null, null, "workflow:canvas:publish", 634, false);
+        menu(canvas.getId(), "执行工作流", "BUTTON", null, null, null, "workflow:canvas:execute", 635, false);
+        menu(canvas.getId(), "工作流日志", "BUTTON", null, null, null, "workflow:canvas:logs", 636, false);
 
     }
 

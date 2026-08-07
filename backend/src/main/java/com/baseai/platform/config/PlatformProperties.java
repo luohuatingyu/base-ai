@@ -211,7 +211,8 @@ public class PlatformProperties {
     public static class TraceTracking {
         private java.util.List<String> excludedMethods = java.util.List.of("GET", "OPTIONS");
         private java.util.List<String> excludedPaths = java.util.List.of(
-            "/api/auth/**", "/api/open/**", "/api/internal/**", "/api/system/tasks/**", "/api/mail/**"
+            "/api/auth/**", "/api/open/**", "/api/internal/**", "/api/system/tasks/**", "/api/mail/**",
+            "/api/workflow-hooks/**"
         );
         public java.util.List<String> getExcludedMethods() { return excludedMethods; }
         public void setExcludedMethods(java.util.List<String> excludedMethods) { this.excludedMethods = excludedMethods; }
@@ -251,6 +252,7 @@ public class PlatformProperties {
         private int maxAgentSteps = 20;
         private int maxRecursionDepth = 5;
         private int maxPayloadBytes = 1024 * 1024;
+        private int maxWaitSeconds = 3600;
         /** 读取执行线程数量。 */
         public int getExecutorPoolSize() { return executorPoolSize; }
         /** 设置执行线程数量。 */
@@ -275,5 +277,9 @@ public class PlatformProperties {
         public int getMaxPayloadBytes() { return maxPayloadBytes; }
         /** 设置输入输出负载字节上限。 */
         public void setMaxPayloadBytes(int value) { maxPayloadBytes = value; }
+        /** 读取单个等待节点允许的最长秒数。 */
+        public int getMaxWaitSeconds() { return maxWaitSeconds; }
+        /** 设置单个等待节点允许的最长秒数。 */
+        public void setMaxWaitSeconds(int value) { maxWaitSeconds = value; }
     }
 }

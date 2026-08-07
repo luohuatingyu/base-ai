@@ -1,11 +1,11 @@
 <template>
   <div class="workflow-node" :class="`workflow-node--${nodeType.toLowerCase()}`">
-    <Handle v-if="nodeType !== 'START'" type="target" :position="Position.Left" />
+    <Handle v-if="!entryTypes.has(nodeType)" type="target" :position="Position.Left" />
     <strong>{{ data?.label || nodeType }}</strong>
     <small>{{ nodeType }}</small>
-    <template v-if="nodeType === 'CONDITION'">
-      <Handle id="true" type="source" :position="Position.Right" :style="{ top: '34%' }" />
-      <Handle id="false" type="source" :position="Position.Right" :style="{ top: '68%' }" />
+    <template v-if="sourceHandles.length">
+      <Handle v-for="(handle, index) in sourceHandles" :id="handle" :key="handle" type="source"
+              :position="Position.Right" :style="{ top: `${((index + 1) * 100) / (sourceHandles.length + 1)}%` }" />
     </template>
     <Handle v-else-if="nodeType !== 'END'" type="source" :position="Position.Right" />
   </div>
@@ -17,6 +17,13 @@ import { Handle, Position } from '@vue-flow/core'
 
 const props = defineProps({ type: { type: String, required: true }, data: { type: Object, default: () => ({}) } })
 const nodeType = computed(() => props.data?.nodeType || props.type)
+const entryTypes = new Set(['START', 'WEBHOOK_TRIGGER', 'SCHEDULE_TRIGGER', 'KAFKA_TRIGGER', 'RABBITMQ_TRIGGER'])
+const sourceHandles = computed(() => {
+  if (nodeType.value === 'CONDITION') return ['true', 'false']
+  if (nodeType.value === 'SWITCH') return [...(props.data?.config?.cases || []).map((item, index) => item.branch || `case-${index}`), props.data?.config?.defaultBranch || 'default']
+  if (nodeType.value === 'QUESTION_CLASSIFIER') return (props.data?.config?.categories || []).map(item => item.name).filter(Boolean)
+  return props.data?.config?.onError === 'BRANCH' ? ['success', 'error'] : []
+})
 </script>
 
 <style scoped>
