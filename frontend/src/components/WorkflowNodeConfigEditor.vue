@@ -4,40 +4,45 @@
     <el-alert v-if="missingRequirements.length" :title="requiredHint" type="warning" show-icon :closable="false" />
     <div v-if="fields.length" class="workflow-config-grid">
       <article v-for="field in fields" :key="field.key" class="workflow-config-card"
-               :class="{ configured: hasField(field.key), defaulted: !hasField(field.key) && hasDefault(field), 'required-missing': fieldRequirementMissing(field) }">
+               :class="{ configured: hasField(field.key), disabled: fieldDisabled(field), 'required-missing': fieldRequirementMissing(field) }">
         <button type="button" class="workflow-config-card-head" @click="toggleField(field.key)">
           <span><strong>{{ fieldLabel(field.key) }} <em v-if="field.requirement">{{ t(`workflowConfig.${field.requirement}`) }}</em></strong><small>{{ fieldDescription(field.key) }}</small></span>
           <span class="workflow-config-card-tags">
             <el-tag v-if="fieldRequirementMissing(field)" size="small" type="danger">{{ t('workflowConfig.requiredMissing') }}</el-tag>
-            <el-tag v-else size="small" :type="hasField(field.key) ? 'success' : hasDefault(field) ? 'primary' : 'info'">{{ t(fieldStatusKey(field)) }}</el-tag>
+            <el-tag v-else size="small" :type="hasField(field.key) ? 'success' : fieldCanToggle(field) ? 'info' : hasDefault(field) ? 'primary' : 'info'">{{ t(fieldStatusKey(field)) }}</el-tag>
           </span>
         </button>
         <div v-if="openFields.includes(field.key)" class="workflow-config-card-body">
-          <el-input v-if="['text','textarea'].includes(field.editor)" :model-value="fieldValue(field)"
-                      :type="field.editor === 'textarea' ? 'textarea' : 'text'" :rows="4" @update:model-value="setField(field.key, $event)" />
-          <el-input-number v-else-if="field.editor === 'number'" :model-value="fieldValue(field)" controls-position="right" @update:model-value="setNumber(field.key, $event)" />
-          <el-switch v-else-if="field.editor === 'boolean'" :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)" />
-          <el-select v-else-if="field.editor === 'select'" :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)">
-            <el-option v-for="option in field.options" :key="option" :label="fieldOption(field.key, option)" :value="option" />
-          </el-select>
-          <template v-else-if="field.editor === 'model'">
-            <el-select :model-value="fieldValue(field)" filterable clearable :loading="modelOptionsLoading"
-                       :placeholder="t('workflowConfig.selectModel')" :no-data-text="t('workflowConfig.noCompatibleModels')"
-                       @update:model-value="setModelId">
-              <el-option v-for="option in compatibleModelOptions" :key="option.id"
-                         :label="workflowModelOptionLabel(option)" :value="option.id" />
-            </el-select>
-            <el-alert v-if="modelOptionsError" :title="t('workflowConfig.modelOptionsFailed')" type="error" show-icon :closable="false" />
-          </template>
-          <div v-else-if="field.editor === 'condition'" class="workflow-condition-editor">
-            <el-input :model-value="condition(field).left" :placeholder="t('workflowConfig.conditionLeft')" @update:model-value="setCondition(field, 'left', $event)" />
-            <el-select :model-value="condition(field).operator" @update:model-value="setCondition(field, 'operator', $event)">
-              <el-option v-for="operator in CONDITION_OPERATORS" :key="operator" :label="t(`workflowConfig.operators.${operator}`)" :value="operator" />
-            </el-select>
-            <WorkflowConfigValueEditor v-if="!['EXISTS','EMPTY'].includes(condition(field).operator)" :model-value="condition(field).right" @update:model-value="setCondition(field, 'right', $event)" />
+          <div v-if="fieldCanToggle(field)" class="workflow-config-enable">
+            <span>{{ t('workflowConfig.enableField') }}</span>
+            <el-switch :model-value="hasField(field.key)" @change="toggleConfigured(field, $event)" />
           </div>
-          <WorkflowConfigValueEditor v-else :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)" />
-          <el-button v-if="hasField(field.key)" type="danger" plain @click="removeField(field.key)">{{ t('workflowConfig.clearField') }}</el-button>
+          <fieldset class="workflow-config-controls" :disabled="fieldDisabled(field)">
+            <el-input v-if="['text','textarea'].includes(field.editor)" :model-value="fieldValue(field)"
+                        :type="field.editor === 'textarea' ? 'textarea' : 'text'" :rows="4" @update:model-value="setField(field.key, $event)" />
+            <el-input-number v-else-if="field.editor === 'number'" :model-value="fieldValue(field)" controls-position="right" @update:model-value="setNumber(field.key, $event)" />
+            <el-switch v-else-if="field.editor === 'boolean'" :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)" />
+            <el-select v-else-if="field.editor === 'select'" :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)">
+              <el-option v-for="option in field.options" :key="option" :label="fieldOption(field.key, option)" :value="option" />
+            </el-select>
+            <template v-else-if="field.editor === 'model'">
+              <el-select :model-value="fieldValue(field)" filterable clearable :loading="modelOptionsLoading"
+                         :placeholder="t('workflowConfig.selectModel')" :no-data-text="t('workflowConfig.noCompatibleModels')"
+                         @update:model-value="setModelId">
+                <el-option v-for="option in compatibleModelOptions" :key="option.id"
+                           :label="workflowModelOptionLabel(option)" :value="option.id" />
+              </el-select>
+              <el-alert v-if="modelOptionsError" :title="t('workflowConfig.modelOptionsFailed')" type="error" show-icon :closable="false" />
+            </template>
+            <div v-else-if="field.editor === 'condition'" class="workflow-condition-editor">
+              <el-input :model-value="condition(field).left" :placeholder="t('workflowConfig.conditionLeft')" @update:model-value="setCondition(field, 'left', $event)" />
+              <el-select :model-value="condition(field).operator" @update:model-value="setCondition(field, 'operator', $event)">
+                <el-option v-for="operator in CONDITION_OPERATORS" :key="operator" :label="t(`workflowConfig.operators.${operator}`)" :value="operator" />
+              </el-select>
+              <WorkflowConfigValueEditor v-if="!['EXISTS','EMPTY'].includes(condition(field).operator)" :model-value="condition(field).right" @update:model-value="setCondition(field, 'right', $event)" />
+            </div>
+            <WorkflowConfigValueEditor v-else :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)" />
+          </fieldset>
         </div>
       </article>
     </div>
@@ -112,9 +117,14 @@ async function loadModelOptions() {
 function hasField(key) { return Object.prototype.hasOwnProperty.call(config.value, key) }
 /** 判断字段定义是否声明默认值，包含 null、false、零和空容器。 */
 function hasDefault(field) { return Object.prototype.hasOwnProperty.call(field, 'defaultValue') }
+/** 判断字段是否允许由用户启用或禁用；固定必填字段始终启用。 */
+function fieldCanToggle(field) { return field.requirement !== 'required' }
+/** 判断可选或条件必填字段当前是否处于禁用状态。 */
+function fieldDisabled(field) { return fieldCanToggle(field) && !hasField(field.key) }
 /** 返回非缺失字段的配置状态文案键。 */
 function fieldStatusKey(field) {
   if (hasField(field.key)) return 'workflowConfig.configured'
+  if (fieldCanToggle(field)) return 'workflowConfig.disabled'
   return hasDefault(field) ? 'workflowConfig.defaultValue' : 'workflowConfig.notConfigured'
 }
 /** 返回已配置值或仅供编辑展示的字段默认值，不因展开卡片写入配置。 */
@@ -144,6 +154,8 @@ function toggleExtra(key) { openExtra.value = openExtra.value.includes(key) ? op
 function setField(key, value) { config.value = { ...config.value, [key]: value }; emit('update:modelValue', cloneConfig(config.value)) }
 /** 规范数字字段后更新配置。 */
 function setNumber(key, value) { setField(key, Number.isFinite(value) ? value : 0) }
+/** 启用时写入隔离的默认值，禁用时从配置中移除字段。 */
+function toggleConfigured(field, enabled) { enabled ? setField(field.key, cloneValue(field.defaultValue)) : removeField(field.key) }
 /** 保存下拉选择的模型 ID；清空选择时移除可选配置并回退能力路由。 */
 function setModelId(value) { value === null || value === undefined || value === '' ? removeField('modelId') : setField('modelId', Number(value)) }
 /** 删除配置字段并保留其他未知字段。 */
@@ -166,7 +178,7 @@ function addExtra() {
 .workflow-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .workflow-config-card { min-width: 0; overflow: hidden; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
 .workflow-config-card.configured { border-color: #b8cdf8; background: #f7faff; }
-.workflow-config-card.defaulted { border-color: #c9d6ec; background: #f8faff; }
+.workflow-config-card.disabled { border-color: #d8dee9; background: #fafbfc; }
 .workflow-config-card.required-missing { border-color: #efb2b2; background: #fffafa; }
 .workflow-config-card-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
 .workflow-config-card-head > span:first-child, .workflow-extra-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
@@ -175,6 +187,9 @@ function addExtra() {
 .workflow-config-card-head small, .workflow-extra-head small { color: var(--app-muted); line-height: 1.45; }
 .workflow-config-card-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; border-top: 1px solid #e8edf5; }
 .workflow-config-card-body > :first-child { margin-top: 14px; }
+.workflow-config-enable { display: flex; align-items: center; justify-content: space-between; }
+.workflow-config-controls { display: flex; min-width: 0; flex-direction: column; gap: 12px; margin: 0; padding: 0; border: 0; }
+.workflow-config-controls:disabled { opacity: .65; pointer-events: none; }
 .workflow-condition-editor { display: flex; flex-direction: column; gap: 10px; }
 .workflow-extra-config { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
 .workflow-extra-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }

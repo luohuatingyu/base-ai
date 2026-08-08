@@ -84,23 +84,26 @@ test('发布提示覆盖固定必填、组合条件、操作条件和参数数�
   assert.deepEqual(missingNodeConfigRequirements('RABBITMQ_PUBLISH', { connectionId: 1, routingKey: 'orders', value: null }), [])
 })
 
-test('标准字段无需显式启用且保留清除配置和缺失必填提示', () => {
-  assert.doesNotMatch(configEditorSource, /workflowConfig\.enableField|toggleConfigured|workflow-config-enable/)
+test('必填字段直接编辑且非必填和条件必填字段通过开关启停', () => {
+  assert.match(configEditorSource, /v-if="fieldCanToggle\(field\)" class="workflow-config-enable"/)
+  assert.match(configEditorSource, /:model-value="hasField\(field\.key\)" @change="toggleConfigured\(field, \$event\)"/)
+  assert.match(configEditorSource, /function fieldCanToggle\(field\).*field\.requirement !== 'required'/)
+  assert.match(configEditorSource, /function toggleConfigured\(field, enabled\)/)
   assert.match(configEditorSource, /:model-value="fieldValue\(field\)"/)
-  assert.match(configEditorSource, /@update:model-value="setField\(field\.key, \$event\)"/)
-  assert.match(configEditorSource, /v-if="hasField\(field\.key\)"[\s\S]*workflowConfig\.clearField/)
+  assert.match(configEditorSource, /<fieldset[^>]*:disabled="fieldDisabled\(field\)"/)
   assert.match(configEditorSource, /missingNodeConfigRequirements\(props\.nodeType, config\.value\)/)
 })
 
-test('默认值字段使用独立状态且必填缺失提示保持最高优先级', () => {
+test('非必填默认值字段未启用时显示禁用且必填缺失提示保持最高优先级', () => {
   assert.match(configEditorSource, /function hasDefault\(field\).*hasOwnProperty\.call\(field, 'defaultValue'\)/)
   assert.match(configEditorSource, /if \(hasField\(field\.key\)\) return 'workflowConfig\.configured'/)
+  assert.match(configEditorSource, /if \(fieldCanToggle\(field\)\) return 'workflowConfig\.disabled'/)
   assert.match(configEditorSource, /hasDefault\(field\) \? 'workflowConfig\.defaultValue' : 'workflowConfig\.notConfigured'/)
   assert.match(configEditorSource, /v-if="fieldRequirementMissing\(field\)"[\s\S]*v-else[\s\S]*fieldStatusKey\(field\)/)
-  assert.match(configEditorSource, /defaulted: !hasField\(field\.key\) && hasDefault\(field\)/)
+  assert.match(configEditorSource, /disabled: fieldDisabled\(field\)/)
 })
 
-test('零、false、null、空对象和空数组均保留为可展示默认值', () => {
+test('零、false、null、空对象和空数组均可作为启用时写入的默认值', () => {
   const examples = [
     nodeConfigFields('LLM').find(field => field.key === 'temperature').defaultValue,
     nodeConfigFields('LLM').find(field => field.key === 'enableThinking').defaultValue,
@@ -109,6 +112,7 @@ test('零、false、null、空对象和空数组均保留为可展示默认值',
     nodeConfigFields('AGENT').find(field => field.key === 'tools').defaultValue
   ]
   assert.deepEqual(examples, [0, false, null, {}, []])
+  assert.match(configEditorSource, /setField\(field\.key, cloneValue\(field\.defaultValue\)\)/)
 })
 
 test('模板基础信息完整标记必填并说明发布前校验', () => {
