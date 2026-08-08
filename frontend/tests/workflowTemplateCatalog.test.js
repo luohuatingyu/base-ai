@@ -111,3 +111,13 @@ test('节点管理卡片仅展示当前语言的功能文案并隐藏技术编�
   assert.doesNotMatch(nodeManagementSource, /\{\{\s*row\.code\s*\}\}/)
   assert.doesNotMatch(nodeManagementSource, /\{\{\s*row\.nodeType\s*\}\}/)
 })
+
+test('节点来源位于顶部且功能类型在节点列表左侧展示', () => {
+  const sourceFilterIndex = nodeManagementSource.indexOf('class="node-template-source-filter"')
+  const layoutIndex = nodeManagementSource.indexOf('class="node-template-layout"')
+  assert.ok(sourceFilterIndex >= 0 && sourceFilterIndex < layoutIndex)
+  assert.match(nodeManagementSource, /<aside class="node-template-category-filter"[\s\S]*?<section class="node-template-group">/)
+  assert.match(nodeManagementSource, /\.node-template-layout\s*\{[^}]*grid-template-columns:\s*minmax\(180px, 220px\)\s+minmax\(0, 1fr\)/)
+  assert.match(nodeManagementSource, /\.node-template-category-options\s*\{[^}]*display:\s*grid/)
+  assert.match(nodeManagementSource, /@media\s*\(max-width:\s*800px\)[\s\S]*?\.node-template-layout\s*\{[^}]*grid-template-columns:\s*1fr/)
+})

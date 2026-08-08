@@ -4,21 +4,20 @@
       <div><h2>{{ t('workflowNodes.title') }}</h2><p>{{ t('workflowNodes.description') }}</p></div>
       <el-button v-if="auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
     </div>
-    <div class="node-template-filters" aria-label="workflow node filters">
-      <div class="node-template-filter-level">
-        <strong>{{ t('workflowNodes.source') }}</strong>
-        <el-radio-group v-model="selectedSource" class="node-template-filter-options">
-          <el-radio-button v-for="source in sources" :key="source" :value="source">{{ t(`workflowCatalog.sources.${source}`) }}</el-radio-button>
-        </el-radio-group>
-      </div>
-      <div class="node-template-filter-level">
+    <div class="node-template-source-filter" :aria-label="t('workflowNodes.source')">
+      <strong>{{ t('workflowNodes.source') }}</strong>
+      <el-radio-group v-model="selectedSource" class="node-template-source-options">
+        <el-radio-button v-for="source in sources" :key="source" :value="source">{{ t(`workflowCatalog.sources.${source}`) }}</el-radio-button>
+      </el-radio-group>
+    </div>
+    <div class="node-template-layout">
+      <aside class="node-template-category-filter" :aria-label="t('workflowNodes.category')">
         <strong>{{ t('workflowNodes.category') }}</strong>
-        <el-radio-group v-model="selectedCategory" class="node-template-filter-options">
+        <el-radio-group v-model="selectedCategory" class="node-template-category-options">
           <el-radio-button v-for="category in categories" :key="category" :value="category">{{ t(`workflowCatalog.categories.${category}`) }}</el-radio-button>
         </el-radio-group>
-      </div>
-    </div>
-    <section class="node-template-group">
+      </aside>
+      <section class="node-template-group">
       <div class="node-template-group-head"><div><h3>{{ t(`workflowCatalog.categories.${selectedCategory}`) }}</h3><p>{{ t('workflowNodes.filteredDescription', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</p></div><el-tag round>{{ filteredRows.length }}</el-tag></div>
       <div v-if="filteredRows.length" class="node-template-grid">
         <article v-for="row in filteredRows" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
@@ -36,7 +35,8 @@
         </article>
       </div>
       <el-empty v-else :description="t('workflowNodes.emptyGroup')" :image-size="56" />
-    </section>
+      </section>
+    </div>
 
     <el-dialog v-model="visible" :title="form.id ? t('workflowNodes.edit') : t('workflowNodes.add')" width="min(980px, 94vw)" top="5vh">
       <el-form label-width="120px">
@@ -118,12 +118,16 @@ onMounted(load)
 </script>
 
 <style scoped>
-.node-template-filters { display: grid; gap: 14px; margin-bottom: 24px; padding: 18px; border: 1px solid #dfe6f0; border-radius: 14px; background: #f8faff; }
-.node-template-filter-level { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 14px; align-items: start; }
-.node-template-filter-level strong { padding-top: 7px; color: #344054; }
-.node-template-filter-options { display: flex; flex-wrap: wrap; gap: 8px; }
-.node-template-filter-options :deep(.el-radio-button__inner) { border: 1px solid #dcdfe6; border-radius: 8px; box-shadow: none; }
-.node-template-filter-options :deep(.el-radio-button:first-child .el-radio-button__inner), .node-template-filter-options :deep(.el-radio-button:last-child .el-radio-button__inner) { border-radius: 8px; }
+.node-template-source-filter { display: flex; gap: 18px; align-items: flex-start; margin-bottom: 20px; padding: 18px; border: 1px solid #dfe6f0; border-radius: 14px; background: #f8faff; }
+.node-template-source-filter > strong, .node-template-category-filter > strong { flex: 0 0 auto; padding-top: 7px; color: #344054; }
+.node-template-source-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.node-template-layout { display: grid; grid-template-columns: minmax(180px, 220px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.node-template-category-filter { display: grid; gap: 12px; padding: 18px; border: 1px solid #dfe6f0; border-radius: 14px; background: #f8faff; }
+.node-template-category-options { display: grid; width: 100%; gap: 8px; }
+.node-template-category-options :deep(.el-radio-button), .node-template-category-options :deep(.el-radio-button__inner) { width: 100%; }
+.node-template-category-options :deep(.el-radio-button__inner) { text-align: left; }
+.node-template-source-options :deep(.el-radio-button__inner), .node-template-category-options :deep(.el-radio-button__inner) { border: 1px solid #dcdfe6; border-radius: 8px; box-shadow: none; }
+.node-template-source-options :deep(.el-radio-button:first-child .el-radio-button__inner), .node-template-source-options :deep(.el-radio-button:last-child .el-radio-button__inner), .node-template-category-options :deep(.el-radio-button:first-child .el-radio-button__inner), .node-template-category-options :deep(.el-radio-button:last-child .el-radio-button__inner) { border-radius: 8px; }
 .node-template-group-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .node-template-group-head h3 { margin: 0 0 5px; }
 .node-template-group-head p { margin: 0; color: var(--app-muted); }
@@ -144,9 +148,15 @@ onMounted(load)
 .node-template-actions { display: flex; justify-content: flex-end; gap: 4px; padding: 8px 14px; border-top: 1px solid #edf1f6; }
 :deep(.el-dialog__body) { max-height: 76vh; overflow-y: auto; }
 :deep(.workflow-config-editor) { width: 100%; }
+@media (max-width: 800px) {
+  .node-template-source-filter { display: grid; gap: 8px; }
+  .node-template-source-filter > strong, .node-template-category-filter > strong { padding-top: 0; }
+  .node-template-layout { grid-template-columns: 1fr; gap: 18px; }
+  .node-template-category-options { display: flex; flex-wrap: wrap; }
+  .node-template-category-options :deep(.el-radio-button), .node-template-category-options :deep(.el-radio-button__inner) { width: auto; }
+  .node-template-category-options :deep(.el-radio-button__inner) { text-align: center; }
+}
 @media (max-width: 600px) {
-  .node-template-filter-level { grid-template-columns: 1fr; gap: 8px; }
-  .node-template-filter-level strong { padding-top: 0; }
   .node-template-grid { grid-template-columns: 1fr; }
 }
 </style>
