@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { reactive } from 'vue'
-import { cloneWorkflowData, createWorkflowGraph, removeWorkflowEdge, validateWorkflowGraph } from '../src/utils/workflowGraph.js'
+import { cloneWorkflowData, createWorkflowGraph, removeWorkflowEdge, serializeWorkflowGraph, validateWorkflowGraph, withWorkflowEdgeInteractionWidth } from '../src/utils/workflowGraph.js'
 import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
 
@@ -55,17 +55,27 @@ test('画布自身的 v-model 回显不会重置撤销重做历史', () => {
 
 test('悬停连线显示提示且左键点击立即删除并纳入撤销历史', () => {
   const source = [
-    { id: 'first', source: 'start', target: 'http' },
+    { id: 'first', source: 'start', target: 'http', interactionWidth: 20 },
     { id: 'second', source: 'http', target: 'end' }
   ]
   const remaining = removeWorkflowEdge(source, 'first')
+  const runtimeEdges = withWorkflowEdgeInteractionWidth(source, 96)
+  const serialized = serializeWorkflowGraph({ nodes: [], edges: runtimeEdges })
 
   assert.deepEqual(remaining, [{ id: 'second', source: 'http', target: 'end' }])
   assert.equal(source.length, 2)
   assert.deepEqual(removeWorkflowEdge(source, 'missing'), source)
   assert.deepEqual(removeWorkflowEdge(null, 'first'), [])
+  assert.deepEqual(runtimeEdges.map(edge => edge.interactionWidth), [96, 96])
+  assert.equal(source[0].interactionWidth, 20)
+  assert.ok(serialized.edges.every(edge => !Object.prototype.hasOwnProperty.call(edge, 'interactionWidth')))
+  assert.equal(withWorkflowEdgeInteractionWidth([{ id: 'fallback' }], 0)[0].interactionWidth, 20)
   assert.match(graphEditorSource, /:default-edge-options="edgeOptions"/)
-  assert.match(graphEditorSource, /interactionWidth:\s*384/)
+  assert.match(graphEditorSource, /EDGE_INTERACTION_WIDTH\s*=\s*96/)
+  assert.match(graphEditorSource, /withWorkflowEdgeInteractionWidth\(initial\.edges, EDGE_INTERACTION_WIDTH\)/)
+  assert.match(graphEditorSource, /withWorkflowEdgeInteractionWidth\(next\.edges, EDGE_INTERACTION_WIDTH\)/)
+  assert.match(graphEditorSource, /withWorkflowEdgeInteractionWidth\(graph\.edges, EDGE_INTERACTION_WIDTH\)/)
+  assert.match(graphEditorSource, /interactionWidth:\s*EDGE_INTERACTION_WIDTH/)
   assert.match(graphEditorSource, /@edge-mouse-enter="showEdgeDeleteHint"\s+@edge-mouse-move="moveEdgeDeleteHint"/)
   assert.match(graphEditorSource, /@edge-mouse-leave="hideEdgeDeleteHint"\s+@edge-click="deleteEdge"/)
   assert.match(graphEditorSource, /workflow-edge-delete-hint[\s\S]*workflowCanvas\.deleteEdgeHint/)

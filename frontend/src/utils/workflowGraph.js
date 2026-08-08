@@ -54,7 +54,19 @@ export function cloneWorkflowData(value) {
 
 /** 深复制画布，避免 Vue Flow 运行态字段污染保存版本。 */
 export function serializeWorkflowGraph(graph) {
-  return cloneWorkflowData({ nodes: graph?.nodes || [], edges: graph?.edges || [] })
+  const edges = (Array.isArray(graph?.edges) ? graph.edges : []).map(edge => {
+    if (!edge || typeof edge !== 'object') return edge
+    const { interactionWidth: _interactionWidth, ...serializableEdge } = edge
+    return serializableEdge
+  })
+  return cloneWorkflowData({ nodes: graph?.nodes || [], edges })
+}
+
+/** 统一覆盖连线运行态命中宽度，避免历史持久化值覆盖当前交互配置。 */
+export function withWorkflowEdgeInteractionWidth(edges, width = 20) {
+  const numericWidth = Number(width)
+  const interactionWidth = Number.isFinite(numericWidth) && numericWidth > 0 ? numericWidth : 20
+  return (Array.isArray(edges) ? edges : []).map(edge => ({ ...edge, interactionWidth }))
 }
 
 /** 删除指定画布连线并保留原数组，供画布交互和测试复用。 */

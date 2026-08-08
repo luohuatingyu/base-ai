@@ -83,7 +83,7 @@ import { Controls } from '@vue-flow/controls'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import WorkflowNode from './WorkflowNode.vue'
 import WorkflowNodeConfigEditor from './WorkflowNodeConfigEditor.vue'
-import { cloneWorkflowData, createWorkflowGraph, removeWorkflowEdge, serializeWorkflowGraph, workflowElementId } from '../utils/workflowGraph'
+import { cloneWorkflowData, createWorkflowGraph, removeWorkflowEdge, serializeWorkflowGraph, withWorkflowEdgeInteractionWidth, workflowElementId } from '../utils/workflowGraph'
 import { WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
 import { groupWorkflowTemplates, localizedTemplateText } from '../utils/workflowTemplateCatalog'
 
@@ -93,10 +93,11 @@ const emit = defineEmits(['update:modelValue'])
 const { t, te } = useI18n()
 const editorId = workflowElementId('editor')
 const nodeTypes = Object.fromEntries(WORKFLOW_NODE_TYPES.map(type => [type, WorkflowNode]))
-const edgeOptions = { interactionWidth: 384 }
+const EDGE_INTERACTION_WIDTH = 96
+const edgeOptions = { interactionWidth: EDGE_INTERACTION_WIDTH }
 const initial = serializeWorkflowGraph(props.modelValue)
 const nodes = ref(initial.nodes)
-const edges = ref(initial.edges)
+const edges = ref(withWorkflowEdgeInteractionWidth(initial.edges, EDGE_INTERACTION_WIDTH))
 const selectedId = ref('')
 const editorShell = ref(null)
 const isMaximized = ref(false)
@@ -130,7 +131,7 @@ watch([() => props.historyKey, () => props.modelValue], ([historyKey, value], [p
   }
   const next = serializeWorkflowGraph(value)
   if (!historyKeyChanged && JSON.stringify(next) === JSON.stringify(serializeWorkflowGraph({ nodes: nodes.value, edges: edges.value }))) return
-  nodes.value = next.nodes; edges.value = next.edges
+  nodes.value = next.nodes; edges.value = withWorkflowEdgeInteractionWidth(next.edges, EDGE_INTERACTION_WIDTH)
   history.value = [next]; historyIndex.value = 0; selectedId.value = ''
 }, { deep: true })
 watch([nodes, edges], () => {
@@ -199,7 +200,7 @@ function addNode(template, position) {
   remember()
 }
 /** 接受用户连线并生成稳定 ID。 */
-function connect(connection) { addEdges([{ ...connection, id: workflowElementId('edge') }]); nextTick(remember) }
+function connect(connection) { addEdges([{ ...connection, id: workflowElementId('edge'), interactionWidth: EDGE_INTERACTION_WIDTH }]); nextTick(remember) }
 /** 选中节点并展示实例配置。 */
 function selectNode({ node }) { closeContextMenus(); selectedId.value = node.id }
 /** 点击画布空白区域时清除选择和临时菜单。 */
@@ -258,7 +259,7 @@ function undo() { if (canUndo.value) restore(historyIndex.value - 1) }
 /** 恢复下一个画布快照。 */
 function redo() { if (canRedo.value) restore(historyIndex.value + 1) }
 /** 替换运行态节点和连线。 */
-function restore(index) { historyIndex.value = index; const graph = serializeWorkflowGraph(history.value[index]); nodes.value = graph.nodes; edges.value = graph.edges; selectedId.value = '' }
+function restore(index) { historyIndex.value = index; const graph = serializeWorkflowGraph(history.value[index]); nodes.value = graph.nodes; edges.value = withWorkflowEdgeInteractionWidth(graph.edges, EDGE_INTERACTION_WIDTH); selectedId.value = '' }
 defineExpose({ canUndo, canRedo, undo, redo })
 /** 关闭画布临时菜单和悬停提示。 */
 function closeContextMenus() { closeTemplateMenu(); hideEdgeDeleteHint() }
