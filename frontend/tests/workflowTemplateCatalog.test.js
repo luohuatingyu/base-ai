@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 import {
-  defaultTemplateCategory, groupWorkflowTemplates, normalizeTemplateMetadata,
+  defaultTemplateCategory, filterWorkflowTemplates, groupWorkflowTemplates, normalizeTemplateMetadata,
   WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES
 } from '../src/utils/workflowTemplateCatalog.js'
 
@@ -36,6 +36,20 @@ test('功能分组保持固定顺序并默认隐藏停用节点', () => {
   assert.deepEqual(groupWorkflowTemplates(templates, true).map(group => group.category), ['BASIC', 'AI', 'NETWORK_API'])
 })
 
+test('必选来源和功能类型共同过滤节点并可按需保留停用节点', () => {
+  const templates = [
+    { id: 1, nodeType: 'LLM', enabled: true, source: 'SYSTEM', functionalCategory: 'AI' },
+    { id: 2, nodeType: 'LLM', enabled: false, source: 'SYSTEM', functionalCategory: 'AI' },
+    { id: 3, nodeType: 'LLM', enabled: true, source: 'DIFY', functionalCategory: 'AI' },
+    { id: 4, nodeType: 'HTTP', enabled: true, source: 'SYSTEM', functionalCategory: 'NETWORK_API' }
+  ]
+  assert.deepEqual(filterWorkflowTemplates(templates, 'SYSTEM', 'AI').map(template => template.id), [1])
+  assert.deepEqual(filterWorkflowTemplates(templates, 'SYSTEM', 'AI', true).map(template => template.id), [1, 2])
+  assert.deepEqual(filterWorkflowTemplates(templates, 'N8N', 'AI'), [])
+  assert.deepEqual(filterWorkflowTemplates(templates, '', 'AI'), [])
+  assert.deepEqual(filterWorkflowTemplates(templates, 'SYSTEM', ''), [])
+})
+
 test('画布使用右键分类菜单并在点击坐标添加节点', () => {
   assert.match(graphEditorSource, /@pane-context-menu="openTemplateMenu"/)
   assert.match(graphEditorSource, /screenToFlowCoordinate/)
@@ -44,10 +58,17 @@ test('画布使用右键分类菜单并在点击坐标添加节点', () => {
   assert.doesNotMatch(graphEditorSource, /workflow-palette|startDrag|application\/workflow-template/)
 })
 
-test('节点管理可维护来源和功能分类', () => {
+test('节点管理使用必选来源和功能类型级联标签并校验表单必填项', () => {
   assert.match(nodeManagementSource, /form\.source/)
   assert.match(nodeManagementSource, /form\.functionalCategory/)
   assert.match(nodeManagementSource, /v-model="form\.source"/)
+  assert.match(nodeManagementSource, /v-model="selectedSource"/)
+  assert.match(nodeManagementSource, /v-model="selectedCategory"/)
+  assert.match(nodeManagementSource, /filterWorkflowTemplates\(rows\.value, selectedSource\.value, selectedCategory\.value, true\)/)
+  assert.match(nodeManagementSource, /:label="t\('workflowNodes\.source'\)" required/)
+  assert.match(nodeManagementSource, /:label="t\('workflowNodes\.category'\)" required/)
+  assert.match(nodeManagementSource, /!sources\.includes\(form\.source\)/)
+  assert.match(nodeManagementSource, /!categories\.includes\(form\.functionalCategory\)/)
   assert.match(nodeManagementSource, /WORKFLOW_TEMPLATE_SOURCES/)
   assert.match(nodeManagementSource, /WORKFLOW_TEMPLATE_CATEGORIES/)
 })

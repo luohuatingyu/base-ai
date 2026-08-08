@@ -43,3 +43,10 @@ export function groupWorkflowTemplates(templates, includeDisabled = false) {
     items: normalized.filter(template => template.functionalCategory === category)
   })).filter(group => group.items.length)
 }
+
+/** 按必选来源和功能分类过滤模板，并按需保留停用模板。 */
+export function filterWorkflowTemplates(templates, source, functionalCategory, includeDisabled = false) {
+  if (!WORKFLOW_TEMPLATE_SOURCES.includes(source) || !WORKFLOW_TEMPLATE_CATEGORIES.includes(functionalCategory)) return []
+  return (templates || []).map(normalizeTemplateMetadata).filter(template =>
+    (includeDisabled || template.enabled) && template.source === source && template.functionalCategory === functionalCategory)
+}

@@ -4,10 +4,24 @@
       <div><h2>{{ t('workflowNodes.title') }}</h2><p>{{ t('workflowNodes.description') }}</p></div>
       <el-button v-if="auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
     </div>
-    <section v-for="group in groups" :key="group.key" class="node-template-group">
-      <div class="node-template-group-head"><div><h3>{{ group.title }}</h3><p>{{ t('workflowNodes.categoryDescription') }}</p></div><el-tag round>{{ group.items.length }}</el-tag></div>
-      <div v-if="group.items.length" class="node-template-grid">
-        <article v-for="row in group.items" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
+    <div class="node-template-filters" aria-label="workflow node filters">
+      <div class="node-template-filter-level">
+        <strong>{{ t('workflowNodes.source') }}</strong>
+        <el-radio-group v-model="selectedSource" class="node-template-filter-options">
+          <el-radio-button v-for="source in sources" :key="source" :value="source">{{ t(`workflowCatalog.sources.${source}`) }}</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="node-template-filter-level">
+        <strong>{{ t('workflowNodes.category') }}</strong>
+        <el-radio-group v-model="selectedCategory" class="node-template-filter-options">
+          <el-radio-button v-for="category in categories" :key="category" :value="category">{{ t(`workflowCatalog.categories.${category}`) }}</el-radio-button>
+        </el-radio-group>
+      </div>
+    </div>
+    <section class="node-template-group">
+      <div class="node-template-group-head"><div><h3>{{ t(`workflowCatalog.categories.${selectedCategory}`) }}</h3><p>{{ t('workflowNodes.filteredDescription', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</p></div><el-tag round>{{ filteredRows.length }}</el-tag></div>
+      <div v-if="filteredRows.length" class="node-template-grid">
+        <article v-for="row in filteredRows" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
           <button type="button" class="node-template-card-main" :disabled="!auth.hasPermission('workflow:node:update')" @click="open(row)">
             <span class="node-template-icon">{{ row.nodeType.slice(0, 2) }}</span>
             <span class="node-template-summary"><strong>{{ row.name }}</strong><code>{{ row.code }}</code></span>
@@ -29,8 +43,8 @@
         <el-form-item :label="t('common.code')"><el-input v-model="form.code" :disabled="form.systemTemplate" /></el-form-item>
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('common.type')"><el-select v-model="form.nodeType" class="full" :disabled="form.systemTemplate" @change="syncDefaultCategory"><el-option v-for="type in nodeTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
-        <el-form-item :label="t('workflowNodes.source')"><el-select v-model="form.source" class="full"><el-option v-for="source in sources" :key="source" :label="t(`workflowCatalog.sources.${source}`)" :value="source" /></el-select></el-form-item>
-        <el-form-item :label="t('workflowNodes.category')"><el-select v-model="form.functionalCategory" class="full"><el-option v-for="category in categories" :key="category" :label="t(`workflowCatalog.categories.${category}`)" :value="category" /></el-select></el-form-item>
+        <el-form-item :label="t('workflowNodes.source')" required><el-select v-model="form.source" class="full"><el-option v-for="source in sources" :key="source" :label="t(`workflowCatalog.sources.${source}`)" :value="source" /></el-select></el-form-item>
+        <el-form-item :label="t('workflowNodes.category')" required><el-select v-model="form.functionalCategory" class="full"><el-option v-for="category in categories" :key="category" :label="t(`workflowCatalog.categories.${category}`)" :value="category" /></el-select></el-form-item>
         <el-form-item :label="t('common.description')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item :label="t('workflowNodes.defaultConfig')"><WorkflowNodeConfigEditor v-model="form.config" :node-type="form.nodeType" /></el-form-item>
         <el-form-item :label="t('common.status')"><el-switch v-model="form.enabled" /></el-form-item>
@@ -48,7 +62,7 @@ import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import WorkflowNodeConfigEditor from '../components/WorkflowNodeConfigEditor.vue'
 import { cloneConfig, WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
-import { defaultTemplateCategory, groupWorkflowTemplates, normalizeTemplateMetadata, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
+import { defaultTemplateCategory, filterWorkflowTemplates, normalizeTemplateMetadata, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -57,12 +71,11 @@ const visible = ref(false)
 const nodeTypes = WORKFLOW_NODE_TYPES
 const sources = WORKFLOW_TEMPLATE_SOURCES
 const categories = WORKFLOW_TEMPLATE_CATEGORIES
+const selectedSource = ref('SYSTEM')
+const selectedCategory = ref('BASIC')
 const form = reactive(emptyForm())
-const groups = computed(() => groupWorkflowTemplates(rows.value, true).map(group => ({
-  key: group.category,
-  title: t(`workflowCatalog.categories.${group.category}`),
-  items: group.items
-})))
+/** 返回同时匹配必选来源和功能分类的节点，并保留停用模板供管理员维护。 */
+const filteredRows = computed(() => filterWorkflowTemplates(rows.value, selectedSource.value, selectedCategory.value, true))
 
 /** 加载未作废节点模板。 */
 async function load() { rows.value = (await http.get('/workflow/nodes')).data || [] }
@@ -72,7 +85,9 @@ function open(row) { Object.assign(form, emptyForm(), normalizeTemplateMetadata(
 function syncDefaultCategory(nodeType) { form.functionalCategory = defaultTemplateCategory(nodeType) }
 /** 校验必填字段并保存模板。 */
 async function save() {
-  if (!form.name.trim() || !form.code.trim()) { ElMessage.warning(t('workflowNodes.required')); return }
+  if (!form.name.trim() || !form.code.trim() || !sources.includes(form.source) || !categories.includes(form.functionalCategory)) {
+    ElMessage.warning(t('workflowNodes.required')); return
+  }
   const command = { code: form.code, name: form.name, nodeType: form.nodeType, description: form.description,
     config: cloneConfig(form.config), enabled: form.enabled, source: form.source, functionalCategory: form.functionalCategory }
   try {
@@ -95,7 +110,12 @@ onMounted(load)
 </script>
 
 <style scoped>
-.node-template-group + .node-template-group { margin-top: 30px; }
+.node-template-filters { display: grid; gap: 14px; margin-bottom: 24px; padding: 18px; border: 1px solid #dfe6f0; border-radius: 14px; background: #f8faff; }
+.node-template-filter-level { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 14px; align-items: start; }
+.node-template-filter-level strong { padding-top: 7px; color: #344054; }
+.node-template-filter-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.node-template-filter-options :deep(.el-radio-button__inner) { border: 1px solid #dcdfe6; border-radius: 8px; box-shadow: none; }
+.node-template-filter-options :deep(.el-radio-button:first-child .el-radio-button__inner), .node-template-filter-options :deep(.el-radio-button:last-child .el-radio-button__inner) { border-radius: 8px; }
 .node-template-group-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .node-template-group-head h3 { margin: 0 0 5px; }
 .node-template-group-head p { margin: 0; color: var(--app-muted); }
@@ -116,5 +136,9 @@ onMounted(load)
 .node-template-actions { display: flex; justify-content: flex-end; gap: 4px; padding: 8px 14px; border-top: 1px solid #edf1f6; }
 :deep(.el-dialog__body) { max-height: 76vh; overflow-y: auto; }
 :deep(.workflow-config-editor) { width: 100%; }
-@media (max-width: 600px) { .node-template-grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .node-template-filter-level { grid-template-columns: 1fr; gap: 8px; }
+  .node-template-filter-level strong { padding-top: 0; }
+  .node-template-grid { grid-template-columns: 1fr; }
+}
 </style>
