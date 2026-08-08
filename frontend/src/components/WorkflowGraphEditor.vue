@@ -1,5 +1,5 @@
 <template>
-  <div class="workflow-editor-shell" :class="{ 'has-properties': selected, fill: props.fill }">
+  <div ref="editorShell" class="workflow-editor-shell" :class="{ 'has-properties': selected, fill: props.fill, maximized: isMaximized }">
     <div class="workflow-flow">
       <VueFlow :id="editorId" v-model:nodes="nodes" v-model:edges="edges" :node-types="nodeTypes"
                fit-view-on-init @node-click="selectNode" @pane-click="clearSelection"
@@ -10,6 +10,10 @@
         <div class="workflow-history-actions">
           <el-button size="small" :disabled="!canUndo" @click.stop="undo">{{ t('workflowCanvas.undo') }}</el-button>
           <el-button size="small" :disabled="!canRedo" @click.stop="redo">{{ t('workflowCanvas.redo') }}</el-button>
+        </div>
+        <div class="workflow-display-actions">
+          <el-button size="small" @click.stop="toggleMaximized">{{ t(isMaximized ? 'workflowCanvas.restore' : 'workflowCanvas.maximize') }}</el-button>
+          <el-button size="small" :disabled="!fullscreenSupported" @click.stop="toggleFullscreen">{{ t(isFullscreen ? 'workflowCanvas.exitFullscreen' : 'workflowCanvas.fullscreen') }}</el-button>
         </div>
       </VueFlow>
     </div>
@@ -63,7 +67,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -75,7 +80,7 @@ import { WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
 import { groupWorkflowTemplates } from '../utils/workflowTemplateCatalog'
 
 defineOptions({ name: 'WorkflowGraphEditor' })
-const props = defineProps({ modelValue: { type: Object, required: true }, templates: { type: Array, default: () => [] }, height: { type: Number, default: 620 }, fill: { type: Boolean, default: false } })
+const props = defineProps({ modelValue: { type: Object, required: true }, templates: { type: Array, default: () => [] }, height: { type: Number, default: 620 }, fill: { type: Boolean, default: false }, historyKey: { type: [String, Number], default: null } })
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
 const editorId = workflowElementId('editor')
@@ -84,6 +89,10 @@ const initial = serializeWorkflowGraph(props.modelValue)
 const nodes = ref(initial.nodes)
 const edges = ref(initial.edges)
 const selectedId = ref('')
+const editorShell = ref(null)
+const isMaximized = ref(false)
+const isFullscreen = ref(false)
+const fullscreenSupported = ref(false)
 const subgraphVisible = ref(false)
 const subgraph = ref(createWorkflowGraph())
 const history = ref([serializeWorkflowGraph(initial)])
@@ -93,6 +102,7 @@ const templateMenuElement = ref(null)
 const templateMenu = reactive({ visible: false, left: 0, top: 0, flowPosition: { x: 0, y: 0 } })
 const { addEdges, screenToFlowCoordinate } = useVueFlow({ id: editorId })
 let configHistoryTimer
+let lastEmittedModel
 const selected = computed(() => nodes.value.find(node => node.id === selectedId.value))
 const enabledTemplates = computed(() => props.templates.filter(template => template.enabled))
 const templateGroups = computed(() => groupWorkflowTemplates(enabledTemplates.value))
@@ -100,13 +110,20 @@ const activeTemplates = computed(() => templateGroups.value.find(group => group.
 const canUndo = computed(() => historyIndex.value > 0)
 const canRedo = computed(() => historyIndex.value < history.value.length - 1)
 
-watch(() => props.modelValue, value => {
+watch([() => props.historyKey, () => props.modelValue], ([historyKey, value], [previousHistoryKey]) => {
+  const historyKeyChanged = historyKey !== previousHistoryKey
+  if (!historyKeyChanged) {
+    if (toRaw(value) === lastEmittedModel) return
+  }
   const next = serializeWorkflowGraph(value)
-  if (JSON.stringify(next) === JSON.stringify(serializeWorkflowGraph({ nodes: nodes.value, edges: edges.value }))) return
+  if (!historyKeyChanged && JSON.stringify(next) === JSON.stringify(serializeWorkflowGraph({ nodes: nodes.value, edges: edges.value }))) return
   nodes.value = next.nodes; edges.value = next.edges
   history.value = [next]; historyIndex.value = 0; selectedId.value = ''
 }, { deep: true })
-watch([nodes, edges], () => emit('update:modelValue', serializeWorkflowGraph({ nodes: nodes.value, edges: edges.value })), { deep: true })
+watch([nodes, edges], () => {
+  const nextModel = serializeWorkflowGraph({ nodes: nodes.value, edges: edges.value })
+  lastEmittedModel = nextModel; emit('update:modelValue', nextModel)
+}, { deep: true })
 
 /** 在空白画布右键坐标打开功能分类节点菜单。 */
 function openTemplateMenu(event) {
@@ -153,8 +170,36 @@ function removeSelected() {
   edges.value = edges.value.filter(edge => edge.source !== id && edge.target !== id)
   selectedId.value = ''; remember()
 }
+/** 退出画布显示模式，确保 Teleport 弹窗不会被全屏顶层遮挡。 */
+async function leaveDisplayMode() {
+  isMaximized.value = false
+  if (document.fullscreenElement !== editorShell.value) return true
+  try { await document.exitFullscreen(); return true } catch { showFullscreenWarning(); return false }
+}
+/** 在画布内部展示全屏错误，兼容原生全屏顶层限制。 */
+function showFullscreenWarning() {
+  ElMessage.warning({ message: t('workflowCanvas.fullscreenFailed'), appendTo: editorShell.value })
+}
+/** 切换覆盖应用内容区的最大化画布。 */
+async function toggleMaximized() {
+  closeTemplateMenu()
+  if (isFullscreen.value && !await leaveDisplayMode()) return
+  isMaximized.value = !isMaximized.value
+}
+/** 切换浏览器原生全屏，失败时保留当前显示模式。 */
+async function toggleFullscreen() {
+  if (!fullscreenSupported.value) return
+  closeTemplateMenu()
+  const wasMaximized = isMaximized.value
+  try {
+    if (isFullscreen.value) await document.exitFullscreen()
+    else { isMaximized.value = false; await editorShell.value?.requestFullscreen() }
+  } catch { isMaximized.value = wasMaximized; showFullscreenWarning() }
+}
+/** 根据浏览器全屏事件同步按钮文案和退出状态。 */
+function syncFullscreenState() { isFullscreen.value = document.fullscreenElement === editorShell.value }
 /** 打开迭代或循环节点的嵌套子画布。 */
-function openSubgraph() { subgraph.value = serializeWorkflowGraph(selected.value.data.config?.bodyGraph || createWorkflowGraph()); subgraphVisible.value = true }
+async function openSubgraph() { if (!await leaveDisplayMode()) return; subgraph.value = serializeWorkflowGraph(selected.value.data.config?.bodyGraph || createWorkflowGraph()); subgraphVisible.value = true }
 /** 保存嵌套子画布到当前控制节点配置。 */
 function saveSubgraph() { selected.value.data.config = { ...(selected.value.data.config || {}), bodyGraph: serializeWorkflowGraph(subgraph.value) }; subgraphVisible.value = false; remember() }
 /** 保存一份可撤销快照并截断旧的重做分支。 */
@@ -174,16 +219,23 @@ function restore(index) { historyIndex.value = index; const graph = serializeWor
 defineExpose({ canUndo, canRedo, undo, redo })
 /** 处理全局取消操作，避免菜单在失焦后残留。 */
 function handleGlobalPointer() { closeTemplateMenu() }
-/** Escape 关闭节点菜单且不改变画布。 */
-function handleGlobalKey(event) { if (event.key === 'Escape') closeTemplateMenu() }
+/** Escape 优先关闭节点菜单，否则退出应用内最大化。 */
+function handleGlobalKey(event) {
+  if (event.key !== 'Escape') return
+  if (templateMenu.visible) closeTemplateMenu()
+  else isMaximized.value = false
+}
 onMounted(() => {
+  fullscreenSupported.value = Boolean(document.fullscreenEnabled && editorShell.value?.requestFullscreen)
   document.addEventListener('pointerdown', handleGlobalPointer)
+  document.addEventListener('fullscreenchange', syncFullscreenState)
   window.addEventListener('keydown', handleGlobalKey)
   window.addEventListener('resize', closeTemplateMenu)
 })
 onBeforeUnmount(() => {
   clearTimeout(configHistoryTimer)
   document.removeEventListener('pointerdown', handleGlobalPointer)
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
   window.removeEventListener('keydown', handleGlobalKey)
   window.removeEventListener('resize', closeTemplateMenu)
 })
@@ -192,6 +244,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .workflow-editor-shell { position: relative; height: v-bind('`${height}px`'); display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; border: 1px solid var(--app-border); border-radius: 12px; background: #fff; }
 .workflow-editor-shell.fill { flex: 1; height: auto; min-height: 0; }
+.workflow-editor-shell.maximized,
+.workflow-editor-shell:fullscreen { position: fixed; inset: 0; z-index: 3100; width: 100vw; height: 100vh; min-height: 0; border: 0; border-radius: 0; }
 .workflow-editor-shell.has-properties { grid-template-columns: minmax(0, 1fr) 360px; }
 .workflow-properties { min-width: 0; overflow: auto; padding: 14px; background: #f8fafc; }
 .workflow-properties { border-left: 1px solid var(--app-border); }
@@ -199,6 +253,7 @@ onBeforeUnmount(() => {
 .workflow-properties-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .workflow-properties :deep(.workflow-config-grid), .workflow-properties :deep(.workflow-extra-add) { grid-template-columns: 1fr; }
 .workflow-history-actions { position: absolute; top: 12px; left: 12px; z-index: 4; display: flex; gap: 4px; }
+.workflow-display-actions { position: absolute; top: 12px; right: 12px; z-index: 4; display: flex; gap: 4px; }
 .workflow-template-menu { position: fixed; z-index: 3200; width: min(640px, calc(100vw - 16px)); overflow: hidden; border: 1px solid #d8e1ee; border-radius: 14px; background: #fff; box-shadow: 0 20px 56px rgb(15 23 42 / 24%); }
 .workflow-template-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #edf1f6; }
 .workflow-template-menu-head button { border: 0; color: var(--app-muted); background: transparent; font-size: 20px; cursor: pointer; }

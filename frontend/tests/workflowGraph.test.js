@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { reactive } from 'vue'
 import { cloneWorkflowData, createWorkflowGraph, validateWorkflowGraph } from '../src/utils/workflowGraph.js'
+import enUS from '../src/locales/en-US.js'
+import zhCN from '../src/locales/zh-CN.js'
 
 const canvasViewSource = readFileSync(new URL('../src/views/WorkflowCanvasView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
@@ -36,6 +38,35 @@ test('撤销重做作为画布悬浮操作并复用编辑器历史状态', () =>
   assert.match(graphEditorSource, /const canUndo = computed\(\(\) => historyIndex\.value > 0\)/)
   assert.match(graphEditorSource, /const canRedo = computed\(\(\) => historyIndex\.value < history\.value\.length - 1\)/)
   assert.match(graphEditorSource, /defineExpose\(\{ canUndo, canRedo, undo, redo \}\)/)
+})
+
+test('画布自身的 v-model 回显不会重置撤销重做历史', () => {
+  assert.match(canvasViewSource, /<WorkflowGraphEditor[^>]*:history-key="selected\.id"/)
+  assert.match(graphEditorSource, /historyKey:\s*\{\s*type:\s*\[String,\s*Number\],\s*default:\s*null\s*\}/)
+  assert.match(graphEditorSource, /import\s*\{[^}]*toRaw[^}]*\}\s*from\s*'vue'/)
+  assert.match(graphEditorSource, /let\s+lastEmittedModel/)
+  assert.match(graphEditorSource, /const\s+historyKeyChanged\s*=\s*historyKey\s*!==\s*previousHistoryKey/)
+  assert.match(graphEditorSource, /if\s*\(toRaw\(value\)\s*===\s*lastEmittedModel\)\s*return/)
+  assert.match(graphEditorSource, /lastEmittedModel\s*=\s*nextModel;\s*emit\('update:modelValue',\s*nextModel\)/)
+  assert.match(graphEditorSource, /history\.value\s*=\s*\[next\];\s*historyIndex\.value\s*=\s*0/)
+  assert.match(graphEditorSource, /history\.value\s*=\s*\[\.\.\.history\.value\.slice\(0,\s*historyIndex\.value\s*\+\s*1\),\s*snapshot\]/)
+})
+
+test('画布提供应用内最大化和浏览器原生全屏入口', () => {
+  assert.match(graphEditorSource, /ref="editorShell"[^>]*:class="\{[^}]*maximized:\s*isMaximized/)
+  assert.match(graphEditorSource, /workflow-display-actions[\s\S]*workflowCanvas\.maximize[\s\S]*workflowCanvas\.fullscreen/)
+  assert.match(graphEditorSource, /:disabled="!fullscreenSupported"/)
+  assert.match(graphEditorSource, /editorShell\.value\?\.requestFullscreen\(\)/)
+  assert.match(graphEditorSource, /document\.exitFullscreen\(\)/)
+  assert.match(graphEditorSource, /const\s+wasMaximized\s*=\s*isMaximized\.value/)
+  assert.match(graphEditorSource, /catch\s*\{\s*isMaximized\.value\s*=\s*wasMaximized;\s*showFullscreenWarning\(\)\s*\}/)
+  assert.match(graphEditorSource, /appendTo:\s*editorShell\.value/)
+  assert.match(graphEditorSource, /document\.addEventListener\('fullscreenchange',\s*syncFullscreenState\)/)
+  assert.match(graphEditorSource, /\.workflow-editor-shell\.maximized,\s*\.workflow-editor-shell:fullscreen\s*\{[^}]*position:\s*fixed[^}]*inset:\s*0[^}]*height:\s*100vh/)
+  assert.equal(zhCN.workflowCanvas.maximize, '最大化')
+  assert.equal(zhCN.workflowCanvas.fullscreen, '全屏')
+  assert.equal(enUS.workflowCanvas.maximize, 'Maximize')
+  assert.equal(enUS.workflowCanvas.fullscreen, 'Fullscreen')
 })
 
 test('主工作流画布填满工具栏下方的剩余空间', () => {
