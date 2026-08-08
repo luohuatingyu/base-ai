@@ -50,7 +50,7 @@
         </nav>
         <div class="workflow-template-items">
           <button v-for="template in activeTemplates" :key="template.id" type="button" @click="addTemplateFromMenu(template)">
-            <span class="workflow-template-item-icon">{{ template.nodeType.slice(0, 2) }}</span>
+            <span class="workflow-template-item-icon" :style="workflowTemplateCategoryStyle(template.functionalCategory, template.nodeType)">{{ template.nodeType.slice(0, 2) }}</span>
             <span class="workflow-template-item-label"><strong>{{ templateText(template, 'name') }}</strong><small>{{ template.nodeType }}</small></span>
             <span class="workflow-template-source" :class="`source-${template.source.toLowerCase()}`">{{ t(`workflowCatalog.sources.${template.source}`) }}</span>
           </button>
@@ -85,7 +85,7 @@ import WorkflowNode from './WorkflowNode.vue'
 import WorkflowNodeConfigEditor from './WorkflowNodeConfigEditor.vue'
 import { cloneWorkflowData, createWorkflowGraph, removeWorkflowEdge, serializeWorkflowGraph, withWorkflowEdgeInteractionWidth, workflowElementId } from '../utils/workflowGraph'
 import { WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
-import { groupWorkflowTemplates, localizedTemplateText } from '../utils/workflowTemplateCatalog'
+import { groupWorkflowTemplates, localizedTemplateText, workflowTemplateCategoryStyle } from '../utils/workflowTemplateCatalog'
 
 defineOptions({ name: 'WorkflowGraphEditor' })
 const props = defineProps({ modelValue: { type: Object, required: true }, templates: { type: Array, default: () => [] }, height: { type: Number, default: 620 }, fill: { type: Boolean, default: false }, historyKey: { type: [String, Number], default: null } })
@@ -196,7 +196,8 @@ function deleteEdge({ event, edge }) {
 /** 用模板快照创建独立画布实例。 */
 function addNode(template, position) {
   nodes.value.push({ id: workflowElementId('node'), type: template.nodeType, templateId: template.id, position,
-    data: { label: templateText(template, 'name'), nodeType: template.nodeType, config: cloneWorkflowData(template.config || {}) } })
+    data: { label: templateText(template, 'name'), nodeType: template.nodeType, functionalCategory: template.functionalCategory,
+      config: cloneWorkflowData(template.config || {}) } })
   remember()
 }
 /** 接受用户连线并生成稳定 ID。 */
@@ -315,7 +316,7 @@ onBeforeUnmount(() => {
 .workflow-template-items { overflow-y: auto; padding: 10px; }
 .workflow-template-items > button { display: grid; width: 100%; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-bottom: 7px; padding: 9px; border: 1px solid #e5eaf2; border-radius: 9px; color: inherit; background: #fff; text-align: left; cursor: pointer; }
 .workflow-template-items > button:hover { border-color: #93b4ef; background: #f8fbff; }
-.workflow-template-item-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; color: #315ea8; background: #eaf1ff; font-size: 11px; font-weight: 800; }
+.workflow-template-item-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; font-size: 11px; font-weight: 800; }
 .workflow-template-item-label { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .workflow-template-item-label strong, .workflow-template-item-label small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-template-item-label small { color: var(--app-muted); }

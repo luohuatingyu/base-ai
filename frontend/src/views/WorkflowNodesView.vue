@@ -25,7 +25,7 @@
       <div v-if="filteredRows.length" class="node-template-grid">
         <article v-for="row in filteredRows" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
           <button type="button" class="node-template-card-main" :disabled="!auth.hasPermission('workflow:node:update')" @click="open(row)">
-            <span class="node-template-icon">{{ templateIcon(row) }}</span>
+            <span class="node-template-icon" :style="workflowTemplateCategoryStyle(row.functionalCategory, row.nodeType)">{{ templateIcon(row) }}</span>
             <span class="node-template-summary"><strong>{{ templateText(row, 'name') }}</strong></span>
             <el-tag size="small" :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag>
             <span class="node-template-type">{{ t(`workflowCatalog.categories.${row.functionalCategory}`) }} · {{ t(`workflowCatalog.sources.${row.source}`) }}</span>
@@ -66,7 +66,7 @@ import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import WorkflowNodeConfigEditor from '../components/WorkflowNodeConfigEditor.vue'
 import { cloneConfig, WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
-import { defaultTemplateCategory, filterWorkflowTemplates, localizedTemplateText, normalizeTemplateMetadata, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
+import { defaultTemplateCategory, filterWorkflowTemplates, localizedTemplateText, normalizeTemplateMetadata, workflowTemplateCategoryStyle, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
 
 const { t, te } = useI18n()
 const auth = useAuthStore()
@@ -139,9 +139,7 @@ onMounted(load)
 .node-template-card.disabled { opacity: .68; }
 .node-template-card-main { display: grid; width: 100%; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 16px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
 .node-template-card-main:disabled { cursor: default; }
-.node-template-icon { display: grid; grid-row: span 2; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: #315ea8; background: #eaf1ff; font-size: 12px; font-weight: 800; }
-.node-template-card--agent .node-template-icon, .node-template-card--llm .node-template-icon, .node-template-card--question_classifier .node-template-icon, .node-template-card--parameter_extractor .node-template-icon { color: #6d4cc7; background: #f0ebff; }
-.node-template-card--condition .node-template-icon, .node-template-card--switch .node-template-icon, .node-template-card--loop .node-template-icon, .node-template-card--iteration .node-template-icon { color: #9a6700; background: #fff5d6; }
+.node-template-icon { display: grid; grid-row: span 2; place-items: center; width: 44px; height: 44px; border-radius: 12px; font-size: 12px; font-weight: 800; }
 .node-template-summary { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .node-template-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-template-type, .node-template-card-main small { color: var(--app-muted); font-size: 12px; }

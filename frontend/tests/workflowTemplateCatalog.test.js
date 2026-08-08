@@ -6,7 +6,7 @@ import zhCN from '../src/locales/zh-CN.js'
 import { WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 import {
   defaultTemplateCategory, filterWorkflowTemplates, groupWorkflowTemplates, localizedTemplateText, normalizeTemplateMetadata,
-  systemTemplateTranslationKey,
+  systemTemplateTranslationKey, workflowTemplateCategoryStyle,
   WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES
 } from '../src/utils/workflowTemplateCatalog.js'
 
@@ -19,11 +19,32 @@ function localeAccessors(messages) {
   return { translate: key => find(key), hasTranslation: key => find(key) !== undefined }
 }
 
+/** 计算十六进制前景色与背景色的 WCAG 对比度。 */
+function contrastRatio(foreground, background) {
+  const luminance = hex => {
+    const channels = hex.slice(1).match(/../g).map(value => parseInt(value, 16) / 255)
+      .map(value => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+  }
+  const values = [luminance(foreground), luminance(background)].sort((left, right) => right - left)
+  return (values[0] + 0.05) / (values[1] + 0.05)
+}
+
 test('全部原生节点属于受控功能分类', () => {
   assert.deepEqual(WORKFLOW_TEMPLATE_SOURCES, ['SYSTEM', 'N8N', 'DIFY'])
   for (const nodeType of WORKFLOW_NODE_TYPES) {
     assert.ok(WORKFLOW_TEMPLATE_CATEGORIES.includes(defaultTemplateCategory(nodeType)), nodeType)
   }
+})
+
+test('全部功能类型使用互不相同的统一图标背景色并安全回退', () => {
+  const styles = WORKFLOW_TEMPLATE_CATEGORIES.map(category => workflowTemplateCategoryStyle(category))
+  assert.equal(new Set(styles.map(style => style.backgroundColor)).size, WORKFLOW_TEMPLATE_CATEGORIES.length)
+  assert.ok(styles.every(style => style.color && style.backgroundColor))
+  assert.ok(styles.every(style => contrastRatio(style.color, style.backgroundColor) >= 4.5))
+  assert.deepEqual(workflowTemplateCategoryStyle('ai'), workflowTemplateCategoryStyle('AI'))
+  assert.deepEqual(workflowTemplateCategoryStyle('', 'LLM'), workflowTemplateCategoryStyle('AI'))
+  assert.deepEqual(workflowTemplateCategoryStyle('UNKNOWN', 'UNKNOWN'), workflowTemplateCategoryStyle('BASIC'))
 })
 
 test('迁移前模板兼容系统来源并按节点类型推导分类', () => {
@@ -114,6 +135,13 @@ test('节点管理卡片仅展示当前语言的功能文案并隐藏技术编�
   assert.match(nodeManagementSource, /templateText\(row, 'description'\)/)
   assert.doesNotMatch(nodeManagementSource, /\{\{\s*row\.code\s*\}\}/)
   assert.doesNotMatch(nodeManagementSource, /\{\{\s*row\.nodeType\s*\}\}/)
+  assert.match(nodeManagementSource, /:style="workflowTemplateCategoryStyle\(row\.functionalCategory, row\.nodeType\)"/)
+  assert.doesNotMatch(nodeManagementSource, /node-template-card--agent \.node-template-icon/)
+})
+
+test('画布菜单复用功能类型图标配色并把分类保存到新节点', () => {
+  assert.match(graphEditorSource, /:style="workflowTemplateCategoryStyle\(template\.functionalCategory, template\.nodeType\)"/)
+  assert.match(graphEditorSource, /functionalCategory:\s*template\.functionalCategory/)
 })
 
 test('节点来源位于顶部且功能类型在节点列表左侧展示', () => {

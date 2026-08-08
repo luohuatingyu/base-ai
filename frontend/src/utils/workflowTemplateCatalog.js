@@ -5,6 +5,19 @@ export const WORKFLOW_TEMPLATE_CATEGORIES = [
   'NETWORK_API', 'TRIGGER', 'NOTIFICATION', 'DATA_STORAGE', 'MESSAGE_QUEUE'
 ]
 
+const CATEGORY_ICON_STYLES = Object.freeze({
+  BASIC: Object.freeze({ color: '#315ea8', backgroundColor: '#eaf1ff' }),
+  AI: Object.freeze({ color: '#6d4cc7', backgroundColor: '#f0ebff' }),
+  FLOW_CONTROL: Object.freeze({ color: '#8a5b00', backgroundColor: '#fff5d6' }),
+  DATA_TRANSFORM: Object.freeze({ color: '#0f766e', backgroundColor: '#dff7f3' }),
+  TEXT_DOCUMENT: Object.freeze({ color: '#a33d75', backgroundColor: '#fce8f3' }),
+  NETWORK_API: Object.freeze({ color: '#0369a1', backgroundColor: '#e0f2fe' }),
+  TRIGGER: Object.freeze({ color: '#a84400', backgroundColor: '#ffedd5' }),
+  NOTIFICATION: Object.freeze({ color: '#be123c', backgroundColor: '#ffe4e6' }),
+  DATA_STORAGE: Object.freeze({ color: '#4d7c0f', backgroundColor: '#ecfccb' }),
+  MESSAGE_QUEUE: Object.freeze({ color: '#a21caf', backgroundColor: '#fae8ff' })
+})
+
 const DEFAULT_CATEGORIES = {
   START: 'BASIC', END: 'BASIC',
   LLM: 'AI', AGENT: 'AI', QUESTION_CLASSIFIER: 'AI', PARAMETER_EXTRACTOR: 'AI', STRUCTURED_OUTPUT: 'AI',
@@ -24,6 +37,14 @@ const LOCALIZED_TEMPLATE_FIELDS = new Set(['name', 'description'])
 /** 返回节点类型的稳定默认功能分类。 */
 export function defaultTemplateCategory(nodeType) {
   return DEFAULT_CATEGORIES[String(nodeType || '').toUpperCase()] || 'BASIC'
+}
+
+/** 返回功能类型统一图标配色；历史或非法分类按节点类型安全回退。 */
+export function workflowTemplateCategoryStyle(functionalCategory, nodeType) {
+  const requestedCategory = String(functionalCategory || '').toUpperCase()
+  const category = WORKFLOW_TEMPLATE_CATEGORIES.includes(requestedCategory)
+    ? requestedCategory : defaultTemplateCategory(nodeType)
+  return CATEGORY_ICON_STYLES[category]
 }
 
 /** 兼容迁移前接口，为模板补齐受控来源和功能分类。 */

@@ -95,6 +95,14 @@ test('画布节点实时显示缺失必填配置及字段提示', () => {
   assert.match(workflowNodeSource, /workflowConfig\.requirementLabels/)
 })
 
+test('画布节点仅使用功能类型图标配色并兼容历史节点', () => {
+  assert.match(workflowNodeSource, /class="workflow-node-icon"\s+:style="categoryStyle"/)
+  assert.match(workflowNodeSource, /workflowTemplateCategoryStyle\(props\.data\?\.functionalCategory, nodeType\.value\)/)
+  assert.match(workflowNodeSource, /\.workflow-node\s*\{[^}]*background:\s*#fff/)
+  assert.doesNotMatch(workflowNodeSource, /\.workflow-node--start\s*\{[^}]*background:/)
+  assert.match(workflowNodeSource, /\.workflow-node\.has-missing-config\s*\{[^}]*background:\s*var\(--el-color-danger-light-9\)/)
+})
+
 test('画布提供应用内最大化和浏览器原生全屏入口', () => {
   assert.match(graphEditorSource, /ref="editorShell"[^>]*:class="\{[^}]*maximized:\s*isMaximized/)
   assert.match(graphEditorSource, /workflow-display-actions[\s\S]*workflowCanvas\.maximize[\s\S]*workflowCanvas\.fullscreen/)
