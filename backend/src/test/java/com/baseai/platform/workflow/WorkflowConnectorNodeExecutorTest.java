@@ -3,6 +3,7 @@ package com.baseai.platform.workflow;
 import com.baseai.platform.automation.ApiTriggerModels;
 import com.baseai.platform.automation.ApiTriggerService;
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.service.MailDeliveryClient;
 import com.baseai.platform.service.MailManagementService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -45,7 +46,7 @@ class WorkflowConnectorNodeExecutorTest {
         mailDeliveryClient = mock(MailDeliveryClient.class);
         apiTriggerService = mock(ApiTriggerService.class);
         executor = new WorkflowConnectorNodeExecutor(objectMapper, new WorkflowExpressionService(objectMapper), connections,
-            mailManagementService, mailDeliveryClient, apiTriggerService);
+            mailManagementService, mailDeliveryClient, apiTriggerService, new PlatformProperties());
         context = objectMapper.createObjectNode();
         context.set("input", objectMapper.createObjectNode());
         context.set("nodes", objectMapper.createObjectNode());
@@ -78,6 +79,30 @@ class WorkflowConnectorNodeExecutorTest {
             {"connectionId":1,"query":"UPDATE orders SET status=?","parameters":["DONE"]}
             """)));
         assertEquals("workflow.sqlWriteForbidden", exception.getMessageKey());
+    }
+
+    /** 只读连接必须拒绝以 WITH 伪装的写语句，不能依赖 JDBC readOnly 提示。 */
+    @Test
+    void rejectsWithStatementOnReadOnlyConnection() throws Exception {
+        stored("POSTGRESQL", objectMapper.readTree("""
+            {"url":"jdbc:postgresql://unused/orders","username":"app","password":"","allowWrite":false}
+            """));
+        BusinessException exception = assertThrows(BusinessException.class, () -> execute("SQL_QUERY", objectMapper.readTree("""
+            {"connectionId":1,"query":"WITH changed AS (DELETE FROM orders RETURNING id) SELECT * FROM changed","parameters":[]}
+            """)));
+        assertEquals("workflow.sqlWriteForbidden", exception.getMessageKey());
+    }
+
+    /** 可写连接也只开放查询和 DML，不允许通过工作流执行 DDL。 */
+    @Test
+    void rejectsDdlEvenWhenWritesAreEnabled() throws Exception {
+        stored("MYSQL", objectMapper.readTree("""
+            {"url":"jdbc:mysql://unused/orders","username":"app","password":"","allowWrite":true}
+            """));
+        BusinessException exception = assertThrows(BusinessException.class, () -> execute("SQL_QUERY", objectMapper.readTree("""
+            {"connectionId":1,"query":"DROP TABLE orders","parameters":[]}
+            """)));
+        assertEquals("workflow.sqlUnsafe", exception.getMessageKey());
     }
 
     /** 邮件和即时通知节点必须复用平台受管客户端并返回可审计结果。 */

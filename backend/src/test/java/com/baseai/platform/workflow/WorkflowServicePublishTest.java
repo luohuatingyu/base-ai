@@ -36,14 +36,21 @@ class WorkflowServicePublishTest {
         jdbcTemplate.execute("""
             CREATE TABLE workflow_version(
               id BIGINT PRIMARY KEY,workflow_id BIGINT,version_number INT,graph_json CLOB,input_schema_json CLOB,
-              template_snapshot_json CLOB,created_at TIMESTAMP)
+              template_snapshot_json CLOB,connection_snapshot_complete BOOLEAN,created_at TIMESTAMP)
+            """);
+        jdbcTemplate.execute("""
+            CREATE TABLE workflow_version_connection(workflow_version_id BIGINT,connection_id BIGINT,security_revision BIGINT)
+            """);
+        jdbcTemplate.execute("""
+            CREATE TABLE workflow_connection(id BIGINT PRIMARY KEY,security_revision BIGINT,enabled BOOLEAN,voided BOOLEAN)
             """);
         ObjectMapper objectMapper = new ObjectMapper();
         PlatformProperties properties = new PlatformProperties();
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString(
             "0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
         service = new WorkflowService(jdbcTemplate, objectMapper, new ConfigCryptoService(properties),
-            mock(WorkflowGraphValidator.class), new WorkflowNodeConfigValidator(objectMapper), mock(WorkflowConnectionService.class));
+            mock(WorkflowGraphValidator.class), new WorkflowNodeConfigValidator(objectMapper), mock(WorkflowConnectionService.class),
+            mock(WorkflowAccessService.class));
     }
 
     /** 当前版本缺少运行必填配置时必须保持草稿状态且不写入发布版本。 */
@@ -77,13 +84,32 @@ class WorkflowServicePublishTest {
         assertEquals(2L, published.revision());
     }
 
+    /** 已发布版本引用的连接安全修订变化后必须拒绝执行并要求重新发布。 */
+    @Test
+    void rejectsChangedConnectionRevision() {
+        insertWorkflow("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"end","type":"END"}],
+             "edges":[{"id":"a","source":"start","target":"end"}]}
+            """, "{}");
+        jdbcTemplate.update("INSERT INTO workflow_connection VALUES (9,2,true,false)");
+        jdbcTemplate.update("INSERT INTO workflow_version_connection VALUES (10,9,1)");
+        WorkflowModels.StoredVersion version = new WorkflowModels.StoredVersion(10L, 1L, "ORDERS", 1,
+            new ObjectMapper().createObjectNode(), new ObjectMapper().createObjectNode(),
+            new ObjectMapper().createObjectNode(), 7L);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+            () -> service.validateConnectionSnapshot(version));
+
+        assertEquals("workflow.connectionChanged", exception.getMessageKey());
+    }
+
     /** 插入一个当前版本工作流及对应不可变模板快照。 */
     private void insertWorkflow(String graph, String snapshots) {
         jdbcTemplate.update("""
             INSERT INTO workflow_definition VALUES (1,'ORDERS','Orders','', 'DRAFT',10,NULL,1,true,7,false,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
             """);
         jdbcTemplate.update("""
-            INSERT INTO workflow_version VALUES (10,1,1,?,'{}',?,CURRENT_TIMESTAMP)
+            INSERT INTO workflow_version VALUES (10,1,1,?,'{}',?,true,CURRENT_TIMESTAMP)
             """, graph, snapshots);
     }
 }

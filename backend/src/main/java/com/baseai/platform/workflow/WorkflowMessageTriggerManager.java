@@ -27,6 +27,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** 为已发布 Kafka 和 RabbitMQ 触发节点维护受控消费者生命周期。 */
@@ -37,9 +41,10 @@ public class WorkflowMessageTriggerManager {
     private final WorkflowConnectionService connectionService;
     private final WorkflowTriggerService triggerService;
     private final ObjectMapper objectMapper;
-    private final ExecutorService executor = Executors.newCachedThreadPool(runnable -> {
-        Thread thread = new Thread(runnable, "workflow-message-trigger"); thread.setDaemon(true); return thread;
-    });
+    private final ExecutorService executor = new ThreadPoolExecutor(1, 32, 60L, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<>(32), runnable -> {
+            Thread thread = new Thread(runnable, "workflow-message-trigger"); thread.setDaemon(true); return thread;
+        }, new ThreadPoolExecutor.AbortPolicy());
     private final Map<String, Worker> workers = new ConcurrentHashMap<>();
 
     /** 注入工作流、连接、触发和 JSON 服务。 */
@@ -57,12 +62,26 @@ public class WorkflowMessageTriggerManager {
         Map<String, WorkflowModels.TriggerDefinition> expected = new HashMap<>();
         workflowService.triggerDefinitions().stream()
             .filter(item -> "KAFKA_TRIGGER".equals(item.nodeType()) || "RABBITMQ_TRIGGER".equals(item.nodeType()))
+            .filter(this::configurationExecutable)
             .forEach(item -> expected.put(key(item), item));
-        expected.forEach((key, trigger) -> workers.computeIfAbsent(key, ignored -> start(trigger)));
+        expected.forEach((key, trigger) -> workers.compute(key, (ignored, existing) -> {
+            if (existing != null && !existing.future().isDone()) return existing;
+            if (existing != null) existing.close();
+            try { return start(trigger); }
+            catch (RejectedExecutionException exception) {
+                log.warn("Workflow message trigger capacity reached: {}", key); return null;
+            }
+        }));
         workers.keySet().removeIf(key -> {
             if (expected.containsKey(key)) return false;
             Worker worker = workers.get(key); if (worker != null) worker.close(); return true;
         });
+    }
+
+    /** 资源修订失效时停止消费者，重新发布后刷新周期会自动恢复。 */
+    private boolean configurationExecutable(WorkflowModels.TriggerDefinition trigger) {
+        try { workflowService.validateExecutableConfiguration(workflowService.storedVersion(trigger.versionId())); return true; }
+        catch (RuntimeException exception) { log.warn("Workflow message trigger disabled until republished: {}", key(trigger)); return false; }
     }
 
     /** 根据触发器类型启动后台消费者。 */

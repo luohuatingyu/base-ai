@@ -13,6 +13,8 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -22,34 +24,44 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 /** 管理节点模板、工作流草稿、不可变版本和发布状态。 */
 @Service
 public class WorkflowService {
+    private static final Logger log = LoggerFactory.getLogger(WorkflowService.class);
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ConfigCryptoService cryptoService;
     private final WorkflowGraphValidator graphValidator;
     private final WorkflowNodeConfigValidator nodeConfigValidator;
     private final WorkflowConnectionService connectionService;
+    private final WorkflowAccessService accessService;
 
     /** 注入 MySQL、加密、图结构和节点配置校验组件。 */
     public WorkflowService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                            ConfigCryptoService cryptoService, WorkflowGraphValidator graphValidator,
-                           WorkflowNodeConfigValidator nodeConfigValidator, WorkflowConnectionService connectionService) {
+                           WorkflowNodeConfigValidator nodeConfigValidator, WorkflowConnectionService connectionService,
+                           WorkflowAccessService accessService) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.cryptoService = cryptoService;
         this.graphValidator = graphValidator;
         this.nodeConfigValidator = nodeConfigValidator;
         this.connectionService = connectionService;
+        this.accessService = accessService;
     }
 
     /** 查询全部未作废节点模板，并解密授权页面需要的默认配置。 */
     public List<WorkflowModels.NodeTemplateView> templates() {
-        return jdbcTemplate.query("SELECT * FROM workflow_node_template WHERE voided=false ORDER BY functional_category,template_source,system_template DESC,id",
-            (rs, row) -> mapTemplate(rs));
+        var user = AuthContext.require();
+        String sql = "SELECT * FROM workflow_node_template WHERE voided=false "
+            + (user.roles().contains("ADMIN") ? "" : "AND (system_template=true OR created_by=?) ")
+            + "ORDER BY functional_category,template_source,system_template DESC,id";
+        return user.roles().contains("ADMIN") ? jdbcTemplate.query(sql, (rs, row) -> mapTemplate(rs))
+            : jdbcTemplate.query(sql, (rs, row) -> mapTemplate(rs), user.id());
     }
 
     /** 创建可复用节点模板。 */
@@ -73,7 +85,7 @@ public class WorkflowService {
     /** 更新节点模板，系统模板保持编码和节点类型不可变。 */
     @Transactional
     public WorkflowModels.NodeTemplateView updateTemplate(Long id, WorkflowModels.NodeTemplateCommand command) {
-        WorkflowModels.NodeTemplateView existing = template(id);
+        WorkflowModels.NodeTemplateView existing = templateForManagement(id);
         validateTemplate(command, existing.systemTemplate());
         String savedCode = existing.systemTemplate() ? existing.code() : code(command.code());
         String savedType = existing.systemTemplate() ? existing.nodeType() : type(command.nodeType());
@@ -94,13 +106,29 @@ public class WorkflowService {
     /** 软删除用户模板，系统内置模板不可删除。 */
     @Transactional
     public void deleteTemplate(Long id) {
-        WorkflowModels.NodeTemplateView existing = template(id);
+        WorkflowModels.NodeTemplateView existing = templateForManagement(id);
         if (existing.systemTemplate()) throw new BusinessException(409, "workflow.systemTemplateProtected");
         jdbcTemplate.update("UPDATE workflow_node_template SET enabled=false,voided=true,updated_at=NOW() WHERE id=?", id);
     }
 
     /** 按 ID 查询单个节点模板。 */
     public WorkflowModels.NodeTemplateView template(Long id) {
+        WorkflowModels.NodeTemplateView template = storedTemplate(id);
+        Long createdBy = jdbcTemplate.queryForObject("SELECT created_by FROM workflow_node_template WHERE id=?", Long.class, id);
+        if (!template.systemTemplate()) accessService.requireTemplateOwnerOrAdmin(createdBy, false);
+        return template;
+    }
+
+    /** 查询模板并执行维护权限校验。 */
+    private WorkflowModels.NodeTemplateView templateForManagement(Long id) {
+        WorkflowModels.NodeTemplateView template = storedTemplate(id);
+        Long createdBy = jdbcTemplate.queryForObject("SELECT created_by FROM workflow_node_template WHERE id=?", Long.class, id);
+        accessService.requireTemplateOwnerOrAdmin(createdBy, template.systemTemplate());
+        return template;
+    }
+
+    /** 内部读取单个未作废模板。 */
+    private WorkflowModels.NodeTemplateView storedTemplate(Long id) {
         List<WorkflowModels.NodeTemplateView> rows = jdbcTemplate.query(
             "SELECT * FROM workflow_node_template WHERE id=? AND voided=false", (rs, row) -> mapTemplate(rs), id);
         if (rows.isEmpty()) throw BusinessException.notFound("workflow.templateNotFound");
@@ -109,7 +137,11 @@ public class WorkflowService {
 
     /** 查询工作流列表并携带当前草稿画布。 */
     public List<WorkflowModels.WorkflowView> workflows() {
-        return jdbcTemplate.query(workflowSelect() + " WHERE d.voided=false ORDER BY d.id DESC", (rs, row) -> mapWorkflow(rs));
+        var user = AuthContext.require();
+        String sql = workflowSelect() + " WHERE d.voided=false "
+            + (user.roles().contains("ADMIN") ? "" : "AND d.owner_user_id=? ") + "ORDER BY d.id DESC";
+        return user.roles().contains("ADMIN") ? jdbcTemplate.query(sql, (rs, row) -> mapWorkflow(rs))
+            : jdbcTemplate.query(sql, (rs, row) -> mapWorkflow(rs), user.id());
     }
 
     /** 创建工作流及首个不可变草稿版本。 */
@@ -165,11 +197,13 @@ public class WorkflowService {
     /** 校验指定版本的模板快照和实例配置已满足所有节点运行条件。 */
     public void validateExecutableConfiguration(WorkflowModels.StoredVersion version) {
         nodeConfigValidator.validateForPublish(version.graph(), version.templateSnapshots());
+        validateConnectionSnapshot(version);
     }
 
     /** 软删除定义但保留历史版本和运行记录。 */
     @Transactional
     public void deleteWorkflow(Long id) {
+        workflow(id);
         if (jdbcTemplate.update("UPDATE workflow_definition SET enabled=false,voided=true,updated_at=NOW() WHERE id=? AND voided=false", id) == 0) {
             throw BusinessException.notFound("workflow.notFound");
         }
@@ -177,6 +211,13 @@ public class WorkflowService {
 
     /** 查询单个工作流及当前草稿。 */
     public WorkflowModels.WorkflowView workflow(Long id) {
+        WorkflowModels.WorkflowView workflow = storedWorkflow(id);
+        accessService.requireOwnerOrAdmin(workflow.ownerUserId());
+        return workflow;
+    }
+
+    /** 内部读取单个未作废工作流，不建立调用者权限语义。 */
+    private WorkflowModels.WorkflowView storedWorkflow(Long id) {
         List<WorkflowModels.WorkflowView> rows = jdbcTemplate.query(workflowSelect() + " WHERE d.id=? AND d.voided=false",
             (rs, row) -> mapWorkflow(rs), id);
         if (rows.isEmpty()) throw BusinessException.notFound("workflow.notFound");
@@ -193,12 +234,20 @@ public class WorkflowService {
 
     /** 为页面调试解析当前草稿，为开放 API 解析已发布版本。 */
     public WorkflowModels.StoredVersion executable(String code, boolean publishedOnly) {
+        WorkflowModels.StoredVersion version = executableInternal(code, publishedOnly);
+        accessService.requireExecute(version.workflowId(), version.workflowOwnerId());
+        return version;
+    }
+
+    /** 为平台原生触发器读取可执行版本，调用方必须已经验证触发定义。 */
+    public WorkflowModels.StoredVersion executableInternal(String code, boolean publishedOnly) {
         String column = publishedOnly ? "published_version_id" : "current_version_id";
         List<WorkflowModels.StoredVersion> rows = jdbcTemplate.query("""
             SELECT v.*,d.code workflow_code,d.enabled,d.status,d.owner_user_id workflow_owner_id FROM workflow_definition d
             JOIN workflow_version v ON v.id=d.%s
-            WHERE d.code=? AND d.voided=false AND d.enabled=true
-            """.formatted(column), (rs, row) -> mapStoredVersion(rs), code(code));
+            WHERE d.code=? AND d.voided=false AND d.enabled=true %s
+            """.formatted(column, publishedOnly ? "AND d.status='PUBLISHED'" : ""),
+            (rs, row) -> mapStoredVersion(rs), code(code));
         if (rows.isEmpty()) throw BusinessException.notFound("workflow.notFound");
         return rows.get(0);
     }
@@ -260,15 +309,21 @@ public class WorkflowService {
                 snapshot.set("config", template.config());
             }
         });
-        validateConnections(graph, snapshots, connectionOwnerId);
-        return insertKey("""
+        Map<Long, Long> connectionRevisions = new LinkedHashMap<>();
+        validateConnections(graph, snapshots, connectionOwnerId, connectionRevisions);
+        Long versionId = insertKey("""
             INSERT INTO workflow_version(workflow_id,version_number,graph_json,input_schema_json,template_snapshot_json,created_by)
             VALUES (?,?,?,?,?,?)
             """, workflowId, version, json(graph), json(inputSchema), json(snapshots), createdBy);
+        connectionRevisions.forEach((connectionId, revision) -> jdbcTemplate.update("""
+            INSERT INTO workflow_version_connection(workflow_version_id,connection_id,security_revision) VALUES (?,?,?)
+            """, versionId, connectionId, revision));
+        jdbcTemplate.update("UPDATE workflow_version SET connection_snapshot_complete=true WHERE id=?", versionId);
+        return versionId;
     }
 
     /** 校验主图和嵌套子图引用的连接均属于工作流所有者且类型匹配。 */
-    private void validateConnections(JsonNode graph, JsonNode snapshots, Long ownerId) {
+    private void validateConnections(JsonNode graph, JsonNode snapshots, Long ownerId, Map<Long, Long> revisions) {
         graph.path("nodes").forEach(node -> {
             String nodeType = WorkflowGraphValidator.nodeType(node);
             JsonNode config = effectiveConfig(node, snapshots.path(node.path("id").asText()));
@@ -283,10 +338,52 @@ public class WorkflowService {
                     default -> Set.of();
                 };
                 if (allowed.isEmpty()) throw new BusinessException("workflow.connectionForbidden");
-                connectionService.requireOwnedAndEnabled(config.path("connectionId").asLong(), ownerId, allowed);
+                WorkflowConnectionService.StoredConnection connection = connectionService.requireOwnedAndEnabled(
+                    config.path("connectionId").asLong(), ownerId, allowed);
+                if ("WEBHOOK_TRIGGER".equals(nodeType)
+                    && connection.config().path("secret").asText("").getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
+                    throw new BusinessException("workflow.webhookSecretWeak");
+                }
+                revisions.put(connection.id(), connection.securityRevision());
             }
             if (WorkflowNodeTypes.NESTED_GRAPH.contains(nodeType) && config.path("bodyGraph").isObject()) {
-                validateConnections(config.path("bodyGraph"), objectMapper.createObjectNode(), ownerId);
+                validateConnections(config.path("bodyGraph"), objectMapper.createObjectNode(), ownerId, revisions);
+            }
+        });
+    }
+
+    /** 校验不可变版本引用的连接仍保持发布时安全修订，阻止目标被静默改向。 */
+    public void validateConnectionSnapshot(WorkflowModels.StoredVersion version) {
+        Boolean complete = jdbcTemplate.queryForObject(
+            "SELECT connection_snapshot_complete FROM workflow_version WHERE id=?", Boolean.class, version.id());
+        if (!Boolean.TRUE.equals(complete)) throw new BusinessException("workflow.connectionSnapshotIncomplete");
+        Integer mismatches = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM workflow_version_connection vc
+            LEFT JOIN workflow_connection c ON c.id=vc.connection_id AND c.voided=false AND c.enabled=true
+            WHERE vc.workflow_version_id=? AND (c.id IS NULL OR c.security_revision<>vc.security_revision)
+            """, Integer.class, version.id());
+        if (mismatches != null && mismatches > 0) throw new BusinessException("workflow.connectionChanged");
+    }
+
+    /** 为升级前历史版本按当前连接修订幂等补齐安全快照。 */
+    public void initializeLegacyConnectionSnapshots() {
+        jdbcTemplate.query("""
+            SELECT v.id,v.graph_json,v.template_snapshot_json,d.owner_user_id FROM workflow_version v
+            JOIN workflow_definition d ON d.id=v.workflow_id WHERE v.connection_snapshot_complete=false
+            ORDER BY v.id
+            """, rs -> {
+            Long versionId = rs.getLong("id");
+            Map<Long, Long> revisions = new LinkedHashMap<>();
+            try {
+                validateConnections(parseJson(rs.getString("graph_json")), parseJson(rs.getString("template_snapshot_json")),
+                    rs.getLong("owner_user_id"), revisions);
+                revisions.forEach((connectionId, revision) -> jdbcTemplate.update("""
+                    INSERT INTO workflow_version_connection(workflow_version_id,connection_id,security_revision)
+                    VALUES (?,?,?) ON DUPLICATE KEY UPDATE security_revision=VALUES(security_revision)
+                    """, versionId, connectionId, revision));
+                jdbcTemplate.update("UPDATE workflow_version SET connection_snapshot_complete=true WHERE id=?", versionId);
+            } catch (RuntimeException exception) {
+                log.warn("Workflow version connection snapshot remains incomplete: versionId={}", versionId);
             }
         });
     }
@@ -316,6 +413,7 @@ public class WorkflowService {
         }
         graphValidator.validate(command.graph());
         if (command.inputSchema() != null && !command.inputSchema().isObject()) throw new BusinessException("workflow.inputSchemaInvalid");
+        graphValidator.validatePayload(command.inputSchema());
         if (updating && command.revision() == null) throw new BusinessException("workflow.revisionConflict");
     }
 

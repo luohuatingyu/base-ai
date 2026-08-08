@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 class WorkflowTriggerServiceTest {
     private WorkflowService workflowService;
     private WorkflowExecutionService executionService;
+    private WorkflowConnectionService connectionService;
     private JdbcTemplate jdbcTemplate;
     private WorkflowTriggerService service;
 
@@ -34,18 +35,19 @@ class WorkflowTriggerServiceTest {
     void setUp() throws Exception {
         workflowService = mock(WorkflowService.class);
         executionService = mock(WorkflowExecutionService.class);
-        WorkflowConnectionService connectionService = mock(WorkflowConnectionService.class);
+        connectionService = mock(WorkflowConnectionService.class);
         jdbcTemplate = mock(JdbcTemplate.class);
         ObjectMapper mapper = new ObjectMapper();
         WorkflowModels.TriggerDefinition trigger = new WorkflowModels.TriggerDefinition(1L, "ORDERS", 2L, 7L,
             "hook", "WEBHOOK_TRIGGER", mapper.readTree("{\"connectionId\":9}"));
         when(workflowService.triggerDefinitions()).thenReturn(List.of(trigger));
         when(connectionService.resolved(9L, Set.of("WEBHOOK"))).thenReturn(new WorkflowConnectionService.StoredConnection(
-            9L, "HOOK", "Hook", "WEBHOOK", mapper.readTree("{\"secret\":\"top-secret\"}"), 7L, true, null, null));
+            9L, "HOOK", "Hook", "WEBHOOK", mapper.readTree("{\"secret\":\"top-secret-0123456789abcdef0123456789\"}"), 7L, true, null, null));
         when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
         when(executionService.startTriggered(anyString(), any(Map.class), anyString()))
             .thenReturn(new WorkflowModels.RunAccepted("run-1", "QUEUED"));
-        service = new WorkflowTriggerService(workflowService, executionService, connectionService, jdbcTemplate, mapper);
+        service = new WorkflowTriggerService(workflowService, executionService, connectionService, jdbcTemplate, mapper,
+            new com.baseai.platform.config.PlatformProperties());
     }
 
     /** 停止测试调度器线程。 */
@@ -56,7 +58,8 @@ class WorkflowTriggerServiceTest {
     @Test
     void acceptsSignedWebhook() throws Exception {
         String body = "{\"orderId\":42}";
-        WorkflowModels.RunAccepted accepted = service.webhook("ORDERS", "hook", signature("top-secret", body), "evt-1", body);
+        WorkflowModels.RunAccepted accepted = service.webhook("ORDERS", "hook",
+            signature("top-secret-0123456789abcdef0123456789", body), "evt-1", body);
         assertEquals("run-1", accepted.runId());
         verify(executionService).startTriggered("ORDERS", Map.of("orderId", 42), "WEBHOOK");
     }
@@ -65,6 +68,26 @@ class WorkflowTriggerServiceTest {
     @Test
     void rejectsInvalidSignature() {
         assertThrows(BusinessException.class, () -> service.webhook("ORDERS", "hook", "bad", "evt-2", "{}"));
+    }
+
+    /** 超长或含控制字符的事件 ID 必须拒绝，不能截断后产生幂等碰撞。 */
+    @Test
+    void rejectsInvalidEventIdWithoutTruncation() throws Exception {
+        String body = "{}";
+        String signature = signature("top-secret-0123456789abcdef0123456789", body);
+        assertEquals("workflow.triggerEventIdInvalid", assertThrows(BusinessException.class,
+            () -> service.webhook("ORDERS", "hook", signature, "x".repeat(161), body)).getMessageKey());
+    }
+
+    /** 弱 Webhook Secret 必须使公开入口安全失败，不能依赖调用方自觉配置强密钥。 */
+    @Test
+    void rejectsWeakWebhookSecret() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        when(connectionService.resolved(9L, Set.of("WEBHOOK"))).thenReturn(new WorkflowConnectionService.StoredConnection(
+            9L, "HOOK", "Hook", "WEBHOOK", mapper.readTree("{\"secret\":\"short\"}"), 7L, true, null, null));
+        BusinessException exception = assertThrows(BusinessException.class,
+            () -> service.webhook("ORDERS", "hook", "invalid", "evt-3", "{}"));
+        assertEquals(503, exception.getStatus());
     }
 
     /** 生成测试 HMAC 签名。 */

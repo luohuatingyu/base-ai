@@ -47,6 +47,13 @@ public class ApiKeyManagementController {
         return service.endpoints();
     }
 
+    /** 查询指定绑定用户拥有的工作流白名单选项。 */
+    @GetMapping("/workflow-options")
+    @RequiredPermission("system:api-key:list")
+    public List<ApiKeyManagementService.WorkflowOption> workflowOptions(@RequestParam Long ownerUserId) {
+        return service.workflowOptions(ownerUserId);
+    }
+
     /** 查询指定 API Key 的完整明文，服务层额外要求管理员角色。 */
     @GetMapping("/{id}/secret")
     @RequiredPermission("system:api-key:list")

@@ -112,9 +112,16 @@ app:
     caddy-ca-file: ${API_TRIGGER_CADDY_CA_FILE:}
   workflow:
     executor-pool-size: ${WORKFLOW_EXECUTOR_POOL_SIZE:4}
+    executor-queue-capacity: ${WORKFLOW_EXECUTOR_QUEUE_CAPACITY:400}
     max-nodes: ${WORKFLOW_MAX_NODES:100}
     max-iterations: ${WORKFLOW_MAX_ITERATIONS:100}
     max-agent-steps: ${WORKFLOW_MAX_AGENT_STEPS:20}
     max-recursion-depth: ${WORKFLOW_MAX_RECURSION_DEPTH:5}
     max-payload-bytes: ${WORKFLOW_MAX_PAYLOAD_BYTES:1048576}
     max-wait-seconds: ${WORKFLOW_MAX_WAIT_SECONDS:3600}
+    max-execution-steps: ${WORKFLOW_MAX_EXECUTION_STEPS:1000}
+    max-run-log-bytes: ${WORKFLOW_MAX_RUN_LOG_BYTES:10485760}
+    lease-seconds: ${WORKFLOW_LEASE_SECONDS:60}
+    webhook-max-body-bytes: ${WORKFLOW_WEBHOOK_MAX_BODY_BYTES:1048576}
+    webhook-rate-limit-per-minute: ${WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE:60}
+    trigger-delivery-retention-days: ${WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS:30}

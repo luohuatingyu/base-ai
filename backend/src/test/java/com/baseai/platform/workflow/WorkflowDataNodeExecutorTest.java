@@ -1,6 +1,7 @@
 package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.config.PlatformProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -20,7 +21,8 @@ class WorkflowDataNodeExecutorTest {
     @BeforeEach
     void setUp() throws Exception {
         WorkflowExpressionService expressions = new WorkflowExpressionService(objectMapper);
-        executor = new WorkflowDataNodeExecutor(objectMapper, expressions);
+        PlatformProperties properties = new PlatformProperties(); properties.getWorkflow().setMaxPayloadBytes(32);
+        executor = new WorkflowDataNodeExecutor(objectMapper, expressions, properties);
         context = (ObjectNode) objectMapper.readTree("""
             {"input":{"status":"PAID","items":[{"score":3},{"score":1},{"score":2}]},"nodes":{},"loop":{}}
             """);
@@ -86,6 +88,14 @@ class WorkflowDataNodeExecutorTest {
             {"inputMode":"TEXT","content":"hello workflow","fileName":"note.txt"}
             """)).output();
         assertTrue(output.path("text").asText().contains("hello workflow"));
+    }
+
+    /** 文档必须在 Tika 解析前执行原始字节限制，避免压缩或大正文耗尽内存。 */
+    @Test
+    void rejectsOversizedDocumentBeforeParsing() throws Exception {
+        JsonNode config = objectMapper.createObjectNode().put("inputMode", "TEXT").put("content", "x".repeat(33));
+        assertEquals("workflow.payloadTooLarge", assertThrows(BusinessException.class,
+            () -> execute("DOCUMENT_EXTRACTOR", config)).getMessageKey());
     }
 
     /** 构造统一节点请求。 */

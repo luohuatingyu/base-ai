@@ -34,13 +34,16 @@ public class WorkflowConnectionService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ConfigCryptoService cryptoService;
+    private final WorkflowNetworkPolicy networkPolicy;
 
     /** 注入 MySQL、JSON 和加密服务。 */
     public WorkflowConnectionService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate,
-                                     ObjectMapper objectMapper, ConfigCryptoService cryptoService) {
+                                     ObjectMapper objectMapper, ConfigCryptoService cryptoService,
+                                     WorkflowNetworkPolicy networkPolicy) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.cryptoService = cryptoService;
+        this.networkPolicy = networkPolicy;
     }
 
     /** 查询当前用户可见的连接，管理员可以查看全部脱敏记录。 */
@@ -67,11 +70,13 @@ public class WorkflowConnectionService {
     @Transactional
     public WorkflowModels.ConnectionView create(WorkflowModels.ConnectionCommand command) {
         validate(command);
+        String connectionType = type(command.connectionType());
+        networkPolicy.validate(connectionType, command.config());
         try {
             jdbcTemplate.update("""
                 INSERT INTO workflow_connection(code,name,connection_type,config_encrypted,owner_user_id,enabled)
                 VALUES (?,?,?,?,?,?)
-                """, code(command.code()), text(command.name()), type(command.connectionType()), encrypt(command.config()),
+                """, code(command.code()), text(command.name()), connectionType, encrypt(command.config()),
                 AuthContext.require().id(), !Boolean.FALSE.equals(command.enabled()));
             Long id = jdbcTemplate.queryForObject("SELECT id FROM workflow_connection WHERE code=?", Long.class, code(command.code()));
             return view(id);
@@ -86,12 +91,18 @@ public class WorkflowConnectionService {
         StoredConnection existing = requireOwned(id);
         validate(command);
         ObjectNode merged = mergeMasked(existing.config(), command.config());
+        String connectionType = type(command.connectionType());
+        networkPolicy.validate(connectionType, merged);
+        boolean enabled = !Boolean.FALSE.equals(command.enabled());
+        boolean securityChanged = !existing.connectionType().equals(connectionType) || !existing.config().equals(merged)
+            || existing.enabled() != enabled;
         try {
             jdbcTemplate.update("""
-                UPDATE workflow_connection SET code=?,name=?,connection_type=?,config_encrypted=?,enabled=?,updated_at=NOW()
+                UPDATE workflow_connection SET code=?,name=?,connection_type=?,config_encrypted=?,enabled=?,
+                    security_revision=security_revision+?,updated_at=NOW()
                 WHERE id=? AND voided=false
-                """, code(command.code()), text(command.name()), type(command.connectionType()), encrypt(merged),
-                !Boolean.FALSE.equals(command.enabled()), id);
+                """, code(command.code()), text(command.name()), connectionType, encrypt(merged),
+                enabled, securityChanged ? 1 : 0, id);
             return view(id);
         } catch (DataIntegrityViolationException exception) {
             throw new BusinessException(409, "workflow.connectionCodeExists");
@@ -102,9 +113,8 @@ public class WorkflowConnectionService {
     @Transactional
     public void delete(Long id) {
         requireOwned(id);
-        String marker = "\"connectionId\":" + id;
         Integer references = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM workflow_version WHERE graph_json LIKE ?", Integer.class, "%" + marker + "%");
+            "SELECT COUNT(*) FROM workflow_version_connection WHERE connection_id=?", Integer.class, id);
         if (references != null && references > 0) throw new BusinessException(409, "workflow.connectionInUse");
         jdbcTemplate.update("UPDATE workflow_connection SET enabled=false,voided=true,updated_at=NOW() WHERE id=?", id);
     }
@@ -113,11 +123,13 @@ public class WorkflowConnectionService {
     public WorkflowModels.ConnectionView view(Long id) { return mapView(requireStored(id)); }
 
     /** 在保存工作流时确认连接存在、启用且属于工作流所有者。 */
-    public void requireOwnedAndEnabled(Long id, Long ownerId, Set<String> allowedTypes) {
+    public StoredConnection requireOwnedAndEnabled(Long id, Long ownerId, Set<String> allowedTypes) {
         StoredConnection connection = requireStored(id);
         if (!connection.enabled() || !connection.ownerUserId().equals(ownerId) || !allowedTypes.contains(connection.connectionType())) {
             throw new BusinessException("workflow.connectionForbidden");
         }
+        networkPolicy.validate(connection.connectionType(), connection.config());
+        return connection;
     }
 
     /** 为节点执行器读取已授权连接的明文配置。 */
@@ -126,11 +138,16 @@ public class WorkflowConnectionService {
         if (!connection.enabled() || !allowedTypes.contains(connection.connectionType())) {
             throw new BusinessException("workflow.connectionInvalid");
         }
+        networkPolicy.validate(connection.connectionType(), connection.config());
         return connection;
     }
 
     /** 为当前所有者执行连接测试读取明文配置。 */
-    public StoredConnection ownedForTest(Long id) { return requireOwned(id); }
+    public StoredConnection ownedForTest(Long id) {
+        StoredConnection connection = requireOwned(id);
+        networkPolicy.validate(connection.connectionType(), connection.config());
+        return connection;
+    }
 
     /** 当前用户只能维护自己的连接，管理员仍需显式成为记录所有者。 */
     private StoredConnection requireOwned(Long id) {
@@ -194,7 +211,8 @@ public class WorkflowConnectionService {
     private StoredConnection mapStored(ResultSet rs) throws SQLException {
         return new StoredConnection(rs.getLong("id"), rs.getString("code"), rs.getString("name"),
             rs.getString("connection_type"), decrypt(rs.getString("config_encrypted")), rs.getLong("owner_user_id"),
-            rs.getBoolean("enabled"), timestamp(rs, "created_at"), timestamp(rs, "updated_at"));
+            rs.getBoolean("enabled"), timestamp(rs, "created_at"), timestamp(rs, "updated_at"),
+            rs.getLong("security_revision"));
     }
 
     /** 规范连接编码。 */
@@ -231,6 +249,13 @@ public class WorkflowConnectionService {
     }
 
     public record StoredConnection(Long id, String code, String name, String connectionType, JsonNode config,
-                                   Long ownerUserId, boolean enabled, LocalDateTime createdAt, LocalDateTime updatedAt) { }
+                                   Long ownerUserId, boolean enabled, LocalDateTime createdAt, LocalDateTime updatedAt,
+                                   long securityRevision) {
+        /** 兼容不关心修订号的隔离单元测试和内部构造。 */
+        public StoredConnection(Long id, String code, String name, String connectionType, JsonNode config,
+                                Long ownerUserId, boolean enabled, LocalDateTime createdAt, LocalDateTime updatedAt) {
+            this(id, code, name, connectionType, config, ownerUserId, enabled, createdAt, updatedAt, 1L);
+        }
+    }
     public record ConnectionOption(Long id, String code, String name, String connectionType) { }
 }

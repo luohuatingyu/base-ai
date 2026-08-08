@@ -1,6 +1,7 @@
 package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.config.PlatformProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -38,11 +39,14 @@ public class WorkflowDataNodeExecutor implements WorkflowNodeExecutor {
     );
     private final ObjectMapper objectMapper;
     private final WorkflowExpressionService expressions;
+    private final int maxPayloadBytes;
 
     /** 注入 JSON 与受限表达式服务。 */
-    public WorkflowDataNodeExecutor(ObjectMapper objectMapper, WorkflowExpressionService expressions) {
+    public WorkflowDataNodeExecutor(ObjectMapper objectMapper, WorkflowExpressionService expressions,
+                                    PlatformProperties properties) {
         this.objectMapper = objectMapper;
         this.expressions = expressions;
+        this.maxPayloadBytes = Math.max(1, properties.getWorkflow().getMaxPayloadBytes());
     }
 
     /** 返回数据执行器支持的节点集合。 */
@@ -258,9 +262,14 @@ public class WorkflowDataNodeExecutor implements WorkflowNodeExecutor {
         JsonNode resolved = expressions.resolve(config, context);
         byte[] bytes;
         try {
-            bytes = resolved.hasNonNull("base64") ? Base64.getDecoder().decode(resolved.path("base64").asText())
+            String encoded = resolved.path("base64").asText("");
+            if (resolved.hasNonNull("base64") && encoded.length() > (long) maxPayloadBytes * 4 / 3 + 8) {
+                throw new BusinessException("workflow.payloadTooLarge", maxPayloadBytes);
+            }
+            bytes = resolved.hasNonNull("base64") ? Base64.getDecoder().decode(encoded)
                 : resolved.path("content").asText("").getBytes(StandardCharsets.UTF_8);
             if (bytes.length == 0) throw new BusinessException("workflow.documentEmpty");
+            if (bytes.length > maxPayloadBytes) throw new BusinessException("workflow.payloadTooLarge", maxPayloadBytes);
             Metadata metadata = new Metadata();
             if (resolved.hasNonNull("fileName")) metadata.set("resourceName", resolved.path("fileName").asText());
             BodyContentHandler handler = new BodyContentHandler(resolved.path("maxCharacters").asInt(1_000_000));

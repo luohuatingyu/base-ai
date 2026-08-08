@@ -135,8 +135,11 @@ curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
 顶层的**工作流**模块包含可复用的**节点管理**和可视化的**画布管理**页面。画布支持开始/结束、LLM、HTTP、工具调用 Agent、条件、数组迭代和条件循环节点；草稿通过校验后发布为不可变版本，再进入执行阶段。
 
 - 手动运行需要工作流执行权限；外部系统使用授权范围内的 `X-API-Key` 和工作流编码运行。
+- 非管理员只能查看和维护自己拥有的工作流；API Key 还必须显式加入具体工作流白名单，历史 Key 默认不获得工作流权限。
 - Agent 节点可调用受控 HTTP 工具或另一个已发布工作流。平台配置限制递归深度、迭代次数、循环次数、节点数量和负载大小。
 - 工作流输入、输出和节点输出均使用 AES-GCM 加密保存；定义、版本、运行和节点日志作为框架层数据统一存入 MySQL。
+- 数据库、Redis、S3、Kafka 和 RabbitMQ 使用独立的 Host/CIDR 出站白名单；升级时仅精确导入已有目标，连接安全配置变更后需重新发布引用它的工作流。
+- 运行采用有界队列、累计步骤/日志预算和多实例租约；取消状态不会被迟到结果覆盖，但远端系统已经接受的不可逆副作用无法自动回滚。
 - 开放执行接口为 `POST /api/workflows/{code}/runs`，状态及解密结果通过 `GET /api/workflows/runs/{runId}` 查询。
 
 ## 任务追踪与审计日志
@@ -212,6 +215,7 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
+- **工作流：** `WORKFLOW_EXECUTOR_POOL_SIZE`、`WORKFLOW_EXECUTOR_QUEUE_CAPACITY`、`WORKFLOW_MAX_NODES`、`WORKFLOW_MAX_ITERATIONS`、`WORKFLOW_MAX_AGENT_STEPS`、`WORKFLOW_MAX_RECURSION_DEPTH`、`WORKFLOW_MAX_PAYLOAD_BYTES`、`WORKFLOW_MAX_WAIT_SECONDS`、`WORKFLOW_MAX_EXECUTION_STEPS`、`WORKFLOW_MAX_RUN_LOG_BYTES`、`WORKFLOW_LEASE_SECONDS`、`WORKFLOW_WEBHOOK_MAX_BODY_BYTES`、`WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE`、`WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS`。
 - **HTTPS 入口、端口和镜像：** `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR`、`APP_HTTPS_IPS`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。

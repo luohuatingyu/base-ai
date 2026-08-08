@@ -100,4 +100,17 @@ class WorkflowGraphValidatorTest {
              "edges":[{"id":"a","source":"start","target":"loop"},{"id":"b","source":"loop","target":"end"}]}
             """)));
     }
+
+    /** 节点上限必须累计主图和全部子图，不能由每层分别计数绕过。 */
+    @Test
+    void rejectsNestedGraphsWhenCumulativeNodeLimitIsExceeded() throws Exception {
+        WorkflowGraphValidator limited = new WorkflowGraphValidator(objectMapper, 4, 5);
+        assertThrows(BusinessException.class, () -> limited.validate(objectMapper.readTree("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"loop","type":"LOOP","config":{"bodyGraph":{
+                "nodes":[{"id":"inner-start","type":"START"},{"id":"inner-end","type":"END"}],
+                "edges":[{"id":"inner-edge","source":"inner-start","target":"inner-end"}]
+            }}},{"id":"end","type":"END"}],
+             "edges":[{"id":"a","source":"start","target":"loop"},{"id":"b","source":"loop","target":"end"}]}
+            """)));
+    }
 }

@@ -7,6 +7,7 @@ import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
 import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.TaskTraceService;
 import com.baseai.platform.trace.TraceCancelledException;
@@ -28,6 +29,7 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
+import org.springframework.core.task.TaskRejectedException;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
@@ -63,11 +65,14 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private final AiChatClient aiChatClient;
     private final ApiTriggerService apiTriggerService;
     private final WorkflowNodeExecutorRegistry nodeExecutors;
+    private final WorkflowAccessService accessService;
     private final ThreadPoolTaskExecutor executor;
     private final TaskTraceService taskTraceService;
     private final TraceRuntimeRegistry runtimeRegistry;
     private final PlatformProperties.Workflow limits;
+    private final String instanceId;
     private final Map<String, Future<?>> futures = new ConcurrentHashMap<>();
+    private final ThreadLocal<String> budgetRunId = new ThreadLocal<>();
 
     /** 注入执行所需的持久化、节点适配器、线程池和追踪组件。 */
     public WorkflowExecutionService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate,
@@ -75,7 +80,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
                                     WorkflowService workflowService, WorkflowExpressionService expressions,
                                     WorkflowAgentClient agentClient, AiChatClient aiChatClient,
                                     ApiTriggerService apiTriggerService,
-                                    WorkflowNodeExecutorRegistry nodeExecutors,
+                                    WorkflowNodeExecutorRegistry nodeExecutors, WorkflowAccessService accessService,
                                     @Qualifier("workflowTaskExecutor") ThreadPoolTaskExecutor executor,
                                     TaskTraceService taskTraceService, TraceRuntimeRegistry runtimeRegistry,
                                     PlatformProperties properties) {
@@ -88,48 +93,42 @@ public class WorkflowExecutionService implements ApplicationRunner {
         this.aiChatClient = aiChatClient;
         this.apiTriggerService = apiTriggerService;
         this.nodeExecutors = nodeExecutors;
+        this.accessService = accessService;
         this.executor = executor;
         this.taskTraceService = taskTraceService;
         this.runtimeRegistry = runtimeRegistry;
         this.limits = properties.getWorkflow();
+        this.instanceId = properties.getPythonWorker().getJavaInstanceId() + ":" + UUID.randomUUID();
     }
 
-    /** 启动时恢复持久等待，并将无法恢复的普通运行中记录置为失败。 */
+    /** 启动时只回收租约已经过期的遗留运行，不影响其他实例的活跃任务。 */
     @Override
     public void run(ApplicationArguments arguments) {
-        jdbcTemplate.update("""
-            UPDATE workflow_run r JOIN workflow_wait_state w ON w.workflow_run_id=r.id
-            SET r.status='WAITING',r.updated_at=NOW(),w.status='WAITING',w.updated_at=NOW()
-            WHERE r.status IN ('QUEUED','RUNNING','WAITING')
-            """);
-        jdbcTemplate.update("""
-            UPDATE workflow_run SET status='FAILED',error_message='服务重启，工作流未恢复',finished_at=NOW(),updated_at=NOW()
-            WHERE status IN ('QUEUED','RUNNING')
-            """);
+        recoverExpiredLeases();
     }
 
     /** 从画布启动当前草稿版本。 */
     public WorkflowModels.RunAccepted startDraft(Long workflowId, Map<String, Object> inputs) {
         WorkflowModels.WorkflowView workflow = workflowService.workflow(workflowId);
         WorkflowModels.StoredVersion version = workflowService.storedVersion(workflow.currentVersionId());
-        return enqueue(version, inputs, "MANUAL", AuthContext.require().id(), null, 0, Set.of());
+        return enqueue(version, inputs, "MANUAL", AuthContext.require().id(), currentApiKeyId(), null, 0, Set.of());
     }
 
     /** 从开放平台按稳定编码启动已发布版本。 */
     public WorkflowModels.RunAccepted startPublished(String workflowCode, Map<String, Object> inputs) {
         WorkflowModels.StoredVersion version = workflowService.executable(workflowCode, true);
-        return enqueue(version, inputs, "API", AuthContext.require().id(), null, 0, Set.of());
+        return enqueue(version, inputs, "API", AuthContext.require().id(), currentApiKeyId(), null, 0, Set.of());
     }
 
     /** 由平台原生触发器按已发布版本所有者启动工作流。 */
     public WorkflowModels.RunAccepted startTriggered(String workflowCode, Map<String, Object> inputs, String triggerType) {
-        WorkflowModels.StoredVersion version = workflowService.executable(workflowCode, true);
-        return enqueue(version, inputs, triggerType, version.workflowOwnerId(), null, 0, Set.of());
+        WorkflowModels.StoredVersion version = workflowService.executableInternal(workflowCode, true);
+        return enqueue(version, inputs, triggerType, version.workflowOwnerId(), null, null, 0, Set.of());
     }
 
     /** 创建异步运行记录、MySQL 任务追踪和可取消 Future。 */
     private WorkflowModels.RunAccepted enqueue(WorkflowModels.StoredVersion version, Map<String, Object> rawInputs,
-                                                String triggerType, Long ownerId, String parentRunId,
+                                                String triggerType, Long ownerId, Long apiKeyId, String parentRunId,
                                                 int depth, Set<String> stack) {
         workflowService.validateExecutableConfiguration(version);
         ObjectNode inputs = objectMapper.valueToTree(rawInputs == null ? Map.of() : rawInputs);
@@ -138,11 +137,25 @@ public class WorkflowExecutionService implements ApplicationRunner {
         String runId = UUID.randomUUID().toString();
         String traceId = taskTraceService.create(null, ownerId, "WORKFLOW_EXECUTE", triggerType, "POST",
             "/api/workflows/" + version.workflowCode() + "/runs", new TraceSnapshot("{}", "{}"));
-        insertRun(runId, version, parentRunId, traceId, triggerType, inputs, ownerId);
+        try { insertRun(runId, version, parentRunId, traceId, triggerType, inputs, ownerId, apiKeyId); }
+        catch (RuntimeException exception) {
+            taskTraceService.markFailed(traceId, "工作流运行记录创建失败"); throw exception;
+        }
         TraceRuntime runtime = runtimeRegistry.create(traceId);
-        Future<?> future = executor.submit(() -> executeQueued(runId, version, inputs, ownerId, triggerType, depth, stack, runtime));
-        runtime.registerFuture(future);
-        futures.put(runId, future);
+        try {
+            Future<?> future = executor.submit(() -> executeQueued(runId, version, inputs, ownerId, triggerType, depth, stack, runtime));
+            runtime.registerFuture(future);
+            futures.put(runId, future);
+            if (future.isDone()) futures.remove(runId, future);
+        } catch (TaskRejectedException exception) {
+            String message = "工作流执行队列已满";
+            jdbcTemplate.update("""
+                UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
+                WHERE id=? AND status='QUEUED'
+                """, message, runId);
+            taskTraceService.markFailed(traceId, message); runtimeRegistry.remove(traceId);
+            throw new BusinessException(503, "workflow.queueFull");
+        }
         return new WorkflowModels.RunAccepted(runId, "QUEUED");
     }
 
@@ -150,19 +163,22 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private void executeQueued(String runId, WorkflowModels.StoredVersion version, ObjectNode inputs, Long ownerId,
                                String triggerType, int depth, Set<String> stack, TraceRuntime runtime) {
         String traceId = traceId(runId);
+        budgetRunId.set(runId);
         runtime.registerThread(Thread.currentThread());
         TraceContext context = new TraceContext(traceId, ownerId, "WORKFLOW_EXECUTE", triggerType, runtime.token(), runtime);
         try (TraceContextHolder.Scope ignored = TraceContextHolder.bind(context)) {
-            markRunRunning(runId);
+            if (!markRunRunning(runId)) throw new TraceCancelledException(traceId);
             JsonNode output = executeGraph(runId, version, inputs, depth, stack, new AtomicInteger());
             enforcePayload(output);
-            jdbcTemplate.update("""
-                UPDATE workflow_run SET status='SUCCESS',output_encrypted=?,finished_at=NOW(),updated_at=NOW() WHERE id=?
-                """, encrypt(output), runId);
+            if (!completeRunSuccess(runId, output)) throw new TraceCancelledException(traceId);
             taskTraceService.markSuccess(traceId);
         } catch (WorkflowWaitSignal signal) {
-            persistWait(runId, signal.checkpoint());
-            taskTraceService.markWaiting(traceId);
+            try {
+                persistWait(runId, signal.checkpoint());
+                taskTraceService.markWaiting(traceId);
+            } catch (TraceCancelledException exception) {
+                markCancelled(runId); taskTraceService.completeCancellation(traceId);
+            }
         } catch (TraceCancelledException exception) {
             markCancelled(runId);
             taskTraceService.completeCancellation(traceId);
@@ -172,15 +188,18 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 taskTraceService.completeCancellation(traceId);
             } else {
                 String message = truncate(exception.getMessage(), 2000);
-                jdbcTemplate.update("""
-                    UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),updated_at=NOW() WHERE id=?
+                int failed = jdbcTemplate.update("""
+                    UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
+                    WHERE id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false
                     """, message, runId);
-                taskTraceService.markFailed(traceId, message);
+                if (failed == 1) taskTraceService.markFailed(traceId, message);
+                else { markCancelled(runId); taskTraceService.completeCancellation(traceId); }
             }
         } finally {
             futures.remove(runId);
             runtime.unregisterThread(Thread.currentThread());
             runtimeRegistry.remove(traceId);
+            budgetRunId.remove();
             Thread.interrupted();
         }
     }
@@ -234,8 +253,11 @@ public class WorkflowExecutionService implements ApplicationRunner {
             boolean entry = "START".equals(type) || WorkflowNodeTypes.TRIGGERS.contains(type);
             if (!entry && incoming.stream().noneMatch(edge -> selectedEdges.contains(edge.path("id").asText()))) continue;
             ObjectNode config = nodeConfig(node, snapshots.path(nodeId));
+            enforcePayload(context);
             JsonNode nodeInput = objectMapper.createObjectNode().set("context", context.deepCopy());
-            long nodeRunId = startNodeRun(runId, node, type, sequence.incrementAndGet(), iterationPath, nodeInput);
+            int step = sequence.incrementAndGet();
+            if (step > Math.max(1, limits.getMaxExecutionSteps())) throw new BusinessException("workflow.executionStepLimit", limits.getMaxExecutionSteps());
+            long nodeRunId = startNodeRun(runId, node, type, step, iterationPath, nodeInput);
             try {
                 if ("WAIT".equals(type)) {
                     if (depth > 0) throw new BusinessException("workflow.waitNestedForbidden");
@@ -246,6 +268,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 }
                 NodeResult result = executeNodeWithPolicy(runId, node, type, config, context, depth, stack, sequence,
                     iterationPath, workflowOwnerId);
+                enforcePayload(result.output());
                 ((ObjectNode) context.path("nodes")).set(nodeId, result.output());
                 finishNodeRun(nodeRunId, result.error() == null ? "SUCCESS" : "FAILED_CONTINUED", result.output(), result.error());
                 if ("END".equals(type)) finalOutput = result.output();
@@ -328,8 +351,9 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 workflowOwnerId), null, null);
             case "LOOP" -> new NodeResult(executeLoop(runId, config, context, depth, stack, sequence, iterationPath,
                 workflowOwnerId), null, null);
-            case "AGENT" -> new NodeResult(executeAgent(runId, config, context, depth, stack), null, null);
-            case "SUB_WORKFLOW" -> new NodeResult(executeSubWorkflow(runId, config, context, depth, stack), null, null);
+            case "AGENT" -> new NodeResult(executeAgent(runId, config, context, depth, stack, sequence, workflowOwnerId), null, null);
+            case "SUB_WORKFLOW" -> new NodeResult(executeSubWorkflow(runId, config, context, depth, stack, sequence,
+                workflowOwnerId), null, null);
             case "WAIT" -> throw new BusinessException("workflow.waitNestedForbidden");
             default -> {
                 if (!nodeExecutors.supports(type)) throw new BusinessException("workflow.nodeTypeInvalid");
@@ -426,25 +450,29 @@ public class WorkflowExecutionService implements ApplicationRunner {
 
     /** 确定性调用已发布子工作流并记录父子运行关系。 */
     private JsonNode executeSubWorkflow(String parentRunId, ObjectNode config, ObjectNode context,
-                                        int depth, Set<String> stack) {
+                                        int depth, Set<String> stack, AtomicInteger sequence, Long workflowOwnerId) {
         JsonNode resolved = expressions.resolve(config, context);
         WorkflowNodeConfigValidator.validateResolved("SUB_WORKFLOW", resolved);
-        WorkflowModels.StoredVersion version = workflowService.executable(resolved.path("workflowCode").asText(), true);
+        WorkflowModels.StoredVersion version = workflowService.executableInternal(resolved.path("workflowCode").asText(), true);
+        requireSameWorkflowOwner(version, workflowOwnerId);
         workflowService.validateExecutableConfiguration(version);
         ObjectNode arguments = resolved.path("inputs").isObject() ? (ObjectNode) resolved.path("inputs") : objectMapper.createObjectNode();
         validateInputs(version.inputSchema(), arguments);
         String childRunId = UUID.randomUUID().toString();
         insertRun(childRunId, version, parentRunId, TraceContextHolder.currentTraceId().orElse(null), "SUB_WORKFLOW",
-            arguments, version.workflowOwnerId());
-        markRunRunning(childRunId);
+            arguments, version.workflowOwnerId(), parentApiKeyId(parentRunId));
+        if (!markRunRunning(childRunId)) throw new TraceCancelledException(TraceContextHolder.currentTraceId().orElse(""));
         try {
-            JsonNode output = executeGraph(childRunId, version, arguments, depth + 1, stack, new AtomicInteger());
-            jdbcTemplate.update("UPDATE workflow_run SET status='SUCCESS',output_encrypted=?,finished_at=NOW(),updated_at=NOW() WHERE id=?",
-                encrypt(output), childRunId);
+            JsonNode output = executeGraph(childRunId, version, arguments, depth + 1, stack, sequence);
+            if (!completeRunSuccess(childRunId, output)) {
+                throw new TraceCancelledException(TraceContextHolder.currentTraceId().orElse(""));
+            }
             return output;
+        } catch (TraceCancelledException exception) {
+            markCancelled(childRunId);
+            throw exception;
         } catch (RuntimeException exception) {
-            jdbcTemplate.update("UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),updated_at=NOW() WHERE id=?",
-                truncate(exception.getMessage(), 2000), childRunId);
+            completeRunFailure(childRunId, exception.getMessage());
             throw exception;
         }
     }
@@ -460,7 +488,8 @@ public class WorkflowExecutionService implements ApplicationRunner {
     }
 
     /** 在最大步骤内让模型选择 HTTP 或已发布子工作流工具。 */
-    private JsonNode executeAgent(String runId, ObjectNode config, ObjectNode context, int depth, Set<String> stack) {
+    private JsonNode executeAgent(String runId, ObjectNode config, ObjectNode context, int depth, Set<String> stack,
+                                  AtomicInteger sequence, Long workflowOwnerId) {
         JsonNode resolved = expressions.resolve(config, context);
         WorkflowNodeConfigValidator.validateResolved("AGENT", resolved);
         int maximum = bounded(resolved.path("maxSteps").asInt(5), limits.getMaxAgentSteps());
@@ -496,7 +525,8 @@ public class WorkflowExecutionService implements ApplicationRunner {
             assistant.put("role", "assistant"); assistant.put("content", decision.content()); assistant.put("tool_calls", rawCalls);
             messages.add(assistant);
             for (WorkflowAgentClient.ToolCall call : decision.toolCalls()) {
-                JsonNode toolResult = executeAgentTool(runId, toolConfigs.get(call.name()), call.arguments(), depth, stack);
+                JsonNode toolResult = executeAgentTool(runId, toolConfigs.get(call.name()), call.arguments(), depth, stack,
+                    sequence, workflowOwnerId);
                 Map<String, Object> toolMessage = new LinkedHashMap<>();
                 toolMessage.put("role", "tool"); toolMessage.put("tool_call_id", call.id());
                 toolMessage.put("name", call.name()); toolMessage.put("content", toolResult.toString());
@@ -507,7 +537,8 @@ public class WorkflowExecutionService implements ApplicationRunner {
     }
 
     /** 执行 Agent 已授权的具体工具。 */
-    private JsonNode executeAgentTool(String parentRunId, JsonNode tool, JsonNode arguments, int depth, Set<String> stack) {
+    private JsonNode executeAgentTool(String parentRunId, JsonNode tool, JsonNode arguments, int depth, Set<String> stack,
+                                      AtomicInteger sequence, Long workflowOwnerId) {
         String type = tool.path("toolType").asText().toUpperCase(Locale.ROOT);
         if ("HTTP".equals(type)) {
             ObjectNode toolContext = objectMapper.createObjectNode();
@@ -516,21 +547,26 @@ public class WorkflowExecutionService implements ApplicationRunner {
             return executeHttp((ObjectNode) tool.path("config"), toolContext);
         }
         if ("WORKFLOW".equals(type)) {
-            WorkflowModels.StoredVersion version = workflowService.executable(tool.path("workflowCode").asText(), true);
+            WorkflowModels.StoredVersion version = workflowService.executableInternal(tool.path("workflowCode").asText(), true);
+            requireSameWorkflowOwner(version, workflowOwnerId);
             workflowService.validateExecutableConfiguration(version);
             validateInputs(version.inputSchema(), object(arguments));
             String childRunId = UUID.randomUUID().toString();
             Long ownerId = TraceContextHolder.current().map(TraceContext::ownerUserId).orElseThrow();
-            insertRun(childRunId, version, parentRunId, TraceContextHolder.currentTraceId().orElse(null), "AGENT", arguments, ownerId);
-            markRunRunning(childRunId);
+            insertRun(childRunId, version, parentRunId, TraceContextHolder.currentTraceId().orElse(null), "AGENT", arguments,
+                ownerId, parentApiKeyId(parentRunId));
+            if (!markRunRunning(childRunId)) throw new TraceCancelledException(TraceContextHolder.currentTraceId().orElse(""));
             try {
-                JsonNode output = executeGraph(childRunId, version, object(arguments), depth + 1, stack, new AtomicInteger());
-                jdbcTemplate.update("UPDATE workflow_run SET status='SUCCESS',output_encrypted=?,finished_at=NOW(),updated_at=NOW() WHERE id=?",
-                    encrypt(output), childRunId);
+                JsonNode output = executeGraph(childRunId, version, object(arguments), depth + 1, stack, sequence);
+                if (!completeRunSuccess(childRunId, output)) {
+                    throw new TraceCancelledException(TraceContextHolder.currentTraceId().orElse(""));
+                }
                 return output;
+            } catch (TraceCancelledException exception) {
+                markCancelled(childRunId);
+                throw exception;
             } catch (RuntimeException exception) {
-                jdbcTemplate.update("UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),updated_at=NOW() WHERE id=?",
-                    truncate(exception.getMessage(), 2000), childRunId);
+                completeRunFailure(childRunId, exception.getMessage());
                 throw exception;
             }
         }
@@ -545,10 +581,10 @@ public class WorkflowExecutionService implements ApplicationRunner {
             """, (rs, row) -> mapRun(rs), runId);
         if (rows.isEmpty()) throw BusinessException.notFound("workflow.runNotFound");
         WorkflowModels.RunView run = rows.get(0);
-        requireRunAccess(run.ownerUserId());
+        accessService.requireRunAccess(run.workflowId(), run.ownerUserId(), run.apiKeyId());
         return new WorkflowModels.RunView(run.id(), run.workflowId(), run.workflowCode(), run.versionNumber(), run.parentRunId(),
             run.traceId(), run.triggerType(), run.status(), run.input(), run.output(), run.errorMessage(), run.ownerUserId(),
-            run.cancelRequested(), run.startedAt(), run.finishedAt(), run.createdAt(), nodeRuns(runId));
+            run.apiKeyId(), run.cancelRequested(), run.startedAt(), run.finishedAt(), run.createdAt(), nodeRuns(runId));
     }
 
     /** 查询工作流最近运行记录。 */
@@ -582,16 +618,37 @@ public class WorkflowExecutionService implements ApplicationRunner {
 
     /** 插入工作流运行记录。 */
     private void insertRun(String runId, WorkflowModels.StoredVersion version, String parentRunId, String traceId,
-                           String triggerType, JsonNode inputs, Long ownerId) {
+                           String triggerType, JsonNode inputs, Long ownerId, Long apiKeyId) {
         jdbcTemplate.update("""
-            INSERT INTO workflow_run(id,workflow_id,workflow_version_id,parent_run_id,trace_id,trigger_type,status,input_encrypted,output_encrypted,owner_user_id)
-            VALUES (?,?,?,?,?,?,'QUEUED',?,'',?)
-            """, runId, version.workflowId(), version.id(), parentRunId, traceId, triggerType, encrypt(inputs), ownerId);
+            INSERT INTO workflow_run(id,workflow_id,workflow_version_id,parent_run_id,trace_id,trigger_type,status,input_encrypted,
+                output_encrypted,owner_user_id,api_key_id,execution_instance_id,lease_expires_at)
+            VALUES (?,?,?,?,?,?,'QUEUED',?,'',?,?,?,?)
+            """, runId, version.workflowId(), version.id(), parentRunId, traceId, triggerType, encrypt(inputs), ownerId,
+            apiKeyId, instanceId, leaseTimestamp());
     }
 
     /** 标记运行开始。 */
-    private void markRunRunning(String runId) {
-        jdbcTemplate.update("UPDATE workflow_run SET status='RUNNING',started_at=NOW(),updated_at=NOW() WHERE id=? AND status='QUEUED'", runId);
+    private boolean markRunRunning(String runId) {
+        return jdbcTemplate.update("""
+            UPDATE workflow_run SET status='RUNNING',started_at=COALESCE(started_at,NOW()),execution_instance_id=?,
+                lease_expires_at=?,updated_at=NOW() WHERE id=? AND status='QUEUED' AND cancel_requested=false
+            """, instanceId, leaseTimestamp(), runId) == 1;
+    }
+
+    /** 仅允许活跃且未取消的运行进入成功终态，供状态机测试验证竞争行为。 */
+    boolean completeRunSuccess(String runId, JsonNode output) {
+        return jdbcTemplate.update("""
+            UPDATE workflow_run SET status='SUCCESS',output_encrypted=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
+            WHERE id=? AND status='RUNNING' AND cancel_requested=false
+            """, encrypt(output), runId) == 1;
+    }
+
+    /** 仅允许活跃且未取消的运行进入失败终态，防止子运行迟到异常覆盖取消结果。 */
+    boolean completeRunFailure(String runId, String message) {
+        return jdbcTemplate.update("""
+            UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
+            WHERE id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false
+            """, truncate(message, 2000), runId) == 1;
     }
 
     /** 标记运行取消。 */
@@ -600,6 +657,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
             UPDATE workflow_run SET status='CANCELLED',cancel_requested=true,finished_at=NOW(),updated_at=NOW()
             WHERE id=? AND status IN ('QUEUED','RUNNING','WAITING','CANCELLED')
             """, runId);
+        jdbcTemplate.update("UPDATE workflow_run SET lease_expires_at=NULL WHERE id=?", runId);
         jdbcTemplate.update("DELETE FROM workflow_wait_state WHERE workflow_run_id=?", runId);
     }
 
@@ -612,13 +670,22 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private void persistWait(String runId, WaitCheckpoint checkpoint) {
         Instant resumeAt = Instant.now().plusMillis(checkpoint.waitedMilliseconds());
         JsonNode state = objectMapper.valueToTree(checkpoint);
-        jdbcTemplate.update("""
+        int persisted = jdbcTemplate.update("""
             INSERT INTO workflow_wait_state(workflow_run_id,node_id,resume_at,state_encrypted,status)
-            VALUES (?,?,?,?, 'WAITING')
+            SELECT ?,?,?,?,'WAITING' FROM workflow_run
+            WHERE id=? AND status='RUNNING' AND cancel_requested=false
             ON DUPLICATE KEY UPDATE node_id=VALUES(node_id),resume_at=VALUES(resume_at),state_encrypted=VALUES(state_encrypted),
                 status='WAITING',updated_at=NOW()
-            """, runId, checkpoint.waitNodeId(), java.sql.Timestamp.from(resumeAt), encrypt(state));
-        jdbcTemplate.update("UPDATE workflow_run SET status='WAITING',updated_at=NOW() WHERE id=? AND status='RUNNING'", runId);
+            """, runId, checkpoint.waitNodeId(), java.sql.Timestamp.from(resumeAt), encrypt(state), runId);
+        if (persisted == 0) throw new TraceCancelledException(TraceContextHolder.currentTraceId().orElse(""));
+        int waiting = jdbcTemplate.update("""
+            UPDATE workflow_run SET status='WAITING',execution_instance_id=NULL,lease_expires_at=NULL,updated_at=NOW()
+            WHERE id=? AND status='RUNNING' AND cancel_requested=false
+            """, runId);
+        if (waiting == 0) {
+            jdbcTemplate.update("DELETE FROM workflow_wait_state WHERE workflow_run_id=?", runId);
+            throw new TraceCancelledException(TraceContextHolder.currentTraceId().orElse(""));
+        }
     }
 
     /** 每秒领取到期等待记录并提交恢复任务。 */
@@ -633,23 +700,87 @@ public class WorkflowExecutionService implements ApplicationRunner {
             rs.getLong("workflow_version_id"), rs.getString("trace_id"), rs.getLong("owner_user_id"), rs.getString("trigger_type")));
         for (WaitResumeRow row : due) {
             int claimed = jdbcTemplate.update("""
-                UPDATE workflow_wait_state w JOIN workflow_run r ON r.id=w.workflow_run_id
-                SET w.status='RESUMING',w.updated_at=NOW(),r.status='RUNNING',r.updated_at=NOW()
-                WHERE w.workflow_run_id=? AND w.status='WAITING' AND r.status='WAITING' AND r.cancel_requested=false
-                """, row.runId());
-            if (claimed == 1) submitResume(row);
+                UPDATE workflow_run SET status='RUNNING',execution_instance_id=?,lease_expires_at=?,updated_at=NOW()
+                WHERE id=? AND status='WAITING' AND cancel_requested=false AND EXISTS (
+                    SELECT 1 FROM workflow_wait_state w WHERE w.workflow_run_id=workflow_run.id AND w.status='WAITING')
+                """, instanceId, leaseTimestamp(), row.runId());
+            if (claimed == 1) {
+                int checkpoint = jdbcTemplate.update("""
+                    UPDATE workflow_wait_state SET status='RESUMING',updated_at=NOW()
+                    WHERE workflow_run_id=? AND status='WAITING'
+                    """, row.runId());
+                if (checkpoint == 1) submitResume(row);
+                else jdbcTemplate.update("""
+                    UPDATE workflow_run SET status='WAITING',execution_instance_id=NULL,lease_expires_at=NULL,updated_at=NOW()
+                    WHERE id=? AND status='RUNNING' AND cancel_requested=false AND execution_instance_id=?
+                    """, row.runId(), instanceId);
+            }
+        }
+    }
+
+    /** 周期性续租本实例排队和运行中的任务，避免其他实例误判为遗留任务。 */
+    @Scheduled(fixedDelay = 10_000L)
+    public void heartbeatLeases() {
+        jdbcTemplate.update("""
+            UPDATE workflow_run SET lease_expires_at=?,updated_at=NOW()
+            WHERE execution_instance_id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false
+            """, leaseTimestamp(), instanceId);
+    }
+
+    /** 周期性回收过期恢复租约，并只将没有等待检查点的遗留运行置为失败。 */
+    @Scheduled(fixedDelay = 15_000L)
+    public void recoverExpiredLeases() {
+        jdbcTemplate.update("""
+            UPDATE workflow_run SET status='WAITING',execution_instance_id=NULL,lease_expires_at=NULL,updated_at=NOW()
+            WHERE status='RUNNING' AND lease_expires_at<NOW() AND EXISTS (
+                SELECT 1 FROM workflow_wait_state w WHERE w.workflow_run_id=workflow_run.id AND w.status='RESUMING')
+            """);
+        jdbcTemplate.update("""
+            UPDATE workflow_wait_state SET status='WAITING',updated_at=NOW()
+            WHERE status='RESUMING' AND EXISTS (
+                SELECT 1 FROM workflow_run r WHERE r.id=workflow_wait_state.workflow_run_id AND r.status='WAITING')
+            """);
+        List<Map<String, Object>> expired = jdbcTemplate.queryForList("""
+            SELECT r.id,r.trace_id FROM workflow_run r LEFT JOIN workflow_wait_state w ON w.workflow_run_id=r.id
+            WHERE r.status IN ('QUEUED','RUNNING') AND r.cancel_requested=false AND r.lease_expires_at<NOW()
+                AND w.workflow_run_id IS NULL
+            """);
+        for (Map<String, Object> row : expired) {
+            String runId = String.valueOf(row.get("id"));
+            String traceId = row.get("trace_id") == null ? null : String.valueOf(row.get("trace_id"));
+            String message = "工作流执行租约已过期";
+            int failed = jdbcTemplate.update("""
+                UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),execution_instance_id=NULL,
+                    lease_expires_at=NULL,updated_at=NOW()
+                WHERE id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false AND lease_expires_at<NOW()
+                """, message, runId);
+            if (failed == 1 && traceId != null) taskTraceService.markFailed(traceId, message);
         }
     }
 
     /** 为已领取检查点创建新的可取消运行时。 */
     private void submitResume(WaitResumeRow row) {
         TraceRuntime runtime = runtimeRegistry.create(row.traceId());
-        Future<?> future = executor.submit(() -> executeResumed(row, runtime));
-        runtime.registerFuture(future); futures.put(row.runId(), future);
+        try {
+            Future<?> future = executor.submit(() -> executeResumed(row, runtime));
+            runtime.registerFuture(future); futures.put(row.runId(), future);
+            if (future.isDone()) futures.remove(row.runId(), future);
+        } catch (TaskRejectedException exception) {
+            jdbcTemplate.update("""
+                UPDATE workflow_run SET status='WAITING',execution_instance_id=NULL,lease_expires_at=NULL,updated_at=NOW()
+                WHERE id=? AND status='RUNNING' AND cancel_requested=false AND execution_instance_id=?
+                """, row.runId(), instanceId);
+            jdbcTemplate.update("""
+                UPDATE workflow_wait_state SET status='WAITING',updated_at=NOW()
+                WHERE workflow_run_id=? AND status='RESUMING'
+                """, row.runId());
+            runtimeRegistry.remove(row.traceId());
+        }
     }
 
     /** 绑定原 Trace 并从等待节点之后恢复拓扑执行。 */
     private void executeResumed(WaitResumeRow row, TraceRuntime runtime) {
+        budgetRunId.set(row.runId());
         runtime.registerThread(Thread.currentThread());
         TraceContext trace = new TraceContext(row.traceId(), row.ownerId(), "WORKFLOW_EXECUTE", row.triggerType(),
             runtime.token(), runtime);
@@ -662,30 +793,40 @@ public class WorkflowExecutionService implements ApplicationRunner {
             JsonNode output = executeGraphNodes(row.runId(), version.graph(), version.templateSnapshots(), context, 0, stack,
                 new AtomicInteger(checkpoint.sequence()), "", version.workflowOwnerId(), checkpoint);
             enforcePayload(output);
-            jdbcTemplate.update("""
-                UPDATE workflow_run SET status='SUCCESS',output_encrypted=?,finished_at=NOW(),updated_at=NOW() WHERE id=?
-                """, encrypt(output), row.runId());
+            int completed = jdbcTemplate.update("""
+                UPDATE workflow_run SET status='SUCCESS',output_encrypted=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
+                WHERE id=? AND status='RUNNING' AND cancel_requested=false AND execution_instance_id=?
+                """, encrypt(output), row.runId(), instanceId);
+            if (completed == 0) throw new TraceCancelledException(row.traceId());
             jdbcTemplate.update("DELETE FROM workflow_wait_state WHERE workflow_run_id=?", row.runId());
             taskTraceService.markSuccess(row.traceId());
         } catch (WorkflowWaitSignal signal) {
-            persistWait(row.runId(), signal.checkpoint()); taskTraceService.markWaiting(row.traceId());
+            try {
+                persistWait(row.runId(), signal.checkpoint()); taskTraceService.markWaiting(row.traceId());
+            } catch (TraceCancelledException exception) {
+                markCancelled(row.runId()); taskTraceService.completeCancellation(row.traceId());
+            }
         } catch (TraceCancelledException exception) {
             markCancelled(row.runId()); taskTraceService.completeCancellation(row.traceId());
         } catch (Throwable exception) {
             String message = truncate(exception.getMessage(), 2000);
-            jdbcTemplate.update("""
-                UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),updated_at=NOW() WHERE id=?
-                """, message, row.runId());
+            int failed = jdbcTemplate.update("""
+                UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
+                WHERE id=? AND status='RUNNING' AND cancel_requested=false AND execution_instance_id=?
+                """, message, row.runId(), instanceId);
             jdbcTemplate.update("DELETE FROM workflow_wait_state WHERE workflow_run_id=?", row.runId());
-            taskTraceService.markFailed(row.traceId(), message);
+            if (failed == 1) taskTraceService.markFailed(row.traceId(), message);
+            else { markCancelled(row.runId()); taskTraceService.completeCancellation(row.traceId()); }
         } finally {
             futures.remove(row.runId()); runtime.unregisterThread(Thread.currentThread()); runtimeRegistry.remove(row.traceId());
+            budgetRunId.remove();
             Thread.interrupted();
         }
     }
 
     /** 写入节点运行开始记录并返回主键。 */
     private long startNodeRun(String runId, JsonNode node, String type, int sequence, String iterationPath, JsonNode input) {
+        reserveLogBytes(runId, input, null);
         Long id = insertKey("""
             INSERT INTO workflow_node_run(workflow_run_id,node_id,node_name,node_type,sequence_no,iteration_path,status,input_encrypted,output_encrypted)
             VALUES (?,?,?,?,?,?,'RUNNING',?,'')
@@ -696,6 +837,8 @@ public class WorkflowExecutionService implements ApplicationRunner {
 
     /** 写入节点终态、输出或错误。 */
     private void finishNodeRun(long id, String status, JsonNode output, String error) {
+        String runId = jdbcTemplate.queryForObject("SELECT workflow_run_id FROM workflow_node_run WHERE id=?", String.class, id);
+        reserveLogBytes(runId, output, error);
         jdbcTemplate.update("""
             UPDATE workflow_node_run SET status=?,output_encrypted=?,error_message=?,finished_at=NOW() WHERE id=?
             """, status, output == null ? "" : encrypt(output), error, id);
@@ -771,12 +914,6 @@ public class WorkflowExecutionService implements ApplicationRunner {
         return jdbcTemplate.queryForObject("SELECT trace_id FROM workflow_run WHERE id=?", String.class, runId);
     }
 
-    /** 校验运行记录只能由所属用户或管理员查看。 */
-    private void requireRunAccess(Long ownerId) {
-        AuthUser user = AuthContext.require();
-        if (!user.roles().contains("ADMIN") && !user.id().equals(ownerId)) throw BusinessException.forbidden("workflow.runForbidden");
-    }
-
     /** 查询并解密节点运行记录。 */
     private List<WorkflowModels.NodeRunView> nodeRuns(String runId) {
         return jdbcTemplate.query("SELECT * FROM workflow_node_run WHERE workflow_run_id=? ORDER BY sequence_no,id", (rs, row) ->
@@ -791,7 +928,8 @@ public class WorkflowExecutionService implements ApplicationRunner {
         return new WorkflowModels.RunView(rs.getString("id"), rs.getLong("workflow_id"), rs.getString("workflow_code"),
             rs.getInt("version_number"), rs.getString("parent_run_id"), rs.getString("trace_id"), rs.getString("trigger_type"),
             rs.getString("status"), decrypt(rs.getString("input_encrypted")), decrypt(rs.getString("output_encrypted")),
-            rs.getString("error_message"), rs.getLong("owner_user_id"), rs.getBoolean("cancel_requested"),
+            rs.getString("error_message"), rs.getLong("owner_user_id"), (Long) rs.getObject("api_key_id"),
+            rs.getBoolean("cancel_requested"),
             timestamp(rs, "started_at"), timestamp(rs, "finished_at"), timestamp(rs, "created_at"), List.of());
     }
 
@@ -803,6 +941,34 @@ public class WorkflowExecutionService implements ApplicationRunner {
 
     /** 将节点自定义上限限制在平台硬上限内。 */
     private int bounded(int requested, int maximum) { return Math.max(1, Math.min(requested, Math.max(1, maximum))); }
+    /** 返回当前请求的 API Key ID，交互登录态返回空。 */
+    private Long currentApiKeyId() {
+        AuthUser user = AuthContext.require();
+        return user.authenticationType() == AuthenticationType.API_KEY ? user.credentialId() : null;
+    }
+    /** 读取父运行来源 API Key，使同步子工作流保持同一结果访问边界。 */
+    private Long parentApiKeyId(String parentRunId) {
+        return jdbcTemplate.queryForObject("SELECT api_key_id FROM workflow_run WHERE id=?", Long.class, parentRunId);
+    }
+    /** 子工作流和 Agent 工具不得跨越所属用户调用其他用户的工作流。 */
+    private void requireSameWorkflowOwner(WorkflowModels.StoredVersion version, Long ownerId) {
+        if (!version.workflowOwnerId().equals(ownerId)) throw BusinessException.forbidden("workflow.subWorkflowForbidden");
+    }
+    /** 计算本实例下一次租约截止时间。 */
+    private java.sql.Timestamp leaseTimestamp() {
+        return java.sql.Timestamp.from(Instant.now().plusSeconds(Math.max(15, limits.getLeaseSeconds())));
+    }
+    /** 原子预留节点日志字节预算，避免累计上下文造成数据库空间放大。 */
+    private void reserveLogBytes(String runId, JsonNode value, String error) {
+        long bytes = json(value).getBytes(StandardCharsets.UTF_8).length
+            + (error == null ? 0 : error.getBytes(StandardCharsets.UTF_8).length);
+        long maximum = Math.max(limits.getMaxPayloadBytes(), limits.getMaxRunLogBytes());
+        String budgetOwner = budgetRunId.get() == null ? runId : budgetRunId.get();
+        int reserved = jdbcTemplate.update("""
+            UPDATE workflow_run SET log_bytes=log_bytes+? WHERE id=? AND log_bytes+?<=?
+            """, bytes, budgetOwner, bytes, maximum);
+        if (reserved == 0) throw new BusinessException("workflow.runLogLimit", maximum);
+    }
     /** 将 HTTP 正文配置规范为文本。 */
     private String bodyText(JsonNode value) { return value.isTextual() ? value.asText() : value.isMissingNode() ? "" : value.toString(); }
     /** 将 HTTP 结构化字段规范为 JSON 文本。 */

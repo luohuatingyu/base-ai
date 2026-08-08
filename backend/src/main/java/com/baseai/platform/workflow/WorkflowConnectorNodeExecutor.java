@@ -3,8 +3,11 @@ package com.baseai.platform.workflow;
 import com.baseai.platform.automation.ApiTriggerModels;
 import com.baseai.platform.automation.ApiTriggerService;
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.service.MailDeliveryClient;
 import com.baseai.platform.service.MailManagementService;
+import com.baseai.platform.trace.TraceContext;
+import com.baseai.platform.trace.TraceContextHolder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -23,7 +26,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -64,17 +67,20 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
     private final MailManagementService mailManagementService;
     private final MailDeliveryClient mailDeliveryClient;
     private final ApiTriggerService apiTriggerService;
+    private final int maxPayloadBytes;
 
     /** 注入连接、邮件及安全 HTTP 调用能力。 */
     public WorkflowConnectorNodeExecutor(ObjectMapper objectMapper, WorkflowExpressionService expressions,
                                          WorkflowConnectionService connections, MailManagementService mailManagementService,
-                                         MailDeliveryClient mailDeliveryClient, ApiTriggerService apiTriggerService) {
+                                         MailDeliveryClient mailDeliveryClient, ApiTriggerService apiTriggerService,
+                                         PlatformProperties properties) {
         this.objectMapper = objectMapper;
         this.expressions = expressions;
         this.connections = connections;
         this.mailManagementService = mailManagementService;
         this.mailDeliveryClient = mailDeliveryClient;
         this.apiTriggerService = apiTriggerService;
+        this.maxPayloadBytes = Math.max(1, properties.getWorkflow().getMaxPayloadBytes());
     }
 
     /** 返回连接执行器支持的节点集合。 */
@@ -132,19 +138,30 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         if (query.isBlank() || query.contains(";") || query.contains("--") || query.contains("/*")) {
             throw new BusinessException("workflow.sqlUnsafe");
         }
-        boolean select = query.regionMatches(true, 0, "SELECT", 0, 6) || query.regionMatches(true, 0, "WITH", 0, 4);
-        if (!select && !secret.path("allowWrite").asBoolean(false)) throw new BusinessException("workflow.sqlWriteForbidden");
+        boolean allowWrite = secret.path("allowWrite").asBoolean(false);
+        String statementType = query.split("\\s+", 2)[0].toUpperCase(Locale.ROOT);
+        if (!allowWrite && !"SELECT".equals(statementType)) throw new BusinessException("workflow.sqlWriteForbidden");
+        if (allowWrite && !Set.of("SELECT", "WITH", "INSERT", "UPDATE", "DELETE").contains(statementType)) {
+            throw new BusinessException("workflow.sqlUnsafe");
+        }
         Properties properties = new Properties();
         properties.setProperty("user", secret.path("username").asText());
         properties.setProperty("password", secret.path("password").asText());
         try (Connection jdbc = DriverManager.getConnection(secret.path("url").asText(), properties)) {
-            jdbc.setReadOnly(!secret.path("allowWrite").asBoolean(false));
-            try (PreparedStatement statement = jdbc.prepareStatement(query)) {
-                statement.setQueryTimeout(Math.max(1, Math.min(config.path("timeoutSeconds").asInt(30), 120)));
-                int index = 1;
-                for (JsonNode parameter : config.path("parameters")) setParameter(statement, index++, parameter);
-                if (!select) return objectMapper.createObjectNode().put("updated", statement.executeUpdate());
-                try (ResultSet resultSet = statement.executeQuery()) { return rows(resultSet, config.path("maxRows").asInt(1000)); }
+            register(jdbc);
+            jdbc.setReadOnly(!allowWrite);
+            if (!allowWrite) jdbc.setAutoCommit(false);
+            try {
+                try (PreparedStatement statement = jdbc.prepareStatement(query)) {
+                    statement.setQueryTimeout(Math.max(1, Math.min(config.path("timeoutSeconds").asInt(30), 120)));
+                    int index = 1;
+                    for (JsonNode parameter : config.path("parameters")) setParameter(statement, index++, parameter);
+                    boolean resultSet = statement.execute();
+                    if (!resultSet) return objectMapper.createObjectNode().put("updated", statement.getUpdateCount());
+                    try (ResultSet rows = statement.getResultSet()) { return rows(rows, config.path("maxRows").asInt(1000)); }
+                }
+            } finally {
+                if (!allowWrite) jdbc.rollback();
             }
         } catch (BusinessException exception) { throw exception; }
         catch (Exception exception) { throw new BusinessException("workflow.connectionExecutionFailed"); }
@@ -186,6 +203,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         validateRedisArguments(command, args);
         RedisURI uri = RedisURI.create(secret.path("uri").asText());
         try (RedisClient client = RedisClient.create(uri); StatefulRedisConnection<String, String> state = client.connect()) {
+            register(client); register(state);
             RedisCommands<String, String> sync = state.sync();
             String prefix = secret.path("keyPrefix").asText("");
             Object value = switch (command) {
@@ -238,19 +256,28 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         String listPrefix = config.path("prefix").asText(prefix);
         if ("LIST".equals(operation) && !listPrefix.startsWith(prefix)) throw new BusinessException("workflow.s3PathForbidden");
         try (S3Client client = s3Client(secret)) {
+            register(client);
             return switch (operation) {
                 case "PUT" -> {
-                    byte[] bytes = config.hasNonNull("base64") ? Base64.getDecoder().decode(config.path("base64").asText())
+                    String encoded = config.path("base64").asText("");
+                    if (config.hasNonNull("base64") && encoded.length() > (long) maxPayloadBytes * 4 / 3 + 8) {
+                        throw new BusinessException("workflow.payloadTooLarge", maxPayloadBytes);
+                    }
+                    byte[] bytes = config.hasNonNull("base64") ? Base64.getDecoder().decode(encoded)
                         : config.path("content").asText("").getBytes(StandardCharsets.UTF_8);
+                    if (bytes.length > maxPayloadBytes) throw new BusinessException("workflow.payloadTooLarge", maxPayloadBytes);
                     client.putObject(builder -> builder.bucket(bucket).key(key).contentType(config.path("contentType").asText("application/octet-stream")),
                         RequestBody.fromBytes(bytes));
                     yield objectMapper.createObjectNode().put("uploaded", true).put("bytes", bytes.length).put("key", key);
                 }
                 case "GET" -> {
-                    ResponseBytes<GetObjectResponse> bytes = client.getObjectAsBytes(GetObjectRequest.builder().bucket(bucket).key(key).build());
-                    yield objectMapper.createObjectNode().put("base64", Base64.getEncoder().encodeToString(bytes.asByteArray()))
-                        .put("bytes", bytes.asByteArray().length)
-                        .put("contentType", bytes.response().contentType());
+                    try (ResponseInputStream<GetObjectResponse> response = client.getObject(
+                        GetObjectRequest.builder().bucket(bucket).key(key).build())) {
+                        byte[] bytes = response.readNBytes(maxPayloadBytes + 1);
+                        if (bytes.length > maxPayloadBytes) throw new BusinessException("workflow.payloadTooLarge", maxPayloadBytes);
+                        yield objectMapper.createObjectNode().put("base64", Base64.getEncoder().encodeToString(bytes))
+                            .put("bytes", bytes.length).put("contentType", response.response().contentType());
+                    }
                 }
                 case "LIST" -> {
                     List<S3Object> objects = client.listObjectsV2(ListObjectsV2Request.builder().bucket(bucket)
@@ -287,6 +314,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         if (!topic.startsWith(secret.path("topicPrefix").asText(""))) throw new BusinessException("workflow.messageDestinationForbidden");
         Properties properties = kafkaProperties(secret);
         try (KafkaProducer<String, String> producer = new KafkaProducer<>(properties)) {
+            register(producer);
             RecordMetadata metadata = producer.send(new ProducerRecord<>(topic, config.path("key").asText(null),
                 textValue(config.path("value")))).get(Math.min(config.path("timeoutSeconds").asInt(30), 120), TimeUnit.SECONDS);
             return objectMapper.createObjectNode().put("topic", metadata.topic()).put("partition", metadata.partition()).put("offset", metadata.offset());
@@ -328,6 +356,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         try {
             factory.setUri(secret.path("uri").asText()); factory.setConnectionTimeout(10_000);
             try (com.rabbitmq.client.Connection rabbit = factory.newConnection(); Channel channel = rabbit.createChannel()) {
+                register(rabbit); register(channel);
                 channel.confirmSelect();
                 channel.basicPublish(exchange, config.path("routingKey").asText(""), null,
                     textValue(config.path("value")).getBytes(StandardCharsets.UTF_8));
@@ -350,5 +379,10 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
     private String singleLine(String value) {
         if (value.contains("\r") || value.contains("\n")) throw new BusinessException("workflow.dataInputInvalid");
         return value;
+    }
+
+    /** 将外部连接注册到当前运行时，使取消请求可以主动关闭阻塞资源。 */
+    private void register(AutoCloseable closeable) {
+        TraceContextHolder.current().map(TraceContext::runtime).ifPresent(runtime -> runtime.registerCloseable(closeable));
     }
 }

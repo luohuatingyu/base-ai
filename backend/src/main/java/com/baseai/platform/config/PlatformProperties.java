@@ -247,16 +247,27 @@ public class PlatformProperties {
     /** 限制画布和执行器资源占用，所有循环和 Agent 调用均有硬上限。 */
     public static class Workflow {
         private int executorPoolSize = 4;
+        private int executorQueueCapacity = 400;
         private int maxNodes = 100;
         private int maxIterations = 100;
         private int maxAgentSteps = 20;
         private int maxRecursionDepth = 5;
         private int maxPayloadBytes = 1024 * 1024;
         private int maxWaitSeconds = 3600;
+        private int maxExecutionSteps = 1000;
+        private long maxRunLogBytes = 10L * 1024 * 1024;
+        private int leaseSeconds = 60;
+        private int webhookMaxBodyBytes = 1024 * 1024;
+        private int webhookRateLimitPerMinute = 60;
+        private int triggerDeliveryRetentionDays = 30;
         /** 读取执行线程数量。 */
         public int getExecutorPoolSize() { return executorPoolSize; }
         /** 设置执行线程数量。 */
         public void setExecutorPoolSize(int value) { executorPoolSize = value; }
+        /** 读取执行等待队列容量。 */
+        public int getExecutorQueueCapacity() { return executorQueueCapacity; }
+        /** 设置执行等待队列容量。 */
+        public void setExecutorQueueCapacity(int value) { executorQueueCapacity = value; }
         /** 读取单层画布节点上限。 */
         public int getMaxNodes() { return maxNodes; }
         /** 设置单层画布节点上限。 */
@@ -281,5 +292,29 @@ public class PlatformProperties {
         public int getMaxWaitSeconds() { return maxWaitSeconds; }
         /** 设置单个等待节点允许的最长秒数。 */
         public void setMaxWaitSeconds(int value) { maxWaitSeconds = value; }
+        /** 读取单次运行累计节点执行上限。 */
+        public int getMaxExecutionSteps() { return maxExecutionSteps; }
+        /** 设置单次运行累计节点执行上限。 */
+        public void setMaxExecutionSteps(int value) { maxExecutionSteps = value; }
+        /** 读取单次运行节点日志明文累计字节上限。 */
+        public long getMaxRunLogBytes() { return maxRunLogBytes; }
+        /** 设置单次运行节点日志明文累计字节上限。 */
+        public void setMaxRunLogBytes(long value) { maxRunLogBytes = value; }
+        /** 读取工作流实例租约秒数。 */
+        public int getLeaseSeconds() { return leaseSeconds; }
+        /** 设置工作流实例租约秒数。 */
+        public void setLeaseSeconds(int value) { leaseSeconds = value; }
+        /** 读取公开 Webhook 正文字节上限。 */
+        public int getWebhookMaxBodyBytes() { return webhookMaxBodyBytes; }
+        /** 设置公开 Webhook 正文字节上限。 */
+        public void setWebhookMaxBodyBytes(int value) { webhookMaxBodyBytes = value; }
+        /** 读取单个 Webhook 每分钟请求上限。 */
+        public int getWebhookRateLimitPerMinute() { return webhookRateLimitPerMinute; }
+        /** 设置单个 Webhook 每分钟请求上限。 */
+        public void setWebhookRateLimitPerMinute(int value) { webhookRateLimitPerMinute = value; }
+        /** 读取触发幂等记录保留天数。 */
+        public int getTriggerDeliveryRetentionDays() { return triggerDeliveryRetentionDays; }
+        /** 设置触发幂等记录保留天数。 */
+        public void setTriggerDeliveryRetentionDays(int value) { triggerDeliveryRetentionDays = value; }
     }
 }

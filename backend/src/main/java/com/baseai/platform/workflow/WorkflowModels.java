@@ -33,7 +33,7 @@ public final class WorkflowModels {
     public record RunView(String id, Long workflowId, String workflowCode, int versionNumber,
                           String parentRunId, String traceId, String triggerType, String status,
                           JsonNode input, JsonNode output, String errorMessage, Long ownerUserId,
-                          boolean cancelRequested, LocalDateTime startedAt, LocalDateTime finishedAt,
+                          Long apiKeyId, boolean cancelRequested, LocalDateTime startedAt, LocalDateTime finishedAt,
                           LocalDateTime createdAt, List<NodeRunView> nodes) {}
     public record StoredVersion(Long id, Long workflowId, String workflowCode, int versionNumber,
                                 JsonNode graph, JsonNode inputSchema, JsonNode templateSnapshots, Long workflowOwnerId) {}

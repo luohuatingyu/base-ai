@@ -39,6 +39,38 @@
             <span class="switch-help">{{ t('apiTriggerSecurity.allowPrivateNetworkHelp') }}</span>
           </el-form-item>
         </el-form>
+
+        <el-divider />
+        <section class="workflow-network-security">
+          <div>
+            <h3>{{ t('apiTriggerSecurity.workflowTitle') }}</h3>
+            <p>{{ t('apiTriggerSecurity.workflowDescription') }}</p>
+          </div>
+          <el-alert :title="t('apiTriggerSecurity.workflowImportedNotice')" type="info" :closable="false" show-icon />
+          <el-alert v-if="workflowHasAnyRule" :title="t('apiTriggerSecurity.workflowAnyWarning')" type="warning" :closable="false" show-icon />
+          <el-form label-position="top" class="security-form" :disabled="!canUpdate">
+            <el-form-item :label="t('apiTriggerSecurity.allowedHosts')">
+              <div class="host-rule-editor">
+                <div v-for="(rule, index) in workflowHostRuleRows" :key="index" class="host-rule-editor-row">
+                  <el-select v-model="rule.type" class="host-rule-type" @change="changeWorkflowRuleType(rule)">
+                    <el-option v-for="type in hostRuleTypes" :key="type" :label="t(`apiTriggerSecurity.ruleTypes.${type}`)" :value="type" />
+                  </el-select>
+                  <el-input v-if="rule.type !== 'ANY'" v-model="rule.value" :placeholder="t('apiTriggerSecurity.ruleValuePlaceholder')" />
+                  <div v-else class="any-rule-value">{{ t('apiTriggerSecurity.anyRuleValue') }}</div>
+                  <el-button link type="danger" @click="deleteWorkflowHostRule(index)">{{ t('apiTriggerSecurity.deleteRule') }}</el-button>
+                </div>
+                <el-button plain type="primary" @click="workflowHostRuleRows.push(createHostRule())">+ {{ t('apiTriggerSecurity.addRule') }}</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item :label="t('apiTriggerSecurity.allowedCidrs')">
+              <el-input v-model="workflowCidrsText" type="textarea" :rows="5" :placeholder="t('apiTriggerSecurity.allowedCidrsPlaceholder')" />
+              <div class="form-help">{{ t('apiTriggerSecurity.allowedCidrsHelp') }}</div>
+            </el-form-item>
+            <el-button type="primary" :loading="workflowSaving" @click="saveWorkflowSecurity">
+              {{ t('common.save') }}
+            </el-button>
+          </el-form>
+        </section>
       </template>
       <el-button v-else-if="!loading" @click="load">{{ t('common.refresh') }}</el-button>
     </div>
@@ -58,12 +90,16 @@ const auth = useAuthStore()
 const form = reactive({ allowLoopback: true, allowPrivateNetwork: false })
 const hostRuleTypes = HOST_RULE_TYPES
 const hostRuleRows = ref([createHostRule()])
+const workflowHostRuleRows = ref([createHostRule()])
+const workflowCidrsText = ref('')
+const workflowSaving = ref(false)
 const loading = ref(true)
 const loaded = ref(false)
 const saveStatus = ref('saved')
 const effectiveConfiguration = ref(null)
 const canUpdate = computed(() => auth.hasPermission('automation:api-trigger-security:update'))
 const hasAnyRule = computed(() => normalizeHostRules(hostRuleRows.value).some(rule => rule.type === 'ANY'))
+const workflowHasAnyRule = computed(() => normalizeHostRules(workflowHostRuleRows.value).some(rule => rule.type === 'ANY'))
 const autoSaver = createLatestAutoSaver(persistConfiguration)
 
 /** 将接口数据规范化为可比较、可提交的安全配置快照。 */
@@ -120,6 +156,40 @@ function changeRuleType(rule) {
   scheduleAutomaticSave(true)
 }
 
+/** 切换工作流规则类型时清理 ANY 不再需要的规则值。 */
+function changeWorkflowRuleType(rule) {
+  if (rule.type === 'ANY') rule.value = null
+}
+
+/** 删除工作流 Host 规则，并为编辑器保留一行空白输入。 */
+function deleteWorkflowHostRule(index) {
+  workflowHostRuleRows.value.splice(index, 1)
+  if (!workflowHostRuleRows.value.length) workflowHostRuleRows.value.push(createHostRule())
+}
+
+/** 规范工作流 CIDR 文本为去重数组。 */
+function workflowCidrs() {
+  return [...new Set(workflowCidrsText.value.split(/[\n,]/).map(value => value.trim()).filter(Boolean))]
+}
+
+/** 显式保存独立连接器白名单，高风险 ANY 规则沿用确认流程。 */
+async function saveWorkflowSecurity() {
+  const hostRules = normalizeHostRules(workflowHostRuleRows.value)
+  if (hostRules.some(rule => rule.type === 'ANY')) {
+    await ElMessageBox.confirm(t('apiTriggerSecurity.workflowAnyConfirm'), t('apiTriggerSecurity.riskTitle'), { type: 'warning' })
+  }
+  workflowSaving.value = true
+  try {
+    const { data } = await http.put('/workflow/network-security', { hostRules, allowedCidrs: workflowCidrs() })
+    workflowHostRuleRows.value = toHostRuleRows(data.hostRules)
+    workflowCidrsText.value = (data.allowedCidrs || []).join('\n')
+  } catch (error) {
+    showHttpError(error, 'apiTriggerSecurity.workflowSaveFailed')
+  } finally {
+    workflowSaving.value = false
+  }
+}
+
 /** 根据控件类型调度自动保存；文本输入防抖，离散修改立即处理。 */
 function scheduleAutomaticSave(immediate = false) {
   if (!loaded.value || !canUpdate.value) return
@@ -163,9 +233,14 @@ async function load() {
   loading.value = true
   loaded.value = false
   try {
-    const { data } = await http.get('/automation/api-trigger-security')
-    effectiveConfiguration.value = normalizeConfiguration(data)
+    const [apiResponse, workflowResponse] = await Promise.all([
+      http.get('/automation/api-trigger-security'),
+      http.get('/workflow/network-security')
+    ])
+    effectiveConfiguration.value = normalizeConfiguration(apiResponse.data)
     replaceEditor(effectiveConfiguration.value)
+    workflowHostRuleRows.value = toHostRuleRows(workflowResponse.data.hostRules)
+    workflowCidrsText.value = (workflowResponse.data.allowedCidrs || []).join('\n')
     saveStatus.value = 'saved'
     loaded.value = true
   } finally {
@@ -179,6 +254,9 @@ onBeforeUnmount(() => autoSaver.dispose())
 
 <style scoped>
 .api-trigger-security { display: grid; gap: 18px; }
+.workflow-network-security { display: grid; gap: 16px; }
+.workflow-network-security h3, .workflow-network-security p { margin: 0; }
+.workflow-network-security p { margin-top: 6px; color: var(--el-text-color-secondary); }
 .security-content { display: grid; gap: 18px; min-height: 160px; align-content: start; }
 .security-form { max-width: 760px; }
 .auto-save-status { color: var(--el-text-color-secondary); font-size: 14px; }

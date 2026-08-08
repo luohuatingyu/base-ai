@@ -84,4 +84,18 @@ class WorkflowSchemaResourceTest {
         for (String category : WorkflowTemplateCatalog.CATEGORIES) assertTrue(schema.contains("'" + category + "'"), category);
         for (String type : WorkflowNodeTypes.ALL) assertTrue(schema.contains("'" + type + "'"), type);
     }
+
+    /** MySQL V10 必须增加 Key 级白名单、连接修订和多实例运行租约。 */
+    @Test
+    void hardensWorkflowSecurityAndExecutionState() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V10__harden_workflow_security_and_execution.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS sys_api_key_workflow"));
+        assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS workflow_version_connection"));
+        assertTrue(schema.contains("security_revision"));
+        assertTrue(schema.contains("execution_instance_id"));
+        assertTrue(schema.contains("lease_expires_at"));
+        assertTrue(schema.contains("log_bytes"));
+    }
 }

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -34,6 +35,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 
 @ExtendWith(MockitoExtension.class)
 class ApiKeyManagementServiceTest {
@@ -41,6 +44,7 @@ class ApiKeyManagementServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private ApiKeyEndpointCatalogService endpointCatalog;
     @Mock private ConfigCryptoService cryptoService;
+    @Mock private JdbcTemplate jdbcTemplate;
     private ApiKeyManagementService service;
 
     /** 初始化管理服务、操作用户和可开放接口。 */
@@ -49,7 +53,7 @@ class ApiKeyManagementServiceTest {
         PlatformProperties properties = new PlatformProperties();
         properties.getApiKey().setHashSecret("0123456789abcdef0123456789abcdef");
         service = new ApiKeyManagementService(repository, userRepository, new ApiKeySecretService(properties),
-            cryptoService, endpointCatalog, new ApiKeyCidrMatcher());
+            cryptoService, endpointCatalog, new ApiKeyCidrMatcher(), jdbcTemplate);
         AuthContext.set(new AuthUser(1L, "admin", Set.of("ADMIN"), Set.of(), AuthenticationType.TOKEN, null, null));
         UserAccount owner = new UserAccount();
         owner.setId(2L);
@@ -80,6 +84,24 @@ class ApiKeyManagementServiceTest {
         assertEquals(ApiKeyRateLimitType.MINUTE, created.item().rateLimitType());
         assertEquals(120, created.item().rateLimitCount());
         verify(cryptoService).encrypt(created.apiKey());
+    }
+
+    /** 工作流白名单只保存绑定用户拥有的资源，空集合保持默认拒绝。 */
+    @Test
+    void validatesWorkflowAllowlistOwnership() {
+        when(endpointCatalog.contains("workflow.execute")).thenReturn(true);
+        when(repository.save(any(ApiKeyCredential.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(10L), eq(2L))).thenReturn(1);
+        ApiKeyManagementService.ApiKeyCommand allowed = new ApiKeyManagementService.ApiKeyCommand("workflow", 2L, true,
+            true, null, ApiKeyRateLimitType.MINUTE, 60, Set.of("workflow.execute"), Set.of(), Set.of(10L));
+
+        ApiKeyManagementService.CreatedApiKey created = service.create(allowed);
+
+        assertEquals(Set.of(10L), created.item().workflowIds());
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(11L), eq(2L))).thenReturn(0);
+        ApiKeyManagementService.ApiKeyCommand forbidden = new ApiKeyManagementService.ApiKeyCommand("workflow", 2L, true,
+            true, null, ApiKeyRateLimitType.MINUTE, 60, Set.of("workflow.execute"), Set.of(), Set.of(11L));
+        assertEquals("apiKey.workflowForbidden", assertThrows(BusinessException.class, () -> service.create(forbidden)).getMessageKey());
     }
 
     /** 管理员可解密查看新建或轮换后持久化的完整 API Key。 */
@@ -155,7 +177,7 @@ class ApiKeyManagementServiceTest {
     void createRequiresRateLimitType() {
         ApiKeyManagementService.ApiKeyCommand command = new ApiKeyManagementService.ApiKeyCommand(
             "integration", 2L, true, true, null, null, 90,
-            Set.of("ai.chat.invoke"), Set.of());
+            Set.of("ai.chat.invoke"), Set.of(), Set.of());
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.create(command));
 
@@ -187,13 +209,13 @@ class ApiKeyManagementServiceTest {
     /** 构造覆盖接口授权、IP 白名单和限流的管理命令。 */
     private ApiKeyManagementService.ApiKeyCommand command(boolean neverExpires, Instant expiresAt) {
         return new ApiKeyManagementService.ApiKeyCommand("integration", 2L, true, neverExpires, expiresAt,
-            ApiKeyRateLimitType.MINUTE, 120, Set.of("ai.chat.invoke"), Set.of("10.0.0.0/24"));
+            ApiKeyRateLimitType.MINUTE, 120, Set.of("ai.chat.invoke"), Set.of("10.0.0.0/24"), Set.of());
     }
 
     /** 构造指定调用周期和次数的管理命令。 */
     private ApiKeyManagementService.ApiKeyCommand command(ApiKeyRateLimitType type, Integer count) {
         return new ApiKeyManagementService.ApiKeyCommand("integration", 2L, true, true, null,
-            type, count, Set.of("ai.chat.invoke"), Set.of("10.0.0.0/24"));
+            type, count, Set.of("ai.chat.invoke"), Set.of("10.0.0.0/24"), Set.of());
     }
 
     /** 构造用于明文查看测试的 API Key 实体。 */

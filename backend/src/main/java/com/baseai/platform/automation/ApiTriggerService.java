@@ -3,6 +3,7 @@ package com.baseai.platform.automation;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.trace.TraceContextHolder;
+import com.baseai.platform.trace.TraceContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -433,6 +434,8 @@ public class ApiTriggerService {
         @Override
         protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
             super.prepareConnection(connection, httpMethod);
+            TraceContextHolder.current().map(TraceContext::runtime)
+                .ifPresent(runtime -> runtime.registerCloseable(connection::disconnect));
             connection.setInstanceFollowRedirects(false);
             if (sslSocketFactory != null && connection instanceof HttpsURLConnection httpsConnection) {
                 httpsConnection.setSSLSocketFactory(sslSocketFactory);

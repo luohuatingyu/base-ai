@@ -1,6 +1,5 @@
 package com.baseai.platform.trace;
 
-import java.io.Closeable;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
@@ -9,14 +8,14 @@ public final class TraceRuntime {
     private final TraceCancellationToken token;
     private final Set<Thread> threads = ConcurrentHashMap.newKeySet();
     private final Set<Future<?>> futures = ConcurrentHashMap.newKeySet();
-    private final Set<Closeable> closeables = ConcurrentHashMap.newKeySet();
+    private final Set<AutoCloseable> closeables = ConcurrentHashMap.newKeySet();
 
     public TraceRuntime(String traceId) { this.token = new TraceCancellationToken(traceId); }
     public TraceCancellationToken token() { return token; }
     public void registerThread(Thread thread) { threads.add(thread); }
     public void unregisterThread(Thread thread) { threads.remove(thread); }
     public void registerFuture(Future<?> future) { futures.add(future); }
-    public void registerCloseable(Closeable closeable) { closeables.add(closeable); }
+    public void registerCloseable(AutoCloseable closeable) { closeables.add(closeable); }
 
     /** 发出协作取消并中断已登记线程和 Future。 */
     public void cancel() {

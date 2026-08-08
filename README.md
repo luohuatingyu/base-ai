@@ -135,8 +135,11 @@ The currently exposed API-key endpoints are AI chat invocation, production API-t
 The top-level **Workflow** section contains reusable **Node Management** and visual **Canvas Management** pages. A canvas supports start/end, LLM, HTTP, tool-calling agent, condition, array iteration, and condition-loop nodes. Draft graphs can be validated and published as immutable versions before execution.
 
 - Manual runs require workflow execution permission; external runs use a scoped `X-API-Key` and the workflow code.
+- Non-admin users can only view and manage workflows they own. API keys must explicitly allowlist individual workflows; existing keys receive no workflow grants by default.
 - Agent nodes can call the controlled HTTP tool or another published workflow. Recursion depth, iteration count, loop count, node count, and payload size are bounded by platform configuration.
 - Workflow inputs, outputs, and node outputs are AES-GCM encrypted at rest. Definitions, versions, runs, and node logs remain framework-level data in MySQL.
+- Database, Redis, S3, Kafka, and RabbitMQ connectors use an independent Host/CIDR egress allowlist. Existing targets are imported once during upgrade, and security-relevant connection changes require referenced workflows to be published again.
+- Runs use a bounded queue, cumulative step/log budgets, and multi-instance leases. Cancellation is terminal, although irreversible side effects already accepted by a remote system cannot be rolled back automatically.
 - Open execution uses `POST /api/workflows/{code}/runs`; status and decrypted results are read from `GET /api/workflows/runs/{runId}`.
 
 ## Task Tracing and Audit Logs
@@ -212,6 +215,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
+- **Workflow:** `WORKFLOW_EXECUTOR_POOL_SIZE`, `WORKFLOW_EXECUTOR_QUEUE_CAPACITY`, `WORKFLOW_MAX_NODES`, `WORKFLOW_MAX_ITERATIONS`, `WORKFLOW_MAX_AGENT_STEPS`, `WORKFLOW_MAX_RECURSION_DEPTH`, `WORKFLOW_MAX_PAYLOAD_BYTES`, `WORKFLOW_MAX_WAIT_SECONDS`, `WORKFLOW_MAX_EXECUTION_STEPS`, `WORKFLOW_MAX_RUN_LOG_BYTES`, `WORKFLOW_LEASE_SECONDS`, `WORKFLOW_WEBHOOK_MAX_BODY_BYTES`, `WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE`, and `WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS`.
 - **HTTPS ingress and images:** `APP_HTTPS_SITES_FILE`, `TLS_CERTS_DIR`, `APP_HTTPS_IPS`, `TLS_CERT_CHECK_INTERVAL_SECONDS`, `IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`, `IP_CERT_MAX_LEARNED_HOSTS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.

@@ -73,6 +73,12 @@ public class ApiKeyCredential {
     @Column(name = "cidr", nullable = false, length = 64)
     private Set<String> allowedCidrs = new LinkedHashSet<>();
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "sys_api_key_workflow", joinColumns = @JoinColumn(name = "api_key_id"),
+        uniqueConstraints = @UniqueConstraint(name = "uk_api_key_workflow", columnNames = {"api_key_id", "workflow_id"}))
+    @Column(name = "workflow_id", nullable = false)
+    private Set<Long> workflowIds = new LinkedHashSet<>();
+
     @Column(name = "last_used_at")
     private Instant lastUsedAt;
 
@@ -130,6 +136,8 @@ public class ApiKeyCredential {
     public void setEndpointCodes(Set<String> endpointCodes) { this.endpointCodes = endpointCodes; }
     public Set<String> getAllowedCidrs() { return allowedCidrs; }
     public void setAllowedCidrs(Set<String> allowedCidrs) { this.allowedCidrs = allowedCidrs; }
+    public Set<Long> getWorkflowIds() { return workflowIds; }
+    public void setWorkflowIds(Set<Long> workflowIds) { this.workflowIds = workflowIds; }
     public Instant getLastUsedAt() { return lastUsedAt; }
     public void setLastUsedAt(Instant lastUsedAt) { this.lastUsedAt = lastUsedAt; }
     public String getLastUsedIp() { return lastUsedIp; }

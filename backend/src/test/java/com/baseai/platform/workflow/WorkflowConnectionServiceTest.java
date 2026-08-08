@@ -35,12 +35,14 @@ class WorkflowConnectionServiceTest {
         jdbcTemplate.execute("""
             CREATE TABLE workflow_connection(id BIGINT AUTO_INCREMENT PRIMARY KEY,code VARCHAR(80) UNIQUE,name VARCHAR(120),
             connection_type VARCHAR(24),config_encrypted CLOB,owner_user_id BIGINT,enabled BOOLEAN,voided BOOLEAN DEFAULT FALSE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+            security_revision BIGINT DEFAULT 1,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
         jdbcTemplate.execute("CREATE TABLE workflow_version(id BIGINT AUTO_INCREMENT PRIMARY KEY,graph_json CLOB)");
+        jdbcTemplate.execute("CREATE TABLE workflow_version_connection(workflow_version_id BIGINT,connection_id BIGINT,security_revision BIGINT)");
         PlatformProperties properties = new PlatformProperties();
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
-        service = new WorkflowConnectionService(jdbcTemplate, new ObjectMapper(), new ConfigCryptoService(properties));
+        service = new WorkflowConnectionService(jdbcTemplate, new ObjectMapper(), new ConfigCryptoService(properties),
+            org.mockito.Mockito.mock(WorkflowNetworkPolicy.class));
         authenticate(7L);
     }
 
@@ -59,6 +61,11 @@ class WorkflowConnectionServiceTest {
         service.update(created.id(), new WorkflowModels.ConnectionCommand("ORDERS", "Orders", "MYSQL",
             new ObjectMapper().readTree("{\"url\":\"jdbc:mysql://db/orders\",\"username\":\"app\",\"password\":\"******\"}"), true));
         assertEquals("secret", service.resolved(created.id(), Set.of("MYSQL")).config().path("password").asText());
+        assertEquals(1L, service.resolved(created.id(), Set.of("MYSQL")).securityRevision());
+
+        service.update(created.id(), new WorkflowModels.ConnectionCommand("ORDERS", "Orders", "MYSQL",
+            new ObjectMapper().readTree("{\"url\":\"jdbc:mysql://db-v2/orders\",\"username\":\"app\",\"password\":\"******\"}"), true));
+        assertEquals(2L, service.resolved(created.id(), Set.of("MYSQL")).securityRevision());
     }
 
     /** 其他用户不能维护不属于自己的连接。 */
@@ -85,6 +92,16 @@ class WorkflowConnectionServiceTest {
         List<WorkflowConnectionService.ConnectionOption> options = service.connectionOptions();
 
         assertEquals(List.of(new WorkflowConnectionService.ConnectionOption(1L, "MYSQL_MAIN", "Main", "MYSQL")), options);
+    }
+
+    /** 精确版本连接快照中的引用必须阻止删除，不能依赖 JSON 字符串搜索。 */
+    @Test
+    void rejectsDeletingConnectionReferencedByVersionSnapshot() throws Exception {
+        WorkflowModels.ConnectionView created = service.create(new WorkflowModels.ConnectionCommand("cache", "Cache", "REDIS",
+            new ObjectMapper().readTree("{\"uri\":\"redis://cache:6379\"}"), true));
+        jdbcTemplate.update("INSERT INTO workflow_version_connection VALUES (10,?,1)", created.id());
+        assertEquals("workflow.connectionInUse", assertThrows(BusinessException.class,
+            () -> service.delete(created.id())).getMessageKey());
     }
 
     /** 设置当前会话用户。 */

@@ -15,7 +15,7 @@ public class WorkflowExecutorConfig {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(size);
         executor.setMaxPoolSize(size);
-        executor.setQueueCapacity(size * 100);
+        executor.setQueueCapacity(Math.max(1, Math.min(properties.getWorkflow().getExecutorQueueCapacity(), 100_000)));
         executor.setThreadNamePrefix("workflow-");
         executor.setWaitForTasksToCompleteOnShutdown(false);
         executor.initialize();

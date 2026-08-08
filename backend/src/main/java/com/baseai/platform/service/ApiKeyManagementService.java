@@ -13,6 +13,8 @@ import com.baseai.platform.security.ApiKeySecretService;
 import com.baseai.platform.security.AuthContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -28,16 +30,19 @@ public class ApiKeyManagementService {
     private final ConfigCryptoService cryptoService;
     private final ApiKeyEndpointCatalogService endpointCatalog;
     private final ApiKeyCidrMatcher cidrMatcher;
+    private final JdbcTemplate jdbcTemplate;
 
     public ApiKeyManagementService(ApiKeyCredentialRepository repository, UserRepository userRepository,
                                    ApiKeySecretService secretService, ConfigCryptoService cryptoService,
-                                   ApiKeyEndpointCatalogService endpointCatalog, ApiKeyCidrMatcher cidrMatcher) {
+                                   ApiKeyEndpointCatalogService endpointCatalog, ApiKeyCidrMatcher cidrMatcher,
+                                   @Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.secretService = secretService;
         this.cryptoService = cryptoService;
         this.endpointCatalog = endpointCatalog;
         this.cidrMatcher = cidrMatcher;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /** 分页查询未吊销的 API Key。 */
@@ -69,6 +74,17 @@ public class ApiKeyManagementService {
     /** 返回代码显式声明的 API Key 接口目录。 */
     public List<ApiKeyEndpointCatalogService.EndpointView> endpoints() {
         return endpointCatalog.catalog();
+    }
+
+    /** 返回指定绑定用户拥有的未作废工作流，供管理员配置 Key 级执行白名单。 */
+    @Transactional(readOnly = true)
+    public List<WorkflowOption> workflowOptions(Long ownerUserId) {
+        if (ownerUserId == null) return List.of();
+        return jdbcTemplate.query("""
+            SELECT id,code,name,status FROM workflow_definition
+            WHERE owner_user_id=? AND voided=false ORDER BY code
+            """, (rs, row) -> new WorkflowOption(rs.getLong("id"), rs.getString("code"), rs.getString("name"),
+            rs.getString("status")), ownerUserId);
     }
 
     /** 创建 API Key，加密保存明文并仅向管理员返回。 */
@@ -148,6 +164,7 @@ public class ApiKeyManagementService {
         credential.setRateLimitCount(rateLimit.count());
         credential.setEndpointCodes(resolveEndpointCodes(command.endpointCodes()));
         credential.setAllowedCidrs(resolveCidrs(command.allowedCidrs()));
+        credential.setWorkflowIds(resolveWorkflowIds(owner.getId(), command.workflowIds()));
     }
 
     /** 校验永久有效与指定过期时间的互斥关系。 */
@@ -195,6 +212,21 @@ public class ApiKeyManagementService {
         return rules;
     }
 
+    /** 校验工作流白名单中的每个资源均属于 Key 绑定用户且尚未作废。 */
+    private Set<Long> resolveWorkflowIds(Long ownerUserId, Set<Long> values) {
+        LinkedHashSet<Long> workflowIds = new LinkedHashSet<>();
+        if (values == null) return workflowIds;
+        for (Long workflowId : values) {
+            if (workflowId == null || workflowId <= 0 || workflowIds.contains(workflowId)) continue;
+            Integer matches = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM workflow_definition WHERE id=? AND owner_user_id=? AND voided=false
+                """, Integer.class, workflowId, ownerUserId);
+            if (matches == null || matches != 1) throw new BusinessException("apiKey.workflowForbidden", workflowId);
+            workflowIds.add(workflowId);
+        }
+        return workflowIds;
+    }
+
     /** 查询未吊销 API Key。 */
     private ApiKeyCredential requireCredential(Long id) {
         return repository.findByIdAndRevokedAtIsNull(id).orElseThrow(() -> BusinessException.notFound("apiKey.notFound"));
@@ -214,21 +246,22 @@ public class ApiKeyManagementService {
         return new ApiKeyView(credential.getId(), credential.getName(), secretService.displayPrefix(credential.getKeyId()),
             owner.getId(), owner.getUsername(), owner.getDisplayName(), credential.getEnabled(), credential.getExpiresAt() == null,
             credential.getExpiresAt(), credential.getRateLimitType(), credential.getRateLimitCount(),
-            credential.getEndpointCodes(), credential.getAllowedCidrs(),
+            credential.getEndpointCodes(), credential.getAllowedCidrs(), credential.getWorkflowIds(),
             credential.getLastUsedAt(), credential.getLastUsedIp(), credential.getCreatedAt(), credential.getUpdatedAt());
     }
 
     public record ApiKeyCommand(String name, Long ownerUserId, Boolean enabled, Boolean neverExpires, Instant expiresAt,
                                 ApiKeyRateLimitType rateLimitType, Integer rateLimitCount,
-                                Set<String> endpointCodes, Set<String> allowedCidrs) {}
+                                Set<String> endpointCodes, Set<String> allowedCidrs, Set<Long> workflowIds) {}
     public record ApiKeyView(Long id, String name, String keyPrefix, Long ownerUserId, String ownerUsername,
                              String ownerDisplayName, Boolean enabled, Boolean neverExpires, Instant expiresAt,
                              ApiKeyRateLimitType rateLimitType, Integer rateLimitCount,
-                             Set<String> endpointCodes, Set<String> allowedCidrs,
+                             Set<String> endpointCodes, Set<String> allowedCidrs, Set<Long> workflowIds,
                              Instant lastUsedAt, String lastUsedIp, Instant createdAt, Instant updatedAt) {}
     public record CreatedApiKey(ApiKeyView item, String apiKey) {}
     public record RotatedApiKey(ApiKeyView item, String apiKey) {}
     public record RevealedApiKey(Long id, String apiKey) {}
     public record OwnerView(Long id, String username, String displayName) {}
+    public record WorkflowOption(Long id, String code, String name, String status) {}
     private record RateLimitConfiguration(ApiKeyRateLimitType type, Integer count) {}
 }

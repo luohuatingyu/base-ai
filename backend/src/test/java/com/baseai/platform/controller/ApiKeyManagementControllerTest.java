@@ -29,6 +29,14 @@ class ApiKeyManagementControllerTest {
         assertNull(reveal.getAnnotation(ApiKeyEndpoint.class));
     }
 
+    /** 工作流白名单选项属于管理接口，不允许 API Key 自身枚举可执行资源。 */
+    @Test
+    void workflowOptionsRemainBearerOnly() throws Exception {
+        Method options = ApiKeyManagementController.class.getMethod("workflowOptions", Long.class);
+        assertEquals("system:api-key:list", options.getAnnotation(RequiredPermission.class).value());
+        assertNull(options.getAnnotation(ApiKeyEndpoint.class));
+    }
+
     /** 首批开放接口声明稳定代码和前端国际化键。 */
     @Test
     void businessEndpointsDeclareStableApiKeyCodesAndTranslationKeys() throws Exception {

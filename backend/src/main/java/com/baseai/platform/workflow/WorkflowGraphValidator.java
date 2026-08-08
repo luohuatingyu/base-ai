@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** 校验工作流画布结构，拒绝悬空边、不可达节点和未受控循环。 */
 @Component
@@ -22,28 +23,47 @@ public class WorkflowGraphValidator {
     private final ObjectMapper objectMapper;
     private final int maxNodes;
     private final int maxDepth;
+    private final int maxDefinitionBytes;
 
     /** 使用平台资源限制创建生产校验器。 */
     @Autowired
     public WorkflowGraphValidator(ObjectMapper objectMapper, PlatformProperties properties) {
-        this(objectMapper, properties.getWorkflow().getMaxNodes(), properties.getWorkflow().getMaxRecursionDepth());
+        this(objectMapper, properties.getWorkflow().getMaxNodes(), properties.getWorkflow().getMaxRecursionDepth(),
+            properties.getWorkflow().getMaxPayloadBytes());
     }
 
     /** 允许测试注入明确节点上限。 */
     WorkflowGraphValidator(ObjectMapper objectMapper, int maxNodes) {
-        this(objectMapper, maxNodes, 5);
+        this(objectMapper, maxNodes, 5, 1024 * 1024);
     }
 
     /** 允许测试同时注入节点和嵌套深度上限。 */
     WorkflowGraphValidator(ObjectMapper objectMapper, int maxNodes, int maxDepth) {
+        this(objectMapper, maxNodes, maxDepth, 1024 * 1024);
+    }
+
+    /** 允许测试同时注入节点、深度和定义字节上限。 */
+    WorkflowGraphValidator(ObjectMapper objectMapper, int maxNodes, int maxDepth, int maxDefinitionBytes) {
         this.objectMapper = objectMapper;
         this.maxNodes = Math.max(2, maxNodes);
         this.maxDepth = Math.max(1, maxDepth);
+        this.maxDefinitionBytes = Math.max(1024, maxDefinitionBytes);
     }
 
     /** 校验主图及迭代、循环节点携带的嵌套子图。 */
     public void validate(JsonNode graph) {
-        validateGraph(graph, true, 0);
+        validatePayload(graph);
+        validateGraph(graph, true, 0, new AtomicInteger());
+    }
+
+    /** 限制画布、输入 Schema 等持久化定义的序列化体积。 */
+    public void validatePayload(JsonNode value) {
+        try {
+            if (objectMapper.writeValueAsBytes(value).length > maxDefinitionBytes) {
+                throw new BusinessException("workflow.graphPayloadTooLarge", maxDefinitionBytes);
+            }
+        } catch (BusinessException exception) { throw exception; }
+        catch (Exception exception) { throw new BusinessException("workflow.graphInvalid"); }
     }
 
     /** 解析 JSON 文本后执行统一图校验。 */
@@ -60,20 +80,23 @@ public class WorkflowGraphValidator {
     }
 
     /** 校验单层有向无环图，并递归校验控制节点子画布。 */
-    private void validateGraph(JsonNode graph, boolean requireBoundary, int depth) {
+    private void validateGraph(JsonNode graph, boolean requireBoundary, int depth, AtomicInteger totalNodes) {
         if (depth > maxDepth) throw new BusinessException("workflow.recursionLimit");
         if (graph == null || !graph.isObject() || !graph.path("nodes").isArray() || !graph.path("edges").isArray()) {
             throw new BusinessException("workflow.graphInvalid");
         }
         List<JsonNode> nodes = iterable(graph.path("nodes"));
-        if (nodes.size() < 2 || nodes.size() > maxNodes) throw new BusinessException("workflow.graphNodeLimit", maxNodes);
+        if (nodes.size() < 2 || totalNodes.addAndGet(nodes.size()) > maxNodes) {
+            throw new BusinessException("workflow.graphNodeLimit", maxNodes);
+        }
         Map<String, JsonNode> byId = new LinkedHashMap<>();
         int startCount = 0;
         int endCount = 0;
         for (JsonNode node : nodes) {
             String id = text(node, "id");
             String type = nodeType(node);
-            if (id.isBlank() || !WorkflowNodeTypes.ALL.contains(type) || byId.putIfAbsent(id, node) != null) {
+            if (!id.matches("[A-Za-z0-9_-]{1,100}") || !WorkflowNodeTypes.ALL.contains(type)
+                || byId.putIfAbsent(id, node) != null) {
                 throw new BusinessException("workflow.graphInvalid");
             }
             if ("START".equals(type) || WorkflowNodeTypes.TRIGGERS.contains(type)) startCount++;
@@ -82,7 +105,7 @@ public class WorkflowGraphValidator {
             if ("END".equals(type)) endCount++;
             JsonNode config = nodeConfig(node);
             if (WorkflowNodeTypes.NESTED_GRAPH.contains(type) && config.has("bodyGraph")) {
-                validateGraph(config.path("bodyGraph"), true, depth + 1);
+                validateGraph(config.path("bodyGraph"), true, depth + 1, totalNodes);
             }
         }
         if (requireBoundary && (startCount != 1 || endCount < 1)) {
@@ -92,10 +115,15 @@ public class WorkflowGraphValidator {
         Map<String, Set<String>> outgoing = new HashMap<>();
         Map<String, Integer> incoming = new HashMap<>();
         byId.keySet().forEach(id -> { outgoing.put(id, new HashSet<>()); incoming.put(id, 0); });
-        for (JsonNode edge : iterable(graph.path("edges"))) {
+        List<JsonNode> edges = iterable(graph.path("edges"));
+        if (edges.size() > maxNodes * 4) throw new BusinessException("workflow.graphEdgeLimit", maxNodes * 4);
+        Set<String> edgeIds = new HashSet<>();
+        for (JsonNode edge : edges) {
+            String edgeId = text(edge, "id");
             String source = text(edge, "source");
             String target = text(edge, "target");
-            if (!byId.containsKey(source) || !byId.containsKey(target) || source.equals(target)) {
+            if (!edgeId.matches("[A-Za-z0-9_-]{1,100}") || !edgeIds.add(edgeId)
+                || !byId.containsKey(source) || !byId.containsKey(target) || source.equals(target)) {
                 throw new BusinessException("workflow.graphDanglingEdge");
             }
             if (outgoing.get(source).add(target)) incoming.put(target, incoming.get(target) + 1);
