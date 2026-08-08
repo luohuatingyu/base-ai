@@ -303,7 +303,7 @@ onBeforeUnmount(() => {
 .workflow-display-actions { position: absolute; top: 12px; right: 12px; z-index: 4; display: flex; gap: 4px; }
 .workflow-template-menu { position: fixed; z-index: 3200; width: min(640px, calc(100vw - 16px)); overflow: hidden; border: 1px solid #d8e1ee; border-radius: 14px; background: #fff; box-shadow: 0 20px 56px rgb(15 23 42 / 24%); }
 .workflow-edge-delete-hint { position: fixed; z-index: 3200; padding: 6px 10px; border-radius: 7px; color: #fff; background: var(--el-color-danger); box-shadow: 0 8px 20px rgb(15 23 42 / 18%); font-size: 12px; line-height: 1.4; white-space: nowrap; pointer-events: none; }
-:deep(.vue-flow__edge-interaction) { cursor: pointer; }
+:deep(.vue-flow__edge-interaction) { stroke: transparent; pointer-events: stroke; cursor: pointer; }
 :deep(.vue-flow__edge:hover .vue-flow__edge-path) { stroke: var(--el-color-danger); stroke-width: 3; }
 .workflow-template-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #edf1f6; }
 .workflow-template-menu-head button { border: 0; color: var(--app-muted); background: transparent; font-size: 20px; cursor: pointer; }

@@ -76,6 +76,7 @@ test('悬停连线显示提示且左键点击立即删除并纳入撤销历史',
   assert.match(graphEditorSource, /withWorkflowEdgeInteractionWidth\(next\.edges, EDGE_INTERACTION_WIDTH\)/)
   assert.match(graphEditorSource, /withWorkflowEdgeInteractionWidth\(graph\.edges, EDGE_INTERACTION_WIDTH\)/)
   assert.match(graphEditorSource, /interactionWidth:\s*EDGE_INTERACTION_WIDTH/)
+  assert.match(graphEditorSource, /vue-flow__edge-interaction\)\s*\{[^}]*stroke:\s*transparent[^}]*pointer-events:\s*stroke/)
   assert.match(graphEditorSource, /@edge-mouse-enter="showEdgeDeleteHint"\s+@edge-mouse-move="moveEdgeDeleteHint"/)
   assert.match(graphEditorSource, /@edge-mouse-leave="hideEdgeDeleteHint"\s+@edge-click="deleteEdge"/)
   assert.match(graphEditorSource, /workflow-edge-delete-hint[\s\S]*workflowCanvas\.deleteEdgeHint/)
