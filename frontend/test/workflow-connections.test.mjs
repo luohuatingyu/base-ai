@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
+import { CONNECTION_TYPES } from '../src/utils/workflowConnectionConfig.js'
 
 const viewSource = readFileSync(new URL('../src/views/WorkflowConnectionsView.vue', import.meta.url), 'utf8')
 const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
@@ -10,7 +11,7 @@ const navigationSource = readFileSync(new URL('../src/utils/navigation.js', impo
 
 test('连接管理页面覆盖七类受管连接和安全占位符', () => {
   for (const type of ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK']) {
-    assert.match(viewSource, new RegExp(`\\b${type}\\b`), type)
+    assert.ok(CONNECTION_TYPES.includes(type), type)
   }
   assert.match(viewSource, /\/workflow\/connections/)
   assert.match(viewSource, /workflow:connection:create/)
