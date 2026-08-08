@@ -103,6 +103,15 @@ test('画布节点仅使用功能类型图标配色并兼容历史节点', () =>
   assert.match(workflowNodeSource, /\.workflow-node\.has-missing-config\s*\{[^}]*background:\s*var\(--el-color-danger-light-9\)/)
 })
 
+test('画布端点在宽松命中范围内提供连线反馈', () => {
+  assert.match(graphEditorSource, /:connection-radius="CONNECTION_RADIUS"/)
+  assert.match(graphEditorSource, /const CONNECTION_RADIUS = 32/)
+  assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle\)\s*\{[^}]*width:\s*40px[^}]*height:\s*40px[^}]*border:\s*0[^}]*background:\s*transparent/)
+  assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle::after\)\s*\{[^}]*width:\s*6px[^}]*height:\s*6px[^}]*border-radius:\s*50%/)
+  assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle:hover::after\)[\s\S]*:deep\(\.vue-flow__handle\.connecting::after\)[\s\S]*box-shadow:/)
+  assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle\.valid::after\)\s*\{[^}]*background:/)
+})
+
 test('画布提供应用内最大化和浏览器原生全屏入口', () => {
   assert.match(graphEditorSource, /ref="editorShell"[^>]*:class="\{[^}]*maximized:\s*isMaximized/)
   assert.match(graphEditorSource, /workflow-display-actions[\s\S]*workflowCanvas\.maximize[\s\S]*workflowCanvas\.fullscreen/)

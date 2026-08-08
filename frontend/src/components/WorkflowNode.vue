@@ -56,4 +56,9 @@ function requirementLabel(key) {
 .workflow-node small { color: #748198; font-size: 10px; letter-spacing: .8px; }
 .workflow-node.has-missing-config { border-color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
 .workflow-node-config-warning { align-self: flex-start; margin-top: 3px; padding: 2px 6px; border-radius: 999px; color: #fff; background: var(--el-color-danger); font-size: 10px; line-height: 1.4; cursor: help; }
+:deep(.vue-flow__handle) { width: 40px; height: 40px; min-width: 40px; min-height: 40px; border: 0; border-radius: 50%; background: transparent; }
+:deep(.vue-flow__handle::after) { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; box-sizing: border-box; border: 1px solid #fff; border-radius: 50%; background: var(--vf-handle, #555); content: ''; transform: translate(-50%, -50%); transition: width .12s ease, height .12s ease, background-color .12s ease, box-shadow .12s ease; }
+:deep(.vue-flow__handle:hover::after),
+:deep(.vue-flow__handle.connecting::after) { width: 12px; height: 12px; box-shadow: 0 0 0 6px rgb(59 130 246 / 18%); }
+:deep(.vue-flow__handle.valid::after) { background: var(--el-color-success); box-shadow: 0 0 0 6px rgb(103 194 58 / 20%); }
 </style>

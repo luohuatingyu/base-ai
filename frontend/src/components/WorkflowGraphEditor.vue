@@ -2,7 +2,7 @@
   <div ref="editorShell" class="workflow-editor-shell" :class="{ 'has-properties': selected, fill: props.fill, maximized: isMaximized }">
     <div class="workflow-flow">
       <VueFlow :id="editorId" v-model:nodes="nodes" v-model:edges="edges" :node-types="nodeTypes"
-               :default-edge-options="edgeOptions"
+               :default-edge-options="edgeOptions" :connection-radius="CONNECTION_RADIUS"
                fit-view-on-init @node-click="selectNode" @pane-click="clearSelection"
                @pane-context-menu="openTemplateMenu"
                @edge-mouse-enter="showEdgeDeleteHint" @edge-mouse-move="moveEdgeDeleteHint"
@@ -93,6 +93,7 @@ const emit = defineEmits(['update:modelValue'])
 const { t, te } = useI18n()
 const editorId = workflowElementId('editor')
 const nodeTypes = Object.fromEntries(WORKFLOW_NODE_TYPES.map(type => [type, WorkflowNode]))
+const CONNECTION_RADIUS = 32
 const EDGE_INTERACTION_WIDTH = 32
 const edgeOptions = { interactionWidth: EDGE_INTERACTION_WIDTH }
 const initial = serializeWorkflowGraph(props.modelValue)
