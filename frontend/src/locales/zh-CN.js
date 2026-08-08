@@ -331,7 +331,14 @@ export default {
       RABBITMQ_TRIGGER: { name: 'RabbitMQ 触发', description: '消费 RabbitMQ 消息并启动工作流' }
     }
   },
-  workflowConnections: { title: '连接配置', description: '集中管理工作流数据库、缓存、对象存储、消息队列和通知连接。', add: '新增连接', edit: '编辑连接', config: '连接配置 JSON', securityNotice: '密码和 Token 使用 AES-GCM 加密；列表只返回脱敏值，节点仅保存连接 ID。', maskHelp: '编辑已有连接时保留 ****** 可继续使用原密钥。', test: '测试', connected: '连接成功', testFailed: '连接测试失败', invalidJson: '连接配置不是有效 JSON', required: '请填写编码、名称和连接配置' },
+  workflowConnections: {
+    title: '连接配置', description: '集中管理工作流数据库、缓存、对象存储、消息队列和通知连接。', add: '新增连接', edit: '编辑连接',
+    config: '连接参数', configHelp: '根据连接类型填写标准参数，每项参数独立保存在配置卡片中。', securityNotice: '密码和 Token 使用 AES-GCM 加密；列表只返回脱敏值，节点仅保存连接 ID。', maskHelp: '编辑已有连接时保留 ****** 可继续使用原密钥。',
+    customTitle: '自定义参数', customHelp: '通过键值卡片维护标准字段之外的兼容配置，支持选择值类型和嵌套结构。', customKey: '参数名称', customValue: '参数值', addCustom: '添加自定义参数', invalidCustomKey: '请输入有效且安全的参数名称', duplicateCustomKey: '参数名称已存在', notSet: '不设置',
+    test: '测试', connected: '连接成功', testFailed: '连接测试失败', required: '请填写编码和名称',
+    fields: { url: '连接地址', username: '用户名', password: '密码', allowWrite: '允许写入', uri: '连接 URI', keyPrefix: '键前缀', endpoint: '服务端点', region: '区域', accessKey: 'Access Key', secretKey: 'Secret Key', bucket: '存储桶', pathStyle: '路径样式访问', allowDelete: '允许删除', bootstrapServers: 'Bootstrap Servers', topicPrefix: 'Topic 前缀', securityProtocol: '安全协议', saslMechanism: 'SASL 机制', exchangePrefix: 'Exchange 前缀', queuePrefix: 'Queue 前缀', method: '请求方法', testMethod: '测试方法', headers: '请求头', secret: '签名密钥' },
+    fieldDescriptions: { url: '数据库 JDBC 地址或 Webhook 目标地址。', username: '连接服务使用的账号。', password: '连接服务使用的密码，编辑时可保留脱敏值。', allowWrite: '允许工作流执行受控写入操作。', uri: '包含协议、主机、端口及可选凭据的完整连接地址。', keyPrefix: '限制工作流可访问的键命名空间。', endpoint: 'S3 兼容服务地址，使用 AWS S3 时可留空。', region: '对象存储服务所在区域。', accessKey: '对象存储访问凭据标识。', secretKey: '对象存储访问密钥。', bucket: '限制工作流访问的存储桶。', pathStyle: '使用路径形式访问 S3 存储桶。', allowDelete: '允许删除限定范围内的对象。', bootstrapServers: 'Kafka 集群地址，多个地址使用逗号分隔。', topicPrefix: '限制工作流可访问的 Topic 前缀。', securityProtocol: 'Kafka 客户端传输与认证协议。', saslMechanism: '启用 SASL 时使用的认证机制。', exchangePrefix: '限制工作流可访问的 Exchange 前缀。', queuePrefix: '限制工作流可访问的 Queue 前缀。', method: '工作流正式调用 Webhook 时使用的方法。', testMethod: '测试连接可用性时使用的方法。', headers: '通过键值行维护 Webhook 请求头。', secret: 'Webhook 请求签名使用的共享密钥。' }
+  },
   workflowCanvas: { title: '画布管理', description: '在画布空白处右键选择节点，通过连线和版本发布构建可运行工作流。', workflows: '工作流', search: '搜索工作流', add: '新增工作流', required: '请填写工作流编码和名称', empty: '请选择或创建工作流', palette: '节点模板', nodeMenu: '添加节点', categories: '节点功能分类', noTemplates: '暂无可用节点模板', properties: '节点属性', nodeConfig: '实例配置', editSubgraph: '编辑子画布', subgraph: '循环子画布', deleteNode: '删除节点', undo: '撤销', redo: '重做', maximize: '最大化', restore: '还原', fullscreen: '全屏', exitFullscreen: '退出全屏', fullscreenFailed: '无法切换全屏模式', publish: '发布', published: '工作流已发布', run: '运行', start: '开始运行', cancel: '取消运行', logs: '运行日志', inputSchema: '输入 Schema JSON', invalidJson: '请输入有效 JSON', invalidGraph: '画布校验失败：{error}', iteration: '迭代路径' },
   workflowConfig: {
     visualHint: '点击配置卡片展开字段；未启用的字段不会写入配置。', configured: '已配置', notConfigured: '未配置', enableField: '启用该字段',
