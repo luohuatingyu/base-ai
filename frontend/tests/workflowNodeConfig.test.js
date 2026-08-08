@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import enUS from '../src/locales/en-US.js'
+import zhCN from '../src/locales/zh-CN.js'
 import { cloneConfig, compatibleWorkflowModelId, compatibleWorkflowResourceId, compatibleWorkflowRouteCode, configValueType, createConfigValue, effectiveNodeConfigDefaultValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFieldRequirement, nodeConfigFields, nodeConfigUsesEffectiveDefault, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, workflowRouteOptionLabel, WORKFLOW_NODE_TYPES, WORKFLOW_NODE_VALIDATION_TYPES } from '../src/utils/workflowNodeConfig.js'
 
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
@@ -220,6 +222,21 @@ test('必填字段直接编辑且非必填和条件必填字段通过开关启�
   assert.match(configEditorSource, /field\.editor === 'boolean'[^>]*:model-value="fieldValue\(field\)"/)
   assert.match(configEditorSource, /<fieldset[^>]*:disabled="fieldDisabled\(field\)"/)
   assert.match(configEditorSource, /missingNodeConfigRequirements\(props\.nodeType, config\.value\)/)
+})
+
+test('标准字段和附加参数明确提示配置值的展开收起行为', () => {
+  assert.match(configEditorSource, /:aria-expanded="openFields\.includes\(field\.key\)" @click="toggleField\(field\.key\)"/)
+  assert.match(configEditorSource, /openFields\.includes\(field\.key\) \? 'workflowConfig\.collapseValue' : 'workflowConfig\.expandValue'/)
+  assert.match(configEditorSource, /:aria-expanded="openExtra\.includes\(key\)" @click="toggleExtra\(key\)"/)
+  assert.match(configEditorSource, /openExtra\.includes\(key\) \? 'workflowConfig\.collapseValue' : 'workflowConfig\.expandValue'/)
+  assert.match(configEditorSource, /workflow-config-toggle-chevron" :class="\{ open:/)
+  assert.match(configEditorSource, /\.workflow-config-toggle-chevron\.open \{ transform: rotate\(225deg\); \}/)
+  assert.match(zhCN.workflowConfig.visualHint, /点击字段标题可展开或收起配置值/)
+  assert.equal(zhCN.workflowConfig.expandValue, '展开配置')
+  assert.equal(zhCN.workflowConfig.collapseValue, '收起配置')
+  assert.match(enUS.workflowConfig.visualHint, /Click a field heading to expand or collapse its value/)
+  assert.equal(enUS.workflowConfig.expandValue, 'Expand configuration')
+  assert.equal(enUS.workflowConfig.collapseValue, 'Collapse configuration')
 })
 
 test('非必填默认值字段未启用时保持禁用样式且必填缺失提示优先展示', () => {

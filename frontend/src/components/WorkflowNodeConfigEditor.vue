@@ -6,11 +6,15 @@
       <article v-for="field in fields" :key="field.key" class="workflow-config-card"
                :class="{ configured: hasField(field.key), disabled: fieldDisabled(field), 'required-missing': fieldRequirementMissing(field) }">
         <div class="workflow-config-card-head-layout">
-          <button type="button" class="workflow-config-card-head" @click="toggleField(field.key)">
+          <button type="button" class="workflow-config-card-head" :aria-expanded="openFields.includes(field.key)" @click="toggleField(field.key)">
             <span>
               <strong>{{ fieldLabel(field.key) }} <em v-if="field.requirement">{{ t(`workflowConfig.${field.requirement}`) }}</em></strong>
               <small>{{ fieldDescription(field.key) }}</small>
               <small v-if="usesEffectiveDefault(field)" class="workflow-config-default-preview">{{ t('workflowConfig.defaultPreview', { value: defaultPreview(field) }) }}</small>
+            </span>
+            <span class="workflow-config-toggle-hint">
+              <span>{{ t(openFields.includes(field.key) ? 'workflowConfig.collapseValue' : 'workflowConfig.expandValue') }}</span>
+              <span class="workflow-config-toggle-chevron" :class="{ open: openFields.includes(field.key) }" aria-hidden="true"></span>
             </span>
           </button>
           <span class="workflow-config-card-tags">
@@ -97,7 +101,13 @@
     <section class="workflow-extra-config">
       <div class="workflow-extra-head"><div><strong>{{ t('workflowConfig.extraTitle') }}</strong><small>{{ t('workflowConfig.extraDescription') }}</small></div><el-tag>{{ extraKeys.length }}</el-tag></div>
       <article v-for="key in extraKeys" :key="key" class="workflow-config-card configured">
-        <button type="button" class="workflow-config-card-head" @click="toggleExtra(key)"><span><strong>{{ key }}</strong><small>{{ t('workflowConfig.customParameter') }}</small></span><span>⌄</span></button>
+        <button type="button" class="workflow-config-card-head" :aria-expanded="openExtra.includes(key)" @click="toggleExtra(key)">
+          <span><strong>{{ key }}</strong><small>{{ t('workflowConfig.customParameter') }}</small></span>
+          <span class="workflow-config-toggle-hint">
+            <span>{{ t(openExtra.includes(key) ? 'workflowConfig.collapseValue' : 'workflowConfig.expandValue') }}</span>
+            <span class="workflow-config-toggle-chevron" :class="{ open: openExtra.includes(key) }" aria-hidden="true"></span>
+          </span>
+        </button>
         <div v-if="openExtra.includes(key)" class="workflow-config-card-body">
           <WorkflowConfigValueEditor :model-value="config[key]" @update:model-value="setField(key, $event)" />
           <el-button type="danger" plain @click="removeField(key)">{{ t('workflowConfig.removeParameter') }}</el-button>
@@ -310,6 +320,9 @@ function addExtra() {
 .workflow-config-card-head-layout .workflow-config-card-head { min-width: 0; flex: 1; width: auto; padding-right: 0; }
 .workflow-config-card-head > span:first-child, .workflow-extra-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .workflow-config-card-head strong em { margin-left: 4px; color: var(--el-color-danger); font-size: 12px; font-style: normal; font-weight: 500; }
+.workflow-config-toggle-hint { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; color: var(--el-color-primary); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.workflow-config-toggle-chevron { width: 7px; height: 7px; border-right: 1.5px solid currentcolor; border-bottom: 1.5px solid currentcolor; transform: rotate(45deg); transition: transform .2s ease; }
+.workflow-config-toggle-chevron.open { transform: rotate(225deg); }
 .workflow-config-card-tags { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 14px; }
 .workflow-config-card-head small, .workflow-extra-head small { color: var(--app-muted); line-height: 1.45; }
 .workflow-config-card-head .workflow-config-default-preview { color: var(--el-color-primary); font-weight: 500; }
