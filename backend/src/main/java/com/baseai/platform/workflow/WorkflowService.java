@@ -31,16 +31,18 @@ public class WorkflowService {
     private final ObjectMapper objectMapper;
     private final ConfigCryptoService cryptoService;
     private final WorkflowGraphValidator graphValidator;
+    private final WorkflowNodeConfigValidator nodeConfigValidator;
     private final WorkflowConnectionService connectionService;
 
-    /** 注入 MySQL、加密和图校验组件。 */
+    /** 注入 MySQL、加密、图结构和节点配置校验组件。 */
     public WorkflowService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                            ConfigCryptoService cryptoService, WorkflowGraphValidator graphValidator,
-                           WorkflowConnectionService connectionService) {
+                           WorkflowNodeConfigValidator nodeConfigValidator, WorkflowConnectionService connectionService) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.cryptoService = cryptoService;
         this.graphValidator = graphValidator;
+        this.nodeConfigValidator = nodeConfigValidator;
         this.connectionService = connectionService;
     }
 
@@ -150,7 +152,9 @@ public class WorkflowService {
     @Transactional
     public WorkflowModels.WorkflowView publish(Long id) {
         WorkflowModels.WorkflowView existing = workflow(id);
-        graphValidator.validate(existing.graph());
+        WorkflowModels.StoredVersion currentVersion = storedVersion(existing.currentVersionId());
+        graphValidator.validate(currentVersion.graph());
+        nodeConfigValidator.validateForPublish(currentVersion.graph(), currentVersion.templateSnapshots());
         jdbcTemplate.update("""
             UPDATE workflow_definition SET published_version_id=current_version_id,status='PUBLISHED',enabled=true,
                 revision=revision+1,updated_at=NOW() WHERE id=? AND voided=false

@@ -43,7 +43,7 @@ class WorkflowServiceTriggerDefinitionTest {
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString(
             "0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
         WorkflowService service = new WorkflowService(jdbcTemplate, new ObjectMapper(), new ConfigCryptoService(properties),
-            mock(WorkflowGraphValidator.class), mock(WorkflowConnectionService.class));
+            mock(WorkflowGraphValidator.class), mock(WorkflowNodeConfigValidator.class), mock(WorkflowConnectionService.class));
 
         List<WorkflowModels.TriggerDefinition> definitions = service.triggerDefinitions();
 

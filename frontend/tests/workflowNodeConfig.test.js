@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { cloneConfig, configValueType, createConfigValue, extraConfigKeys, isSafeConfigKey, nodeConfigFields, WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
+import { cloneConfig, configValueType, createConfigValue, extraConfigKeys, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldRequirement, nodeConfigFields, WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
+const configEditorSource = readFileSync(new URL('../src/components/WorkflowNodeConfigEditor.vue', import.meta.url), 'utf8')
 
 test('节点管理按两层必选条件展示卡片并保留模板保护权限', () => {
   assert.match(nodeManagementSource, /v-for="row in filteredRows"/)
@@ -31,6 +32,44 @@ test('全部原生节点都有可视化配置定义', () => {
   assert.deepEqual(nodeConfigFields('WEBHOOK_TRIGGER').map(field => field.key), ['connectionId'])
   assert.deepEqual(nodeConfigFields('SCHEDULE_TRIGGER').map(field => field.key), ['cron', 'zoneId'])
   assert.deepEqual(nodeConfigFields('LLM').slice(-3).map(field => field.key), ['maxAttempts', 'retryDelayMillis', 'onError'])
+})
+
+test('配置字段区分必填、条件必填和具有运行默认值的可选项', () => {
+  assert.equal(nodeConfigFieldRequirement('HTTP', 'url'), 'required')
+  assert.equal(nodeConfigFieldRequirement('S3_OBJECT', 'key'), 'conditional')
+  assert.equal(nodeConfigFieldRequirement('LLM', 'featureCode'), '')
+  assert.equal(nodeConfigFields('HTTP').find(field => field.key === 'url').requirement, 'required')
+})
+
+test('发布提示覆盖固定必填、组合条件、操作条件和参数数量', () => {
+  assert.deepEqual(missingNodeConfigRequirements('LLM', {}), [])
+  assert.deepEqual(missingNodeConfigRequirements('HTTP', {}), ['url'])
+  assert.deepEqual(missingNodeConfigRequirements('HTTP', { url: 'https://example.test' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('ITERATION', { collection: '{{input.items}}' }), ['bodyGraph'])
+  assert.deepEqual(missingNodeConfigRequirements('DOCUMENT_EXTRACTOR', {}), ['contentOrBase64'])
+  assert.deepEqual(missingNodeConfigRequirements('DOCUMENT_EXTRACTOR', { content: 'text' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('S3_OBJECT', { connectionId: 1, operation: 'LIST' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('S3_OBJECT', { connectionId: 1, operation: 'GET' }), ['key'])
+  assert.deepEqual(missingNodeConfigRequirements('REDIS_COMMAND', { connectionId: 1, command: 'HSET', arguments: ['key', 'field'] }), ['arguments'])
+  assert.deepEqual(missingNodeConfigRequirements('RABBITMQ_PUBLISH', { connectionId: 1, value: null }), ['rabbitDestination'])
+  assert.deepEqual(missingNodeConfigRequirements('RABBITMQ_PUBLISH', { connectionId: 1, routingKey: 'orders', value: null }), [])
+})
+
+test('标准字段无需显式启用且保留清除配置和缺失必填提示', () => {
+  assert.doesNotMatch(configEditorSource, /workflowConfig\.enableField|toggleConfigured|workflow-config-enable/)
+  assert.match(configEditorSource, /:model-value="fieldValue\(field\)"/)
+  assert.match(configEditorSource, /@update:model-value="setField\(field\.key, \$event\)"/)
+  assert.match(configEditorSource, /v-if="hasField\(field\.key\)"[\s\S]*workflowConfig\.clearField/)
+  assert.match(configEditorSource, /missingNodeConfigRequirements\(props\.nodeType, config\.value\)/)
+})
+
+test('模板基础信息完整标记必填并说明发布前校验', () => {
+  assert.match(nodeManagementSource, /:label="t\('common\.code'\)" required/)
+  assert.match(nodeManagementSource, /:label="t\('common\.name'\)" required/)
+  assert.match(nodeManagementSource, /:label="t\('common\.type'\)" required/)
+  assert.match(nodeManagementSource, /:label="t\('workflowNodes\.source'\)" required/)
+  assert.match(nodeManagementSource, /:label="t\('workflowNodes\.category'\)" required/)
+  assert.match(nodeManagementSource, /workflowNodes\.requiredHint/)
 })
 
 test('配置副本保留深层对象、数组和标量且不污染原值', () => {

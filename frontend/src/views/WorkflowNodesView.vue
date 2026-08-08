@@ -38,10 +38,11 @@
     </div>
 
     <el-dialog v-model="visible" :title="form.id ? t('workflowNodes.edit') : t('workflowNodes.add')" width="min(980px, 94vw)" top="5vh">
+      <el-alert class="node-template-required-hint" :title="t('workflowNodes.requiredHint')" type="info" show-icon :closable="false" />
       <el-form label-width="120px">
-        <el-form-item :label="t('common.code')"><el-input v-model="form.code" :disabled="form.systemTemplate" /></el-form-item>
-        <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item :label="t('common.type')"><el-select v-model="form.nodeType" class="full" :disabled="form.systemTemplate" @change="syncDefaultCategory"><el-option v-for="type in nodeTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+        <el-form-item :label="t('common.code')" required><el-input v-model="form.code" :disabled="form.systemTemplate" /></el-form-item>
+        <el-form-item :label="t('common.name')" required><el-input v-model="form.name" /></el-form-item>
+        <el-form-item :label="t('common.type')" required><el-select v-model="form.nodeType" class="full" :disabled="form.systemTemplate" @change="syncDefaultCategory"><el-option v-for="type in nodeTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
         <el-form-item :label="t('workflowNodes.source')" required><el-select v-model="form.source" class="full"><el-option v-for="source in sources" :key="source" :label="t(`workflowCatalog.sources.${source}`)" :value="source" /></el-select></el-form-item>
         <el-form-item :label="t('workflowNodes.category')" required><el-select v-model="form.functionalCategory" class="full"><el-option v-for="category in categories" :key="category" :label="t(`workflowCatalog.categories.${category}`)" :value="category" /></el-select></el-form-item>
         <el-form-item :label="t('common.description')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
@@ -144,6 +145,7 @@ onMounted(load)
 .node-template-actions { display: flex; justify-content: flex-end; gap: 4px; padding: 8px 14px; border-top: 1px solid #edf1f6; }
 :deep(.el-dialog__body) { max-height: 76vh; overflow-y: auto; }
 :deep(.workflow-config-editor) { width: 100%; }
+.node-template-required-hint { margin-bottom: 16px; }
 @media (max-width: 800px) {
   .node-template-source-filter { display: grid; gap: 8px; }
   .node-template-source-filter > strong, .node-template-category-filter > strong { padding-top: 0; }

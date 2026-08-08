@@ -86,12 +86,95 @@ export const WORKFLOW_NODE_TYPES = Object.keys(NODE_CONFIG_FIELDS)
 export const CONDITION_OPERATORS = ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'CONTAINS', 'EXISTS', 'EMPTY']
 export const CONFIG_VALUE_TYPES = ['string', 'number', 'boolean', 'null', 'object', 'array']
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
+const REQUIRED_CONFIG_FIELDS = {
+  HTTP: ['url'], AGENT: ['tools'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
+  SWITCH: ['cases'], MERGE: ['values'], SUB_WORKFLOW: ['workflowCode'], SET_VARIABLE: ['output'], TEMPLATE: ['template'],
+  JSON_PARSE: ['value'], JSON_VALIDATE: ['value', 'schema'], TRANSFORM: ['output'], FILTER: ['collection', 'condition'],
+  SORT: ['collection'], AGGREGATE: ['collection'], CSV: ['value'], QUESTION_CLASSIFIER: ['input', 'categories'],
+  PARAMETER_EXTRACTOR: ['input', 'schema'], STRUCTURED_OUTPUT: ['value', 'schema'], WEBHOOK_TRIGGER: ['connectionId'],
+  SCHEDULE_TRIGGER: ['cron'], EMAIL_SEND: ['routeId'], IM_NOTIFY: ['connectionId'], SQL_QUERY: ['connectionId', 'query'],
+  REDIS_COMMAND: ['connectionId', 'arguments'], S3_OBJECT: ['connectionId'], KAFKA_PUBLISH: ['connectionId', 'topic', 'value'],
+  KAFKA_TRIGGER: ['connectionId', 'topic'], RABBITMQ_PUBLISH: ['connectionId', 'value'], RABBITMQ_TRIGGER: ['connectionId', 'queue']
+}
+const CONDITIONAL_CONFIG_FIELDS = {
+  DOCUMENT_EXTRACTOR: ['content', 'base64'], S3_OBJECT: ['key'], RABBITMQ_PUBLISH: ['exchange', 'routingKey']
+}
 
 /** 创建节点配置字段定义。 */
 function field(key, editor, defaultValue, options = []) { return { key, editor, defaultValue, options } }
 
-/** 返回节点类型支持的标准配置字段。 */
-export function nodeConfigFields(nodeType) { return NODE_CONFIG_FIELDS[String(nodeType || '').toUpperCase()] || [] }
+/** 返回节点类型支持的标准配置字段，并附加必填展示元数据。 */
+export function nodeConfigFields(nodeType) {
+  const type = String(nodeType || '').toUpperCase()
+  return (NODE_CONFIG_FIELDS[type] || []).map(item => ({ ...item, requirement: nodeConfigFieldRequirement(type, item.key) }))
+}
+
+/** 返回标准字段在当前节点中的必填级别。 */
+export function nodeConfigFieldRequirement(nodeType, key) {
+  const type = String(nodeType || '').toUpperCase()
+  if (REQUIRED_CONFIG_FIELDS[type]?.includes(key)) return 'required'
+  if (CONDITIONAL_CONFIG_FIELDS[type]?.includes(key)) return 'conditional'
+  return ''
+}
+
+/** 汇总发布前仍缺失的必填配置标识，供模板和画布提前提示。 */
+export function missingNodeConfigRequirements(nodeType, config = {}) {
+  const type = String(nodeType || '').toUpperCase()
+  const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const missing = []
+  const requirePresent = key => { if (!Object.prototype.hasOwnProperty.call(value, key)) missing.push(key) }
+  const requireText = key => { if (!String(value[key] ?? '').trim()) missing.push(key) }
+  const requirePositive = key => { if (!Number.isFinite(Number(value[key])) || Number(value[key]) <= 0) missing.push(key) }
+  const requireObject = key => { if (!value[key] || typeof value[key] !== 'object' || Array.isArray(value[key])) missing.push(key) }
+  const requireArray = (key, minimum = 0) => { if (!Array.isArray(value[key]) || value[key].length < minimum) missing.push(key) }
+  const requireCondition = key => {
+    const condition = value[key]
+    const operator = String(condition?.operator || 'EQ').toUpperCase()
+    if (!condition || typeof condition !== 'object' || Array.isArray(condition) || !String(condition.left ?? '').trim()
+      || (!['EXISTS', 'EMPTY'].includes(operator) && !Object.prototype.hasOwnProperty.call(condition, 'right'))) missing.push(key)
+  }
+
+  switch (type) {
+    case 'HTTP': requireText('url'); break
+    case 'AGENT': requireArray('tools', 1); break
+    case 'CONDITION': requireCondition('condition'); break
+    case 'ITERATION': requireText('collection'); requireObject('bodyGraph'); break
+    case 'LOOP': requireCondition('condition'); requireObject('bodyGraph'); break
+    case 'SWITCH': requireArray('cases', 1); break
+    case 'MERGE': requirePresent('values'); break
+    case 'SUB_WORKFLOW': requireText('workflowCode'); break
+    case 'SET_VARIABLE': case 'TRANSFORM': requirePresent('output'); break
+    case 'TEMPLATE': requireText('template'); break
+    case 'JSON_PARSE': case 'CSV': requirePresent('value'); break
+    case 'JSON_VALIDATE': case 'STRUCTURED_OUTPUT': requirePresent('value'); requireObject('schema'); break
+    case 'FILTER': requirePresent('collection'); requireCondition('condition'); break
+    case 'SORT': case 'AGGREGATE': requirePresent('collection'); break
+    case 'QUESTION_CLASSIFIER': requireText('input'); requireArray('categories', 2); break
+    case 'PARAMETER_EXTRACTOR': requireText('input'); requireObject('schema'); break
+    case 'DOCUMENT_EXTRACTOR':
+      if (!String(value.content ?? '').trim() && !String(value.base64 ?? '').trim()) missing.push('contentOrBase64')
+      break
+    case 'WEBHOOK_TRIGGER': case 'IM_NOTIFY': case 'SQL_QUERY': case 'REDIS_COMMAND': case 'S3_OBJECT':
+    case 'KAFKA_PUBLISH': case 'KAFKA_TRIGGER': case 'RABBITMQ_PUBLISH': case 'RABBITMQ_TRIGGER':
+      requirePositive('connectionId'); break
+    case 'EMAIL_SEND': requirePositive('routeId'); break
+    case 'SCHEDULE_TRIGGER': requireText('cron'); break
+    default: break
+  }
+  if (type === 'SQL_QUERY') requireText('query')
+  if (type === 'REDIS_COMMAND') requireArray('arguments', redisArgumentMinimum(value.command))
+  if (type === 'S3_OBJECT' && String(value.operation || 'GET').toUpperCase() !== 'LIST') requireText('key')
+  if (['KAFKA_PUBLISH', 'KAFKA_TRIGGER'].includes(type)) requireText('topic')
+  if (type === 'KAFKA_PUBLISH' || type === 'RABBITMQ_PUBLISH') requirePresent('value')
+  if (type === 'RABBITMQ_TRIGGER') requireText('queue')
+  if (type === 'RABBITMQ_PUBLISH' && !String(value.exchange ?? '').trim() && !String(value.routingKey ?? '').trim()) missing.push('rabbitDestination')
+  return [...new Set(missing)]
+}
+
+/** 返回 Redis 白名单命令执行所需的最少参数数量。 */
+function redisArgumentMinimum(command) {
+  return { GET: 1, SET: 2, DEL: 1, HGET: 2, HSET: 3, LPUSH: 2, RPUSH: 2, LRANGE: 3, PUBLISH: 2 }[String(command || 'GET').toUpperCase()] || 1
+}
 
 /** 返回由专用交互维护、不应出现在附加参数中的字段。 */
 export function hiddenConfigKeys(nodeType) {
