@@ -1,5 +1,103 @@
 # 最近分支覆盖测试报告
 
+## 📋 节点模板必填提示与发布校验测试结果（2026-08-08）
+
+### Git 基准点
+
+Commit: 405db69163389d643f67747641a3563e18caa22f
+- 提交说明: Validate required workflow node configuration
+- 测试日期: 2026-08-08
+- 分支: master
+- 上一测试报告基准点: `64e1e7279ae0a0d2fe92eb19520b573baf978643`
+- Backend 业务代码差异: `git diff 64e1e7279ae0a0d2fe92eb19520b573baf978643 405db69163389d643f67747641a3563e18caa22f -- backend/src/main/java/` 包含工作流节点发布前必填配置校验，因此已执行 Backend、Frontend、Python Worker、Caddy 完整回归及 Compose 统一重建。
+- 基准点跨度说明: 上一报告后还包含画布显示、节点筛选及连接配置卡片等已提交变更；本次完整回归以当前功能提交为统一验收基准。
+
+### 变更范围
+
+- 节点模板和画布实例的标准字段卡片取消“启用该字段”开关；展开卡片不会修改数据，第一次编辑才写入配置对象，已配置字段可主动清除。
+- 模板基础信息明确标记编码、名称、节点类型、节点来源和功能类型为必填项；说明、状态和默认配置保持可选。
+- 原生节点字段区分必填、条件必填和可选，模板允许暂时缺少运行参数，并在中英文界面汇总提示发布前需补充的字段。
+- 工作流发布前校验当前保存版本，合并不可变模板快照和实例覆盖，并递归检查迭代、循环子画布；任一节点缺少必填配置时汇总错误且不更新发布状态、版本或 revision。
+- 条件必填覆盖文档内容或 Base64、S3 非 LIST 操作的对象键、RabbitMQ 交换机或路由键、Redis 命令最少参数数等场景。
+- LLM 模型路由、等待时长、超时和重试策略等具备运行默认值的参数不误标为必填。
+- 未新增依赖、配置、数据库迁移或临时调试文件。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 未配置字段无需显式启用 | Frontend 工具与组件契约测试 | 展开未配置标准字段并检查编辑、清除入口 | 展开不写入；第一次修改自动写入；无启用开关；符合预期 | 正常、边界、副作用 |
+| 模板基础必填项明确 | Frontend 组件与中英文资源测试 | 打开新增或编辑模板弹窗 | 编码、名称、类型、来源、功能类型显示必填提示，默认配置允许留空；符合预期 | 正常、兼容 |
+| 节点运行必填字段提前提示 | Frontend 参数化规则测试 | HTTP、SQL、迭代、文档、S3、Redis、RabbitMQ 等配置 | 固定必填、组合必填和操作条件均返回对应提示；符合预期 | 正常、边界、异常 |
+| 运行默认值不误报 | Frontend 与 Backend 单元测试 | START、END、LLM、WAIT 空配置 | 不产生必填错误；符合预期 | 兼容、回归 |
+| 模板与实例共同补齐配置 | Backend 单元测试 | SQL 的连接来自模板快照、查询来自实例覆盖 | 合并后的有效配置通过发布校验；符合预期 | 正常、兼容 |
+| 缺少配置阻止发布 | Backend H2 Service 集成测试 | 当前版本 HTTP 节点缺少 URL | 返回稳定业务错误，状态保持 DRAFT，publishedVersionId 为空且 revision 不变；符合预期 | 异常、数据副作用 |
+| 配置完整允许发布 | Backend H2 Service 集成测试 | HTTP URL 由模板快照提供 | 状态更新为 PUBLISHED，发布版本指向当前版本，revision 原子递增；符合预期 | 正常、数据副作用 |
+| 嵌套节点统一校验 | Backend 单元测试 | 迭代子画布 SQL 节点缺少查询 | 主图与子图错误一次汇总返回；符合预期 | 边界、异常、回归 |
+| 全部模块无回归 | Backend、Frontend、Worker、Caddy 完整套件 | 当前功能提交全部自动化测试 | 632/632 通过，失败 0、错误 0、跳过 0；符合预期 | 回归、安全、兼容 |
+| 统一重建后服务可运行 | 正式 Compose 环境 | `docker compose up --build -d` | 四个镜像构建完成，Backend、Frontend、Worker、Caddy 全部 healthy；符合预期 | 构建、部署 |
+
+### 测试执行结果
+
+- 自动化测试合计：632/632 通过（Backend 362、Frontend 226、Python Worker 28、Caddy Go 16），失败 0，错误 0，跳过 0，通过率 100%。
+- Backend 定向覆盖：节点配置校验 4、发布原子性 2、模板快照触发器兼容 1，共 7/7 通过；包含在 Backend 完整 362 项中，不重复计数。
+- Frontend 定向覆盖：节点字段启用语义、必填级别、组合条件、模板基础必填和中英文提示，共同纳入 22/22 工作流相关定向测试；包含在 Frontend 完整 226 项中，不重复计数。
+- 生产构建：Vite 1749 个模块转换成功；仅保留既有 runtime-config、第三方 PURE 注释和大分块警告，没有构建失败。
+- 运行态：四个 Compose 服务全部 healthy；Backend 开放就绪接口返回 `UP`。
+- 静态检查：`git diff --check` 和 `git diff --cached --check` 均通过。
+
+### 关键模块测试
+
+- Workflow Service 与发布事务：2/2 通过。
+- Workflow 节点配置校验：4/4 通过。
+- Workflow 模板快照兼容：1/1 通过。
+- Frontend 节点配置与模板管理：22/22 定向测试通过。
+- Backend 完整回归：362/362 通过。
+- Frontend 完整回归：226/226 通过。
+- Python Worker：28/28 通过（Python 3.12）。
+- Caddy：16/16 通过，`go vet` 通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向测试 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp -Dtest=WorkflowNodeConfigValidatorTest,WorkflowServicePublishTest,WorkflowServiceTriggerDefinitionTest test` | 7/7 通过，BUILD SUCCESS |
+| Frontend 定向测试 | `node --test tests/workflowNodeConfig.test.js tests/workflowTemplateCatalog.test.js` | 22/22 通过 |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 362/362 通过，BUILD SUCCESS |
+| Frontend 完整回归 | `node --test test/*.test.mjs tests/*.test.js` | 226/226 通过 |
+| Python Worker 完整回归 | Python 3.12 容器按哈希安装开发依赖后执行 `python -m pytest -q -p no:cacheprovider` | 28/28 通过 |
+| Caddy Go 回归 | Go 1.26.5 容器执行 `gofmt`、`go test ./...`、`go vet ./...` | 16/16 通过 |
+| 统一重建 | `docker compose up --build -d` | 命令退出码 0，四服务全部 healthy |
+| 运行态就绪检查 | Backend 容器请求 `/api/open/health/ready` | 返回 `{"status":"UP"}` |
+| 差异检查 | `git diff --check`、`git diff --cached --check`、工作区状态检查 | 均通过 |
+
+### 测试过程问题与处理
+
+- 宿主机未安装 Maven，按项目允许方式改用固定 Maven 3.9.9 / Java 17 容器执行定向和完整测试；未跳过任何 Backend 测试。
+- 第一次 Frontend 定向运行有 2 个新增源码契约正则过窄，实际组件结构正确；修正测试表达式后定向 22/22、完整 226/226 通过，没有弱化业务断言。
+- Compose 构建期间的 Vite runtime-config、第三方 PURE 注释和 chunk 大小均为既有非阻断警告；构建和健康检查成功。
+
+### 已知问题与限制
+
+- 模板默认配置允许不完整，这是本次确认的复用策略；只有保存后的当前工作流版本在发布时执行强校验。
+- 必填规则覆盖平台原生节点标准字段；附加自定义参数没有通用 Schema，不能自动判断业务必填性。
+- 条件必填提示根据当前操作或命令计算；修改 S3 操作、Redis 命令等字段后，提示会即时重新计算。
+- 发布接口校验当前已保存版本，不会隐式保存浏览器中尚未提交的画布修改，保持现有版本语义。
+
+### 下次测试建议
+
+1. 增加浏览器 E2E，验证真实点击字段卡片、首次输入、清除配置及必填警告的视觉状态。
+2. 为发布错误增加前端节点定位能力，使用户可从汇总错误直接选中对应画布节点。
+3. 若未来允许自定义节点 Schema，应把必填规则纳入模板元数据，并由前后端共同消费同一版本化定义。
+
+### 重测触发条件与回滚
+
+- 修改节点字段定义、必填/条件必填规则、模板快照合并、子画布结构或发布事务时，必须重跑 Backend、Frontend 完整回归和 Compose 统一重建。
+- 回滚应用代码可回退功能提交 `405db69163389d643f67747641a3563e18caa22f` 后重新执行 `docker compose up --build -d`；本次无数据库迁移或数据回填。
+- 如仅调整展示文案，仍需执行 Frontend 定向测试；若改变发布规则，必须同步更新前后端规则测试，避免提示和服务端校验漂移。
+
+---
+
 ## 📋 画布右键节点目录与三来源配置测试结果（2026-08-08）
 
 ### Git 基准点
