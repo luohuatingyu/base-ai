@@ -5,22 +5,23 @@
     <div v-if="fields.length" class="workflow-config-grid">
       <article v-for="field in fields" :key="field.key" class="workflow-config-card"
                :class="{ configured: hasField(field.key), disabled: fieldDisabled(field), 'required-missing': fieldRequirementMissing(field) }">
-        <button type="button" class="workflow-config-card-head" @click="toggleField(field.key)">
-          <span>
-            <strong>{{ fieldLabel(field.key) }} <em v-if="field.requirement">{{ t(`workflowConfig.${field.requirement}`) }}</em></strong>
-            <small>{{ fieldDescription(field.key) }}</small>
-            <small v-if="usesEffectiveDefault(field)" class="workflow-config-default-preview">{{ t('workflowConfig.defaultPreview', { value: defaultPreview(field) }) }}</small>
-          </span>
+        <div class="workflow-config-card-head-layout">
+          <button type="button" class="workflow-config-card-head" @click="toggleField(field.key)">
+            <span>
+              <strong>{{ fieldLabel(field.key) }} <em v-if="field.requirement">{{ t(`workflowConfig.${field.requirement}`) }}</em></strong>
+              <small>{{ fieldDescription(field.key) }}</small>
+              <small v-if="usesEffectiveDefault(field)" class="workflow-config-default-preview">{{ t('workflowConfig.defaultPreview', { value: defaultPreview(field) }) }}</small>
+            </span>
+          </button>
           <span class="workflow-config-card-tags">
             <el-tag v-if="fieldRequirementMissing(field)" size="small" type="danger">{{ t('workflowConfig.requiredMissing') }}</el-tag>
-            <el-tag v-else size="small" :type="hasField(field.key) ? 'success' : fieldCanToggle(field) ? 'info' : hasDefault(field) ? 'primary' : 'info'">{{ t(fieldStatusKey(field)) }}</el-tag>
+            <el-switch v-if="fieldCanToggle(field)" :aria-label="t('workflowConfig.enableField')"
+                       :model-value="hasField(field.key)" @change="toggleConfigured(field, $event)" />
+            <el-tag v-else-if="!fieldRequirementMissing(field)" size="small"
+                    :type="hasField(field.key) ? 'success' : hasDefault(field) ? 'primary' : 'info'">{{ t(fieldStatusKey(field)) }}</el-tag>
           </span>
-        </button>
+        </div>
         <div v-if="openFields.includes(field.key)" class="workflow-config-card-body">
-          <div v-if="fieldCanToggle(field)" class="workflow-config-enable">
-            <span>{{ t('workflowConfig.enableField') }}</span>
-            <el-switch :model-value="hasField(field.key)" @change="toggleConfigured(field, $event)" />
-          </div>
           <fieldset class="workflow-config-controls" :disabled="fieldDisabled(field)">
             <el-input v-if="['text','textarea'].includes(field.editor)" :model-value="fieldValue(field)"
                         :type="field.editor === 'textarea' ? 'textarea' : 'text'" :rows="4" @update:model-value="setField(field.key, $event)" />
@@ -201,7 +202,6 @@ function fieldDisabled(field) { return fieldCanToggle(field) && !hasField(field.
 /** 返回非缺失字段的配置状态文案键。 */
 function fieldStatusKey(field) {
   if (hasField(field.key)) return 'workflowConfig.configured'
-  if (fieldCanToggle(field)) return 'workflowConfig.disabled'
   return hasDefault(field) ? 'workflowConfig.defaultValue' : 'workflowConfig.notConfigured'
 }
 /** 判断当前未展开字段是否会采用已验证的运行默认值。 */
@@ -269,15 +269,16 @@ function addExtra() {
 .workflow-config-card.configured { border-color: #b8cdf8; background: #f7faff; }
 .workflow-config-card.disabled { border-color: #d8dee9; background: #fafbfc; }
 .workflow-config-card.required-missing { border-color: #efb2b2; background: #fffafa; }
+.workflow-config-card-head-layout { display: flex; align-items: center; }
 .workflow-config-card-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.workflow-config-card-head-layout .workflow-config-card-head { min-width: 0; flex: 1; width: auto; padding-right: 0; }
 .workflow-config-card-head > span:first-child, .workflow-extra-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .workflow-config-card-head strong em { margin-left: 4px; color: var(--el-color-danger); font-size: 12px; font-style: normal; font-weight: 500; }
-.workflow-config-card-tags { display: flex; flex: 0 0 auto; gap: 6px; }
+.workflow-config-card-tags { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 14px; }
 .workflow-config-card-head small, .workflow-extra-head small { color: var(--app-muted); line-height: 1.45; }
 .workflow-config-card-head .workflow-config-default-preview { color: var(--el-color-primary); font-weight: 500; }
 .workflow-config-card-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; border-top: 1px solid #e8edf5; }
 .workflow-config-card-body > :first-child { margin-top: 14px; }
-.workflow-config-enable { display: flex; align-items: center; justify-content: space-between; }
 .workflow-config-controls { display: flex; min-width: 0; flex-direction: column; gap: 12px; margin: 0; padding: 0; border: 0; }
 .workflow-config-controls:disabled { opacity: .65; pointer-events: none; }
 .workflow-model-option-label { display: block; width: 100%; min-width: 0; }

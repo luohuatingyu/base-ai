@@ -187,21 +187,21 @@ test('发布提示覆盖固定必填、方案条件、操作条件和参数数�
 })
 
 test('必填字段直接编辑且非必填和条件必填字段通过开关启停', () => {
-  assert.match(configEditorSource, /v-if="fieldCanToggle\(field\)" class="workflow-config-enable"/)
-  assert.match(configEditorSource, /:model-value="hasField\(field\.key\)" @change="toggleConfigured\(field, \$event\)"/)
+  assert.match(configEditorSource, /class="workflow-config-card-head-layout"[\s\S]*<button[^>]*@click="toggleField\(field\.key\)"[\s\S]*<span class="workflow-config-card-tags">/)
+  assert.match(configEditorSource, /<el-switch v-if="fieldCanToggle\(field\)"[^>]*:aria-label="t\('workflowConfig\.enableField'\)"[\s\S]*:model-value="hasField\(field\.key\)" @change="toggleConfigured\(field, \$event\)"/)
+  assert.doesNotMatch(configEditorSource, /class="workflow-config-enable"/)
   assert.match(configEditorSource, /function fieldCanToggle\(field\).*field\.requirement !== 'required'/)
   assert.match(configEditorSource, /function toggleConfigured\(field, enabled\)/)
-  assert.match(configEditorSource, /:model-value="fieldValue\(field\)"/)
+  assert.match(configEditorSource, /field\.editor === 'boolean'[^>]*:model-value="fieldValue\(field\)"/)
   assert.match(configEditorSource, /<fieldset[^>]*:disabled="fieldDisabled\(field\)"/)
   assert.match(configEditorSource, /missingNodeConfigRequirements\(props\.nodeType, config\.value\)/)
 })
 
-test('非必填默认值字段未启用时显示禁用且必填缺失提示保持最高优先级', () => {
+test('非必填默认值字段未启用时保持禁用样式且必填缺失提示优先展示', () => {
   assert.match(configEditorSource, /function hasDefault\(field\).*hasOwnProperty\.call\(field, 'defaultValue'\)/)
-  assert.match(configEditorSource, /if \(hasField\(field\.key\)\) return 'workflowConfig\.configured'/)
-  assert.match(configEditorSource, /if \(fieldCanToggle\(field\)\) return 'workflowConfig\.disabled'/)
-  assert.match(configEditorSource, /hasDefault\(field\) \? 'workflowConfig\.defaultValue' : 'workflowConfig\.notConfigured'/)
-  assert.match(configEditorSource, /v-if="fieldRequirementMissing\(field\)"[\s\S]*v-else[\s\S]*fieldStatusKey\(field\)/)
+  assert.match(configEditorSource, /v-if="fieldRequirementMissing\(field\)"[^>]*type="danger"/)
+  assert.match(configEditorSource, /v-if="fieldCanToggle\(field\)"[^>]*hasField\(field\.key\)/)
+  assert.match(configEditorSource, /v-else-if="!fieldRequirementMissing\(field\)"[\s\S]*fieldStatusKey\(field\)/)
   assert.match(configEditorSource, /disabled: fieldDisabled\(field\)/)
 })
 
