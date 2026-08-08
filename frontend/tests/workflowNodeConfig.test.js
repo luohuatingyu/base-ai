@@ -224,19 +224,19 @@ test('必填字段直接编辑且非必填和条件必填字段通过开关启�
   assert.match(configEditorSource, /missingNodeConfigRequirements\(props\.nodeType, config\.value\)/)
 })
 
-test('标准字段和附加参数明确提示配置值的展开收起行为', () => {
+test('标准字段和附加参数使用简短文字切换配置值且不显示箭头', () => {
   assert.match(configEditorSource, /:aria-expanded="openFields\.includes\(field\.key\)" @click="toggleField\(field\.key\)"/)
-  assert.match(configEditorSource, /openFields\.includes\(field\.key\) \? 'workflowConfig\.collapseValue' : 'workflowConfig\.expandValue'/)
   assert.match(configEditorSource, /:aria-expanded="openExtra\.includes\(key\)" @click="toggleExtra\(key\)"/)
+  assert.match(configEditorSource, /openFields\.includes\(field\.key\) \? 'workflowConfig\.collapseValue' : 'workflowConfig\.expandValue'/)
   assert.match(configEditorSource, /openExtra\.includes\(key\) \? 'workflowConfig\.collapseValue' : 'workflowConfig\.expandValue'/)
-  assert.match(configEditorSource, /workflow-config-toggle-chevron" :class="\{ open:/)
-  assert.match(configEditorSource, /\.workflow-config-toggle-chevron\.open \{ transform: rotate\(225deg\); \}/)
+  assert.match(configEditorSource, /class="workflow-config-toggle-hint"/)
+  assert.doesNotMatch(configEditorSource, /workflow-config-toggle-chevron/)
   assert.match(zhCN.workflowConfig.visualHint, /点击字段标题可展开或收起配置值/)
-  assert.equal(zhCN.workflowConfig.expandValue, '展开配置')
-  assert.equal(zhCN.workflowConfig.collapseValue, '收起配置')
   assert.match(enUS.workflowConfig.visualHint, /Click a field heading to expand or collapse its value/)
-  assert.equal(enUS.workflowConfig.expandValue, 'Expand configuration')
-  assert.equal(enUS.workflowConfig.collapseValue, 'Collapse configuration')
+  assert.equal(zhCN.workflowConfig.expandValue, '显示')
+  assert.equal(zhCN.workflowConfig.collapseValue, '隐藏')
+  assert.equal(enUS.workflowConfig.expandValue, 'Show')
+  assert.equal(enUS.workflowConfig.collapseValue, 'Hide')
 })
 
 test('非必填默认值字段未启用时保持禁用样式且必填缺失提示优先展示', () => {
