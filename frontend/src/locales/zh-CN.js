@@ -341,7 +341,7 @@ export default {
   },
   workflowCanvas: { title: '画布管理', description: '在画布空白处右键选择节点，通过连线和版本发布构建可运行工作流。', workflows: '工作流', search: '搜索工作流', add: '新增工作流', required: '请填写工作流编码和名称', empty: '请选择或创建工作流', palette: '节点模板', nodeMenu: '添加节点', categories: '节点功能分类', noTemplates: '暂无可用节点模板', properties: '节点属性', nodeConfig: '实例配置', editSubgraph: '编辑子画布', subgraph: '循环子画布', deleteNode: '删除节点', undo: '撤销', redo: '重做', maximize: '最大化', restore: '还原', fullscreen: '全屏', exitFullscreen: '退出全屏', fullscreenFailed: '无法切换全屏模式', publish: '发布', published: '工作流已发布', run: '运行', start: '开始运行', cancel: '取消运行', logs: '运行日志', inputSchema: '输入 Schema JSON', invalidJson: '请输入有效 JSON', invalidGraph: '画布校验失败：{error}', iteration: '迭代路径' },
   workflowConfig: {
-    visualHint: '点击配置卡片即可编辑；首次修改会自动写入配置，未配置的可选字段不会启用。', configured: '已配置', notConfigured: '未配置', required: '必填', conditional: '条件必填', requiredMissing: '缺少必填配置', clearField: '清除该字段配置',
+    visualHint: '点击配置卡片即可编辑；首次修改会覆盖默认值，没有默认值且未配置的可选字段不会启用。', configured: '已配置', defaultValue: '使用默认值', notConfigured: '未配置', required: '必填', conditional: '条件必填', requiredMissing: '缺少必填配置', clearField: '清除该字段配置',
     requiredHint: '模板可以暂时留空，但工作流发布前需补充：{fields}', fieldSeparator: '、',
     noStandardFields: '该节点没有标准字段，可在下方添加附加参数', extraTitle: '附加参数', extraDescription: '维护标准字段之外的自定义配置，支持对象和数组嵌套。',
     customParameter: '自定义参数', removeParameter: '删除参数', parameterName: '参数名称', addParameter: '添加参数', addItem: '添加数组项',

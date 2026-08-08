@@ -63,6 +63,25 @@ test('标准字段无需显式启用且保留清除配置和缺失必填提示',
   assert.match(configEditorSource, /missingNodeConfigRequirements\(props\.nodeType, config\.value\)/)
 })
 
+test('默认值字段使用独立状态且必填缺失提示保持最高优先级', () => {
+  assert.match(configEditorSource, /function hasDefault\(field\).*hasOwnProperty\.call\(field, 'defaultValue'\)/)
+  assert.match(configEditorSource, /if \(hasField\(field\.key\)\) return 'workflowConfig\.configured'/)
+  assert.match(configEditorSource, /hasDefault\(field\) \? 'workflowConfig\.defaultValue' : 'workflowConfig\.notConfigured'/)
+  assert.match(configEditorSource, /v-if="fieldRequirementMissing\(field\)"[\s\S]*v-else[\s\S]*fieldStatusKey\(field\)/)
+  assert.match(configEditorSource, /defaulted: !hasField\(field\.key\) && hasDefault\(field\)/)
+})
+
+test('零、false、null、空对象和空数组均保留为可展示默认值', () => {
+  const examples = [
+    nodeConfigFields('LLM').find(field => field.key === 'temperature').defaultValue,
+    nodeConfigFields('LLM').find(field => field.key === 'enableThinking').defaultValue,
+    nodeConfigFields('LLM').find(field => field.key === 'modelId').defaultValue,
+    nodeConfigFields('HTTP').find(field => field.key === 'headers').defaultValue,
+    nodeConfigFields('AGENT').find(field => field.key === 'tools').defaultValue
+  ]
+  assert.deepEqual(examples, [0, false, null, {}, []])
+})
+
 test('模板基础信息完整标记必填并说明发布前校验', () => {
   assert.match(nodeManagementSource, /:label="t\('common\.code'\)" required/)
   assert.match(nodeManagementSource, /:label="t\('common\.name'\)" required/)

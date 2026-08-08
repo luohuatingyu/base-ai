@@ -4,12 +4,12 @@
     <el-alert v-if="missingRequirements.length" :title="requiredHint" type="warning" show-icon :closable="false" />
     <div v-if="fields.length" class="workflow-config-grid">
       <article v-for="field in fields" :key="field.key" class="workflow-config-card"
-               :class="{ configured: hasField(field.key), 'required-missing': fieldRequirementMissing(field) }">
+               :class="{ configured: hasField(field.key), defaulted: !hasField(field.key) && hasDefault(field), 'required-missing': fieldRequirementMissing(field) }">
         <button type="button" class="workflow-config-card-head" @click="toggleField(field.key)">
           <span><strong>{{ fieldLabel(field.key) }} <em v-if="field.requirement">{{ t(`workflowConfig.${field.requirement}`) }}</em></strong><small>{{ fieldDescription(field.key) }}</small></span>
           <span class="workflow-config-card-tags">
             <el-tag v-if="fieldRequirementMissing(field)" size="small" type="danger">{{ t('workflowConfig.requiredMissing') }}</el-tag>
-            <el-tag v-else size="small" :type="hasField(field.key) ? 'success' : 'info'">{{ hasField(field.key) ? t('workflowConfig.configured') : t('workflowConfig.notConfigured') }}</el-tag>
+            <el-tag v-else size="small" :type="hasField(field.key) ? 'success' : hasDefault(field) ? 'primary' : 'info'">{{ t(fieldStatusKey(field)) }}</el-tag>
           </span>
         </button>
         <div v-if="openFields.includes(field.key)" class="workflow-config-card-body">
@@ -80,6 +80,13 @@ watch(() => props.modelValue, value => {
 
 /** 返回字段是否已写入当前配置。 */
 function hasField(key) { return Object.prototype.hasOwnProperty.call(config.value, key) }
+/** 判断字段定义是否声明默认值，包含 null、false、零和空容器。 */
+function hasDefault(field) { return Object.prototype.hasOwnProperty.call(field, 'defaultValue') }
+/** 返回非缺失字段的配置状态文案键。 */
+function fieldStatusKey(field) {
+  if (hasField(field.key)) return 'workflowConfig.configured'
+  return hasDefault(field) ? 'workflowConfig.defaultValue' : 'workflowConfig.notConfigured'
+}
 /** 返回已配置值或仅供编辑展示的字段默认值，不因展开卡片写入配置。 */
 function fieldValue(field) { return hasField(field.key) ? config.value[field.key] : cloneValue(field.defaultValue) }
 /** 深复制可序列化字段值，避免可视化编辑器污染共享默认值。 */
@@ -127,6 +134,7 @@ function addExtra() {
 .workflow-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .workflow-config-card { min-width: 0; overflow: hidden; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
 .workflow-config-card.configured { border-color: #b8cdf8; background: #f7faff; }
+.workflow-config-card.defaulted { border-color: #c9d6ec; background: #f8faff; }
 .workflow-config-card.required-missing { border-color: #efb2b2; background: #fffafa; }
 .workflow-config-card-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
 .workflow-config-card-head > span:first-child, .workflow-extra-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
