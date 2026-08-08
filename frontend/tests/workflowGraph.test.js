@@ -2,12 +2,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { reactive } from 'vue'
-import { cloneWorkflowData, createWorkflowGraph, validateWorkflowGraph } from '../src/utils/workflowGraph.js'
+import { cloneWorkflowData, createWorkflowGraph, removeWorkflowEdge, validateWorkflowGraph } from '../src/utils/workflowGraph.js'
 import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
 
 const canvasViewSource = readFileSync(new URL('../src/views/WorkflowCanvasView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
+const workflowNodeSource = readFileSync(new URL('../src/components/WorkflowNode.vue', import.meta.url), 'utf8')
 const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
 test('工作流 JSON 数据可安全复制 Vue 响应式对象', () => {
@@ -50,6 +51,32 @@ test('画布自身的 v-model 回显不会重置撤销重做历史', () => {
   assert.match(graphEditorSource, /lastEmittedModel\s*=\s*nextModel;\s*emit\('update:modelValue',\s*nextModel\)/)
   assert.match(graphEditorSource, /history\.value\s*=\s*\[next\];\s*historyIndex\.value\s*=\s*0/)
   assert.match(graphEditorSource, /history\.value\s*=\s*\[\.\.\.history\.value\.slice\(0,\s*historyIndex\.value\s*\+\s*1\),\s*snapshot\]/)
+})
+
+test('右键连线显示删除选项并将删除纳入撤销历史', () => {
+  const source = [
+    { id: 'first', source: 'start', target: 'http' },
+    { id: 'second', source: 'http', target: 'end' }
+  ]
+  const remaining = removeWorkflowEdge(source, 'first')
+
+  assert.deepEqual(remaining, [{ id: 'second', source: 'http', target: 'end' }])
+  assert.equal(source.length, 2)
+  assert.deepEqual(removeWorkflowEdge(source, 'missing'), source)
+  assert.deepEqual(removeWorkflowEdge(null, 'first'), [])
+  assert.match(graphEditorSource, /@edge-context-menu="openEdgeMenu"/)
+  assert.match(graphEditorSource, /event\.preventDefault\(\)[\s\S]*event\.stopPropagation\(\)/)
+  assert.match(graphEditorSource, /workflow-edge-menu[\s\S]*common\.delete/)
+  assert.match(graphEditorSource, /edges\.value\s*=\s*removeWorkflowEdge\(edges\.value, edgeId\)[\s\S]*remember\(\)/)
+  assert.match(graphEditorSource, /if \(templateMenu\.visible\) closeTemplateMenu\(\)[\s\S]*else if \(edgeMenu\.visible\) closeEdgeMenu\(\)/)
+})
+
+test('画布节点实时显示缺失必填配置及字段提示', () => {
+  assert.match(workflowNodeSource, /missingNodeConfigRequirements\(nodeType\.value, props\.data\?\.config\)/)
+  assert.match(workflowNodeSource, /has-missing-config/)
+  assert.match(workflowNodeSource, /v-if="missingRequirements\.length"[\s\S]*:title="missingHint"/)
+  assert.match(workflowNodeSource, /workflowConfig\.requiredMissing/)
+  assert.match(workflowNodeSource, /workflowConfig\.requirementLabels/)
 })
 
 test('画布提供应用内最大化和浏览器原生全屏入口', () => {

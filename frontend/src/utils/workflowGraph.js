@@ -56,3 +56,8 @@ export function cloneWorkflowData(value) {
 export function serializeWorkflowGraph(graph) {
   return cloneWorkflowData({ nodes: graph?.nodes || [], edges: graph?.edges || [] })
 }
+
+/** 删除指定画布连线并保留原数组，供画布交互和测试复用。 */
+export function removeWorkflowEdge(edges, edgeId) {
+  return (Array.isArray(edges) ? edges : []).filter(edge => edge?.id !== edgeId)
+}
