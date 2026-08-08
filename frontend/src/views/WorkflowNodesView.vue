@@ -14,7 +14,11 @@
       <aside class="node-template-category-filter" :aria-label="t('workflowNodes.category')">
         <strong>{{ t('workflowNodes.category') }}</strong>
         <el-radio-group v-model="selectedCategory" class="node-template-category-options">
-          <el-radio-button v-for="category in categories" :key="category" :value="category">{{ t(`workflowCatalog.categories.${category}`) }}</el-radio-button>
+          <el-tooltip v-for="category in categories" :key="category" :content="t(`workflowCatalog.categories.${category}`)" placement="right" :show-after="300">
+            <el-radio-button :value="category" :aria-label="t(`workflowCatalog.categories.${category}`)">
+              <span class="node-template-category-label">{{ t(`workflowCatalog.categories.${category}`) }}</span>
+            </el-radio-button>
+          </el-tooltip>
         </el-radio-group>
       </aside>
       <section class="node-template-group">
@@ -124,8 +128,9 @@ onMounted(load)
 .node-template-layout { display: grid; grid-template-columns: minmax(180px, 220px) minmax(0, 1fr); gap: 24px; align-items: start; }
 .node-template-category-filter { display: grid; gap: 12px; padding: 18px; border: 1px solid #dfe6f0; border-radius: 14px; background: #f8faff; }
 .node-template-category-options { display: grid; width: 100%; gap: 8px; }
-.node-template-category-options :deep(.el-radio-button), .node-template-category-options :deep(.el-radio-button__inner) { width: 100%; }
-.node-template-category-options :deep(.el-radio-button__inner) { display: flex; min-height: 48px; align-items: center; padding: 12px 14px; line-height: 1.4; text-align: left; }
+.node-template-category-options :deep(.el-radio-button), .node-template-category-options :deep(.el-radio-button__inner) { min-width: 0; width: 100%; }
+.node-template-category-options :deep(.el-radio-button__inner) { box-sizing: border-box; display: flex; min-height: 48px; align-items: center; padding: 12px 14px; line-height: 1.4; text-align: left; }
+.node-template-category-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-template-source-options :deep(.el-radio-button__inner), .node-template-category-options :deep(.el-radio-button__inner) { border: 1px solid #dcdfe6; border-radius: 8px; box-shadow: none; }
 .node-template-source-options :deep(.el-radio-button:first-child .el-radio-button__inner), .node-template-source-options :deep(.el-radio-button:last-child .el-radio-button__inner), .node-template-category-options :deep(.el-radio-button:first-child .el-radio-button__inner), .node-template-category-options :deep(.el-radio-button:last-child .el-radio-button__inner) { border-radius: 8px; }
 .node-template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }

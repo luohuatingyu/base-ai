@@ -132,3 +132,10 @@ test('节点列表隐藏重复筛选摘要并增高功能类型选项', () => {
   assert.doesNotMatch(nodeManagementSource, /<el-tag round>\{\{ filteredRows\.length \}\}<\/el-tag>/)
   assert.match(nodeManagementSource, /\.node-template-category-options\s+:deep\(\.el-radio-button__inner\)\s*\{[^}]*min-height:\s*48px[^}]*align-items:\s*center/)
 })
+
+test('英文功能类型限制在侧栏内并通过省略号和提示展示长名称', () => {
+  assert.match(nodeManagementSource, /<el-tooltip v-for="category in categories"[^>]*:content="t\(`workflowCatalog\.categories\.\$\{category\}`\)"[^>]*placement="right"/)
+  assert.match(nodeManagementSource, /class="node-template-category-label"/)
+  assert.match(nodeManagementSource, /\.node-template-category-options\s+:deep\(\.el-radio-button__inner\)\s*\{[^}]*box-sizing:\s*border-box/)
+  assert.match(nodeManagementSource, /\.node-template-category-label\s*\{[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/)
+})
