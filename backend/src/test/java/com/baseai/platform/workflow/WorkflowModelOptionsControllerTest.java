@@ -20,6 +20,15 @@ class WorkflowModelOptionsControllerTest {
         assertEquals("workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
     }
 
+    /** 模型路由选项接口必须保持只读并复用工作流节点查看权限。 */
+    @Test
+    void routeOptionsRequireWorkflowNodeListPermission() throws Exception {
+        Method method = WorkflowController.class.getMethod("routeOptions");
+
+        assertArrayEquals(new String[]{"/route-options"}, method.getAnnotation(GetMapping.class).value());
+        assertEquals("workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
+    }
+
     /** 邮件路由和连接选项接口必须保持只读并复用节点查看权限。 */
     @Test
     void managedResourceOptionsRequireWorkflowNodeListPermission() throws Exception {

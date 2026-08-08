@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { cloneConfig, compatibleWorkflowModelId, compatibleWorkflowResourceId, configValueType, createConfigValue, effectiveNodeConfigDefaultValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFieldRequirement, nodeConfigFields, nodeConfigUsesEffectiveDefault, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, WORKFLOW_NODE_TYPES, WORKFLOW_NODE_VALIDATION_TYPES } from '../src/utils/workflowNodeConfig.js'
+import { cloneConfig, compatibleWorkflowModelId, compatibleWorkflowResourceId, compatibleWorkflowRouteCode, configValueType, createConfigValue, effectiveNodeConfigDefaultValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFieldRequirement, nodeConfigFields, nodeConfigUsesEffectiveDefault, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, workflowRouteOptionLabel, WORKFLOW_NODE_TYPES, WORKFLOW_NODE_VALIDATION_TYPES } from '../src/utils/workflowNodeConfig.js'
 
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
@@ -33,6 +33,7 @@ test('全部原生节点都有可视化配置定义', () => {
   assert.deepEqual(nodeConfigFields('SCHEDULE_TRIGGER').map(field => field.key), ['cron', 'zoneId'])
   assert.deepEqual(nodeConfigFields('LLM').slice(-3).map(field => field.key), ['maxAttempts', 'retryDelayMillis', 'onError'])
   for (const type of ['LLM', 'AGENT', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR']) {
+    assert.equal(nodeConfigFields(type).find(field => field.key === 'featureCode').editor, 'modelRoute', type)
     assert.equal(nodeConfigFields(type).find(field => field.key === 'modelId').editor, 'model', type)
   }
   assert.equal(nodeConfigFields('EMAIL_SEND').find(field => field.key === 'routeId').editor, 'mailRoute')
@@ -59,6 +60,17 @@ test('Agent 模型下拉按动态模型类型过滤并生成可识别标签', ()
   assert.equal(compatibleWorkflowModelId(options, 'vision_model', 1), null)
   assert.equal(compatibleWorkflowModelId(options, 'text_model', ''), null)
   assert.equal(compatibleWorkflowModelId(options, 'text_model', 'invalid'), null)
+})
+
+test('模型路由功能编码下拉生成可识别标签并拒绝失效编码', () => {
+  const options = [
+    { id: 1, featureCode: 'DEFAULT', name: '默认能力路由' },
+    { id: 2, featureCode: 'CHAT', name: '对话路由' }
+  ]
+  assert.equal(workflowRouteOptionLabel(options[1]), '对话路由 (CHAT)')
+  assert.equal(compatibleWorkflowRouteCode(options, 'chat'), 'CHAT')
+  assert.equal(compatibleWorkflowRouteCode(options, 'UNKNOWN'), null)
+  assert.equal(compatibleWorkflowRouteCode(options, ''), null)
 })
 
 test('连接下拉按节点运行时允许类型过滤并生成可识别标签', () => {
@@ -92,6 +104,19 @@ test('全部 AI 节点指定模型使用可搜索可清空下拉并在类型不�
   assert.match(configEditorSource, /compatibleWorkflowModelId\(modelOptions\.value, type, config\.value\.modelId\) === null/)
   assert.match(configEditorSource, /removeField\('modelId'\)/)
   assert.doesNotMatch(configEditorSource, /field\.editor === 'model'[\s\S]{0,300}<el-input-number/)
+})
+
+test('全部 AI 节点的模型路由功能编码使用精简路由选项下拉', () => {
+  assert.match(configEditorSource, /field\.editor === 'modelRoute'/)
+  assert.match(configEditorSource, /filterable clearable fit-input-width :loading="routeOptionsLoading"/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/route-options'\)/)
+  assert.match(configEditorSource, /workflowRouteOptionLabel\(option\)/)
+  assert.match(configEditorSource, /@update:model-value="setFeatureCode"/)
+  assert.match(configEditorSource, /const compatibleCode = compatibleWorkflowRouteCode\(routeOptions\.value, config\.value\.featureCode\)/)
+  assert.match(configEditorSource, /if \(compatibleCode === null\) removeField\('featureCode'\)[\s\S]*setFeatureCode\(compatibleCode\)/)
+  assert.match(configEditorSource, /if \(!routeOptionsLoaded\.value \|\| !hasField\('featureCode'\)\) return/)
+  assert.match(configEditorSource, /catch \{ routeOptionsError\.value = true \}/)
+  assert.doesNotMatch(configEditorSource, /field\.key === 'featureCode'[\s\S]{0,300}<el-input/)
 })
 
 test('邮件路由和连接配置使用精简资源接口且加载失败时保留原值', () => {

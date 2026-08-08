@@ -1,7 +1,7 @@
-/** 创建 AI 节点共用模型字段，指定模型统一通过资源下拉选择。 */
+/** 创建 AI 节点共用模型字段，模型路由和指定模型统一通过资源下拉选择。 */
 function aiModelFields() { return [
   field('modelMode', 'select', null, ['ROUTE', 'DIRECT']),
-  field('featureCode', 'text', 'DEFAULT'),
+  field('featureCode', 'modelRoute', 'DEFAULT'),
   field('modelType', 'select', 'text_model', ['text_model', 'vision_model']),
   field('modelId', 'model', null),
   field('temperature', 'number', 0),
@@ -397,6 +397,18 @@ export function filterWorkflowModelOptions(options, modelType) {
 /** 生成包含供应商和真实模型标识的稳定下拉标签。 */
 export function workflowModelOptionLabel(option = {}) {
   return `${option.name || option.modelName || option.id} (${option.modelName || '-'}) · ${option.providerName || '-'}`
+}
+
+/** 生成模型路由名称和功能编码组成的稳定下拉标签。 */
+export function workflowRouteOptionLabel(option = {}) {
+  return `${option.name || option.featureCode || option.id} (${option.featureCode || '-'})`
+}
+
+/** 保留选项列表中存在的功能编码，并使用服务端返回的规范大小写。 */
+export function compatibleWorkflowRouteCode(options, featureCode) {
+  const normalized = String(featureCode || '').trim().toUpperCase()
+  if (!normalized) return null
+  return (options || []).find(option => String(option?.featureCode || '').trim().toUpperCase() === normalized)?.featureCode || null
 }
 
 /** 保留兼容当前模型类型的数字 ID，不兼容、空值或非法值统一返回 null。 */

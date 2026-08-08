@@ -97,6 +97,34 @@ class LlmManagementServiceTest {
         verifyNoInteractions(cryptoService);
     }
 
+    /** 工作流模型路由下拉只返回启用路由，并按功能编码排序且不携带管理配置。 */
+    @Test
+    void workflowRouteOptionsContainOnlyEnabledRoutes() {
+        LlmRoute disabled = route("1");
+        ReflectionTestUtils.setField(disabled, "id", 3L);
+        disabled.setFeatureCode("DISABLED");
+        disabled.setName("Disabled route");
+        LlmRoute chat = route("1");
+        ReflectionTestUtils.setField(chat, "id", 2L);
+        chat.setFeatureCode("CHAT");
+        chat.setName("Chat route");
+        chat.setEnabled(true);
+        LlmRoute defaultRoute = route("1");
+        ReflectionTestUtils.setField(defaultRoute, "id", 1L);
+        defaultRoute.setFeatureCode("DEFAULT");
+        defaultRoute.setName("Default route");
+        defaultRoute.setEnabled(true);
+        when(routeRepository.findAll()).thenReturn(List.of(disabled, defaultRoute, chat));
+
+        List<LlmManagementService.WorkflowRouteOption> options = service.workflowRouteOptions();
+
+        assertEquals(List.of(
+            new LlmManagementService.WorkflowRouteOption(2L, "CHAT", "Chat route"),
+            new LlmManagementService.WorkflowRouteOption(1L, "DEFAULT", "Default route")
+        ), options);
+        verifyNoInteractions(providerRepository, modelRepository, cryptoService);
+    }
+
     /** 查看单个供应商时，应解密并将逗号、换行分隔的密钥统一为一行一个。 */
     @Test
     void providerApiKeysReturnsOneKeyPerLine() {

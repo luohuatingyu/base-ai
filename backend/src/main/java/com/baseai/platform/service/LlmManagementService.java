@@ -152,6 +152,15 @@ public class LlmManagementService {
             .toList();
     }
 
+    /** 查询工作流配置可选择的启用模型路由，并仅返回功能编码下拉所需字段。 */
+    public List<WorkflowRouteOption> workflowRouteOptions(){
+        return routeRepository.findAll().stream()
+            .filter(route->Boolean.TRUE.equals(route.getEnabled()))
+            .sorted(Comparator.comparing(LlmRoute::getFeatureCode))
+            .map(route->new WorkflowRouteOption(route.getId(),route.getFeatureCode(),route.getName()))
+            .toList();
+    }
+
     /** 查询启用的模型类型目录；字典尚未初始化时回退到内置的首批类型。 */
     public List<ModelTypeOption> modelTypes(){
         List<ModelTypeOption> result=dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type").stream()
@@ -742,5 +751,6 @@ public class LlmManagementService {
     public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
     public record ModelTypeOption(String value,String label){}
     public record WorkflowModelOption(Long id,String name,String modelName,String providerName,List<String> supportedModelTypes){}
+    public record WorkflowRouteOption(Long id,String featureCode,String name){}
     private record ModelSyncKey(Long modelId,boolean enableThinking,String thinkingLevel){}
 }

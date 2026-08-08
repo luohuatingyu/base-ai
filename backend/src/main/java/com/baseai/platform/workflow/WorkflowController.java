@@ -80,6 +80,13 @@ public class WorkflowController {
         return llmManagementService.workflowModelOptions();
     }
 
+    /** 查询 AI 节点可选择的启用模型路由，不返回供应商池等管理配置。 */
+    @GetMapping("/route-options")
+    @RequiredPermission("workflow:node:list")
+    public List<LlmManagementService.WorkflowRouteOption> routeOptions() {
+        return llmManagementService.workflowRouteOptions();
+    }
+
     /** 查询邮件发送节点可选择的启用可发送路由，不返回账户或收件人配置。 */
     @GetMapping("/mail-route-options")
     @RequiredPermission("workflow:node:list")
