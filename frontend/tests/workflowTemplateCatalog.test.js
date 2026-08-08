@@ -11,25 +11,25 @@ const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphE
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
 
 test('全部原生节点属于受控功能分类', () => {
-  assert.deepEqual(WORKFLOW_TEMPLATE_SOURCES, ['SYSTEM', 'CUSTOM'])
+  assert.deepEqual(WORKFLOW_TEMPLATE_SOURCES, ['SYSTEM', 'N8N', 'DIFY'])
   for (const nodeType of WORKFLOW_NODE_TYPES) {
     assert.ok(WORKFLOW_TEMPLATE_CATEGORIES.includes(defaultTemplateCategory(nodeType)), nodeType)
   }
 })
 
-test('模板按系统标记推导原生来源并按节点类型推导分类', () => {
+test('迁移前模板兼容系统来源并按节点类型推导分类', () => {
   assert.deepEqual(
-    normalizeTemplateMetadata({ id: 1, nodeType: 'LLM', systemTemplate: true }),
-    { id: 1, nodeType: 'LLM', systemTemplate: true, source: 'SYSTEM', functionalCategory: 'AI' }
+    normalizeTemplateMetadata({ id: 1, nodeType: 'LLM' }),
+    { id: 1, nodeType: 'LLM', source: 'SYSTEM', functionalCategory: 'AI' }
   )
-  assert.equal(normalizeTemplateMetadata({ nodeType: 'HTTP', systemTemplate: false, functionalCategory: 'trigger' }).source, 'CUSTOM')
+  assert.equal(normalizeTemplateMetadata({ nodeType: 'HTTP', source: 'dify', functionalCategory: 'trigger' }).source, 'DIFY')
   assert.equal(normalizeTemplateMetadata({ nodeType: 'HTTP', source: 'unknown', functionalCategory: 'unknown' }).functionalCategory, 'NETWORK_API')
 })
 
 test('功能分组保持固定顺序并默认隐藏停用节点', () => {
   const templates = [
-    { id: 1, nodeType: 'HTTP', enabled: true, source: 'CUSTOM' },
-    { id: 2, nodeType: 'LLM', enabled: true, source: 'CUSTOM' },
+    { id: 1, nodeType: 'HTTP', enabled: true, source: 'N8N' },
+    { id: 2, nodeType: 'LLM', enabled: true, source: 'DIFY' },
     { id: 3, nodeType: 'START', enabled: false, source: 'SYSTEM', systemTemplate: true }
   ]
   assert.deepEqual(groupWorkflowTemplates(templates).map(group => group.category), ['AI', 'NETWORK_API'])
@@ -44,9 +44,10 @@ test('画布使用右键分类菜单并在点击坐标添加节点', () => {
   assert.doesNotMatch(graphEditorSource, /workflow-palette|startDrag|application\/workflow-template/)
 })
 
-test('节点管理展示固定原生来源并可维护功能分类', () => {
+test('节点管理可维护来源和功能分类', () => {
   assert.match(nodeManagementSource, /form\.source/)
   assert.match(nodeManagementSource, /form\.functionalCategory/)
-  assert.doesNotMatch(nodeManagementSource, /v-model="form\.source"/)
+  assert.match(nodeManagementSource, /v-model="form\.source"/)
+  assert.match(nodeManagementSource, /WORKFLOW_TEMPLATE_SOURCES/)
   assert.match(nodeManagementSource, /WORKFLOW_TEMPLATE_CATEGORIES/)
 })

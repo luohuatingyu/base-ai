@@ -5,7 +5,7 @@
       <el-button v-if="auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
     </div>
     <section v-for="group in groups" :key="group.key" class="node-template-group">
-      <div class="node-template-group-head"><div><h3>{{ group.title }}</h3><p>{{ group.description }}</p></div><el-tag round>{{ group.items.length }}</el-tag></div>
+      <div class="node-template-group-head"><div><h3>{{ group.title }}</h3><p>{{ t('workflowNodes.categoryDescription') }}</p></div><el-tag round>{{ group.items.length }}</el-tag></div>
       <div v-if="group.items.length" class="node-template-grid">
         <article v-for="row in group.items" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
           <button type="button" class="node-template-card-main" :disabled="!auth.hasPermission('workflow:node:update')" @click="open(row)">
@@ -29,7 +29,7 @@
         <el-form-item :label="t('common.code')"><el-input v-model="form.code" :disabled="form.systemTemplate" /></el-form-item>
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('common.type')"><el-select v-model="form.nodeType" class="full" :disabled="form.systemTemplate" @change="syncDefaultCategory"><el-option v-for="type in nodeTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
-        <el-form-item :label="t('workflowNodes.source')"><el-tag>{{ t(`workflowCatalog.sources.${form.source}`) }}</el-tag></el-form-item>
+        <el-form-item :label="t('workflowNodes.source')"><el-select v-model="form.source" class="full"><el-option v-for="source in sources" :key="source" :label="t(`workflowCatalog.sources.${source}`)" :value="source" /></el-select></el-form-item>
         <el-form-item :label="t('workflowNodes.category')"><el-select v-model="form.functionalCategory" class="full"><el-option v-for="category in categories" :key="category" :label="t(`workflowCatalog.categories.${category}`)" :value="category" /></el-select></el-form-item>
         <el-form-item :label="t('common.description')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item :label="t('workflowNodes.defaultConfig')"><WorkflowNodeConfigEditor v-model="form.config" :node-type="form.nodeType" /></el-form-item>
@@ -48,22 +48,21 @@ import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import WorkflowNodeConfigEditor from '../components/WorkflowNodeConfigEditor.vue'
 import { cloneConfig, WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
-import { defaultTemplateCategory, normalizeTemplateMetadata, WORKFLOW_TEMPLATE_CATEGORIES } from '../utils/workflowTemplateCatalog'
+import { defaultTemplateCategory, groupWorkflowTemplates, normalizeTemplateMetadata, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
 const visible = ref(false)
 const nodeTypes = WORKFLOW_NODE_TYPES
+const sources = WORKFLOW_TEMPLATE_SOURCES
 const categories = WORKFLOW_TEMPLATE_CATEGORIES
 const form = reactive(emptyForm())
-const groups = computed(() => {
-  const normalized = rows.value.map(normalizeTemplateMetadata)
-  return [
-    { key: 'system', title: t('workflowNodes.system'), description: t('workflowNodes.systemDescription'), items: normalized.filter(row => row.systemTemplate) },
-    { key: 'custom', title: t('workflowNodes.custom'), description: t('workflowNodes.customDescription'), items: normalized.filter(row => !row.systemTemplate) }
-  ]
-})
+const groups = computed(() => groupWorkflowTemplates(rows.value, true).map(group => ({
+  key: group.category,
+  title: t(`workflowCatalog.categories.${group.category}`),
+  items: group.items
+})))
 
 /** 加载未作废节点模板。 */
 async function load() { rows.value = (await http.get('/workflow/nodes')).data || [] }
@@ -91,7 +90,7 @@ async function remove(row) {
 }
 /** 创建隔离的空表单。 */
 function emptyForm() { return { id: null, code: '', name: '', nodeType: 'LLM', description: '', config: {}, enabled: true,
-  systemTemplate: false, source: 'CUSTOM', functionalCategory: defaultTemplateCategory('LLM') } }
+  systemTemplate: false, source: 'SYSTEM', functionalCategory: defaultTemplateCategory('LLM') } }
 onMounted(load)
 </script>
 

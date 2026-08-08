@@ -6,11 +6,11 @@ import { cloneConfig, configValueType, createConfigValue, extraConfigKeys, isSaf
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
 
-test('节点管理按来源分组展示卡片并保留权限操作', () => {
+test('节点管理按功能分类展示卡片并保留模板保护权限', () => {
   assert.match(nodeManagementSource, /v-for="group in groups"/)
   assert.match(nodeManagementSource, /class="node-template-card"/)
-  assert.match(nodeManagementSource, /items:\s*normalized\.filter\(row\s*=>\s*row\.systemTemplate\)/)
-  assert.match(nodeManagementSource, /items:\s*normalized\.filter\(row\s*=>\s*!row\.systemTemplate\)/)
+  assert.match(nodeManagementSource, /groupWorkflowTemplates\(rows\.value, true\)/)
+  assert.match(nodeManagementSource, /!row\.systemTemplate/)
   assert.match(nodeManagementSource, /workflow:node:update/)
   assert.match(nodeManagementSource, /workflow:node:delete/)
 })

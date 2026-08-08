@@ -1,4 +1,4 @@
-export const WORKFLOW_TEMPLATE_SOURCES = ['SYSTEM', 'CUSTOM']
+export const WORKFLOW_TEMPLATE_SOURCES = ['SYSTEM', 'N8N', 'DIFY']
 
 export const WORKFLOW_TEMPLATE_CATEGORIES = [
   'BASIC', 'AI', 'FLOW_CONTROL', 'DATA_TRANSFORM', 'TEXT_DOCUMENT',
@@ -26,9 +26,8 @@ export function defaultTemplateCategory(nodeType) {
 
 /** 兼容迁移前接口，为模板补齐受控来源和功能分类。 */
 export function normalizeTemplateMetadata(template = {}) {
-  const fallbackSource = template.systemTemplate ? 'SYSTEM' : 'CUSTOM'
   const source = WORKFLOW_TEMPLATE_SOURCES.includes(String(template.source || '').toUpperCase())
-    ? String(template.source).toUpperCase() : fallbackSource
+    ? String(template.source).toUpperCase() : 'SYSTEM'
   const requestedCategory = String(template.functionalCategory || '').toUpperCase()
   const functionalCategory = WORKFLOW_TEMPLATE_CATEGORIES.includes(requestedCategory)
     ? requestedCategory : defaultTemplateCategory(template.nodeType)

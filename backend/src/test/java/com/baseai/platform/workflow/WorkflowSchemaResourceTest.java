@@ -62,6 +62,16 @@ class WorkflowSchemaResourceTest {
         assertTrue(schema.contains("DEFAULT 'CUSTOM'"));
     }
 
+    /** MySQL V9 必须恢复系统、n8n、Dify 三种后台可配置来源并兼容已执行 V8 的数据库。 */
+    @Test
+    void restoresConfigurableWorkflowTemplateSources() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V9__restore_configurable_workflow_template_sources.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        assertTrue(schema.contains("DEFAULT 'SYSTEM'"));
+        assertTrue(schema.contains("NOT IN ('SYSTEM', 'N8N', 'DIFY')"));
+    }
+
     /** MySQL V7 必须增加来源和功能分类，并将历史模板准确回填为系统来源。 */
     @Test
     void categorizesExistingWorkflowNodeTemplates() throws Exception {

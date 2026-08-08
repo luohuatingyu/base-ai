@@ -60,7 +60,7 @@ public class WorkflowService {
                 INSERT INTO workflow_node_template(code,name,node_type,description,config_encrypted,system_template,template_source,functional_category,enabled,created_by)
                 VALUES (?,?,?,?,?,false,?,?,?,?)
                 """, code(command.code()), text(command.name()), nodeType, text(command.description()), encryptJson(command.config()),
-                "CUSTOM", WorkflowTemplateCatalog.category(command.functionalCategory(), nodeType),
+                WorkflowTemplateCatalog.source(command.source()), WorkflowTemplateCatalog.category(command.functionalCategory(), nodeType),
                 !Boolean.FALSE.equals(command.enabled()), AuthContext.require().id());
             return template(id);
         } catch (DataIntegrityViolationException exception) {
@@ -68,7 +68,7 @@ public class WorkflowService {
         }
     }
 
-    /** 更新用户节点模板，系统模板只允许调整默认配置和启用状态。 */
+    /** 更新节点模板，系统模板保持编码和节点类型不可变。 */
     @Transactional
     public WorkflowModels.NodeTemplateView updateTemplate(Long id, WorkflowModels.NodeTemplateCommand command) {
         WorkflowModels.NodeTemplateView existing = template(id);
@@ -80,7 +80,8 @@ public class WorkflowService {
                 UPDATE workflow_node_template SET code=?,name=?,node_type=?,description=?,config_encrypted=?,template_source=?,functional_category=?,enabled=?,updated_at=NOW()
                 WHERE id=? AND voided=false
                 """, savedCode, text(command.name()), savedType, text(command.description()), encryptJson(command.config()),
-                existing.source(), WorkflowTemplateCatalog.category(command.functionalCategory(), savedType),
+                WorkflowTemplateCatalog.updatedSource(command.source(), existing.source()),
+                WorkflowTemplateCatalog.updatedCategory(command.functionalCategory(), existing.functionalCategory(), savedType),
                 !Boolean.FALSE.equals(command.enabled()), id);
             return template(id);
         } catch (DataIntegrityViolationException exception) {
@@ -315,6 +316,7 @@ public class WorkflowService {
             throw new BusinessException("workflow.nameCodeRequired");
         }
         type(command.nodeType());
+        WorkflowTemplateCatalog.source(command.source());
         WorkflowTemplateCatalog.category(command.functionalCategory(), command.nodeType());
         if (command.config() != null && !command.config().isObject()) throw new BusinessException("workflow.templateConfigInvalid");
     }

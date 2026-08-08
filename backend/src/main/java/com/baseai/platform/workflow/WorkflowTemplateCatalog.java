@@ -7,7 +7,7 @@ import java.util.Set;
 
 /** 统一维护节点模板来源、功能分类及原生节点默认分类。 */
 public final class WorkflowTemplateCatalog {
-    public static final Set<String> SOURCES = Set.of("SYSTEM", "CUSTOM");
+    public static final Set<String> SOURCES = Set.of("SYSTEM", "N8N", "DIFY");
     public static final Set<String> CATEGORIES = Set.of(
         "BASIC", "AI", "FLOW_CONTROL", "DATA_TRANSFORM", "TEXT_DOCUMENT", "NETWORK_API",
         "TRIGGER", "NOTIFICATION", "DATA_STORAGE", "MESSAGE_QUEUE"
@@ -16,12 +16,17 @@ public final class WorkflowTemplateCatalog {
     /** 工具类不允许实例化。 */
     private WorkflowTemplateCatalog() { }
 
-    /** 规范模板来源，缺失时按系统模板标记推导原生来源。 */
-    public static String source(String value, boolean systemTemplate) {
+    /** 规范模板来源，旧客户端未提交时兼容为系统来源。 */
+    public static String source(String value) {
         String normalized = normalize(value);
-        if (normalized.isBlank()) return systemTemplate ? "SYSTEM" : "CUSTOM";
+        if (normalized.isBlank()) return "SYSTEM";
         if (!SOURCES.contains(normalized)) throw new BusinessException("workflow.templateSourceInvalid");
         return normalized;
+    }
+
+    /** 更新时省略来源则保留已配置值，避免旧客户端覆盖目录元数据。 */
+    public static String updatedSource(String value, String existing) {
+        return normalize(value).isBlank() ? source(existing) : source(value);
     }
 
     /** 规范功能分类，旧客户端未提交时按节点类型推导。 */
@@ -30,6 +35,11 @@ public final class WorkflowTemplateCatalog {
         if (normalized.isBlank()) normalized = defaultCategory(nodeType);
         if (!CATEGORIES.contains(normalized)) throw new BusinessException("workflow.templateCategoryInvalid");
         return normalized;
+    }
+
+    /** 更新时省略分类则保留已配置值，避免旧客户端重置管理员调整。 */
+    public static String updatedCategory(String value, String existing, String nodeType) {
+        return normalize(value).isBlank() ? category(existing, nodeType) : category(value, nodeType);
     }
 
     /** 返回原生节点类型的默认功能分类。 */

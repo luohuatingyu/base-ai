@@ -190,7 +190,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.workflow-editor-shell { height: v-bind('`${height}px`'); display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; border: 1px solid var(--app-border); border-radius: 12px; background: #fff; }
+.workflow-editor-shell { position: relative; height: v-bind('`${height}px`'); display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; border: 1px solid var(--app-border); border-radius: 12px; background: #fff; }
 .workflow-editor-shell.has-properties { grid-template-columns: minmax(0, 1fr) 360px; }
 .workflow-properties { min-width: 0; overflow: auto; padding: 14px; background: #f8fafc; }
 .workflow-properties { border-left: 1px solid var(--app-border); }
