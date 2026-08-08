@@ -1,5 +1,80 @@
 # 最近分支覆盖测试报告
 
+## 📋 工作流模型路由功能编码下拉测试结果（2026-08-08）
+
+### Git 基准点
+
+Commit: 4f7cad12590ae883af7be2601b8c1ce56fb6cc62
+- 提交说明: Use model route selector for workflow nodes
+- 测试日期: 2026-08-08
+- 分支: master
+- 上一测试报告基准点: `182fce8c3b522dbcc6821251488e8436277017cd`
+- Backend 业务代码差异: 新增工作流专用启用模型路由选项查询及只读接口，因此已执行 Backend、Frontend 完整回归和 Compose 统一重建。
+
+### 变更范围
+
+- AI 节点选择“模型路由”后，功能编码由自由文本改为可搜索、可清空的模型路由下拉，选项显示“路由名称（功能编码）”并继续保存原有 `featureCode` 字符串。
+- 工作流专用接口只返回已启用模型路由的 ID、功能编码和名称，按功能编码排序，复用 `workflow:node:list` 权限且不返回供应商池等管理配置。
+- 已有有效编码按服务端编码规范回显；失效或停用编码在选项成功加载后移除显式值并回退 `DEFAULT`，加载失败时保留原值。
+- 未修改数据库结构、节点运行配置格式、发布校验、执行器、依赖或环境配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 功能编码使用模型路由下拉 | Frontend 配置定义与组件契约测试；AI 节点选择 `ROUTE` | 检查 LLM、Agent、问题分类和参数提取节点字段及编辑器 | 四类节点均使用可搜索、可清空的 `modelRoute` 选择器，不再自由输入；通过 | 正常、交互、回归 |
+| 下拉只展示启用路由 | Backend Service 单元测试；仓库同时返回启用和停用路由 | 返回 `CHAT`、`DEFAULT` 和停用路由 | 仅返回启用项并按功能编码排序；通过 | 正常、边界、兼容 |
+| 选项接口权限和数据最小化 | Backend Controller 契约与 Service 单元测试 | 使用节点查看权限访问 `/workflow/route-options` | 接口为只读 GET，要求 `workflow:node:list`，结果不含供应商池和敏感字段；通过 | 权限、安全 |
+| 有效旧编码回显、失效编码回退 | Frontend 工具与组件契约测试 | 输入大小写不同的有效编码、未知编码和空值 | 有效值规范为服务端编码；未知或空值返回 `null` 并移除显式配置；通过 | 边界、异常、兼容 |
+| 加载失败不误改配置 | Frontend 组件契约测试 | 路由选项接口失败 | 只展示失败提示，不标记加载完成且保留原功能编码；通过 | 异常、副作用 |
+| 全模块无回归 | Backend 与 Frontend 完整套件 | 当前功能提交 | Backend 411/411、Frontend 80/80 通过 | 回归、兼容 |
+
+### 测试执行结果
+
+- 自动化测试总数：491 项，491 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：411/411 通过；其中 `LlmManagementServiceTest` 40/40、`WorkflowModelOptionsControllerTest` 3/3 通过。
+- Frontend 完整回归：80/80 通过；其中工作流节点配置测试 26/26 通过。
+- Backend 定向回归：路由 Service 与工作流选项 Controller 共 43/43 通过，包含在完整结果中，不重复计数。
+- Compose 构建阶段再次执行 Backend 411 项测试并通过，Frontend 生产构建成功；Backend、Frontend、Python Worker、Caddy 均 healthy。
+- 本轮未独立执行 Python Worker Pytest、Caddy Go 测试和浏览器 E2E，未计入自动化通过数。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 缺陷复现 | 新增路由下拉测试后执行 Frontend 定向测试 | 因缺少路由编码工具导出而失败，稳定复现实现缺口 |
+| Frontend 完整回归 | `cd frontend && npm test` | 80/80 通过 |
+| Frontend 定向回归 | `cd frontend && node --test tests/workflowNodeConfig.test.js` | 26/26 通过 |
+| Backend 定向回归 | Maven 3.9.9 / Java 17 容器执行 `LlmManagementServiceTest`、`WorkflowModelOptionsControllerTest` | 43/43 通过，BUILD SUCCESS |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn test -B` | 411/411 通过，BUILD SUCCESS |
+| 统一重建 | `docker compose up --build -d` | 首次因 80 端口被占用失败；停止占用容器后重试成功，四服务 healthy |
+| 运行状态 | `docker compose ps`、`curl -fsS http://localhost/api/open/health/ready` | 四服务 healthy，就绪探针成功 |
+| 差异检查 | `git diff --check`、提交前文件范围检查 | 通过 |
+
+### 测试过程问题与处理
+
+- 宿主机未安装 Maven，仓库也未提供 Maven Wrapper；使用 Maven 3.9.9 / Java 17 一次性容器执行 Backend 定向和完整测试，未跳过测试。
+- 首次 Compose 启动 Caddy 时，`domestic-trade-caddy` 容器占用 80/443 端口；按项目规则停止该容器后重新执行 `docker compose up --build -d`，本项目四个服务全部健康。
+- Backend 完整测试中的路由同步失败堆栈和依赖健康告警来自验证异常隔离的既有测试，最终断言、测试统计及 Maven 构建均成功。
+
+### 已知问题与限制
+
+- 下拉按数据库中的“启用”状态展示；已启用但尚未同步、无可用候选模型或健康检查失败的路由仍可能在运行时不可用。
+- 选项接口失败时为避免网络故障误改历史配置会保留当前编码，用户需在接口恢复后重新确认选项。
+- 本轮未执行浏览器 E2E，交互行为由配置工具单元测试、Vue 组件契约测试和生产构建覆盖。
+- `domestic-trade-caddy` 为释放本项目端口已停止，如需使用对应项目需在本项目释放 80/443 后另行启动。
+
+### 下次测试建议
+
+1. 增加浏览器 E2E，验证节点模板和画布实例中切换 `ROUTE` 后下拉加载、搜索、清空、失效值回退及保存行为。
+2. 后续若要求只展示实际可调用路由，可在选项接口增加已同步候选模型状态，并补充未同步、空供应商池和健康失败测试。
+3. 增加接口集成测试，使用仅具备 `workflow:node:list` 的账号验证可访问选项，同时确认无 `model:route:list` 权限也不受影响。
+
+### 重测触发条件与回滚
+
+- 修改模型路由启用规则、工作流资源选项权限、功能编码配置格式或 AI 节点编辑器时，必须重跑 Backend、Frontend 完整回归和 Compose 统一重建。
+- 回滚应用代码可撤销功能提交 `4f7cad12590ae883af7be2601b8c1ce56fb6cc62` 后执行 `docker compose up --build -d`；本次无数据库迁移或数据回填。
+
 ## 📋 工作流有效默认值必填校验测试结果（2026-08-08）
 
 ### Git 基准点
