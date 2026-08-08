@@ -43,7 +43,8 @@ public class WorkflowNodeConfigValidator {
 
     /** 在节点参数经表达式解析后复用同一份规则，阻止空值触发外部行为。 */
     static void validateResolved(String type, JsonNode config) {
-        ObjectNode value = config instanceof ObjectNode object ? object : new ObjectMapper().createObjectNode();
+        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectNode value = WorkflowNodeConfigDefaults.withDefaults(objectMapper, type, config);
         LinkedHashSet<String> missing = missingRequirements(type, value);
         if (!missing.isEmpty()) throw new BusinessException("workflow.nodeConfigRequired", type + "：" + String.join(", ", missing));
     }
@@ -194,7 +195,7 @@ public class WorkflowNodeConfigValidator {
         if (snapshot.path("config").isObject()) result.setAll((ObjectNode) snapshot.path("config").deepCopy());
         JsonNode own = node.path("config").isObject() ? node.path("config") : node.path("data").path("config");
         if (own.isObject()) deepMerge(result, own);
-        return result;
+        return WorkflowNodeConfigDefaults.withDefaults(objectMapper, WorkflowGraphValidator.nodeType(node), result);
     }
 
     /** 递归合并对象覆盖，避免实例只修改嵌套字段时丢失模板默认值。 */

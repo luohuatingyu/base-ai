@@ -52,21 +52,22 @@ public class WorkflowDataNodeExecutor implements WorkflowNodeExecutor {
     /** 按节点类型执行确定性数据处理。 */
     @Override
     public Result execute(Request request) {
-        WorkflowNodeConfigValidator.validateResolved(request.type(), request.config());
+        ObjectNode config = WorkflowNodeConfigDefaults.withDefaults(objectMapper, request.type(), request.config());
+        WorkflowNodeConfigValidator.validateResolved(request.type(), config);
         return switch (request.type()) {
-            case "SWITCH" -> executeSwitch(request.config(), request.context());
-            case "MERGE" -> Result.output(executeMerge(request.config(), request.context()));
-            case "SET_VARIABLE", "TRANSFORM" -> Result.output(resolveOutput(request.config(), request.context()));
+            case "SWITCH" -> executeSwitch(config, request.context());
+            case "MERGE" -> Result.output(executeMerge(config, request.context()));
+            case "SET_VARIABLE", "TRANSFORM" -> Result.output(resolveOutput(config, request.context()));
             case "TEMPLATE" -> Result.output(objectMapper.createObjectNode().put("text",
-                expressions.resolve(request.config().path("template"), request.context()).asText("")));
-            case "JSON_PARSE" -> Result.output(parseJson(expressions.resolve(request.config().path("value"), request.context())));
-            case "JSON_VALIDATE" -> Result.output(validateNode(request.config(), request.context()));
-            case "FILTER" -> Result.output(filter(request.config(), request.context()));
-            case "SORT" -> Result.output(sort(request.config(), request.context()));
-            case "AGGREGATE" -> Result.output(aggregate(request.config(), request.context()));
-            case "CSV" -> Result.output(csv(request.config(), request.context()));
-            case "STRUCTURED_OUTPUT" -> Result.output(structured(request.config(), request.context()));
-            case "DOCUMENT_EXTRACTOR" -> Result.output(document(request.config(), request.context()));
+                expressions.resolve(config.path("template"), request.context()).asText("")));
+            case "JSON_PARSE" -> Result.output(parseJson(expressions.resolve(config.path("value"), request.context())));
+            case "JSON_VALIDATE" -> Result.output(validateNode(config, request.context()));
+            case "FILTER" -> Result.output(filter(config, request.context()));
+            case "SORT" -> Result.output(sort(config, request.context()));
+            case "AGGREGATE" -> Result.output(aggregate(config, request.context()));
+            case "CSV" -> Result.output(csv(config, request.context()));
+            case "STRUCTURED_OUTPUT" -> Result.output(structured(config, request.context()));
+            case "DOCUMENT_EXTRACTOR" -> Result.output(document(config, request.context()));
             default -> throw new BusinessException("workflow.nodeTypeInvalid");
         };
     }

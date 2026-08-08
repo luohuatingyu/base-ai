@@ -133,10 +133,11 @@ test('全部原生节点都有显式验证策略，防止新增节点绕过必�
 
 test('AI 节点按模型路由或指定模型方案校验且提示词必填', () => {
   assert.deepEqual(missingNodeConfigRequirements('LLM', {}), ['modelMode', 'prompt'])
-  assert.deepEqual(missingNodeConfigRequirements('LLM', { modelMode: 'ROUTE', prompt: 'hello' }), ['featureCode', 'modelType'])
+  assert.deepEqual(missingNodeConfigRequirements('LLM', { modelMode: 'ROUTE', prompt: 'hello' }), [])
   assert.deepEqual(missingNodeConfigRequirements('LLM', {
     modelMode: 'ROUTE', featureCode: 'CHAT', modelType: 'text_model', prompt: 'hello'
   }), [])
+  assert.deepEqual(missingNodeConfigRequirements('LLM', { modelMode: 'ROUTE', prompt: 'hello' }), [])
   assert.deepEqual(missingNodeConfigRequirements('LLM', { modelMode: 'DIRECT', modelId: 7, prompt: 'hello' }), [])
   assert.deepEqual(missingNodeConfigRequirements('LLM', { modelMode: 'DIRECT', modelId: 0, prompt: ' ' }), ['modelId', 'prompt'])
   assert.deepEqual(missingNodeConfigRequirements('AGENT', {
@@ -156,7 +157,8 @@ test('方案选择只展示当前方案适用字段', () => {
 })
 
 test('发布提示覆盖固定必填、方案条件、操作条件和参数数量', () => {
-  assert.deepEqual(missingNodeConfigRequirements('HTTP', {}), ['method', 'url'])
+  assert.deepEqual(missingNodeConfigRequirements('HTTP', {}), ['url'])
+  assert.deepEqual(missingNodeConfigRequirements('HTTP', { url: 'https://example.test' }), [])
   assert.deepEqual(missingNodeConfigRequirements('HTTP', { method: 'GET', url: 'https://example.test' }), [])
   assert.deepEqual(missingNodeConfigRequirements('ITERATION', { collection: '{{input.items}}' }), ['bodyGraph'])
   assert.deepEqual(missingNodeConfigRequirements('DOCUMENT_EXTRACTOR', {}), ['inputMode'])

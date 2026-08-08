@@ -84,7 +84,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
     /** 解析非敏感节点参数后调用对应受管连接。 */
     @Override
     public Result execute(Request request) {
-        JsonNode config = expressions.resolve(request.config(), request.context());
+        JsonNode config = expressions.resolve(WorkflowNodeConfigDefaults.withDefaults(objectMapper, request.type(), request.config()), request.context());
         WorkflowNodeConfigValidator.validateResolved(request.type(), config);
         return Result.output(switch (request.type()) {
             case "EMAIL_SEND" -> email(config);

@@ -36,7 +36,7 @@ public class WorkflowAiNodeExecutor implements WorkflowNodeExecutor {
     /** 执行分类或参数提取并验证模型结构化结果。 */
     @Override
     public Result execute(Request request) {
-        JsonNode resolved = expressions.resolve(request.config(), request.context());
+        JsonNode resolved = expressions.resolve(WorkflowNodeConfigDefaults.withDefaults(objectMapper, request.type(), request.config()), request.context());
         WorkflowNodeConfigValidator.validateResolved(request.type(), resolved);
         return "QUESTION_CLASSIFIER".equals(request.type()) ? classify(resolved) : Result.output(extract(resolved));
     }

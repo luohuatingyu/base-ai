@@ -361,7 +361,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
 
     /** 将节点配置映射为接口触发命令，复用已有 SSRF 和 TLS 安全实现。 */
     private JsonNode executeHttp(ObjectNode config, ObjectNode context) {
-        JsonNode resolved = expressions.resolve(config, context);
+        JsonNode resolved = expressions.resolve(WorkflowNodeConfigDefaults.withDefaults(objectMapper, "HTTP", config), context);
         WorkflowNodeConfigValidator.validateResolved("HTTP", resolved);
         ApiTriggerModels.Command command = new ApiTriggerModels.Command(
             resolved.path("name").asText("Workflow HTTP"), "Workflow node", resolved.path("method").asText("GET"),
@@ -727,7 +727,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
         if (snapshot.path("config").isObject()) result.setAll((ObjectNode) snapshot.path("config").deepCopy());
         JsonNode own = node.path("config").isObject() ? node.path("config") : node.path("data").path("config");
         if (own.isObject()) deepMerge(result, own);
-        return result;
+        return WorkflowNodeConfigDefaults.withDefaults(objectMapper, WorkflowGraphValidator.nodeType(node), result);
     }
 
     /** 递归合并实例配置，确保嵌套 HTTP、Agent 配置可局部覆盖。 */

@@ -185,7 +185,7 @@ export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
 /** 汇总发布前仍缺失的必填配置标识，供模板和画布提前提示。 */
 export function missingNodeConfigRequirements(nodeType, config = {}) {
   const type = String(nodeType || '').toUpperCase()
-  const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const value = withValidDefaults(type, config)
   const missing = []
   const requirePresent = key => { if (!Object.prototype.hasOwnProperty.call(value, key)) missing.push(key) }
   const requireText = key => { if (!String(value[key] ?? '').trim()) missing.push(key) }
@@ -299,6 +299,34 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
   /** 校验限定枚举值，拒绝依赖运行默认值的模糊行为。 */
   function requireEnum(key, options) { if (!options.includes(String(value[key] || '').toUpperCase())) missing.push(key) }
 }
+
+/** 仅回填能够独立满足业务规则的默认值，空占位仍须由用户配置。 */
+function withValidDefaults(nodeType, config) {
+  const value = config && typeof config === 'object' && !Array.isArray(config) ? { ...config } : {}
+  const setDefault = (key, defaultValue) => {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) value[key] = cloneValue(defaultValue)
+  }
+  switch (nodeType) {
+    case 'LLM': case 'AGENT': case 'QUESTION_CLASSIFIER': case 'PARAMETER_EXTRACTOR':
+      setDefault('featureCode', 'DEFAULT'); setDefault('modelType', 'text_model'); break
+    case 'HTTP': setDefault('method', 'GET'); break
+    case 'ITERATION': setDefault('collection', '{{input.items}}'); break
+    case 'MERGE': setDefault('mode', 'ARRAY'); setDefault('values', []); break
+    case 'WAIT': setDefault('seconds', 1); setDefault('milliseconds', 1000); break
+    case 'SET_VARIABLE': case 'TRANSFORM': setDefault('output', {}); break
+    case 'SWITCH': setDefault('defaultBranch', 'default'); break
+    case 'FILTER': setDefault('collection', []); break
+    case 'SORT': setDefault('collection', []); setDefault('direction', 'ASC'); break
+    case 'AGGREGATE': setDefault('collection', []); setDefault('operation', 'COUNT'); break
+    case 'CSV': setDefault('operation', 'PARSE'); break
+    case 'KAFKA_PUBLISH': case 'RABBITMQ_PUBLISH': setDefault('value', null); break
+    default: break
+  }
+  return value
+}
+
+/** 克隆字段默认值，避免校验过程污染调用方配置。 */
+function cloneValue(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)) }
 
 /** 返回 Redis 白名单命令执行所需的最少参数数量。 */
 function redisArgumentMinimum(command) {

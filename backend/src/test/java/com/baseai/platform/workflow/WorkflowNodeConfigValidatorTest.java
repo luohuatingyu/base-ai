@@ -62,7 +62,7 @@ class WorkflowNodeConfigValidatorTest {
             () -> validator.validateForPublish(graph, objectMapper.createObjectNode()));
 
         assertEquals("workflow.nodeConfigRequired", exception.getMessageKey());
-        assertTrue(exception.getMessage().contains("调用接口（HTTP）：method, url"));
+        assertTrue(exception.getMessage().contains("调用接口（HTTP）：url"));
         assertTrue(exception.getMessage().contains("查询明细（SQL_QUERY）：query"));
     }
 
@@ -92,18 +92,32 @@ class WorkflowNodeConfigValidatorTest {
             "{\"modelMode\":\"ROUTE\",\"featureCode\":\"CHAT\",\"modelType\":\"text_model\",\"prompt\":\"hello\"}"), objectMapper.createObjectNode()));
         assertDoesNotThrow(() -> validator.validateForPublish(graph("LLM",
             "{\"modelMode\":\"DIRECT\",\"modelId\":7,\"prompt\":\"hello\"}"), objectMapper.createObjectNode()));
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("LLM",
+            "{\"modelMode\":\"ROUTE\",\"prompt\":\"hello\"}"), objectMapper.createObjectNode()));
 
         BusinessException missingMode = assertThrows(BusinessException.class,
             () -> validator.validateForPublish(graph("LLM", "{\"prompt\":\"hello\"}"), objectMapper.createObjectNode()));
-        BusinessException missingRoute = assertThrows(BusinessException.class,
-            () -> validator.validateForPublish(graph("LLM", "{\"modelMode\":\"ROUTE\",\"prompt\":\"hello\"}"), objectMapper.createObjectNode()));
         BusinessException blankPrompt = assertThrows(BusinessException.class,
             () -> validator.validateForPublish(graph("LLM", "{\"modelMode\":\"DIRECT\",\"modelId\":7,\"prompt\":\" \"}"), objectMapper.createObjectNode()));
 
         assertTrue(missingMode.getMessage().contains("modelMode"));
-        assertTrue(missingRoute.getMessage().contains("featureCode"));
-        assertTrue(missingRoute.getMessage().contains("modelType"));
         assertTrue(blankPrompt.getMessage().contains("prompt"));
+    }
+
+    /** 有效默认值应参与必填校验，空占位默认值仍然必须由用户补充。 */
+    @Test
+    void acceptsValidDefaultsButRejectsEmptyPlaceholders() throws Exception {
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("HTTP", "{\"url\":\"https://example.test\"}"), objectMapper.createObjectNode()));
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("MERGE", "{}"), objectMapper.createObjectNode()));
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("SET_VARIABLE", "{}"), objectMapper.createObjectNode()));
+
+        BusinessException http = assertThrows(BusinessException.class,
+            () -> validator.validateForPublish(graph("HTTP", "{}"), objectMapper.createObjectNode()));
+        BusinessException llm = assertThrows(BusinessException.class,
+            () -> validator.validateForPublish(graph("LLM", "{\"modelMode\":\"ROUTE\"}"), objectMapper.createObjectNode()));
+
+        assertTrue(http.getMessage().contains("url"));
+        assertTrue(llm.getMessage().contains("prompt"));
     }
 
     /** 邮件发送仅要求路由和主题，正文允许缺失或为空。 */
