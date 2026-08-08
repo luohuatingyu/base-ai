@@ -15,6 +15,7 @@
         <java.version>17</java.version>
         <spring-framework.version>6.2.19</spring-framework.version>
         <spring-data-bom.version>2025.0.12</spring-data-bom.version>
+        <spring-kafka.version>3.3.16</spring-kafka.version>
         <tomcat.version>10.1.55</tomcat.version>
         <jackson-bom.version>2.21.4</jackson-bom.version>
         <netty.version>4.1.136.Final</netty.version>
