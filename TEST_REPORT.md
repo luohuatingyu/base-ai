@@ -4,19 +4,20 @@
 
 ### Git 基准点
 
-Commit: 265f6664a407405113d4eb118e8dc2bec7fa3b7b
-- 提交说明: Expand workflow nodes and visual configuration
+Commit: 5f0aaa6009275c417cafef1ad6066f2d75c5011e
+- 提交说明: Harden workflow connector nodes
 - 测试日期: 2026-08-07
 - 分支: master
-- 上一测试报告基准点: `14c27e253ead1fb785de7a711ffe4c93da441664`
-- Backend 业务代码差异: `git diff 14c27e253ead1fb785de7a711ffe4c93da441664 265f6664a407405113d4eb118e8dc2bec7fa3b7b -- backend/src/main/java/` 包含工作流执行器注册、原生节点、连接管理、触发器、模板目录、运行恢复和配置限制，因此已执行 Backend、Frontend、Python Worker、Caddy 及统一部署完整回归。
+- 上一测试报告基准点: `265f6664a407405113d4eb118e8dc2bec7fa3b7b`
+- Backend 业务代码差异: `git diff 265f6664a407405113d4eb118e8dc2bec7fa3b7b 5f0aaa6009275c417cafef1ad6066f2d75c5011e -- backend/src/main/java/` 增加 Redis 参数前置校验；结合上一功能提交覆盖工作流执行器注册、原生节点、连接管理、触发器、模板目录、运行恢复和配置限制，因此已重新执行 Backend、Frontend 及统一部署回归。
 
 ### 变更范围
 
-- 节点管理改为按“系统内置 / 自定义”来源分组的响应式卡片目录；卡片展示节点类型、功能分类、生态来源、状态及说明，权限控制和系统模板保护规则保持不变。
+- 节点管理改为按“Base AI 原生 / 自定义”来源分组的响应式卡片目录；卡片展示节点类型、功能分类、状态及说明，权限控制和系统模板保护规则保持不变。
 - 节点模板默认配置和画布节点实例配置统一使用卡片式可视化编辑器；标准字段按节点类型呈现，额外字段通过可递归的字符串、数字、布尔、空值、对象和数组参数卡维护，不再要求用户直接编辑 JSON。
 - 原生节点扩展至流程控制、数据转换、文本与文档、AI、通知、数据库/缓存/对象存储、Kafka/RabbitMQ 和 Webhook/定时触发等能力；执行器通过受控注册表分派。
 - 新增工作流连接管理，支持 MySQL、PostgreSQL、Redis、S3、Kafka、RabbitMQ 和 Webhook；敏感配置继续使用 AES-GCM 加密，列表只返回脱敏值，画布仅保存连接 ID。
+- 连接执行器新增参数化 H2 SQL、SQL 写权限、受管邮件/通知、S3 前缀、Kafka Topic、RabbitMQ Exchange 及 Redis 非数组参数测试；Redis 在建立外部连接前完成参数结构校验。
 - 新增 Webhook、定时和消息触发基础设施，以及 WAIT、子工作流、失败策略、重试参数和运行恢复能力；触发器仍受所有者、连接类型、幂等事件和资源上限约束。
 - 新增 MySQL V6-V8 迁移，创建连接、等待和触发投递结构，补充节点模板的来源及功能分类并规范原生来源；未删除历史表或历史模板。
 
@@ -24,36 +25,38 @@ Commit: 265f6664a407405113d4eb118e8dc2bec7fa3b7b
 
 | 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
 | --- | --- | --- | --- | --- |
-| 节点管理以卡片分类展示 | Frontend 页面契约及生产构建 | 加载系统模板与自定义模板 | 分别进入系统内置和自定义分组，卡片展示类型、功能分类、生态来源和状态；符合预期 | 正常、兼容、响应式 |
+| 节点管理以卡片分类展示 | Frontend 页面契约及生产构建 | 加载系统模板与自定义模板 | 分别进入 Base AI 原生和自定义分组，卡片展示类型、功能分类和状态；符合预期 | 正常、兼容、响应式 |
 | 模板和画布配置不使用 JSON 文本框 | Frontend 页面契约与配置工具单元 | 打开模板默认配置和画布实例配置 | 两处均使用同一可视化配置组件，未出现 `configText` 或配置 JSON 文本框；符合预期 | 正常、回归 |
 | 标准字段与任意附加字段可往返 | Frontend 参数化单元 | 标量、空值、深层对象、数组、空集合、未知字段和危险键名 | 类型保持、深复制不污染原值、未知字段保留，原型污染键被拒绝；符合预期 | 正常、边界、安全 |
 | 全部原生节点有受控分类和配置入口 | Backend/Frontend 目录单元 | 36 类原生节点及迁移前模板 | 类型均进入稳定功能分类并具备配置定义，旧模板可推导兼容元数据；符合预期 | 兼容、数据、回归 |
 | 连接配置加密且越权受限 | Backend Service 单元 | 创建含密码连接、脱敏更新、跨所有者更新 | 密文不含明文密码，`******` 保留旧密钥，跨所有者操作被拒绝；符合预期 | 权限、安全、数据副作用 |
+| 连接节点遵守执行与目的地边界 | Backend 执行器单元 | 参数化 SQL、未授权写入、邮件、通知、越界 S3/Kafka/RabbitMQ 和非法 Redis 参数 | 合法只读查询及受管调用成功；写入、目的地越界和非法参数在外连前被拒绝；符合预期 | 正常、异常、权限、安全 |
 | 数据与 AI 节点执行语义正确 | Backend 执行器单元 | 排序、聚合、CSV 转义、Schema 校验、分类和提取配置 | 正常结果正确，非法结构和 Schema 明确失败；符合预期 | 正常、边界、异常 |
 | 触发器、子工作流和嵌套图受限 | Backend Service/Validator 单元 | 触发节点边界、重复事件、连接类型、嵌套深度和等待状态 | 合法触发可调度，重复及越权连接被拒，图和资源上限生效；符合预期 | 权限、安全、资源保护 |
-| 现有功能不回归 | Backend、Frontend、Worker、Caddy 完整套件 | 当前功能提交全部自动化测试 | 601/601 通过，失败 0、错误 0、跳过 0；符合预期 | 回归、权限、安全 |
-| 统一重建后服务可运行 | Docker Compose 完整构建与健康检查 | `docker compose up --build -d` | Backend 构建阶段 348/348 通过，四服务最终全部 healthy，HTTPS readiness 返回 `UP`；符合预期 | 构建、部署、回归 |
+| 现有功能不回归 | Backend、Frontend、Worker、Caddy 完整套件 | 当前功能提交全部自动化测试 | 608/608 通过，失败 0、错误 0、跳过 0；符合预期 | 回归、权限、安全 |
+| 统一重建后服务可运行 | Docker Compose 完整构建与健康检查 | `docker compose up --build -d` | Backend 构建阶段 355/355 通过，四服务最终全部 healthy；符合预期 | 构建、部署、回归 |
 
 ### 测试执行结果
 
-- 自动化测试合计：601/601 通过（Backend 348、Frontend 209、Python Worker 28、Caddy Go 16），失败 0，错误 0，跳过 0，通过率 100%。
-- Backend 关键模块：Workflow Service、连接、触发器、图校验、数据执行器、模板目录及 Schema 相关新增/回归用例全部通过，并包含于完整 348 项中。
+- 自动化测试合计：608/608 通过（Backend 355、Frontend 209、Python Worker 28、Caddy Go 16），失败 0，错误 0，跳过 0，通过率 100%。
+- Backend 关键模块：Workflow Service、连接、连接执行器、触发器、图校验、数据执行器、模板目录及 Schema 相关新增/回归用例全部通过，并包含于完整 355 项中。
 - Frontend 关键模块：节点来源分组、配置结构往返、全部节点配置定义、画布菜单、模板分类和连接管理契约全部通过，并包含于完整 209 项中。
 - Python Worker：Python 3.12 隔离容器执行 28 项完整测试，全部通过。
 - Caddy：Go 1.26.5 隔离容器执行 16 项完整测试，全部通过。
-- 静态及部署：`git diff --check` 通过；统一 Compose 重建成功；Backend、Frontend、Python Worker、Caddy 全部 healthy；`https://localhost/api/open/health/ready` 返回 `{"status":"UP"}`。
+- 静态及部署：`git diff --check` 通过；统一 Compose 重建成功；Backend、Frontend、Python Worker、Caddy 全部 healthy；登录态 API 返回 36 个 Base AI 原生模板且来源集合仅为 `SYSTEM`，连接权限可用。
 
 ### 实际执行记录
 
 | 范围 | 执行命令或方式 | 结果 |
 | --- | --- | --- |
-| Backend 完整回归与构建 | `docker compose up --build -d` 内 Maven 3.9.9 / Java 17 执行 `mvn -B -ntp package` | 348/348 通过，BUILD SUCCESS |
+| Backend 完整回归与构建 | `docker compose up --build -d` 内 Maven 3.9.9 / Java 17 执行 `mvn -B -ntp package` | 355/355 通过，BUILD SUCCESS |
 | Frontend 快捷套件 | `cd frontend && npm test` | 41/41 通过 |
 | Frontend 完整回归 | `cd frontend && node --test test/*.test.mjs tests/*.test.js` | 209/209 通过 |
 | Worker 完整回归 | Python 3.12 只读源码容器安装锁定开发依赖后执行 `python -m pytest -q -p no:cacheprovider` | 28/28 通过 |
 | Caddy Go 回归 | Go 1.26.5 只读源码容器在临时目录执行 `go test -v` | 16/16 通过 |
 | 规定统一重建 | `docker compose down --remove-orphans` 后执行 `docker compose up --build -d` | 未删除卷；四镜像构建成功，四服务全部 healthy |
 | HTTPS 健康检查 | `curl -kfsS https://localhost/api/open/health/ready` | HTTP 200，状态 `UP` |
+| 登录态 API 冒烟 | 临时 Cookie 登录后读取 `/api/auth/me`、`/api/workflow/nodes`、`/api/workflow/connections` | 管理员连接权限存在；36 个模板均为 Base AI 原生来源；临时 Cookie 已删除 |
 | 变更与清理检查 | `git status`、`git diff --check`、提交范围检查 | 无调试文件、缓存或临时容器遗留 |
 
 ### 测试过程问题与处理
@@ -61,6 +64,7 @@ Commit: 265f6664a407405113d4eb118e8dc2bec7fa3b7b
 - 首次统一构建发现并发扩展调用当前 AWS SDK 不存在的 `ResponseBytes.asBase64String()`；改用 JDK Base64 编码后编译通过。
 - 首轮 Backend 完整测试发现连接 Service 测试缺少 H2 表结构、CSV 转义测试数据不是有效 JSON；补齐独立测试表并修正转义后，348/348 通过，未删除、跳过或弱化测试。
 - 多次 Compose 启动因并发重建遗留的容器名称发生冲突；最终执行不删除卷的 `docker compose down --remove-orphans` 清理运行态容器，再统一重建成功，持久数据未删除。
+- 最终连接执行器定向覆盖新增 7 项，参数化 H2 SQL、邮件/通知委派及外部目的地边界均通过；完整 Backend 从 348 项增至 355 项。
 - Air 预览受本地自签名证书拦截，宿主浏览器自动化又受临时目录权限限制，因此未取得浏览器截图；页面行为由 209 项 Frontend 契约/单元测试、Vite 生产构建和真实 HTTPS 健康检查覆盖。
 
 ### 已知问题与限制
@@ -81,7 +85,7 @@ Commit: 265f6664a407405113d4eb118e8dc2bec7fa3b7b
 
 - 修改任一工作流执行器、节点类型、连接加密/授权、触发器、图校验、失败策略、配置字段、模板来源/功能分类或 V6-V8 Schema 时，必须重跑 Backend、Frontend 完整套件及统一 Compose 重建。
 - 修改可视化参数类型、递归深度、卡片分组、画布实例配置或权限显隐时，必须重跑 Frontend 完整套件、生产构建和浏览器交互验收。
-- 应用代码可回退功能提交 `265f6664a407405113d4eb118e8dc2bec7fa3b7b` 的父提交后重新执行 `docker compose up --build -d`；V6-V8 已应用的数据结构和元数据列应保留，旧应用会忽略新增表/列。
+- 如只回退连接节点加固，可撤销提交 `5f0aaa6009275c417cafef1ad6066f2d75c5011e`；如回退完整节点扩展，可回退功能提交 `265f6664a407405113d4eb118e8dc2bec7fa3b7b` 的父提交后重新执行 `docker compose up --build -d`。V6-V8 已应用的数据结构和元数据列应保留，旧应用会忽略新增表/列。
 - 如必须物理回滚数据库，应先停止触发消费与工作流写入并备份连接、等待状态、触发投递和模板元数据；删除表、列或迁移记录属于破坏性操作，必须另行制定迁移方案并确认。
 
 ---
