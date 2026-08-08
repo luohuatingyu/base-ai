@@ -121,3 +121,10 @@ test('节点来源位于顶部且功能类型在节点列表左侧展示', () =>
   assert.match(nodeManagementSource, /\.node-template-category-options\s*\{[^}]*display:\s*grid/)
   assert.match(nodeManagementSource, /@media\s*\(max-width:\s*800px\)[\s\S]*?\.node-template-layout\s*\{[^}]*grid-template-columns:\s*1fr/)
 })
+
+test('节点列表隐藏重复筛选摘要并增高功能类型选项', () => {
+  assert.doesNotMatch(nodeManagementSource, /class="node-template-group-head"/)
+  assert.doesNotMatch(nodeManagementSource, /workflowNodes\.filteredDescription/)
+  assert.doesNotMatch(nodeManagementSource, /<el-tag round>\{\{ filteredRows\.length \}\}<\/el-tag>/)
+  assert.match(nodeManagementSource, /\.node-template-category-options\s+:deep\(\.el-radio-button__inner\)\s*\{[^}]*min-height:\s*48px[^}]*align-items:\s*center/)
+})

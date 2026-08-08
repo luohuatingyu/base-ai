@@ -18,7 +18,6 @@
         </el-radio-group>
       </aside>
       <section class="node-template-group">
-      <div class="node-template-group-head"><div><h3>{{ t(`workflowCatalog.categories.${selectedCategory}`) }}</h3><p>{{ t('workflowNodes.filteredDescription', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</p></div><el-tag round>{{ filteredRows.length }}</el-tag></div>
       <div v-if="filteredRows.length" class="node-template-grid">
         <article v-for="row in filteredRows" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
           <button type="button" class="node-template-card-main" :disabled="!auth.hasPermission('workflow:node:update')" @click="open(row)">
@@ -125,12 +124,9 @@ onMounted(load)
 .node-template-category-filter { display: grid; gap: 12px; padding: 18px; border: 1px solid #dfe6f0; border-radius: 14px; background: #f8faff; }
 .node-template-category-options { display: grid; width: 100%; gap: 8px; }
 .node-template-category-options :deep(.el-radio-button), .node-template-category-options :deep(.el-radio-button__inner) { width: 100%; }
-.node-template-category-options :deep(.el-radio-button__inner) { text-align: left; }
+.node-template-category-options :deep(.el-radio-button__inner) { display: flex; min-height: 48px; align-items: center; padding: 12px 14px; line-height: 1.4; text-align: left; }
 .node-template-source-options :deep(.el-radio-button__inner), .node-template-category-options :deep(.el-radio-button__inner) { border: 1px solid #dcdfe6; border-radius: 8px; box-shadow: none; }
 .node-template-source-options :deep(.el-radio-button:first-child .el-radio-button__inner), .node-template-source-options :deep(.el-radio-button:last-child .el-radio-button__inner), .node-template-category-options :deep(.el-radio-button:first-child .el-radio-button__inner), .node-template-category-options :deep(.el-radio-button:last-child .el-radio-button__inner) { border-radius: 8px; }
-.node-template-group-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-.node-template-group-head h3 { margin: 0 0 5px; }
-.node-template-group-head p { margin: 0; color: var(--app-muted); }
 .node-template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
 .node-template-card { overflow: hidden; border: 1px solid #dfe6f0; border-radius: 14px; background: #fff; box-shadow: 0 7px 20px rgb(31 53 91 / 7%); transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease; }
 .node-template-card:hover { border-color: #9eb8ef; transform: translateY(-2px); box-shadow: 0 12px 26px rgb(31 53 91 / 12%); }
@@ -154,7 +150,7 @@ onMounted(load)
   .node-template-layout { grid-template-columns: 1fr; gap: 18px; }
   .node-template-category-options { display: flex; flex-wrap: wrap; }
   .node-template-category-options :deep(.el-radio-button), .node-template-category-options :deep(.el-radio-button__inner) { width: auto; }
-  .node-template-category-options :deep(.el-radio-button__inner) { text-align: center; }
+  .node-template-category-options :deep(.el-radio-button__inner) { justify-content: center; text-align: center; }
 }
 @media (max-width: 600px) {
   .node-template-grid { grid-template-columns: 1fr; }
