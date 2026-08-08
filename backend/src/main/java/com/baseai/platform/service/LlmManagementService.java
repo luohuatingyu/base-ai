@@ -139,6 +139,19 @@ public class LlmManagementService {
      */
     public List<LlmModel> models(){return modelRepository.findAll().stream().sorted(Comparator.comparing(LlmModel::getId)).toList();}
 
+    /** 查询工作流配置可选择的启用模型，并仅返回下拉展示所需的非敏感字段。 */
+    public List<WorkflowModelOption> workflowModelOptions(){
+        Map<Long,LlmProvider> providers=providerRepository.findAll().stream()
+            .filter(provider->Boolean.TRUE.equals(provider.getEnabled()))
+            .collect(java.util.stream.Collectors.toMap(LlmProvider::getId,provider->provider));
+        return modelRepository.findAll().stream()
+            .filter(model->Boolean.TRUE.equals(model.getEnabled())&&providers.containsKey(model.getProviderId()))
+            .sorted(Comparator.comparing(LlmModel::getId))
+            .map(model->new WorkflowModelOption(model.getId(),model.getName(),model.getModelName(),
+                providers.get(model.getProviderId()).getName(),model.getSupportedModelTypes()))
+            .toList();
+    }
+
     /** 查询启用的模型类型目录；字典尚未初始化时回退到内置的首批类型。 */
     public List<ModelTypeOption> modelTypes(){
         List<ModelTypeOption> result=dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type").stream()
@@ -728,5 +741,6 @@ public class LlmManagementService {
     public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
     public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
     public record ModelTypeOption(String value,String label){}
+    public record WorkflowModelOption(Long id,String name,String modelName,String providerName,List<String> supportedModelTypes){}
     private record ModelSyncKey(Long modelId,boolean enableThinking,String thinkingLevel){}
 }

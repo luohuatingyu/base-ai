@@ -20,6 +20,15 @@
           <el-select v-else-if="field.editor === 'select'" :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)">
             <el-option v-for="option in field.options" :key="option" :label="fieldOption(field.key, option)" :value="option" />
           </el-select>
+          <template v-else-if="field.editor === 'model'">
+            <el-select :model-value="fieldValue(field)" filterable clearable :loading="modelOptionsLoading"
+                       :placeholder="t('workflowConfig.selectModel')" :no-data-text="t('workflowConfig.noCompatibleModels')"
+                       @update:model-value="setModelId">
+              <el-option v-for="option in compatibleModelOptions" :key="option.id"
+                         :label="workflowModelOptionLabel(option)" :value="option.id" />
+            </el-select>
+            <el-alert v-if="modelOptionsError" :title="t('workflowConfig.modelOptionsFailed')" type="error" show-icon :closable="false" />
+          </template>
           <div v-else-if="field.editor === 'condition'" class="workflow-condition-editor">
             <el-input :model-value="condition(field).left" :placeholder="t('workflowConfig.conditionLeft')" @update:model-value="setCondition(field, 'left', $event)" />
             <el-select :model-value="condition(field).operator" @update:model-value="setCondition(field, 'operator', $event)">
@@ -56,8 +65,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import http from '../api/http'
 import WorkflowConfigValueEditor from './WorkflowConfigValueEditor.vue'
-import { CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, extraConfigKeys, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFields } from '../utils/workflowNodeConfig'
+import { compatibleWorkflowModelId, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, extraConfigKeys, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFields, workflowModelOptionLabel } from '../utils/workflowNodeConfig'
 
 const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, nodeType: { type: String, required: true } })
 const emit = defineEmits(['update:modelValue'])
@@ -68,15 +78,35 @@ const openExtra = ref([])
 const newKey = ref('')
 const newType = ref('string')
 const keyError = ref('')
+const modelOptions = ref([])
+const modelOptionsLoading = ref(false)
+const modelOptionsLoaded = ref(false)
+const modelOptionsError = ref(false)
 const fields = computed(() => nodeConfigFields(props.nodeType))
 const extraKeys = computed(() => extraConfigKeys(config.value, props.nodeType))
 const missingRequirements = computed(() => missingNodeConfigRequirements(props.nodeType, config.value))
 const requiredHint = computed(() => t('workflowConfig.requiredHint', { fields: missingRequirements.value.map(requirementLabel).join(t('workflowConfig.fieldSeparator')) }))
+const currentModelType = computed(() => config.value.modelType || 'text_model')
+const compatibleModelOptions = computed(() => filterWorkflowModelOptions(modelOptions.value, currentModelType.value))
 
 watch(() => props.modelValue, value => {
   const next = cloneConfig(value)
   if (JSON.stringify(next) !== JSON.stringify(config.value)) config.value = next
 }, { deep: true })
+watch(() => props.nodeType, type => { if (String(type).toUpperCase() === 'AGENT') loadModelOptions() }, { immediate: true })
+watch([currentModelType, compatibleModelOptions], () => {
+  if (!modelOptionsLoaded.value || !hasField('modelId')) return
+  if (compatibleWorkflowModelId(modelOptions.value, currentModelType.value, config.value.modelId) === null) removeField('modelId')
+})
+
+/** 按需加载 Agent 可选择的启用模型，失败时保留当前配置避免误清理。 */
+async function loadModelOptions() {
+  if (modelOptionsLoaded.value || modelOptionsLoading.value) return
+  modelOptionsLoading.value = true; modelOptionsError.value = false
+  try { modelOptions.value = (await http.get('/workflow/model-options')).data || []; modelOptionsLoaded.value = true }
+  catch { modelOptionsError.value = true }
+  finally { modelOptionsLoading.value = false }
+}
 
 /** 返回字段是否已写入当前配置。 */
 function hasField(key) { return Object.prototype.hasOwnProperty.call(config.value, key) }
@@ -114,6 +144,8 @@ function toggleExtra(key) { openExtra.value = openExtra.value.includes(key) ? op
 function setField(key, value) { config.value = { ...config.value, [key]: value }; emit('update:modelValue', cloneConfig(config.value)) }
 /** 规范数字字段后更新配置。 */
 function setNumber(key, value) { setField(key, Number.isFinite(value) ? value : 0) }
+/** 保存下拉选择的模型 ID；清空选择时移除可选配置并回退能力路由。 */
+function setModelId(value) { value === null || value === undefined || value === '' ? removeField('modelId') : setField('modelId', Number(value)) }
 /** 删除配置字段并保留其他未知字段。 */
 function removeField(key) { const next = { ...config.value }; delete next[key]; config.value = next; emit('update:modelValue', cloneConfig(next)) }
 /** 返回结构化条件并补齐默认操作符。 */

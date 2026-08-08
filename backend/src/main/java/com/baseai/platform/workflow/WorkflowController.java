@@ -1,6 +1,7 @@
 package com.baseai.platform.workflow;
 
 import com.baseai.platform.security.RequiredPermission;
+import com.baseai.platform.service.LlmManagementService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,14 +22,17 @@ public class WorkflowController {
     private final WorkflowExecutionService executionService;
     private final WorkflowConnectionService connectionService;
     private final WorkflowConnectionTester connectionTester;
+    private final LlmManagementService llmManagementService;
 
     /** 注入工作流配置和执行服务。 */
     public WorkflowController(WorkflowService workflowService, WorkflowExecutionService executionService,
-                              WorkflowConnectionService connectionService, WorkflowConnectionTester connectionTester) {
+                              WorkflowConnectionService connectionService, WorkflowConnectionTester connectionTester,
+                              LlmManagementService llmManagementService) {
         this.workflowService = workflowService;
         this.executionService = executionService;
         this.connectionService = connectionService;
         this.connectionTester = connectionTester;
+        this.llmManagementService = llmManagementService;
     }
 
     /** 查询当前用户可见的脱敏连接配置。 */
@@ -65,6 +69,13 @@ public class WorkflowController {
     @GetMapping("/nodes")
     @RequiredPermission("workflow:node:list")
     public List<WorkflowModels.NodeTemplateView> templates() { return workflowService.templates(); }
+
+    /** 查询 Agent 配置可选择的启用模型，不返回供应商密钥或健康错误。 */
+    @GetMapping("/model-options")
+    @RequiredPermission("workflow:node:list")
+    public List<LlmManagementService.WorkflowModelOption> modelOptions() {
+        return llmManagementService.workflowModelOptions();
+    }
 
     /** 创建节点模板。 */
     @PostMapping("/nodes")

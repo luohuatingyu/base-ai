@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { cloneConfig, configValueType, createConfigValue, extraConfigKeys, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldRequirement, nodeConfigFields, WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
+import { cloneConfig, compatibleWorkflowModelId, configValueType, createConfigValue, extraConfigKeys, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldRequirement, nodeConfigFields, workflowModelOptionLabel, WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
@@ -32,6 +32,35 @@ test('全部原生节点都有可视化配置定义', () => {
   assert.deepEqual(nodeConfigFields('WEBHOOK_TRIGGER').map(field => field.key), ['connectionId'])
   assert.deepEqual(nodeConfigFields('SCHEDULE_TRIGGER').map(field => field.key), ['cron', 'zoneId'])
   assert.deepEqual(nodeConfigFields('LLM').slice(-3).map(field => field.key), ['maxAttempts', 'retryDelayMillis', 'onError'])
+  assert.equal(nodeConfigFields('AGENT').find(field => field.key === 'modelId').editor, 'model')
+  assert.equal(nodeConfigFields('LLM').find(field => field.key === 'modelId').editor, 'number')
+})
+
+test('Agent 模型下拉按动态模型类型过滤并生成可识别标签', () => {
+  const options = [
+    { id: 1, name: 'Text', modelName: 'text-v1', providerName: 'OpenAI', supportedModelTypes: ['text_model'] },
+    { id: 2, name: 'Vision', modelName: 'vision-v1', providerName: 'Vendor', supportedModelTypes: ['TEXT_MODEL', 'vision_model'] },
+    { id: 3, name: 'Audio', modelName: 'audio-v1', providerName: 'Vendor', supportedModelTypes: ['audio_model'] }
+  ]
+  assert.deepEqual(filterWorkflowModelOptions(options, 'text_model').map(option => option.id), [1, 2])
+  assert.deepEqual(filterWorkflowModelOptions(options, 'VISION_MODEL').map(option => option.id), [2])
+  assert.deepEqual(filterWorkflowModelOptions(options, 'audio_model').map(option => option.id), [3])
+  assert.deepEqual(filterWorkflowModelOptions(options, 'unknown'), [])
+  assert.equal(workflowModelOptionLabel(options[0]), 'Text (text-v1) · OpenAI')
+  assert.equal(compatibleWorkflowModelId(options, 'text_model', '2'), 2)
+  assert.equal(compatibleWorkflowModelId(options, 'vision_model', 1), null)
+  assert.equal(compatibleWorkflowModelId(options, 'text_model', ''), null)
+  assert.equal(compatibleWorkflowModelId(options, 'text_model', 'invalid'), null)
+})
+
+test('Agent 指定模型使用可搜索可清空下拉并在类型不兼容时移除旧值', () => {
+  assert.match(configEditorSource, /field\.editor === 'model'/)
+  assert.match(configEditorSource, /filterable clearable :loading="modelOptionsLoading"/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/model-options'\)/)
+  assert.match(configEditorSource, /@update:model-value="setModelId"/)
+  assert.match(configEditorSource, /compatibleWorkflowModelId\(modelOptions\.value, currentModelType\.value, config\.value\.modelId\) === null/)
+  assert.match(configEditorSource, /removeField\('modelId'\)/)
+  assert.doesNotMatch(configEditorSource, /field\.editor === 'model'[\s\S]{0,300}<el-input-number/)
 })
 
 test('配置字段区分必填、条件必填和具有运行默认值的可选项', () => {

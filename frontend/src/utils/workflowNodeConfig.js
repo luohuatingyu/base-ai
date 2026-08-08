@@ -1,17 +1,18 @@
-const AI_MODEL_FIELDS = [
+/** 创建 AI 节点共用模型字段，并允许特定节点使用资源下拉编辑器。 */
+function aiModelFields(modelEditor = 'number') { return [
   field('featureCode', 'text', 'DEFAULT'),
   field('modelType', 'select', 'text_model', ['text_model', 'vision_model']),
-  field('modelId', 'number', null),
+  field('modelId', modelEditor, null),
   field('temperature', 'number', 0),
   field('enableThinking', 'boolean', false),
   field('thinkingLevel', 'select', 'MEDIUM', ['LOW', 'MEDIUM', 'HIGH', 'EXTRA_HIGH', 'MAX', 'ULTRA'])
-]
+] }
 
 export const NODE_CONFIG_FIELDS = {
   START: [],
   END: [field('output', 'generic', null)],
   LLM: [
-    ...AI_MODEL_FIELDS,
+    ...aiModelFields(),
     field('systemPrompt', 'textarea', ''),
     field('prompt', 'textarea', ''),
   ],
@@ -26,7 +27,7 @@ export const NODE_CONFIG_FIELDS = {
     field('timeoutSeconds', 'number', 30)
   ],
   AGENT: [
-    ...AI_MODEL_FIELDS,
+    ...aiModelFields('model'),
     field('systemPrompt', 'textarea', 'Use the provided tools to complete the task.'),
     field('prompt', 'textarea', ''),
     field('maxSteps', 'number', 5),
@@ -54,8 +55,8 @@ export const NODE_CONFIG_FIELDS = {
   SORT: [field('collection', 'generic', []), field('path', 'text', ''), field('direction', 'select', 'ASC', ['ASC', 'DESC'])],
   AGGREGATE: [field('collection', 'generic', []), field('operation', 'select', 'COUNT', ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX']), field('path', 'text', '')],
   CSV: [field('operation', 'select', 'PARSE', ['PARSE', 'STRINGIFY']), field('value', 'generic', '')],
-  QUESTION_CLASSIFIER: [...AI_MODEL_FIELDS, field('input', 'text', '{{input}}'), field('categories', 'generic', [])],
-  PARAMETER_EXTRACTOR: [...AI_MODEL_FIELDS, field('input', 'text', '{{input}}'), field('schema', 'generic', { type: 'object' })],
+  QUESTION_CLASSIFIER: [...aiModelFields(), field('input', 'text', '{{input}}'), field('categories', 'generic', [])],
+  PARAMETER_EXTRACTOR: [...aiModelFields(), field('input', 'text', '{{input}}'), field('schema', 'generic', { type: 'object' })],
   STRUCTURED_OUTPUT: [field('value', 'generic', ''), field('schema', 'generic', { type: 'object' })],
   DOCUMENT_EXTRACTOR: [field('content', 'textarea', ''), field('base64', 'textarea', ''), field('fileName', 'text', ''), field('maxCharacters', 'number', 1000000)],
   WEBHOOK_TRIGGER: [field('connectionId', 'number', null)],
@@ -213,4 +214,24 @@ export function isSafeConfigKey(key) {
 export function extraConfigKeys(config, nodeType) {
   const known = new Set([...nodeConfigFields(nodeType).map(item => item.key), ...hiddenConfigKeys(nodeType)])
   return Object.keys(config || {}).filter(key => !known.has(key))
+}
+
+/** 按当前模型类型筛选 Agent 可选模型，兼容后续动态扩展的类型编码。 */
+export function filterWorkflowModelOptions(options, modelType) {
+  const type = String(modelType || 'text_model').trim().toLowerCase()
+  return (options || []).filter(option => Array.isArray(option?.supportedModelTypes)
+    && option.supportedModelTypes.map(value => String(value).toLowerCase()).includes(type))
+}
+
+/** 生成包含供应商和真实模型标识的稳定下拉标签。 */
+export function workflowModelOptionLabel(option = {}) {
+  return `${option.name || option.modelName || option.id} (${option.modelName || '-'}) · ${option.providerName || '-'}`
+}
+
+/** 保留兼容当前模型类型的数字 ID，不兼容、空值或非法值统一返回 null。 */
+export function compatibleWorkflowModelId(options, modelType, modelId) {
+  if (modelId === null || modelId === undefined || modelId === '') return null
+  const normalizedId = Number(modelId)
+  return Number.isFinite(normalizedId)
+    && filterWorkflowModelOptions(options, modelType).some(option => option.id === normalizedId) ? normalizedId : null
 }

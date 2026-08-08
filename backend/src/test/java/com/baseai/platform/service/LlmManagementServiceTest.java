@@ -66,6 +66,37 @@ class LlmManagementServiceTest {
         verifyNoInteractions(cryptoService);
     }
 
+    /** 工作流模型下拉只返回启用供应商下的启用模型和非敏感展示字段。 */
+    @Test
+    void workflowModelOptionsContainOnlyEnabledModelsFromEnabledProviders() {
+        LlmProvider enabledProvider = provider("enabled-secret");
+        ReflectionTestUtils.setField(enabledProvider, "id", 1L);
+        enabledProvider.setName("Enabled provider");
+        enabledProvider.setEnabled(true);
+        LlmProvider disabledProvider = provider("disabled-secret");
+        ReflectionTestUtils.setField(disabledProvider, "id", 2L);
+        disabledProvider.setEnabled(false);
+        LlmModel enabledModel = model(1L, "MIDDLE");
+        ReflectionTestUtils.setField(enabledModel, "id", 11L);
+        enabledModel.setName("Agent model");
+        enabledModel.setModelName("agent-v1");
+        enabledModel.setSupportedModelTypes(List.of("text_model", "vision_model"));
+        LlmModel disabledModel = model(1L, "MIDDLE");
+        ReflectionTestUtils.setField(disabledModel, "id", 12L);
+        disabledModel.setEnabled(false);
+        LlmModel disabledProviderModel = model(2L, "MIDDLE");
+        ReflectionTestUtils.setField(disabledProviderModel, "id", 13L);
+        when(providerRepository.findAll()).thenReturn(List.of(enabledProvider, disabledProvider));
+        when(modelRepository.findAll()).thenReturn(List.of(disabledProviderModel, disabledModel, enabledModel));
+
+        List<LlmManagementService.WorkflowModelOption> options = service.workflowModelOptions();
+
+        assertEquals(1, options.size());
+        assertEquals(new LlmManagementService.WorkflowModelOption(11L, "Agent model", "agent-v1",
+            "Enabled provider", List.of("text_model", "vision_model")), options.get(0));
+        verifyNoInteractions(cryptoService);
+    }
+
     /** 查看单个供应商时，应解密并将逗号、换行分隔的密钥统一为一行一个。 */
     @Test
     void providerApiKeysReturnsOneKeyPerLine() {
