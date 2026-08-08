@@ -53,7 +53,7 @@ test('画布自身的 v-model 回显不会重置撤销重做历史', () => {
   assert.match(graphEditorSource, /history\.value\s*=\s*\[\.\.\.history\.value\.slice\(0,\s*historyIndex\.value\s*\+\s*1\),\s*snapshot\]/)
 })
 
-test('右键连线显示删除选项并将删除纳入撤销历史', () => {
+test('悬停连线显示提示且左键点击立即删除并纳入撤销历史', () => {
   const source = [
     { id: 'first', source: 'start', target: 'http' },
     { id: 'second', source: 'http', target: 'end' }
@@ -64,11 +64,16 @@ test('右键连线显示删除选项并将删除纳入撤销历史', () => {
   assert.equal(source.length, 2)
   assert.deepEqual(removeWorkflowEdge(source, 'missing'), source)
   assert.deepEqual(removeWorkflowEdge(null, 'first'), [])
-  assert.match(graphEditorSource, /@edge-context-menu="openEdgeMenu"/)
-  assert.match(graphEditorSource, /event\.preventDefault\(\)[\s\S]*event\.stopPropagation\(\)/)
-  assert.match(graphEditorSource, /workflow-edge-menu[\s\S]*common\.delete/)
-  assert.match(graphEditorSource, /edges\.value\s*=\s*removeWorkflowEdge\(edges\.value, edgeId\)[\s\S]*remember\(\)/)
-  assert.match(graphEditorSource, /if \(templateMenu\.visible\) closeTemplateMenu\(\)[\s\S]*else if \(edgeMenu\.visible\) closeEdgeMenu\(\)/)
+  assert.match(graphEditorSource, /:default-edge-options="edgeOptions"/)
+  assert.match(graphEditorSource, /interactionWidth:\s*48/)
+  assert.match(graphEditorSource, /@edge-mouse-enter="showEdgeDeleteHint"\s+@edge-mouse-move="moveEdgeDeleteHint"/)
+  assert.match(graphEditorSource, /@edge-mouse-leave="hideEdgeDeleteHint"\s+@edge-click="deleteEdge"/)
+  assert.match(graphEditorSource, /workflow-edge-delete-hint[\s\S]*workflowCanvas\.deleteEdgeHint/)
+  assert.match(graphEditorSource, /function deleteEdge\(\{ event, edge \}\)[\s\S]*event\.stopPropagation\(\)[\s\S]*removeWorkflowEdge\(edges\.value, edge\.id\)[\s\S]*remember\(\)/)
+  assert.match(graphEditorSource, /vue-flow__edge:hover \.vue-flow__edge-path/)
+  assert.doesNotMatch(graphEditorSource, /@edge-context-menu|workflow-edge-menu|openEdgeMenu/)
+  assert.equal(zhCN.workflowCanvas.deleteEdgeHint, '点击删除连线')
+  assert.equal(enUS.workflowCanvas.deleteEdgeHint, 'Click to delete edge')
 })
 
 test('画布节点实时显示缺失必填配置及字段提示', () => {

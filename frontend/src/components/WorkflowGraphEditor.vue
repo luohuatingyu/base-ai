@@ -2,9 +2,11 @@
   <div ref="editorShell" class="workflow-editor-shell" :class="{ 'has-properties': selected, fill: props.fill, maximized: isMaximized }">
     <div class="workflow-flow">
       <VueFlow :id="editorId" v-model:nodes="nodes" v-model:edges="edges" :node-types="nodeTypes"
+               :default-edge-options="edgeOptions"
                fit-view-on-init @node-click="selectNode" @pane-click="clearSelection"
                @pane-context-menu="openTemplateMenu"
-               @edge-context-menu="openEdgeMenu"
+               @edge-mouse-enter="showEdgeDeleteHint" @edge-mouse-move="moveEdgeDeleteHint"
+               @edge-mouse-leave="hideEdgeDeleteHint" @edge-click="deleteEdge"
                @node-drag-stop="remember" @connect="connect">
         <Background pattern-color="#cbd5e1" :gap="20" />
         <Controls />
@@ -57,10 +59,9 @@
       <el-empty v-else :description="t('workflowCanvas.noTemplates')" :image-size="52" />
     </div>
 
-    <div v-if="edgeMenu.visible" ref="edgeMenuElement" class="workflow-edge-menu"
-         :style="{ left: `${edgeMenu.left}px`, top: `${edgeMenu.top}px` }"
-         @pointerdown.stop @contextmenu.prevent>
-      <button type="button" @click="removeEdgeFromMenu">{{ t('common.delete') }}</button>
+    <div v-if="edgeDeleteHint.visible" class="workflow-edge-delete-hint" role="tooltip"
+         :style="{ left: `${edgeDeleteHint.left}px`, top: `${edgeDeleteHint.top}px` }">
+      {{ t('workflowCanvas.deleteEdgeHint') }}
     </div>
 
     <el-dialog v-model="subgraphVisible" :title="t('workflowCanvas.subgraph')" width="min(1180px, 96vw)" append-to-body>
@@ -92,6 +93,7 @@ const emit = defineEmits(['update:modelValue'])
 const { t, te } = useI18n()
 const editorId = workflowElementId('editor')
 const nodeTypes = Object.fromEntries(WORKFLOW_NODE_TYPES.map(type => [type, WorkflowNode]))
+const edgeOptions = { interactionWidth: 48 }
 const initial = serializeWorkflowGraph(props.modelValue)
 const nodes = ref(initial.nodes)
 const edges = ref(initial.edges)
@@ -107,8 +109,7 @@ const historyIndex = ref(0)
 const activeCategory = ref('')
 const templateMenuElement = ref(null)
 const templateMenu = reactive({ visible: false, left: 0, top: 0, flowPosition: { x: 0, y: 0 } })
-const edgeMenuElement = ref(null)
-const edgeMenu = reactive({ visible: false, left: 0, top: 0, edgeId: '' })
+const edgeDeleteHint = reactive({ visible: false, left: 0, top: 0, edgeId: '' })
 const { addEdges, screenToFlowCoordinate } = useVueFlow({ id: editorId })
 let configHistoryTimer
 let lastEmittedModel
@@ -140,7 +141,7 @@ watch([nodes, edges], () => {
 /** 在空白画布右键坐标打开功能分类节点菜单。 */
 function openTemplateMenu(event) {
   event.preventDefault()
-  closeEdgeMenu()
+  hideEdgeDeleteHint()
   templateMenu.flowPosition = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
   templateMenu.left = event.clientX
   templateMenu.top = event.clientY
@@ -162,31 +163,33 @@ function addTemplateFromMenu(template) {
 }
 /** 关闭节点模板菜单。 */
 function closeTemplateMenu() { templateMenu.visible = false }
-/** 在目标连线的右键坐标打开删除菜单。 */
-function openEdgeMenu({ event, edge }) {
-  event.preventDefault()
-  event.stopPropagation()
+/** 进入连线命中区域时显示跟随鼠标的删除提示。 */
+function showEdgeDeleteHint({ event, edge }) {
   closeTemplateMenu()
-  edgeMenu.edgeId = edge.id
-  edgeMenu.left = event.clientX
-  edgeMenu.top = event.clientY
-  edgeMenu.visible = true
-  nextTick(clampEdgeMenu)
+  edgeDeleteHint.edgeId = edge.id
+  edgeDeleteHint.visible = true
+  positionEdgeDeleteHint(event)
 }
-/** 将连线菜单限制在浏览器可视区域内。 */
-function clampEdgeMenu() {
-  const bounds = edgeMenuElement.value?.getBoundingClientRect()
-  if (!bounds) return
-  edgeMenu.left = Math.max(8, Math.min(edgeMenu.left, window.innerWidth - bounds.width - 8))
-  edgeMenu.top = Math.max(8, Math.min(edgeMenu.top, window.innerHeight - bounds.height - 8))
+/** 在连线内移动时同步删除提示位置。 */
+function moveEdgeDeleteHint({ event, edge }) {
+  if (edgeDeleteHint.edgeId !== edge.id) edgeDeleteHint.edgeId = edge.id
+  edgeDeleteHint.visible = true
+  positionEdgeDeleteHint(event)
 }
-/** 关闭连线菜单并清除待操作连线。 */
-function closeEdgeMenu() { edgeMenu.visible = false; edgeMenu.edgeId = '' }
-/** 删除右键选中的连线并记录可撤销快照。 */
-function removeEdgeFromMenu() {
-  const edgeId = edgeMenu.edgeId
-  edges.value = removeWorkflowEdge(edges.value, edgeId)
-  closeEdgeMenu()
+/** 根据视口边缘选择提示方向，避免文案超出可视范围。 */
+function positionEdgeDeleteHint(event) {
+  const offsetX = event.clientX > window.innerWidth - 180 ? -160 : 12
+  const offsetY = event.clientY > window.innerHeight - 48 ? -36 : 12
+  edgeDeleteHint.left = Math.max(8, event.clientX + offsetX)
+  edgeDeleteHint.top = Math.max(8, event.clientY + offsetY)
+}
+/** 离开连线时隐藏删除提示。 */
+function hideEdgeDeleteHint() { edgeDeleteHint.visible = false; edgeDeleteHint.edgeId = '' }
+/** 单击连线后立即删除并记录可撤销快照。 */
+function deleteEdge({ event, edge }) {
+  event.stopPropagation()
+  edges.value = removeWorkflowEdge(edges.value, edge.id)
+  hideEdgeDeleteHint()
   remember()
 }
 /** 用模板快照创建独立画布实例。 */
@@ -257,15 +260,15 @@ function redo() { if (canRedo.value) restore(historyIndex.value + 1) }
 /** 替换运行态节点和连线。 */
 function restore(index) { historyIndex.value = index; const graph = serializeWorkflowGraph(history.value[index]); nodes.value = graph.nodes; edges.value = graph.edges; selectedId.value = '' }
 defineExpose({ canUndo, canRedo, undo, redo })
-/** 关闭画布节点和连线的临时菜单。 */
-function closeContextMenus() { closeTemplateMenu(); closeEdgeMenu() }
+/** 关闭画布临时菜单和悬停提示。 */
+function closeContextMenus() { closeTemplateMenu(); hideEdgeDeleteHint() }
 /** 处理全局取消操作，避免菜单在失焦后残留。 */
 function handleGlobalPointer() { closeContextMenus() }
 /** Escape 优先关闭画布菜单，否则退出应用内最大化。 */
 function handleGlobalKey(event) {
   if (event.key !== 'Escape') return
   if (templateMenu.visible) closeTemplateMenu()
-  else if (edgeMenu.visible) closeEdgeMenu()
+  else if (edgeDeleteHint.visible) hideEdgeDeleteHint()
   else isMaximized.value = false
 }
 onMounted(() => {
@@ -298,9 +301,9 @@ onBeforeUnmount(() => {
 .workflow-history-actions { position: absolute; top: 12px; left: 12px; z-index: 4; display: flex; gap: 4px; }
 .workflow-display-actions { position: absolute; top: 12px; right: 12px; z-index: 4; display: flex; gap: 4px; }
 .workflow-template-menu { position: fixed; z-index: 3200; width: min(640px, calc(100vw - 16px)); overflow: hidden; border: 1px solid #d8e1ee; border-radius: 14px; background: #fff; box-shadow: 0 20px 56px rgb(15 23 42 / 24%); }
-.workflow-edge-menu { position: fixed; z-index: 3200; min-width: 120px; padding: 6px; border: 1px solid #d8e1ee; border-radius: 10px; background: #fff; box-shadow: 0 12px 32px rgb(15 23 42 / 20%); }
-.workflow-edge-menu button { width: 100%; padding: 8px 12px; border: 0; border-radius: 7px; color: var(--el-color-danger); background: transparent; text-align: left; cursor: pointer; }
-.workflow-edge-menu button:hover { background: var(--el-color-danger-light-9); }
+.workflow-edge-delete-hint { position: fixed; z-index: 3200; padding: 6px 10px; border-radius: 7px; color: #fff; background: var(--el-color-danger); box-shadow: 0 8px 20px rgb(15 23 42 / 18%); font-size: 12px; line-height: 1.4; white-space: nowrap; pointer-events: none; }
+:deep(.vue-flow__edge-interaction) { cursor: pointer; }
+:deep(.vue-flow__edge:hover .vue-flow__edge-path) { stroke: var(--el-color-danger); stroke-width: 3; }
 .workflow-template-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #edf1f6; }
 .workflow-template-menu-head button { border: 0; color: var(--app-muted); background: transparent; font-size: 20px; cursor: pointer; }
 .workflow-template-menu-body { display: grid; grid-template-columns: 190px minmax(0, 1fr); height: min(430px, calc(100vh - 100px)); }
