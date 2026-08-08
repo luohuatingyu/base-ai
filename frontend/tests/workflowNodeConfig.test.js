@@ -239,6 +239,13 @@ test('标准字段和附加参数使用简短文字切换配置值且不显示�
   assert.equal(enUS.workflowConfig.collapseValue, 'Hide')
 })
 
+test('显示和隐藏切换按钮在标准字段及附加参数卡片中保持居中', () => {
+  assert.match(configEditorSource, /\.workflow-config-card-head-layout\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/)
+  assert.match(configEditorSource, /\.workflow-config-toggle-hint\s*\{[^}]*justify-self:\s*center;/)
+  assert.match(configEditorSource, /class="workflow-config-card-head-layout"[\s\S]*class="workflow-config-toggle-hint"[^>]*openFields\.includes\(field\.key\)/)
+  assert.match(configEditorSource, /v-for="key in extraKeys"[\s\S]*class="workflow-config-card-head-layout"[\s\S]*class="workflow-config-toggle-hint"[^>]*openExtra\.includes\(key\)/)
+})
+
 test('非必填默认值字段未启用时保持禁用样式且必填缺失提示优先展示', () => {
   assert.match(configEditorSource, /function hasDefault\(field\).*hasOwnProperty\.call\(field, 'defaultValue'\)/)
   assert.match(configEditorSource, /v-if="fieldRequirementMissing\(field\)"[^>]*type="danger"/)

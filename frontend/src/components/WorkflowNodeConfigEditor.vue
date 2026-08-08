@@ -12,7 +12,9 @@
               <small>{{ fieldDescription(field.key) }}</small>
               <small v-if="usesEffectiveDefault(field)" class="workflow-config-default-preview">{{ t('workflowConfig.defaultPreview', { value: defaultPreview(field) }) }}</small>
             </span>
-            <span class="workflow-config-toggle-hint">{{ t(openFields.includes(field.key) ? 'workflowConfig.collapseValue' : 'workflowConfig.expandValue') }}</span>
+          </button>
+          <button type="button" class="workflow-config-toggle-hint" :aria-expanded="openFields.includes(field.key)" @click="toggleField(field.key)">
+            {{ t(openFields.includes(field.key) ? 'workflowConfig.collapseValue' : 'workflowConfig.expandValue') }}
           </button>
           <span class="workflow-config-card-tags">
             <el-tag v-if="fieldRequirementMissing(field)" size="small" type="danger">{{ t('workflowConfig.requiredMissing') }}</el-tag>
@@ -98,10 +100,15 @@
     <section class="workflow-extra-config">
       <div class="workflow-extra-head"><div><strong>{{ t('workflowConfig.extraTitle') }}</strong><small>{{ t('workflowConfig.extraDescription') }}</small></div><el-tag>{{ extraKeys.length }}</el-tag></div>
       <article v-for="key in extraKeys" :key="key" class="workflow-config-card configured">
-        <button type="button" class="workflow-config-card-head" :aria-expanded="openExtra.includes(key)" @click="toggleExtra(key)">
-          <span><strong>{{ key }}</strong><small>{{ t('workflowConfig.customParameter') }}</small></span>
-          <span class="workflow-config-toggle-hint">{{ t(openExtra.includes(key) ? 'workflowConfig.collapseValue' : 'workflowConfig.expandValue') }}</span>
-        </button>
+        <div class="workflow-config-card-head-layout">
+          <button type="button" class="workflow-config-card-head" :aria-expanded="openExtra.includes(key)" @click="toggleExtra(key)">
+            <span><strong>{{ key }}</strong><small>{{ t('workflowConfig.customParameter') }}</small></span>
+          </button>
+          <button type="button" class="workflow-config-toggle-hint" :aria-expanded="openExtra.includes(key)" @click="toggleExtra(key)">
+            {{ t(openExtra.includes(key) ? 'workflowConfig.collapseValue' : 'workflowConfig.expandValue') }}
+          </button>
+          <span aria-hidden="true"></span>
+        </div>
         <div v-if="openExtra.includes(key)" class="workflow-config-card-body">
           <WorkflowConfigValueEditor :model-value="config[key]" @update:model-value="setField(key, $event)" />
           <el-button type="danger" plain @click="removeField(key)">{{ t('workflowConfig.removeParameter') }}</el-button>
@@ -309,13 +316,12 @@ function addExtra() {
 .workflow-config-card.configured { border-color: #b8cdf8; background: #f7faff; }
 .workflow-config-card.disabled { border-color: #d8dee9; background: #fafbfc; }
 .workflow-config-card.required-missing { border-color: #efb2b2; background: #fffafa; }
-.workflow-config-card-head-layout { display: flex; align-items: center; }
-.workflow-config-card-head { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
-.workflow-config-card-head-layout .workflow-config-card-head { min-width: 0; flex: 1; width: auto; padding-right: 0; }
+.workflow-config-card-head-layout { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
+.workflow-config-card-head { display: flex; min-width: 0; width: 100%; align-items: center; gap: 12px; padding: 14px 8px 14px 14px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
 .workflow-config-card-head > span:first-child, .workflow-extra-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .workflow-config-card-head strong em { margin-left: 4px; color: var(--el-color-danger); font-size: 12px; font-style: normal; font-weight: 500; }
-.workflow-config-toggle-hint { flex: 0 0 auto; color: var(--el-color-primary); font-size: 12px; font-weight: 500; line-height: 1.5; white-space: nowrap; }
-.workflow-config-card-tags { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 14px; }
+.workflow-config-toggle-hint { justify-self: center; padding: 8px; border: 0; color: var(--el-color-primary); background: transparent; font-size: 12px; font-weight: 500; line-height: 1.5; white-space: nowrap; cursor: pointer; }
+.workflow-config-card-tags { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 6px; padding: 14px; }
 .workflow-config-card-head small, .workflow-extra-head small { color: var(--app-muted); line-height: 1.45; }
 .workflow-config-card-head .workflow-config-default-preview { color: var(--el-color-primary); font-weight: 500; }
 .workflow-config-card-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; border-top: 1px solid #e8edf5; }
