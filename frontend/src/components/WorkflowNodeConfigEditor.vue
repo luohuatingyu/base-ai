@@ -6,7 +6,11 @@
       <article v-for="field in fields" :key="field.key" class="workflow-config-card"
                :class="{ configured: hasField(field.key), disabled: fieldDisabled(field), 'required-missing': fieldRequirementMissing(field) }">
         <button type="button" class="workflow-config-card-head" @click="toggleField(field.key)">
-          <span><strong>{{ fieldLabel(field.key) }} <em v-if="field.requirement">{{ t(`workflowConfig.${field.requirement}`) }}</em></strong><small>{{ fieldDescription(field.key) }}</small></span>
+          <span>
+            <strong>{{ fieldLabel(field.key) }} <em v-if="field.requirement">{{ t(`workflowConfig.${field.requirement}`) }}</em></strong>
+            <small>{{ fieldDescription(field.key) }}</small>
+            <small v-if="usesEffectiveDefault(field)" class="workflow-config-default-preview">{{ t('workflowConfig.defaultPreview', { value: defaultPreview(field) }) }}</small>
+          </span>
           <span class="workflow-config-card-tags">
             <el-tag v-if="fieldRequirementMissing(field)" size="small" type="danger">{{ t('workflowConfig.requiredMissing') }}</el-tag>
             <el-tag v-else size="small" :type="hasField(field.key) ? 'success' : fieldCanToggle(field) ? 'info' : hasDefault(field) ? 'primary' : 'info'">{{ t(fieldStatusKey(field)) }}</el-tag>
@@ -101,7 +105,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import WorkflowConfigValueEditor from './WorkflowConfigValueEditor.vue'
-import { compatibleWorkflowModelId, compatibleWorkflowResourceId, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFields, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel } from '../utils/workflowNodeConfig'
+import { compatibleWorkflowModelId, compatibleWorkflowResourceId, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, effectiveNodeConfigDefaultValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFields, nodeConfigUsesEffectiveDefault, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel } from '../utils/workflowNodeConfig'
 
 const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, nodeType: { type: String, required: true } })
 const emit = defineEmits(['update:modelValue'])
@@ -200,6 +204,16 @@ function fieldStatusKey(field) {
   if (fieldCanToggle(field)) return 'workflowConfig.disabled'
   return hasDefault(field) ? 'workflowConfig.defaultValue' : 'workflowConfig.notConfigured'
 }
+/** 判断当前未展开字段是否会采用已验证的运行默认值。 */
+function usesEffectiveDefault(field) { return nodeConfigUsesEffectiveDefault(props.nodeType, field.key, config.value) }
+/** 将默认值格式化为卡片标题中可直接识别的文本。 */
+function defaultPreview(field) {
+  const value = effectiveNodeConfigDefaultValue(props.nodeType, field.key, config.value)
+  if (typeof value === 'string') return fieldOption(field.key, value)
+  if (value === null) return t('workflowConfig.nullValue')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
 /** 返回已配置值或仅供编辑展示的字段默认值，不因展开卡片写入配置。 */
 function fieldValue(field) { return hasField(field.key) ? config.value[field.key] : cloneValue(field.defaultValue) }
 /** 深复制可序列化字段值，避免可视化编辑器污染共享默认值。 */
@@ -260,6 +274,7 @@ function addExtra() {
 .workflow-config-card-head strong em { margin-left: 4px; color: var(--el-color-danger); font-size: 12px; font-style: normal; font-weight: 500; }
 .workflow-config-card-tags { display: flex; flex: 0 0 auto; gap: 6px; }
 .workflow-config-card-head small, .workflow-extra-head small { color: var(--app-muted); line-height: 1.45; }
+.workflow-config-card-head .workflow-config-default-preview { color: var(--el-color-primary); font-weight: 500; }
 .workflow-config-card-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; border-top: 1px solid #e8edf5; }
 .workflow-config-card-body > :first-child { margin-top: 14px; }
 .workflow-config-enable { display: flex; align-items: center; justify-content: space-between; }

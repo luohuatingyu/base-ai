@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { cloneConfig, compatibleWorkflowModelId, compatibleWorkflowResourceId, configValueType, createConfigValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFieldRequirement, nodeConfigFields, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, WORKFLOW_NODE_TYPES, WORKFLOW_NODE_VALIDATION_TYPES } from '../src/utils/workflowNodeConfig.js'
+import { cloneConfig, compatibleWorkflowModelId, compatibleWorkflowResourceId, configValueType, createConfigValue, effectiveNodeConfigDefaultValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFieldRequirement, nodeConfigFields, nodeConfigUsesEffectiveDefault, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, WORKFLOW_NODE_TYPES, WORKFLOW_NODE_VALIDATION_TYPES } from '../src/utils/workflowNodeConfig.js'
 
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
@@ -156,6 +156,17 @@ test('方案选择只展示当前方案适用字段', () => {
   assert.equal(nodeConfigFieldApplicable('RABBITMQ_PUBLISH', 'exchange', { destinationMode: 'DEFAULT_EXCHANGE' }), false)
 })
 
+test('运行默认值仅在当前方案适用且未显式配置时可用于卡片摘要', () => {
+  assert.equal(nodeConfigUsesEffectiveDefault('LLM', 'featureCode', { modelMode: 'ROUTE' }), true)
+  assert.equal(nodeConfigUsesEffectiveDefault('LLM', 'modelType', { modelMode: 'ROUTE' }), true)
+  assert.equal(nodeConfigUsesEffectiveDefault('LLM', 'featureCode', { modelMode: 'DIRECT' }), false)
+  assert.equal(nodeConfigUsesEffectiveDefault('LLM', 'featureCode', { modelMode: 'ROUTE', featureCode: 'CHAT' }), false)
+  assert.equal(nodeConfigUsesEffectiveDefault('LLM', 'prompt', { modelMode: 'ROUTE' }), false)
+  assert.equal(effectiveNodeConfigDefaultValue('LLM', 'featureCode', { modelMode: 'ROUTE' }), 'DEFAULT')
+  assert.equal(effectiveNodeConfigDefaultValue('LLM', 'modelType', { modelMode: 'ROUTE' }), 'text_model')
+  assert.equal(effectiveNodeConfigDefaultValue('HTTP', 'method', {}), 'GET')
+})
+
 test('发布提示覆盖固定必填、方案条件、操作条件和参数数量', () => {
   assert.deepEqual(missingNodeConfigRequirements('HTTP', {}), ['url'])
   assert.deepEqual(missingNodeConfigRequirements('HTTP', { url: 'https://example.test' }), [])
@@ -192,6 +203,13 @@ test('非必填默认值字段未启用时显示禁用且必填缺失提示保�
   assert.match(configEditorSource, /hasDefault\(field\) \? 'workflowConfig\.defaultValue' : 'workflowConfig\.notConfigured'/)
   assert.match(configEditorSource, /v-if="fieldRequirementMissing\(field\)"[\s\S]*v-else[\s\S]*fieldStatusKey\(field\)/)
   assert.match(configEditorSource, /disabled: fieldDisabled\(field\)/)
+})
+
+test('使用运行默认值的字段在不展开卡片时直接展示默认值', () => {
+  assert.match(configEditorSource, /v-if="usesEffectiveDefault\(field\)" class="workflow-config-default-preview"/)
+  assert.match(configEditorSource, /workflowConfig\.defaultPreview/)
+  assert.match(configEditorSource, /function usesEffectiveDefault\(field\).*nodeConfigUsesEffectiveDefault/)
+  assert.match(configEditorSource, /function defaultPreview\(field\)[\s\S]*effectiveNodeConfigDefaultValue/)
 })
 
 test('零、false、null、空对象和空数组均可作为启用时写入的默认值', () => {

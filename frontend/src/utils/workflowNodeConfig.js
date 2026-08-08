@@ -151,6 +151,20 @@ export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
   return true
 }
 
+/** 判断字段是否会使用可直接执行的运行默认值，而非仅使用编辑器占位值。 */
+export function nodeConfigUsesEffectiveDefault(nodeType, key, config = {}) {
+  const type = String(nodeType || '').toUpperCase()
+  const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  if (Object.prototype.hasOwnProperty.call(value, key) || !nodeConfigFieldApplicable(type, key, value)) return false
+  return Object.prototype.hasOwnProperty.call(withValidDefaults(type, value), key)
+}
+
+/** 返回字段实际会采用的运行默认值；不适用或已显式配置时返回 undefined。 */
+export function effectiveNodeConfigDefaultValue(nodeType, key, config = {}) {
+  if (!nodeConfigUsesEffectiveDefault(nodeType, key, config)) return undefined
+  return cloneValue(withValidDefaults(String(nodeType || '').toUpperCase(), config)[key])
+}
+
 /** 返回标准字段在当前节点中的必填级别。 */
 export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
   const type = String(nodeType || '').toUpperCase()
