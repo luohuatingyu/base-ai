@@ -55,12 +55,19 @@ test('Agent 模型下拉按动态模型类型过滤并生成可识别标签', ()
 
 test('Agent 指定模型使用可搜索可清空下拉并在类型不兼容时移除旧值', () => {
   assert.match(configEditorSource, /field\.editor === 'model'/)
-  assert.match(configEditorSource, /filterable clearable :loading="modelOptionsLoading"/)
+  assert.match(configEditorSource, /filterable clearable[^>]*:loading="modelOptionsLoading"/)
   assert.match(configEditorSource, /http\.get\('\/workflow\/model-options'\)/)
   assert.match(configEditorSource, /@update:model-value="setModelId"/)
   assert.match(configEditorSource, /compatibleWorkflowModelId\(modelOptions\.value, currentModelType\.value, config\.value\.modelId\) === null/)
   assert.match(configEditorSource, /removeField\('modelId'\)/)
   assert.doesNotMatch(configEditorSource, /field\.editor === 'model'[\s\S]{0,300}<el-input-number/)
+})
+
+test('Agent 指定模型下拉限制为输入框宽度并为溢出标签提供完整标题', () => {
+  assert.match(configEditorSource, /filterable clearable fit-input-width :loading="modelOptionsLoading"/)
+  assert.match(configEditorSource, /#label="\{ label \}"[\s\S]*workflow-model-option-label" truncated>\{\{ label \}\}/)
+  assert.match(configEditorSource, /workflow-model-option-label" truncated>\{\{ workflowModelOptionLabel\(option\) \}\}/)
+  assert.match(configEditorSource, /\.workflow-model-option-label \{[^}]*width: 100%;[^}]*min-width: 0;/)
 })
 
 test('配置字段区分必填、条件必填和具有运行默认值的可选项', () => {

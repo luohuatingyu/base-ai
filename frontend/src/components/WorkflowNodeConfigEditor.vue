@@ -26,11 +26,16 @@
               <el-option v-for="option in field.options" :key="option" :label="fieldOption(field.key, option)" :value="option" />
             </el-select>
             <template v-else-if="field.editor === 'model'">
-              <el-select :model-value="fieldValue(field)" filterable clearable :loading="modelOptionsLoading"
+              <el-select :model-value="fieldValue(field)" filterable clearable fit-input-width :loading="modelOptionsLoading"
                          :placeholder="t('workflowConfig.selectModel')" :no-data-text="t('workflowConfig.noCompatibleModels')"
                          @update:model-value="setModelId">
+                <template #label="{ label }">
+                  <el-text class="workflow-model-option-label" truncated>{{ label }}</el-text>
+                </template>
                 <el-option v-for="option in compatibleModelOptions" :key="option.id"
-                           :label="workflowModelOptionLabel(option)" :value="option.id" />
+                           :label="workflowModelOptionLabel(option)" :value="option.id">
+                  <el-text class="workflow-model-option-label" truncated>{{ workflowModelOptionLabel(option) }}</el-text>
+                </el-option>
               </el-select>
               <el-alert v-if="modelOptionsError" :title="t('workflowConfig.modelOptionsFailed')" type="error" show-icon :closable="false" />
             </template>
@@ -190,6 +195,7 @@ function addExtra() {
 .workflow-config-enable { display: flex; align-items: center; justify-content: space-between; }
 .workflow-config-controls { display: flex; min-width: 0; flex-direction: column; gap: 12px; margin: 0; padding: 0; border: 0; }
 .workflow-config-controls:disabled { opacity: .65; pointer-events: none; }
+.workflow-model-option-label { display: block; width: 100%; min-width: 0; }
 .workflow-condition-editor { display: flex; flex-direction: column; gap: 10px; }
 .workflow-extra-config { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
 .workflow-extra-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
