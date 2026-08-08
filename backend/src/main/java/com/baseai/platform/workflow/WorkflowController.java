@@ -2,6 +2,7 @@ package com.baseai.platform.workflow;
 
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.service.LlmManagementService;
+import com.baseai.platform.service.MailManagementService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,16 +24,18 @@ public class WorkflowController {
     private final WorkflowConnectionService connectionService;
     private final WorkflowConnectionTester connectionTester;
     private final LlmManagementService llmManagementService;
+    private final MailManagementService mailManagementService;
 
     /** 注入工作流配置和执行服务。 */
     public WorkflowController(WorkflowService workflowService, WorkflowExecutionService executionService,
                               WorkflowConnectionService connectionService, WorkflowConnectionTester connectionTester,
-                              LlmManagementService llmManagementService) {
+                              LlmManagementService llmManagementService, MailManagementService mailManagementService) {
         this.workflowService = workflowService;
         this.executionService = executionService;
         this.connectionService = connectionService;
         this.connectionTester = connectionTester;
         this.llmManagementService = llmManagementService;
+        this.mailManagementService = mailManagementService;
     }
 
     /** 查询当前用户可见的脱敏连接配置。 */
@@ -70,11 +73,25 @@ public class WorkflowController {
     @RequiredPermission("workflow:node:list")
     public List<WorkflowModels.NodeTemplateView> templates() { return workflowService.templates(); }
 
-    /** 查询 Agent 配置可选择的启用模型，不返回供应商密钥或健康错误。 */
+    /** 查询 AI 节点可选择的启用模型，不返回供应商密钥或健康错误。 */
     @GetMapping("/model-options")
     @RequiredPermission("workflow:node:list")
     public List<LlmManagementService.WorkflowModelOption> modelOptions() {
         return llmManagementService.workflowModelOptions();
+    }
+
+    /** 查询邮件发送节点可选择的启用可发送路由，不返回账户或收件人配置。 */
+    @GetMapping("/mail-route-options")
+    @RequiredPermission("workflow:node:list")
+    public List<MailManagementService.RouteOption> mailRouteOptions() {
+        return mailManagementService.workflowRouteOptions();
+    }
+
+    /** 查询当前用户节点可选择的启用连接，不返回加密或脱敏连接参数。 */
+    @GetMapping("/connection-options")
+    @RequiredPermission("workflow:node:list")
+    public List<WorkflowConnectionService.ConnectionOption> connectionOptions() {
+        return connectionService.connectionOptions();
     }
 
     /** 创建节点模板。 */

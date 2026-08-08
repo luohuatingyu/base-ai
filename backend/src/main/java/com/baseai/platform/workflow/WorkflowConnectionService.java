@@ -53,6 +53,16 @@ public class WorkflowConnectionService {
             : jdbcTemplate.query(sql, (rs, row) -> mapView(rs), user.id());
     }
 
+    /** 返回当前用户拥有的启用连接选项，不读取或解密敏感配置。 */
+    public List<ConnectionOption> connectionOptions() {
+        Long ownerId = AuthContext.require().id();
+        return jdbcTemplate.query("""
+            SELECT id,code,name,connection_type FROM workflow_connection
+            WHERE voided=false AND enabled=true AND owner_user_id=? ORDER BY id DESC
+            """, (rs, row) -> new ConnectionOption(rs.getLong("id"), rs.getString("code"), rs.getString("name"),
+                rs.getString("connection_type")), ownerId);
+    }
+
     /** 创建由当前用户拥有的加密连接。 */
     @Transactional
     public WorkflowModels.ConnectionView create(WorkflowModels.ConnectionCommand command) {
@@ -222,4 +232,5 @@ public class WorkflowConnectionService {
 
     public record StoredConnection(Long id, String code, String name, String connectionType, JsonNode config,
                                    Long ownerUserId, boolean enabled, LocalDateTime createdAt, LocalDateTime updatedAt) { }
+    public record ConnectionOption(Long id, String code, String name, String connectionType) { }
 }

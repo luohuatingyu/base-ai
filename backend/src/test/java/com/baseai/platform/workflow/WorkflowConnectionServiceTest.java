@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,6 +69,22 @@ class WorkflowConnectionServiceTest {
         authenticate(8L);
         assertThrows(BusinessException.class, () -> service.update(created.id(), new WorkflowModels.ConnectionCommand(
             "CACHE", "Cache", "REDIS", new ObjectMapper().readTree("{\"uri\":\"redis://cache:6379\"}"), true)));
+    }
+
+    /** 节点选择器只列出当前用户拥有的启用连接，且无需解密敏感配置。 */
+    @Test
+    void listsOnlyCurrentOwnerEnabledConnectionOptionsWithoutDecryptingConfig() {
+        jdbcTemplate.update("""
+            INSERT INTO workflow_connection(code,name,connection_type,config_encrypted,owner_user_id,enabled,voided)
+            VALUES ('MYSQL_MAIN','Main','MYSQL','not-a-ciphertext',7,true,false),
+                   ('CACHE_DISABLED','Cache','REDIS','not-a-ciphertext',7,false,false),
+                   ('OTHER','Other','S3','not-a-ciphertext',8,true,false),
+                   ('VOIDED','Voided','WEBHOOK','not-a-ciphertext',7,true,true)
+            """);
+
+        List<WorkflowConnectionService.ConnectionOption> options = service.connectionOptions();
+
+        assertEquals(List.of(new WorkflowConnectionService.ConnectionOption(1L, "MYSQL_MAIN", "Main", "MYSQL")), options);
     }
 
     /** 设置当前会话用户。 */

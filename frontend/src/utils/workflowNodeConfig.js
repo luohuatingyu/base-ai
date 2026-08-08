@@ -1,8 +1,8 @@
-/** 创建 AI 节点共用模型字段，并允许特定节点使用资源下拉编辑器。 */
-function aiModelFields(modelEditor = 'number') { return [
+/** 创建 AI 节点共用模型字段，指定模型统一通过资源下拉选择。 */
+function aiModelFields() { return [
   field('featureCode', 'text', 'DEFAULT'),
   field('modelType', 'select', 'text_model', ['text_model', 'vision_model']),
-  field('modelId', modelEditor, null),
+  field('modelId', 'model', null),
   field('temperature', 'number', 0),
   field('enableThinking', 'boolean', false),
   field('thinkingLevel', 'select', 'MEDIUM', ['LOW', 'MEDIUM', 'HIGH', 'EXTRA_HIGH', 'MAX', 'ULTRA'])
@@ -27,7 +27,7 @@ export const NODE_CONFIG_FIELDS = {
     field('timeoutSeconds', 'number', 30)
   ],
   AGENT: [
-    ...aiModelFields('model'),
+    ...aiModelFields(),
     field('systemPrompt', 'textarea', 'Use the provided tools to complete the task.'),
     field('prompt', 'textarea', ''),
     field('maxSteps', 'number', 5),
@@ -59,17 +59,17 @@ export const NODE_CONFIG_FIELDS = {
   PARAMETER_EXTRACTOR: [...aiModelFields(), field('input', 'text', '{{input}}'), field('schema', 'generic', { type: 'object' })],
   STRUCTURED_OUTPUT: [field('value', 'generic', ''), field('schema', 'generic', { type: 'object' })],
   DOCUMENT_EXTRACTOR: [field('content', 'textarea', ''), field('base64', 'textarea', ''), field('fileName', 'text', ''), field('maxCharacters', 'number', 1000000)],
-  WEBHOOK_TRIGGER: [field('connectionId', 'number', null)],
+  WEBHOOK_TRIGGER: [field('connectionId', 'connection', null)],
   SCHEDULE_TRIGGER: [field('cron', 'text', ''), field('zoneId', 'text', 'Asia/Shanghai')],
-  EMAIL_SEND: [field('routeId', 'number', null), field('subject', 'text', ''), field('body', 'textarea', '')],
-  IM_NOTIFY: [field('connectionId', 'number', null), field('body', 'generic', {}), field('contentType', 'text', 'application/json'), field('timeoutSeconds', 'number', 15)],
-  SQL_QUERY: [field('connectionId', 'number', null), field('query', 'textarea', ''), field('parameters', 'generic', []), field('timeoutSeconds', 'number', 30), field('maxRows', 'number', 1000)],
-  REDIS_COMMAND: [field('connectionId', 'number', null), field('command', 'text', 'GET'), field('arguments', 'generic', [])],
-  S3_OBJECT: [field('connectionId', 'number', null), field('operation', 'select', 'GET', ['GET', 'PUT', 'LIST', 'DELETE']), field('bucket', 'text', ''), field('key', 'text', ''), field('prefix', 'text', ''), field('content', 'text', ''), field('base64', 'textarea', ''), field('contentType', 'text', 'application/octet-stream'), field('maxKeys', 'number', 100)],
-  KAFKA_PUBLISH: [field('connectionId', 'number', null), field('topic', 'text', ''), field('key', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
-  KAFKA_TRIGGER: [field('connectionId', 'number', null), field('topic', 'text', ''), field('groupId', 'text', '')],
-  RABBITMQ_PUBLISH: [field('connectionId', 'number', null), field('exchange', 'text', ''), field('routingKey', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
-  RABBITMQ_TRIGGER: [field('connectionId', 'number', null), field('queue', 'text', ''), field('exchange', 'text', ''), field('routingKey', 'text', '')]
+  EMAIL_SEND: [field('routeId', 'mailRoute', null), field('subject', 'text', ''), field('body', 'textarea', '')],
+  IM_NOTIFY: [field('connectionId', 'connection', null), field('body', 'generic', {}), field('contentType', 'text', 'application/json'), field('timeoutSeconds', 'number', 15)],
+  SQL_QUERY: [field('connectionId', 'connection', null), field('query', 'textarea', ''), field('parameters', 'generic', []), field('timeoutSeconds', 'number', 30), field('maxRows', 'number', 1000)],
+  REDIS_COMMAND: [field('connectionId', 'connection', null), field('command', 'text', 'GET'), field('arguments', 'generic', [])],
+  S3_OBJECT: [field('connectionId', 'connection', null), field('operation', 'select', 'GET', ['GET', 'PUT', 'LIST', 'DELETE']), field('bucket', 'text', ''), field('key', 'text', ''), field('prefix', 'text', ''), field('content', 'text', ''), field('base64', 'textarea', ''), field('contentType', 'text', 'application/octet-stream'), field('maxKeys', 'number', 100)],
+  KAFKA_PUBLISH: [field('connectionId', 'connection', null), field('topic', 'text', ''), field('key', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
+  KAFKA_TRIGGER: [field('connectionId', 'connection', null), field('topic', 'text', ''), field('groupId', 'text', '')],
+  RABBITMQ_PUBLISH: [field('connectionId', 'connection', null), field('exchange', 'text', ''), field('routingKey', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
+  RABBITMQ_TRIGGER: [field('connectionId', 'connection', null), field('queue', 'text', ''), field('exchange', 'text', ''), field('routingKey', 'text', '')]
 }
 
 const COMMON_EXECUTION_FIELDS = [
@@ -86,6 +86,12 @@ export const WORKFLOW_NODE_TYPES = Object.keys(NODE_CONFIG_FIELDS)
 
 export const CONDITION_OPERATORS = ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'CONTAINS', 'EXISTS', 'EMPTY']
 export const CONFIG_VALUE_TYPES = ['string', 'number', 'boolean', 'null', 'object', 'array']
+const NODE_CONNECTION_TYPES = {
+  SQL_QUERY: ['MYSQL', 'POSTGRESQL'], REDIS_COMMAND: ['REDIS'], S3_OBJECT: ['S3'],
+  KAFKA_PUBLISH: ['KAFKA'], KAFKA_TRIGGER: ['KAFKA'],
+  RABBITMQ_PUBLISH: ['RABBITMQ'], RABBITMQ_TRIGGER: ['RABBITMQ'],
+  IM_NOTIFY: ['WEBHOOK'], WEBHOOK_TRIGGER: ['WEBHOOK']
+}
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const REQUIRED_CONFIG_FIELDS = {
   HTTP: ['url'], AGENT: ['tools'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
@@ -216,7 +222,7 @@ export function extraConfigKeys(config, nodeType) {
   return Object.keys(config || {}).filter(key => !known.has(key))
 }
 
-/** 按当前模型类型筛选 Agent 可选模型，兼容后续动态扩展的类型编码。 */
+/** 按当前模型类型筛选 AI 节点可选模型，兼容后续动态扩展的类型编码。 */
 export function filterWorkflowModelOptions(options, modelType) {
   const type = String(modelType || 'text_model').trim().toLowerCase()
   return (options || []).filter(option => Array.isArray(option?.supportedModelTypes)
@@ -234,4 +240,27 @@ export function compatibleWorkflowModelId(options, modelType, modelId) {
   const normalizedId = Number(modelId)
   return Number.isFinite(normalizedId)
     && filterWorkflowModelOptions(options, modelType).some(option => option.id === normalizedId) ? normalizedId : null
+}
+
+/** 按节点运行时规则筛选当前节点允许使用的连接类型。 */
+export function filterWorkflowConnectionOptions(options, nodeType) {
+  const allowed = new Set(NODE_CONNECTION_TYPES[String(nodeType || '').toUpperCase()] || [])
+  return (options || []).filter(option => allowed.has(String(option?.connectionType || '').toUpperCase()))
+}
+
+/** 生成不包含敏感连接参数的稳定下拉标签。 */
+export function workflowConnectionOptionLabel(option = {}) {
+  return `${option.name || option.code || option.id} (${option.code || '-'}) · ${option.connectionType || '-'}`
+}
+
+/** 生成邮件业务名称和编码组成的稳定下拉标签。 */
+export function workflowMailRouteOptionLabel(option = {}) {
+  return `${option.name || option.businessCode || option.id} (${option.businessCode || '-'})`
+}
+
+/** 保留选项列表中存在的数字资源 ID，空值、非法值或失效值统一返回 null。 */
+export function compatibleWorkflowResourceId(options, resourceId) {
+  if (resourceId === null || resourceId === undefined || resourceId === '') return null
+  const normalizedId = Number(resourceId)
+  return Number.isFinite(normalizedId) && (options || []).some(option => option.id === normalizedId) ? normalizedId : null
 }

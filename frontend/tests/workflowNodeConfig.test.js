@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { cloneConfig, compatibleWorkflowModelId, configValueType, createConfigValue, extraConfigKeys, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldRequirement, nodeConfigFields, workflowModelOptionLabel, WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
+import { cloneConfig, compatibleWorkflowModelId, compatibleWorkflowResourceId, configValueType, createConfigValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldRequirement, nodeConfigFields, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
@@ -32,8 +32,16 @@ test('全部原生节点都有可视化配置定义', () => {
   assert.deepEqual(nodeConfigFields('WEBHOOK_TRIGGER').map(field => field.key), ['connectionId'])
   assert.deepEqual(nodeConfigFields('SCHEDULE_TRIGGER').map(field => field.key), ['cron', 'zoneId'])
   assert.deepEqual(nodeConfigFields('LLM').slice(-3).map(field => field.key), ['maxAttempts', 'retryDelayMillis', 'onError'])
-  assert.equal(nodeConfigFields('AGENT').find(field => field.key === 'modelId').editor, 'model')
-  assert.equal(nodeConfigFields('LLM').find(field => field.key === 'modelId').editor, 'number')
+  for (const type of ['LLM', 'AGENT', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR']) {
+    assert.equal(nodeConfigFields(type).find(field => field.key === 'modelId').editor, 'model', type)
+  }
+  assert.equal(nodeConfigFields('EMAIL_SEND').find(field => field.key === 'routeId').editor, 'mailRoute')
+  for (const type of ['WEBHOOK_TRIGGER', 'IM_NOTIFY', 'SQL_QUERY', 'REDIS_COMMAND', 'S3_OBJECT', 'KAFKA_PUBLISH',
+    'KAFKA_TRIGGER', 'RABBITMQ_PUBLISH', 'RABBITMQ_TRIGGER']) {
+    assert.equal(nodeConfigFields(type).find(field => field.key === 'connectionId').editor, 'connection', type)
+  }
+  assert.equal(Object.values(WORKFLOW_NODE_TYPES).flatMap(type => nodeConfigFields(type))
+    .some(field => ['modelId', 'routeId', 'connectionId'].includes(field.key) && field.editor === 'number'), false)
 })
 
 test('Agent 模型下拉按动态模型类型过滤并生成可识别标签', () => {
@@ -53,7 +61,30 @@ test('Agent 模型下拉按动态模型类型过滤并生成可识别标签', ()
   assert.equal(compatibleWorkflowModelId(options, 'text_model', 'invalid'), null)
 })
 
-test('Agent 指定模型使用可搜索可清空下拉并在类型不兼容时移除旧值', () => {
+test('连接下拉按节点运行时允许类型过滤并生成可识别标签', () => {
+  const options = [
+    { id: 1, code: 'MYSQL_MAIN', name: '主库', connectionType: 'MYSQL' },
+    { id: 2, code: 'PG_REPORT', name: '报表库', connectionType: 'POSTGRESQL' },
+    { id: 3, code: 'CACHE', name: '缓存', connectionType: 'REDIS' },
+    { id: 4, code: 'NOTICE', name: '通知', connectionType: 'WEBHOOK' }
+  ]
+  assert.deepEqual(filterWorkflowConnectionOptions(options, 'SQL_QUERY').map(option => option.id), [1, 2])
+  assert.deepEqual(filterWorkflowConnectionOptions(options, 'REDIS_COMMAND').map(option => option.id), [3])
+  assert.deepEqual(filterWorkflowConnectionOptions(options, 'WEBHOOK_TRIGGER').map(option => option.id), [4])
+  assert.deepEqual(filterWorkflowConnectionOptions(options, 'UNKNOWN'), [])
+  assert.equal(workflowConnectionOptionLabel(options[0]), '主库 (MYSQL_MAIN) · MYSQL')
+})
+
+test('邮件路由和连接资源 ID 仅保留现有数字选项', () => {
+  const options = [{ id: 7, businessCode: 'DEFAULT', name: '默认邮件路由' }]
+  assert.equal(workflowMailRouteOptionLabel(options[0]), '默认邮件路由 (DEFAULT)')
+  assert.equal(compatibleWorkflowResourceId(options, '7'), 7)
+  assert.equal(compatibleWorkflowResourceId(options, 8), null)
+  assert.equal(compatibleWorkflowResourceId(options, ''), null)
+  assert.equal(compatibleWorkflowResourceId(options, 'invalid'), null)
+})
+
+test('全部 AI 节点指定模型使用可搜索可清空下拉并在类型不兼容时移除旧值', () => {
   assert.match(configEditorSource, /field\.editor === 'model'/)
   assert.match(configEditorSource, /filterable clearable[^>]*:loading="modelOptionsLoading"/)
   assert.match(configEditorSource, /http\.get\('\/workflow\/model-options'\)/)
@@ -61,6 +92,19 @@ test('Agent 指定模型使用可搜索可清空下拉并在类型不兼容时�
   assert.match(configEditorSource, /compatibleWorkflowModelId\(modelOptions\.value, currentModelType\.value, config\.value\.modelId\) === null/)
   assert.match(configEditorSource, /removeField\('modelId'\)/)
   assert.doesNotMatch(configEditorSource, /field\.editor === 'model'[\s\S]{0,300}<el-input-number/)
+})
+
+test('邮件路由和连接配置使用精简资源接口且加载失败时保留原值', () => {
+  assert.match(configEditorSource, /field\.editor === 'mailRoute'/)
+  assert.match(configEditorSource, /field\.editor === 'connection'/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/mail-route-options'\)/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/connection-options'\)/)
+  assert.match(configEditorSource, /workflowMailRouteOptionLabel\(option\)/)
+  assert.match(configEditorSource, /workflowConnectionOptionLabel\(option\)/)
+  assert.match(configEditorSource, /if \(!mailRouteOptionsLoaded\.value \|\| !hasField\('routeId'\)\) return/)
+  assert.match(configEditorSource, /if \(!connectionOptionsLoaded\.value \|\| !hasField\('connectionId'\)\) return/)
+  assert.match(configEditorSource, /catch \{ mailRouteOptionsError\.value = true \}/)
+  assert.match(configEditorSource, /catch \{ connectionOptionsError\.value = true \}/)
 })
 
 test('Agent 指定模型下拉限制为输入框宽度并为溢出标签提供完整标题', () => {

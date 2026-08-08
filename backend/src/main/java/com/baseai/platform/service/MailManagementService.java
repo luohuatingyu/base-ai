@@ -94,6 +94,17 @@ public class MailManagementService {
             .map(this::routeView).toList();
     }
 
+    /** 返回工作流节点可选择的启用可发送路由，不暴露账户和收件人配置。 */
+    public List<RouteOption> workflowRouteOptions() {
+        return routeRepository.findAll().stream()
+            .filter(route -> Boolean.TRUE.equals(route.getEnabled()) && route.getAccountId() != null
+                && !splitAddresses(route.getToAddresses()).isEmpty())
+            .filter(route -> accountRepository.findById(route.getAccountId())
+                .filter(account -> Boolean.TRUE.equals(account.getEnabled())).isPresent())
+            .sorted(Comparator.comparing(MailRoute::getBusinessCode))
+            .map(route -> new RouteOption(route.getId(), route.getBusinessCode(), route.getName())).toList();
+    }
+
     /** 幂等创建始终启用的 DEFAULT 路由，未配置邮箱时保留待配置状态。 */
     @Transactional
     public synchronized RouteView ensureDefaultRoute() {
@@ -312,6 +323,7 @@ public class MailManagementService {
                                List<String> ccAddresses, Boolean enabled) { }
     public record RouteView(Long id, String businessCode, String name, Long accountId, String accountName,
                             List<String> toAddresses, List<String> ccAddresses, Boolean enabled, boolean configured) { }
+    public record RouteOption(Long id, String businessCode, String name) { }
     public record ResolvedRoute(String businessCode, String host, Integer port, String username,
                                 String fromAddress, String tlsMode, @JsonIgnore String password, List<String> toAddresses,
                                 List<String> ccAddresses) {

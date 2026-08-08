@@ -147,6 +147,27 @@ class MailManagementServiceTest {
         assertThat(options).extracting(MailManagementService.AccountOption::id).containsExactly(1L);
     }
 
+    /** 工作流邮件路由选项仅返回启用且具备可用账户和收件人的精简记录。 */
+    @Test
+    void listsOnlyUsableWorkflowRouteOptionsWithoutRecipientData() {
+        MailAccount enabledAccount = account(true);
+        MailAccount disabledAccount = account(false);
+        setId(disabledAccount, 2L);
+        MailRoute usable = route("ORDER", enabledAccount.getId(), true);
+        MailRoute disabled = route("DISABLED", enabledAccount.getId(), false);
+        MailRoute pending = route("PENDING", null, true);
+        MailRoute unavailableAccount = route("NO_ACCOUNT", disabledAccount.getId(), true);
+        setId(usable, 21L); setId(disabled, 22L); setId(pending, 23L); setId(unavailableAccount, 24L);
+        when(routeRepository.findAll()).thenReturn(List.of(disabled, pending, unavailableAccount, usable));
+        when(accountRepository.findById(enabledAccount.getId())).thenReturn(Optional.of(enabledAccount));
+        when(accountRepository.findById(disabledAccount.getId())).thenReturn(Optional.of(disabledAccount));
+
+        List<MailManagementService.RouteOption> options = service.workflowRouteOptions();
+
+        assertThat(options).containsExactly(new MailManagementService.RouteOption(21L, "ORDER", "通知路由"));
+        assertThat(options.get(0).toString()).doesNotContain("ops@example.com");
+    }
+
     /** 被路由引用的邮箱账户不得删除。 */
     @Test
     void rejectsDeletingReferencedAccount() {

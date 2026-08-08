@@ -39,6 +39,30 @@
               </el-select>
               <el-alert v-if="modelOptionsError" :title="t('workflowConfig.modelOptionsFailed')" type="error" show-icon :closable="false" />
             </template>
+            <template v-else-if="field.editor === 'mailRoute'">
+              <el-select :model-value="fieldValue(field)" filterable clearable fit-input-width :loading="mailRouteOptionsLoading"
+                         :placeholder="t('workflowConfig.selectMailRoute')" :no-data-text="t('workflowConfig.noMailRoutes')"
+                         @update:model-value="setResourceId('routeId', $event)">
+                <template #label="{ label }"><el-text class="workflow-model-option-label" truncated>{{ label }}</el-text></template>
+                <el-option v-for="option in mailRouteOptions" :key="option.id"
+                           :label="workflowMailRouteOptionLabel(option)" :value="option.id">
+                  <el-text class="workflow-model-option-label" truncated>{{ workflowMailRouteOptionLabel(option) }}</el-text>
+                </el-option>
+              </el-select>
+              <el-alert v-if="mailRouteOptionsError" :title="t('workflowConfig.mailRouteOptionsFailed')" type="error" show-icon :closable="false" />
+            </template>
+            <template v-else-if="field.editor === 'connection'">
+              <el-select :model-value="fieldValue(field)" filterable clearable fit-input-width :loading="connectionOptionsLoading"
+                         :placeholder="t('workflowConfig.selectConnection')" :no-data-text="t('workflowConfig.noCompatibleConnections')"
+                         @update:model-value="setResourceId('connectionId', $event)">
+                <template #label="{ label }"><el-text class="workflow-model-option-label" truncated>{{ label }}</el-text></template>
+                <el-option v-for="option in compatibleConnectionOptions" :key="option.id"
+                           :label="workflowConnectionOptionLabel(option)" :value="option.id">
+                  <el-text class="workflow-model-option-label" truncated>{{ workflowConnectionOptionLabel(option) }}</el-text>
+                </el-option>
+              </el-select>
+              <el-alert v-if="connectionOptionsError" :title="t('workflowConfig.connectionOptionsFailed')" type="error" show-icon :closable="false" />
+            </template>
             <div v-else-if="field.editor === 'condition'" class="workflow-condition-editor">
               <el-input :model-value="condition(field).left" :placeholder="t('workflowConfig.conditionLeft')" @update:model-value="setCondition(field, 'left', $event)" />
               <el-select :model-value="condition(field).operator" @update:model-value="setCondition(field, 'operator', $event)">
@@ -77,7 +101,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import WorkflowConfigValueEditor from './WorkflowConfigValueEditor.vue'
-import { compatibleWorkflowModelId, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, extraConfigKeys, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFields, workflowModelOptionLabel } from '../utils/workflowNodeConfig'
+import { compatibleWorkflowModelId, compatibleWorkflowResourceId, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFields, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel } from '../utils/workflowNodeConfig'
 
 const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, nodeType: { type: String, required: true } })
 const emit = defineEmits(['update:modelValue'])
@@ -92,30 +116,72 @@ const modelOptions = ref([])
 const modelOptionsLoading = ref(false)
 const modelOptionsLoaded = ref(false)
 const modelOptionsError = ref(false)
+const mailRouteOptions = ref([])
+const mailRouteOptionsLoading = ref(false)
+const mailRouteOptionsLoaded = ref(false)
+const mailRouteOptionsError = ref(false)
+const connectionOptions = ref([])
+const connectionOptionsLoading = ref(false)
+const connectionOptionsLoaded = ref(false)
+const connectionOptionsError = ref(false)
 const fields = computed(() => nodeConfigFields(props.nodeType))
 const extraKeys = computed(() => extraConfigKeys(config.value, props.nodeType))
 const missingRequirements = computed(() => missingNodeConfigRequirements(props.nodeType, config.value))
 const requiredHint = computed(() => t('workflowConfig.requiredHint', { fields: missingRequirements.value.map(requirementLabel).join(t('workflowConfig.fieldSeparator')) }))
 const currentModelType = computed(() => config.value.modelType || 'text_model')
 const compatibleModelOptions = computed(() => filterWorkflowModelOptions(modelOptions.value, currentModelType.value))
+const compatibleConnectionOptions = computed(() => filterWorkflowConnectionOptions(connectionOptions.value, props.nodeType))
+const hasModelSelector = computed(() => fields.value.some(field => field.editor === 'model'))
+const hasMailRouteSelector = computed(() => fields.value.some(field => field.editor === 'mailRoute'))
+const hasConnectionSelector = computed(() => fields.value.some(field => field.editor === 'connection'))
 
 watch(() => props.modelValue, value => {
   const next = cloneConfig(value)
   if (JSON.stringify(next) !== JSON.stringify(config.value)) config.value = next
 }, { deep: true })
-watch(() => props.nodeType, type => { if (String(type).toUpperCase() === 'AGENT') loadModelOptions() }, { immediate: true })
+watch(hasModelSelector, enabled => { if (enabled) loadModelOptions() }, { immediate: true })
+watch(hasMailRouteSelector, enabled => { if (enabled) loadMailRouteOptions() }, { immediate: true })
+watch(hasConnectionSelector, enabled => { if (enabled) loadConnectionOptions() }, { immediate: true })
 watch([currentModelType, compatibleModelOptions], () => {
-  if (!modelOptionsLoaded.value || !hasField('modelId')) return
+  if (!hasModelSelector.value || !modelOptionsLoaded.value || !hasField('modelId')) return
   if (compatibleWorkflowModelId(modelOptions.value, currentModelType.value, config.value.modelId) === null) removeField('modelId')
 })
+watch([hasMailRouteSelector, mailRouteOptions], () => {
+  if (!hasMailRouteSelector.value) return
+  if (!mailRouteOptionsLoaded.value || !hasField('routeId')) return
+  if (compatibleWorkflowResourceId(mailRouteOptions.value, config.value.routeId) === null) removeField('routeId')
+})
+watch([hasConnectionSelector, compatibleConnectionOptions], () => {
+  if (!hasConnectionSelector.value) return
+  if (!connectionOptionsLoaded.value || !hasField('connectionId')) return
+  if (compatibleWorkflowResourceId(compatibleConnectionOptions.value, config.value.connectionId) === null) removeField('connectionId')
+})
 
-/** 按需加载 Agent 可选择的启用模型，失败时保留当前配置避免误清理。 */
+/** 按需加载 AI 节点可选择的启用模型，失败时保留当前配置避免误清理。 */
 async function loadModelOptions() {
   if (modelOptionsLoaded.value || modelOptionsLoading.value) return
   modelOptionsLoading.value = true; modelOptionsError.value = false
   try { modelOptions.value = (await http.get('/workflow/model-options')).data || []; modelOptionsLoaded.value = true }
   catch { modelOptionsError.value = true }
   finally { modelOptionsLoading.value = false }
+}
+
+/** 按需加载邮件节点可选择的可发送路由，失败时保留当前配置。 */
+async function loadMailRouteOptions() {
+  if (mailRouteOptionsLoaded.value || mailRouteOptionsLoading.value) return
+  mailRouteOptionsLoading.value = true; mailRouteOptionsError.value = false
+  try { mailRouteOptions.value = (await http.get('/workflow/mail-route-options')).data || []; mailRouteOptionsLoaded.value = true }
+  catch { mailRouteOptionsError.value = true }
+  finally { mailRouteOptionsLoading.value = false }
+}
+
+/** 按需加载当前用户拥有的启用连接，失败时保留当前配置。 */
+async function loadConnectionOptions() {
+  if (connectionOptionsLoaded.value || connectionOptionsLoading.value) return
+  connectionOptionsLoading.value = true; connectionOptionsError.value = false
+  try { connectionOptions.value = (await http.get('/workflow/connection-options')).data || []; connectionOptionsLoaded.value = true }
+  catch { connectionOptionsError.value = true }
+  finally { connectionOptionsLoading.value = false }
 }
 
 /** 返回字段是否已写入当前配置。 */
@@ -163,6 +229,8 @@ function setNumber(key, value) { setField(key, Number.isFinite(value) ? value : 
 function toggleConfigured(field, enabled) { enabled ? setField(field.key, cloneValue(field.defaultValue)) : removeField(field.key) }
 /** 保存下拉选择的模型 ID；清空选择时移除可选配置并回退能力路由。 */
 function setModelId(value) { value === null || value === undefined || value === '' ? removeField('modelId') : setField('modelId', Number(value)) }
+/** 保存资源下拉选择的数字 ID；清空选择时移除字段并恢复缺失提示。 */
+function setResourceId(key, value) { value === null || value === undefined || value === '' ? removeField(key) : setField(key, Number(value)) }
 /** 删除配置字段并保留其他未知字段。 */
 function removeField(key) { const next = { ...config.value }; delete next[key]; config.value = next; emit('update:modelValue', cloneConfig(next)) }
 /** 返回结构化条件并补齐默认操作符。 */
