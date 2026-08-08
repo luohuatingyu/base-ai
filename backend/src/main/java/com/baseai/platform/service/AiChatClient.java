@@ -90,12 +90,14 @@ public class AiChatClient {
 
         // 标准化功能特性码：如果为空或空白则使用默认值"chat"
         String normalizedFeature = featureCode == null || featureCode.isBlank() ? "chat" : featureCode.trim();
-        String normalizedModelType = modelType == null || modelType.isBlank() ? "text_model" : modelType;
+        String requestedModelType = modelType == null ? "" : modelType.trim();
+        String normalizedModelType = requestedModelType.isBlank() ? "text_model" : requestedModelType;
 
         // 解析路由配置：指定了 modelId 走单模型直连，否则走按类型筛选后的能力路由
         LlmManagementService.WorkerRoute route = modelId==null
             ?llmManagementService.resolveActive(normalizedFeature,normalizedModelType)
-            :llmManagementService.resolveModel(modelId,normalizedModelType,Boolean.TRUE.equals(enableThinking),thinkingLevel);
+            :llmManagementService.resolveModel(modelId,requestedModelType,Boolean.TRUE.equals(enableThinking),thinkingLevel);
+        if (modelId != null && requestedModelType.isBlank()) normalizedModelType = preferredModelType(route);
 
         // 获取当前追踪ID作为父追踪ID
         String parentTraceId = TraceContextHolder.currentTraceId().orElse(null);
@@ -147,6 +149,13 @@ public class AiChatClient {
      * @param content 消息内容文本，或符合 OpenAI-compatible 规范的多模态内容数组
      */
     public record Message(String role, Object content) {}
+
+    /** 指定模型未声明类型时优先使用文本类型，否则使用模型支持列表中的首项。 */
+    private String preferredModelType(LlmManagementService.WorkerRoute route) {
+        List<String> types = route.candidates().isEmpty() ? List.of() : route.candidates().get(0).supportedModelTypes();
+        if (types.stream().anyMatch("text_model"::equalsIgnoreCase)) return "text_model";
+        return types.stream().findFirst().orElse("text_model");
+    }
 
     /**
      * LLM对话请求对象

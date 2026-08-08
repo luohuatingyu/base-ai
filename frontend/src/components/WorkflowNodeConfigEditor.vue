@@ -101,7 +101,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import WorkflowConfigValueEditor from './WorkflowConfigValueEditor.vue'
-import { compatibleWorkflowModelId, compatibleWorkflowResourceId, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFields, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel } from '../utils/workflowNodeConfig'
+import { compatibleWorkflowModelId, compatibleWorkflowResourceId, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFields, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel } from '../utils/workflowNodeConfig'
 
 const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, nodeType: { type: String, required: true } })
 const emit = defineEmits(['update:modelValue'])
@@ -124,12 +124,13 @@ const connectionOptions = ref([])
 const connectionOptionsLoading = ref(false)
 const connectionOptionsLoaded = ref(false)
 const connectionOptionsError = ref(false)
-const fields = computed(() => nodeConfigFields(props.nodeType))
+const fields = computed(() => nodeConfigFields(props.nodeType, config.value).filter(field => nodeConfigFieldApplicable(props.nodeType, field.key, config.value)))
 const extraKeys = computed(() => extraConfigKeys(config.value, props.nodeType))
 const missingRequirements = computed(() => missingNodeConfigRequirements(props.nodeType, config.value))
 const requiredHint = computed(() => t('workflowConfig.requiredHint', { fields: missingRequirements.value.map(requirementLabel).join(t('workflowConfig.fieldSeparator')) }))
 const currentModelType = computed(() => config.value.modelType || 'text_model')
-const compatibleModelOptions = computed(() => filterWorkflowModelOptions(modelOptions.value, currentModelType.value))
+const compatibleModelOptions = computed(() => config.value.modelMode === 'DIRECT'
+  ? modelOptions.value : filterWorkflowModelOptions(modelOptions.value, currentModelType.value))
 const compatibleConnectionOptions = computed(() => filterWorkflowConnectionOptions(connectionOptions.value, props.nodeType))
 const hasModelSelector = computed(() => fields.value.some(field => field.editor === 'model'))
 const hasMailRouteSelector = computed(() => fields.value.some(field => field.editor === 'mailRoute'))
@@ -144,7 +145,8 @@ watch(hasMailRouteSelector, enabled => { if (enabled) loadMailRouteOptions() }, 
 watch(hasConnectionSelector, enabled => { if (enabled) loadConnectionOptions() }, { immediate: true })
 watch([currentModelType, compatibleModelOptions], () => {
   if (!hasModelSelector.value || !modelOptionsLoaded.value || !hasField('modelId')) return
-  if (compatibleWorkflowModelId(modelOptions.value, currentModelType.value, config.value.modelId) === null) removeField('modelId')
+  const type = config.value.modelMode === 'DIRECT' ? null : currentModelType.value
+  if (compatibleWorkflowModelId(modelOptions.value, type, config.value.modelId) === null) removeField('modelId')
 })
 watch([hasMailRouteSelector, mailRouteOptions], () => {
   if (!hasMailRouteSelector.value) return

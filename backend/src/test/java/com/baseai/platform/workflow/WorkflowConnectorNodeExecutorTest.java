@@ -103,6 +103,22 @@ class WorkflowConnectorNodeExecutorTest {
         assertEquals("accepted", notification.path("body").asText());
     }
 
+    /** 邮件节点主题必填但正文可省略，省略时仍以空正文调用受管邮件客户端。 */
+    @Test
+    void sendsEmailWhenBodyIsOmitted() throws Exception {
+        MailManagementService.ResolvedRoute route = new MailManagementService.ResolvedRoute("ORDER", "smtp.example.com", 465,
+            "app", "app@example.com", "SSL", "secret", List.of("ops@example.com"), List.of());
+        when(mailManagementService.resolveRoute(5L)).thenReturn(route);
+        when(mailDeliveryClient.send(route, "Order ready", "")).thenReturn(Map.of("sent", true));
+
+        JsonNode output = execute("EMAIL_SEND", objectMapper.readTree("""
+            {"routeId":5,"subject":"Order ready"}
+            """)).output();
+
+        assertEquals(true, output.path("sent").asBoolean());
+        verify(mailDeliveryClient).send(route, "Order ready", "");
+    }
+
     /** 连接限定的存储和消息目的地必须在建立外部连接前拒绝越界配置。 */
     @ParameterizedTest
     @MethodSource("forbiddenDestinations")
@@ -122,9 +138,9 @@ class WorkflowConnectorNodeExecutorTest {
             Arguments.of("KAFKA_PUBLISH", "KAFKA", "{\"topicPrefix\":\"tenant.\"}",
                 "{\"connectionId\":1,\"topic\":\"other.events\",\"value\":{}}", "workflow.messageDestinationForbidden"),
             Arguments.of("RABBITMQ_PUBLISH", "RABBITMQ", "{\"exchangePrefix\":\"tenant.\"}",
-                "{\"connectionId\":1,\"exchange\":\"other.events\",\"value\":{}}", "workflow.messageDestinationForbidden"),
+                "{\"connectionId\":1,\"destinationMode\":\"EXCHANGE\",\"exchange\":\"other.events\",\"value\":{}}", "workflow.messageDestinationForbidden"),
             Arguments.of("REDIS_COMMAND", "REDIS", "{\"uri\":\"redis://127.0.0.1:6379\"}",
-                "{\"connectionId\":1,\"command\":\"GET\",\"arguments\":{}}", "workflow.dataInputInvalid")
+                "{\"connectionId\":1,\"command\":\"GET\",\"arguments\":[null]}", "workflow.dataInputInvalid")
         );
     }
 

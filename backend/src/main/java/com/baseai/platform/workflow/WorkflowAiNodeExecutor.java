@@ -37,6 +37,7 @@ public class WorkflowAiNodeExecutor implements WorkflowNodeExecutor {
     @Override
     public Result execute(Request request) {
         JsonNode resolved = expressions.resolve(request.config(), request.context());
+        WorkflowNodeConfigValidator.validateResolved(request.type(), resolved);
         return "QUESTION_CLASSIFIER".equals(request.type()) ? classify(resolved) : Result.output(extract(resolved));
     }
 
@@ -79,8 +80,9 @@ public class WorkflowAiNodeExecutor implements WorkflowNodeExecutor {
         messages.add(new AiChatClient.Message("system", system));
         messages.add(new AiChatClient.Message("user", input));
         Long modelId = config.hasNonNull("modelId") ? config.path("modelId").asLong() : null;
+        String modelType = config.hasNonNull("modelType") ? config.path("modelType").asText() : modelId == null ? "text_model" : "";
         AiChatClient.ChatResult result = aiChatClient.chat(config.path("featureCode").asText("DEFAULT"),
-            config.path("modelType").asText("text_model"), messages, config.path("temperature").asDouble(0),
+            modelType, messages, config.path("temperature").asDouble(0),
             config.has("enableThinking") ? config.path("enableThinking").asBoolean() : null,
             config.path("thinkingLevel").asText(null), modelId);
         String content = result.content() == null ? "" : result.content().trim();

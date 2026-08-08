@@ -1,5 +1,6 @@
 /** 创建 AI 节点共用模型字段，指定模型统一通过资源下拉选择。 */
 function aiModelFields() { return [
+  field('modelMode', 'select', null, ['ROUTE', 'DIRECT']),
   field('featureCode', 'text', 'DEFAULT'),
   field('modelType', 'select', 'text_model', ['text_model', 'vision_model']),
   field('modelId', 'model', null),
@@ -45,7 +46,7 @@ export const NODE_CONFIG_FIELDS = {
   SWITCH: [field('cases', 'generic', []), field('defaultBranch', 'text', 'default')],
   MERGE: [field('values', 'generic', []), field('mode', 'select', 'ARRAY', ['ARRAY', 'OBJECT'])],
   SUB_WORKFLOW: [field('workflowCode', 'text', ''), field('inputs', 'generic', {})],
-  WAIT: [field('seconds', 'number', 1), field('milliseconds', 'number', 1000)],
+  WAIT: [field('durationMode', 'select', null, ['SECONDS', 'MILLISECONDS']), field('seconds', 'number', 1), field('milliseconds', 'number', 1000)],
   SET_VARIABLE: [field('output', 'generic', {})],
   TEMPLATE: [field('template', 'textarea', '')],
   JSON_PARSE: [field('value', 'generic', '')],
@@ -58,17 +59,17 @@ export const NODE_CONFIG_FIELDS = {
   QUESTION_CLASSIFIER: [...aiModelFields(), field('input', 'text', '{{input}}'), field('categories', 'generic', [])],
   PARAMETER_EXTRACTOR: [...aiModelFields(), field('input', 'text', '{{input}}'), field('schema', 'generic', { type: 'object' })],
   STRUCTURED_OUTPUT: [field('value', 'generic', ''), field('schema', 'generic', { type: 'object' })],
-  DOCUMENT_EXTRACTOR: [field('content', 'textarea', ''), field('base64', 'textarea', ''), field('fileName', 'text', ''), field('maxCharacters', 'number', 1000000)],
+  DOCUMENT_EXTRACTOR: [field('inputMode', 'select', null, ['TEXT', 'BASE64']), field('content', 'textarea', ''), field('base64', 'textarea', ''), field('fileName', 'text', ''), field('maxCharacters', 'number', 1000000)],
   WEBHOOK_TRIGGER: [field('connectionId', 'connection', null)],
   SCHEDULE_TRIGGER: [field('cron', 'text', ''), field('zoneId', 'text', 'Asia/Shanghai')],
   EMAIL_SEND: [field('routeId', 'mailRoute', null), field('subject', 'text', ''), field('body', 'textarea', '')],
   IM_NOTIFY: [field('connectionId', 'connection', null), field('body', 'generic', {}), field('contentType', 'text', 'application/json'), field('timeoutSeconds', 'number', 15)],
   SQL_QUERY: [field('connectionId', 'connection', null), field('query', 'textarea', ''), field('parameters', 'generic', []), field('timeoutSeconds', 'number', 30), field('maxRows', 'number', 1000)],
   REDIS_COMMAND: [field('connectionId', 'connection', null), field('command', 'text', 'GET'), field('arguments', 'generic', [])],
-  S3_OBJECT: [field('connectionId', 'connection', null), field('operation', 'select', 'GET', ['GET', 'PUT', 'LIST', 'DELETE']), field('bucket', 'text', ''), field('key', 'text', ''), field('prefix', 'text', ''), field('content', 'text', ''), field('base64', 'textarea', ''), field('contentType', 'text', 'application/octet-stream'), field('maxKeys', 'number', 100)],
+  S3_OBJECT: [field('connectionId', 'connection', null), field('operation', 'select', null, ['GET', 'PUT', 'LIST', 'DELETE']), field('bucket', 'text', ''), field('key', 'text', ''), field('prefix', 'text', ''), field('contentMode', 'select', null, ['TEXT', 'BASE64']), field('content', 'text', ''), field('base64', 'textarea', ''), field('contentType', 'text', 'application/octet-stream'), field('maxKeys', 'number', 100)],
   KAFKA_PUBLISH: [field('connectionId', 'connection', null), field('topic', 'text', ''), field('key', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
   KAFKA_TRIGGER: [field('connectionId', 'connection', null), field('topic', 'text', ''), field('groupId', 'text', '')],
-  RABBITMQ_PUBLISH: [field('connectionId', 'connection', null), field('exchange', 'text', ''), field('routingKey', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
+  RABBITMQ_PUBLISH: [field('connectionId', 'connection', null), field('destinationMode', 'select', null, ['EXCHANGE', 'DEFAULT_EXCHANGE']), field('exchange', 'text', ''), field('routingKey', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
   RABBITMQ_TRIGGER: [field('connectionId', 'connection', null), field('queue', 'text', ''), field('exchange', 'text', ''), field('routingKey', 'text', '')]
 }
 
@@ -83,6 +84,8 @@ Object.entries(NODE_CONFIG_FIELDS).forEach(([type, fields]) => {
 })
 
 export const WORKFLOW_NODE_TYPES = Object.keys(NODE_CONFIG_FIELDS)
+/** 记录全部纳入必填校验的原生节点，测试据此阻止新增节点遗漏规则。 */
+export const WORKFLOW_NODE_VALIDATION_TYPES = [...WORKFLOW_NODE_TYPES]
 
 export const CONDITION_OPERATORS = ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'CONTAINS', 'EXISTS', 'EMPTY']
 export const CONFIG_VALUE_TYPES = ['string', 'number', 'boolean', 'null', 'object', 'array']
@@ -94,32 +97,87 @@ const NODE_CONNECTION_TYPES = {
 }
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const REQUIRED_CONFIG_FIELDS = {
-  HTTP: ['url'], AGENT: ['tools'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
-  SWITCH: ['cases'], MERGE: ['values'], SUB_WORKFLOW: ['workflowCode'], SET_VARIABLE: ['output'], TEMPLATE: ['template'],
+  LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
+  SWITCH: ['cases', 'defaultBranch'], MERGE: ['mode', 'values'], SUB_WORKFLOW: ['workflowCode'], WAIT: ['durationMode'], SET_VARIABLE: ['output'], TEMPLATE: ['template'],
   JSON_PARSE: ['value'], JSON_VALIDATE: ['value', 'schema'], TRANSFORM: ['output'], FILTER: ['collection', 'condition'],
-  SORT: ['collection'], AGGREGATE: ['collection'], CSV: ['value'], QUESTION_CLASSIFIER: ['input', 'categories'],
-  PARAMETER_EXTRACTOR: ['input', 'schema'], STRUCTURED_OUTPUT: ['value', 'schema'], WEBHOOK_TRIGGER: ['connectionId'],
-  SCHEDULE_TRIGGER: ['cron'], EMAIL_SEND: ['routeId'], IM_NOTIFY: ['connectionId'], SQL_QUERY: ['connectionId', 'query'],
-  REDIS_COMMAND: ['connectionId', 'arguments'], S3_OBJECT: ['connectionId'], KAFKA_PUBLISH: ['connectionId', 'topic', 'value'],
+  SORT: ['collection', 'direction'], AGGREGATE: ['collection', 'operation'], CSV: ['operation', 'value'], QUESTION_CLASSIFIER: ['modelMode', 'input', 'categories'],
+  PARAMETER_EXTRACTOR: ['modelMode', 'input', 'schema'], STRUCTURED_OUTPUT: ['value', 'schema'], DOCUMENT_EXTRACTOR: ['inputMode'], WEBHOOK_TRIGGER: ['connectionId'],
+  SCHEDULE_TRIGGER: ['cron'], EMAIL_SEND: ['routeId', 'subject'], IM_NOTIFY: ['connectionId'], SQL_QUERY: ['connectionId', 'query'],
+  REDIS_COMMAND: ['connectionId', 'command', 'arguments'], S3_OBJECT: ['connectionId', 'operation'], KAFKA_PUBLISH: ['connectionId', 'topic', 'value'],
   KAFKA_TRIGGER: ['connectionId', 'topic'], RABBITMQ_PUBLISH: ['connectionId', 'value'], RABBITMQ_TRIGGER: ['connectionId', 'queue']
 }
 const CONDITIONAL_CONFIG_FIELDS = {
-  DOCUMENT_EXTRACTOR: ['content', 'base64'], S3_OBJECT: ['key'], RABBITMQ_PUBLISH: ['exchange', 'routingKey']
+  LLM: ['featureCode', 'modelType', 'modelId'], AGENT: ['featureCode', 'modelType', 'modelId'],
+  QUESTION_CLASSIFIER: ['featureCode', 'modelType', 'modelId'], PARAMETER_EXTRACTOR: ['featureCode', 'modelType', 'modelId'],
+  WAIT: ['seconds', 'milliseconds'], DOCUMENT_EXTRACTOR: ['content', 'base64'],
+  S3_OBJECT: ['key', 'contentMode', 'content', 'base64'], RABBITMQ_PUBLISH: ['destinationMode', 'exchange', 'routingKey']
 }
 
 /** 创建节点配置字段定义。 */
 function field(key, editor, defaultValue, options = []) { return { key, editor, defaultValue, options } }
 
 /** 返回节点类型支持的标准配置字段，并附加必填展示元数据。 */
-export function nodeConfigFields(nodeType) {
+export function nodeConfigFields(nodeType, config = undefined) {
   const type = String(nodeType || '').toUpperCase()
-  return (NODE_CONFIG_FIELDS[type] || []).map(item => ({ ...item, requirement: nodeConfigFieldRequirement(type, item.key) }))
+  return (NODE_CONFIG_FIELDS[type] || []).map(item => ({ ...item, requirement: nodeConfigFieldRequirement(type, item.key, config) }))
+}
+
+/** 判断字段是否属于当前已选择的节点方案，避免不同方案字段同时造成歧义。 */
+export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
+  const type = String(nodeType || '').toUpperCase()
+  const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const modelMode = String(value.modelMode || '').toUpperCase()
+  if (['LLM', 'AGENT', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR'].includes(type)) {
+    if (['featureCode', 'modelType'].includes(key)) return modelMode === 'ROUTE'
+    if (key === 'modelId') return modelMode === 'DIRECT'
+  }
+  const durationMode = String(value.durationMode || '').toUpperCase()
+  if (type === 'WAIT' && key === 'seconds') return durationMode === 'SECONDS'
+  if (type === 'WAIT' && key === 'milliseconds') return durationMode === 'MILLISECONDS'
+  const inputMode = String(value.inputMode || '').toUpperCase()
+  if (type === 'DOCUMENT_EXTRACTOR' && key === 'content') return inputMode === 'TEXT'
+  if (type === 'DOCUMENT_EXTRACTOR' && key === 'base64') return inputMode === 'BASE64'
+  const operation = String(value.operation || '').toUpperCase()
+  if (type === 'S3_OBJECT') {
+    if (key === 'key') return ['GET', 'PUT', 'DELETE'].includes(operation)
+    if (key === 'contentMode') return operation === 'PUT'
+    const contentMode = String(value.contentMode || '').toUpperCase()
+    if (key === 'content') return operation === 'PUT' && contentMode === 'TEXT'
+    if (key === 'base64') return operation === 'PUT' && contentMode === 'BASE64'
+  }
+  const destinationMode = String(value.destinationMode || '').toUpperCase()
+  if (type === 'RABBITMQ_PUBLISH' && key === 'exchange') return destinationMode === 'EXCHANGE'
+  if (type === 'RABBITMQ_PUBLISH' && key === 'routingKey') return ['EXCHANGE', 'DEFAULT_EXCHANGE'].includes(destinationMode)
+  return true
 }
 
 /** 返回标准字段在当前节点中的必填级别。 */
-export function nodeConfigFieldRequirement(nodeType, key) {
+export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
   const type = String(nodeType || '').toUpperCase()
   if (REQUIRED_CONFIG_FIELDS[type]?.includes(key)) return 'required'
+  if (!CONDITIONAL_CONFIG_FIELDS[type]?.includes(key)) return ''
+  if (config === undefined) return 'conditional'
+  const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const modelMode = String(value.modelMode || '').toUpperCase()
+  if (['LLM', 'AGENT', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR'].includes(type)) {
+    if (['featureCode', 'modelType'].includes(key)) return modelMode === 'ROUTE' ? 'required' : ''
+    if (key === 'modelId') return modelMode === 'DIRECT' ? 'required' : ''
+  }
+  if (type === 'WAIT') return String(value.durationMode || '').toUpperCase() === (key === 'seconds' ? 'SECONDS' : 'MILLISECONDS') ? 'required' : ''
+  if (type === 'DOCUMENT_EXTRACTOR') return String(value.inputMode || '').toUpperCase() === (key === 'content' ? 'TEXT' : 'BASE64') ? 'required' : ''
+  if (type === 'S3_OBJECT') {
+    const operation = String(value.operation || '').toUpperCase()
+    if (key === 'key') return ['GET', 'PUT', 'DELETE'].includes(operation) ? 'required' : ''
+    if (key === 'contentMode') return operation === 'PUT' ? 'required' : ''
+    const contentMode = String(value.contentMode || '').toUpperCase()
+    if (key === 'content') return operation === 'PUT' && contentMode === 'TEXT' ? 'required' : ''
+    if (key === 'base64') return operation === 'PUT' && contentMode === 'BASE64' ? 'required' : ''
+  }
+  if (type === 'RABBITMQ_PUBLISH') {
+    const mode = String(value.destinationMode || '').toUpperCase()
+    if (key === 'exchange') return mode === 'EXCHANGE' ? 'required' : ''
+    if (key === 'routingKey') return mode === 'DEFAULT_EXCHANGE' ? 'required' : ''
+  }
   if (CONDITIONAL_CONFIG_FIELDS[type]?.includes(key)) return 'conditional'
   return ''
 }
@@ -142,40 +200,104 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
   }
 
   switch (type) {
-    case 'HTTP': requireText('url'); break
-    case 'AGENT': requireArray('tools', 1); break
+    case 'LLM': requireAiModel(value, missing); requireText('prompt'); break
+    case 'HTTP': requireEnum('method', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']); requireText('url'); break
+    case 'AGENT': requireAiModel(value, missing); requireText('prompt'); requireTools(); break
     case 'CONDITION': requireCondition('condition'); break
     case 'ITERATION': requireText('collection'); requireObject('bodyGraph'); break
     case 'LOOP': requireCondition('condition'); requireObject('bodyGraph'); break
-    case 'SWITCH': requireArray('cases', 1); break
-    case 'MERGE': requirePresent('values'); break
+    case 'SWITCH': requireCases(); requireText('defaultBranch'); break
+    case 'MERGE': requireEnum('mode', ['ARRAY', 'OBJECT']); requirePresent('values'); break
     case 'SUB_WORKFLOW': requireText('workflowCode'); break
+    case 'WAIT': requireWait(); break
     case 'SET_VARIABLE': case 'TRANSFORM': requirePresent('output'); break
     case 'TEMPLATE': requireText('template'); break
     case 'JSON_PARSE': case 'CSV': requirePresent('value'); break
     case 'JSON_VALIDATE': case 'STRUCTURED_OUTPUT': requirePresent('value'); requireObject('schema'); break
     case 'FILTER': requirePresent('collection'); requireCondition('condition'); break
-    case 'SORT': case 'AGGREGATE': requirePresent('collection'); break
-    case 'QUESTION_CLASSIFIER': requireText('input'); requireArray('categories', 2); break
-    case 'PARAMETER_EXTRACTOR': requireText('input'); requireObject('schema'); break
-    case 'DOCUMENT_EXTRACTOR':
-      if (!String(value.content ?? '').trim() && !String(value.base64 ?? '').trim()) missing.push('contentOrBase64')
-      break
+    case 'SORT': requirePresent('collection'); requireEnum('direction', ['ASC', 'DESC']); break
+    case 'AGGREGATE': requirePresent('collection'); requireEnum('operation', ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX']); break
+    case 'CSV': requireEnum('operation', ['PARSE', 'STRINGIFY']); requirePresent('value'); break
+    case 'QUESTION_CLASSIFIER': requireAiModel(value, missing); requireText('input'); requireCategories(); break
+    case 'PARAMETER_EXTRACTOR': requireAiModel(value, missing); requireText('input'); requireObject('schema'); break
+    case 'DOCUMENT_EXTRACTOR': requireDocument(); break
     case 'WEBHOOK_TRIGGER': case 'IM_NOTIFY': case 'SQL_QUERY': case 'REDIS_COMMAND': case 'S3_OBJECT':
     case 'KAFKA_PUBLISH': case 'KAFKA_TRIGGER': case 'RABBITMQ_PUBLISH': case 'RABBITMQ_TRIGGER':
       requirePositive('connectionId'); break
-    case 'EMAIL_SEND': requirePositive('routeId'); break
+    case 'EMAIL_SEND': requirePositive('routeId'); requireText('subject'); break
     case 'SCHEDULE_TRIGGER': requireText('cron'); break
     default: break
   }
   if (type === 'SQL_QUERY') requireText('query')
-  if (type === 'REDIS_COMMAND') requireArray('arguments', redisArgumentMinimum(value.command))
-  if (type === 'S3_OBJECT' && String(value.operation || 'GET').toUpperCase() !== 'LIST') requireText('key')
+  if (type === 'REDIS_COMMAND') { requireEnum('command', ['GET', 'SET', 'DEL', 'HGET', 'HSET', 'LPUSH', 'RPUSH', 'LRANGE', 'PUBLISH']); requireArray('arguments', redisArgumentMinimum(value.command)) }
+  if (type === 'S3_OBJECT') requireS3()
   if (['KAFKA_PUBLISH', 'KAFKA_TRIGGER'].includes(type)) requireText('topic')
   if (type === 'KAFKA_PUBLISH' || type === 'RABBITMQ_PUBLISH') requirePresent('value')
   if (type === 'RABBITMQ_TRIGGER') requireText('queue')
-  if (type === 'RABBITMQ_PUBLISH' && !String(value.exchange ?? '').trim() && !String(value.routingKey ?? '').trim()) missing.push('rabbitDestination')
+  if (type === 'RABBITMQ_PUBLISH') requireRabbitDestination()
   return [...new Set(missing)]
+
+  /** 校验 AI 模型来源方案。 */
+  function requireAiModel(config, target) {
+    const mode = String(config.modelMode || '').toUpperCase()
+    if (!['ROUTE', 'DIRECT'].includes(mode)) { target.push('modelMode'); return }
+    if (mode === 'ROUTE') { requireText('featureCode'); requireText('modelType') }
+    else requirePositive('modelId')
+  }
+  /** 校验等待单位与对应时长。 */
+  function requireWait() {
+    const mode = String(value.durationMode || '').toUpperCase()
+    if (!['SECONDS', 'MILLISECONDS'].includes(mode)) { missing.push('durationMode'); return }
+    requirePositive(mode === 'SECONDS' ? 'seconds' : 'milliseconds')
+  }
+  /** 校验文档来源方案。 */
+  function requireDocument() {
+    const mode = String(value.inputMode || '').toUpperCase()
+    if (!['TEXT', 'BASE64'].includes(mode)) { missing.push('inputMode'); return }
+    requireText(mode === 'TEXT' ? 'content' : 'base64')
+  }
+  /** 校验 S3 操作及上传内容方案。 */
+  function requireS3() {
+    const operation = String(value.operation || '').toUpperCase()
+    if (!['GET', 'PUT', 'LIST', 'DELETE'].includes(operation)) { missing.push('operation'); return }
+    if (operation !== 'LIST') requireText('key')
+    if (operation !== 'PUT') return
+    const mode = String(value.contentMode || '').toUpperCase()
+    if (!['TEXT', 'BASE64'].includes(mode)) { missing.push('contentMode'); return }
+    requirePresent(mode === 'TEXT' ? 'content' : 'base64')
+  }
+  /** 校验 RabbitMQ 目的地方案。 */
+  function requireRabbitDestination() {
+    const mode = String(value.destinationMode || '').toUpperCase()
+    if (!['EXCHANGE', 'DEFAULT_EXCHANGE'].includes(mode)) { missing.push('destinationMode'); return }
+    requireText(mode === 'EXCHANGE' ? 'exchange' : 'routingKey')
+  }
+  /** 校验 Switch 分支结构。 */
+  function requireCases() {
+    requireArray('cases', 1)
+    if (!Array.isArray(value.cases) || value.cases.some(item => !String(item?.branch ?? '').trim())) missing.push('cases')
+  }
+  /** 校验 Agent 工具的名称、类型和目标。 */
+  function requireTools() {
+    requireArray('tools', 1)
+    const names = new Set()
+    if (!Array.isArray(value.tools) || value.tools.some(item => {
+      const name = String(item?.name ?? '').trim(); const toolType = String(item?.toolType ?? '').toUpperCase()
+      if (!name || names.has(name) || !['HTTP', 'WORKFLOW'].includes(toolType)) return true
+      names.add(name)
+      return toolType === 'HTTP' ? !String(item?.config?.url ?? '').trim() : !String(item?.workflowCode ?? '').trim()
+    })) missing.push('tools')
+  }
+  /** 校验问题分类至少含有两个唯一名称。 */
+  function requireCategories() {
+    requireArray('categories', 2)
+    const names = new Set()
+    if (!Array.isArray(value.categories) || value.categories.some(item => {
+      const name = String(item?.name ?? '').trim(); if (!name || names.has(name)) return true; names.add(name); return false
+    })) missing.push('categories')
+  }
+  /** 校验限定枚举值，拒绝依赖运行默认值的模糊行为。 */
+  function requireEnum(key, options) { if (!options.includes(String(value[key] || '').toUpperCase())) missing.push(key) }
 }
 
 /** 返回 Redis 白名单命令执行所需的最少参数数量。 */
@@ -224,6 +346,7 @@ export function extraConfigKeys(config, nodeType) {
 
 /** 按当前模型类型筛选 AI 节点可选模型，兼容后续动态扩展的类型编码。 */
 export function filterWorkflowModelOptions(options, modelType) {
+  if (modelType === null) return options || []
   const type = String(modelType || 'text_model').trim().toLowerCase()
   return (options || []).filter(option => Array.isArray(option?.supportedModelTypes)
     && option.supportedModelTypes.map(value => String(value).toLowerCase()).includes(type))

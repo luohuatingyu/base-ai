@@ -37,8 +37,8 @@ public class WorkflowAgentClient {
     /** 根据节点模型配置请求一次 Agent 决策。 */
     public AgentStep step(JsonNode config, List<Map<String, Object>> messages, List<Tool> tools) {
         String featureCode = config.path("featureCode").asText("DEFAULT");
-        String modelType = config.path("modelType").asText("text_model");
         Long modelId = config.hasNonNull("modelId") ? config.path("modelId").asLong() : null;
+        String modelType = config.hasNonNull("modelType") ? config.path("modelType").asText() : modelId == null ? "text_model" : "";
         boolean thinking = config.path("enableThinking").asBoolean(false);
         String thinkingLevel = config.path("thinkingLevel").asText(null);
         LlmManagementService.WorkerRoute route = modelId == null

@@ -85,6 +85,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
     @Override
     public Result execute(Request request) {
         JsonNode config = expressions.resolve(request.config(), request.context());
+        WorkflowNodeConfigValidator.validateResolved(request.type(), config);
         return Result.output(switch (request.type()) {
             case "EMAIL_SEND" -> email(config);
             case "IM_NOTIFY" -> notify(config);
@@ -182,6 +183,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         if (writes.contains(command) && !secret.path("allowWrite").asBoolean(false)) throw new BusinessException("workflow.redisWriteForbidden");
         if (!config.path("arguments").isArray()) throw new BusinessException("workflow.dataInputInvalid");
         ArrayNode args = (ArrayNode) config.path("arguments");
+        validateRedisArguments(command, args);
         RedisURI uri = RedisURI.create(secret.path("uri").asText());
         try (RedisClient client = RedisClient.create(uri); StatefulRedisConnection<String, String> state = client.connect()) {
             RedisCommands<String, String> sync = state.sync();
@@ -210,6 +212,16 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
     private String argument(ArrayNode arguments, int index) {
         if (arguments == null || index >= arguments.size() || arguments.get(index).isNull()) throw new BusinessException("workflow.dataInputInvalid");
         return arguments.get(index).asText();
+    }
+
+    /** 在建立 Redis 连接前校验命令参数，避免无效输入触发外部连接。 */
+    private void validateRedisArguments(String command, ArrayNode arguments) {
+        int minimum = switch (command) {
+            case "SET", "HGET", "LPUSH", "RPUSH", "PUBLISH" -> 2;
+            case "HSET", "LRANGE" -> 3;
+            default -> 1;
+        };
+        for (int index = 0; index < minimum; index++) argument(arguments, index);
     }
 
     /** 执行受 Bucket 和 Key 前缀约束的 S3 操作。 */

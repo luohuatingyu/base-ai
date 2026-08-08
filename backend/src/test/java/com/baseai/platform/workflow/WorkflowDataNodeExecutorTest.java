@@ -83,7 +83,7 @@ class WorkflowDataNodeExecutorTest {
     @Test
     void extractsPlainTextDocument() throws Exception {
         JsonNode output = execute("DOCUMENT_EXTRACTOR", objectMapper.readTree("""
-            {"content":"hello workflow","fileName":"note.txt"}
+            {"inputMode":"TEXT","content":"hello workflow","fileName":"note.txt"}
             """)).output();
         assertTrue(output.path("text").asText().contains("hello workflow"));
     }

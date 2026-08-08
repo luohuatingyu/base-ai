@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { cloneConfig, compatibleWorkflowModelId, compatibleWorkflowResourceId, configValueType, createConfigValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldRequirement, nodeConfigFields, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
+import { cloneConfig, compatibleWorkflowModelId, compatibleWorkflowResourceId, configValueType, createConfigValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFieldRequirement, nodeConfigFields, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, WORKFLOW_NODE_TYPES, WORKFLOW_NODE_VALIDATION_TYPES } from '../src/utils/workflowNodeConfig.js'
 
 const nodeManagementSource = readFileSync(new URL('../src/views/WorkflowNodesView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
@@ -27,7 +27,7 @@ test('全部原生节点都有可视化配置定义', () => {
   const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER']
   expected.forEach(type => assert.ok(WORKFLOW_NODE_TYPES.includes(type), type))
   assert.equal(nodeConfigFields('unknown').length, 0)
-  assert.deepEqual(nodeConfigFields('WAIT').map(field => field.key), ['seconds', 'milliseconds'])
+  assert.deepEqual(nodeConfigFields('WAIT').map(field => field.key), ['durationMode', 'seconds', 'milliseconds'])
   assert.deepEqual(nodeConfigFields('SQL_QUERY').map(field => field.key), ['connectionId', 'query', 'parameters', 'timeoutSeconds', 'maxRows', 'maxAttempts', 'retryDelayMillis', 'onError'])
   assert.deepEqual(nodeConfigFields('WEBHOOK_TRIGGER').map(field => field.key), ['connectionId'])
   assert.deepEqual(nodeConfigFields('SCHEDULE_TRIGGER').map(field => field.key), ['cron', 'zoneId'])
@@ -89,7 +89,7 @@ test('全部 AI 节点指定模型使用可搜索可清空下拉并在类型不�
   assert.match(configEditorSource, /filterable clearable[^>]*:loading="modelOptionsLoading"/)
   assert.match(configEditorSource, /http\.get\('\/workflow\/model-options'\)/)
   assert.match(configEditorSource, /@update:model-value="setModelId"/)
-  assert.match(configEditorSource, /compatibleWorkflowModelId\(modelOptions\.value, currentModelType\.value, config\.value\.modelId\) === null/)
+  assert.match(configEditorSource, /compatibleWorkflowModelId\(modelOptions\.value, type, config\.value\.modelId\) === null/)
   assert.match(configEditorSource, /removeField\('modelId'\)/)
   assert.doesNotMatch(configEditorSource, /field\.editor === 'model'[\s\S]{0,300}<el-input-number/)
 })
@@ -117,22 +117,60 @@ test('Agent 指定模型下拉限制为输入框宽度并为溢出标签提供�
 test('配置字段区分必填、条件必填和具有运行默认值的可选项', () => {
   assert.equal(nodeConfigFieldRequirement('HTTP', 'url'), 'required')
   assert.equal(nodeConfigFieldRequirement('S3_OBJECT', 'key'), 'conditional')
-  assert.equal(nodeConfigFieldRequirement('LLM', 'featureCode'), '')
+  assert.equal(nodeConfigFieldRequirement('LLM', 'modelMode'), 'required')
+  assert.equal(nodeConfigFieldRequirement('LLM', 'featureCode'), 'conditional')
+  assert.equal(nodeConfigFieldRequirement('LLM', 'featureCode', { modelMode: 'ROUTE' }), 'required')
+  assert.equal(nodeConfigFieldRequirement('LLM', 'modelId', { modelMode: 'DIRECT' }), 'required')
+  assert.equal(nodeConfigFieldRequirement('LLM', 'modelId', { modelMode: 'ROUTE' }), '')
+  assert.equal(nodeConfigFieldRequirement('LLM', 'prompt'), 'required')
+  assert.equal(nodeConfigFieldRequirement('EMAIL_SEND', 'subject'), 'required')
   assert.equal(nodeConfigFields('HTTP').find(field => field.key === 'url').requirement, 'required')
 })
 
-test('发布提示覆盖固定必填、组合条件、操作条件和参数数量', () => {
-  assert.deepEqual(missingNodeConfigRequirements('LLM', {}), [])
-  assert.deepEqual(missingNodeConfigRequirements('HTTP', {}), ['url'])
-  assert.deepEqual(missingNodeConfigRequirements('HTTP', { url: 'https://example.test' }), [])
+test('全部原生节点都有显式验证策略，防止新增节点绕过必填校验', () => {
+  assert.deepEqual([...WORKFLOW_NODE_VALIDATION_TYPES].sort(), [...WORKFLOW_NODE_TYPES].sort())
+})
+
+test('AI 节点按模型路由或指定模型方案校验且提示词必填', () => {
+  assert.deepEqual(missingNodeConfigRequirements('LLM', {}), ['modelMode', 'prompt'])
+  assert.deepEqual(missingNodeConfigRequirements('LLM', { modelMode: 'ROUTE', prompt: 'hello' }), ['featureCode', 'modelType'])
+  assert.deepEqual(missingNodeConfigRequirements('LLM', {
+    modelMode: 'ROUTE', featureCode: 'CHAT', modelType: 'text_model', prompt: 'hello'
+  }), [])
+  assert.deepEqual(missingNodeConfigRequirements('LLM', { modelMode: 'DIRECT', modelId: 7, prompt: 'hello' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('LLM', { modelMode: 'DIRECT', modelId: 0, prompt: ' ' }), ['modelId', 'prompt'])
+  assert.deepEqual(missingNodeConfigRequirements('AGENT', {
+    modelMode: 'DIRECT', modelId: 7, prompt: 'complete task', tools: []
+  }), ['tools'])
+})
+
+test('方案选择只展示当前方案适用字段', () => {
+  assert.equal(nodeConfigFieldApplicable('LLM', 'featureCode', {}), false)
+  assert.equal(nodeConfigFieldApplicable('LLM', 'featureCode', { modelMode: 'ROUTE' }), true)
+  assert.equal(nodeConfigFieldApplicable('LLM', 'modelId', { modelMode: 'ROUTE' }), false)
+  assert.equal(nodeConfigFieldApplicable('LLM', 'modelId', { modelMode: 'DIRECT' }), true)
+  assert.equal(nodeConfigFieldApplicable('WAIT', 'seconds', { durationMode: 'SECONDS' }), true)
+  assert.equal(nodeConfigFieldApplicable('WAIT', 'milliseconds', { durationMode: 'SECONDS' }), false)
+  assert.equal(nodeConfigFieldApplicable('DOCUMENT_EXTRACTOR', 'base64', { inputMode: 'BASE64' }), true)
+  assert.equal(nodeConfigFieldApplicable('RABBITMQ_PUBLISH', 'exchange', { destinationMode: 'DEFAULT_EXCHANGE' }), false)
+})
+
+test('发布提示覆盖固定必填、方案条件、操作条件和参数数量', () => {
+  assert.deepEqual(missingNodeConfigRequirements('HTTP', {}), ['method', 'url'])
+  assert.deepEqual(missingNodeConfigRequirements('HTTP', { method: 'GET', url: 'https://example.test' }), [])
   assert.deepEqual(missingNodeConfigRequirements('ITERATION', { collection: '{{input.items}}' }), ['bodyGraph'])
-  assert.deepEqual(missingNodeConfigRequirements('DOCUMENT_EXTRACTOR', {}), ['contentOrBase64'])
-  assert.deepEqual(missingNodeConfigRequirements('DOCUMENT_EXTRACTOR', { content: 'text' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('DOCUMENT_EXTRACTOR', {}), ['inputMode'])
+  assert.deepEqual(missingNodeConfigRequirements('DOCUMENT_EXTRACTOR', { inputMode: 'TEXT', content: 'text' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('S3_OBJECT', { connectionId: 1 }), ['operation'])
   assert.deepEqual(missingNodeConfigRequirements('S3_OBJECT', { connectionId: 1, operation: 'LIST' }), [])
   assert.deepEqual(missingNodeConfigRequirements('S3_OBJECT', { connectionId: 1, operation: 'GET' }), ['key'])
   assert.deepEqual(missingNodeConfigRequirements('REDIS_COMMAND', { connectionId: 1, command: 'HSET', arguments: ['key', 'field'] }), ['arguments'])
-  assert.deepEqual(missingNodeConfigRequirements('RABBITMQ_PUBLISH', { connectionId: 1, value: null }), ['rabbitDestination'])
-  assert.deepEqual(missingNodeConfigRequirements('RABBITMQ_PUBLISH', { connectionId: 1, routingKey: 'orders', value: null }), [])
+  assert.deepEqual(missingNodeConfigRequirements('RABBITMQ_PUBLISH', { connectionId: 1, value: null }), ['destinationMode'])
+  assert.deepEqual(missingNodeConfigRequirements('RABBITMQ_PUBLISH', {
+    connectionId: 1, destinationMode: 'DEFAULT_EXCHANGE', routingKey: 'orders', value: null
+  }), [])
+  assert.deepEqual(missingNodeConfigRequirements('EMAIL_SEND', { routeId: 2, subject: '', body: '' }), ['subject'])
+  assert.deepEqual(missingNodeConfigRequirements('EMAIL_SEND', { routeId: 2, subject: 'Notice' }), [])
 })
 
 test('必填字段直接编辑且非必填和条件必填字段通过开关启停', () => {

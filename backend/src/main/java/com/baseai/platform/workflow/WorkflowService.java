@@ -154,12 +154,17 @@ public class WorkflowService {
         WorkflowModels.WorkflowView existing = workflow(id);
         WorkflowModels.StoredVersion currentVersion = storedVersion(existing.currentVersionId());
         graphValidator.validate(currentVersion.graph());
-        nodeConfigValidator.validateForPublish(currentVersion.graph(), currentVersion.templateSnapshots());
+        validateExecutableConfiguration(currentVersion);
         jdbcTemplate.update("""
             UPDATE workflow_definition SET published_version_id=current_version_id,status='PUBLISHED',enabled=true,
                 revision=revision+1,updated_at=NOW() WHERE id=? AND voided=false
             """, id);
         return workflow(id);
+    }
+
+    /** 校验指定版本的模板快照和实例配置已满足所有节点运行条件。 */
+    public void validateExecutableConfiguration(WorkflowModels.StoredVersion version) {
+        nodeConfigValidator.validateForPublish(version.graph(), version.templateSnapshots());
     }
 
     /** 软删除定义但保留历史版本和运行记录。 */

@@ -7,15 +7,23 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** 在工作流发布前校验节点模板快照与实例覆盖合并后的必填配置。 */
+/** 在发布和运行前校验节点模板快照与实例覆盖合并后的必填配置。 */
 @Component
 public class WorkflowNodeConfigValidator {
     private static final Set<String> UNARY_CONDITION_OPERATORS = Set.of("EXISTS", "EMPTY");
+    private static final Set<String> SUPPORTED_TYPES = Set.of(
+        "START", "END", "LLM", "HTTP", "AGENT", "CONDITION", "ITERATION", "LOOP", "SWITCH", "MERGE",
+        "SUB_WORKFLOW", "WAIT", "SET_VARIABLE", "TEMPLATE", "JSON_PARSE", "JSON_VALIDATE", "TRANSFORM",
+        "FILTER", "SORT", "AGGREGATE", "CSV", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT",
+        "DOCUMENT_EXTRACTOR", "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER", "EMAIL_SEND", "IM_NOTIFY", "SQL_QUERY",
+        "REDIS_COMMAND", "S3_OBJECT", "KAFKA_PUBLISH", "KAFKA_TRIGGER", "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER"
+    );
     private final ObjectMapper objectMapper;
 
     /** 注入 JSON 工具以创建隔离的有效配置副本。 */
@@ -23,11 +31,21 @@ public class WorkflowNodeConfigValidator {
         this.objectMapper = objectMapper;
     }
 
+    /** 返回已显式定义必填规则的节点类型，供测试防止新增节点遗漏。 */
+    static Set<String> supportedTypes() { return SUPPORTED_TYPES; }
+
     /** 汇总主画布及嵌套子画布的配置问题，并以单个业务错误阻止发布。 */
     public void validateForPublish(JsonNode graph, JsonNode templateSnapshots) {
         List<String> errors = new ArrayList<>();
         validateGraph(graph, templateSnapshots, errors);
         if (!errors.isEmpty()) throw new BusinessException("workflow.nodeConfigRequired", String.join("；", errors));
+    }
+
+    /** 在节点参数经表达式解析后复用同一份规则，阻止空值触发外部行为。 */
+    static void validateResolved(String type, JsonNode config) {
+        ObjectNode value = config instanceof ObjectNode object ? object : new ObjectMapper().createObjectNode();
+        LinkedHashSet<String> missing = missingRequirements(type, value);
+        if (!missing.isEmpty()) throw new BusinessException("workflow.nodeConfigRequired", type + "：" + String.join(", ", missing));
     }
 
     /** 校验一层画布节点，并递归检查迭代和循环节点的有效子画布。 */
@@ -45,53 +63,129 @@ public class WorkflowNodeConfigValidator {
     }
 
     /** 根据节点类型返回缺失或无效的必填配置字段。 */
-    private LinkedHashSet<String> missingRequirements(String type, ObjectNode config) {
+    private static LinkedHashSet<String> missingRequirements(String rawType, ObjectNode config) {
+        String type = rawType == null ? "" : rawType.toUpperCase(Locale.ROOT);
         LinkedHashSet<String> missing = new LinkedHashSet<>();
+        if (!SUPPORTED_TYPES.contains(type)) { missing.add("nodeType"); return missing; }
         switch (type) {
-            case "HTTP" -> requireText(config, missing, "url");
-            case "AGENT" -> requireArray(config, missing, "tools", 1);
+            case "START", "END" -> { }
+            case "LLM" -> { requireAiModel(config, missing); requireText(config, missing, "prompt"); }
+            case "HTTP" -> { requireEnum(config, missing, "method", Set.of("GET", "POST", "PUT", "PATCH", "DELETE")); requireText(config, missing, "url"); }
+            case "AGENT" -> { requireAiModel(config, missing); requireText(config, missing, "prompt"); requireTools(config, missing); }
             case "CONDITION" -> requireCondition(config, missing, "condition");
             case "ITERATION" -> { requireText(config, missing, "collection"); requireObject(config, missing, "bodyGraph"); }
             case "LOOP" -> { requireCondition(config, missing, "condition"); requireObject(config, missing, "bodyGraph"); }
-            case "SWITCH" -> requireArray(config, missing, "cases", 1);
-            case "MERGE" -> requirePresent(config, missing, "values");
+            case "SWITCH" -> { requireCases(config, missing); requireText(config, missing, "defaultBranch"); }
+            case "MERGE" -> { requireEnum(config, missing, "mode", Set.of("ARRAY", "OBJECT")); requirePresent(config, missing, "values"); }
             case "SUB_WORKFLOW" -> requireText(config, missing, "workflowCode");
+            case "WAIT" -> requireWait(config, missing);
             case "SET_VARIABLE", "TRANSFORM" -> requirePresent(config, missing, "output");
             case "TEMPLATE" -> requireText(config, missing, "template");
-            case "JSON_PARSE", "CSV" -> requirePresent(config, missing, "value");
-            case "JSON_VALIDATE", "STRUCTURED_OUTPUT" -> {
-                requirePresent(config, missing, "value"); requireObject(config, missing, "schema");
-            }
+            case "JSON_PARSE" -> requirePresent(config, missing, "value");
+            case "JSON_VALIDATE", "STRUCTURED_OUTPUT" -> { requirePresent(config, missing, "value"); requireObject(config, missing, "schema"); }
             case "FILTER" -> { requirePresent(config, missing, "collection"); requireCondition(config, missing, "condition"); }
-            case "SORT", "AGGREGATE" -> requirePresent(config, missing, "collection");
-            case "QUESTION_CLASSIFIER" -> {
-                requireText(config, missing, "input"); requireArray(config, missing, "categories", 2);
-            }
-            case "PARAMETER_EXTRACTOR" -> { requireText(config, missing, "input"); requireObject(config, missing, "schema"); }
-            case "DOCUMENT_EXTRACTOR" -> requireOneText(config, missing, "contentOrBase64", "content", "base64");
-            case "WEBHOOK_TRIGGER", "IM_NOTIFY", "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT",
-                 "KAFKA_PUBLISH", "KAFKA_TRIGGER", "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER" ->
-                requirePositive(config, missing, "connectionId");
-            case "EMAIL_SEND" -> requirePositive(config, missing, "routeId");
+            case "SORT" -> { requirePresent(config, missing, "collection"); requireEnum(config, missing, "direction", Set.of("ASC", "DESC")); }
+            case "AGGREGATE" -> { requirePresent(config, missing, "collection"); requireEnum(config, missing, "operation", Set.of("COUNT", "SUM", "AVG", "MIN", "MAX")); }
+            case "CSV" -> { requireEnum(config, missing, "operation", Set.of("PARSE", "STRINGIFY")); requirePresent(config, missing, "value"); }
+            case "QUESTION_CLASSIFIER" -> { requireAiModel(config, missing); requireText(config, missing, "input"); requireCategories(config, missing); }
+            case "PARAMETER_EXTRACTOR" -> { requireAiModel(config, missing); requireText(config, missing, "input"); requireObject(config, missing, "schema"); }
+            case "DOCUMENT_EXTRACTOR" -> requireDocument(config, missing);
+            case "WEBHOOK_TRIGGER", "IM_NOTIFY" -> requirePositive(config, missing, "connectionId");
             case "SCHEDULE_TRIGGER" -> requireText(config, missing, "cron");
-            default -> { }
+            case "EMAIL_SEND" -> { requirePositive(config, missing, "routeId"); requireText(config, missing, "subject"); if (text(config, "subject").contains("\n") || text(config, "subject").contains("\r")) missing.add("subject"); }
+            case "SQL_QUERY" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "query"); }
+            case "REDIS_COMMAND" -> { requirePositive(config, missing, "connectionId"); requireEnum(config, missing, "command", Set.of("GET", "SET", "DEL", "HGET", "HSET", "LPUSH", "RPUSH", "LRANGE", "PUBLISH")); requireArray(config, missing, "arguments", redisArgumentMinimum(config.path("command").asText())); }
+            case "S3_OBJECT" -> requireS3(config, missing);
+            case "KAFKA_PUBLISH" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "topic"); requirePresent(config, missing, "value"); }
+            case "KAFKA_TRIGGER" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "topic"); }
+            case "RABBITMQ_PUBLISH" -> { requirePositive(config, missing, "connectionId"); requireRabbitDestination(config, missing); requirePresent(config, missing, "value"); }
+            case "RABBITMQ_TRIGGER" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "queue"); }
+            default -> missing.add("nodeType");
         }
-        validateConditionalRequirements(type, config, missing);
         return missing;
     }
 
-    /** 校验依赖节点操作、命令或字段组合的条件必填项。 */
-    private void validateConditionalRequirements(String type, ObjectNode config, LinkedHashSet<String> missing) {
-        if ("SQL_QUERY".equals(type)) requireText(config, missing, "query");
-        if ("REDIS_COMMAND".equals(type)) requireArray(config, missing, "arguments", redisArgumentMinimum(config.path("command").asText()));
-        if ("S3_OBJECT".equals(type) && !"LIST".equalsIgnoreCase(config.path("operation").asText("GET"))) {
-            requireText(config, missing, "key");
+    /** 校验模型路由或指定模型二选一方案。 */
+    private static void requireAiModel(ObjectNode config, Set<String> missing) {
+        String mode = text(config, "modelMode").toUpperCase(Locale.ROOT);
+        if ("ROUTE".equals(mode)) { requireText(config, missing, "featureCode"); requireText(config, missing, "modelType"); }
+        else if ("DIRECT".equals(mode)) requirePositive(config, missing, "modelId");
+        else missing.add("modelMode");
+    }
+
+    /** 校验等待单位和对应的正数时长。 */
+    private static void requireWait(ObjectNode config, Set<String> missing) {
+        String mode = text(config, "durationMode").toUpperCase(Locale.ROOT);
+        if ("SECONDS".equals(mode)) requirePositive(config, missing, "seconds");
+        else if ("MILLISECONDS".equals(mode)) requirePositive(config, missing, "milliseconds");
+        else missing.add("durationMode");
+    }
+
+    /** 校验文档文本或 Base64 输入方案。 */
+    private static void requireDocument(ObjectNode config, Set<String> missing) {
+        String mode = text(config, "inputMode").toUpperCase(Locale.ROOT);
+        if ("TEXT".equals(mode)) requireText(config, missing, "content");
+        else if ("BASE64".equals(mode)) requireBase64(config, missing, "base64", true);
+        else missing.add("inputMode");
+    }
+
+    /** 校验 S3 操作与 PUT 内容来源方案。 */
+    private static void requireS3(ObjectNode config, Set<String> missing) {
+        requirePositive(config, missing, "connectionId");
+        String operation = text(config, "operation").toUpperCase(Locale.ROOT);
+        if (!Set.of("GET", "PUT", "LIST", "DELETE").contains(operation)) { missing.add("operation"); return; }
+        if (!"LIST".equals(operation)) requireText(config, missing, "key");
+        if (!"PUT".equals(operation)) return;
+        String mode = text(config, "contentMode").toUpperCase(Locale.ROOT);
+        if ("TEXT".equals(mode)) requirePresent(config, missing, "content");
+        else if ("BASE64".equals(mode)) requireBase64(config, missing, "base64", false);
+        else missing.add("contentMode");
+    }
+
+    /** 校验 RabbitMQ 自定义交换机或默认交换机方案。 */
+    private static void requireRabbitDestination(ObjectNode config, Set<String> missing) {
+        String mode = text(config, "destinationMode").toUpperCase(Locale.ROOT);
+        if ("EXCHANGE".equals(mode)) requireText(config, missing, "exchange");
+        else if ("DEFAULT_EXCHANGE".equals(mode)) requireText(config, missing, "routingKey");
+        else missing.add("destinationMode");
+    }
+
+    /** 校验 Switch 的分支名称和条件均可执行。 */
+    private static void requireCases(ObjectNode config, Set<String> missing) {
+        JsonNode cases = config.path("cases");
+        if (!cases.isArray() || cases.isEmpty()) { missing.add("cases"); return; }
+        for (JsonNode item : cases) {
+            if (item == null || !item.isObject() || item.path("branch").asText().trim().isBlank()) { missing.add("cases"); return; }
+            LinkedHashSet<String> conditionMissing = new LinkedHashSet<>();
+            requireConditionObject(item.path("condition"), conditionMissing);
+            if (!conditionMissing.isEmpty()) { missing.add("cases"); return; }
         }
-        if ("KAFKA_PUBLISH".equals(type) || "KAFKA_TRIGGER".equals(type)) requireText(config, missing, "topic");
-        if ("KAFKA_PUBLISH".equals(type) || "RABBITMQ_PUBLISH".equals(type)) requirePresent(config, missing, "value");
-        if ("RABBITMQ_TRIGGER".equals(type)) requireText(config, missing, "queue");
-        if ("RABBITMQ_PUBLISH".equals(type)
-            && text(config, "exchange").isBlank() && text(config, "routingKey").isBlank()) missing.add("exchange/routingKey");
+    }
+
+    /** 校验 Agent 工具名称、类型和对应目标。 */
+    private static void requireTools(ObjectNode config, Set<String> missing) {
+        JsonNode tools = config.path("tools");
+        if (!tools.isArray() || tools.isEmpty()) { missing.add("tools"); return; }
+        Set<String> names = new LinkedHashSet<>();
+        for (JsonNode tool : tools) {
+            String name = tool.path("name").asText().trim();
+            String type = tool.path("toolType").asText().trim().toUpperCase(Locale.ROOT);
+            if (!name.matches("[A-Za-z_][A-Za-z0-9_-]{0,63}") || !names.add(name)) { missing.add("tools"); return; }
+            if ("HTTP".equals(type) && !tool.path("config").path("url").asText().trim().isBlank()) continue;
+            if ("WORKFLOW".equals(type) && !tool.path("workflowCode").asText().trim().isBlank()) continue;
+            missing.add("tools"); return;
+        }
+    }
+
+    /** 校验问题分类至少有两个名称唯一的候选项。 */
+    private static void requireCategories(ObjectNode config, Set<String> missing) {
+        JsonNode categories = config.path("categories");
+        if (!categories.isArray() || categories.size() < 2) { missing.add("categories"); return; }
+        Set<String> names = new LinkedHashSet<>();
+        for (JsonNode category : categories) {
+            String name = category.path("name").asText().trim();
+            if (name.isBlank() || !names.add(name)) { missing.add("categories"); return; }
+        }
     }
 
     /** 合并版本中的模板快照和画布实例覆盖，保持与执行阶段一致。 */
@@ -106,9 +200,8 @@ public class WorkflowNodeConfigValidator {
     /** 递归合并对象覆盖，避免实例只修改嵌套字段时丢失模板默认值。 */
     private void deepMerge(ObjectNode target, JsonNode source) {
         source.fields().forEachRemaining(entry -> {
-            if (entry.getValue().isObject() && target.path(entry.getKey()).isObject()) {
-                deepMerge((ObjectNode) target.path(entry.getKey()), entry.getValue());
-            } else target.set(entry.getKey(), entry.getValue().deepCopy());
+            if (entry.getValue().isObject() && target.path(entry.getKey()).isObject()) deepMerge((ObjectNode) target.path(entry.getKey()), entry.getValue());
+            else target.set(entry.getKey(), entry.getValue().deepCopy());
         });
     }
 
@@ -119,46 +212,44 @@ public class WorkflowNodeConfigValidator {
     }
 
     /** 校验字段在配置对象中存在，显式 null 仍视为有效业务值。 */
-    private void requirePresent(ObjectNode config, Set<String> missing, String key) {
-        if (!config.has(key)) missing.add(key);
-    }
+    private static void requirePresent(ObjectNode config, Set<String> missing, String key) { if (!config.has(key)) missing.add(key); }
 
     /** 校验字段为非空文本。 */
-    private void requireText(ObjectNode config, Set<String> missing, String key) {
-        if (text(config, key).isBlank()) missing.add(key);
-    }
+    private static void requireText(ObjectNode config, Set<String> missing, String key) { if (text(config, key).isBlank()) missing.add(key); }
 
-    /** 校验字段为正数连接或路由标识。 */
-    private void requirePositive(ObjectNode config, Set<String> missing, String key) {
-        if (!config.hasNonNull(key) || config.path(key).asLong() <= 0) missing.add(key);
-    }
+    /** 校验字段为正数连接、路由、模型或时长标识。 */
+    private static void requirePositive(ObjectNode config, Set<String> missing, String key) { if (!config.hasNonNull(key) || config.path(key).asLong() <= 0) missing.add(key); }
 
     /** 校验字段为 JSON 对象。 */
-    private void requireObject(ObjectNode config, Set<String> missing, String key) {
-        if (!config.path(key).isObject()) missing.add(key);
-    }
+    private static void requireObject(ObjectNode config, Set<String> missing, String key) { if (!config.path(key).isObject()) missing.add(key); }
 
     /** 校验字段为达到最少元素数量的 JSON 数组。 */
-    private void requireArray(ObjectNode config, Set<String> missing, String key, int minimum) {
-        if (!config.path(key).isArray() || config.path(key).size() < minimum) missing.add(key);
-    }
+    private static void requireArray(ObjectNode config, Set<String> missing, String key, int minimum) { if (!config.path(key).isArray() || config.path(key).size() < minimum) missing.add(key); }
 
     /** 校验结构化条件包含左值、操作符及非一元操作所需右值。 */
-    private void requireCondition(ObjectNode config, Set<String> missing, String key) {
-        JsonNode condition = config.path(key);
+    private static void requireCondition(ObjectNode config, Set<String> missing, String key) { requireConditionObject(config.path(key), missing); }
+
+    /** 校验任意条件对象的完整性。 */
+    private static void requireConditionObject(JsonNode condition, Set<String> missing) {
         String operator = condition.path("operator").asText("EQ").toUpperCase(Locale.ROOT);
         if (!condition.isObject() || condition.path("left").asText().trim().isBlank()
-            || !UNARY_CONDITION_OPERATORS.contains(operator) && !condition.has("right")) missing.add(key);
+            || !Set.of("EQ", "NE", "GT", "GTE", "LT", "LTE", "CONTAINS", "EXISTS", "EMPTY").contains(operator)
+            || !UNARY_CONDITION_OPERATORS.contains(operator) && !condition.has("right")) missing.add("condition");
     }
 
-    /** 校验一组候选文本中至少存在一个非空值。 */
-    private void requireOneText(ObjectNode config, Set<String> missing, String label, String... keys) {
-        for (String key : keys) if (!text(config, key).isBlank()) return;
-        missing.add(label);
+    /** 校验枚举方案值，拒绝依赖默认值的模糊行为。 */
+    private static void requireEnum(ObjectNode config, Set<String> missing, String key, Set<String> values) { if (!values.contains(text(config, key).toUpperCase(Locale.ROOT))) missing.add(key); }
+
+    /** 校验必传 Base64 字段，并允许表达式在运行时再解析。 */
+    private static void requireBase64(ObjectNode config, Set<String> missing, String key, boolean nonEmpty) {
+        if (!config.has(key) || (nonEmpty && text(config, key).isBlank())) { missing.add(key); return; }
+        String value = text(config, key);
+        if (value.contains("{{") && value.contains("}}")) return;
+        try { Base64.getDecoder().decode(value); } catch (IllegalArgumentException exception) { missing.add(key); }
     }
 
     /** 返回 Redis 白名单命令执行所需的最少参数数量。 */
-    private int redisArgumentMinimum(String command) {
+    private static int redisArgumentMinimum(String command) {
         return switch ((command == null ? "GET" : command).toUpperCase(Locale.ROOT)) {
             case "SET", "HGET", "LPUSH", "RPUSH", "PUBLISH" -> 2;
             case "HSET", "LRANGE" -> 3;
@@ -167,7 +258,5 @@ public class WorkflowNodeConfigValidator {
     }
 
     /** 安全读取配置文本。 */
-    private String text(ObjectNode config, String key) {
-        return config.path(key).asText("").trim();
-    }
+    private static String text(ObjectNode config, String key) { return config.path(key).asText("").trim(); }
 }

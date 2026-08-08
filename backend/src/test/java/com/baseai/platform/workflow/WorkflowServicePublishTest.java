@@ -68,7 +68,7 @@ class WorkflowServicePublishTest {
         insertWorkflow("""
             {"nodes":[{"id":"start","type":"START"},{"id":"http","type":"HTTP","data":{"config":{}}},{"id":"end","type":"END"}],
              "edges":[{"id":"a","source":"start","target":"http"},{"id":"b","source":"http","target":"end"}]}
-            """, "{\"http\":{\"config\":{\"url\":\"https://example.test\"}}}");
+            """, "{\"http\":{\"config\":{\"method\":\"GET\",\"url\":\"https://example.test\"}}}");
 
         WorkflowModels.WorkflowView published = service.publish(1L);
 

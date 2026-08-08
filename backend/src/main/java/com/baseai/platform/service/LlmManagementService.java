@@ -432,7 +432,7 @@ public class LlmManagementService {
     public WorkerRoute resolveModel(Long modelId,String modelType,boolean enableThinking,String thinkingLevel){
         LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound"));
         if(!Boolean.TRUE.equals(model.getEnabled()))throw new BusinessException("llm.selectedModelDisabled");
-        if(!matchesModelType(model.getSupportedModelTypes(),modelType))throw new BusinessException("llm.modelTypeUnsupported");
+        if(!blank(modelType)&&!matchesModelType(model.getSupportedModelTypes(),modelType))throw new BusinessException("llm.modelTypeUnsupported");
         String normalizedThinking=enableThinking&&!blank(thinkingLevel)?thinkingLevel.trim().toUpperCase(Locale.ROOT):null;
         WorkerCandidate candidate=candidate(model,normalizedThinking);
         if(candidate==null)throw new BusinessException(enableThinking?"llm.thinkingLevelUnavailable":"llm.selectedModelProviderUnavailable");

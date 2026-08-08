@@ -131,6 +131,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private WorkflowModels.RunAccepted enqueue(WorkflowModels.StoredVersion version, Map<String, Object> rawInputs,
                                                 String triggerType, Long ownerId, String parentRunId,
                                                 int depth, Set<String> stack) {
+        workflowService.validateExecutableConfiguration(version);
         ObjectNode inputs = objectMapper.valueToTree(rawInputs == null ? Map.of() : rawInputs);
         validateInputs(version.inputSchema(), inputs);
         enforcePayload(inputs);
@@ -342,15 +343,16 @@ public class WorkflowExecutionService implements ApplicationRunner {
     /** 调用现有模型路由执行 LLM 节点。 */
     private JsonNode executeLlm(ObjectNode config, ObjectNode context) {
         JsonNode resolved = expressions.resolve(config, context);
+        WorkflowNodeConfigValidator.validateResolved("LLM", resolved);
         List<AiChatClient.Message> messages = new ArrayList<>();
         String systemPrompt = resolved.path("systemPrompt").asText("");
         if (!systemPrompt.isBlank()) messages.add(new AiChatClient.Message("system", systemPrompt));
-        String prompt = resolved.path("prompt").asText(context.path("input").toString());
-        if (prompt.isBlank()) prompt = context.path("input").toString();
+        String prompt = resolved.path("prompt").asText();
         messages.add(new AiChatClient.Message("user", prompt));
         Long modelId = resolved.hasNonNull("modelId") ? resolved.path("modelId").asLong() : null;
+        String modelType = resolved.hasNonNull("modelType") ? resolved.path("modelType").asText() : modelId == null ? "text_model" : "";
         AiChatClient.ChatResult result = aiChatClient.chat(resolved.path("featureCode").asText("DEFAULT"),
-            resolved.path("modelType").asText("text_model"), messages, resolved.path("temperature").asDouble(0),
+            modelType, messages, resolved.path("temperature").asDouble(0),
             resolved.has("enableThinking") ? resolved.path("enableThinking").asBoolean() : null,
             resolved.path("thinkingLevel").asText(null), modelId);
         return objectMapper.createObjectNode().put("content", result.content()).put("model", result.model())
@@ -360,6 +362,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
     /** 将节点配置映射为接口触发命令，复用已有 SSRF 和 TLS 安全实现。 */
     private JsonNode executeHttp(ObjectNode config, ObjectNode context) {
         JsonNode resolved = expressions.resolve(config, context);
+        WorkflowNodeConfigValidator.validateResolved("HTTP", resolved);
         ApiTriggerModels.Command command = new ApiTriggerModels.Command(
             resolved.path("name").asText("Workflow HTTP"), "Workflow node", resolved.path("method").asText("GET"),
             resolved.path("url").asText(), jsonText(resolved.path("headers")), jsonText(resolved.path("queryParams")),
@@ -425,7 +428,9 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private JsonNode executeSubWorkflow(String parentRunId, ObjectNode config, ObjectNode context,
                                         int depth, Set<String> stack) {
         JsonNode resolved = expressions.resolve(config, context);
+        WorkflowNodeConfigValidator.validateResolved("SUB_WORKFLOW", resolved);
         WorkflowModels.StoredVersion version = workflowService.executable(resolved.path("workflowCode").asText(), true);
+        workflowService.validateExecutableConfiguration(version);
         ObjectNode arguments = resolved.path("inputs").isObject() ? (ObjectNode) resolved.path("inputs") : objectMapper.createObjectNode();
         validateInputs(version.inputSchema(), arguments);
         String childRunId = UUID.randomUUID().toString();
@@ -457,6 +462,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
     /** 在最大步骤内让模型选择 HTTP 或已发布子工作流工具。 */
     private JsonNode executeAgent(String runId, ObjectNode config, ObjectNode context, int depth, Set<String> stack) {
         JsonNode resolved = expressions.resolve(config, context);
+        WorkflowNodeConfigValidator.validateResolved("AGENT", resolved);
         int maximum = bounded(resolved.path("maxSteps").asInt(5), limits.getMaxAgentSteps());
         List<WorkflowAgentClient.Tool> tools = new ArrayList<>();
         Map<String, JsonNode> toolConfigs = new LinkedHashMap<>();
@@ -511,6 +517,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
         }
         if ("WORKFLOW".equals(type)) {
             WorkflowModels.StoredVersion version = workflowService.executable(tool.path("workflowCode").asText(), true);
+            workflowService.validateExecutableConfiguration(version);
             validateInputs(version.inputSchema(), object(arguments));
             String childRunId = UUID.randomUUID().toString();
             Long ownerId = TraceContextHolder.current().map(TraceContext::ownerUserId).orElseThrow();

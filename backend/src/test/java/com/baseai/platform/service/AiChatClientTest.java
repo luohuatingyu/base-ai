@@ -79,6 +79,20 @@ class AiChatClientTest {
         verify(management).resolveModel(7L, "text_model", true, "HIGH");
     }
 
+    /** 指定模型模式未填写模型类型时，应从模型能力中推导并传给 Worker。 */
+    @Test
+    void infersDirectModelTypeWhenItIsNotProvided() {
+        LlmManagementService management = mock(LlmManagementService.class);
+        LlmManagementService.WorkerCandidate candidate = new LlmManagementService.WorkerCandidate(
+            "vision-provider", "https://vision.example/v1", List.of("key"), "vision-x", 3, "API_KEY", 45, "", "", List.of("vision_model"));
+        when(management.resolveModel(8L, "", false, null)).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), false, true));
+
+        client(management).chat(null, null, List.of(new AiChatClient.Message("user", "describe")), 0D, false, null, 8L);
+
+        assertTrue(requestBody.contains("\"model_type\":\"vision_model\""));
+        verify(management).resolveModel(8L, "", false, null);
+    }
+
     /** 未配置能力路由时保持空候选和空开关，以触发 Worker 默认模型池回退。 */
     @Test
     void keepsDefaultPoolFallbackWhenFeatureRouteIsMissing() {

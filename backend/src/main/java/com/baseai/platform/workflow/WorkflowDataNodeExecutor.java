@@ -52,6 +52,7 @@ public class WorkflowDataNodeExecutor implements WorkflowNodeExecutor {
     /** 按节点类型执行确定性数据处理。 */
     @Override
     public Result execute(Request request) {
+        WorkflowNodeConfigValidator.validateResolved(request.type(), request.config());
         return switch (request.type()) {
             case "SWITCH" -> executeSwitch(request.config(), request.context());
             case "MERGE" -> Result.output(executeMerge(request.config(), request.context()));
