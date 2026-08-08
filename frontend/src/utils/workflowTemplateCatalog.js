@@ -19,6 +19,8 @@ const DEFAULT_CATEGORIES = {
   KAFKA_TRIGGER: 'MESSAGE_QUEUE', RABBITMQ_PUBLISH: 'MESSAGE_QUEUE', RABBITMQ_TRIGGER: 'MESSAGE_QUEUE'
 }
 
+const LOCALIZED_TEMPLATE_FIELDS = new Set(['name', 'description'])
+
 /** 返回节点类型的稳定默认功能分类。 */
 export function defaultTemplateCategory(nodeType) {
   return DEFAULT_CATEGORIES[String(nodeType || '').toUpperCase()] || 'BASIC'
@@ -32,6 +34,20 @@ export function normalizeTemplateMetadata(template = {}) {
   const functionalCategory = WORKFLOW_TEMPLATE_CATEGORIES.includes(requestedCategory)
     ? requestedCategory : defaultTemplateCategory(template.nodeType)
   return { ...template, source, functionalCategory }
+}
+
+/** 返回系统内置模板的本地化词条键，自定义模板继续使用管理员录入文案。 */
+export function systemTemplateTranslationKey(template, field) {
+  const nodeType = String(template?.nodeType || '').toUpperCase()
+  if (!template?.systemTemplate || !nodeType || !LOCALIZED_TEMPLATE_FIELDS.has(field)) return ''
+  return `workflowCatalog.templates.${nodeType}.${field}`
+}
+
+/** 解析模板展示文案；系统词条缺失或非系统模板时安全回退到原始字段。 */
+export function localizedTemplateText(template, field, translate, hasTranslation) {
+  const key = systemTemplateTranslationKey(template, field)
+  if (key && hasTranslation(key)) return translate(key)
+  return String(template?.[field] || '')
 }
 
 /** 按固定功能顺序对模板分组，并可按需保留停用模板。 */

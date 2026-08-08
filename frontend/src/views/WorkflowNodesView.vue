@@ -23,11 +23,11 @@
       <div v-if="filteredRows.length" class="node-template-grid">
         <article v-for="row in filteredRows" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
           <button type="button" class="node-template-card-main" :disabled="!auth.hasPermission('workflow:node:update')" @click="open(row)">
-            <span class="node-template-icon">{{ row.nodeType.slice(0, 2) }}</span>
-            <span class="node-template-summary"><strong>{{ row.name }}</strong><code>{{ row.code }}</code></span>
+            <span class="node-template-icon">{{ templateIcon(row) }}</span>
+            <span class="node-template-summary"><strong>{{ templateText(row, 'name') }}</strong></span>
             <el-tag size="small" :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag>
-            <span class="node-template-type">{{ row.nodeType }} · {{ t(`workflowCatalog.categories.${row.functionalCategory}`) }} · {{ t(`workflowCatalog.sources.${row.source}`) }}</span>
-            <small>{{ row.description || t('workflowNodes.noDescription') }}</small>
+            <span class="node-template-type">{{ t(`workflowCatalog.categories.${row.functionalCategory}`) }} · {{ t(`workflowCatalog.sources.${row.source}`) }}</span>
+            <small>{{ templateText(row, 'description') || t('workflowNodes.noDescription') }}</small>
           </button>
           <div class="node-template-actions">
             <el-button v-if="auth.hasPermission('workflow:node:update')" link type="primary" @click="open(row)">{{ t('common.edit') }}</el-button>
@@ -62,9 +62,9 @@ import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import WorkflowNodeConfigEditor from '../components/WorkflowNodeConfigEditor.vue'
 import { cloneConfig, WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
-import { defaultTemplateCategory, filterWorkflowTemplates, normalizeTemplateMetadata, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
+import { defaultTemplateCategory, filterWorkflowTemplates, localizedTemplateText, normalizeTemplateMetadata, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
 const visible = ref(false)
@@ -76,6 +76,14 @@ const selectedCategory = ref('BASIC')
 const form = reactive(emptyForm())
 /** 返回同时匹配必选来源和功能分类的节点，并保留停用模板供管理员维护。 */
 const filteredRows = computed(() => filterWorkflowTemplates(rows.value, selectedSource.value, selectedCategory.value, true))
+
+/** 按当前界面语言返回系统模板文案，自定义模板保留管理员录入内容。 */
+function templateText(template, field) {
+  return localizedTemplateText(template, field, t, te)
+}
+
+/** 使用当前语言的功能名称生成卡片图标文字。 */
+function templateIcon(template) { return templateText(template, 'name').trim().slice(0, 2).toUpperCase() || '·' }
 
 /** 加载未作废节点模板。 */
 async function load() { rows.value = (await http.get('/workflow/nodes')).data || [] }
@@ -129,8 +137,8 @@ onMounted(load)
 .node-template-card--agent .node-template-icon, .node-template-card--llm .node-template-icon, .node-template-card--question_classifier .node-template-icon, .node-template-card--parameter_extractor .node-template-icon { color: #6d4cc7; background: #f0ebff; }
 .node-template-card--condition .node-template-icon, .node-template-card--switch .node-template-icon, .node-template-card--loop .node-template-icon, .node-template-card--iteration .node-template-icon { color: #9a6700; background: #fff5d6; }
 .node-template-summary { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.node-template-summary strong, .node-template-summary code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.node-template-summary code, .node-template-type, .node-template-card-main small { color: var(--app-muted); font-size: 12px; }
+.node-template-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-template-type, .node-template-card-main small { color: var(--app-muted); font-size: 12px; }
 .node-template-type { grid-column: 2 / -1; }
 .node-template-card-main small { grid-column: 1 / -1; min-height: 36px; line-height: 1.5; }
 .node-template-actions { display: flex; justify-content: flex-end; gap: 4px; padding: 8px 14px; border-top: 1px solid #edf1f6; }
