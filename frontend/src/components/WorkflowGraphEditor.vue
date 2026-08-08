@@ -93,7 +93,7 @@ const emit = defineEmits(['update:modelValue'])
 const { t, te } = useI18n()
 const editorId = workflowElementId('editor')
 const nodeTypes = Object.fromEntries(WORKFLOW_NODE_TYPES.map(type => [type, WorkflowNode]))
-const EDGE_INTERACTION_WIDTH = 96
+const EDGE_INTERACTION_WIDTH = 32
 const edgeOptions = { interactionWidth: EDGE_INTERACTION_WIDTH }
 const initial = serializeWorkflowGraph(props.modelValue)
 const nodes = ref(initial.nodes)

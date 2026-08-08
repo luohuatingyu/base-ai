@@ -71,7 +71,7 @@ test('悬停连线显示提示且左键点击立即删除并纳入撤销历史',
   assert.ok(serialized.edges.every(edge => !Object.prototype.hasOwnProperty.call(edge, 'interactionWidth')))
   assert.equal(withWorkflowEdgeInteractionWidth([{ id: 'fallback' }], 0)[0].interactionWidth, 20)
   assert.match(graphEditorSource, /:default-edge-options="edgeOptions"/)
-  assert.match(graphEditorSource, /EDGE_INTERACTION_WIDTH\s*=\s*96/)
+  assert.match(graphEditorSource, /EDGE_INTERACTION_WIDTH\s*=\s*32/)
   assert.match(graphEditorSource, /withWorkflowEdgeInteractionWidth\(initial\.edges, EDGE_INTERACTION_WIDTH\)/)
   assert.match(graphEditorSource, /withWorkflowEdgeInteractionWidth\(next\.edges, EDGE_INTERACTION_WIDTH\)/)
   assert.match(graphEditorSource, /withWorkflowEdgeInteractionWidth\(graph\.edges, EDGE_INTERACTION_WIDTH\)/)
