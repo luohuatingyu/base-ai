@@ -106,7 +106,8 @@ test('画布节点仅使用功能类型图标配色并兼容历史节点', () =>
 test('画布端点在宽松命中范围内提供连线反馈', () => {
   assert.match(graphEditorSource, /:connection-radius="CONNECTION_RADIUS"/)
   assert.match(graphEditorSource, /const CONNECTION_RADIUS = 32/)
-  assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle\)\s*\{[^}]*width:\s*40px[^}]*height:\s*40px[^}]*border:\s*0[^}]*background:\s*transparent/)
+  assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle\)\s*\{[^}]*width:\s*6px[^}]*height:\s*6px[^}]*border:\s*0[^}]*background:\s*transparent/)
+  assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle::before\)\s*\{[^}]*width:\s*40px[^}]*height:\s*40px[^}]*background:\s*transparent[^}]*pointer-events:\s*auto/)
   assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle::after\)\s*\{[^}]*width:\s*6px[^}]*height:\s*6px[^}]*border-radius:\s*50%/)
   assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle:hover::after\)[\s\S]*:deep\(\.vue-flow__handle\.connecting::after\)[\s\S]*box-shadow:/)
   assert.match(workflowNodeSource, /:deep\(\.vue-flow__handle\.valid::after\)\s*\{[^}]*background:/)
