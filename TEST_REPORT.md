@@ -1,5 +1,91 @@
 # 最近分支覆盖测试报告
 
+## 📋 Agent 指定模型下拉选择测试结果（2026-08-08）
+
+### Git 基准点
+
+Commit: cf308192b35d6e3a5c638792f4bb17606a060c03
+- 提交说明: Add Agent model selector
+- 测试日期: 2026-08-08
+- 分支: master
+- 上一测试报告基准点: `405db69163389d643f67747641a3563e18caa22f`
+- Backend 业务代码差异: `git diff 405db69163389d643f67747641a3563e18caa22f cf308192b35d6e3a5c638792f4bb17606a060c03 -- backend/src/main/java/` 包含工作流可选模型查询接口，因此已执行 Backend、Frontend、Python Worker、Caddy 完整回归及 Compose 统一重建。
+
+### 变更范围
+
+- Agent 节点的“指定模型”由数字输入改为可搜索、可清空的下拉选择；LLM、问题分类器、参数提取器等其他节点保持原有编辑器行为。
+- 新增受 `workflow:node:list` 权限保护的只读模型选项接口，仅返回模型 ID、名称、真实模型标识、供应商名称和支持类型，不返回 API Key、健康错误等敏感字段。
+- 下拉仅包含启用供应商下的启用模型，并按 Agent 当前模型类型动态过滤；切换类型或加载后发现旧模型不兼容时移除 `modelId`，回退到能力路由。
+- 模型列表加载失败时保留已有配置并展示中英文错误提示；清空选择会删除可选字段，不写入无效 ID。
+- 未新增依赖、配置、数据库迁移或持久化格式变更。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| Agent 不再手工输入模型 ID | Frontend 组件契约测试，Agent 配置可展开 | 打开 `modelId` 字段 | 使用可搜索、可清空下拉，无数字输入框；符合预期 | 正常、兼容 |
+| 下拉显示可识别模型信息 | Frontend 工具参数化测试 | 输入模型名称、真实标识和供应商 | 标签为“名称（真实标识）· 供应商”，选择值保持数字 ID；符合预期 | 正常、数据副作用 |
+| 模型类型动态过滤 | Frontend 工具参数化测试 | 文本、视觉、扩展类型及未知类型 | 仅保留声明支持当前类型的模型，未知类型返回空集合；符合预期 | 正常、边界、兼容 |
+| 不兼容或非法旧值自动清理 | Frontend 工具与组件契约测试 | 切换类型，或传入空值、非法 ID | 不兼容值返回 null 并删除 `modelId`，继续使用能力路由；符合预期 | 边界、异常、副作用 |
+| 只提供真实可用模型 | Backend Service 单元测试 | 混合启用/停用供应商和模型 | 仅返回启用供应商下的启用模型；符合预期 | 正常、异常、回归 |
+| 接口不泄漏敏感配置 | Backend Service 单元测试 | 查询工作流模型选项 | 仅返回五个下拉字段且加密服务无交互；符合预期 | 权限、安全 |
+| 接口权限保持受控 | Backend Controller 契约、AuthInterceptor 完整回归、运行态请求 | 检查注解；未登录请求新接口 | 要求 `workflow:node:list`，全局 401/403 语义通过，运行态未登录返回 401；符合预期 | 权限、安全、异常 |
+| 其他模块无回归 | Backend、Frontend、Worker、Caddy 完整套件 | 当前功能提交全部自动化测试 | 641/641 通过，失败 0、错误 0、跳过 0；符合预期 | 回归、兼容 |
+| 统一重建后服务可运行 | 正式 Compose 环境 | `docker compose up --build -d` | 四个镜像构建完成，Backend、Frontend、Worker、Caddy 全部 healthy；符合预期 | 构建、部署 |
+
+### 测试执行结果
+
+- 自动化测试合计：641/641 通过（Backend 364、Frontend 233、Python Worker 28、Caddy Go 16），失败 0，错误 0，跳过 0，通过率 100%。
+- Backend 定向覆盖：包含模型选项筛选与敏感字段隔离新增用例的 LLM 管理 Service 套件 39 项、接口权限契约 1 项，共 40/40 通过；包含在 Backend 完整 364 项中，不重复计数。
+- Frontend 定向覆盖：Agent 专用编辑器、类型过滤、动态扩展类型、标签、空值、非法值和类型切换，共 15/15 通过；包含在 Frontend 完整 233 项中，不重复计数。
+- Python Worker 使用 Python 3.12 执行 28 项测试，全部通过。
+- Caddy Go 执行格式检查、16 项测试和 `go vet`，全部通过。
+- 运行态：四个 Compose 服务全部 healthy；Backend 就绪接口返回 `UP`；未登录访问模型选项接口返回 HTTP 401。
+- 静态检查：`git diff --check` 通过，功能提交仅包含确认范围内的 9 个文件。
+
+### 关键模块测试
+
+- LLM 模型选项筛选和敏感字段隔离：1/1 新增用例通过，所在 Service 套件 39/39 通过。
+- Workflow 模型选项接口权限契约：1/1 通过。
+- Agent 配置编辑与模型类型兼容：2/2 新增用例通过，所在工作流配置套件 15/15 通过。
+- Backend 完整回归：364/364 通过。
+- Frontend 完整回归：233/233 通过。
+- Python Worker：28/28 通过。
+- Caddy：16/16 通过，格式检查及 `go vet` 通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Frontend 定向测试 | `node --test tests/workflowNodeConfig.test.js` | 15/15 通过 |
+| Backend 定向测试 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp -Dtest=LlmManagementServiceTest,WorkflowModelOptionsControllerTest test` | 40/40 通过，BUILD SUCCESS |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 364/364 通过，BUILD SUCCESS |
+| Frontend 完整回归 | `node --test test/*.test.mjs tests/*.test.js` | 233/233 通过 |
+| Python Worker 完整回归 | Python 3.12 容器按哈希安装开发依赖后执行 `python -m pytest -q -p no:cacheprovider` | 28/28 通过 |
+| Caddy Go 回归 | Go 1.26.5 容器执行 `gofmt`、`go test ./...`、`go vet ./...` | 16/16 通过 |
+| 统一重建 | `docker compose up --build -d` | 命令退出码 0，四服务全部 healthy |
+| 运行态就绪检查 | `/api/open/health/ready` | 返回 `{"status":"UP"}` |
+| 未登录权限检查 | GET `/api/workflow/model-options` | 返回 HTTP 401 和统一未登录响应 |
+| 差异检查 | `git diff --check`、提交文件范围和工作区状态检查 | 均通过 |
+
+### 测试过程问题与处理
+
+- 第一次 Backend 定向测试使用独立 Maven 缓存时，Maven Central 下载 Spring AMQP 依赖出现一次 TLS `bad_record_mac`，测试尚未进入编译阶段；切换到项目此前完整回归使用的宿主 Maven 缓存后，定向 40/40 和完整 364/364 均通过。
+- 工作期间另一项已确认的前端默认值状态改动先独立提交；本功能基于该提交继续开发，最终功能提交差异未混入其他未提交内容。
+- Python 测试容器出现 root 用户安装依赖的非阻断提示；容器为一次性环境，测试正常完成且未写入工作区缓存。
+
+### 已知问题与限制
+
+- 本次仅调整 Agent 节点；其他包含 `modelId` 的 AI 节点仍使用现有数字编辑器，符合确认范围。
+- 模型选项只包含当前启用供应商下的启用模型；已停用或删除的历史模型 ID 在列表加载成功后会被清理并回退能力路由。
+- 当前自动化测试覆盖数据逻辑、组件契约、权限声明与运行态未登录响应，尚未增加真实浏览器端到端点击测试。
+
+### 下次测试建议
+
+1. 增加浏览器 E2E，验证 Agent 卡片展开、模型搜索、清空、类型切换和错误提示的真实交互。
+2. 后续若将模型下拉推广到 LLM、问题分类器或参数提取器，应复用同一选项接口并分别验证默认路由语义。
+3. 增加带 `workflow:node:list` 和不带该权限的运行态集成账号，直接覆盖新接口的 200/403 响应。
+
 ## 📋 节点模板必填提示与发布校验测试结果（2026-08-08）
 
 ### Git 基准点
