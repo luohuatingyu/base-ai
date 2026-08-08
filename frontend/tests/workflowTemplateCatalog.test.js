@@ -86,6 +86,10 @@ test('画布使用右键分类菜单并在点击坐标添加节点', () => {
   assert.match(graphEditorSource, /screenToFlowCoordinate/)
   assert.match(graphEditorSource, /addTemplateFromMenu/)
   assert.match(graphEditorSource, /workflow-template-source/)
+  assert.match(graphEditorSource, /templateText\(template, 'name'\)/)
+  assert.match(graphEditorSource, /localizedTemplateText\(template, field, t, te\)/)
+  assert.match(graphEditorSource, /data:\s*\{\s*label:\s*templateText\(template, 'name'\)/)
+  assert.doesNotMatch(graphEditorSource, /<strong>\{\{\s*template\.name\s*\}\}<\/strong>/)
   assert.doesNotMatch(graphEditorSource, /workflow-palette|startDrag|application\/workflow-template/)
 })
 
