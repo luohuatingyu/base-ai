@@ -486,12 +486,13 @@ body { margin: 0; background: var(--app-canvas); }
 
 .full { width: 100%; }
 
-/* 工作流页面：列表与大画布并排，窄屏允许横向滚动而不压缩节点。 */
-.workflow-canvas-page { min-height: calc(100vh - 118px); display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; }
+/* 工作流页面：列表与大画布并排并填满主内容区，窄屏允许横向滚动而不压缩节点。 */
+.workflow-canvas-page { display: grid; height: calc(100vh - 124px); min-height: 0; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; }
+.workflow-list-panel, .workflow-design-panel { display: flex; flex-direction: column; min-height: 0; }
 .workflow-list-panel { min-width: 0; padding: 16px; }
 .workflow-list-heading, .workflow-toolbar, .workflow-toolbar-actions, .workflow-metadata { display: flex; align-items: center; gap: 10px; }
 .workflow-list-heading { justify-content: space-between; margin-bottom: 12px; }
-.workflow-list { display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 230px); margin-top: 12px; overflow: auto; }
+.workflow-list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 8px; margin-top: 12px; overflow: auto; }
 .workflow-list > button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; padding: 11px; border: 1px solid var(--app-border); border-radius: 9px; background: #fff; color: var(--app-text); text-align: left; cursor: pointer; }
 .workflow-list > button strong, .workflow-list > button small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-list > button small { color: var(--app-muted); }
@@ -594,6 +595,7 @@ body { margin: 0; background: var(--app-canvas); }
   .topbar { height: 62px; padding: 0 16px; }
   .nav-trigger { display: inline-flex; }
   .main { padding: 16px; }
+  .workflow-canvas-page { height: calc(100vh - 94px); }
   .panel { padding: 18px; border-radius: 10px; }
   .hero { min-height: auto; padding: 24px 20px; }
   .orbit { display: none; }
@@ -615,6 +617,7 @@ body { margin: 0; background: var(--app-canvas); }
   .topbar-open-platform-link span { display: none; }
   .user-chip { padding: 0 10px; }
   .main { padding: 12px; }
+  .workflow-canvas-page { height: calc(100vh - 86px); }
   .panel { padding: 16px; }
   .chat-panel { height: calc(100vh - 92px); }
   .metric-grid { grid-template-columns: 1fr; gap: 12px; }

@@ -1,5 +1,5 @@
 <template>
-  <div class="workflow-editor-shell" :class="{ 'has-properties': selected }">
+  <div class="workflow-editor-shell" :class="{ 'has-properties': selected, fill: props.fill }">
     <div class="workflow-flow">
       <VueFlow :id="editorId" v-model:nodes="nodes" v-model:edges="edges" :node-types="nodeTypes"
                fit-view-on-init @node-click="selectNode" @pane-click="clearSelection"
@@ -75,7 +75,7 @@ import { WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
 import { groupWorkflowTemplates } from '../utils/workflowTemplateCatalog'
 
 defineOptions({ name: 'WorkflowGraphEditor' })
-const props = defineProps({ modelValue: { type: Object, required: true }, templates: { type: Array, default: () => [] }, height: { type: Number, default: 620 } })
+const props = defineProps({ modelValue: { type: Object, required: true }, templates: { type: Array, default: () => [] }, height: { type: Number, default: 620 }, fill: { type: Boolean, default: false } })
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
 const editorId = workflowElementId('editor')
@@ -191,6 +191,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .workflow-editor-shell { position: relative; height: v-bind('`${height}px`'); display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; border: 1px solid var(--app-border); border-radius: 12px; background: #fff; }
+.workflow-editor-shell.fill { flex: 1; height: auto; min-height: 0; }
 .workflow-editor-shell.has-properties { grid-template-columns: minmax(0, 1fr) 360px; }
 .workflow-properties { min-width: 0; overflow: auto; padding: 14px; background: #f8fafc; }
 .workflow-properties { border-left: 1px solid var(--app-border); }

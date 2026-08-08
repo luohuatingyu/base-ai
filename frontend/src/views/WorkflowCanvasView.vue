@@ -26,7 +26,7 @@
         <el-input v-model="selected.description" :placeholder="t('common.description')" />
         <el-input v-model="inputSchemaText" :placeholder="t('workflowCanvas.inputSchema')" />
       </div>
-      <WorkflowGraphEditor v-model="graph" :templates="templates" />
+      <WorkflowGraphEditor v-model="graph" :templates="templates" fill />
     </section>
     <section v-else class="panel workflow-empty"><el-empty :description="t('workflowCanvas.empty')" /></section>
 

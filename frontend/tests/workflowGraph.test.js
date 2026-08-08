@@ -6,6 +6,7 @@ import { cloneWorkflowData, createWorkflowGraph, validateWorkflowGraph } from '.
 
 const canvasViewSource = readFileSync(new URL('../src/views/WorkflowCanvasView.vue', import.meta.url), 'utf8')
 const graphEditorSource = readFileSync(new URL('../src/components/WorkflowGraphEditor.vue', import.meta.url), 'utf8')
+const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
 test('工作流 JSON 数据可安全复制 Vue 响应式对象', () => {
   const workflow = reactive({
@@ -35,6 +36,15 @@ test('撤销重做作为画布悬浮操作并复用编辑器历史状态', () =>
   assert.match(graphEditorSource, /const canUndo = computed\(\(\) => historyIndex\.value > 0\)/)
   assert.match(graphEditorSource, /const canRedo = computed\(\(\) => historyIndex\.value < history\.value\.length - 1\)/)
   assert.match(graphEditorSource, /defineExpose\(\{ canUndo, canRedo, undo, redo \}\)/)
+})
+
+test('主工作流画布填满工具栏下方的剩余空间', () => {
+  assert.match(canvasViewSource, /<WorkflowGraphEditor[^>]*\sfill\s*\/>/)
+  assert.match(graphEditorSource, /fill:\s*\{\s*type:\s*Boolean,\s*default:\s*false\s*\}/)
+  assert.match(graphEditorSource, /\.workflow-editor-shell\.fill\s*\{[^}]*flex:\s*1[^}]*height:\s*auto[^}]*min-height:\s*0/)
+  assert.match(globalStyles, /\.workflow-canvas-page\s*\{[^}]*height:\s*calc\(100vh\s*-\s*124px\)[^}]*min-height:\s*0/)
+  assert.match(globalStyles, /\.workflow-list-panel,\s*\.workflow-design-panel\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*min-height:\s*0/)
+  assert.match(globalStyles, /\.workflow-list\s*\{[^}]*flex:\s*1[^}]*min-height:\s*0/)
 })
 
 test('工作流画布初始化唯一开始和结束节点', () => {
