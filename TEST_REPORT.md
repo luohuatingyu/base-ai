@@ -43,6 +43,7 @@ Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
 - Frontend 当前正式入口：88/88 通过；其中工作流模板目录定向测试 17/17 通过并包含新增 3 项导入契约。
 - Python Worker：Python 3.12 一次性容器执行 28/28 通过。
 - Caddy Go：16/16 通过，`go vet ./...` 通过。
+- Backend 容器运行态接口：管理员登录与 `workflow:node:import` 权限验证通过；n8n 兼容目录返回 7 项、Dify 兼容目录返回 2 项，响应码均为 200；只读验证后已注销，未导入模板。
 - 额外执行未纳入 `npm test` 的历史 `test/*.test.mjs`：168 项中 165 通过、3 失败。失败均来自既有 `api-trigger-security.test.mjs` 对当前工作流 CIDR 文本框及保存流程的旧源码断言；本次未修改对应页面，未计入本功能 584 项正式验收结果。
 - Compose 生产构建：Backend 测试阶段再次执行 452 项并通过，Frontend Vite 构建成功；Backend、Frontend、Python Worker、Caddy 全部 healthy。
 
@@ -57,6 +58,7 @@ Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
 | Python Worker 完整回归 | Python 3.12 一次性容器安装哈希锁定开发依赖后执行 `python -m pytest -q -p no:cacheprovider` | 28/28 通过 |
 | Caddy Go 完整回归 | Go 1.26.5 一次性容器执行 `go test -v ./...`、`go vet ./...` | 16/16 通过，vet 通过 |
 | 官方市场契约烟测 | 限时请求 n8n `/api/nodes/search-filters` 与 Dify `/api/v1/plugins/search/advanced` | 两个官方接口均返回当前预期 JSON 结构，Dify 可查到 Tavily |
+| 登录态市场接口烟测 | 在 Backend 容器内登录管理员并只读请求 N8N/DIFY 的 `compatibleOnly=true` 目录 | 登录和独立导入权限有效；N8N 返回 7 项、DIFY 返回 2 项，均为 200；随后注销且未写入模板 |
 | 统一重建 | `docker compose up --build -d` | 首次 Caddy 因主机 80 端口占用失败；停止占用容器后重试成功，四服务 healthy |
 | 数据库迁移 | Backend 启动 Flyway 日志 | MySQL Schema 当前为 v11，无待应用迁移 |
 | 运行状态 | `docker compose ps`、HTTP health 与 API readiness | 四服务 healthy；两个探针请求均成功 |
@@ -70,7 +72,7 @@ Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
 - 提交前审查发现“仅显示可导入”在市场分页后过滤会产生空页和错误总数；改为按服务端白名单先生成兼容目录、再检索分页，并增加回归用例。
 - 首次统一启动由 `domestic-trade-caddy` 占用 80/443；按项目规则停止该容器后重新执行，最终四服务全部健康。
 - Caddy 一次性测试容器前两次因登录 shell PATH 和 `/tmp` 模块根限制未进入测试；改在容器临时工作目录执行后 16/16 通过，容器销毁时已清理临时模块。
-- 最终状态复核时 Caddy 曾收到一次外部 SIGTERM 并以 0 正常退出，日志无崩溃、OOM 或端口错误；执行 `docker compose up -d caddy` 恢复后持续观察，容器恢复 healthy 且 HTTP health 返回 OK。
+- 最终状态复核时 Caddy 收到外部 SIGTERM 并以 0 正常退出，日志无崩溃或 OOM。Docker 事件确认另一工作区 `/Users/xyzc/gitee/domestic-trade` 正在后台执行 `docker compose up --build -d` 并停止本项目 Caddy 以争用 80/443；为避免干扰并行任务，后续登录态市场验证改在 Backend 容器内部完成。
 
 ### 已知问题与限制
 
@@ -80,7 +82,7 @@ Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
 - 未执行登录后的真实浏览器 E2E 或通过页面实际导入；交互由 Frontend 契约、生产构建、官方接口烟测及 Backend 持久化/安全测试覆盖。
 - 历史 Frontend 补充测试目录有 3 个既存旧断言失败：其假设接口触发安全页不存在任何 textarea 且只有旧自动保存流程，与当前已提交的工作流 CIDR 配置不一致；本次未修改无关测试或业务页。
 - Frontend 构建仍有既有 runtime-config、第三方 PURE 注释和大 chunk 警告，不影响构建成功。
-- `domestic-trade-caddy` 为释放本项目端口已停止；如需恢复该项目，需先释放本项目 80/443。
+- 本机另一个工作区正在并行重建并争用 80/443，因此本项目 Caddy 可能被其外部 Compose 任务停止；Backend、Frontend 和 Python Worker 不受影响。需在两个项目之间明确端口归属后再恢复对应 Caddy。
 
 ### 下次测试建议
 
