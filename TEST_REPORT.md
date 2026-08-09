@@ -1,5 +1,100 @@
 # 最近分支覆盖测试报告
 
+## 📋 n8n 与 Dify 节点市场导入测试结果（2026-08-09）
+
+### Git 基准点
+
+Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
+- 提交说明: Add marketplace node imports
+- 测试日期: 2026-08-09
+- 分支: master
+- 上一测试报告基准点: `981e47af29914a9f6fb6d23853d04938f2e8cfa9`
+- Backend 业务代码差异: 新增官方市场代理、白名单原生适配、Dify 包声明安全解析、幂等模板持久化、独立导入权限及节点模板外部身份字段，因此执行 Backend、Frontend、Python Worker、Caddy 完整回归和 Compose 统一重建。
+
+### 变更范围
+
+- 节点管理切换至 SYSTEM 时保留新增模板入口；切换至 N8N 或 DIFY 时展示对应官方市场导入入口。
+- 市场弹窗支持搜索、分页、全量条目浏览、兼容性标识和“仅显示可导入”筛选；未适配条目可查看但不能选中导入。
+- n8n 精确白名单将 PostgreSQL、MySQL、Redis、S3、Kafka Trigger 和 RabbitMQ Trigger 转换为 Base AI 现有原生节点类型。
+- Dify 当前精确支持官方市场 `langgenius/tavily` 的 Search 与 Extract 工具，导入时重新下载官方插件包并只解析 manifest/provider/tool YAML 声明，不加载或执行包内 Python 源码。
+- 市场目录和导入均由 Backend 代理；只允许 HTTPS 官方根域名，Dify 下载重定向限制为官方市场或官方 R2 存储，并设置超时、响应大小、压缩文件数和解压总量上限。
+- 导入时服务端重新查询市场条目并重新执行白名单适配，不信任前端提交的名称、类型或配置；同一来源与外部 ID 幂等，已删除模板可恢复，新导入模板默认停用。
+- 导入后仍使用现有系统节点卡片布局和 `WorkflowNodeConfigEditor` 原生配置编辑器；外部来源、模板编码和节点类型锁定，名称、说明、分类、配置和启用状态可继续维护。
+- 新增 MySQL V11 迁移、`workflow:node:import` 权限、中英文提示和可配置市场请求安全上限；新增 SnakeYAML 直接依赖以使用受限 `SafeConstructor` 解析声明。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 来源切换展示对应操作 | Frontend 组件契约测试；用户具备节点新增或导入权限 | 切换 SYSTEM、N8N、DIFY | SYSTEM 展示新增模板，外部来源展示对应官方市场导入；通过 | 正常、权限、交互 |
+| 全市场可浏览且仅白名单可导入 | Backend Service + Frontend 契约测试；市场同时返回 Redis 和 Slack | 浏览全部、启用仅兼容筛选、直接提交 Slack ID | 全部条目标记兼容状态；筛选按白名单先过滤再分页；Slack 不可选且服务端拒绝；通过 | 正常、边界、安全 |
+| n8n 转换为原生节点模板 | Backend Service 测试；官方目录可查到白名单 ID | 导入受支持 n8n 节点 | 生成受控原生类型、稳定编码和默认配置，不保存第三方运行代码；通过 | 正常、兼容、安全 |
+| Dify 包不执行且声明身份可信 | Backend 包解析与 Service 测试；内存 ZIP 含声明和恶意 Python 文件 | 导入 Tavily Search、构造路径穿越和超限解压包 | 只读取三类 YAML 并校验引用/工具名；Python 不执行；恶意包被拒绝；通过 | 正常、异常、恶意输入、安全 |
+| 导入幂等且默认停用 | Backend H2 Service 测试；已登录管理员 | 连续两次导入同一 `source + external_key` | 首次 CREATED 且 disabled，第二次 ALREADY_IMPORTED 并返回原模板；通过 | 正常、状态冲突、副作用 |
+| 通用创建接口不可伪造市场来源 | Backend H2 Service 测试 | 通过普通新增接口提交 DIFY 来源 | 服务端要求使用市场导入接口并拒绝请求；通过 | 权限、安全、异常 |
+| 导入权限独立且返回外部身份 | Backend Controller 反射契约、Schema 与 Service 测试 | 检查浏览/导入注解和模板查询结果 | 浏览要求 list，导入要求 import；返回版本、发布者、指纹和导入时间；通过 | 权限、安全、兼容 |
+| 导入卡片沿用原生配置方式 | Frontend 契约测试 | 打开已导入模板 | 使用统一节点卡片和原生配置编辑器，锁定外部身份字段；通过 | 交互、兼容、回归 |
+| 数据迁移和部署可用 | Backend Schema 测试、真实 MySQL 8.0、Compose | 应用 V11 并统一构建启动 | Schema 当前为 v11，四服务 healthy，入口健康检查成功；通过 | 数据、构建、部署、回归 |
+
+### 测试执行结果
+
+- 当前正式测试入口及组件完整回归共 584 项，584 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：452/452 通过；市场 Service 4/4、包安全解析 3/3、Schema 8/8、模板持久化/访问 4/4、Controller 权限契约 4/4 均通过。
+- Frontend 当前正式入口：88/88 通过；其中工作流模板目录定向测试 17/17 通过并包含新增 3 项导入契约。
+- Python Worker：Python 3.12 一次性容器执行 28/28 通过。
+- Caddy Go：16/16 通过，`go vet ./...` 通过。
+- 额外执行未纳入 `npm test` 的历史 `test/*.test.mjs`：168 项中 165 通过、3 失败。失败均来自既有 `api-trigger-security.test.mjs` 对当前工作流 CIDR 文本框及保存流程的旧源码断言；本次未修改对应页面，未计入本功能 584 项正式验收结果。
+- Compose 生产构建：Backend 测试阶段再次执行 452 项并通过，Frontend Vite 构建成功；Backend、Frontend、Python Worker、Caddy 全部 healthy。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整回归 | `docker compose build backend`（Dockerfile 内 Maven 3.9.9 / Java 17 执行 `mvn -B -ntp package`） | 452/452 通过，BUILD SUCCESS |
+| Frontend 定向回归 | `cd frontend && node --test tests/workflowTemplateCatalog.test.js` | 17/17 通过 |
+| Frontend 正式完整回归 | `cd frontend && npm test` | 88/88 通过 |
+| Frontend 历史补充入口 | `cd frontend && node --test test/*.test.mjs` | 165/168 通过；3 个既有接口触发安全页源码契约失败，与本次文件无差异 |
+| Python Worker 完整回归 | Python 3.12 一次性容器安装哈希锁定开发依赖后执行 `python -m pytest -q -p no:cacheprovider` | 28/28 通过 |
+| Caddy Go 完整回归 | Go 1.26.5 一次性容器执行 `go test -v ./...`、`go vet ./...` | 16/16 通过，vet 通过 |
+| 官方市场契约烟测 | 限时请求 n8n `/api/nodes/search-filters` 与 Dify `/api/v1/plugins/search/advanced` | 两个官方接口均返回当前预期 JSON 结构，Dify 可查到 Tavily |
+| 统一重建 | `docker compose up --build -d` | 首次 Caddy 因主机 80 端口占用失败；停止占用容器后重试成功，四服务 healthy |
+| 数据库迁移 | Backend 启动 Flyway 日志 | MySQL Schema 当前为 v11，无待应用迁移 |
+| 运行状态 | `docker compose ps`、HTTP health 与 API readiness | 四服务 healthy；两个探针请求均成功 |
+| 差异检查 | `git diff --check`、`git diff --cached --check`、文件范围及未跟踪文件检查 | 通过；未修改接口触发安全页，无调试或临时文件 |
+
+### 测试过程问题与处理
+
+- 首次直接使用 Maven 官方容器下载既有依赖时出现 TLS `Tag mismatch`，未进入编译；改用项目 Dockerfile 配置的 Maven 镜像后完成完整测试，不影响代码。
+- 初版 Dify ZIP 解析器存在 Java 模式变量作用域编译错误，修正收窄逻辑后继续测试。
+- 初版 H2 模板夹具缺少新增列默认值，随后又因时间戳默认值导致 `GeneratedKeyHolder` 返回多列；将夹具调整为与生产插入行为一致后，持久化测试和完整 452 项均通过，未弱化业务断言。
+- 提交前审查发现“仅显示可导入”在市场分页后过滤会产生空页和错误总数；改为按服务端白名单先生成兼容目录、再检索分页，并增加回归用例。
+- 首次统一启动由 `domestic-trade-caddy` 占用 80/443；按项目规则停止该容器后重新执行，最终四服务全部健康。
+- Caddy 一次性测试容器前两次因登录 shell PATH 和 `/tmp` 模块根限制未进入测试；改在容器临时工作目录执行后 16/16 通过，容器销毁时已清理临时模块。
+- 最终状态复核时 Caddy 曾收到一次外部 SIGTERM 并以 0 正常退出，日志无崩溃、OOM 或端口错误；执行 `docker compose up -d caddy` 恢复后持续观察，容器恢复 healthy 且 HTTP health 返回 OK。
+
+### 已知问题与限制
+
+- 当前 n8n 原生白名单仅覆盖 PostgreSQL、MySQL、Redis、AWS S3/S3、Kafka Trigger 和 RabbitMQ Trigger；Dify 仅覆盖 Tavily Search/Extract。其他条目可以浏览但会显示暂不支持。
+- 市场依赖 n8n 与 Dify 当前官方 Web API，接口变化或外部服务不可用时会返回市场暂不可用；目录默认缓存 300 秒，不影响已导入模板运行。
+- 导入模板默认停用，需要管理员补齐 Base AI 原生连接或 Tavily API Key 等配置后手动启用；第三方插件自身的凭据、运行时和自定义代码不会被导入。
+- 未执行登录后的真实浏览器 E2E 或通过页面实际导入；交互由 Frontend 契约、生产构建、官方接口烟测及 Backend 持久化/安全测试覆盖。
+- 历史 Frontend 补充测试目录有 3 个既存旧断言失败：其假设接口触发安全页不存在任何 textarea 且只有旧自动保存流程，与当前已提交的工作流 CIDR 配置不一致；本次未修改无关测试或业务页。
+- Frontend 构建仍有既有 runtime-config、第三方 PURE 注释和大 chunk 警告，不影响构建成功。
+- `domestic-trade-caddy` 为释放本项目端口已停止；如需恢复该项目，需先释放本项目 80/443。
+
+### 下次测试建议
+
+1. 增加登录态浏览器 E2E，覆盖来源切换、市场搜索/分页、不可导入状态、批量导入、默认停用和配置启用。
+2. 使用可控的官方响应录制或契约测试服务，持续监测 n8n 与 Dify 市场字段、分页和下载重定向变化。
+3. 扩展白名单前为每个第三方节点建立原生能力映射、凭据迁移规则、恶意包测试和运行集成测试，禁止直接执行插件代码。
+4. 在后续独立任务中修正或迁移 `frontend/test/api-trigger-security.test.mjs` 的 3 个过期源码契约，并考虑统一两套 Frontend 测试入口。
+
+### 重测触发条件与回滚
+
+- 修改市场白名单、官方接口适配、包下载/解析安全限制、模板外部身份、导入权限、节点原生映射、V11 迁移或市场导入界面时，必须重跑 Backend、Frontend 完整回归和 Compose 统一重建。
+- 应用回滚可撤销功能提交 `499cea569b9acfb4e284ed1cbae007b986934e73` 后执行 `docker compose up --build -d`；V11 新增列和唯一约束均为前向兼容结构，建议保留以免破坏审计信息。
+- 如必须回退 V11 数据结构，应先停机、备份并确认没有 N8N/DIFY 导入模板依赖，再设计独立下行迁移；不得直接删除生产字段或导入数据。
+
 ## 📋 工作流安全与执行可靠性加固测试结果（2026-08-08）
 
 ### Git 基准点
