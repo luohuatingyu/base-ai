@@ -44,6 +44,7 @@ Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
 - Python Worker：Python 3.12 一次性容器执行 28/28 通过。
 - Caddy Go：16/16 通过，`go vet ./...` 通过。
 - Backend 容器运行态接口：管理员登录与 `workflow:node:import` 权限验证通过；n8n 兼容目录返回 7 项、Dify 兼容目录返回 2 项，响应码均为 200；只读验证后已注销，未导入模板。
+- 经用户确认后执行真实导入链路：Dify Tavily Search 首次导入为 CREATED 并生成模板 ID 37，重复导入为 ALREADY_IMPORTED；更新原生 HTTP 搜索参数后启用成功，来源、外部 ID 和节点类型保持不变；验证完成后恢复停用，避免缺少真实 Tavily Key 时被误用。
 - 额外执行未纳入 `npm test` 的历史 `test/*.test.mjs`：168 项中 165 通过、3 失败。失败均来自既有 `api-trigger-security.test.mjs` 对当前工作流 CIDR 文本框及保存流程的旧源码断言；本次未修改对应页面，未计入本功能 584 项正式验收结果。
 - Compose 生产构建：Backend 测试阶段再次执行 452 项并通过，Frontend Vite 构建成功；Backend、Frontend、Python Worker、Caddy 全部 healthy。
 
@@ -59,6 +60,7 @@ Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
 | Caddy Go 完整回归 | Go 1.26.5 一次性容器执行 `go test -v ./...`、`go vet ./...` | 16/16 通过，vet 通过 |
 | 官方市场契约烟测 | 限时请求 n8n `/api/nodes/search-filters` 与 Dify `/api/v1/plugins/search/advanced` | 两个官方接口均返回当前预期 JSON 结构，Dify 可查到 Tavily |
 | 登录态市场接口烟测 | 在 Backend 容器内登录管理员并只读请求 N8N/DIFY 的 `compatibleOnly=true` 目录 | 登录和独立导入权限有效；N8N 返回 7 项、DIFY 返回 2 项，均为 200；随后注销且未写入模板 |
+| 真实导入与配置链路 | 经用户确认后通过 Backend 接口导入 `langgenius/tavily/tavily_search`，重复导入，调整非敏感 HTTP 搜索参数并启用、查询、停用 | 模板 ID 37；CREATED → ALREADY_IMPORTED；启用回显通过且外部身份不可变；最终安全恢复为 disabled |
 | 统一重建 | `docker compose up --build -d` | 首次 Caddy 因主机 80 端口占用失败；停止占用容器后重试成功，四服务 healthy |
 | 数据库迁移 | Backend 启动 Flyway 日志 | MySQL Schema 当前为 v11，无待应用迁移 |
 | 运行状态 | `docker compose ps`、HTTP health 与 API readiness | 四服务 healthy；两个探针请求均成功 |
@@ -79,7 +81,7 @@ Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
 - 当前 n8n 原生白名单仅覆盖 PostgreSQL、MySQL、Redis、AWS S3/S3、Kafka Trigger 和 RabbitMQ Trigger；Dify 仅覆盖 Tavily Search/Extract。其他条目可以浏览但会显示暂不支持。
 - 市场依赖 n8n 与 Dify 当前官方 Web API，接口变化或外部服务不可用时会返回市场暂不可用；目录默认缓存 300 秒，不影响已导入模板运行。
 - 导入模板默认停用，需要管理员补齐 Base AI 原生连接或 Tavily API Key 等配置后手动启用；第三方插件自身的凭据、运行时和自定义代码不会被导入。
-- 未执行登录后的真实浏览器 E2E 或通过页面实际导入；交互由 Frontend 契约、生产构建、官方接口烟测及 Backend 持久化/安全测试覆盖。
+- 未执行浏览器页面自动化 E2E；已通过真实登录态 Backend 接口完成导入、幂等、配置、启用、回显和安全停用链路，页面交互仍由 Frontend 契约及生产构建覆盖。
 - 历史 Frontend 补充测试目录有 3 个既存旧断言失败：其假设接口触发安全页不存在任何 textarea 且只有旧自动保存流程，与当前已提交的工作流 CIDR 配置不一致；本次未修改无关测试或业务页。
 - Frontend 构建仍有既有 runtime-config、第三方 PURE 注释和大 chunk 警告，不影响构建成功。
 - 本机另一个工作区正在并行重建并争用 80/443，因此本项目 Caddy 可能被其外部 Compose 任务停止；Backend、Frontend 和 Python Worker 不受影响。需在两个项目之间明确端口归属后再恢复对应 Caddy。
