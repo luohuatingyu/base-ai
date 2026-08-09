@@ -40,9 +40,12 @@ class WorkflowServiceAccessTest {
             input_schema_json CLOB,template_snapshot_json CLOB,created_at TIMESTAMP)
             """);
         jdbcTemplate.execute("""
-            CREATE TABLE workflow_node_template(id BIGINT PRIMARY KEY,code VARCHAR(80),name VARCHAR(120),node_type VARCHAR(24),
+            CREATE TABLE workflow_node_template(id BIGINT AUTO_INCREMENT PRIMARY KEY,code VARCHAR(80),name VARCHAR(120),node_type VARCHAR(24),
             description VARCHAR(500),config_encrypted CLOB,system_template BOOLEAN,template_source VARCHAR(20),
-            functional_category VARCHAR(40),enabled BOOLEAN,voided BOOLEAN,created_by BIGINT,created_at TIMESTAMP,updated_at TIMESTAMP)
+            functional_category VARCHAR(40),external_key VARCHAR(255),external_version VARCHAR(64),external_publisher VARCHAR(120),
+            external_fingerprint CHAR(64),imported_at TIMESTAMP,enabled BOOLEAN DEFAULT TRUE,voided BOOLEAN DEFAULT FALSE,
+            created_by BIGINT,created_at TIMESTAMP,updated_at TIMESTAMP,
+            UNIQUE(template_source,external_key))
             """);
         jdbcTemplate.update("INSERT INTO workflow_version VALUES (10,1,1,'{}','{}','{}',CURRENT_TIMESTAMP),(20,2,1,'{}','{}','{}',CURRENT_TIMESTAMP)");
         jdbcTemplate.update("""
@@ -52,9 +55,9 @@ class WorkflowServiceAccessTest {
             """);
         jdbcTemplate.update("""
             INSERT INTO workflow_node_template VALUES
-            (1,'START','Start','START','','',true,'SYSTEM','FLOW_CONTROL',true,false,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
-            (2,'OWN_NODE','Own','HTTP','','',false,'CUSTOM','INTEGRATION',true,false,7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
-            (3,'OTHER_NODE','Other','HTTP','','',false,'CUSTOM','INTEGRATION',true,false,8,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+            (1,'START','Start','START','','',true,'SYSTEM','FLOW_CONTROL',NULL,NULL,NULL,NULL,NULL,true,false,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+            (2,'OWN_NODE','Own','HTTP','','',false,'CUSTOM','INTEGRATION',NULL,NULL,NULL,NULL,NULL,true,false,7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+            (3,'OTHER_NODE','Other','HTTP','','',false,'CUSTOM','INTEGRATION',NULL,NULL,NULL,NULL,NULL,true,false,8,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
             """);
         PlatformProperties properties = new PlatformProperties();
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString(
@@ -86,6 +89,33 @@ class WorkflowServiceAccessTest {
         authenticate(1L, Set.of("ADMIN"));
         assertEquals(2, service.workflows().size());
         assertEquals(3, service.templates().size());
+    }
+
+    /** 市场模板导入必须幂等保存外部身份并默认停用。 */
+    @Test
+    void importsMarketplaceTemplateIdempotently() {
+        authenticate(1L, Set.of("ADMIN"));
+        WorkflowModels.MarketplaceTemplateDraft draft = new WorkflowModels.MarketplaceTemplateDraft(
+            "N8N", "n8n-nodes-base.redis", "1", "n8n", "a".repeat(64), "N8N_REDIS", "Redis", "",
+            "REDIS_COMMAND", "DATA_STORAGE", new ObjectMapper().createObjectNode());
+
+        WorkflowModels.MarketplaceTemplatePersistence first = service.importMarketplaceTemplate(draft);
+        WorkflowModels.MarketplaceTemplatePersistence second = service.importMarketplaceTemplate(draft);
+
+        assertEquals("CREATED", first.status());
+        assertEquals("ALREADY_IMPORTED", second.status());
+        WorkflowModels.NodeTemplateView imported = service.templates().stream()
+            .filter(template -> "n8n-nodes-base.redis".equals(template.externalKey())).findFirst().orElseThrow();
+        assertEquals(true, imported.importedTemplate());
+        assertEquals(false, imported.enabled());
+        assertEquals("n8n-nodes-base.redis", imported.externalKey());
+    }
+
+    /** 通用创建接口不能伪造 n8n 或 Dify 市场来源。 */
+    @Test
+    void rejectsForgedMarketplaceSourceOnGenericCreate() {
+        assertThrows(BusinessException.class, () -> service.createTemplate(new WorkflowModels.NodeTemplateCommand(
+            "FORGED", "Forged", "HTTP", "", new ObjectMapper().createObjectNode(), true, "DIFY", "NETWORK_API")));
     }
 
     /** 设置交互用户身份。 */

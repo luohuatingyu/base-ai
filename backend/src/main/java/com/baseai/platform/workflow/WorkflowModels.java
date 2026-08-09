@@ -15,8 +15,21 @@ public final class WorkflowModels {
                                       JsonNode config, Boolean enabled, String source, String functionalCategory) {}
     public record NodeTemplateView(Long id, String code, String name, String nodeType, String description,
                                    JsonNode config, boolean systemTemplate, String source, String functionalCategory,
-                                   boolean enabled,
+                                   boolean enabled, boolean importedTemplate, String externalKey, String externalVersion,
+                                   String externalPublisher, String externalFingerprint, LocalDateTime importedAt,
                                    LocalDateTime createdAt, LocalDateTime updatedAt) {}
+    public record MarketplaceNodeView(String externalId, String name, String description, String version,
+                                      String publisher, String marketplaceCategory, boolean compatible,
+                                      String incompatibilityReason, String targetNodeType, String functionalCategory) {}
+    public record MarketplacePage(String source, List<MarketplaceNodeView> items, int page, int pageSize, long total) {}
+    public record MarketplaceImportCommand(List<String> externalIds) {}
+    public record MarketplaceImportItem(String externalId, String status, Long templateId) {}
+    public record MarketplaceImportResult(String source, List<MarketplaceImportItem> items) {}
+    public record MarketplaceTemplateDraft(String source, String externalKey, String externalVersion,
+                                           String externalPublisher, String externalFingerprint, String code,
+                                           String name, String description, String nodeType,
+                                           String functionalCategory, JsonNode config) {}
+    public record MarketplaceTemplatePersistence(Long templateId, String status) {}
     public record WorkflowCommand(String code, String name, String description, JsonNode graph,
                                   JsonNode inputSchema, Long revision) {}
     public record WorkflowView(Long id, String code, String name, String description, String status,

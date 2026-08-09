@@ -260,6 +260,13 @@ public class PlatformProperties {
         private int webhookMaxBodyBytes = 1024 * 1024;
         private int webhookRateLimitPerMinute = 60;
         private int triggerDeliveryRetentionDays = 30;
+        private String marketplaceN8nUrl = "https://n8n.io";
+        private String marketplaceDifyUrl = "https://marketplace.dify.ai";
+        private int marketplaceTimeoutSeconds = 8;
+        private int marketplaceCacheSeconds = 300;
+        private int marketplaceMaxPackageBytes = 5 * 1024 * 1024;
+        private int marketplaceMaxUnpackedBytes = 10 * 1024 * 1024;
+        private int marketplaceMaxPackageFiles = 128;
         /** 读取执行线程数量。 */
         public int getExecutorPoolSize() { return executorPoolSize; }
         /** 设置执行线程数量。 */
@@ -316,5 +323,33 @@ public class PlatformProperties {
         public int getTriggerDeliveryRetentionDays() { return triggerDeliveryRetentionDays; }
         /** 设置触发幂等记录保留天数。 */
         public void setTriggerDeliveryRetentionDays(int value) { triggerDeliveryRetentionDays = value; }
+        /** 读取 n8n 官方市场根地址。 */
+        public String getMarketplaceN8nUrl() { return marketplaceN8nUrl; }
+        /** 设置 n8n 官方市场根地址。 */
+        public void setMarketplaceN8nUrl(String value) { marketplaceN8nUrl = value; }
+        /** 读取 Dify 官方市场根地址。 */
+        public String getMarketplaceDifyUrl() { return marketplaceDifyUrl; }
+        /** 设置 Dify 官方市场根地址。 */
+        public void setMarketplaceDifyUrl(String value) { marketplaceDifyUrl = value; }
+        /** 读取市场请求超时秒数。 */
+        public int getMarketplaceTimeoutSeconds() { return marketplaceTimeoutSeconds; }
+        /** 设置市场请求超时秒数。 */
+        public void setMarketplaceTimeoutSeconds(int value) { marketplaceTimeoutSeconds = value; }
+        /** 读取市场目录缓存秒数。 */
+        public int getMarketplaceCacheSeconds() { return marketplaceCacheSeconds; }
+        /** 设置市场目录缓存秒数。 */
+        public void setMarketplaceCacheSeconds(int value) { marketplaceCacheSeconds = value; }
+        /** 读取 Dify 插件压缩包字节上限。 */
+        public int getMarketplaceMaxPackageBytes() { return marketplaceMaxPackageBytes; }
+        /** 设置 Dify 插件压缩包字节上限。 */
+        public void setMarketplaceMaxPackageBytes(int value) { marketplaceMaxPackageBytes = value; }
+        /** 读取 Dify 插件解压后字节上限。 */
+        public int getMarketplaceMaxUnpackedBytes() { return marketplaceMaxUnpackedBytes; }
+        /** 设置 Dify 插件解压后字节上限。 */
+        public void setMarketplaceMaxUnpackedBytes(int value) { marketplaceMaxUnpackedBytes = value; }
+        /** 读取 Dify 插件压缩包文件数量上限。 */
+        public int getMarketplaceMaxPackageFiles() { return marketplaceMaxPackageFiles; }
+        /** 设置 Dify 插件压缩包文件数量上限。 */
+        public void setMarketplaceMaxPackageFiles(int value) { marketplaceMaxPackageFiles = value; }
     }
 }

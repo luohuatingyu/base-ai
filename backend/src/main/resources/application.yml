@@ -125,3 +125,10 @@ app:
     webhook-max-body-bytes: ${WORKFLOW_WEBHOOK_MAX_BODY_BYTES:1048576}
     webhook-rate-limit-per-minute: ${WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE:60}
     trigger-delivery-retention-days: ${WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS:30}
+    marketplace-n8n-url: ${WORKFLOW_MARKETPLACE_N8N_URL:https://n8n.io}
+    marketplace-dify-url: ${WORKFLOW_MARKETPLACE_DIFY_URL:https://marketplace.dify.ai}
+    marketplace-timeout-seconds: ${WORKFLOW_MARKETPLACE_TIMEOUT_SECONDS:8}
+    marketplace-cache-seconds: ${WORKFLOW_MARKETPLACE_CACHE_SECONDS:300}
+    marketplace-max-package-bytes: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_BYTES:5242880}
+    marketplace-max-unpacked-bytes: ${WORKFLOW_MARKETPLACE_MAX_UNPACKED_BYTES:10485760}
+    marketplace-max-package-files: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_FILES:128}

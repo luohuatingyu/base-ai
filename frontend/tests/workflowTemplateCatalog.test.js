@@ -129,6 +129,29 @@ test('节点管理使用必选来源和功能类型级联标签并校验表单�
   assert.match(nodeManagementSource, /WORKFLOW_TEMPLATE_CATEGORIES/)
 })
 
+test('节点来源切换后系统使用新增入口且外部来源使用官方市场导入', () => {
+  assert.match(nodeManagementSource, /selectedSource === 'SYSTEM'[^>]*workflow:node:create/)
+  assert.match(nodeManagementSource, /selectedSource !== 'SYSTEM'[^>]*workflow:node:import/)
+  assert.match(nodeManagementSource, /openMarketplace/)
+  assert.match(nodeManagementSource, /\/workflow\/node-marketplaces\/\$\{selectedSource\.value\}\/nodes/)
+  assert.match(nodeManagementSource, /\/workflow\/node-marketplaces\/\$\{selectedSource\.value\}\/imports/)
+})
+
+test('市场目录全量可浏览但只有原生兼容节点可以选中导入', () => {
+  assert.match(nodeManagementSource, /v-model="compatibleOnly"/)
+  assert.match(nodeManagementSource, /:disabled="!item\.compatible"/)
+  assert.match(nodeManagementSource, /item\.incompatibilityReason/)
+  assert.match(nodeManagementSource, /externalIds:\s*\[\.\.\.selectedMarketplaceIds\.value\]/)
+  assert.match(nodeManagementSource, /marketplaceHint/)
+})
+
+test('市场导入模板锁定外部身份但继续使用原生配置编辑器', () => {
+  assert.match(nodeManagementSource, /form\.systemTemplate \|\| form\.importedTemplate/)
+  assert.match(nodeManagementSource, /:disabled="form\.importedTemplate \|\| !form\.id"/)
+  assert.match(nodeManagementSource, /WorkflowNodeConfigEditor/)
+  assert.match(nodeManagementSource, /importedTemplate:\s*false/)
+})
+
 test('节点管理卡片仅展示当前语言的功能文案并隐藏技术编码和节点类型', () => {
   assert.match(nodeManagementSource, /templateIcon\(row\)/)
   assert.match(nodeManagementSource, /templateText\(row, 'name'\)/)

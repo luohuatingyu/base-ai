@@ -75,6 +75,7 @@ const menuKeysByPermission = Object.freeze({
   'workflow:catalog': 'nav.items.workflow',
   'workflow:node:list': 'nav.items.workflowNodes',
   'workflow:node:create': 'workflowNodes.add',
+  'workflow:node:import': 'workflowNodes.add',
   'workflow:node:update': 'workflowNodes.edit',
   'workflow:node:delete': 'common.delete',
   'workflow:connection:list': 'nav.items.workflowConnections',

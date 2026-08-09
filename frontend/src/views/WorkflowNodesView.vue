@@ -2,7 +2,8 @@
   <div class="panel">
     <div class="section-head">
       <div><h2>{{ t('workflowNodes.title') }}</h2><p>{{ t('workflowNodes.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
+      <el-button v-if="selectedSource === 'SYSTEM' && auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
+      <el-button v-else-if="selectedSource !== 'SYSTEM' && auth.hasPermission('workflow:node:import')" type="primary" @click="openMarketplace">{{ t('workflowNodes.importFrom', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</el-button>
     </div>
     <div class="node-template-source-filter" :aria-label="t('workflowNodes.source')">
       <strong>{{ t('workflowNodes.source') }}</strong>
@@ -44,16 +45,53 @@
     <el-dialog v-model="visible" :title="form.id ? t('workflowNodes.edit') : t('workflowNodes.add')" width="min(980px, 94vw)" top="5vh">
       <el-alert class="node-template-required-hint" :title="t('workflowNodes.requiredHint')" type="info" show-icon :closable="false" />
       <el-form label-width="120px">
-        <el-form-item :label="t('common.code')" required><el-input v-model="form.code" :disabled="form.systemTemplate" /></el-form-item>
+        <el-form-item :label="t('common.code')" required><el-input v-model="form.code" :disabled="form.systemTemplate || form.importedTemplate" /></el-form-item>
         <el-form-item :label="t('common.name')" required><el-input v-model="form.name" /></el-form-item>
-        <el-form-item :label="t('common.type')" required><el-select v-model="form.nodeType" class="full" :disabled="form.systemTemplate" @change="syncDefaultCategory"><el-option v-for="type in nodeTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
-        <el-form-item :label="t('workflowNodes.source')" required><el-select v-model="form.source" class="full"><el-option v-for="source in sources" :key="source" :label="t(`workflowCatalog.sources.${source}`)" :value="source" /></el-select></el-form-item>
+        <el-form-item :label="t('common.type')" required><el-select v-model="form.nodeType" class="full" :disabled="form.systemTemplate || form.importedTemplate" @change="syncDefaultCategory"><el-option v-for="type in nodeTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+        <el-form-item :label="t('workflowNodes.source')" required><el-select v-model="form.source" class="full" :disabled="form.importedTemplate || !form.id"><el-option v-for="source in sources" :key="source" :label="t(`workflowCatalog.sources.${source}`)" :value="source" /></el-select></el-form-item>
         <el-form-item :label="t('workflowNodes.category')" required><el-select v-model="form.functionalCategory" class="full"><el-option v-for="category in categories" :key="category" :label="t(`workflowCatalog.categories.${category}`)" :value="category" /></el-select></el-form-item>
         <el-form-item :label="t('common.description')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item :label="t('workflowNodes.defaultConfig')"><WorkflowNodeConfigEditor v-model="form.config" :node-type="form.nodeType" /></el-form-item>
         <el-form-item :label="t('common.status')"><el-switch v-model="form.enabled" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="visible=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="save">{{ t('common.save') }}</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="marketplaceVisible" :title="t('workflowNodes.marketplaceTitle', { source: t(`workflowCatalog.sources.${selectedSource}`) })" width="min(1040px, 95vw)" top="4vh">
+      <div class="marketplace-toolbar">
+        <el-input v-model="marketplaceQuery" clearable :placeholder="t('workflowNodes.marketplaceSearch')" @keyup.enter="searchMarketplace" />
+        <el-checkbox v-model="compatibleOnly" @change="searchMarketplace">{{ t('workflowNodes.compatibleOnly') }}</el-checkbox>
+        <el-button :loading="marketplaceLoading" @click="searchMarketplace">{{ t('common.search') }}</el-button>
+      </div>
+      <el-alert :title="t('workflowNodes.marketplaceHint')" type="info" show-icon :closable="false" />
+      <el-checkbox-group v-if="marketplaceItems.length" v-model="selectedMarketplaceIds" class="marketplace-grid">
+        <article v-for="item in marketplaceItems" :key="item.externalId" class="marketplace-card" :class="{ unsupported: !item.compatible }">
+          <div class="marketplace-card-head">
+            <el-checkbox :value="item.externalId" :disabled="!item.compatible">
+              <strong>{{ item.name }}</strong>
+            </el-checkbox>
+            <el-tag v-if="item.compatible" type="success" size="small">{{ t('workflowNodes.compatible') }}</el-tag>
+            <el-tag v-else type="info" size="small">{{ t('workflowNodes.unsupported') }}</el-tag>
+          </div>
+          <p>{{ item.description || t('workflowNodes.noDescription') }}</p>
+          <div class="marketplace-meta">
+            <span>{{ item.publisher || selectedSource }}</span>
+            <span v-if="item.version">v{{ item.version }}</span>
+            <span v-if="item.targetNodeType">{{ item.targetNodeType }}</span>
+          </div>
+          <small v-if="!item.compatible">{{ t(`workflowNodes.incompatibility.${item.incompatibilityReason}`) }}</small>
+        </article>
+      </el-checkbox-group>
+      <el-empty v-else-if="!marketplaceLoading" :description="t('workflowNodes.marketplaceEmpty')" :image-size="56" />
+      <el-skeleton v-else :rows="6" animated />
+      <el-pagination v-if="marketplaceTotal > marketplacePageSize" v-model:current-page="marketplacePage" class="marketplace-pagination"
+        layout="prev, pager, next" :page-size="marketplacePageSize" :total="marketplaceTotal" @current-change="loadMarketplace" />
+      <template #footer>
+        <el-button @click="marketplaceVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="marketplaceImporting" :disabled="!selectedMarketplaceIds.length" @click="importMarketplaceNodes">
+          {{ t('workflowNodes.importSelected', { count: selectedMarketplaceIds.length }) }}
+        </el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -78,6 +116,16 @@ const categories = WORKFLOW_TEMPLATE_CATEGORIES
 const selectedSource = ref('SYSTEM')
 const selectedCategory = ref('BASIC')
 const form = reactive(emptyForm())
+const marketplaceVisible = ref(false)
+const marketplaceLoading = ref(false)
+const marketplaceImporting = ref(false)
+const marketplaceQuery = ref('')
+const compatibleOnly = ref(false)
+const marketplaceItems = ref([])
+const selectedMarketplaceIds = ref([])
+const marketplacePage = ref(1)
+const marketplacePageSize = 20
+const marketplaceTotal = ref(0)
 /** 返回同时匹配必选来源和功能分类的节点，并保留停用模板供管理员维护。 */
 const filteredRows = computed(() => filterWorkflowTemplates(rows.value, selectedSource.value, selectedCategory.value, true))
 
@@ -93,6 +141,42 @@ function templateIcon(template) { return templateText(template, 'name').trim().s
 async function load() { rows.value = (await http.get('/workflow/nodes')).data || [] }
 /** 打开新增或编辑表单，并隔离默认配置副本。 */
 function open(row) { Object.assign(form, emptyForm(), normalizeTemplateMetadata(row), { config: cloneConfig(row?.config) }); visible.value = true }
+/** 打开当前来源的官方市场并重置临时选择。 */
+async function openMarketplace() {
+  marketplaceVisible.value = true; marketplaceQuery.value = ''; compatibleOnly.value = false
+  marketplacePage.value = 1; selectedMarketplaceIds.value = []; await loadMarketplace()
+}
+/** 从第一页重新执行市场搜索。 */
+async function searchMarketplace() { marketplacePage.value = 1; selectedMarketplaceIds.value = []; await loadMarketplace() }
+/** 通过后端代理加载市场目录，避免浏览器直接访问第三方。 */
+async function loadMarketplace() {
+  if (!['N8N', 'DIFY'].includes(selectedSource.value)) return
+  marketplaceLoading.value = true
+  try {
+    const { data } = await http.get(`/workflow/node-marketplaces/${selectedSource.value}/nodes`, { params: {
+      query: marketplaceQuery.value, page: marketplacePage.value, pageSize: marketplacePageSize,
+      compatibleOnly: compatibleOnly.value
+    } })
+    marketplaceItems.value = data?.items || []; marketplaceTotal.value = Number(data?.total || 0)
+  } catch (error) { marketplaceItems.value = []; marketplaceTotal.value = 0; showHttpError(error) }
+  finally { marketplaceLoading.value = false }
+}
+/** 导入服务端重新确认过的白名单节点，并刷新当前来源卡片。 */
+async function importMarketplaceNodes() {
+  marketplaceImporting.value = true
+  try {
+    const { data } = await http.post(`/workflow/node-marketplaces/${selectedSource.value}/imports`, {
+      externalIds: [...selectedMarketplaceIds.value]
+    })
+    const created = (data?.items || []).filter(item => item.status !== 'ALREADY_IMPORTED').length
+    marketplaceVisible.value = false; selectedMarketplaceIds.value = []; await load()
+    const importedIds = new Set((data?.items || []).map(item => item.templateId))
+    const firstImported = rows.value.find(row => importedIds.has(row.id))
+    if (firstImported) selectedCategory.value = firstImported.functionalCategory
+    ElMessage.success(t('workflowNodes.importCompleted', { created, total: data?.items?.length || 0 }))
+  } catch (error) { showHttpError(error, 'workflowNodes.importFailed') }
+  finally { marketplaceImporting.value = false }
+}
 /** 节点类型变化时切换到该原生能力的推荐功能分类。 */
 function syncDefaultCategory(nodeType) { form.functionalCategory = defaultTemplateCategory(nodeType) }
 /** 校验必填字段并保存模板。 */
@@ -117,7 +201,7 @@ async function remove(row) {
 }
 /** 创建隔离的空表单。 */
 function emptyForm() { return { id: null, code: '', name: '', nodeType: 'LLM', description: '', config: {}, enabled: true,
-  systemTemplate: false, source: 'SYSTEM', functionalCategory: defaultTemplateCategory('LLM') } }
+  systemTemplate: false, importedTemplate: false, source: 'SYSTEM', functionalCategory: defaultTemplateCategory('LLM') } }
 onMounted(load)
 </script>
 
@@ -149,6 +233,15 @@ onMounted(load)
 :deep(.el-dialog__body) { max-height: 76vh; overflow-y: auto; }
 :deep(.workflow-config-editor) { width: 100%; }
 .node-template-required-hint { margin-bottom: 16px; }
+.marketplace-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 12px; align-items: center; margin-bottom: 14px; }
+.marketplace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
+.marketplace-card { display: grid; align-content: start; gap: 10px; min-height: 150px; padding: 14px; border: 1px solid #dfe6f0; border-radius: 12px; background: #fff; }
+.marketplace-card.unsupported { background: #f8f9fb; opacity: .78; }
+.marketplace-card-head, .marketplace-meta { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.marketplace-card p { min-height: 42px; margin: 0; color: var(--app-muted); font-size: 13px; line-height: 1.5; }
+.marketplace-meta { justify-content: flex-start; flex-wrap: wrap; color: var(--app-muted); font-size: 12px; }
+.marketplace-card > small { color: var(--el-color-warning-dark-2); }
+.marketplace-pagination { justify-content: center; margin-top: 18px; }
 @media (max-width: 800px) {
   .node-template-source-filter { display: grid; gap: 8px; }
   .node-template-source-filter > strong, .node-template-category-filter > strong { padding-top: 0; }
@@ -159,5 +252,7 @@ onMounted(load)
 }
 @media (max-width: 600px) {
   .node-template-grid { grid-template-columns: 1fr; }
+  .marketplace-toolbar { grid-template-columns: 1fr; }
+  .marketplace-grid { grid-template-columns: 1fr; }
 }
 </style>

@@ -98,4 +98,15 @@ class WorkflowSchemaResourceTest {
         assertTrue(schema.contains("lease_expires_at"));
         assertTrue(schema.contains("log_bytes"));
     }
+
+    /** MySQL V11 必须持久化市场身份并保证同一来源节点幂等。 */
+    @Test
+    void addsWorkflowMarketplaceImportMetadata() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V11__add_workflow_marketplace_imports.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        for (String column : new String[]{"external_key", "external_version", "external_publisher",
+            "external_fingerprint", "imported_at"}) assertTrue(schema.contains(column));
+        assertTrue(schema.contains("UNIQUE (template_source, external_key)"));
+    }
 }

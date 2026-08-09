@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -23,19 +24,22 @@ public class WorkflowController {
     private final WorkflowExecutionService executionService;
     private final WorkflowConnectionService connectionService;
     private final WorkflowConnectionTester connectionTester;
+    private final WorkflowNodeMarketplaceService marketplaceService;
     private final LlmManagementService llmManagementService;
     private final MailManagementService mailManagementService;
 
     /** 注入工作流配置和执行服务。 */
     public WorkflowController(WorkflowService workflowService, WorkflowExecutionService executionService,
                               WorkflowConnectionService connectionService, WorkflowConnectionTester connectionTester,
-                              LlmManagementService llmManagementService, MailManagementService mailManagementService) {
+                              LlmManagementService llmManagementService, MailManagementService mailManagementService,
+                              WorkflowNodeMarketplaceService marketplaceService) {
         this.workflowService = workflowService;
         this.executionService = executionService;
         this.connectionService = connectionService;
         this.connectionTester = connectionTester;
         this.llmManagementService = llmManagementService;
         this.mailManagementService = mailManagementService;
+        this.marketplaceService = marketplaceService;
     }
 
     /** 查询当前用户可见的脱敏连接配置。 */
@@ -72,6 +76,26 @@ public class WorkflowController {
     @GetMapping("/nodes")
     @RequiredPermission("workflow:node:list")
     public List<WorkflowModels.NodeTemplateView> templates() { return workflowService.templates(); }
+
+    /** 代理查询 n8n 或 Dify 官方市场节点目录。 */
+    @GetMapping("/node-marketplaces/{source}/nodes")
+    @RequiredPermission("workflow:node:list")
+    public WorkflowModels.MarketplacePage marketplaceNodes(@PathVariable String source,
+                                                            @RequestParam(defaultValue = "") String query,
+                                                            @RequestParam(defaultValue = "") String category,
+                                                            @RequestParam(defaultValue = "1") int page,
+                                                            @RequestParam(defaultValue = "20") int pageSize,
+                                                            @RequestParam(defaultValue = "false") boolean compatibleOnly) {
+        return marketplaceService.nodes(source, query, category, page, pageSize, compatibleOnly);
+    }
+
+    /** 导入经过服务端白名单重新确认的市场节点。 */
+    @PostMapping("/node-marketplaces/{source}/imports")
+    @RequiredPermission("workflow:node:import")
+    public WorkflowModels.MarketplaceImportResult importMarketplaceNodes(
+        @PathVariable String source, @RequestBody WorkflowModels.MarketplaceImportCommand command) {
+        return marketplaceService.importNodes(source, command);
+    }
 
     /** 查询 AI 节点可选择的启用模型，不返回供应商密钥或健康错误。 */
     @GetMapping("/model-options")
