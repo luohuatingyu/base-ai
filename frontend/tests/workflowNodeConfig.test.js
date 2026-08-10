@@ -234,7 +234,7 @@ test('发布提示覆盖固定必填、方案条件、操作条件和参数数�
 })
 
 test('必填字段直接编辑且非必填和条件必填字段通过开关启停', () => {
-  assert.match(configEditorSource, /class="workflow-config-card-head-layout"[\s\S]*<button[^>]*@click="toggleField\(field\.key\)"[\s\S]*<span class="workflow-config-card-tags">/)
+  assert.match(configEditorSource, /class="workflow-config-card-head-layout"[\s\S]*<button[^>]*@click="toggleField\(field\.key\)"[\s\S]*<span class="workflow-config-card-tags"[^>]*>/)
   assert.match(configEditorSource, /<el-switch v-if="fieldCanToggle\(field\)"[^>]*:aria-label="t\('workflowConfig\.enableField'\)"[\s\S]*:model-value="hasField\(field\.key\)" @change="toggleConfigured\(field, \$event\)"/)
   assert.doesNotMatch(configEditorSource, /class="workflow-config-enable"/)
   assert.match(configEditorSource, /function fieldCanToggle\(field\).*field\.requirement !== 'required'/)
@@ -264,6 +264,12 @@ test('显示和隐藏切换按钮在标准字段及附加参数卡片中保持�
   assert.match(configEditorSource, /\.workflow-config-toggle-hint\s*\{[^}]*justify-self:\s*center;/)
   assert.match(configEditorSource, /class="workflow-config-card-head-layout"[\s\S]*class="workflow-config-toggle-hint"[^>]*openFields\.includes\(field\.key\)/)
   assert.match(configEditorSource, /v-for="key in extraKeys"[\s\S]*class="workflow-config-card-head-layout"[\s\S]*class="workflow-config-toggle-hint"[^>]*openExtra\.includes\(key\)/)
+})
+
+test('标准字段卡片右侧状态区域可切换显示且启用开关不会触发展开', () => {
+  assert.match(configEditorSource, /<span class="workflow-config-card-tags"[^>]*@click="toggleField\(field\.key\)"/)
+  assert.match(configEditorSource, /<el-switch v-if="fieldCanToggle\(field\)"[^>]*@click\.stop/)
+  assert.match(configEditorSource, /@change="toggleConfigured\(field, \$event\)"/)
 })
 
 test('非必填默认值字段未启用时保持禁用样式且必填缺失提示优先展示', () => {

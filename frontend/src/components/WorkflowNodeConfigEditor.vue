@@ -16,9 +16,9 @@
           <button type="button" class="workflow-config-toggle-hint" :aria-expanded="openFields.includes(field.key)" @click="toggleField(field.key)">
             {{ t(openFields.includes(field.key) ? 'workflowConfig.collapseValue' : 'workflowConfig.expandValue') }}
           </button>
-          <span class="workflow-config-card-tags">
+          <span class="workflow-config-card-tags" @click="toggleField(field.key)">
             <el-tag v-if="fieldRequirementMissing(field)" size="small" type="danger">{{ t('workflowConfig.requiredMissing') }}</el-tag>
-            <el-switch v-if="fieldCanToggle(field)" :aria-label="t('workflowConfig.enableField')"
+            <el-switch v-if="fieldCanToggle(field)" :aria-label="t('workflowConfig.enableField')" @click.stop
                        :model-value="hasField(field.key)" @change="toggleConfigured(field, $event)" />
             <el-tag v-else-if="!fieldRequirementMissing(field)" size="small"
                     :type="hasField(field.key) ? 'success' : hasDefault(field) ? 'primary' : 'info'">{{ t(fieldStatusKey(field)) }}</el-tag>
@@ -356,7 +356,7 @@ function addExtra() {
 .workflow-config-card-head > span:first-child, .workflow-extra-head > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .workflow-config-card-head strong em { margin-left: 4px; color: var(--el-color-danger); font-size: 12px; font-style: normal; font-weight: 500; }
 .workflow-config-toggle-hint { justify-self: center; padding: 8px; border: 0; color: var(--el-color-primary); background: transparent; font-size: 12px; font-weight: 500; line-height: 1.5; white-space: nowrap; cursor: pointer; }
-.workflow-config-card-tags { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 6px; padding: 14px; }
+.workflow-config-card-tags { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 6px; padding: 14px; cursor: pointer; }
 .workflow-config-card-head small, .workflow-extra-head small { color: var(--app-muted); line-height: 1.45; }
 .workflow-config-card-head .workflow-config-default-preview { color: var(--el-color-primary); font-weight: 500; }
 .workflow-config-card-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; border-top: 1px solid #e8edf5; }
