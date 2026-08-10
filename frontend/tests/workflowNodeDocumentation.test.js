@@ -94,3 +94,15 @@ test('独立文档页面覆盖完整使用说明、响应式目录和安全异�
   assert.doesNotMatch(viewSource,/<el-table/)
   assert.doesNotMatch(viewSource,/v-html|marked|markdown-it/)
 })
+
+test('桌面文档目录固定且说明区域独立滚动并在窄屏恢复自然布局',()=>{
+  assert.match(viewSource,/<el-scrollbar class="docs-directory-scroll">/)
+  assert.doesNotMatch(viewSource,/docs-directory-scroll" max-height=/)
+  assert.match(viewSource,/\.docs-page\{[^}]*height:calc\(100vh - 124px\)[^}]*flex-direction:column/)
+  assert.match(viewSource,/\.docs-layout\{[^}]*min-height:0[^}]*overflow:hidden/)
+  assert.match(viewSource,/\.docs-directory\{[^}]*min-height:0[^}]*flex-direction:column/)
+  assert.match(viewSource,/\.docs-directory-scroll\{[^}]*flex:1[^}]*min-height:0/)
+  assert.match(viewSource,/\.docs-content\{[^}]*overflow-y:auto/)
+  assert.match(viewSource,/@media\(max-width:800px\)\{\.docs-page\{[^}]*height:auto/)
+  assert.match(viewSource,/@media\(max-width:800px\)[\s\S]*?\.docs-content\{[^}]*overflow:visible/)
+})
