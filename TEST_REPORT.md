@@ -1,5 +1,105 @@
 # 最近分支覆盖测试报告
 
+## 📋 向量模型平台能力同步测试结果（2026-08-10）
+
+### Git 基准点
+
+Commit: f813b0c4f7853639a777408aad860975878d120c
+- 提交说明: Add vector model worker support
+- 测试日期: 2026-08-10
+- 分支: master
+- 上一测试报告基准点: `da1b8ac0dccb53e10efe1a5e39a8a738da9d832e`
+- Backend 业务代码差异: 仅在平台初始化与模型管理中注册 `embedding_model`、选择向量健康检查；同步 Python Worker 通用 embeddings 能力。未同步商品匹配 Controller、Repository、Service、SQL、前端业务字段、业务文案或价格校验。
+
+### 变更范围
+
+- 模型类型目录新增内置 `embedding_model / 向量模型`；启动时只补充缺失项，不覆盖管理员维护的已有字典数据。
+- 模型连接测试根据模型声明能力向 Worker 发送 `embedding=true/false`；向量模型使用最小 embeddings 请求，文本和视觉模型保持原聊天健康检查。
+- Python Worker 新增受内部令牌保护的 `POST /llm/embeddings`，支持批量输入、候选模型和 API Key 轮换、超时、并发控制及候选故障切换。
+- OpenAI 兼容响应按 `index` 恢复输入顺序，并拒绝数量不匹配、重复或布尔索引、非数值或布尔向量值、空向量、维度不一致、非有限数和超大响应。
+- 请求限制为 1 至 256 条输入、每条去空白后 1 至 500 字符、1 至 20 个候选；调用日志只记录模型、数量和维度，不记录向量输入或 API Key。
+- 未新增依赖、配置、数据库迁移、Markdown 文件或外部业务消费者；未修改第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 模型目录提供向量类型 | Backend 初始化与模型管理单元测试；字典为空 | 执行初始化并读取回退目录 | 保存文本、视觉、向量三项，回退目录包含可读向量标签；通过 | 正常、边界、兼容、副作用 |
+| 模型测试选择正确协议 | Backend HTTP 客户端参数化测试；文本或向量模型已配置 | 调用模型连接测试 | 文本发送 `embedding=false`，向量发送 `embedding=true`；通过 | 正常、分支、回归 |
+| embeddings 请求兼容 OpenAI | Worker HTTP 模拟；供应商返回乱序 index | 批量提交两条文本 | 请求 `/embeddings` 且模型和输入不变，结果恢复原输入顺序；通过 | 正常、兼容、副作用 |
+| 候选故障切换有效 | Worker HTTP 模拟；首个候选返回 503 | 使用两个向量候选 | 按顺序尝试，第二候选成功后返回结果；通过 | 异常、可用性、回归 |
+| 请求边界受控 | Worker Pydantic 参数化测试 | 空、空白、超长、257 条输入，0 或 21 个候选 | 全部在调用供应商前拒绝；通过 | 边界、异常、安全 |
+| 供应商异常响应不污染结果 | Worker 参数化测试 | 缺项、重复或布尔 index，非数值、布尔、空、异维、NaN 向量 | 返回受控校验失败，不产生部分结果；通过 | 异常、边界、安全 |
+| 响应大小受统一限制 | Worker 流式响应测试；上限 1024 字节 | 供应商返回 1025 字节 | 达到上限后立即失败，不继续缓冲解析；通过 | 边界、安全、资源 |
+| 新接口保持内部认证 | 运行态 Worker；不发送内部令牌 | 请求 `POST /llm/embeddings` | 返回 HTTP 401；通过 | 权限、安全 |
+| 全模块与部署无回归 | Backend、Worker、Frontend、Caddy 正式完整回归及 Compose | 当前功能提交 | 正式测试 618/618 通过，四服务 healthy，HTTPS 与 readiness 成功；通过 | 回归、构建、部署 |
+
+### 测试执行结果
+
+- 当前正式测试入口及组件完整回归共 618 项，618 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：466/466 通过；定向的初始化和模型管理测试 54/54 通过。
+- Python Worker：Python 3.12 完整回归 48/48 通过；其中 LLM 定向测试 33/33 通过。
+- Frontend 正式完整回归：88/88 通过；本次没有 Frontend 文件差异。
+- Caddy Go：16/16 通过，`go vet ./...` 通过；本次没有 Caddy 文件差异。
+- 权限与运行态：未认证 embeddings 请求返回 401；Backend 和 Worker readiness 均为 `UP`，四服务全部 healthy，HTTPS 根路径返回 200。
+- 额外执行未纳入 `npm test` 的历史 `test/*.test.mjs`：168 项中 165 通过、3 失败。失败仍是既有 `api-trigger-security.test.mjs` 对当前工作流 CIDR 文本框和保存流程的过期源码断言，本次未修改对应页面，与上一测试基准一致，不计入本功能 618 项正式验收结果。
+
+### 关键模块测试
+
+- Domain 层：未修改 Domain 实体；相关兼容性由 Backend 466 项完整回归覆盖。
+- Service/初始化层：`DataInitializerTest` 与 `LlmManagementServiceTest` 合计 54/54 通过，覆盖目录初始化、回退标签和连接测试协议分支。
+- Repository 层：未修改 Repository 接口或持久化结构；初始化测试验证新增字典保存副作用，完整 Backend 回归通过。
+- Controller/权限层：未新增公开 Java Controller；Worker 内部接口未认证烟测返回 401，既有认证中间件回归通过。
+- Worker 模型层：LLM 定向 33/33、Worker 完整 48/48 通过，覆盖请求/响应模型、调用协议、故障切换和安全边界。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 预修复定向测试 | Maven 3.9.9 / Java 17 容器执行 `mvn test -B -ntp -Dtest=DataInitializerTest,LlmManagementServiceTest` | 54 项中新增断言稳定产生 3 失败、1 错误，分别定位缺失向量初始化、回退项和请求字段 |
+| Worker 预修复定向测试 | Python 3.12 一次性容器执行 `python -m pytest -q -p no:cacheprovider tests/test_llm.py` | 收集阶段因缺少 Embedding 模型失败，证明当前能力缺失 |
+| Backend 修复后定向测试 | 同一 Maven 容器命令 | 54/54 通过，BUILD SUCCESS |
+| Worker 修复后定向测试 | Python 3.12 一次性容器执行 LLM 测试 | 33/33 通过 |
+| Backend 完整回归 | `docker compose up --build -d` 的 Backend Dockerfile 执行 `mvn -B -ntp package` | 466/466 通过，BUILD SUCCESS |
+| Worker 完整回归 | Python 3.12 一次性容器安装哈希锁定开发依赖后执行 `python -m pytest -q -p no:cacheprovider` | 48/48 通过 |
+| Frontend 正式完整回归 | `cd frontend && npm test` | 88/88 通过 |
+| Frontend 历史补充入口 | `cd frontend && node --test test/*.test.mjs` | 165/168 通过；3 个既有接口触发安全页源码契约失败 |
+| Caddy Go 完整回归 | 固定 Go 1.26.5 镜像只读挂载源码，在容器临时目录执行 `go test -v ./...`、`go vet ./...` | 16/16 通过，vet 通过；仓库未生成 go.mod/go.sum |
+| 统一重建 | `docker compose up --build -d` | 首次入口端口由源项目 Caddy 占用；停止 `domestic-trade-caddy` 后重试成功 |
+| 权限与运行状态 | 无内部令牌请求 embeddings，检查 Compose、HTTPS、Backend/Worker readiness | embeddings 返回 401；四服务 healthy；HTTPS 200；两个探针均为 UP |
+| 差异检查 | `git status`、`git diff --check`、文件白名单、商品业务关键字和未跟踪文件检查 | 仅 8 个确认文件进入功能提交；无商品业务代码、密钥、调试或临时文件 |
+
+### 测试过程问题与处理
+
+- 主机 Python 为 3.12.13，但未安装 pytest，且主机没有 Maven；直接命令未进入测试，随后全部改用项目既有的隔离容器方式，未向主机或仓库新增依赖。
+- 预修复测试先稳定暴露缺失能力，再补充实现并复跑到通过；未删除、跳过或弱化有效测试。
+- 代码审查发现 Python `bool` 同时是 `int` 子类，显式拒绝布尔 index 和向量值，并增加对应恶意响应测试。
+- 首次统一启动时 `domestic-trade-caddy` 占用 80/443；按项目规则仅停止该入口容器并重新启动当前项目，最终四服务全部健康。
+- Caddy 一次性测试首次使用登录 shell 导致镜像预设 Go PATH 被重置，未启动测试；改用非登录 shell后 16/16 和 vet 通过。
+- 测试产生的 Python `__pycache__` 已清理；Caddy 模块文件只存在于一次性容器临时目录，容器退出后自动清除。
+
+### 已知问题与限制
+
+- 当前只提供平台模型类型、连接健康检查和 Worker 内部 embeddings 能力；没有同步商品匹配、pgvector 索引或任何业务消费者。
+- 仅验证 OpenAI 兼容协议的可执行模拟，没有使用真实外部向量模型 API Key 进行公网端到端调用。
+- embeddings 调用方必须提供模型中心已解析的候选列表；Worker 不自行解析 Java 能力路由。
+- 启动后会持久化 `embedding_model` 字典项。回滚代码不会自动删除该行，但旧版动态模型类型逻辑可兼容保留项。
+- 历史 Frontend 补充目录仍有 3 个与本次无关的过期断言失败；本次未修改、删除或弱化这些测试。
+- 为释放 80/443 已停止 `domestic-trade-caddy`；如需恢复源项目入口，应先释放当前项目端口后再启动。
+
+### 下次测试建议
+
+1. 使用专用沙箱向量模型执行真实 embeddings E2E，覆盖供应商限流、超时、Key 轮换、不同维度和实际响应大小。
+2. 后续业务接入时为 Java 调用方补充默认路由筛选、维度约束、持久化一致性和业务权限测试，不在 Worker 中耦合业务索引。
+3. 增加 Worker 路由级集成测试，使用有效内部令牌验证完整请求与响应序列化；当前路由行为由函数测试、Pydantic 测试和 401 烟测共同覆盖。
+4. 在独立任务中修正或迁移 Frontend 历史补充入口的 3 个过期源码断言，避免与正式 `npm test` 入口长期分叉。
+
+### 重测触发条件与回滚
+
+- 修改模型类型目录、模型连接测试协议、Worker embeddings 请求/响应模型、候选切换、输入输出限制或内部认证时，必须重跑 Backend 与 Worker 定向测试、四组件完整回归及 Compose 统一重建。
+- 应用回滚可撤销功能提交 `f813b0c4f7853639a777408aad860975878d120c` 后执行 `docker compose up --build -d`；本次没有 Schema 或配置迁移。
+- 如需彻底恢复数据状态，可在确认没有模型引用后另行删除 `llm_model_type` 中的 `embedding_model` 字典项；该数据删除不属于本次自动回滚范围。
+
 ## 📋 n8n 与 Dify 节点兼容修复测试结果（2026-08-10）
 
 ### Git 基准点
