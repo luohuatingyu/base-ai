@@ -1,5 +1,68 @@
 # 最近分支覆盖测试报告
 
+## 📋 工作流节点文档完善测试结果（2026-08-10）
+
+### Git 基准点
+
+Commit: c69ec030b515d36b33438fb990af1c6e7f7b9d4c
+- 提交说明: Improve workflow node documentation
+- 测试日期: 2026-08-10
+- 分支: master
+- 上一测试报告基准点: `3e704b6`
+- Backend 业务代码差异: 节点文档新增独立只读接口，使用 `workflow:node:docs` 权限查询当前用户可见的模板元数据；不改变节点运行或数据结构。
+
+### 变更范围
+
+- 全部 40 种原生节点均提供中英文专属行为、输入、输出及异常/限制说明；系统、市场导入和自建模板继续复用原生契约并展示来源、版本和发布者。
+- 节点文档展示字段类型、示例默认值、枚举选项、动态必填状态和可参考配置示例；RAG 的 ROUTE/DIRECT 条件字段状态与当前配置规则一致，Tavily 专用字段复用已本地化词条。
+- 页面通过独立 `/workflow/node-docs` 接口加载，提供加载、失败、无搜索结果和未知模板的安全状态。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 全部原生节点具备完整双语说明 | Frontend 参数化单元测试 | 遍历当前 40 种原生节点及四类说明段落 | 每种节点均有行为、输入、输出、限制词条；通过 | 正常、兼容、回归 |
+| 配置说明准确可用 | Frontend 单元测试 | RAG 路由/指定模型、HTTP、Tavily、知识库节点示例 | 字段类型、默认值、选项、动态必填及适用分支正确；通过 | 正常、边界、分支 |
+| 文档权限独立 | Backend 控制器契约测试与运行态未认证请求 | 查询 `/workflow/node-docs` | 映射使用 `workflow:node:docs`；未认证请求返回 401；通过 | 权限、安全 |
+| 页面安全处理异常状态 | Frontend 页面契约测试 | 模拟加载失败、空搜索和未知节点路径 | 显示明确状态，不渲染 HTML/Markdown；通过 | 异常、安全 |
+| 全模块与部署无回归 | Backend、Frontend、Worker、Caddy、Compose | 构建、正式测试和健康检查 | 643 项正式测试通过，四服务 healthy；通过 | 回归、构建、部署 |
+
+### 测试执行结果
+
+- 正式完整回归共 643 项，643 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend Docker 构建内完整回归：485/485 通过；新增节点文档控制器定向测试 1/1 通过。
+- Frontend 正式回归：94/94 通过；节点文档与配置定向回归 34/34 通过。
+- Python Worker：Python 3.12 一次性容器完整回归 48/48 通过。
+- Caddy：Go 1.26.5 一次性容器 16/16 通过，`go vet ./...` 通过。
+- `docker compose up --build -d` 成功；Backend、Python Worker、Frontend、Caddy 全部 healthy，HTTPS 首页返回 200，节点文档接口未认证返回 401。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 节点文档与配置定向测试 | `node --test frontend/tests/workflowNodeDocumentation.test.js frontend/tests/workflowNodeConfig.test.js` | 34/34 通过 |
+| Frontend 正式回归 | `cd frontend && npm test` | 94/94 通过 |
+| Backend 定向测试 | Maven 3.9.9 / Java 17 容器执行 `-Dtest=WorkflowNodeDocumentationControllerTest test` | 1/1 通过 |
+| Backend 完整回归 | `docker compose up --build -d` 的 Backend Dockerfile 内执行 `mvn -B -ntp package` | 485/485 通过，BUILD SUCCESS |
+| Worker 完整回归 | Python 3.12 一次性容器安装哈希锁定开发依赖并执行 `pytest -q -p no:cacheprovider` | 48/48 通过 |
+| Caddy 完整回归 | Go 1.26.5 一次性容器临时初始化模块并执行 `go test -v ./...`、`go vet ./...` | 16/16 通过，vet 通过 |
+| 运行态检查 | `docker compose ps` 与 HTTPS 请求 | 四服务 healthy；首页 200，文档接口未认证 401 |
+
+### 已知问题与限制
+
+- README 合并前端入口 `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` 为 259/262 通过；3 个失败均是 `api-trigger-security.test.mjs` 对已演进 Host 规则页面的过期源码断言，与本次节点文档文件无交集，未删除、跳过或弱化。
+- 文档页面的权限映射由控制器契约测试和未认证运行态请求验证；当前环境未创建“仅拥有 `workflow:node:docs`”的单独角色进行浏览器端到端验证。
+
+### 下次测试建议
+
+1. 增加浏览器组件测试或 E2E，验证仅有节点文档权限的角色可加载目录、搜索和失败提示。
+2. 将历史 `api-trigger-security.test.mjs` 的三条源码断言迁移为当前 Host 规则交互契约，恢复 README 合并入口全绿。
+
+### 重测触发条件与回滚
+
+- 修改节点类型目录、节点说明词条、配置字段/默认值/条件必填、文档接口权限或页面加载逻辑时，必须重跑本节定向测试、Backend/Frontend 完整回归和 Compose 重建。
+- 应用回滚可撤销提交 `c69ec030b515d36b33438fb990af1c6e7f7b9d4c` 后执行 `docker compose up --build -d`；本功能无数据库迁移或数据回滚操作。
+
 ## 📋 工作流知识库检索与入库节点测试结果（2026-08-10）
 
 ### Git 基准点
