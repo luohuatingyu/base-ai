@@ -1,5 +1,97 @@
 # 最近分支覆盖测试报告
 
+## 📋 n8n 与 Dify 节点兼容修复测试结果（2026-08-10）
+
+### Git 基准点
+
+Commit: da1b8ac0dccb53e10efe1a5e39a8a738da9d832e
+- 提交说明: Fix marketplace node compatibility
+- 测试日期: 2026-08-10
+- 分支: master
+- 上一测试报告基准点: `499cea569b9acfb4e284ed1cbae007b986934e73`
+- Backend 业务代码差异: 新增 Tavily 受管连接和原生执行器，修正 Dify 插件分页与动作模型、市场模板更新语义、批量预校验和外部身份保护，因此执行 Backend、Frontend、Python Worker、Caddy 完整回归、官方契约烟测和 Compose 统一重建。
+
+### 变更范围
+
+- n8n 与 Dify 可导入项明确标记为 Base AI 原生能力子集，不再暗示完整兼容第三方节点的全部操作、参数和输出。
+- Dify Tavily 以一个插件卡片参与分页，Search 与 Extract 作为可选择子动作；Crawl、Map、Research 仍显示为未纳入支持范围。
+- Tavily API Key 改由独立 TAVILY 连接使用 AES-GCM 加密保存和脱敏返回；模板、工作流图和版本快照只保存连接 ID，不再保存凭据。
+- 新增 TAVILY_TOOL 原生执行器，固定调用 Tavily Search/Extract 官方 HTTPS 端点，通过 Authorization Bearer 注入凭据，并拒绝非 2xx 响应。
+- 导入前校验 Dify provider 的 secret-input 凭据声明和 Search/Extract 必填参数；市场目录解析增加录制契约测试，外部响应结构漂移时显式失败。
+- 市场批量导入先完成全部外部条目与包声明预校验，再进入单事务持久化，避免后续条目非法时留下前序部分导入。
+- 已导入模板的来源、编码和节点类型由 Backend 锁定；市场指纹变化返回 UPDATE_AVAILABLE，管理员确认后才重置为最新原生配置、更新版本并保持停用。
+- Frontend 增加 TAVILY 连接配置、Search/Extract 条件字段、Dify 子动作选择、原生子集提示和版本更新二次确认；未新增依赖、配置、数据库迁移或第三方运行代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| Tavily 凭据不进入模板或请求体 | Backend 连接 Service 与执行器测试；创建 TAVILY 连接 | 保存 `tvly-secret`，执行 Search | 数据库仅保存密文，管理视图返回掩码，Bearer Header 注入密钥且 Body 不含密钥；通过 | 正常、安全、副作用 |
+| Tavily 非成功响应中止执行 | Backend 执行器测试；外部服务返回 401 | 执行 Extract | 抛出连接执行失败，不把鉴权错误作为正常节点输出；通过 | 异常、安全 |
+| Dify 插件分页与动作选择正确 | Backend 市场 Service + Frontend 契约测试 | 查询 Tavily 插件并选择 Search/Extract | total 按一个插件计算，返回两个子动作且可独立选择；通过 | 正常、边界、交互 |
+| 兼容范围表达真实 | Backend Service + Frontend 双语契约测试 | 浏览 n8n/Dify 可导入项 | 统一返回 NATIVE_SUBSET 并提示不保证第三方完整等价；通过 | 兼容、交互 |
+| 外部包契约漂移可检测 | Backend 包解析和录制契约测试；构造错误凭据类型、参数类型和响应结构 | 解析 Dify ZIP、n8n/Dify 目录 | 当前声明通过；凭据、必填参数或目录数组漂移时拒绝；通过 | 正常、异常、安全 |
+| 批量非法输入不部分持久化 | Backend 市场 Service 测试；第一项受支持、第二项不受支持 | 一次提交两个外部 ID | 全部草稿预校验失败后持久化服务未调用；通过 | 异常、事务、副作用 |
+| 已导入模板身份不可伪造 | Backend H2 Service 测试；已导入 n8n 模板 | 更新接口提交伪造 code/type/source | 保存后仍保持原编码、节点类型和来源，仅允许维护字段变化；通过 | 权限、安全、兼容 |
+| 市场更新需明确确认 | Backend H2 Service + Frontend 契约测试；指纹和版本变化 | 首次不替换、随后确认替换 | 依次返回 UPDATE_AVAILABLE、UPDATED；旧版本未提前改变，确认后配置重置且 disabled；通过 | 状态冲突、交互、副作用 |
+| 全模块与部署无回归 | 四套完整测试、官方只读接口和 Compose | 当前功能提交 | 正式测试 595/595 通过，四服务 healthy，HTTPS 与 readiness 成功；通过 | 回归、构建、部署 |
+
+### 测试执行结果
+
+- 当前正式测试入口及组件完整回归共 595 项，595 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：463/463 通过；覆盖连接加密脱敏、Tavily Bearer 执行、非 2xx、市场契约解析、Dify 插件分页、批量预校验、身份锁定、版本更新确认和 Schema 不变量。
+- Frontend 当前正式入口：88/88 通过；覆盖 TAVILY 连接字段、节点条件参数、连接类型过滤、Dify 子动作和更新确认契约。
+- Python Worker：Python 3.12 一次性容器执行 28/28 通过。
+- Caddy Go：16/16 通过，`go vet ./...` 通过。
+- 官方只读契约：n8n 目录和 Dify 高级搜索均返回 200；Dify 当前 Tavily 0.1.11 包仍声明 secret-input 凭据及 Search/Extract 字符串参数；Tavily 官方文档确认 Usage/Search/Extract 的 Bearer 鉴权与当前参数边界。
+- 额外执行未纳入 `npm test` 的历史 `test/*.test.mjs`：168 项中 165 通过、3 失败。失败仍是既有 `api-trigger-security.test.mjs` 对当前工作流 CIDR 文本框和保存流程的过期源码断言，本次未修改对应页面，不计入本功能 595 项正式验收结果。
+- Compose 生产构建成功；Backend、Frontend、Python Worker、Caddy 全部 healthy，HTTPS 根路径返回 200，Backend 与 Worker readiness 均返回 UP。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整回归 | `docker compose build backend` 及统一重建中的 Dockerfile Maven 3.9.9 / Java 17 `mvn -B -ntp package` | 463/463 通过，BUILD SUCCESS |
+| Frontend 正式完整回归 | `cd frontend && npm test` | 88/88 通过 |
+| Frontend 历史补充入口 | `cd frontend && node --test test/*.test.mjs` | 165/168 通过；3 个既有接口触发安全页源码契约失败 |
+| Python Worker 完整回归 | Python 3.12 一次性容器安装哈希锁定开发依赖后执行 `python -m pytest -q -p no:cacheprovider` | 28/28 通过 |
+| Caddy Go 完整回归 | Go 1.26.5 一次性容器临时初始化模块并执行 `go test -v ./...`、`go vet ./...` | 16/16 通过，vet 通过 |
+| 官方市场与 API 契约烟测 | 限时请求 n8n/Dify 官方目录，流式读取 Dify Tavily 0.1.11 声明，对照 Tavily 官方 Markdown API 文档 | 目录均为 200；凭据、关键参数、Bearer 鉴权和支持范围符合适配器约束 |
+| 统一重建 | `docker compose up --build -d` | 首次 Caddy 因 80 端口占用失败；停止占用容器后重试成功 |
+| 运行状态 | `docker compose ps`、HTTPS 根路径、Backend/Worker readiness | 四服务 healthy；HTTPS 200；两个探针均为 UP |
+| 差异检查 | `git diff --check`、文件范围、敏感字段和未跟踪文件检查 | 通过；API Key 仅出现在加密连接和测试数据中，无调试或临时文件 |
+
+### 测试过程问题与处理
+
+- 首版 Dify 参数校验使用 Java 模式变量时超出作用域，编译失败后改为显式安全收窄并重新执行完整测试。
+- 首版将 TAVILY_TOOL 当作历史内置模板，Schema 测试稳定暴露缺少迁移；确认该节点仅由市场动态导入后增加 MARKETPLACE_ONLY 不变量，未新增无意义的数据库迁移。
+- Caddy 一次性测试容器首次缺少 `gopkg.in/yaml.v3`，未启动用例；在容器临时模块中获取项目真实依赖后重新执行，16/16 和 vet 均通过，未写入仓库。
+- 首次统一启动由 `domestic-trade-caddy` 占用 80/443；按项目规则停止该容器后重新执行，最终四服务全部健康。
+- Backend 健康烟测首次请求了不存在的 `/actuator/health` 并返回 404；随后使用 Compose 定义的 `/api/open/health/ready` 验证为 UP，不影响服务状态。
+
+### 已知问题与限制
+
+- n8n 仍只支持 PostgreSQL、MySQL、Redis、AWS S3/S3、Kafka Trigger 和 RabbitMQ Trigger 的 Base AI 原生语义子集；不是完整 n8n 运行时。
+- Dify 当前只支持 Tavily Search 与 Extract；Crawl、Map、Research 和插件 Python 运行时不在本次范围内。
+- 未使用真实 Tavily API Key 发起成功的公网端到端请求；Bearer Header、请求体、2xx 输出和 401 失败由可执行测试覆盖。运行前还需在接口触发安全策略中允许 `api.tavily.com`。
+- 旧版已导入 Tavily HTTP 模板不会静默改写；重新导入检测到 UPDATE_AVAILABLE 后，管理员需确认更新、选择 TAVILY 连接并重新启用。
+- 未执行浏览器自动化 E2E；页面交互由 Frontend 工具测试、Vue 源码契约测试和生产构建覆盖。
+- 历史 Frontend 补充目录仍有 3 个与本次无关的过期断言失败；本次未删除、跳过或弱化这些测试。
+- 为释放 80/443 已停止 `domestic-trade-caddy`；如需恢复该项目，应先释放本项目端口后再启动。
+
+### 下次测试建议
+
+1. 使用专用测试 Tavily Key 增加 Search/Extract 公网沙箱 E2E，并校验额度、超时、限流和响应体上限。
+2. 增加浏览器 E2E，覆盖 Dify 插件子动作多选、UPDATE_AVAILABLE 取消/确认、连接选择、停用模板重新启用和错误提示。
+3. 为 n8n 每个白名单节点建立更细的操作/参数能力矩阵；新增映射前以官方节点版本录制契约和真实依赖容器验证语义差异。
+4. 在后续独立任务中修正或迁移 `frontend/test/api-trigger-security.test.mjs` 的 3 个过期源码契约，并统一两套 Frontend 测试入口。
+
+### 重测触发条件与回滚
+
+- 修改 n8n 白名单、Dify 插件/动作映射、Tavily 连接或执行器、市场包解析、批量导入事务、模板外部身份、更新确认或节点配置界面时，必须重跑 Backend、Frontend、Python Worker、Caddy 完整回归和 Compose 统一重建。
+- 应用回滚可撤销功能提交 `da1b8ac0dccb53e10efe1a5e39a8a738da9d832e` 后执行 `docker compose up --build -d`；本次未新增数据库迁移或配置，可直接恢复旧应用行为。
+- 回滚前若已确认更新旧 Tavily 模板，应先导出模板配置；撤销代码不会自动恢复被管理员确认替换的旧模板内容。
+
 ## 📋 n8n 与 Dify 节点市场导入测试结果（2026-08-09）
 
 ### Git 基准点
