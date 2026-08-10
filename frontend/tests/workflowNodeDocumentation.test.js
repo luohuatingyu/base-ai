@@ -96,6 +96,15 @@ test('独立文档页面覆盖完整使用说明、响应式目录和安全异�
   assert.doesNotMatch(viewSource,/v-html|marked|markdown-it/)
 })
 
+test('节点目录按固定功能顺序分组并只展示搜索命中的非空分组',()=>{
+  assert.match(viewSource,/groupWorkflowTemplates\(filtered\.value,true\)/)
+  assert.match(viewSource,/v-for="group in grouped"/)
+  assert.match(viewSource,/categoryLabel\(group\.category\)/)
+  assert.match(viewSource,/\{\{ group\.items\.length \}\}/)
+  assert.match(viewSource,/v-for="item in group\.items"/)
+  assert.match(viewSource,/\.docs-node-group-title\{[^}]*position:sticky/)
+})
+
 test('模型节点文档展示后端统一兼容目录表格',()=>{
   for(const token of ['workflowNodeDocs.modelCompatibility','workflowNodeDocs.modelProtocol','workflowNodeDocs.recommendedModelType','workflowNodeDocs.allowedModelTypes','workflowNodeDocs.modelSources','workflowNodeDocs.filteringRule'])assert.match(viewSource,new RegExp(token.replaceAll('.', '\\.')))
   assert.match(viewSource,/v-if="currentCompatibility" class="docs-model-compatibility"/)
