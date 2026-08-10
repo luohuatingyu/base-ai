@@ -50,6 +50,50 @@ const WORKFLOW_NODE_EXAMPLE_OVERRIDES = Object.freeze({
   TAVILY_TOOL: { connectionId: 1, operation: 'SEARCH', query: '{{input.query}}', searchDepth: 'basic', maxResults: 5 }
 })
 
+/** 为节点文档提供可直接理解的数据输入与输出示例，示例不包含真实凭据或敏感信息。 */
+const WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({
+  START: pair({ orderId: 'ORD-1001', question: '订单什么时候发货？' }, { orderId: 'ORD-1001', question: '订单什么时候发货？' }),
+  END: pair({ answer: '订单预计今天发货。' }, { answer: '订单预计今天发货。' }),
+  LLM: pair({ text: '请概括本周销售情况。' }, { content: '本周销售额稳步增长。', model: 'example-model', totalTokens: 128 }),
+  HTTP: pair({ orderId: 'ORD-1001' }, { httpStatus: 200, durationMs: 86, body: '{"status":"SHIPPED"}', json: { status: 'SHIPPED' } }),
+  AGENT: pair({ task: '查询订单并生成回复', orderId: 'ORD-1001' }, { content: '订单已发货。', toolResults: [{ name: 'query_order', success: true }] }),
+  RAG: pair({ query: '退款规则是什么？' }, { answer: '签收后 7 天内可以申请退款。[1]', citations: [{ index: 1, source: 'refund-policy.md' }], matches: [] }),
+  KNOWLEDGE_RETRIEVAL: pair({ query: '退款规则' }, { knowledgeBaseId: 1, count: 1, matches: [{ source: 'refund-policy.md', score: 0.91 }] }),
+  KNOWLEDGE_UPSERT: pair({ document: '退款申请应在签收后 7 天内提交。' }, { documentId: 42, fileName: 'document.txt', status: 'INDEXED', chunkCount: 1 }),
+  CONDITION: pair({ status: 'READY' }, { matched: true }),
+  ITERATION: pair({ items: [{ id: 1 }, { id: 2 }] }, { iterations: 2, items: [{ id: 1, processed: true }, { id: 2, processed: true }] }),
+  LOOP: pair({ approved: false }, { iterations: 3, items: [{ attempt: 1 }, { attempt: 2 }, { attempt: 3 }] }),
+  SWITCH: pair({ status: 'APPROVED' }, { matched: true, branch: 'approved' }),
+  MERGE: pair({ first: { id: 1 }, second: { status: 'READY' } }, [{ id: 1 }, { status: 'READY' }]),
+  SUB_WORKFLOW: pair({ orderId: 'ORD-1001' }, { approved: true, reviewer: 'workflow' }),
+  WAIT: pair({ taskId: 'TASK-1001' }, { taskId: 'TASK-1001' }),
+  SET_VARIABLE: pair({ orderId: 'ORD-1001' }, { orderId: 'ORD-1001' }),
+  TEMPLATE: pair({ orderId: 'ORD-1001' }, { text: '订单 ORD-1001 已处理' }),
+  JSON_PARSE: pair({ jsonText: '{"id":1,"enabled":true}' }, { id: 1, enabled: true }),
+  JSON_VALIDATE: pair({ payload: { id: 'ORD-1001' } }, { valid: true, value: { id: 'ORD-1001' }, errors: [] }),
+  TRANSFORM: pair({ orderId: 'ORD-1001', status: 'READY' }, { id: 'ORD-1001', status: 'READY' }),
+  FILTER: pair({ items: [{ id: 1, enabled: true }, { id: 2, enabled: false }] }, [{ id: 1, enabled: true }]),
+  SORT: pair({ items: [{ id: 2 }, { id: 1 }] }, [{ id: 1 }, { id: 2 }]),
+  AGGREGATE: pair({ items: [{ amount: 12 }, { amount: 8 }] }, { value: 20 }),
+  CSV: pair({ csvText: 'id,name\n1,示例' }, [{ id: '1', name: '示例' }]),
+  QUESTION_CLASSIFIER: pair({ question: '商品无法开机怎么办？' }, { category: '售后' }),
+  PARAMETER_EXTRACTOR: pair({ text: '查询订单 ORD-1001' }, { orderId: 'ORD-1001' }),
+  STRUCTURED_OUTPUT: pair({ text: '{"answer":"已完成"}' }, { answer: '已完成' }),
+  DOCUMENT_EXTRACTOR: pair({ document: '示例文档正文' }, { text: '示例文档正文', metadata: { fileName: 'example.txt' } }),
+  WEBHOOK_TRIGGER: pair({ event: 'order.created', data: { id: 'ORD-1001' } }, { event: 'order.created', data: { id: 'ORD-1001' } }),
+  SCHEDULE_TRIGGER: pair({ scheduledAt: '2026-08-10T09:00:00+08:00' }, { scheduledAt: '2026-08-10T09:00:00+08:00' }),
+  EMAIL_SEND: pair({ orderId: 'ORD-1001', status: 'SHIPPED' }, { sent: true, routeCode: 'DEFAULT_MAIL' }),
+  IM_NOTIFY: pair({ taskId: 'TASK-1001' }, { httpStatus: 200, durationMs: 72, body: 'ok' }),
+  SQL_QUERY: pair({ orderId: 'ORD-1001' }, { count: 1, rows: [{ id: 'ORD-1001', status: 'SHIPPED' }] }),
+  REDIS_COMMAND: pair({ orderId: 'ORD-1001' }, { value: 'SHIPPED' }),
+  S3_OBJECT: pair({ objectKey: 'reports/weekly.json' }, { bucket: 'workflow-files', key: 'reports/weekly.json', contentType: 'application/json' }),
+  KAFKA_PUBLISH: pair({ orderId: 'ORD-1001', status: 'SHIPPED' }, { topic: 'order-events', partition: 0, offset: 128 }),
+  KAFKA_TRIGGER: pair({ topic: 'order-events', value: { orderId: 'ORD-1001' } }, { topic: 'order-events', value: { orderId: 'ORD-1001' } }),
+  RABBITMQ_PUBLISH: pair({ orderId: 'ORD-1001', status: 'CREATED' }, { published: true, exchange: 'order.events' }),
+  RABBITMQ_TRIGGER: pair({ queue: 'order.workflow', value: { orderId: 'ORD-1001' } }, { queue: 'order.workflow', value: { orderId: 'ORD-1001' } }),
+  TAVILY_TOOL: pair({ query: 'Base AI workflow' }, { httpStatus: 200, durationMs: 310, json: { results: [{ title: 'Example result', url: 'https://example.com' }] } })
+})
+
 /** 每个原生节点都使用独立的双语行为、输入、输出和限制说明。 */
 export const WORKFLOW_NODE_DOCUMENTATION = Object.freeze(Object.fromEntries(DOCUMENTED_WORKFLOW_NODE_TYPES.map(nodeType => [nodeType, Object.freeze({
   nodeType,
@@ -78,6 +122,8 @@ export function workflowNodeDocument(template, translate, hasTranslation) {
   const base = WORKFLOW_NODE_DOCUMENTATION[nodeType]
   if (!base) return null
   const exampleConfig = workflowNodeExample(nodeType, template?.config)
+  const fields = nodeConfigFields(nodeType, exampleConfig).filter(item => nodeConfigFieldApplicable(nodeType, item.key, exampleConfig))
+  const examples = WORKFLOW_NODE_IO_EXAMPLES[nodeType] || pair({}, {})
   return {
     ...base,
     name: template?.name || nodeType,
@@ -88,8 +134,11 @@ export function workflowNodeDocument(template, translate, hasTranslation) {
     input: translated(base.input, 'workflowNodeDocs.genericInput'),
     output: translated(base.output, 'workflowNodeDocs.genericOutput'),
     limitations: translated(base.limitations, 'workflowNodeDocs.defaultLimitations'),
-    fields: nodeConfigFields(nodeType, exampleConfig).filter(item => nodeConfigFieldApplicable(nodeType, item.key, exampleConfig)),
+    fields,
+    requiredFields: fields.filter(item => item.requirement === 'required').map(item => item.key),
     example: JSON.stringify(exampleConfig, null, 2),
+    inputExample: JSON.stringify(examples.input, null, 2),
+    outputExample: JSON.stringify(examples.output, null, 2),
     externalVersion: template?.externalVersion || '',
     externalPublisher: template?.externalPublisher || ''
   }
@@ -110,3 +159,6 @@ function clone(value) { return value === undefined ? undefined : JSON.parse(JSON
 
 /** 只接受普通模板配置对象，忽略数组和空值。 */
 function cloneObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? clone(value) : {} }
+
+/** 创建输入输出示例对，保持目录定义紧凑且结构统一。 */
+function pair(input, output) { return Object.freeze({ input, output }) }

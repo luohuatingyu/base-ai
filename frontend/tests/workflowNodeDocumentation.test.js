@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
-import { WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
+import { nodeConfigFields, WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 import { DOCUMENTED_WORKFLOW_NODE_TYPES, WORKFLOW_NODE_DOCUMENTATION, undocumentedWorkflowNodeTypes, workflowNodeDocument, workflowNodeExample } from '../src/utils/workflowNodeDocumentation.js'
 
 const viewSource=readFileSync(new URL('../src/views/WorkflowNodeDocsView.vue',import.meta.url),'utf8')
@@ -35,6 +35,30 @@ test('系统、导入和自建模板复用原生文档并保留模板元数据',
   assert.equal(workflowNodeDocument({nodeType:'UNKNOWN'},translate,has),null)
 })
 
+test('全部节点提供可解析的输入输出示例和当前分支必填字段清单',()=>{
+  for(const [name,locale] of locales){
+    const {translate,has}=translator(locale)
+    for(const type of WORKFLOW_NODE_TYPES){
+      const doc=workflowNodeDocument({nodeType:type},translate,has)
+      assert.ok(doc,`${name} ${type} document`)
+      assert.doesNotThrow(()=>JSON.parse(doc.inputExample),`${name} ${type} input example`)
+      assert.doesNotThrow(()=>JSON.parse(doc.outputExample),`${name} ${type} output example`)
+      assert.deepEqual(doc.requiredFields,doc.fields.filter(field=>field.requirement==='required').map(field=>field.key),`${name} ${type} required fields`)
+    }
+  }
+})
+
+test('全部配置字段都有双语名称和用途说明或编辑器说明回退',()=>{
+  for(const type of WORKFLOW_NODE_TYPES){
+    for(const field of nodeConfigFields(type)){
+      for(const [name,locale] of locales){
+        assert.ok(locale.workflowConfig.fieldLabels[field.key]||locale.tavilyConfig.fields[field.key],`${name} ${type}.${field.key} label`)
+        assert.ok(locale.workflowNodeDocs.fieldDescriptions[field.key]||locale.workflowNodeDocs.editorDescriptions[field.editor]||locale.workflowNodeDocs.editorDescriptions.generic,`${name} ${type}.${field.key} description`)
+      }
+    }
+  }
+})
+
 test('配置示例合并人工关键参数、字段默认值和模板配置且仅保留适用分支',()=>{
   const rag=workflowNodeExample('RAG',{topK:8,modelMode:'DIRECT',modelId:9})
   assert.equal(rag.knowledgeBaseId,1);assert.equal(rag.topK,8);assert.equal(rag.modelId,9)
@@ -60,9 +84,13 @@ test('Tavily 专用配置字段具备完整双语名称',()=>{
   }
 })
 
-test('独立文档页面覆盖完整配置、加载失败和无结果状态',()=>{
-  for(const token of ['workflowNodeDocs.search','workflowNodeDocs.input','workflowNodeDocs.output','workflowNodeDocs.configuration','workflowNodeDocs.fieldType','workflowNodeDocs.defaultValue','workflowNodeDocs.options','workflowNodeDocs.example','workflowNodeDocs.limitations','workflowNodeDocs.loadFailed','workflowNodeDocs.noResults'])assert.match(viewSource,new RegExp(token.replaceAll('.', '\\.')))
+test('独立文档页面覆盖完整使用说明、响应式目录和安全异常状态',()=>{
+  for(const token of ['workflowNodeDocs.search','workflowNodeDocs.overview','workflowNodeDocs.quickStart','workflowNodeDocs.prerequisites','workflowNodeDocs.input','workflowNodeDocs.output','workflowNodeDocs.configuration','workflowNodeDocs.defaultValue','workflowNodeDocs.options','workflowNodeDocs.examples','workflowNodeDocs.inputExample','workflowNodeDocs.outputExample','workflowNodeDocs.troubleshooting','workflowNodeDocs.limitations','workflowNodeDocs.loadFailed','workflowNodeDocs.noResults'])assert.match(viewSource,new RegExp(token.replaceAll('.', '\\.')))
   assert.match(viewSource,/http\.get\('\/workflow\/node-docs'\)/)
   assert.match(viewSource,/catch\{rows\.value=\[\];selected\.value=null;error\.value=true\}/)
+  assert.match(viewSource,/aria-current/)
+  assert.match(viewSource,/docs-field-card/)
+  assert.match(viewSource,/@media\(max-width:800px\)/)
+  assert.doesNotMatch(viewSource,/<el-table/)
   assert.doesNotMatch(viewSource,/v-html|marked|markdown-it/)
 })
