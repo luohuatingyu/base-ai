@@ -56,12 +56,8 @@ public class WorkflowNodeMarketplaceService {
         List<WorkflowModels.MarketplaceNodeView> items = new ArrayList<>();
         for (WorkflowMarketplaceClients.MarketplaceEntry entry : result.items()) {
             if ("N8N".equals(source)) items.add(view(entry, adaptN8n(entry).orElse(null)));
-            else if (DIFY_TAVILY.equals(entry.externalId())) {
-                items.add(view(difyTool(entry, "tavily_search", "Tavily Search", "Search the web with Tavily"),
-                    entry.version(), entry.publisher(), entry.category()));
-                items.add(view(difyTool(entry, "tavily_extract", "Tavily Extract", "Extract content from web pages with Tavily"),
-                    entry.version(), entry.publisher(), entry.category()));
-            } else items.add(view(entry, null));
+            else if (DIFY_TAVILY.equals(entry.externalId())) items.add(difyPluginView(entry));
+            else items.add(view(entry, null));
         }
         return new WorkflowModels.MarketplacePage(source, List.copyOf(items), page, pageSize, result.total());
     }
@@ -74,16 +70,11 @@ public class WorkflowNodeMarketplaceService {
             N8N_NATIVE_TYPES.keySet().stream().sorted().map(clients::findN8n).flatMap(Optional::stream)
                 .map(entry -> view(entry, adaptN8n(entry).orElseThrow())).forEach(items::add);
         } else if (category == null || category.isBlank() || "tool".equalsIgnoreCase(category)) {
-            clients.findDify(DIFY_TAVILY).ifPresent(plugin -> {
-                items.add(view(difyTool(plugin, "tavily_search", "Tavily Search", "Search the web with Tavily"),
-                    plugin.version(), plugin.publisher(), plugin.category()));
-                items.add(view(difyTool(plugin, "tavily_extract", "Tavily Extract", "Extract content from web pages with Tavily"),
-                    plugin.version(), plugin.publisher(), plugin.category()));
-            });
+            clients.findDify(DIFY_TAVILY).map(this::difyPluginView).ifPresent(items::add);
         }
         String needle = normalized(query);
-        List<WorkflowModels.MarketplaceNodeView> filtered = items.stream().filter(item -> needle.isBlank()
-            || normalized(item.name()).contains(needle) || normalized(item.externalId()).contains(needle)).toList();
+        List<WorkflowModels.MarketplaceNodeView> filtered = items.stream()
+            .filter(item -> matches(item, needle)).toList();
         int from = Math.min(filtered.size(), (page - 1) * pageSize);
         int to = Math.min(filtered.size(), from + pageSize);
         return new WorkflowModels.MarketplacePage(source, List.copyOf(filtered.subList(from, to)),
@@ -101,12 +92,17 @@ public class WorkflowNodeMarketplaceService {
         if (ids.size() > 50 || ids.stream().anyMatch(id -> id == null || id.isBlank() || id.length() > 255)) {
             throw new BusinessException("workflow.marketplaceNodeNotFound");
         }
-        List<WorkflowModels.MarketplaceImportItem> imported = new ArrayList<>();
         Map<String, byte[]> packageCache = new LinkedHashMap<>();
+        List<WorkflowModels.MarketplaceTemplateDraft> drafts = new ArrayList<>();
         for (String externalId : ids) {
-            WorkflowModels.MarketplaceTemplateDraft draft = "N8N".equals(source)
-                ? requireN8n(externalId) : requireDify(externalId, packageCache);
-            WorkflowModels.MarketplaceTemplatePersistence result = workflowService.importMarketplaceTemplate(draft);
+            drafts.add("N8N".equals(source) ? requireN8n(externalId) : requireDify(externalId, packageCache));
+        }
+        List<WorkflowModels.MarketplaceTemplatePersistence> persisted = workflowService.importMarketplaceTemplates(
+            List.copyOf(drafts), Boolean.TRUE.equals(command.replaceExisting()));
+        List<WorkflowModels.MarketplaceImportItem> imported = new ArrayList<>();
+        int index = 0;
+        for (String externalId : ids) {
+            WorkflowModels.MarketplaceTemplatePersistence result = persisted.get(index++);
             imported.add(new WorkflowModels.MarketplaceImportItem(externalId, result.status(), result.templateId()));
         }
         return new WorkflowModels.MarketplaceImportResult(source, List.copyOf(imported));
@@ -148,22 +144,20 @@ public class WorkflowNodeMarketplaceService {
             WorkflowTemplateCatalog.defaultCategory(nodeType), objectMapper.createObjectNode()));
     }
 
-    /** 为 Dify Tavily 工具生成独立维护的原生 HTTP 配置，不复用插件 Python 实现。 */
+    /** 为 Dify Tavily 工具生成只引用加密连接的原生配置，不保存或执行插件 Python。 */
     private NativeDraft difyTool(WorkflowMarketplaceClients.MarketplaceEntry plugin, String toolName,
                                  String name, String description) {
-        ObjectNode body = objectMapper.createObjectNode().put("api_key", "");
-        String endpoint;
+        ObjectNode config = objectMapper.createObjectNode();
+        config.putNull("connectionId");
         if ("tavily_search".equals(toolName)) {
-            endpoint = "https://api.tavily.com/search";
-            body.put("query", "{{input.query}}").put("search_depth", "basic").put("max_results", 5);
+            config.put("operation", "SEARCH").put("query", "{{input.query}}")
+                .put("searchDepth", "basic").put("maxResults", 5);
         } else {
-            endpoint = "https://api.tavily.com/extract";
-            body.put("urls", "{{input.urls}}");
+            config.put("operation", "EXTRACT").put("urls", "{{input.urls}}")
+                .put("extractDepth", "basic").put("format", "markdown");
         }
-        ObjectNode config = objectMapper.createObjectNode().put("method", "POST").put("url", endpoint);
-        config.putObject("headers").put("Content-Type", "application/json");
-        config.set("body", body);
-        return new NativeDraft(plugin.externalId() + "/" + toolName, name, description, "HTTP", "NETWORK_API", config);
+        return new NativeDraft(plugin.externalId() + "/" + toolName, name, description,
+            "TAVILY_TOOL", "NETWORK_API", config);
     }
 
     /** 构造统一市场卡片；未兼容项只返回稳定原因码。 */
@@ -171,14 +165,40 @@ public class WorkflowNodeMarketplaceService {
                                                      NativeDraft draft) {
         return draft == null
             ? new WorkflowModels.MarketplaceNodeView(entry.externalId(), entry.name(), entry.description(),
-                entry.version(), entry.publisher(), entry.category(), false, "NO_NATIVE_ADAPTER", "", "")
+                entry.version(), entry.publisher(), entry.category(), false, "NO_NATIVE_ADAPTER", "", "",
+                "NONE", List.of())
             : view(draft, entry.version(), entry.publisher(), entry.category());
     }
 
     /** 构造兼容市场节点卡片。 */
     private WorkflowModels.MarketplaceNodeView view(NativeDraft draft, String version, String publisher, String category) {
         return new WorkflowModels.MarketplaceNodeView(draft.externalId(), draft.name(), draft.description(), version,
-            publisher, category, true, "", draft.nodeType(), draft.functionalCategory());
+            publisher, category, true, "", draft.nodeType(), draft.functionalCategory(), "NATIVE_SUBSET", List.of());
+    }
+
+    /** 以插件为分页单位展示 Dify，并把受支持工具作为可选择动作返回。 */
+    private WorkflowModels.MarketplaceNodeView difyPluginView(WorkflowMarketplaceClients.MarketplaceEntry plugin) {
+        List<WorkflowModels.MarketplaceActionView> actions = List.of(
+            action(difyTool(plugin, "tavily_search", "Tavily Search", "Search the web with Tavily")),
+            action(difyTool(plugin, "tavily_extract", "Tavily Extract", "Extract content from web pages with Tavily"))
+        );
+        return new WorkflowModels.MarketplaceNodeView(plugin.externalId(), plugin.name(), plugin.description(),
+            plugin.version(), plugin.publisher(), plugin.category(), true, "", "TAVILY_TOOL", "NETWORK_API",
+            "NATIVE_SUBSET", actions);
+    }
+
+    /** 把单个原生适配动作转换为市场子项。 */
+    private WorkflowModels.MarketplaceActionView action(NativeDraft draft) {
+        return new WorkflowModels.MarketplaceActionView(draft.externalId(), draft.name(), draft.description(), true,
+            "", draft.nodeType(), draft.functionalCategory(), "NATIVE_SUBSET");
+    }
+
+    /** 搜索同时匹配插件身份和受支持动作。 */
+    private boolean matches(WorkflowModels.MarketplaceNodeView item, String needle) {
+        return needle.isBlank() || normalized(item.name()).contains(needle)
+            || normalized(item.externalId()).contains(needle)
+            || item.actions().stream().anyMatch(action -> normalized(action.name()).contains(needle)
+                || normalized(action.externalId()).contains(needle));
     }
 
     /** 把市场元数据和原生转换结果固化为不可伪造的持久化命令。 */

@@ -27,7 +27,7 @@ import java.util.Set;
 @Service
 public class WorkflowConnectionService {
     private static final String MASK = "******";
-    private static final Set<String> TYPES = Set.of("MYSQL", "POSTGRESQL", "REDIS", "S3", "KAFKA", "RABBITMQ", "WEBHOOK");
+    private static final Set<String> TYPES = Set.of("MYSQL", "POSTGRESQL", "REDIS", "S3", "KAFKA", "RABBITMQ", "WEBHOOK", "TAVILY");
     private static final Set<String> SECRET_FIELDS = Set.of(
         "password", "secret", "secretkey", "accesskey", "token", "apikey", "saslpassword", "privatekey"
     );
@@ -171,6 +171,9 @@ public class WorkflowConnectionService {
             throw new BusinessException("workflow.connectionInvalid");
         }
         type(command.connectionType());
+        if ("TAVILY".equals(type(command.connectionType())) && command.config().path("apiKey").asText("").isBlank()) {
+            throw new BusinessException("workflow.connectionInvalid");
+        }
     }
 
     /** 递归保留更新命令中的脱敏字段原值。 */

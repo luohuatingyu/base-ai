@@ -4,6 +4,7 @@ import com.baseai.platform.automation.ApiTriggerModels;
 import com.baseai.platform.automation.ApiTriggerService;
 import com.baseai.platform.common.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.ConnectionFactory;
 import io.lettuce.core.RedisClient;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -30,11 +31,14 @@ import java.util.concurrent.TimeUnit;
 public class WorkflowConnectionTester {
     private final WorkflowConnectionService connectionService;
     private final ApiTriggerService apiTriggerService;
+    private final ObjectMapper objectMapper;
 
     /** 注入连接存储和安全 HTTP 服务。 */
-    public WorkflowConnectionTester(WorkflowConnectionService connectionService, ApiTriggerService apiTriggerService) {
+    public WorkflowConnectionTester(WorkflowConnectionService connectionService, ApiTriggerService apiTriggerService,
+                                    ObjectMapper objectMapper) {
         this.connectionService = connectionService;
         this.apiTriggerService = apiTriggerService;
+        this.objectMapper = objectMapper;
     }
 
     /** 按连接类型执行测试并隐藏底层异常细节。 */
@@ -48,6 +52,7 @@ public class WorkflowConnectionTester {
                 case "KAFKA" -> testKafka(connection.config());
                 case "RABBITMQ" -> testRabbit(connection.config());
                 case "WEBHOOK" -> testWebhook(connection.config());
+                case "TAVILY" -> testTavily(connection.config());
                 default -> throw new BusinessException("workflow.connectionTypeInvalid");
             }
             return Map.of("connected", true, "connectionType", connection.connectionType());
@@ -108,5 +113,20 @@ public class WorkflowConnectionTester {
             "{}", "", "application/json", null, 10, true, false, "", "POST", "", "application/json",
             "data.token", "Authorization", "Bearer ");
         apiTriggerService.test(command);
+    }
+
+    /** 使用官方只读 Usage 接口验证 Tavily Bearer 凭据。 */
+    private void testTavily(JsonNode config) {
+        String headers;
+        try { headers = objectMapper.writeValueAsString(Map.of("Authorization", "Bearer " + config.path("apiKey").asText())); }
+        catch (Exception exception) { throw new BusinessException("workflow.connectionInvalid"); }
+        ApiTriggerModels.Command command = new ApiTriggerModels.Command(
+            "Tavily connection test", "Tavily connection test", "GET", "https://api.tavily.com/usage",
+            headers, "{}", "", "application/json", null, 10, true, false, "", "POST", "", "application/json",
+            "data.token", "Authorization", "Bearer ");
+        ApiTriggerModels.ExecutionResult result = apiTriggerService.test(command);
+        if (result.httpStatus() < 200 || result.httpStatus() >= 300) {
+            throw new BusinessException("workflow.connectionTestFailed");
+        }
     }
 }

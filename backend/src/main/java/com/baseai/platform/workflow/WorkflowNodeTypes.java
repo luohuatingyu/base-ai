@@ -11,11 +11,12 @@ public final class WorkflowNodeTypes {
         "AGGREGATE", "CSV", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT",
         "DOCUMENT_EXTRACTOR", "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER", "EMAIL_SEND", "IM_NOTIFY",
         "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT", "KAFKA_PUBLISH", "KAFKA_TRIGGER",
-        "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER"
+        "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER", "TAVILY_TOOL"
     );
 
     public static final Set<String> NESTED_GRAPH = Set.of("ITERATION", "LOOP");
     public static final Set<String> TRIGGERS = Set.of("WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER", "KAFKA_TRIGGER", "RABBITMQ_TRIGGER");
+    public static final Set<String> MARKETPLACE_ONLY = Set.of("TAVILY_TOOL");
 
     /** 工具类不允许实例化。 */
     private WorkflowNodeTypes() { }

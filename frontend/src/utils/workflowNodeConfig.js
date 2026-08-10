@@ -70,7 +70,11 @@ export const NODE_CONFIG_FIELDS = {
   KAFKA_PUBLISH: [field('connectionId', 'connection', null), field('topic', 'text', ''), field('key', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
   KAFKA_TRIGGER: [field('connectionId', 'connection', null), field('topic', 'text', ''), field('groupId', 'text', '')],
   RABBITMQ_PUBLISH: [field('connectionId', 'connection', null), field('destinationMode', 'select', null, ['EXCHANGE', 'DEFAULT_EXCHANGE']), field('exchange', 'text', ''), field('routingKey', 'text', ''), field('value', 'generic', null), field('timeoutSeconds', 'number', 30)],
-  RABBITMQ_TRIGGER: [field('connectionId', 'connection', null), field('queue', 'text', ''), field('exchange', 'text', ''), field('routingKey', 'text', '')]
+  RABBITMQ_TRIGGER: [field('connectionId', 'connection', null), field('queue', 'text', ''), field('exchange', 'text', ''), field('routingKey', 'text', '')],
+  TAVILY_TOOL: [field('connectionId', 'connection', null), field('operation', 'select', null, ['SEARCH', 'EXTRACT']),
+    field('query', 'text', '{{input.query}}'), field('searchDepth', 'select', 'basic', ['basic', 'advanced', 'fast', 'ultra-fast']),
+    field('maxResults', 'number', 5), field('urls', 'text', '{{input.urls}}'),
+    field('extractDepth', 'select', 'basic', ['basic', 'advanced']), field('format', 'select', 'markdown', ['markdown', 'text'])]
 }
 
 const COMMON_EXECUTION_FIELDS = [
@@ -93,7 +97,7 @@ const NODE_CONNECTION_TYPES = {
   SQL_QUERY: ['MYSQL', 'POSTGRESQL'], REDIS_COMMAND: ['REDIS'], S3_OBJECT: ['S3'],
   KAFKA_PUBLISH: ['KAFKA'], KAFKA_TRIGGER: ['KAFKA'],
   RABBITMQ_PUBLISH: ['RABBITMQ'], RABBITMQ_TRIGGER: ['RABBITMQ'],
-  IM_NOTIFY: ['WEBHOOK'], WEBHOOK_TRIGGER: ['WEBHOOK']
+  IM_NOTIFY: ['WEBHOOK'], WEBHOOK_TRIGGER: ['WEBHOOK'], TAVILY_TOOL: ['TAVILY']
 }
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const REQUIRED_CONFIG_FIELDS = {
@@ -104,13 +108,15 @@ const REQUIRED_CONFIG_FIELDS = {
   PARAMETER_EXTRACTOR: ['modelMode', 'input', 'schema'], STRUCTURED_OUTPUT: ['value', 'schema'], DOCUMENT_EXTRACTOR: ['inputMode'], WEBHOOK_TRIGGER: ['connectionId'],
   SCHEDULE_TRIGGER: ['cron'], EMAIL_SEND: ['routeId', 'subject'], IM_NOTIFY: ['connectionId'], SQL_QUERY: ['connectionId', 'query'],
   REDIS_COMMAND: ['connectionId', 'command', 'arguments'], S3_OBJECT: ['connectionId', 'operation'], KAFKA_PUBLISH: ['connectionId', 'topic', 'value'],
-  KAFKA_TRIGGER: ['connectionId', 'topic'], RABBITMQ_PUBLISH: ['connectionId', 'value'], RABBITMQ_TRIGGER: ['connectionId', 'queue']
+  KAFKA_TRIGGER: ['connectionId', 'topic'], RABBITMQ_PUBLISH: ['connectionId', 'value'], RABBITMQ_TRIGGER: ['connectionId', 'queue'],
+  TAVILY_TOOL: ['connectionId', 'operation']
 }
 const CONDITIONAL_CONFIG_FIELDS = {
   LLM: ['featureCode', 'modelType', 'modelId'], AGENT: ['featureCode', 'modelType', 'modelId'],
   QUESTION_CLASSIFIER: ['featureCode', 'modelType', 'modelId'], PARAMETER_EXTRACTOR: ['featureCode', 'modelType', 'modelId'],
   WAIT: ['seconds', 'milliseconds'], DOCUMENT_EXTRACTOR: ['content', 'base64'],
-  S3_OBJECT: ['key', 'contentMode', 'content', 'base64'], RABBITMQ_PUBLISH: ['destinationMode', 'exchange', 'routingKey']
+  S3_OBJECT: ['key', 'contentMode', 'content', 'base64'], RABBITMQ_PUBLISH: ['destinationMode', 'exchange', 'routingKey'],
+  TAVILY_TOOL: ['query', 'searchDepth', 'maxResults', 'urls', 'extractDepth', 'format']
 }
 
 /** 创建节点配置字段定义。 */
@@ -144,6 +150,10 @@ export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
     const contentMode = String(value.contentMode || '').toUpperCase()
     if (key === 'content') return operation === 'PUT' && contentMode === 'TEXT'
     if (key === 'base64') return operation === 'PUT' && contentMode === 'BASE64'
+  }
+  if (type === 'TAVILY_TOOL') {
+    if (['query', 'searchDepth', 'maxResults'].includes(key)) return operation === 'SEARCH'
+    if (['urls', 'extractDepth', 'format'].includes(key)) return operation === 'EXTRACT'
   }
   const destinationMode = String(value.destinationMode || '').toUpperCase()
   if (type === 'RABBITMQ_PUBLISH' && key === 'exchange') return destinationMode === 'EXCHANGE'
@@ -192,6 +202,11 @@ export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
     if (key === 'exchange') return mode === 'EXCHANGE' ? 'required' : ''
     if (key === 'routingKey') return mode === 'DEFAULT_EXCHANGE' ? 'required' : ''
   }
+  if (type === 'TAVILY_TOOL') {
+    const operation = String(value.operation || '').toUpperCase()
+    if (['query', 'searchDepth', 'maxResults'].includes(key)) return operation === 'SEARCH' ? 'required' : ''
+    if (['urls', 'extractDepth', 'format'].includes(key)) return operation === 'EXTRACT' ? 'required' : ''
+  }
   if (CONDITIONAL_CONFIG_FIELDS[type]?.includes(key)) return 'conditional'
   return ''
 }
@@ -237,6 +252,7 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
     case 'DOCUMENT_EXTRACTOR': requireDocument(); break
     case 'WEBHOOK_TRIGGER': case 'IM_NOTIFY': case 'SQL_QUERY': case 'REDIS_COMMAND': case 'S3_OBJECT':
     case 'KAFKA_PUBLISH': case 'KAFKA_TRIGGER': case 'RABBITMQ_PUBLISH': case 'RABBITMQ_TRIGGER':
+    case 'TAVILY_TOOL':
       requirePositive('connectionId'); break
     case 'EMAIL_SEND': requirePositive('routeId'); requireText('subject'); break
     case 'SCHEDULE_TRIGGER': requireText('cron'); break
@@ -249,6 +265,7 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
   if (type === 'KAFKA_PUBLISH' || type === 'RABBITMQ_PUBLISH') requirePresent('value')
   if (type === 'RABBITMQ_TRIGGER') requireText('queue')
   if (type === 'RABBITMQ_PUBLISH') requireRabbitDestination()
+  if (type === 'TAVILY_TOOL') requireTavily()
   return [...new Set(missing)]
 
   /** 校验 AI 模型来源方案。 */
@@ -285,6 +302,17 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
     const mode = String(value.destinationMode || '').toUpperCase()
     if (!['EXCHANGE', 'DEFAULT_EXCHANGE'].includes(mode)) { missing.push('destinationMode'); return }
     requireText(mode === 'EXCHANGE' ? 'exchange' : 'routingKey')
+  }
+  /** 校验 Tavily 操作方案及官方关键参数。 */
+  function requireTavily() {
+    const operation = String(value.operation || '').toUpperCase()
+    if (!['SEARCH', 'EXTRACT'].includes(operation)) { missing.push('operation'); return }
+    if (operation === 'SEARCH') {
+      requireText('query'); requireEnum('searchDepth', ['BASIC', 'ADVANCED', 'FAST', 'ULTRA-FAST'])
+      const maximum = Number(value.maxResults); if (!Number.isInteger(maximum) || maximum < 1 || maximum > 20) missing.push('maxResults')
+    } else {
+      requireText('urls'); requireEnum('extractDepth', ['BASIC', 'ADVANCED']); requireEnum('format', ['MARKDOWN', 'TEXT'])
+    }
   }
   /** 校验 Switch 分支结构。 */
   function requireCases() {
@@ -334,6 +362,7 @@ function withValidDefaults(nodeType, config) {
     case 'AGGREGATE': setDefault('collection', []); setDefault('operation', 'COUNT'); break
     case 'CSV': setDefault('operation', 'PARSE'); break
     case 'KAFKA_PUBLISH': case 'RABBITMQ_PUBLISH': setDefault('value', null); break
+    case 'TAVILY_TOOL': setDefault('searchDepth', 'basic'); setDefault('maxResults', 5); setDefault('extractDepth', 'basic'); setDefault('format', 'markdown'); break
     default: break
   }
   return value

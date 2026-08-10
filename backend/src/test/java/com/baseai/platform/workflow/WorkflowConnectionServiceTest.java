@@ -68,6 +68,22 @@ class WorkflowConnectionServiceTest {
         assertEquals(2L, service.resolved(created.id(), Set.of("MYSQL")).securityRevision());
     }
 
+    /** Tavily API Key 必须使用连接加密保存并在所有管理视图中脱敏。 */
+    @Test
+    void encryptsAndMasksTavilyApiKey() throws Exception {
+        WorkflowModels.ConnectionView created = service.create(new WorkflowModels.ConnectionCommand(
+            "tavily", "Tavily", "TAVILY", new ObjectMapper().readTree("{\"apiKey\":\"tvly-secret\"}"), true));
+
+        assertEquals("******", created.config().path("apiKey").asText());
+        String ciphertext = jdbcTemplate.queryForObject(
+            "SELECT config_encrypted FROM workflow_connection WHERE id=?", String.class, created.id());
+        assertFalse(ciphertext.contains("tvly-secret"));
+        assertEquals("tvly-secret", service.resolved(created.id(), Set.of("TAVILY")).config().path("apiKey").asText());
+        assertEquals("workflow.connectionInvalid", assertThrows(BusinessException.class, () -> service.create(
+            new WorkflowModels.ConnectionCommand("missing", "Missing", "TAVILY",
+                new ObjectMapper().createObjectNode(), true))).getMessageKey());
+    }
+
     /** 其他用户不能维护不属于自己的连接。 */
     @Test
     void rejectsCrossOwnerUpdate() throws Exception {

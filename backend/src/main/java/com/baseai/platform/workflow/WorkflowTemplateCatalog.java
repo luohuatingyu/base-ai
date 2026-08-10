@@ -50,7 +50,7 @@ public final class WorkflowTemplateCatalog {
             case "CONDITION", "SWITCH", "ITERATION", "LOOP", "MERGE", "SUB_WORKFLOW", "WAIT" -> "FLOW_CONTROL";
             case "SET_VARIABLE", "JSON_PARSE", "JSON_VALIDATE", "TRANSFORM", "FILTER", "SORT", "AGGREGATE" -> "DATA_TRANSFORM";
             case "TEMPLATE", "CSV", "DOCUMENT_EXTRACTOR" -> "TEXT_DOCUMENT";
-            case "HTTP" -> "NETWORK_API";
+            case "HTTP", "TAVILY_TOOL" -> "NETWORK_API";
             case "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER" -> "TRIGGER";
             case "EMAIL_SEND", "IM_NOTIFY" -> "NOTIFICATION";
             case "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT" -> "DATA_STORAGE";

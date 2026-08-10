@@ -101,6 +101,11 @@ public class WorkflowMarketplaceClients {
     /** 从 n8n 站点的官方搜索过滤目录读取全部市场节点。 */
     private SearchResult loadN8n() {
         JsonNode root = getJson(n8nBase.resolve("/api/nodes/search-filters"));
+        return parseN8n(root);
+    }
+
+    /** 解析 n8n 官方目录响应，供录制契约测试复用。 */
+    SearchResult parseN8n(JsonNode root) {
         if (!root.isArray()) throw new BusinessException("workflow.marketplaceResponseInvalid");
         List<MarketplaceEntry> items = new ArrayList<>();
         for (JsonNode node : root) {
@@ -119,6 +124,11 @@ public class WorkflowMarketplaceClients {
             .put("page", page).put("page_size", pageSize).put("sort_by", "install_count").put("sort_order", "DESC");
         if (category != null && !category.isBlank()) body.put("category", category);
         JsonNode root = postJson(difyBase.resolve("/api/v1/plugins/search/advanced"), body);
+        return parseDify(root);
+    }
+
+    /** 解析 Dify 官方高级检索响应，供录制契约测试复用。 */
+    SearchResult parseDify(JsonNode root) {
         JsonNode data = root.path("data");
         if (!data.path("plugins").isArray()) throw new BusinessException("workflow.marketplaceResponseInvalid");
         List<MarketplaceEntry> items = new ArrayList<>();

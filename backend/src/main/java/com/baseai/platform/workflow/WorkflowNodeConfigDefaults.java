@@ -31,6 +31,10 @@ final class WorkflowNodeConfigDefaults {
             case "AGGREGATE" -> { putIfAbsentArray(config, "collection"); putIfAbsent(config, "operation", "COUNT"); }
             case "CSV" -> putIfAbsent(config, "operation", "PARSE");
             case "KAFKA_PUBLISH", "RABBITMQ_PUBLISH" -> { if (!config.has("value")) config.putNull("value"); }
+            case "TAVILY_TOOL" -> {
+                putIfAbsent(config, "searchDepth", "basic"); putIfAbsent(config, "maxResults", 5);
+                putIfAbsent(config, "extractDepth", "basic"); putIfAbsent(config, "format", "markdown");
+            }
             default -> { }
         }
         return config;

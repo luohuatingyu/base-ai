@@ -140,6 +140,9 @@ test('节点来源切换后系统使用新增入口且外部来源使用官方�
 test('市场目录全量可浏览但只有原生兼容节点可以选中导入', () => {
   assert.match(nodeManagementSource, /v-model="compatibleOnly"/)
   assert.match(nodeManagementSource, /:disabled="!item\.compatible"/)
+  assert.match(nodeManagementSource, /item\.actions\?\.length/)
+  assert.match(nodeManagementSource, /:disabled="!action\.compatible"/)
+  assert.match(nodeManagementSource, /compatibilityLevel === 'NATIVE_SUBSET'/)
   assert.match(nodeManagementSource, /item\.incompatibilityReason/)
   assert.match(nodeManagementSource, /externalIds:\s*\[\.\.\.selectedMarketplaceIds\.value\]/)
   assert.match(nodeManagementSource, /marketplaceHint/)

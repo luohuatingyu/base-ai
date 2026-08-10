@@ -21,9 +21,11 @@ class WorkflowMarketplacePackageParserTest {
         WorkflowMarketplacePackageParser parser = new WorkflowMarketplacePackageParser(new PlatformProperties());
         byte[] archive = zip(Map.of(
             "manifest.yaml", "plugins:\n  tools:\n    - provider/tavily.yaml\n",
-            "provider/tavily.yaml", "tools:\n  - tools/tavily_search.yaml\n",
+            "provider/tavily.yaml", "credentials_for_provider:\n  tavily_api_key:\n    type: secret-input\n    required: true\n"
+                + "tools:\n  - tools/tavily_search.yaml\n",
             "tools/tavily_search.yaml", "identity:\n  name: tavily_search\n  label:\n    en_US: Tavily Search\n"
-                + "description:\n  human:\n    en_US: Search the web\n",
+                + "description:\n  human:\n    en_US: Search the web\nparameters:\n"
+                + "  - name: query\n    type: string\n    required: true\n",
             "tools/tavily_search.py", "raise RuntimeError('must never run')\n"
         ));
 
@@ -32,6 +34,22 @@ class WorkflowMarketplacePackageParserTest {
 
         assertEquals("Tavily Search", tool.label());
         assertEquals("Search the web", tool.description());
+    }
+
+    /** 官方关键参数或 secret-input 凭据发生漂移时必须拒绝继续套用旧适配器。 */
+    @Test
+    void rejectsToolContractDrift() throws Exception {
+        WorkflowMarketplacePackageParser parser = new WorkflowMarketplacePackageParser(new PlatformProperties());
+        byte[] archive = zip(Map.of(
+            "manifest.yaml", "plugins:\n  tools:\n    - provider/tavily.yaml\n",
+            "provider/tavily.yaml", "credentials_for_provider:\n  tavily_api_key:\n    type: text-input\n    required: true\n"
+                + "tools:\n  - tools/tavily_search.yaml\n",
+            "tools/tavily_search.yaml", "identity:\n  name: tavily_search\nparameters:\n"
+                + "  - name: query\n    type: number\n    required: true\n"
+        ));
+
+        assertThrows(BusinessException.class, () -> parser.requireTool(archive,
+            "provider/tavily.yaml", "tools/tavily_search.yaml", "tavily_search"));
     }
 
     /** 路径穿越条目即使与目标声明无关也必须拒绝。 */

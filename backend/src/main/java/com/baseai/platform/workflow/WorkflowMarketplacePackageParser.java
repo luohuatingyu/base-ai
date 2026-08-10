@@ -43,6 +43,8 @@ public class WorkflowMarketplacePackageParser {
         Map<String, Object> identity = object(tool.get("identity"));
         String name = string(identity.get("name"));
         if (!expectedName.equals(name)) invalid();
+        requireTavilyCredential(provider);
+        requirePrimaryParameter(tool, "tavily_search".equals(expectedName) ? "query" : "urls");
         Map<String, Object> labels = object(identity.get("label"));
         Map<String, Object> description = object(tool.get("description"));
         return new ToolDeclaration(name, localized(labels, name), localized(object(description.get("human")), ""));
@@ -109,6 +111,27 @@ public class WorkflowMarketplacePackageParser {
     /** 判断声明列表是否包含指定字符串。 */
     private boolean containsList(Object value, String expected) {
         return value instanceof List<?> list && list.stream().map(this::string).anyMatch(expected::equals);
+    }
+
+    /** 要求官方 Tavily Provider 继续声明必填 secret-input 凭据。 */
+    private void requireTavilyCredential(Map<String, Object> provider) {
+        Map<String, Object> credential = object(object(provider.get("credentials_for_provider")).get("tavily_api_key"));
+        if (!"secret-input".equals(string(credential.get("type")))
+            || !Boolean.parseBoolean(string(credential.get("required")))) invalid();
+    }
+
+    /** 要求工具关键输入仍为必填字符串，防止市场升级后静默套用旧适配器。 */
+    private void requirePrimaryParameter(Map<String, Object> tool, String expectedName) {
+        Object parameters = tool.get("parameters");
+        if (!(parameters instanceof List<?>)) invalid();
+        List<?> list = (List<?>) parameters;
+        for (Object value : list) {
+            Map<String, Object> parameter = object(value);
+            if (expectedName.equals(string(parameter.get("name")))
+                && "string".equals(string(parameter.get("type")))
+                && Boolean.parseBoolean(string(parameter.get("required")))) return;
+        }
+        invalid();
     }
 
     /** 将未知 YAML 值安全收窄为映射。 */

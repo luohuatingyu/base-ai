@@ -26,7 +26,7 @@ test('模板和画布节点配置统一使用可视化编辑器', () => {
 })
 
 test('全部原生节点都有可视化配置定义', () => {
-  const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER']
+  const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']
   expected.forEach(type => assert.ok(WORKFLOW_NODE_TYPES.includes(type), type))
   assert.equal(nodeConfigFields('unknown').length, 0)
   assert.deepEqual(nodeConfigFields('WAIT').map(field => field.key), ['durationMode', 'seconds', 'milliseconds'])
@@ -40,7 +40,7 @@ test('全部原生节点都有可视化配置定义', () => {
   }
   assert.equal(nodeConfigFields('EMAIL_SEND').find(field => field.key === 'routeId').editor, 'mailRoute')
   for (const type of ['WEBHOOK_TRIGGER', 'IM_NOTIFY', 'SQL_QUERY', 'REDIS_COMMAND', 'S3_OBJECT', 'KAFKA_PUBLISH',
-    'KAFKA_TRIGGER', 'RABBITMQ_PUBLISH', 'RABBITMQ_TRIGGER']) {
+    'KAFKA_TRIGGER', 'RABBITMQ_PUBLISH', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']) {
     assert.equal(nodeConfigFields(type).find(field => field.key === 'connectionId').editor, 'connection', type)
   }
   assert.equal(Object.values(WORKFLOW_NODE_TYPES).flatMap(type => nodeConfigFields(type))
@@ -80,11 +80,13 @@ test('连接下拉按节点运行时允许类型过滤并生成可识别标签',
     { id: 1, code: 'MYSQL_MAIN', name: '主库', connectionType: 'MYSQL' },
     { id: 2, code: 'PG_REPORT', name: '报表库', connectionType: 'POSTGRESQL' },
     { id: 3, code: 'CACHE', name: '缓存', connectionType: 'REDIS' },
-    { id: 4, code: 'NOTICE', name: '通知', connectionType: 'WEBHOOK' }
+    { id: 4, code: 'NOTICE', name: '通知', connectionType: 'WEBHOOK' },
+    { id: 5, code: 'TAVILY', name: '搜索', connectionType: 'TAVILY' }
   ]
   assert.deepEqual(filterWorkflowConnectionOptions(options, 'SQL_QUERY').map(option => option.id), [1, 2])
   assert.deepEqual(filterWorkflowConnectionOptions(options, 'REDIS_COMMAND').map(option => option.id), [3])
   assert.deepEqual(filterWorkflowConnectionOptions(options, 'WEBHOOK_TRIGGER').map(option => option.id), [4])
+  assert.deepEqual(filterWorkflowConnectionOptions(options, 'TAVILY_TOOL').map(option => option.id), [5])
   assert.deepEqual(filterWorkflowConnectionOptions(options, 'UNKNOWN'), [])
   assert.equal(workflowConnectionOptionLabel(options[0]), '主库 (MYSQL_MAIN) · MYSQL')
 })
@@ -211,6 +213,8 @@ test('发布提示覆盖固定必填、方案条件、操作条件和参数数�
   }), [])
   assert.deepEqual(missingNodeConfigRequirements('EMAIL_SEND', { routeId: 2, subject: '', body: '' }), ['subject'])
   assert.deepEqual(missingNodeConfigRequirements('EMAIL_SEND', { routeId: 2, subject: 'Notice' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('TAVILY_TOOL', { connectionId: 1, operation: 'SEARCH', query: 'AI', maxResults: 21 }), ['maxResults'])
+  assert.deepEqual(missingNodeConfigRequirements('TAVILY_TOOL', { connectionId: 1, operation: 'EXTRACT', urls: 'https://example.com' }), [])
 })
 
 test('必填字段直接编辑且非必填和条件必填字段通过开关启停', () => {

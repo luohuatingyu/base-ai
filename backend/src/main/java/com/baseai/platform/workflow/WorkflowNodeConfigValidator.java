@@ -22,7 +22,8 @@ public class WorkflowNodeConfigValidator {
         "SUB_WORKFLOW", "WAIT", "SET_VARIABLE", "TEMPLATE", "JSON_PARSE", "JSON_VALIDATE", "TRANSFORM",
         "FILTER", "SORT", "AGGREGATE", "CSV", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT",
         "DOCUMENT_EXTRACTOR", "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER", "EMAIL_SEND", "IM_NOTIFY", "SQL_QUERY",
-        "REDIS_COMMAND", "S3_OBJECT", "KAFKA_PUBLISH", "KAFKA_TRIGGER", "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER"
+        "REDIS_COMMAND", "S3_OBJECT", "KAFKA_PUBLISH", "KAFKA_TRIGGER", "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER",
+        "TAVILY_TOOL"
     );
     private final ObjectMapper objectMapper;
 
@@ -101,6 +102,7 @@ public class WorkflowNodeConfigValidator {
             case "KAFKA_TRIGGER" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "topic"); }
             case "RABBITMQ_PUBLISH" -> { requirePositive(config, missing, "connectionId"); requireRabbitDestination(config, missing); requirePresent(config, missing, "value"); }
             case "RABBITMQ_TRIGGER" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "queue"); }
+            case "TAVILY_TOOL" -> requireTavily(config, missing);
             default -> missing.add("nodeType");
         }
         return missing;
@@ -149,6 +151,21 @@ public class WorkflowNodeConfigValidator {
         if ("EXCHANGE".equals(mode)) requireText(config, missing, "exchange");
         else if ("DEFAULT_EXCHANGE".equals(mode)) requireText(config, missing, "routingKey");
         else missing.add("destinationMode");
+    }
+
+    /** 校验 Tavily Search/Extract 的连接、操作和关键官方参数边界。 */
+    private static void requireTavily(ObjectNode config, Set<String> missing) {
+        requirePositive(config, missing, "connectionId");
+        String operation = text(config, "operation").toUpperCase(Locale.ROOT);
+        if ("SEARCH".equals(operation)) {
+            requireText(config, missing, "query");
+            requireEnum(config, missing, "searchDepth", Set.of("BASIC", "ADVANCED", "FAST", "ULTRA-FAST"));
+            requireIntegerRange(config, missing, "maxResults", 1, 20);
+        } else if ("EXTRACT".equals(operation)) {
+            requireText(config, missing, "urls");
+            requireEnum(config, missing, "extractDepth", Set.of("BASIC", "ADVANCED"));
+            requireEnum(config, missing, "format", Set.of("MARKDOWN", "TEXT"));
+        } else missing.add("operation");
     }
 
     /** 校验 Switch 的分支名称和条件均可执行。 */
@@ -220,6 +237,12 @@ public class WorkflowNodeConfigValidator {
 
     /** 校验字段为正数连接、路由、模型或时长标识。 */
     private static void requirePositive(ObjectNode config, Set<String> missing, String key) { if (!config.hasNonNull(key) || config.path(key).asLong() <= 0) missing.add(key); }
+
+    /** 校验整数参数位于闭区间内。 */
+    private static void requireIntegerRange(ObjectNode config, Set<String> missing, String key, int minimum, int maximum) {
+        JsonNode value = config.path(key);
+        if (!value.isIntegralNumber() || value.asInt() < minimum || value.asInt() > maximum) missing.add(key);
+    }
 
     /** 校验字段为 JSON 对象。 */
     private static void requireObject(ObjectNode config, Set<String> missing, String key) { if (!config.path(key).isObject()) missing.add(key); }

@@ -67,9 +67,10 @@
       <el-checkbox-group v-if="marketplaceItems.length" v-model="selectedMarketplaceIds" class="marketplace-grid">
         <article v-for="item in marketplaceItems" :key="item.externalId" class="marketplace-card" :class="{ unsupported: !item.compatible }">
           <div class="marketplace-card-head">
-            <el-checkbox :value="item.externalId" :disabled="!item.compatible">
+            <el-checkbox v-if="!item.actions?.length" :value="item.externalId" :disabled="!item.compatible">
               <strong>{{ item.name }}</strong>
             </el-checkbox>
+            <strong v-else>{{ item.name }}</strong>
             <el-tag v-if="item.compatible" type="success" size="small">{{ t('workflowNodes.compatible') }}</el-tag>
             <el-tag v-else type="info" size="small">{{ t('workflowNodes.unsupported') }}</el-tag>
           </div>
@@ -79,6 +80,12 @@
             <span v-if="item.version">v{{ item.version }}</span>
             <span v-if="item.targetNodeType">{{ item.targetNodeType }}</span>
           </div>
+          <div v-if="item.actions?.length" class="marketplace-actions">
+            <el-checkbox v-for="action in item.actions" :key="action.externalId" :value="action.externalId" :disabled="!action.compatible">
+              <span><strong>{{ action.name }}</strong><small>{{ action.description }}</small></span>
+            </el-checkbox>
+          </div>
+          <el-tag v-if="item.compatibilityLevel === 'NATIVE_SUBSET'" type="warning" size="small">{{ t('workflowNodes.nativeSubset') }}</el-tag>
           <small v-if="!item.compatible">{{ t(`workflowNodes.incompatibility.${item.incompatibilityReason}`) }}</small>
         </article>
       </el-checkbox-group>
@@ -165,10 +172,24 @@ async function loadMarketplace() {
 async function importMarketplaceNodes() {
   marketplaceImporting.value = true
   try {
-    const { data } = await http.post(`/workflow/node-marketplaces/${selectedSource.value}/imports`, {
-      externalIds: [...selectedMarketplaceIds.value]
+    let { data } = await http.post(`/workflow/node-marketplaces/${selectedSource.value}/imports`, {
+      externalIds: [...selectedMarketplaceIds.value], replaceExisting: false
     })
-    const created = (data?.items || []).filter(item => item.status !== 'ALREADY_IMPORTED').length
+    const updateItems = (data?.items || []).filter(item => item.status === 'UPDATE_AVAILABLE')
+    if (updateItems.length) {
+      const confirmed = await ElMessageBox.confirm(t('workflowNodes.updateAvailablePrompt', { count: updateItems.length }),
+        t('workflowNodes.updateConfirmTitle')).then(() => true).catch(error => {
+        if (error === 'cancel' || error === 'close') return false
+        throw error
+      })
+      if (!confirmed) { marketplaceVisible.value = false; selectedMarketplaceIds.value = []; await load(); return }
+      const response = await http.post(`/workflow/node-marketplaces/${selectedSource.value}/imports`, {
+        externalIds: updateItems.map(item => item.externalId), replaceExisting: true
+      })
+      const replacements = new Map((response.data?.items || []).map(item => [item.externalId, item]))
+      data = { ...data, items: (data?.items || []).map(item => replacements.get(item.externalId) || item) }
+    }
+    const created = (data?.items || []).filter(item => ['CREATED', 'RESTORED', 'UPDATED'].includes(item.status)).length
     marketplaceVisible.value = false; selectedMarketplaceIds.value = []; await load()
     const importedIds = new Set((data?.items || []).map(item => item.templateId))
     const firstImported = rows.value.find(row => importedIds.has(row.id))
@@ -241,6 +262,10 @@ onMounted(load)
 .marketplace-card p { min-height: 42px; margin: 0; color: var(--app-muted); font-size: 13px; line-height: 1.5; }
 .marketplace-meta { justify-content: flex-start; flex-wrap: wrap; color: var(--app-muted); font-size: 12px; }
 .marketplace-card > small { color: var(--el-color-warning-dark-2); }
+.marketplace-actions { display: grid; gap: 8px; padding: 10px; border-radius: 8px; background: #f8faff; }
+.marketplace-actions :deep(.el-checkbox) { height: auto; align-items: flex-start; white-space: normal; }
+.marketplace-actions span { display: grid; gap: 3px; }
+.marketplace-actions small { color: var(--app-muted); font-weight: 400; }
 .marketplace-pagination { justify-content: center; margin-top: 18px; }
 @media (max-width: 800px) {
   .node-template-source-filter { display: grid; gap: 8px; }

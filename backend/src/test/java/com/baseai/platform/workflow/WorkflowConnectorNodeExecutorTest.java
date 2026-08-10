@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -142,6 +144,39 @@ class WorkflowConnectorNodeExecutorTest {
 
         assertEquals(true, output.path("sent").asBoolean());
         verify(mailDeliveryClient).send(route, "Order ready", "");
+    }
+
+    /** Tavily 原生适配器必须从加密连接注入 Bearer Header，正文不得包含 API Key。 */
+    @Test
+    void executesTavilySearchWithManagedBearerCredential() throws Exception {
+        stored("TAVILY", objectMapper.readTree("{\"apiKey\":\"tvly-secret\"}"));
+        when(apiTriggerService.test(any())).thenReturn(new ApiTriggerModels.ExecutionResult(
+            200, 9, "{\"results\":[{\"title\":\"Base AI\"}]}"));
+
+        JsonNode output = execute("TAVILY_TOOL", objectMapper.readTree("""
+            {"connectionId":1,"operation":"SEARCH","query":"Base AI","searchDepth":"advanced","maxResults":3}
+            """)).output();
+
+        ArgumentCaptor<ApiTriggerModels.Command> captor = ArgumentCaptor.forClass(ApiTriggerModels.Command.class);
+        verify(apiTriggerService).test(captor.capture());
+        ApiTriggerModels.Command command = captor.getValue();
+        assertEquals("https://api.tavily.com/search", command.url());
+        assertEquals("Bearer tvly-secret", objectMapper.readTree(command.headers()).path("Authorization").asText());
+        assertFalse(command.requestBody().contains("tvly-secret"));
+        assertEquals("advanced", objectMapper.readTree(command.requestBody()).path("search_depth").asText());
+        assertEquals("Base AI", output.path("json").path("results").get(0).path("title").asText());
+    }
+
+    /** Tavily 非成功状态必须中止节点，不能把鉴权失败当作正常业务输出。 */
+    @Test
+    void rejectsTavilyNonSuccessResponse() throws Exception {
+        stored("TAVILY", objectMapper.readTree("{\"apiKey\":\"tvly-secret\"}"));
+        when(apiTriggerService.test(any())).thenReturn(new ApiTriggerModels.ExecutionResult(401, 5, "unauthorized"));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> execute("TAVILY_TOOL",
+            objectMapper.readTree("{\"connectionId\":1,\"operation\":\"EXTRACT\",\"urls\":\"https://example.com\"}")));
+
+        assertEquals("workflow.connectionExecutionFailed", exception.getMessageKey());
     }
 
     /** 连接限定的存储和消息目的地必须在建立外部连接前拒绝越界配置。 */

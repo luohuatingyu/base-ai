@@ -59,7 +59,8 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
     private static final Set<String> TYPES = Set.of(
-        "EMAIL_SEND", "IM_NOTIFY", "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT", "KAFKA_PUBLISH", "RABBITMQ_PUBLISH"
+        "EMAIL_SEND", "IM_NOTIFY", "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT", "KAFKA_PUBLISH", "RABBITMQ_PUBLISH",
+        "TAVILY_TOOL"
     );
     private final ObjectMapper objectMapper;
     private final WorkflowExpressionService expressions;
@@ -100,6 +101,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
             case "S3_OBJECT" -> s3(config);
             case "KAFKA_PUBLISH" -> kafka(config);
             case "RABBITMQ_PUBLISH" -> rabbit(config);
+            case "TAVILY_TOOL" -> tavily(config);
             default -> throw new BusinessException("workflow.nodeTypeInvalid");
         });
     }
@@ -127,6 +129,42 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         ApiTriggerModels.ExecutionResult result = apiTriggerService.test(command);
         return objectMapper.createObjectNode().put("httpStatus", result.httpStatus()).put("durationMs", result.durationMs())
             .put("body", result.responseBody());
+    }
+
+    /** 使用加密连接中的 Bearer 凭据调用固定 Tavily Search/Extract 官方端点。 */
+    private JsonNode tavily(JsonNode config) {
+        WorkflowConnectionService.StoredConnection connection = connections.resolved(
+            requiredConnection(config, "connectionId"), Set.of("TAVILY"));
+        String operation = config.path("operation").asText().toUpperCase(Locale.ROOT);
+        ObjectNode body = objectMapper.createObjectNode();
+        String url;
+        if ("SEARCH".equals(operation)) {
+            url = "https://api.tavily.com/search";
+            body.put("query", config.path("query").asText());
+            body.put("search_depth", config.path("searchDepth").asText("basic"));
+            body.put("max_results", config.path("maxResults").asInt(5));
+        } else if ("EXTRACT".equals(operation)) {
+            url = "https://api.tavily.com/extract";
+            body.put("urls", config.path("urls").asText());
+            body.put("extract_depth", config.path("extractDepth").asText("basic"));
+            body.put("format", config.path("format").asText("markdown"));
+        } else throw new BusinessException("workflow.nodeConfigRequired", "TAVILY_TOOL：operation");
+        ObjectNode headers = objectMapper.createObjectNode()
+            .put("Authorization", "Bearer " + connection.config().path("apiKey").asText())
+            .put("Content-Type", "application/json");
+        ApiTriggerModels.Command command = new ApiTriggerModels.Command(
+            "Tavily " + operation.toLowerCase(Locale.ROOT), "Tavily native workflow adapter", "POST", url,
+            headers.toString(), "{}", body.toString(), "application/json", null,
+            config.path("timeoutSeconds").asInt(30), true, false, "", "POST", "", "application/json",
+            "data.token", "Authorization", "Bearer ");
+        ApiTriggerModels.ExecutionResult result = apiTriggerService.test(command);
+        if (result.httpStatus() < 200 || result.httpStatus() >= 300) {
+            throw new BusinessException("workflow.connectionExecutionFailed");
+        }
+        ObjectNode output = objectMapper.createObjectNode().put("httpStatus", result.httpStatus())
+            .put("durationMs", result.durationMs()).put("body", result.responseBody());
+        try { output.set("json", objectMapper.readTree(result.responseBody())); } catch (Exception ignored) { }
+        return output;
     }
 
     /** 使用参数化语句访问受管 MySQL 或 PostgreSQL。 */

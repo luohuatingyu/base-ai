@@ -14,10 +14,11 @@ import {
 
 const viewSource = readFileSync(new URL('../src/views/WorkflowConnectionsView.vue', import.meta.url), 'utf8')
 
-test('七类连接均提供类型化标准字段和安全默认值', () => {
-  assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK'])
+test('八类连接均提供类型化标准字段和安全默认值', () => {
+  assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY'])
   assert.deepEqual(connectionConfigFields('MYSQL').map(field => field.key), ['url', 'username', 'password', 'allowWrite'])
   assert.deepEqual(connectionConfigFields('WEBHOOK').map(field => field.key), ['url', 'method', 'testMethod', 'headers', 'secret'])
+  assert.deepEqual(connectionConfigFields('TAVILY').map(field => field.key), ['apiKey'])
   assert.equal(connectionConfigDefaults('MYSQL').allowWrite, false)
   assert.equal(connectionConfigDefaults('S3').pathStyle, true)
   assert.deepEqual(connectionConfigDefaults('WEBHOOK').headers, {})

@@ -264,7 +264,11 @@ function fieldValue(field) { return hasField(field.key) ? config.value[field.key
 /** 深复制可序列化字段值，避免可视化编辑器污染共享默认值。 */
 function cloneValue(value) { return value === undefined ? null : JSON.parse(JSON.stringify(value)) }
 /** 返回当前语言下的标准字段名称。 */
-function fieldLabel(key) { const path = `workflowConfig.fieldLabels.${key}`; return te(path) ? t(path) : key }
+function fieldLabel(key) {
+  const tavilyPath = `tavilyConfig.fields.${key}`
+  if (props.nodeType === 'TAVILY_TOOL' && te(tavilyPath)) return t(tavilyPath)
+  const path = `workflowConfig.fieldLabels.${key}`; return te(path) ? t(path) : key
+}
 /** 返回当前语言下的标准字段说明。 */
 function fieldDescription(key) { return t('workflowConfig.standardParameterDescription', { key }) }
 /** 返回必填汇总中使用的本地化字段或组合条件名称。 */
@@ -277,7 +281,11 @@ function fieldRequirementMissing(field) {
   return false
 }
 /** 返回选择项的本地化名称，缺少文案时显示原始值。 */
-function fieldOption(key, option) { const path = `workflowConfig.options.${key}.${option}`; return te(path) ? t(path) : option }
+function fieldOption(key, option) {
+  const tavilyPath = `tavilyConfig.options.${key}.${option}`
+  if (props.nodeType === 'TAVILY_TOOL' && te(tavilyPath)) return t(tavilyPath)
+  const path = `workflowConfig.options.${key}.${option}`; return te(path) ? t(path) : option
+}
 /** 展开或收起标准字段卡片。 */
 function toggleField(key) { openFields.value = openFields.value.includes(key) ? openFields.value.filter(item => item !== key) : [...openFields.value, key] }
 /** 展开或收起附加参数卡片。 */

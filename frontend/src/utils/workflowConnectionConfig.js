@@ -50,6 +50,9 @@ export const CONNECTION_CONFIG_FIELDS = {
     field('testMethod', 'select', 'GET', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
     field('headers', 'keyValue', {}),
     field('secret', 'password', '')
+  ],
+  TAVILY: [
+    field('apiKey', 'password', '')
   ]
 }
 

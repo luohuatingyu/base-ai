@@ -18,6 +18,7 @@ import java.util.Base64;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
@@ -109,6 +110,43 @@ class WorkflowServiceAccessTest {
         assertEquals(true, imported.importedTemplate());
         assertEquals(false, imported.enabled());
         assertEquals("n8n-nodes-base.redis", imported.externalKey());
+    }
+
+    /** 市场模板的来源、编码和节点类型必须由后端锁定，不能通过更新接口伪造。 */
+    @Test
+    void locksImportedTemplateIdentityOnUpdate() {
+        authenticate(1L, Set.of("ADMIN"));
+        WorkflowModels.MarketplaceTemplateDraft draft = new WorkflowModels.MarketplaceTemplateDraft(
+            "N8N", "n8n-nodes-base.redis", "1", "n8n", "a".repeat(64), "N8N_REDIS", "Redis", "",
+            "REDIS_COMMAND", "DATA_STORAGE", new ObjectMapper().createObjectNode());
+        Long id = service.importMarketplaceTemplate(draft).templateId();
+
+        WorkflowModels.NodeTemplateView updated = service.updateTemplate(id, new WorkflowModels.NodeTemplateCommand(
+            "FORGED", "Renamed", "HTTP", "", new ObjectMapper().createObjectNode(), true, "DIFY", "NETWORK_API"));
+
+        assertEquals("N8N_REDIS", updated.code());
+        assertEquals("REDIS_COMMAND", updated.nodeType());
+        assertEquals("N8N", updated.source());
+        assertEquals("Renamed", updated.name());
+    }
+
+    /** 市场指纹变化必须先提示，确认后才重置配置、更新版本并保持停用。 */
+    @Test
+    void requiresConfirmationBeforeReplacingChangedMarketplaceTemplate() {
+        authenticate(1L, Set.of("ADMIN"));
+        WorkflowModels.MarketplaceTemplateDraft first = new WorkflowModels.MarketplaceTemplateDraft(
+            "DIFY", "langgenius/tavily/tavily_search", "1", "langgenius", "a".repeat(64), "DIFY_TAVILY", "Tavily", "",
+            "TAVILY_TOOL", "NETWORK_API", new ObjectMapper().createObjectNode().put("operation", "SEARCH"));
+        Long id = service.importMarketplaceTemplate(first).templateId();
+        WorkflowModels.MarketplaceTemplateDraft changed = new WorkflowModels.MarketplaceTemplateDraft(
+            "DIFY", "langgenius/tavily/tavily_search", "2", "langgenius", "b".repeat(64), "DIFY_TAVILY", "Tavily v2", "",
+            "TAVILY_TOOL", "NETWORK_API", new ObjectMapper().createObjectNode().put("operation", "SEARCH").put("maxResults", 5));
+
+        assertEquals("UPDATE_AVAILABLE", service.importMarketplaceTemplates(java.util.List.of(changed), false).get(0).status());
+        assertEquals("1", service.template(id).externalVersion());
+        assertEquals("UPDATED", service.importMarketplaceTemplates(java.util.List.of(changed), true).get(0).status());
+        assertEquals("2", service.template(id).externalVersion());
+        assertFalse(service.template(id).enabled());
     }
 
     /** 通用创建接口不能伪造 n8n 或 Dify 市场来源。 */

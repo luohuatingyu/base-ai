@@ -18,11 +18,15 @@ public final class WorkflowModels {
                                    boolean enabled, boolean importedTemplate, String externalKey, String externalVersion,
                                    String externalPublisher, String externalFingerprint, LocalDateTime importedAt,
                                    LocalDateTime createdAt, LocalDateTime updatedAt) {}
+    public record MarketplaceActionView(String externalId, String name, String description, boolean compatible,
+                                        String incompatibilityReason, String targetNodeType,
+                                        String functionalCategory, String compatibilityLevel) {}
     public record MarketplaceNodeView(String externalId, String name, String description, String version,
                                       String publisher, String marketplaceCategory, boolean compatible,
-                                      String incompatibilityReason, String targetNodeType, String functionalCategory) {}
+                                      String incompatibilityReason, String targetNodeType, String functionalCategory,
+                                      String compatibilityLevel, List<MarketplaceActionView> actions) {}
     public record MarketplacePage(String source, List<MarketplaceNodeView> items, int page, int pageSize, long total) {}
-    public record MarketplaceImportCommand(List<String> externalIds) {}
+    public record MarketplaceImportCommand(List<String> externalIds, Boolean replaceExisting) {}
     public record MarketplaceImportItem(String externalId, String status, Long templateId) {}
     public record MarketplaceImportResult(String source, List<MarketplaceImportItem> items) {}
     public record MarketplaceTemplateDraft(String source, String externalKey, String externalVersion,

@@ -84,13 +84,14 @@ public class WorkflowService {
         }
     }
 
-    /** 更新节点模板，系统模板保持编码和节点类型不可变。 */
+    /** 更新节点模板，系统和市场模板的编码及节点类型保持不可变。 */
     @Transactional
     public WorkflowModels.NodeTemplateView updateTemplate(Long id, WorkflowModels.NodeTemplateCommand command) {
         WorkflowModels.NodeTemplateView existing = templateForManagement(id);
         validateTemplate(command, existing.systemTemplate());
-        String savedCode = existing.systemTemplate() ? existing.code() : code(command.code());
-        String savedType = existing.systemTemplate() ? existing.nodeType() : type(command.nodeType());
+        boolean identityLocked = existing.systemTemplate() || existing.importedTemplate();
+        String savedCode = identityLocked ? existing.code() : code(command.code());
+        String savedType = identityLocked ? existing.nodeType() : type(command.nodeType());
         try {
             jdbcTemplate.update("""
                 UPDATE workflow_node_template SET code=?,name=?,node_type=?,description=?,config_encrypted=?,template_source=?,functional_category=?,enabled=?,updated_at=NOW()
@@ -113,9 +114,27 @@ public class WorkflowService {
         jdbcTemplate.update("UPDATE workflow_node_template SET enabled=false,voided=true,updated_at=NOW() WHERE id=?", id);
     }
 
-    /** 幂等导入经过白名单转换的市场节点，并让已删除模板可安全恢复。 */
+    /** 兼容单项调用，并委托批量事务实现保证一致的版本更新语义。 */
     @Transactional
     public WorkflowModels.MarketplaceTemplatePersistence importMarketplaceTemplate(WorkflowModels.MarketplaceTemplateDraft draft) {
+        return importMarketplaceTemplates(List.of(draft), false).get(0);
+    }
+
+    /** 在单一事务中幂等导入市场模板，版本变化必须显式确认后才重置配置。 */
+    @Transactional
+    public List<WorkflowModels.MarketplaceTemplatePersistence> importMarketplaceTemplates(
+        List<WorkflowModels.MarketplaceTemplateDraft> drafts, boolean replaceExisting) {
+        if (drafts == null || drafts.isEmpty()) throw new BusinessException("workflow.marketplaceNodeNotFound");
+        List<WorkflowModels.MarketplaceTemplatePersistence> results = new ArrayList<>();
+        for (WorkflowModels.MarketplaceTemplateDraft draft : drafts) {
+            results.add(importMarketplaceTemplateItem(draft, replaceExisting));
+        }
+        return List.copyOf(results);
+    }
+
+    /** 保存单个已验证市场草稿；仅供批量事务入口调用。 */
+    private WorkflowModels.MarketplaceTemplatePersistence importMarketplaceTemplateItem(
+        WorkflowModels.MarketplaceTemplateDraft draft, boolean replaceExisting) {
         if (draft == null || draft.externalKey() == null || draft.externalKey().isBlank()) {
             throw new BusinessException("workflow.marketplaceNodeNotFound");
         }
@@ -124,14 +143,22 @@ public class WorkflowService {
         String nodeType = type(draft.nodeType());
         String category = WorkflowTemplateCatalog.category(draft.functionalCategory(), nodeType);
         if (draft.config() != null && !draft.config().isObject()) throw new BusinessException("workflow.templateConfigInvalid");
-        List<Long> existing = jdbcTemplate.query("""
-            SELECT id FROM workflow_node_template WHERE template_source=? AND external_key=? ORDER BY id LIMIT 1
-            """, (rs, row) -> rs.getLong("id"), source, marketplaceText(draft.externalKey(), 255));
+        List<MarketplaceExistingTemplate> existing = jdbcTemplate.query("""
+            SELECT id,voided,external_fingerprint FROM workflow_node_template
+            WHERE template_source=? AND external_key=? ORDER BY id LIMIT 1
+            """, (rs, row) -> new MarketplaceExistingTemplate(rs.getLong("id"), rs.getBoolean("voided"),
+                rs.getString("external_fingerprint")), source, marketplaceText(draft.externalKey(), 255));
         if (!existing.isEmpty()) {
-            Long id = existing.get(0);
-            Boolean voided = jdbcTemplate.queryForObject(
-                "SELECT voided FROM workflow_node_template WHERE id=?", Boolean.class, id);
-            if (!Boolean.TRUE.equals(voided)) return new WorkflowModels.MarketplaceTemplatePersistence(id, "ALREADY_IMPORTED");
+            MarketplaceExistingTemplate current = existing.get(0);
+            Long id = current.id();
+            boolean changed = current.fingerprint() == null
+                || !current.fingerprint().equalsIgnoreCase(fingerprint(draft.externalFingerprint()));
+            if (!current.voided() && !changed) {
+                return new WorkflowModels.MarketplaceTemplatePersistence(id, "ALREADY_IMPORTED");
+            }
+            if (!current.voided() && !replaceExisting) {
+                return new WorkflowModels.MarketplaceTemplatePersistence(id, "UPDATE_AVAILABLE");
+            }
             jdbcTemplate.update("""
                 UPDATE workflow_node_template SET code=?,name=?,node_type=?,description=?,config_encrypted=?,system_template=false,
                     functional_category=?,external_version=?,external_publisher=?,external_fingerprint=?,imported_at=NOW(),
@@ -140,7 +167,7 @@ public class WorkflowService {
                 marketplaceText(draft.description(), 500), encryptJson(draft.config()), category,
                 marketplaceText(draft.externalVersion(), 64), marketplaceText(draft.externalPublisher(), 120),
                 fingerprint(draft.externalFingerprint()), AuthContext.require().id(), id);
-            return new WorkflowModels.MarketplaceTemplatePersistence(id, "RESTORED");
+            return new WorkflowModels.MarketplaceTemplatePersistence(id, current.voided() ? "RESTORED" : "UPDATED");
         }
         try {
             Long id = insertKey("""
@@ -383,6 +410,7 @@ public class WorkflowService {
                     case "KAFKA_PUBLISH", "KAFKA_TRIGGER" -> Set.of("KAFKA");
                     case "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER" -> Set.of("RABBITMQ");
                     case "IM_NOTIFY", "WEBHOOK_TRIGGER" -> Set.of("WEBHOOK");
+                    case "TAVILY_TOOL" -> Set.of("TAVILY");
                     default -> Set.of();
                 };
                 if (allowed.isEmpty()) throw new BusinessException("workflow.connectionForbidden");
@@ -575,4 +603,7 @@ public class WorkflowService {
         if (key == null) throw new IllegalStateException("MySQL 未返回工作流自增主键");
         return key.longValue();
     }
+
+    /** 保存市场模板当前身份状态，避免读取与更新之间重复查询。 */
+    private record MarketplaceExistingTemplate(Long id, boolean voided, String fingerprint) { }
 }

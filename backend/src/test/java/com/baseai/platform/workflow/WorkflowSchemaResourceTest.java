@@ -44,7 +44,8 @@ class WorkflowSchemaResourceTest {
             assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS " + table));
         }
         for (String type : WorkflowNodeTypes.ALL) {
-            if (!Set.of("START", "END", "LLM", "HTTP", "AGENT", "CONDITION", "ITERATION", "LOOP").contains(type)) {
+            if (!Set.of("START", "END", "LLM", "HTTP", "AGENT", "CONDITION", "ITERATION", "LOOP").contains(type)
+                && !WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type)) {
                 assertTrue(schema.contains("'" + type + "'"), type);
             }
         }
@@ -82,7 +83,13 @@ class WorkflowSchemaResourceTest {
         assertTrue(schema.contains("functional_category VARCHAR(32) NOT NULL DEFAULT 'BASIC'"));
         assertTrue(schema.contains("SET template_source = 'SYSTEM'"));
         for (String category : WorkflowTemplateCatalog.CATEGORIES) assertTrue(schema.contains("'" + category + "'"), category);
-        for (String type : WorkflowNodeTypes.ALL) assertTrue(schema.contains("'" + type + "'"), type);
+        for (String type : WorkflowNodeTypes.ALL) {
+            if (!WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type)) assertTrue(schema.contains("'" + type + "'"), type);
+        }
+        for (String type : WorkflowNodeTypes.MARKETPLACE_ONLY) {
+            assertTrue(WorkflowNodeTypes.ALL.contains(type), type);
+            assertTrue(!schema.contains("'" + type + "'"), type);
+        }
     }
 
     /** MySQL V10 必须增加 Key 级白名单、连接修订和多实例运行租约。 */

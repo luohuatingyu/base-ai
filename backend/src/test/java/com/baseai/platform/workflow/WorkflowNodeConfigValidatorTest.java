@@ -191,7 +191,8 @@ class WorkflowNodeConfigValidatorTest {
             Map.entry("KAFKA_PUBLISH", "{\"connectionId\":1,\"topic\":\"events\",\"value\":null}"),
             Map.entry("KAFKA_TRIGGER", "{\"connectionId\":1,\"topic\":\"events\"}"),
             Map.entry("RABBITMQ_PUBLISH", "{\"connectionId\":1,\"destinationMode\":\"DEFAULT_EXCHANGE\",\"routingKey\":\"events\",\"value\":null}"),
-            Map.entry("RABBITMQ_TRIGGER", "{\"connectionId\":1,\"queue\":\"events\"}")
+            Map.entry("RABBITMQ_TRIGGER", "{\"connectionId\":1,\"queue\":\"events\"}"),
+            Map.entry("TAVILY_TOOL", "{\"connectionId\":1,\"operation\":\"SEARCH\",\"query\":\"hello\",\"maxResults\":20}")
         );
         return configurations.entrySet().stream().map(entry -> Arguments.of(entry.getKey(), entry.getValue()));
     }
