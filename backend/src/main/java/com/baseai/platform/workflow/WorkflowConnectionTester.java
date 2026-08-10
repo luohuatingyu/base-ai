@@ -23,7 +23,9 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /** 对当前用户拥有的连接执行最小无副作用可用性检查。 */
@@ -32,13 +34,16 @@ public class WorkflowConnectionTester {
     private final WorkflowConnectionService connectionService;
     private final ApiTriggerService apiTriggerService;
     private final ObjectMapper objectMapper;
+    private final com.baseai.platform.knowledge.VectorStoreService vectorStoreService;
 
     /** 注入连接存储和安全 HTTP 服务。 */
     public WorkflowConnectionTester(WorkflowConnectionService connectionService, ApiTriggerService apiTriggerService,
-                                    ObjectMapper objectMapper) {
+                                    ObjectMapper objectMapper,
+                                    com.baseai.platform.knowledge.VectorStoreService vectorStoreService) {
         this.connectionService = connectionService;
         this.apiTriggerService = apiTriggerService;
         this.objectMapper = objectMapper;
+        this.vectorStoreService = vectorStoreService;
     }
 
     /** 按连接类型执行测试并隐藏底层异常细节。 */
@@ -53,9 +58,19 @@ public class WorkflowConnectionTester {
                 case "RABBITMQ" -> testRabbit(connection.config());
                 case "WEBHOOK" -> testWebhook(connection.config());
                 case "TAVILY" -> testTavily(connection.config());
+                case "QDRANT", "MILVUS", "ELASTICSEARCH" -> { /* 向量探测同时验证连通性。 */ }
                 default -> throw new BusinessException("workflow.connectionTypeInvalid");
             }
-            return Map.of("connected", true, "connectionType", connection.connectionType());
+            if (Set.of("POSTGRESQL", "QDRANT", "MILVUS", "ELASTICSEARCH").contains(connection.connectionType())) {
+                com.baseai.platform.knowledge.VectorStoreService.Capability capability = vectorStoreService.probe(connection);
+                String status = capability.supported() ? "SUPPORTED" : "UNSUPPORTED";
+                connectionService.recordVectorCapability(id, status, capability.engine(), capability.version(), capability.reason());
+                Map<String,Object> result = new LinkedHashMap<>(); result.put("connected", capability.supported());
+                result.put("connectionType", connection.connectionType()); result.put("vectorSupported", capability.supported());
+                result.put("vectorEngine", capability.engine()); result.put("vectorVersion", capability.version());
+                result.put("reason", capability.reason()); return Map.copyOf(result);
+            }
+            return Map.of("connected", true, "connectionType", connection.connectionType(), "vectorSupported", false);
         } catch (BusinessException exception) { throw exception; }
         catch (Exception exception) { throw new BusinessException("workflow.connectionTestFailed"); }
     }

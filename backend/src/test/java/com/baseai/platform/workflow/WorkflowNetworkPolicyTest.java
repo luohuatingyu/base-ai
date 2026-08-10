@@ -54,5 +54,11 @@ class WorkflowNetworkPolicyTest {
             new ObjectMapper().readTree("{\"url\":\"jdbc:postgresql://db/orders\"}")));
         assertThrows(BusinessException.class, () -> parser.parse("RABBITMQ",
             new ObjectMapper().readTree("{\"uri\":\"http://broker\"}")));
+        for (String type : List.of("QDRANT", "MILVUS", "ELASTICSEARCH")) {
+            assertThrows(BusinessException.class, () -> parser.parse(type,
+                new ObjectMapper().readTree("{\"url\":\"file:///etc/passwd\"}")), type);
+            assertDoesNotThrow(() -> parser.parse(type,
+                new ObjectMapper().readTree("{\"url\":\"https://vectors.example.com\"}")), type);
+        }
     }
 }

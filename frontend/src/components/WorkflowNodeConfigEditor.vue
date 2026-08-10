@@ -83,6 +83,14 @@
               </el-select>
               <el-alert v-if="connectionOptionsError" :title="t('workflowConfig.connectionOptionsFailed')" type="error" show-icon :closable="false" />
             </template>
+            <template v-else-if="field.editor === 'knowledgeBase'">
+              <el-select :model-value="fieldValue(field)" filterable clearable fit-input-width :loading="knowledgeBaseOptionsLoading"
+                         :placeholder="t('workflowConfig.selectKnowledgeBase')" :no-data-text="t('workflowConfig.noKnowledgeBases')"
+                         @update:model-value="setResourceId('knowledgeBaseId', $event)">
+                <el-option v-for="option in knowledgeBaseOptions" :key="option.id" :label="`${option.name} (${option.code}) · ${option.storageType}`" :value="option.id" />
+              </el-select>
+              <el-alert v-if="knowledgeBaseOptionsError" :title="t('workflowConfig.knowledgeBaseOptionsFailed')" type="error" show-icon :closable="false" />
+            </template>
             <div v-else-if="field.editor === 'condition'" class="workflow-condition-editor">
               <el-input :model-value="condition(field).left" :placeholder="t('workflowConfig.conditionLeft')" @update:model-value="setCondition(field, 'left', $event)" />
               <el-select :model-value="condition(field).operator" @update:model-value="setCondition(field, 'operator', $event)">
@@ -156,6 +164,10 @@ const connectionOptions = ref([])
 const connectionOptionsLoading = ref(false)
 const connectionOptionsLoaded = ref(false)
 const connectionOptionsError = ref(false)
+const knowledgeBaseOptions = ref([])
+const knowledgeBaseOptionsLoading = ref(false)
+const knowledgeBaseOptionsLoaded = ref(false)
+const knowledgeBaseOptionsError = ref(false)
 const fields = computed(() => nodeConfigFields(props.nodeType, config.value).filter(field => nodeConfigFieldApplicable(props.nodeType, field.key, config.value)))
 const extraKeys = computed(() => extraConfigKeys(config.value, props.nodeType))
 const missingRequirements = computed(() => missingNodeConfigRequirements(props.nodeType, config.value))
@@ -168,6 +180,7 @@ const hasModelSelector = computed(() => fields.value.some(field => field.editor 
 const hasRouteSelector = computed(() => fields.value.some(field => field.editor === 'modelRoute'))
 const hasMailRouteSelector = computed(() => fields.value.some(field => field.editor === 'mailRoute'))
 const hasConnectionSelector = computed(() => fields.value.some(field => field.editor === 'connection'))
+const hasKnowledgeBaseSelector = computed(() => fields.value.some(field => field.editor === 'knowledgeBase'))
 
 watch(() => props.modelValue, value => {
   const next = cloneConfig(value)
@@ -177,6 +190,7 @@ watch(hasModelSelector, enabled => { if (enabled) loadModelOptions() }, { immedi
 watch(hasRouteSelector, enabled => { if (enabled) loadRouteOptions() }, { immediate: true })
 watch(hasMailRouteSelector, enabled => { if (enabled) loadMailRouteOptions() }, { immediate: true })
 watch(hasConnectionSelector, enabled => { if (enabled) loadConnectionOptions() }, { immediate: true })
+watch(hasKnowledgeBaseSelector, enabled => { if (enabled) loadKnowledgeBaseOptions() }, { immediate: true })
 watch([currentModelType, compatibleModelOptions], () => {
   if (!hasModelSelector.value || !modelOptionsLoaded.value || !hasField('modelId')) return
   const type = config.value.modelMode === 'DIRECT' ? null : currentModelType.value
@@ -198,6 +212,10 @@ watch([hasConnectionSelector, compatibleConnectionOptions], () => {
   if (!hasConnectionSelector.value) return
   if (!connectionOptionsLoaded.value || !hasField('connectionId')) return
   if (compatibleWorkflowResourceId(compatibleConnectionOptions.value, config.value.connectionId) === null) removeField('connectionId')
+})
+watch([hasKnowledgeBaseSelector, knowledgeBaseOptions], () => {
+  if (!hasKnowledgeBaseSelector.value || !knowledgeBaseOptionsLoaded.value || !hasField('knowledgeBaseId')) return
+  if (compatibleWorkflowResourceId(knowledgeBaseOptions.value, config.value.knowledgeBaseId) === null) removeField('knowledgeBaseId')
 })
 
 /** 按需加载 AI 节点可选择的启用模型，失败时保留当前配置避免误清理。 */
@@ -234,6 +252,15 @@ async function loadConnectionOptions() {
   try { connectionOptions.value = (await http.get('/workflow/connection-options')).data || []; connectionOptionsLoaded.value = true }
   catch { connectionOptionsError.value = true }
   finally { connectionOptionsLoading.value = false }
+}
+
+/** 按需加载当前工作流所有者可使用的已启用知识库。 */
+async function loadKnowledgeBaseOptions() {
+  if (knowledgeBaseOptionsLoaded.value || knowledgeBaseOptionsLoading.value) return
+  knowledgeBaseOptionsLoading.value = true; knowledgeBaseOptionsError.value = false
+  try { knowledgeBaseOptions.value = (await http.get('/knowledge-bases/options')).data || []; knowledgeBaseOptionsLoaded.value = true }
+  catch { knowledgeBaseOptionsError.value = true }
+  finally { knowledgeBaseOptionsLoading.value = false }
 }
 
 /** 返回字段是否已写入当前配置。 */

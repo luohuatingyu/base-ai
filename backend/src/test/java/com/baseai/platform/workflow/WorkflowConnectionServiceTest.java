@@ -35,7 +35,9 @@ class WorkflowConnectionServiceTest {
         jdbcTemplate.execute("""
             CREATE TABLE workflow_connection(id BIGINT AUTO_INCREMENT PRIMARY KEY,code VARCHAR(80) UNIQUE,name VARCHAR(120),
             connection_type VARCHAR(24),config_encrypted CLOB,owner_user_id BIGINT,enabled BOOLEAN,voided BOOLEAN DEFAULT FALSE,
-            security_revision BIGINT DEFAULT 1,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+            security_revision BIGINT DEFAULT 1,vector_status VARCHAR(16) DEFAULT 'UNKNOWN',vector_engine VARCHAR(32),
+            vector_version VARCHAR(64),vector_checked_at TIMESTAMP,vector_error VARCHAR(500) DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
         jdbcTemplate.execute("CREATE TABLE workflow_version(id BIGINT AUTO_INCREMENT PRIMARY KEY,graph_json CLOB)");
         jdbcTemplate.execute("CREATE TABLE workflow_version_connection(workflow_version_id BIGINT,connection_id BIGINT,security_revision BIGINT)");
@@ -118,6 +120,18 @@ class WorkflowConnectionServiceTest {
         jdbcTemplate.update("INSERT INTO workflow_version_connection VALUES (10,?,1)", created.id());
         assertEquals("workflow.connectionInUse", assertThrows(BusinessException.class,
             () -> service.delete(created.id())).getMessageKey());
+    }
+
+    /** 向量能力结果可展示，任何安全相关配置变更都会重置为未验证。 */
+    @Test
+    void recordsAndResetsVectorCapability() throws Exception {
+        WorkflowModels.ConnectionView created=service.create(new WorkflowModels.ConnectionCommand("vectors","Vectors","QDRANT",
+            new ObjectMapper().readTree("{\"url\":\"https://vectors.example.com\",\"apiKey\":\"secret\"}"),true));
+        service.recordVectorCapability(created.id(),"SUPPORTED","QDRANT","1.13.0","");
+        assertEquals("SUPPORTED",service.view(created.id()).vectorStatus());
+        service.update(created.id(),new WorkflowModels.ConnectionCommand("VECTORS","Vectors","QDRANT",
+            new ObjectMapper().readTree("{\"url\":\"https://vectors-v2.example.com\",\"apiKey\":\"******\"}"),true));
+        assertEquals("UNKNOWN",service.view(created.id()).vectorStatus());
     }
 
     /** 设置当前会话用户。 */

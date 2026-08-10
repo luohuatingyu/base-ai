@@ -53,6 +53,22 @@ export const CONNECTION_CONFIG_FIELDS = {
   ],
   TAVILY: [
     field('apiKey', 'password', '')
+  ],
+  QDRANT: [
+    field('url', 'text', 'https://host:6333'),
+    field('apiKey', 'password', '')
+  ],
+  MILVUS: [
+    field('url', 'text', 'https://host:19530'),
+    field('token', 'password', ''),
+    field('database', 'text', 'default')
+  ],
+  ELASTICSEARCH: [
+    field('url', 'text', 'https://host:9200'),
+    field('username', 'text', ''),
+    field('password', 'password', ''),
+    field('apiKey', 'password', ''),
+    field('product', 'text', 'ELASTICSEARCH')
   ]
 }
 

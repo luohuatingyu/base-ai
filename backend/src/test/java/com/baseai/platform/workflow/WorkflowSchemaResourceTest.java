@@ -45,7 +45,7 @@ class WorkflowSchemaResourceTest {
         }
         for (String type : WorkflowNodeTypes.ALL) {
             if (!Set.of("START", "END", "LLM", "HTTP", "AGENT", "CONDITION", "ITERATION", "LOOP").contains(type)
-                && !WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type)) {
+                && !WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type) && !"RAG".equals(type)) {
                 assertTrue(schema.contains("'" + type + "'"), type);
             }
         }
@@ -84,7 +84,7 @@ class WorkflowSchemaResourceTest {
         assertTrue(schema.contains("SET template_source = 'SYSTEM'"));
         for (String category : WorkflowTemplateCatalog.CATEGORIES) assertTrue(schema.contains("'" + category + "'"), category);
         for (String type : WorkflowNodeTypes.ALL) {
-            if (!WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type)) assertTrue(schema.contains("'" + type + "'"), type);
+            if (!WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type) && !"RAG".equals(type)) assertTrue(schema.contains("'" + type + "'"), type);
         }
         for (String type : WorkflowNodeTypes.MARKETPLACE_ONLY) {
             assertTrue(WorkflowNodeTypes.ALL.contains(type), type);
@@ -115,5 +115,19 @@ class WorkflowSchemaResourceTest {
         for (String column : new String[]{"external_key", "external_version", "external_publisher",
             "external_fingerprint", "imported_at"}) assertTrue(schema.contains(column));
         assertTrue(schema.contains("UNIQUE (template_source, external_key)"));
+    }
+
+    /** MySQL V12 必须增加知识库、向量能力状态和 RAG 系统模板。 */
+    @Test
+    void addsKnowledgeBaseVectorCapabilityAndRagNode() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V12__add_knowledge_base_rag.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+        for (String table : new String[]{"knowledge_base", "knowledge_document", "knowledge_chunk"}) {
+            assertTrue(schema.contains("CREATE TABLE " + table), table);
+        }
+        for (String column : new String[]{"vector_status", "vector_engine", "embedding_model_id", "content_encrypted"}) {
+            assertTrue(schema.contains(column), column);
+        }
+        assertTrue(schema.contains("'RAG'"));
     }
 }

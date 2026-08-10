@@ -25,6 +25,7 @@ public class WorkflowConnectionTargetParser {
                 : List.of(uri(config.path("endpoint").asText(), List.of("http", "https"), -1));
             case "KAFKA" -> authorities(config.path("bootstrapServers").asText(), 9092);
             case "RABBITMQ" -> List.of(uri(config.path("uri").asText(), List.of("amqp", "amqps"), -1));
+            case "QDRANT", "MILVUS", "ELASTICSEARCH" -> List.of(uri(config.path("url").asText(), List.of("http", "https"), -1));
             case "WEBHOOK", "TAVILY" -> List.of();
             default -> throw new BusinessException("workflow.connectionTypeInvalid");
         };

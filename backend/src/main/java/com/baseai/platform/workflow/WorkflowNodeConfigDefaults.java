@@ -17,8 +17,9 @@ final class WorkflowNodeConfigDefaults {
         if (source instanceof ObjectNode object) config.setAll((ObjectNode) object.deepCopy());
         String type = rawType == null ? "" : rawType.toUpperCase(Locale.ROOT);
         switch (type) {
-            case "LLM", "AGENT", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR" -> {
+            case "LLM", "AGENT", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "RAG" -> {
                 putIfAbsent(config, "featureCode", "DEFAULT"); putIfAbsent(config, "modelType", "text_model");
+                if ("RAG".equals(type)) { putIfAbsent(config, "topK", 5); putIfAbsent(config, "scoreThreshold", 0); }
             }
             case "HTTP" -> putIfAbsent(config, "method", "GET");
             case "ITERATION" -> putIfAbsent(config, "collection", "{{input.items}}");

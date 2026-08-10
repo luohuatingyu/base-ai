@@ -139,6 +139,30 @@ public class AiChatClient {
         }
     }
 
+    /** 使用固定向量模型调用 Worker，并保持批量输入和响应顺序一致。 */
+    public EmbeddingResult embed(Long modelId, List<String> input) {
+        TraceContextHolder.checkpoint();
+        if (modelId == null || input == null || input.isEmpty() || input.size() > 256) {
+            throw new BusinessException("knowledge.embeddingInputInvalid");
+        }
+        LlmManagementService.WorkerRoute route = llmManagementService.resolveModel(modelId, "embedding_model", false, null);
+        String parentTraceId = TraceContextHolder.currentTraceId().orElse(null);
+        String pythonTraceId = UUID.randomUUID().toString().replace("-", "");
+        taskTraceService.registerPython(parentTraceId, pythonTraceId, "/llm/embeddings");
+        try {
+            EmbeddingResult result = restClient.post().uri("/llm/embeddings").header("X-Python-Trace-Id", pythonTraceId)
+                .contentType(MediaType.APPLICATION_JSON).body(new EmbeddingRequest(input, route.candidates()))
+                .retrieve().body(EmbeddingResult.class);
+            if (result == null || result.embeddings() == null || result.embeddings().size() != input.size()) {
+                throw new BusinessException("knowledge.embeddingResponseInvalid");
+            }
+            taskTraceService.updatePython(pythonTraceId, "SUCCESS", null, null); TraceContextHolder.checkpoint(); return result;
+        } catch (RestClientException exception) {
+            taskTraceService.updatePython(pythonTraceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, exception.getMessage());
+            throw new BusinessException(502, "ai.serviceCallFailed");
+        }
+    }
+
     /**
      * 对话消息记录
      * <p>
@@ -174,6 +198,11 @@ public class AiChatClient {
      */
     public record ChatRequest(String featureCode, @JsonProperty("model_type") String modelType, List<Message> messages, double temperature,
                               List<LlmManagementService.WorkerCandidate> candidates, Boolean enableThinking, String thinkingLevel, boolean routeConfigured) {}
+
+    /** Worker embeddings 请求，只包含固定模型候选和待向量化文本。 */
+    public record EmbeddingRequest(List<String> input, List<LlmManagementService.WorkerCandidate> candidates) {}
+    /** Worker embeddings 响应。 */
+    public record EmbeddingResult(List<List<Double>> embeddings, String model) {}
 
     /**
      * LLM对话结果对象

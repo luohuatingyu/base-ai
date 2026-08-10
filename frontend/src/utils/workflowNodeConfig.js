@@ -34,6 +34,15 @@ export const NODE_CONFIG_FIELDS = {
     field('maxSteps', 'number', 5),
     field('tools', 'generic', [])
   ],
+  RAG: [
+    field('knowledgeBaseId', 'knowledgeBase', null),
+    field('query', 'textarea', '{{input.query}}'),
+    field('topK', 'number', 5),
+    field('scoreThreshold', 'number', 0),
+    ...aiModelFields(),
+    field('systemPrompt', 'textarea', 'Answer only from the retrieved context and cite sources with [n].'),
+    field('promptTemplate', 'textarea', 'Question:\n{{query}}\n\nRetrieved context:\n{{context}}')
+  ],
   CONDITION: [field('condition', 'condition', { left: '', operator: 'EQ', right: '' })],
   ITERATION: [
     field('collection', 'text', '{{input.items}}'),
@@ -101,7 +110,7 @@ const NODE_CONNECTION_TYPES = {
 }
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const REQUIRED_CONFIG_FIELDS = {
-  LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
+  LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], RAG: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold', 'modelMode'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
   SWITCH: ['cases', 'defaultBranch'], MERGE: ['mode', 'values'], SUB_WORKFLOW: ['workflowCode'], WAIT: ['durationMode'], SET_VARIABLE: ['output'], TEMPLATE: ['template'],
   JSON_PARSE: ['value'], JSON_VALIDATE: ['value', 'schema'], TRANSFORM: ['output'], FILTER: ['collection', 'condition'],
   SORT: ['collection', 'direction'], AGGREGATE: ['collection', 'operation'], CSV: ['operation', 'value'], QUESTION_CLASSIFIER: ['modelMode', 'input', 'categories'],
@@ -112,7 +121,7 @@ const REQUIRED_CONFIG_FIELDS = {
   TAVILY_TOOL: ['connectionId', 'operation']
 }
 const CONDITIONAL_CONFIG_FIELDS = {
-  LLM: ['featureCode', 'modelType', 'modelId'], AGENT: ['featureCode', 'modelType', 'modelId'],
+  LLM: ['featureCode', 'modelType', 'modelId'], AGENT: ['featureCode', 'modelType', 'modelId'], RAG: ['featureCode', 'modelType', 'modelId'],
   QUESTION_CLASSIFIER: ['featureCode', 'modelType', 'modelId'], PARAMETER_EXTRACTOR: ['featureCode', 'modelType', 'modelId'],
   WAIT: ['seconds', 'milliseconds'], DOCUMENT_EXTRACTOR: ['content', 'base64'],
   S3_OBJECT: ['key', 'contentMode', 'content', 'base64'], RABBITMQ_PUBLISH: ['destinationMode', 'exchange', 'routingKey'],
@@ -133,7 +142,7 @@ export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
   const type = String(nodeType || '').toUpperCase()
   const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
   const modelMode = String(value.modelMode || '').toUpperCase()
-  if (['LLM', 'AGENT', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR'].includes(type)) {
+  if (['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR'].includes(type)) {
     if (['featureCode', 'modelType'].includes(key)) return modelMode === 'ROUTE'
     if (key === 'modelId') return modelMode === 'DIRECT'
   }
@@ -232,6 +241,9 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
     case 'LLM': requireAiModel(value, missing); requireText('prompt'); break
     case 'HTTP': requireEnum('method', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']); requireText('url'); break
     case 'AGENT': requireAiModel(value, missing); requireText('prompt'); requireTools(); break
+    case 'RAG': requireAiModel(value, missing); requirePositive('knowledgeBaseId'); requireText('query');
+      if (!Number.isInteger(Number(value.topK)) || Number(value.topK) < 1 || Number(value.topK) > 50) missing.push('topK')
+      if (!Number.isFinite(Number(value.scoreThreshold)) || Number(value.scoreThreshold) < 0 || Number(value.scoreThreshold) > 1) missing.push('scoreThreshold'); break
     case 'CONDITION': requireCondition('condition'); break
     case 'ITERATION': requireText('collection'); requireObject('bodyGraph'); break
     case 'LOOP': requireCondition('condition'); requireObject('bodyGraph'); break
@@ -349,8 +361,9 @@ function withValidDefaults(nodeType, config) {
     if (!Object.prototype.hasOwnProperty.call(value, key)) value[key] = cloneValue(defaultValue)
   }
   switch (nodeType) {
-    case 'LLM': case 'AGENT': case 'QUESTION_CLASSIFIER': case 'PARAMETER_EXTRACTOR':
-      setDefault('featureCode', 'DEFAULT'); setDefault('modelType', 'text_model'); break
+    case 'LLM': case 'AGENT': case 'RAG': case 'QUESTION_CLASSIFIER': case 'PARAMETER_EXTRACTOR':
+      setDefault('featureCode', 'DEFAULT'); setDefault('modelType', 'text_model');
+      if (nodeType === 'RAG') { setDefault('topK', 5); setDefault('scoreThreshold', 0) } break
     case 'HTTP': setDefault('method', 'GET'); break
     case 'ITERATION': setDefault('collection', '{{input.items}}'); break
     case 'MERGE': setDefault('mode', 'ARRAY'); setDefault('values', []); break

@@ -287,6 +287,7 @@ public class DataInitializer implements ApplicationRunner {
         seedCrud(model, "模型配置", "/models", "ModelsView", "Cpu", "model:model", 42);
         // 初始化能力路由的页面和 CRUD 权限
         seedCrud(model, "能力路由", "/model-routes", "ModelRoutesView", "Guide", "model:route", 43);
+        seedCrud(model, "知识库", "/knowledge-bases", "KnowledgeBasesView", "Collection", "knowledge:base", 44);
 
         // ========== 自动化模块 ==========
         Menu automation = menu(null, "自动化", "CATALOG", "/automation", null, "Operation", "automation:catalog", 50, true);
@@ -312,6 +313,8 @@ public class DataInitializer implements ApplicationRunner {
         menu(node.getId(), "更新节点模板", "BUTTON", null, null, null, "workflow:node:update", 612, false);
         menu(node.getId(), "删除节点模板", "BUTTON", null, null, null, "workflow:node:delete", 613, false);
         menu(node.getId(), "导入市场节点", "BUTTON", null, null, null, "workflow:node:import", 614, false);
+        menu(workflow.getId(), "节点文档", "MENU", "/workflow/node-docs", "WorkflowNodeDocsView", "Document",
+            "workflow:node:docs", 64, true);
         Menu connection = menu(workflow.getId(), "连接配置", "MENU", "/workflow/connections", "WorkflowConnectionsView", "Link",
             "workflow:connection:list", 62, true);
         menu(connection.getId(), "新增连接配置", "BUTTON", null, null, null, "workflow:connection:create", 621, false);

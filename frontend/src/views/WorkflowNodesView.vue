@@ -2,6 +2,7 @@
   <div class="panel">
     <div class="section-head">
       <div><h2>{{ t('workflowNodes.title') }}</h2><p>{{ t('workflowNodes.description') }}</p></div>
+      <router-link to="/workflow/node-docs"><el-button>{{ t('workflowNodeDocs.title') }}</el-button></router-link>
       <el-button v-if="selectedSource === 'SYSTEM' && auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
       <el-button v-else-if="selectedSource !== 'SYSTEM' && auth.hasPermission('workflow:node:import')" type="primary" @click="openMarketplace">{{ t('workflowNodes.importFrom', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</el-button>
     </div>

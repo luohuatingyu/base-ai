@@ -27,6 +27,8 @@ import MailRoutesView from '../views/MailRoutesView.vue'
 import WorkflowNodesView from '../views/WorkflowNodesView.vue'
 import WorkflowCanvasView from '../views/WorkflowCanvasView.vue'
 import WorkflowConnectionsView from '../views/WorkflowConnectionsView.vue'
+import KnowledgeBasesView from '../views/KnowledgeBasesView.vue'
+import WorkflowNodeDocsView from '../views/WorkflowNodeDocsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -52,11 +54,13 @@ const router = createRouter({
         { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'model:provider:list', navigable: true, desc: 'providers.description' } },
         { path: 'models', component: ModelsView, meta: { permission: 'model:model:list', navigable: true, desc: 'models.description' } },
         { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list', navigable: true, desc: 'routes.description' } },
+        { path: 'knowledge-bases', component: KnowledgeBasesView, meta: { permission: 'knowledge:base:list', navigable: true, desc: 'knowledgeBases.description' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view', navigable: true, desc: 'tasks.description' } },
         { path: 'api-keys', component: ApiKeysView, meta: { permission: 'system:api-key:list', navigable: true, desc: 'apiKeys.description' } },
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
         { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } },
         { path: 'workflow/nodes', component: WorkflowNodesView, meta: { permission: 'workflow:node:list', navigable: true, desc: 'workflowNodes.description' } },
+        { path: 'workflow/node-docs', component: WorkflowNodeDocsView, meta: { permission: 'workflow:node:docs', navigable: true, desc: 'workflowNodeDocs.description' } },
         { path: 'workflow/connections', component: WorkflowConnectionsView, meta: { permission: 'workflow:connection:list', navigable: true, desc: 'workflowConnections.description' } },
         { path: 'workflow/canvases', component: WorkflowCanvasView, meta: { permission: 'workflow:canvas:list', navigable: true, desc: 'workflowCanvas.description' } }
       ]

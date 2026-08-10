@@ -14,6 +14,7 @@
       <div class="workflow-toolbar">
         <div><strong>{{ selected.name }}</strong><small>{{ selected.code }} · v{{ selected.currentVersion }}</small></div>
         <div class="workflow-toolbar-actions">
+          <router-link to="/workflow/node-docs"><el-button>{{ t('workflowNodeDocs.title') }}</el-button></router-link>
           <el-button v-if="auth.hasPermission('workflow:canvas:update')" @click="save">{{ t('common.save') }}</el-button>
           <el-button v-if="auth.hasPermission('workflow:canvas:publish')" type="success" @click="publish">{{ t('workflowCanvas.publish') }}</el-button>
           <el-button v-if="auth.hasPermission('workflow:canvas:execute')" type="primary" @click="runVisible=true">{{ t('workflowCanvas.run') }}</el-button>

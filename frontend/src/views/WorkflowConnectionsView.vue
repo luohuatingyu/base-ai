@@ -9,6 +9,7 @@
       <el-table-column prop="code" :label="t('common.code')" min-width="150" />
       <el-table-column prop="name" :label="t('common.name')" min-width="160" />
       <el-table-column prop="connectionType" :label="t('common.type')" width="130" />
+      <el-table-column :label="t('workflowConnections.vectorCapability')" min-width="190"><template #default="scope"><el-tag :type="vectorStatusType(scope.row.vectorStatus)">{{ t(`workflowConnections.vectorStatuses.${scope.row.vectorStatus || 'UNKNOWN'}`) }}</el-tag><small v-if="scope.row.vectorEngine" class="vector-detail">{{ scope.row.vectorEngine }} {{ scope.row.vectorVersion }}</small></template></el-table-column>
       <el-table-column :label="t('common.status')" width="100"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'info'">{{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag></template></el-table-column>
       <el-table-column :label="t('common.operation')" width="220" fixed="right"><template #default="scope"><div class="table-actions">
         <el-button v-if="auth.hasPermission('workflow:connection:update')" link type="success" @click="test(scope.row)">{{ t('workflowConnections.test') }}</el-button>
@@ -119,7 +120,9 @@ async function save() {
   } catch (error) { showHttpError(error, 'common.saveFailed') }
 }
 /** 执行无副作用连接测试。 */
-async function test(row) { try { await http.post(`/workflow/connections/${row.id}/test`); ElMessage.success(t('workflowConnections.connected')) } catch (error) { showHttpError(error, 'workflowConnections.testFailed') } }
+async function test(row) { try { const { data } = await http.post(`/workflow/connections/${row.id}/test`); await load(); data.vectorSupported === false && ['POSTGRESQL','QDRANT','MILVUS','ELASTICSEARCH'].includes(row.connectionType) ? ElMessage.warning(t('workflowConnections.vectorUnsupported')) : ElMessage.success(t('workflowConnections.connected')) } catch (error) { showHttpError(error, 'workflowConnections.testFailed') } }
+/** 将向量能力状态映射为稳定标签颜色。 */
+function vectorStatusType(status) { return status === 'SUPPORTED' ? 'success' : status === 'UNSUPPORTED' ? 'danger' : 'info' }
 /** 删除未被工作流引用的连接。 */
 async function remove(row) { try { await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm')); await http.delete(`/workflow/connections/${row.id}`); await load() } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) } }
 /** 返回当前语言下的连接字段名称。 */
@@ -178,6 +181,7 @@ onMounted(load)
 .connection-custom-head strong { overflow-wrap: anywhere; }
 .connection-custom-add { display: grid; grid-template-columns: minmax(160px, 1fr) 150px auto; gap: 8px; }
 .connection-error { color: var(--el-color-danger); }
+.vector-detail { display: block; margin-top: 4px; color: var(--app-muted); }
 @media (max-width: 720px) {
   .connection-grid, .connection-config-grid, .connection-key-value, .connection-custom-add { grid-template-columns: 1fr; }
   .connection-grid { gap: 0; }

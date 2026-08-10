@@ -34,6 +34,7 @@ class AiChatClientTest {
     void startWorker() throws IOException {
         worker = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         worker.createContext("/llm/chat", this::respondToChat);
+        worker.createContext("/llm/embeddings", this::respondToEmbeddings);
         worker.start();
     }
 
@@ -142,6 +143,24 @@ class AiChatClientTest {
         assertTrue(!pythonTraceId.isBlank());
     }
 
+    /** 向量调用必须固定解析 embedding 模型并保持批量响应顺序。 */
+    @Test
+    void embedsBatchWithResolvedEmbeddingModel() {
+        LlmManagementService management = mock(LlmManagementService.class);
+        LlmManagementService.WorkerCandidate candidate = new LlmManagementService.WorkerCandidate(
+            "embedding-provider", "https://embedding.example/v1", List.of("key"), "embed-x", 4, "API_KEY", 45, "", "", List.of("embedding_model"));
+        when(management.resolveModel(12L, "embedding_model", false, null))
+            .thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), false, true));
+
+        AiChatClient.EmbeddingResult result = client(management).embed(12L, List.of("first", "second"));
+
+        assertEquals(List.of(List.of(1D, 0D), List.of(0D, 1D)), result.embeddings());
+        assertEquals("worker-embedding", result.model());
+        assertTrue(requestBody.contains("\"input\":[\"first\",\"second\"]"));
+        assertTrue(requestBody.contains("\"providerCode\":\"embedding-provider\""));
+        verify(management).resolveModel(12L, "embedding_model", false, null);
+    }
+
     /** 创建使用 HTTP/1.1 Worker 客户端的待测对象。 */
     private AiChatClient client(LlmManagementService management) {
         PlatformProperties properties = new PlatformProperties();
@@ -160,6 +179,19 @@ class AiChatClientTest {
         parentTraceId = exchange.getRequestHeaders().getFirst("X-Parent-Trace-Id");
         pythonTraceId = exchange.getRequestHeaders().getFirst("X-Python-Trace-Id");
         byte[] response = "{\"content\":\"ok\",\"model\":\"worker-model\",\"inputTokens\":1,\"outputTokens\":1,\"totalTokens\":2}"
+            .getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, response.length);
+        exchange.getResponseBody().write(response);
+        exchange.close();
+    }
+
+    /** 记录向量请求并返回与输入等长的确定性向量。 */
+    private void respondToEmbeddings(HttpExchange exchange) throws IOException {
+        assertEquals("HTTP/1.1", exchange.getProtocol());
+        requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        assertEquals(internalToken, exchange.getRequestHeaders().getFirst("X-Internal-Token"));
+        byte[] response = "{\"embeddings\":[[1.0,0.0],[0.0,1.0]],\"model\":\"worker-embedding\"}"
             .getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, response.length);

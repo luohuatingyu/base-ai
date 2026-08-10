@@ -26,7 +26,7 @@ test('模板和画布节点配置统一使用可视化编辑器', () => {
 })
 
 test('全部原生节点都有可视化配置定义', () => {
-  const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']
+  const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'RAG', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']
   expected.forEach(type => assert.ok(WORKFLOW_NODE_TYPES.includes(type), type))
   assert.equal(nodeConfigFields('unknown').length, 0)
   assert.deepEqual(nodeConfigFields('WAIT').map(field => field.key), ['durationMode', 'seconds', 'milliseconds'])
@@ -34,11 +34,12 @@ test('全部原生节点都有可视化配置定义', () => {
   assert.deepEqual(nodeConfigFields('WEBHOOK_TRIGGER').map(field => field.key), ['connectionId'])
   assert.deepEqual(nodeConfigFields('SCHEDULE_TRIGGER').map(field => field.key), ['cron', 'zoneId'])
   assert.deepEqual(nodeConfigFields('LLM').slice(-3).map(field => field.key), ['maxAttempts', 'retryDelayMillis', 'onError'])
-  for (const type of ['LLM', 'AGENT', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR']) {
+  for (const type of ['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR']) {
     assert.equal(nodeConfigFields(type).find(field => field.key === 'featureCode').editor, 'modelRoute', type)
     assert.equal(nodeConfigFields(type).find(field => field.key === 'modelId').editor, 'model', type)
   }
   assert.equal(nodeConfigFields('EMAIL_SEND').find(field => field.key === 'routeId').editor, 'mailRoute')
+  assert.equal(nodeConfigFields('RAG').find(field => field.key === 'knowledgeBaseId').editor, 'knowledgeBase')
   for (const type of ['WEBHOOK_TRIGGER', 'IM_NOTIFY', 'SQL_QUERY', 'REDIS_COMMAND', 'S3_OBJECT', 'KAFKA_PUBLISH',
     'KAFKA_TRIGGER', 'RABBITMQ_PUBLISH', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']) {
     assert.equal(nodeConfigFields(type).find(field => field.key === 'connectionId').editor, 'connection', type)

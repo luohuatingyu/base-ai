@@ -104,6 +104,22 @@ class WorkflowNodeConfigValidatorTest {
         assertTrue(blankPrompt.getMessage().contains("prompt"));
     }
 
+    /** RAG 节点必须同时提供知识库、检索参数和文本模型来源。 */
+    @Test
+    void validatesRagKnowledgeBaseAndSearchParameters() throws Exception {
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("RAG",
+            "{\"knowledgeBaseId\":3,\"query\":\"{{input.query}}\",\"topK\":5,\"scoreThreshold\":0.2,\"modelMode\":\"DIRECT\",\"modelId\":9}"), objectMapper.createObjectNode()));
+
+        BusinessException missingBase = assertThrows(BusinessException.class,
+            () -> validator.validateForPublish(graph("RAG", "{\"query\":\"q\",\"topK\":5,\"scoreThreshold\":0,\"modelMode\":\"DIRECT\",\"modelId\":9}"), objectMapper.createObjectNode()));
+        BusinessException invalidRange = assertThrows(BusinessException.class,
+            () -> validator.validateForPublish(graph("RAG", "{\"knowledgeBaseId\":3,\"query\":\"q\",\"topK\":51,\"scoreThreshold\":2,\"modelMode\":\"DIRECT\",\"modelId\":9}"), objectMapper.createObjectNode()));
+
+        assertTrue(missingBase.getMessage().contains("knowledgeBaseId"));
+        assertTrue(invalidRange.getMessage().contains("topK"));
+        assertTrue(invalidRange.getMessage().contains("scoreThreshold"));
+    }
+
     /** 有效默认值应参与必填校验，空占位默认值仍然必须由用户补充。 */
     @Test
     void acceptsValidDefaultsButRejectsEmptyPlaceholders() throws Exception {
@@ -162,6 +178,7 @@ class WorkflowNodeConfigValidatorTest {
             Map.entry("LLM", "{\"modelMode\":\"DIRECT\",\"modelId\":1,\"prompt\":\"hello\"}"),
             Map.entry("HTTP", "{\"method\":\"GET\",\"url\":\"https://example.test\"}"),
             Map.entry("AGENT", "{\"modelMode\":\"DIRECT\",\"modelId\":1,\"prompt\":\"work\",\"tools\":[{\"name\":\"lookup\",\"toolType\":\"HTTP\",\"config\":{\"url\":\"https://example.test\"}}]}"),
+            Map.entry("RAG", "{\"knowledgeBaseId\":1,\"query\":\"hello\",\"topK\":5,\"scoreThreshold\":0,\"modelMode\":\"DIRECT\",\"modelId\":1}"),
             Map.entry("CONDITION", "{\"condition\":{\"left\":\"{{input.ok}}\",\"operator\":\"EQ\",\"right\":true}}"),
             Map.entry("ITERATION", "{\"collection\":\"{{input.items}}\",\"bodyGraph\":{}}"),
             Map.entry("LOOP", "{\"condition\":{\"left\":\"{{input.ok}}\",\"operator\":\"EXISTS\"},\"bodyGraph\":{}}"),

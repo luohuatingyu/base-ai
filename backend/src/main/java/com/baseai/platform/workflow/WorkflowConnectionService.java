@@ -27,7 +27,8 @@ import java.util.Set;
 @Service
 public class WorkflowConnectionService {
     private static final String MASK = "******";
-    private static final Set<String> TYPES = Set.of("MYSQL", "POSTGRESQL", "REDIS", "S3", "KAFKA", "RABBITMQ", "WEBHOOK", "TAVILY");
+    private static final Set<String> TYPES = Set.of("MYSQL", "POSTGRESQL", "REDIS", "S3", "KAFKA", "RABBITMQ", "WEBHOOK", "TAVILY",
+        "QDRANT", "MILVUS", "ELASTICSEARCH");
     private static final Set<String> SECRET_FIELDS = Set.of(
         "password", "secret", "secretkey", "accesskey", "token", "apikey", "saslpassword", "privatekey"
     );
@@ -99,10 +100,13 @@ public class WorkflowConnectionService {
         try {
             jdbcTemplate.update("""
                 UPDATE workflow_connection SET code=?,name=?,connection_type=?,config_encrypted=?,enabled=?,
-                    security_revision=security_revision+?,updated_at=NOW()
+                    security_revision=security_revision+?,vector_status=CASE WHEN ? THEN 'UNKNOWN' ELSE vector_status END,
+                    vector_engine=CASE WHEN ? THEN NULL ELSE vector_engine END,vector_version=CASE WHEN ? THEN NULL ELSE vector_version END,
+                    vector_checked_at=CASE WHEN ? THEN NULL ELSE vector_checked_at END,vector_error=CASE WHEN ? THEN '' ELSE vector_error END,
+                    updated_at=NOW()
                 WHERE id=? AND voided=false
                 """, code(command.code()), text(command.name()), connectionType, encrypt(merged),
-                enabled, securityChanged ? 1 : 0, id);
+                enabled, securityChanged ? 1 : 0, securityChanged, securityChanged, securityChanged, securityChanged, securityChanged, id);
             return view(id);
         } catch (DataIntegrityViolationException exception) {
             throw new BusinessException(409, "workflow.connectionCodeExists");
@@ -149,6 +153,14 @@ public class WorkflowConnectionService {
         return connection;
     }
 
+    /** 保存非敏感向量能力探测结果，供连接列表和知识库选择器使用。 */
+    public void recordVectorCapability(Long id, String status, String engine, String version, String error) {
+        jdbcTemplate.update("""
+            UPDATE workflow_connection SET vector_status=?,vector_engine=?,vector_version=?,vector_checked_at=NOW(),vector_error=?,updated_at=NOW()
+            WHERE id=? AND voided=false
+            """, text(status), text(engine), text(version), truncate(error, 500), id);
+    }
+
     /** 当前用户只能维护自己的连接，管理员仍需显式成为记录所有者。 */
     private StoredConnection requireOwned(Long id) {
         StoredConnection connection = requireStored(id);
@@ -170,8 +182,15 @@ public class WorkflowConnectionService {
             || command.config() == null || !command.config().isObject()) {
             throw new BusinessException("workflow.connectionInvalid");
         }
-        type(command.connectionType());
-        if ("TAVILY".equals(type(command.connectionType())) && command.config().path("apiKey").asText("").isBlank()) {
+        String connectionType = type(command.connectionType());
+        if ("TAVILY".equals(connectionType) && command.config().path("apiKey").asText("").isBlank()) {
+            throw new BusinessException("workflow.connectionInvalid");
+        }
+        if (Set.of("QDRANT", "MILVUS", "ELASTICSEARCH").contains(connectionType)
+            && command.config().path("url").asText("").isBlank()) throw new BusinessException("workflow.connectionInvalid");
+        if ("ELASTICSEARCH".equals(connectionType) && command.config() instanceof ObjectNode object
+            && object.path("product").asText("").isBlank()) object.put("product", "ELASTICSEARCH");
+        if ("MILVUS".equals(connectionType) && command.config().path("token").asText("").isBlank()) {
             throw new BusinessException("workflow.connectionInvalid");
         }
     }
@@ -207,7 +226,8 @@ public class WorkflowConnectionService {
     /** 从内部记录创建脱敏视图。 */
     private WorkflowModels.ConnectionView mapView(StoredConnection connection) {
         return new WorkflowModels.ConnectionView(connection.id(), connection.code(), connection.name(), connection.connectionType(),
-            masked(connection.config()), connection.enabled(), connection.ownerUserId(), connection.createdAt(), connection.updatedAt());
+            masked(connection.config()), connection.enabled(), connection.ownerUserId(), connection.vectorStatus(), connection.vectorEngine(),
+            connection.vectorVersion(), connection.vectorCheckedAt(), connection.vectorError(), connection.createdAt(), connection.updatedAt());
     }
 
     /** 映射并解密内部连接记录。 */
@@ -215,7 +235,8 @@ public class WorkflowConnectionService {
         return new StoredConnection(rs.getLong("id"), rs.getString("code"), rs.getString("name"),
             rs.getString("connection_type"), decrypt(rs.getString("config_encrypted")), rs.getLong("owner_user_id"),
             rs.getBoolean("enabled"), timestamp(rs, "created_at"), timestamp(rs, "updated_at"),
-            rs.getLong("security_revision"));
+            rs.getLong("security_revision"), rs.getString("vector_status"), rs.getString("vector_engine"),
+            rs.getString("vector_version"), timestamp(rs, "vector_checked_at"), rs.getString("vector_error"));
     }
 
     /** 规范连接编码。 */
@@ -234,6 +255,8 @@ public class WorkflowConnectionService {
 
     /** 规范可选文本。 */
     private String text(String value) { return value == null ? "" : value.trim(); }
+    /** 截断外部系统错误，避免响应和数据库字段失控。 */
+    private String truncate(String value, int maximum) { String normalized=text(value); return normalized.length()<=maximum?normalized:normalized.substring(0,maximum); }
     /** 加密 JSON 配置。 */
     private String encrypt(JsonNode value) { return cryptoService.encrypt(json(value)); }
     /** 解密 JSON 配置。 */
@@ -253,11 +276,13 @@ public class WorkflowConnectionService {
 
     public record StoredConnection(Long id, String code, String name, String connectionType, JsonNode config,
                                    Long ownerUserId, boolean enabled, LocalDateTime createdAt, LocalDateTime updatedAt,
-                                   long securityRevision) {
+                                   long securityRevision, String vectorStatus, String vectorEngine, String vectorVersion,
+                                   LocalDateTime vectorCheckedAt, String vectorError) {
         /** 兼容不关心修订号的隔离单元测试和内部构造。 */
         public StoredConnection(Long id, String code, String name, String connectionType, JsonNode config,
                                 Long ownerUserId, boolean enabled, LocalDateTime createdAt, LocalDateTime updatedAt) {
-            this(id, code, name, connectionType, config, ownerUserId, enabled, createdAt, updatedAt, 1L);
+            this(id, code, name, connectionType, config, ownerUserId, enabled, createdAt, updatedAt, 1L,
+                "UNKNOWN", null, null, null, "");
         }
     }
     public record ConnectionOption(Long id, String code, String name, String connectionType) { }
