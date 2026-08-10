@@ -300,6 +300,8 @@ export default {
       END: { name: '结束', description: '汇总工作流输出并结束执行' },
       LLM: { name: '大语言模型', description: '调用平台模型路由生成内容' },
       RAG: { name: '知识库问答', description: '检索知识库上下文并调用文本模型生成带引用回答' },
+      KNOWLEDGE_RETRIEVAL: { name: '知识库检索', description: '检索知识库并返回匹配片段、来源和分数' },
+      KNOWLEDGE_UPSERT: { name: '知识库入库', description: '将文本或文档提取、切片并写入知识库' },
       HTTP: { name: '网络请求', description: '按安全策略调用网络接口' },
       AGENT: { name: '智能体', description: '由模型选择并调用受控工具' },
       CONDITION: { name: '条件分支', description: '按结构化条件选择执行分支' },

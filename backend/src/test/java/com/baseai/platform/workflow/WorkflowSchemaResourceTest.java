@@ -9,6 +9,9 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkflowSchemaResourceTest {
+    private static final Set<String> POST_CATALOG_MIGRATION_TYPES = Set.of(
+        "RAG", "KNOWLEDGE_RETRIEVAL", "KNOWLEDGE_UPSERT");
+
     /** MySQL V4 必须包含模板、版本、运行和节点日志，并初始化全部节点类型。 */
     @Test
     void containsVersionedWorkflowSchemaAndBuiltInNodes() throws Exception {
@@ -45,7 +48,7 @@ class WorkflowSchemaResourceTest {
         }
         for (String type : WorkflowNodeTypes.ALL) {
             if (!Set.of("START", "END", "LLM", "HTTP", "AGENT", "CONDITION", "ITERATION", "LOOP").contains(type)
-                && !WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type) && !"RAG".equals(type)) {
+                && !WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type) && !POST_CATALOG_MIGRATION_TYPES.contains(type)) {
                 assertTrue(schema.contains("'" + type + "'"), type);
             }
         }
@@ -84,7 +87,9 @@ class WorkflowSchemaResourceTest {
         assertTrue(schema.contains("SET template_source = 'SYSTEM'"));
         for (String category : WorkflowTemplateCatalog.CATEGORIES) assertTrue(schema.contains("'" + category + "'"), category);
         for (String type : WorkflowNodeTypes.ALL) {
-            if (!WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type) && !"RAG".equals(type)) assertTrue(schema.contains("'" + type + "'"), type);
+            if (!WorkflowNodeTypes.MARKETPLACE_ONLY.contains(type) && !POST_CATALOG_MIGRATION_TYPES.contains(type)) {
+                assertTrue(schema.contains("'" + type + "'"), type);
+            }
         }
         for (String type : WorkflowNodeTypes.MARKETPLACE_ONLY) {
             assertTrue(WorkflowNodeTypes.ALL.contains(type), type);
@@ -129,5 +134,15 @@ class WorkflowSchemaResourceTest {
             assertTrue(schema.contains(column), column);
         }
         assertTrue(schema.contains("'RAG'"));
+    }
+
+    /** MySQL V13 必须增加纯检索和动态入库系统模板。 */
+    @Test
+    void addsWorkflowKnowledgeRetrievalAndUpsertNodes() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V13__add_workflow_knowledge_nodes.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(schema.contains("'KNOWLEDGE_RETRIEVAL'"));
+        assertTrue(schema.contains("'KNOWLEDGE_UPSERT'"));
+        assertTrue(schema.contains("'DATA_STORAGE'"));
     }
 }

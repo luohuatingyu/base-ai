@@ -122,7 +122,17 @@ public class KnowledgeBaseService {
 
     /** 提取、切片、向量化并写入文档；状态始终反映完整批次最终结果。 */
     public DocumentView indexDocument(Long knowledgeBaseId,String fileName,String contentType,byte[] bytes) {
-        View base=requireOwned(knowledgeBaseId);if(!base.enabled())throw new BusinessException("knowledge.disabled");
+        return indexDocument(requireOwned(knowledgeBaseId),fileName,contentType,bytes);
+    }
+
+    /** 以显式所有者身份为后台工作流写入文档，避免依赖请求线程登录上下文。 */
+    public DocumentView indexDocumentForOwner(Long knowledgeBaseId,String fileName,String contentType,byte[] bytes,Long ownerId) {
+        return indexDocument(requireForOwner(knowledgeBaseId,ownerId),fileName,contentType,bytes);
+    }
+
+    /** 对已完成所有权校验的知识库执行完整索引流程。 */
+    private DocumentView indexDocument(View base,String fileName,String contentType,byte[] bytes) {
+        if(!base.enabled())throw new BusinessException("knowledge.disabled");
         if(bytes==null||bytes.length==0)throw new BusinessException("knowledge.documentEmpty");if(bytes.length>MAX_DOCUMENT_BYTES)throw new BusinessException("knowledge.documentTooLarge");
         String extracted=extract(bytes,fileName);List<String> chunks=chunks(extracted,base.chunkSize(),base.chunkOverlap());String hash=sha256(bytes);
         prepareFailedDocumentRetry(base,hash);

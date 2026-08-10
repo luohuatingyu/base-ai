@@ -43,6 +43,20 @@ export const NODE_CONFIG_FIELDS = {
     field('systemPrompt', 'textarea', 'Answer only from the retrieved context and cite sources with [n].'),
     field('promptTemplate', 'textarea', 'Question:\n{{query}}\n\nRetrieved context:\n{{context}}')
   ],
+  KNOWLEDGE_RETRIEVAL: [
+    field('knowledgeBaseId', 'knowledgeBase', null),
+    field('query', 'textarea', '{{input.query}}'),
+    field('topK', 'number', 5),
+    field('scoreThreshold', 'number', 0)
+  ],
+  KNOWLEDGE_UPSERT: [
+    field('knowledgeBaseId', 'knowledgeBase', null),
+    field('inputMode', 'select', null, ['TEXT', 'BASE64']),
+    field('content', 'textarea', ''),
+    field('base64', 'textarea', ''),
+    field('fileName', 'text', 'document.txt'),
+    field('contentType', 'text', 'text/plain')
+  ],
   CONDITION: [field('condition', 'condition', { left: '', operator: 'EQ', right: '' })],
   ITERATION: [
     field('collection', 'text', '{{input.items}}'),
@@ -110,7 +124,8 @@ const NODE_CONNECTION_TYPES = {
 }
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const REQUIRED_CONFIG_FIELDS = {
-  LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], RAG: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold', 'modelMode'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
+  LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], RAG: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold', 'modelMode'],
+  KNOWLEDGE_RETRIEVAL: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold'], KNOWLEDGE_UPSERT: ['knowledgeBaseId', 'inputMode', 'fileName', 'contentType'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
   SWITCH: ['cases', 'defaultBranch'], MERGE: ['mode', 'values'], SUB_WORKFLOW: ['workflowCode'], WAIT: ['durationMode'], SET_VARIABLE: ['output'], TEMPLATE: ['template'],
   JSON_PARSE: ['value'], JSON_VALIDATE: ['value', 'schema'], TRANSFORM: ['output'], FILTER: ['collection', 'condition'],
   SORT: ['collection', 'direction'], AGGREGATE: ['collection', 'operation'], CSV: ['operation', 'value'], QUESTION_CLASSIFIER: ['modelMode', 'input', 'categories'],
@@ -123,7 +138,7 @@ const REQUIRED_CONFIG_FIELDS = {
 const CONDITIONAL_CONFIG_FIELDS = {
   LLM: ['featureCode', 'modelType', 'modelId'], AGENT: ['featureCode', 'modelType', 'modelId'], RAG: ['featureCode', 'modelType', 'modelId'],
   QUESTION_CLASSIFIER: ['featureCode', 'modelType', 'modelId'], PARAMETER_EXTRACTOR: ['featureCode', 'modelType', 'modelId'],
-  WAIT: ['seconds', 'milliseconds'], DOCUMENT_EXTRACTOR: ['content', 'base64'],
+  WAIT: ['seconds', 'milliseconds'], DOCUMENT_EXTRACTOR: ['content', 'base64'], KNOWLEDGE_UPSERT: ['content', 'base64'],
   S3_OBJECT: ['key', 'contentMode', 'content', 'base64'], RABBITMQ_PUBLISH: ['destinationMode', 'exchange', 'routingKey'],
   TAVILY_TOOL: ['query', 'searchDepth', 'maxResults', 'urls', 'extractDepth', 'format']
 }
@@ -150,8 +165,8 @@ export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
   if (type === 'WAIT' && key === 'seconds') return durationMode === 'SECONDS'
   if (type === 'WAIT' && key === 'milliseconds') return durationMode === 'MILLISECONDS'
   const inputMode = String(value.inputMode || '').toUpperCase()
-  if (type === 'DOCUMENT_EXTRACTOR' && key === 'content') return inputMode === 'TEXT'
-  if (type === 'DOCUMENT_EXTRACTOR' && key === 'base64') return inputMode === 'BASE64'
+  if (['DOCUMENT_EXTRACTOR', 'KNOWLEDGE_UPSERT'].includes(type) && key === 'content') return inputMode === 'TEXT'
+  if (['DOCUMENT_EXTRACTOR', 'KNOWLEDGE_UPSERT'].includes(type) && key === 'base64') return inputMode === 'BASE64'
   const operation = String(value.operation || '').toUpperCase()
   if (type === 'S3_OBJECT') {
     if (key === 'key') return ['GET', 'PUT', 'DELETE'].includes(operation)
@@ -197,7 +212,7 @@ export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
     if (key === 'modelId') return modelMode === 'DIRECT' ? 'required' : ''
   }
   if (type === 'WAIT') return String(value.durationMode || '').toUpperCase() === (key === 'seconds' ? 'SECONDS' : 'MILLISECONDS') ? 'required' : ''
-  if (type === 'DOCUMENT_EXTRACTOR') return String(value.inputMode || '').toUpperCase() === (key === 'content' ? 'TEXT' : 'BASE64') ? 'required' : ''
+  if (['DOCUMENT_EXTRACTOR', 'KNOWLEDGE_UPSERT'].includes(type)) return String(value.inputMode || '').toUpperCase() === (key === 'content' ? 'TEXT' : 'BASE64') ? 'required' : ''
   if (type === 'S3_OBJECT') {
     const operation = String(value.operation || '').toUpperCase()
     if (key === 'key') return ['GET', 'PUT', 'DELETE'].includes(operation) ? 'required' : ''
@@ -244,6 +259,10 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
     case 'RAG': requireAiModel(value, missing); requirePositive('knowledgeBaseId'); requireText('query');
       if (!Number.isInteger(Number(value.topK)) || Number(value.topK) < 1 || Number(value.topK) > 50) missing.push('topK')
       if (!Number.isFinite(Number(value.scoreThreshold)) || Number(value.scoreThreshold) < 0 || Number(value.scoreThreshold) > 1) missing.push('scoreThreshold'); break
+    case 'KNOWLEDGE_RETRIEVAL': requirePositive('knowledgeBaseId'); requireText('query');
+      if (!Number.isInteger(Number(value.topK)) || Number(value.topK) < 1 || Number(value.topK) > 50) missing.push('topK')
+      if (!Number.isFinite(Number(value.scoreThreshold)) || Number(value.scoreThreshold) < 0 || Number(value.scoreThreshold) > 1) missing.push('scoreThreshold'); break
+    case 'KNOWLEDGE_UPSERT': requirePositive('knowledgeBaseId'); requireDocument(); requireText('fileName'); requireText('contentType'); break
     case 'CONDITION': requireCondition('condition'); break
     case 'ITERATION': requireText('collection'); requireObject('bodyGraph'); break
     case 'LOOP': requireCondition('condition'); requireObject('bodyGraph'); break
@@ -364,6 +383,7 @@ function withValidDefaults(nodeType, config) {
     case 'LLM': case 'AGENT': case 'RAG': case 'QUESTION_CLASSIFIER': case 'PARAMETER_EXTRACTOR':
       setDefault('featureCode', 'DEFAULT'); setDefault('modelType', 'text_model');
       if (nodeType === 'RAG') { setDefault('topK', 5); setDefault('scoreThreshold', 0) } break
+    case 'KNOWLEDGE_RETRIEVAL': setDefault('topK', 5); setDefault('scoreThreshold', 0); break
     case 'HTTP': setDefault('method', 'GET'); break
     case 'ITERATION': setDefault('collection', '{{input.items}}'); break
     case 'MERGE': setDefault('mode', 'ARRAY'); setDefault('values', []); break

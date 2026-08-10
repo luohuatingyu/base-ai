@@ -120,6 +120,28 @@ class WorkflowNodeConfigValidatorTest {
         assertTrue(invalidRange.getMessage().contains("scoreThreshold"));
     }
 
+    /** 知识库检索与入库必须校验所有权目标、检索边界及文档输入方案。 */
+    @Test
+    void validatesKnowledgeRetrievalAndUpsertParameters() throws Exception {
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("KNOWLEDGE_RETRIEVAL",
+            "{\"knowledgeBaseId\":3,\"query\":\"q\",\"topK\":50,\"scoreThreshold\":1}"), objectMapper.createObjectNode()));
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("KNOWLEDGE_UPSERT",
+            "{\"knowledgeBaseId\":3,\"inputMode\":\"TEXT\",\"content\":\"document\",\"fileName\":\"note.txt\",\"contentType\":\"text/plain\"}"), objectMapper.createObjectNode()));
+
+        BusinessException retrieval = assertThrows(BusinessException.class,
+            () -> validator.validateForPublish(graph("KNOWLEDGE_RETRIEVAL",
+                "{\"knowledgeBaseId\":3,\"query\":\"q\",\"topK\":0,\"scoreThreshold\":-1}"), objectMapper.createObjectNode()));
+        BusinessException upsert = assertThrows(BusinessException.class,
+            () -> validator.validateForPublish(graph("KNOWLEDGE_UPSERT",
+                "{\"knowledgeBaseId\":3,\"inputMode\":\"BASE64\",\"base64\":\"not-base64\",\"fileName\":\"\",\"contentType\":\"\"}"), objectMapper.createObjectNode()));
+
+        assertTrue(retrieval.getMessage().contains("topK"));
+        assertTrue(retrieval.getMessage().contains("scoreThreshold"));
+        assertTrue(upsert.getMessage().contains("base64"));
+        assertTrue(upsert.getMessage().contains("fileName"));
+        assertTrue(upsert.getMessage().contains("contentType"));
+    }
+
     /** 有效默认值应参与必填校验，空占位默认值仍然必须由用户补充。 */
     @Test
     void acceptsValidDefaultsButRejectsEmptyPlaceholders() throws Exception {
@@ -179,6 +201,8 @@ class WorkflowNodeConfigValidatorTest {
             Map.entry("HTTP", "{\"method\":\"GET\",\"url\":\"https://example.test\"}"),
             Map.entry("AGENT", "{\"modelMode\":\"DIRECT\",\"modelId\":1,\"prompt\":\"work\",\"tools\":[{\"name\":\"lookup\",\"toolType\":\"HTTP\",\"config\":{\"url\":\"https://example.test\"}}]}"),
             Map.entry("RAG", "{\"knowledgeBaseId\":1,\"query\":\"hello\",\"topK\":5,\"scoreThreshold\":0,\"modelMode\":\"DIRECT\",\"modelId\":1}"),
+            Map.entry("KNOWLEDGE_RETRIEVAL", "{\"knowledgeBaseId\":1,\"query\":\"hello\",\"topK\":5,\"scoreThreshold\":0}"),
+            Map.entry("KNOWLEDGE_UPSERT", "{\"knowledgeBaseId\":1,\"inputMode\":\"TEXT\",\"content\":\"hello\",\"fileName\":\"note.txt\",\"contentType\":\"text/plain\"}"),
             Map.entry("CONDITION", "{\"condition\":{\"left\":\"{{input.ok}}\",\"operator\":\"EQ\",\"right\":true}}"),
             Map.entry("ITERATION", "{\"collection\":\"{{input.items}}\",\"bodyGraph\":{}}"),
             Map.entry("LOOP", "{\"condition\":{\"left\":\"{{input.ok}}\",\"operator\":\"EXISTS\"},\"bodyGraph\":{}}"),

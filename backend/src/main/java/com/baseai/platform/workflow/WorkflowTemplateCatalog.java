@@ -46,14 +46,14 @@ public final class WorkflowTemplateCatalog {
     public static String defaultCategory(String nodeType) {
         return switch (normalize(nodeType)) {
             case "START", "END" -> "BASIC";
-            case "LLM", "AGENT", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT", "RAG" -> "AI";
+            case "LLM", "AGENT", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT", "RAG", "KNOWLEDGE_RETRIEVAL" -> "AI";
             case "CONDITION", "SWITCH", "ITERATION", "LOOP", "MERGE", "SUB_WORKFLOW", "WAIT" -> "FLOW_CONTROL";
             case "SET_VARIABLE", "JSON_PARSE", "JSON_VALIDATE", "TRANSFORM", "FILTER", "SORT", "AGGREGATE" -> "DATA_TRANSFORM";
             case "TEMPLATE", "CSV", "DOCUMENT_EXTRACTOR" -> "TEXT_DOCUMENT";
             case "HTTP", "TAVILY_TOOL" -> "NETWORK_API";
             case "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER" -> "TRIGGER";
             case "EMAIL_SEND", "IM_NOTIFY" -> "NOTIFICATION";
-            case "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT" -> "DATA_STORAGE";
+            case "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT", "KNOWLEDGE_UPSERT" -> "DATA_STORAGE";
             case "KAFKA_PUBLISH", "KAFKA_TRIGGER", "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER" -> "MESSAGE_QUEUE";
             default -> "BASIC";
         };

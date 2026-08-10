@@ -23,7 +23,7 @@ public class WorkflowNodeConfigValidator {
         "FILTER", "SORT", "AGGREGATE", "CSV", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT",
         "DOCUMENT_EXTRACTOR", "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER", "EMAIL_SEND", "IM_NOTIFY", "SQL_QUERY",
         "REDIS_COMMAND", "S3_OBJECT", "KAFKA_PUBLISH", "KAFKA_TRIGGER", "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER",
-        "TAVILY_TOOL", "RAG"
+        "TAVILY_TOOL", "RAG", "KNOWLEDGE_RETRIEVAL", "KNOWLEDGE_UPSERT"
     );
     private final ObjectMapper objectMapper;
 
@@ -104,6 +104,8 @@ public class WorkflowNodeConfigValidator {
             case "RABBITMQ_TRIGGER" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "queue"); }
             case "TAVILY_TOOL" -> requireTavily(config, missing);
             case "RAG" -> { requireAiModel(config,missing);requirePositive(config,missing,"knowledgeBaseId");requireText(config,missing,"query");requireIntegerRange(config,missing,"topK",1,50);if(!config.has("scoreThreshold")||!config.path("scoreThreshold").isNumber()||config.path("scoreThreshold").asDouble()<0||config.path("scoreThreshold").asDouble()>1)missing.add("scoreThreshold"); }
+            case "KNOWLEDGE_RETRIEVAL" -> { requirePositive(config,missing,"knowledgeBaseId");requireText(config,missing,"query");requireIntegerRange(config,missing,"topK",1,50);if(!config.has("scoreThreshold")||!config.path("scoreThreshold").isNumber()||config.path("scoreThreshold").asDouble()<0||config.path("scoreThreshold").asDouble()>1)missing.add("scoreThreshold"); }
+            case "KNOWLEDGE_UPSERT" -> { requirePositive(config,missing,"knowledgeBaseId");requireDocument(config,missing);requireText(config,missing,"fileName");requireText(config,missing,"contentType"); }
             default -> missing.add("nodeType");
         }
         return missing;

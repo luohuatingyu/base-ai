@@ -274,6 +274,8 @@ export default {
       END: { name: 'End', description: 'Collect workflow outputs and finish execution' },
       LLM: { name: 'Large Language Model', description: 'Generate content through a platform model route' },
       RAG: { name: 'Knowledge Base RAG', description: 'Retrieve knowledge context and generate a cited answer with a text model' },
+      KNOWLEDGE_RETRIEVAL: { name: 'Knowledge Retrieval', description: 'Retrieve matching chunks, sources, and scores from a knowledge base' },
+      KNOWLEDGE_UPSERT: { name: 'Knowledge Upsert', description: 'Extract, chunk, and index text or documents into a knowledge base' },
       HTTP: { name: 'HTTP Request', description: 'Call an HTTP endpoint under the security policy' },
       AGENT: { name: 'Agent', description: 'Let the model select and invoke controlled tools' },
       CONDITION: { name: 'Conditional Branch', description: 'Choose an execution branch using structured conditions' },

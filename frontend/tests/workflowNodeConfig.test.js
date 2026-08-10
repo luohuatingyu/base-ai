@@ -26,7 +26,7 @@ test('模板和画布节点配置统一使用可视化编辑器', () => {
 })
 
 test('全部原生节点都有可视化配置定义', () => {
-  const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'RAG', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']
+  const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'RAG', 'KNOWLEDGE_RETRIEVAL', 'KNOWLEDGE_UPSERT', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']
   expected.forEach(type => assert.ok(WORKFLOW_NODE_TYPES.includes(type), type))
   assert.equal(nodeConfigFields('unknown').length, 0)
   assert.deepEqual(nodeConfigFields('WAIT').map(field => field.key), ['durationMode', 'seconds', 'milliseconds'])
@@ -40,6 +40,8 @@ test('全部原生节点都有可视化配置定义', () => {
   }
   assert.equal(nodeConfigFields('EMAIL_SEND').find(field => field.key === 'routeId').editor, 'mailRoute')
   assert.equal(nodeConfigFields('RAG').find(field => field.key === 'knowledgeBaseId').editor, 'knowledgeBase')
+  assert.equal(nodeConfigFields('KNOWLEDGE_RETRIEVAL').find(field => field.key === 'knowledgeBaseId').editor, 'knowledgeBase')
+  assert.equal(nodeConfigFields('KNOWLEDGE_UPSERT').find(field => field.key === 'knowledgeBaseId').editor, 'knowledgeBase')
   for (const type of ['WEBHOOK_TRIGGER', 'IM_NOTIFY', 'SQL_QUERY', 'REDIS_COMMAND', 'S3_OBJECT', 'KAFKA_PUBLISH',
     'KAFKA_TRIGGER', 'RABBITMQ_PUBLISH', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']) {
     assert.equal(nodeConfigFields(type).find(field => field.key === 'connectionId').editor, 'connection', type)
@@ -152,6 +154,11 @@ test('配置字段区分必填、条件必填和具有运行默认值的可选�
   assert.equal(nodeConfigFieldRequirement('LLM', 'featureCode', { modelMode: 'ROUTE' }), 'required')
   assert.equal(nodeConfigFieldRequirement('LLM', 'modelId', { modelMode: 'DIRECT' }), 'required')
   assert.equal(nodeConfigFieldRequirement('LLM', 'modelId', { modelMode: 'ROUTE' }), '')
+  assert.equal(nodeConfigFieldRequirement('RAG', 'featureCode', { modelMode: 'ROUTE' }), 'required')
+  assert.equal(nodeConfigFieldRequirement('RAG', 'modelType', { modelMode: 'ROUTE' }), 'required')
+  assert.equal(nodeConfigFieldRequirement('RAG', 'modelId', { modelMode: 'ROUTE' }), '')
+  assert.equal(nodeConfigFieldRequirement('RAG', 'featureCode', { modelMode: 'DIRECT' }), '')
+  assert.equal(nodeConfigFieldRequirement('RAG', 'modelId', { modelMode: 'DIRECT' }), 'required')
   assert.equal(nodeConfigFieldRequirement('LLM', 'prompt'), 'required')
   assert.equal(nodeConfigFieldRequirement('EMAIL_SEND', 'subject'), 'required')
   assert.equal(nodeConfigFields('HTTP').find(field => field.key === 'url').requirement, 'required')
@@ -216,6 +223,14 @@ test('发布提示覆盖固定必填、方案条件、操作条件和参数数�
   assert.deepEqual(missingNodeConfigRequirements('EMAIL_SEND', { routeId: 2, subject: 'Notice' }), [])
   assert.deepEqual(missingNodeConfigRequirements('TAVILY_TOOL', { connectionId: 1, operation: 'SEARCH', query: 'AI', maxResults: 21 }), ['maxResults'])
   assert.deepEqual(missingNodeConfigRequirements('TAVILY_TOOL', { connectionId: 1, operation: 'EXTRACT', urls: 'https://example.com' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('KNOWLEDGE_RETRIEVAL', { knowledgeBaseId: 1, query: 'q' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('KNOWLEDGE_RETRIEVAL', { knowledgeBaseId: 1, query: 'q', topK: 51 }), ['topK'])
+  assert.deepEqual(missingNodeConfigRequirements('KNOWLEDGE_UPSERT', {
+    knowledgeBaseId: 1, inputMode: 'TEXT', content: 'document', fileName: 'note.txt', contentType: 'text/plain'
+  }), [])
+  assert.deepEqual(missingNodeConfigRequirements('KNOWLEDGE_UPSERT', {
+    knowledgeBaseId: 1, inputMode: 'BASE64', base64: '', fileName: 'note.txt', contentType: 'text/plain'
+  }), ['base64'])
 })
 
 test('必填字段直接编辑且非必填和条件必填字段通过开关启停', () => {
