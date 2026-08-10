@@ -207,7 +207,7 @@ export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
   if (config === undefined) return 'conditional'
   const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
   const modelMode = String(value.modelMode || '').toUpperCase()
-  if (['LLM', 'AGENT', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR'].includes(type)) {
+  if (['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR'].includes(type)) {
     if (['featureCode', 'modelType'].includes(key)) return modelMode === 'ROUTE' ? 'required' : ''
     if (key === 'modelId') return modelMode === 'DIRECT' ? 'required' : ''
   }
