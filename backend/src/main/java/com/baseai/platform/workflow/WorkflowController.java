@@ -77,6 +77,11 @@ public class WorkflowController {
     @RequiredPermission("workflow:node:list")
     public List<WorkflowModels.NodeTemplateView> templates() { return workflowService.templates(); }
 
+    /** 使用独立只读权限查询节点文档所需的模板元数据。 */
+    @GetMapping("/node-docs")
+    @RequiredPermission("workflow:node:docs")
+    public List<WorkflowModels.NodeTemplateView> nodeDocumentation() { return workflowService.templates(); }
+
     /** 代理查询 n8n 或 Dify 官方市场节点目录。 */
     @GetMapping("/node-marketplaces/{source}/nodes")
     @RequiredPermission("workflow:node:list")
