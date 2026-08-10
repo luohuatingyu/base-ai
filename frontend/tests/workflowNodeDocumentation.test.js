@@ -96,6 +96,8 @@ test('独立文档页面覆盖完整使用说明、响应式目录和安全异�
 })
 
 test('桌面文档目录固定且说明区域独立滚动并在窄屏恢复自然布局',()=>{
+  assert.doesNotMatch(viewSource,/<section class="docs-intro"/)
+  assert.doesNotMatch(viewSource,/workflowNodeDocs\.(handbook|guideTitle|catalogOverview|templates|nodeTypes|matches)/)
   assert.match(viewSource,/<el-scrollbar class="docs-directory-scroll">/)
   assert.doesNotMatch(viewSource,/docs-directory-scroll" max-height=/)
   assert.match(viewSource,/\.docs-page\{[^}]*height:calc\(100vh - 124px\)[^}]*flex-direction:column/)
