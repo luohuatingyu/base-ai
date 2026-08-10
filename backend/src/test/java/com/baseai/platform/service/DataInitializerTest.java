@@ -1,6 +1,7 @@
 package com.baseai.platform.service;
 
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.domain.DictionaryData;
 import com.baseai.platform.domain.Menu;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.repository.DepartmentRepository;
@@ -47,6 +48,7 @@ class DataInitializerTest {
     private MenuRepository menuRepository;
     private UserRepository userRepository;
     private BCryptPasswordEncoder passwordEncoder;
+    private DictionaryDataRepository dictionaryDataRepository;
     private SystemSettingRepository systemSettingRepository;
     private SystemSettingCacheService systemSettingCacheService;
     private DataInitializer initializer;
@@ -60,7 +62,7 @@ class DataInitializerTest {
         userRepository = mock(UserRepository.class);
         DepartmentRepository departmentRepository = mock(DepartmentRepository.class);
         DictionaryTypeRepository dictionaryTypeRepository = mock(DictionaryTypeRepository.class);
-        DictionaryDataRepository dictionaryDataRepository = mock(DictionaryDataRepository.class);
+        dictionaryDataRepository = mock(DictionaryDataRepository.class);
         systemSettingRepository = mock(SystemSettingRepository.class);
         systemSettingCacheService = mock(SystemSettingCacheService.class);
         passwordEncoder = mock(BCryptPasswordEncoder.class);
@@ -81,6 +83,25 @@ class DataInitializerTest {
         initializer = new DataInitializer(properties, menuRepository, roleRepository, userRepository,
             departmentRepository, dictionaryTypeRepository, dictionaryDataRepository, passwordEncoder,
             systemSettingRepository, systemSettingCacheService);
+    }
+
+    /** 首次启动应同时补齐文本、视觉和向量三种内置模型类型。 */
+    @Test
+    void seedsEmbeddingModelTypeWithBuiltInCatalog() {
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(SEED_PASSWORD)).thenReturn("created-hash");
+
+        initializer.run(null);
+
+        ArgumentCaptor<DictionaryData> captor = ArgumentCaptor.forClass(DictionaryData.class);
+        verify(dictionaryDataRepository, atLeastOnce()).save(captor.capture());
+        Map<String, String> labels = captor.getAllValues().stream().collect(Collectors.toMap(
+            DictionaryData::getDictValue, DictionaryData::getLabel));
+        assertEquals(Map.of(
+            "text_model", "文本模型",
+            "vision_model", "视觉模型",
+            "embedding_model", "向量模型"
+        ), labels);
     }
 
     /** 未配置同步开关时必须保留已有管理员密码。 */

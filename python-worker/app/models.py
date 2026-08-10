@@ -1,5 +1,6 @@
 """Worker 请求、响应和追踪数据模型定义。"""
 
+from math import isfinite
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -171,6 +172,41 @@ class LlmTestRequest(BaseModel):
 
     candidate: LlmCandidate
     enableThinking: bool = False
+    embedding: bool = False
+
+
+class EmbeddingRequest(BaseModel):
+    """Java 后端下发的 OpenAI 兼容向量化请求。"""
+
+    input: list[str] = Field(min_length=1, max_length=256)
+    candidates: list[LlmCandidate] = Field(min_length=1, max_length=20)
+
+    @field_validator("input")
+    @classmethod
+    def validate_input(cls, values: list[str]) -> list[str]:
+        """限制单条参数文本，避免把整份文档或异常内容发送给模型服务。"""
+        normalized = [value.strip() for value in values]
+        if any(not value or len(value) > 500 for value in normalized):
+            raise ValueError("向量文本不能为空且不能超过 500 个字符")
+        return normalized
+
+
+class EmbeddingResponse(BaseModel):
+    """向 Java 返回与输入顺序一致的向量和实际使用模型。"""
+
+    embeddings: list[list[float]] = Field(min_length=1, max_length=256)
+    model: str = Field(min_length=1, max_length=160)
+
+    @model_validator(mode="after")
+    def validate_embeddings(self):
+        """拒绝维度不一致、空向量或非有限数，避免污染调用方的向量索引。"""
+        dimension = len(self.embeddings[0]) if self.embeddings else 0
+        if dimension == 0 or any(
+            len(item) != dimension or not all(isfinite(value) for value in item)
+            for item in self.embeddings
+        ):
+            raise ValueError("向量结果为空、维度不一致或包含非法数值")
+        return self
 
 
 class SmtpConfig(BaseModel):

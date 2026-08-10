@@ -10,7 +10,7 @@ import httpx
 from app.config import Settings
 from app.logging_config import sanitize_log_text
 from app.models import (AgentMessage, AgentStepResponse, AgentToolCall, ChatMessage,
-                        ChatResponse, LlmCandidate, ToolDefinition)
+                        ChatResponse, EmbeddingResponse, LlmCandidate, ToolDefinition)
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +46,32 @@ class LlmClient:
                                    candidate.providerCode, candidate.model, sanitize_log_text(exception, 1000), exc_info=True)
         raise RuntimeError("全部候选模型调用失败: " + "; ".join(failures[-10:]))
 
-    async def test(self, candidate: LlmCandidate, enable_thinking: bool = False) -> dict:
+    async def test(self, candidate: LlmCandidate, enable_thinking: bool = False,
+                   embedding: bool = False) -> dict:
         """使用最小请求测试模型连接并返回耗时。"""
         started = time.perf_counter()
+        if embedding:
+            result = await self.embed(["embedding health check"], [candidate])
+            return {"success": True, "model": result.model, "dimension": len(result.embeddings[0]),
+                    "durationMs": round(self._elapsed(started), 2)}
         result = await self.chat([ChatMessage(role="user", content="reply OK")], 0, [candidate], enable_thinking, route_configured=True)
         return {"success": True, "model": result.model, "durationMs": round(self._elapsed(started), 2)}
+
+    async def embed(self, values: list[str], candidates: list[LlmCandidate]) -> EmbeddingResponse:
+        """依次尝试候选及密钥，调用 OpenAI 兼容 embeddings 接口并保持输入顺序。"""
+        failures: list[str] = []
+        for candidate in candidates:
+            for api_key in await self._ordered_keys(candidate):
+                try:
+                    return await self._invoke_embedding(candidate, api_key, values)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exception:
+                    failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
+                    logger.warning("event=embedding_candidate_failed provider=%s model=%s error=%s",
+                                   candidate.providerCode, candidate.model,
+                                   sanitize_log_text(exception, 1000), exc_info=True)
+        raise RuntimeError("全部候选向量模型调用失败: " + "; ".join(failures[-10:]))
 
     async def agent_step(self, messages: list[AgentMessage], tools: list[ToolDefinition],
                          candidates: list[LlmCandidate], temperature: float = 0,
@@ -168,6 +189,51 @@ class LlmClient:
                 raise RuntimeError("Agent 响应既无内容也无工具调用")
             logger.info("event=agent_step_succeeded model=%s tool_call_count=%d", candidate.model, len(calls))
             return AgentStepResponse(content=content, toolCalls=calls, model=candidate.model)
+
+    async def _invoke_embedding(self, candidate: LlmCandidate, api_key: str,
+                                values: list[str]) -> EmbeddingResponse:
+        """解析 OpenAI embeddings 响应，并确保结果完整对应原始输入。"""
+        semaphore = await self._semaphore(candidate, api_key)
+        async with semaphore:
+            payload = {"model": candidate.model, "input": values}
+            async with self.client.stream(
+                "POST", f"{candidate.baseUrl.rstrip('/')}/embeddings",
+                headers={"Authorization": f"Bearer {api_key}"}, json=payload,
+                timeout=candidate.timeoutSeconds,
+            ) as response:
+                response.raise_for_status()
+                response_body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    response_body.extend(chunk)
+                    if len(response_body) > self.settings.llm_response_max_bytes:
+                        raise RuntimeError(f"供应商 {candidate.providerCode} 响应超过大小限制")
+                data = self._parse_response(bytes(response_body), response.status_code,
+                                            response.headers.get("content-type", "未提供"), candidate)
+        raw_items = data.get("data")
+        if not isinstance(raw_items, list) or len(raw_items) != len(values):
+            raise RuntimeError(f"供应商 {candidate.providerCode} 返回的向量数量不匹配")
+        indexed: dict[int, list[float]] = {}
+        for item in raw_items:
+            if (not isinstance(item, dict) or isinstance(item.get("index"), bool)
+                    or not isinstance(item.get("index"), int)
+                    or not isinstance(item.get("embedding"), list)):
+                raise RuntimeError(f"供应商 {candidate.providerCode} 返回的向量格式无效")
+            index = item["index"]
+            embedding = item["embedding"]
+            if (index < 0 or index >= len(values) or index in indexed
+                    or not all(not isinstance(value, bool) and isinstance(value, (int, float))
+                               for value in embedding)):
+                raise RuntimeError(f"供应商 {candidate.providerCode} 返回的向量索引或值无效")
+            indexed[index] = [float(value) for value in embedding]
+        if len(indexed) != len(values):
+            raise RuntimeError(f"供应商 {candidate.providerCode} 返回的向量索引不完整")
+        result = EmbeddingResponse(
+            embeddings=[indexed[index] for index in range(len(values))],
+            model=candidate.model,
+        )
+        logger.info("event=embedding_succeeded model=%s input_count=%d dimension=%d", candidate.model,
+                    len(values), len(result.embeddings[0]))
+        return result
 
     async def _ordered_keys(self, candidate: LlmCandidate) -> list[str]:
         """并发安全地轮换候选供应商的 API Key 起点。"""

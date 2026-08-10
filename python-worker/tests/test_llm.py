@@ -8,7 +8,7 @@ import pytest
 
 from app.config import Settings
 from app.llm import LlmClient
-from app.models import ChatMessage, LlmCandidate
+from app.models import ChatMessage, EmbeddingRequest, EmbeddingResponse, LlmCandidate
 
 
 def settings() -> Settings:
@@ -67,6 +67,167 @@ def test_invoke_returns_openai_compatible_json_response():
     assert result.outputTokens == 2
     assert result.totalTokens == 3
     assert json.loads(request_holder["request"].content)["stream"] is False
+
+
+def test_embedding_uses_openai_compatible_endpoint_and_restores_input_order():
+    """向量模型必须调用 embeddings 端点，并根据 index 恢复与输入一致的顺序。"""
+    request_holder = {}
+
+    async def invoke():
+        def handler(request: httpx.Request) -> httpx.Response:
+            """返回刻意乱序的向量，验证客户端恢复输入顺序。"""
+            request_holder["request"] = request
+            return httpx.Response(200, json={"data": [
+                {"index": 1, "embedding": [0.0, 1.0]},
+                {"index": 0, "embedding": [1.0, 0.0]},
+            ]})
+
+        client = LlmClient(settings())
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            return await client.embed(["55英寸", "一级能效"], [candidate()])
+        finally:
+            await client.close()
+
+    result = asyncio.run(invoke())
+
+    assert request_holder["request"].url.path == "/embeddings"
+    assert json.loads(request_holder["request"].content) == {
+        "model": "test-model",
+        "input": ["55英寸", "一级能效"],
+    }
+    assert result.embeddings == [[1.0, 0.0], [0.0, 1.0]]
+
+
+def test_embedding_falls_back_to_next_candidate():
+    """首个向量候选失败时应继续尝试后续候选。"""
+    attempted_hosts = []
+    first = candidate().model_copy(update={"providerCode": "first", "baseUrl": "https://first.example"})
+    second = candidate().model_copy(update={"providerCode": "second", "baseUrl": "https://second.example"})
+
+    async def invoke():
+        def handler(request: httpx.Request) -> httpx.Response:
+            """记录候选顺序，并仅允许第二个供应商成功。"""
+            attempted_hosts.append(request.url.host)
+            if request.url.host == "first.example":
+                return httpx.Response(503, json={"error": "unavailable"})
+            return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]})
+
+        client = LlmClient(settings())
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            return await client.embed(["参数"], [first, second])
+        finally:
+            await client.close()
+
+    result = asyncio.run(invoke())
+
+    assert attempted_hosts == ["first.example", "second.example"]
+    assert result.model == "test-model"
+
+
+def test_embedding_connection_test_returns_vector_dimension():
+    """向量模型连接测试应走 embeddings 请求并返回输出维度。"""
+
+    async def invoke():
+        client = LlmClient(settings())
+
+        async def embed(values, candidates):
+            """隔离供应商调用，仅验证连接测试分支。"""
+            assert values == ["embedding health check"]
+            assert candidates == [candidate()]
+            return EmbeddingResponse(embeddings=[[0.1, 0.2, 0.3]], model="test-model")
+
+        client.embed = embed
+        try:
+            return await client.test(candidate(), embedding=True)
+        finally:
+            await client.close()
+
+    result = asyncio.run(invoke())
+
+    assert result["success"] is True
+    assert result["dimension"] == 3
+    assert result["model"] == "test-model"
+
+
+@pytest.mark.parametrize(
+    ("values", "candidates"),
+    [
+        ([], [candidate()]),
+        (["   "], [candidate()]),
+        (["x" * 501], [candidate()]),
+        (["value"] * 257, [candidate()]),
+        (["value"], []),
+        (["value"], [candidate()] * 21),
+    ],
+)
+def test_embedding_request_rejects_invalid_input(values, candidates):
+    """向量请求应拒绝非法输入文本或候选数量。"""
+    with pytest.raises(ValueError):
+        EmbeddingRequest(input=values, candidates=candidates)
+
+
+@pytest.mark.parametrize(
+    "embeddings",
+    [[], [[]], [[1.0], [1.0, 2.0]], [[float("nan")]]],
+)
+def test_embedding_response_rejects_invalid_vectors(embeddings):
+    """向量响应应拒绝空结果、空向量、维度不一致和非有限数。"""
+    with pytest.raises(ValueError):
+        EmbeddingResponse(embeddings=embeddings, model="test-model")
+
+
+@pytest.mark.parametrize(
+    ("values", "body", "exception", "message"),
+    [
+        (["a"], {"data": []}, RuntimeError, "向量数量不匹配"),
+        (["a", "b"], {"data": [
+            {"index": 0, "embedding": [1.0]},
+            {"index": 0, "embedding": [2.0]},
+        ]}, RuntimeError, "向量索引或值无效"),
+        (["a"], {"data": [{"index": 0, "embedding": ["bad"]}]}, RuntimeError, "向量索引或值无效"),
+        (["a"], {"data": [{"index": False, "embedding": [1.0]}]}, RuntimeError, "向量格式无效"),
+        (["a"], {"data": [{"index": 0, "embedding": [True]}]}, RuntimeError, "向量索引或值无效"),
+        (["a"], {"data": [{"index": 0, "embedding": []}]}, ValueError, "向量结果为空"),
+    ],
+)
+def test_embedding_rejects_invalid_provider_payload(values, body, exception, message):
+    """供应商返回缺项、重复索引、非数值或空向量时必须受控失败。"""
+
+    async def invoke():
+        client = LlmClient(settings())
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json=body)
+        ))
+        try:
+            return await client._invoke_embedding(candidate(), "test-key", values)
+        finally:
+            await client.close()
+
+    with pytest.raises(exception, match=message):
+        asyncio.run(invoke())
+
+
+def test_embedding_rejects_oversized_provider_response():
+    """向量供应商响应超过统一上限时不得继续缓冲或解析。"""
+
+    async def invoke():
+        client = LlmClient(settings())
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, content=b"x" * 1025, headers={"content-type": "application/json"})
+        ))
+        try:
+            return await client._invoke_embedding(candidate(), "test-key", ["参数"])
+        finally:
+            await client.close()
+
+    with pytest.raises(RuntimeError, match="响应超过大小限制"):
+        asyncio.run(invoke())
 
 
 def test_invoke_sends_mapped_thinking_value():

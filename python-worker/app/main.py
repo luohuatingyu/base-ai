@@ -9,7 +9,8 @@ from app.config import load_settings, validate_settings
 from app.llm import LlmClient
 from app.logging_config import setup_logging
 from app.middleware import InternalAuthMiddleware, RequestSizeLimitMiddleware
-from app.models import AgentStepRequest, AgentStepResponse, ChatRequest, ChatResponse, EmailSendRequest, LlmTestRequest
+from app.models import (AgentStepRequest, AgentStepResponse, ChatRequest, ChatResponse,
+                        EmailSendRequest, EmbeddingRequest, EmbeddingResponse, LlmTestRequest)
 from app.services.email_delivery import MailDeliveryError, send_email
 from app.trace_runtime import JavaTraceReporter, TraceRuntimeRegistry
 
@@ -43,7 +44,14 @@ async def chat(request: ChatRequest):
 @app.post("/llm/test")
 async def test_llm(request: LlmTestRequest):
     """测试模型中心下发的单个候选配置。"""
-    return await llm_client.test(request.candidate, request.enableThinking)
+    return await llm_client.test(request.candidate, request.enableThinking, request.embedding)
+
+
+@app.post("/llm/embeddings", response_model=EmbeddingResponse)
+async def embeddings(request: EmbeddingRequest):
+    """通过候选向量模型调用 OpenAI 兼容 embeddings 接口。"""
+    logger.info("event=worker_embeddings_started input_count=%d", len(request.input))
+    return await llm_client.embed(request.input, request.candidates)
 
 
 @app.post("/llm/agent-step", response_model=AgentStepResponse)

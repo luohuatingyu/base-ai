@@ -194,6 +194,7 @@ public class DataInitializer implements ApplicationRunner {
         }
         seedModelType("text_model","文本模型",10);
         seedModelType("vision_model","视觉模型",20);
+        seedModelType("embedding_model","向量模型",30);
     }
 
     /** 仅在缺失时写入内置模型类型，保留管理员对已有字典项的调整。 */

@@ -18,6 +18,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
@@ -29,6 +31,9 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class LlmManagementServiceTest {
     private LlmProviderRepository providerRepository;
@@ -183,6 +188,32 @@ class LlmManagementServiceTest {
 
         assertEquals("文本模型", service.modelTypes().get(0).label());
         assertEquals("视觉模型", service.modelTypes().get(1).label());
+        assertEquals("embedding_model", service.modelTypes().get(2).value());
+        assertEquals("向量模型", service.modelTypes().get(2).label());
+    }
+
+    /** 模型连接测试应按声明能力选择聊天或向量健康检查。 */
+    @ParameterizedTest
+    @CsvSource({"text_model,false", "embedding_model,true"})
+    void testModelSelectsHealthCheckByModelType(String modelType, boolean embedding) {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://worker");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        LlmManagementService connectedService = new LlmManagementService(providerRepository, modelRepository,
+            routeRepository, dictionaryDataRepository, cryptoService, builder.build());
+        LlmModel model = model(1L, "MIDDLE");
+        model.setModelName("health-model");
+        model.setSupportedModelTypes(List.of(modelType));
+        LlmProvider provider = provider("encrypted");
+        provider.setEnabled(true);
+        when(modelRepository.findById(10L)).thenReturn(Optional.of(model));
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider));
+        when(cryptoService.decrypt("encrypted")).thenReturn("secret");
+        server.expect(requestTo("http://worker/llm/test"))
+            .andExpect(jsonPath("$.embedding").value(embedding))
+            .andRespond(withSuccess("{\"success\":true}", MediaType.APPLICATION_JSON));
+
+        assertEquals(true, connectedService.testModel(10L).get("success"));
+        server.verify();
     }
 
     /** 模型保存应接受字典中新增的类型编码并持久化为支持集合。 */

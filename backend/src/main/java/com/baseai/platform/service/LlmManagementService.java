@@ -168,7 +168,7 @@ public class LlmManagementService {
             .map(item->new ModelTypeOption(LlmModel.normalizeModelTypes(List.of(item.getDictValue())).stream().findFirst().orElse(""),item.getLabel()))
             .filter(item->!item.value().isBlank())
             .toList();
-        return result.isEmpty()?List.of(new ModelTypeOption("text_model","文本模型"),new ModelTypeOption("vision_model","视觉模型")):result;
+        return result.isEmpty()?List.of(new ModelTypeOption("text_model","文本模型"),new ModelTypeOption("vision_model","视觉模型"),new ModelTypeOption("embedding_model","向量模型")):result;
     }
 
     /**
@@ -467,6 +467,7 @@ public class LlmManagementService {
         // 调用Worker的测试接口
         Map<String,Object> request=new LinkedHashMap<>();
         request.put("candidate",candidate);request.put("enableThinking",normalizedThinking!=null);
+        request.put("embedding",candidate.supportedModelTypes().contains("embedding_model"));
         Map<?,?> result=workerClient.post().uri("/llm/test").contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(Map.class);
         if(result==null)throw new BusinessException("llm.workerEmptyTestResult");
 
