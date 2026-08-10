@@ -120,6 +120,25 @@ class WorkflowNodeConfigValidatorTest {
         assertTrue(invalidRange.getMessage().contains("scoreThreshold"));
     }
 
+    /** 向量化节点必须固定向量能力并接受单文本或受限文本数组。 */
+    @Test
+    void validatesEmbeddingModelSourceAndInputBounds() throws Exception {
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("EMBEDDING",
+            "{\"modelMode\":\"ROUTE\",\"featureCode\":\"VECTOR\",\"modelType\":\"embedding_model\",\"input\":\"hello\"}"), objectMapper.createObjectNode()));
+        assertDoesNotThrow(() -> validator.validateForPublish(graph("EMBEDDING",
+            "{\"modelMode\":\"DIRECT\",\"modelId\":7,\"input\":[\"first\",\"second\"]}"), objectMapper.createObjectNode()));
+
+        BusinessException wrongType = assertThrows(BusinessException.class,
+            () -> validator.validateForPublish(graph("EMBEDDING",
+                "{\"modelMode\":\"ROUTE\",\"featureCode\":\"DEFAULT\",\"modelType\":\"text_model\",\"input\":\"hello\"}"), objectMapper.createObjectNode()));
+        BusinessException empty = assertThrows(BusinessException.class,
+            () -> validator.validateForPublish(graph("EMBEDDING",
+                "{\"modelMode\":\"DIRECT\",\"modelId\":7,\"input\":[]}"), objectMapper.createObjectNode()));
+
+        assertTrue(wrongType.getMessage().contains("modelType"));
+        assertTrue(empty.getMessage().contains("input"));
+    }
+
     /** 知识库检索与入库必须校验所有权目标、检索边界及文档输入方案。 */
     @Test
     void validatesKnowledgeRetrievalAndUpsertParameters() throws Exception {
@@ -203,6 +222,7 @@ class WorkflowNodeConfigValidatorTest {
             Map.entry("RAG", "{\"knowledgeBaseId\":1,\"query\":\"hello\",\"topK\":5,\"scoreThreshold\":0,\"modelMode\":\"DIRECT\",\"modelId\":1}"),
             Map.entry("KNOWLEDGE_RETRIEVAL", "{\"knowledgeBaseId\":1,\"query\":\"hello\",\"topK\":5,\"scoreThreshold\":0}"),
             Map.entry("KNOWLEDGE_UPSERT", "{\"knowledgeBaseId\":1,\"inputMode\":\"TEXT\",\"content\":\"hello\",\"fileName\":\"note.txt\",\"contentType\":\"text/plain\"}"),
+            Map.entry("EMBEDDING", "{\"modelMode\":\"DIRECT\",\"modelId\":1,\"input\":\"hello\"}"),
             Map.entry("CONDITION", "{\"condition\":{\"left\":\"{{input.ok}}\",\"operator\":\"EQ\",\"right\":true}}"),
             Map.entry("ITERATION", "{\"collection\":\"{{input.items}}\",\"bodyGraph\":{}}"),
             Map.entry("LOOP", "{\"condition\":{\"left\":\"{{input.ok}}\",\"operator\":\"EXISTS\"},\"bodyGraph\":{}}"),

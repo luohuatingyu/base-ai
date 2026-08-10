@@ -140,12 +140,17 @@ public class LlmManagementService {
     public List<LlmModel> models(){return modelRepository.findAll().stream().sorted(Comparator.comparing(LlmModel::getId)).toList();}
 
     /** 查询工作流配置可选择的启用模型，并仅返回下拉展示所需的非敏感字段。 */
-    public List<WorkflowModelOption> workflowModelOptions(){
+    public List<WorkflowModelOption> workflowModelOptions(){return workflowModelOptions(Set.of(),"");}
+
+    /** 按节点允许类型和可选模型类型筛选工作流指定模型候选。 */
+    public List<WorkflowModelOption> workflowModelOptions(Collection<String> allowedTypes,String modelType){
+        Set<String> allowed=new LinkedHashSet<>(LlmModel.normalizeModelTypes(allowedTypes));String requested=normalizedModelType(modelType);
         Map<Long,LlmProvider> providers=providerRepository.findAll().stream()
             .filter(provider->Boolean.TRUE.equals(provider.getEnabled()))
             .collect(java.util.stream.Collectors.toMap(LlmProvider::getId,provider->provider));
         return modelRepository.findAll().stream()
             .filter(model->Boolean.TRUE.equals(model.getEnabled())&&providers.containsKey(model.getProviderId()))
+            .filter(model->matchesWorkflowTypes(model.getSupportedModelTypes(),allowed,requested))
             .sorted(Comparator.comparing(LlmModel::getId))
             .map(model->new WorkflowModelOption(model.getId(),model.getName(),model.getModelName(),
                 providers.get(model.getProviderId()).getName(),model.getSupportedModelTypes()))
@@ -153,13 +158,28 @@ public class LlmManagementService {
     }
 
     /** 查询工作流配置可选择的启用模型路由，并仅返回功能编码下拉所需字段。 */
-    public List<WorkflowRouteOption> workflowRouteOptions(){
+    public List<WorkflowRouteOption> workflowRouteOptions(){return workflowRouteOptions(Set.of(),"");}
+
+    /** 按节点允许类型和可选模型类型筛选包含真实候选能力的模型路由。 */
+    public List<WorkflowRouteOption> workflowRouteOptions(Collection<String> allowedTypes,String modelType){
+        Set<String> allowed=new LinkedHashSet<>(LlmModel.normalizeModelTypes(allowedTypes));String requested=normalizedModelType(modelType);
         return routeRepository.findAll().stream()
             .filter(route->Boolean.TRUE.equals(route.getEnabled()))
             .sorted(Comparator.comparing(LlmRoute::getFeatureCode))
-            .map(route->new WorkflowRouteOption(route.getId(),route.getFeatureCode(),route.getName()))
+            .map(route->new WorkflowRouteOption(route.getId(),route.getFeatureCode(),route.getName(),routeModelTypes(route.getFeatureCode())))
+            .filter(route->matchesWorkflowTypes(route.supportedModelTypes(),allowed,requested))
             .toList();
     }
+
+    /** 判断候选声明是否命中节点允许集合和用户已选择的具体类型。 */
+    private boolean matchesWorkflowTypes(Collection<String> supportedTypes,Set<String> allowed,String requested){
+        Set<String> supported=new LinkedHashSet<>(LlmModel.normalizeModelTypes(supportedTypes));
+        if(!requested.isBlank()&&!supported.contains(requested))return false;
+        return allowed.isEmpty()||supported.stream().anyMatch(allowed::contains);
+    }
+
+    /** 规范可选的单个模型类型查询参数。 */
+    private String normalizedModelType(String value){return LlmModel.normalizeModelTypes(List.of(value==null?"":value)).stream().findFirst().orElse("");}
 
     /** 查询启用的模型类型目录；字典尚未初始化时回退到内置的首批类型。 */
     public List<ModelTypeOption> modelTypes(){
@@ -752,6 +772,6 @@ public class LlmManagementService {
     public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
     public record ModelTypeOption(String value,String label){}
     public record WorkflowModelOption(Long id,String name,String modelName,String providerName,List<String> supportedModelTypes){}
-    public record WorkflowRouteOption(Long id,String featureCode,String name){}
+    public record WorkflowRouteOption(Long id,String featureCode,String name,List<String> supportedModelTypes){}
     private record ModelSyncKey(Long modelId,boolean enableThinking,String thinkingLevel){}
 }

@@ -1,8 +1,8 @@
 /** 创建 AI 节点共用模型字段，模型路由和指定模型统一通过资源下拉选择。 */
-function aiModelFields() { return [
+function aiModelFields(defaultModelType = 'text_model') { return [
   field('modelMode', 'select', null, ['ROUTE', 'DIRECT']),
   field('featureCode', 'modelRoute', 'DEFAULT'),
-  field('modelType', 'select', 'text_model', ['text_model', 'vision_model']),
+  field('modelType', 'modelType', defaultModelType),
   field('modelId', 'model', null),
   field('temperature', 'number', 0),
   field('enableThinking', 'boolean', false),
@@ -43,6 +43,7 @@ export const NODE_CONFIG_FIELDS = {
     field('systemPrompt', 'textarea', 'Answer only from the retrieved context and cite sources with [n].'),
     field('promptTemplate', 'textarea', 'Question:\n{{query}}\n\nRetrieved context:\n{{context}}')
   ],
+  EMBEDDING: [...aiModelFields('embedding_model').slice(0, 4), field('input', 'generic', null)],
   KNOWLEDGE_RETRIEVAL: [
     field('knowledgeBaseId', 'knowledgeBase', null),
     field('query', 'textarea', '{{input.query}}'),
@@ -124,7 +125,7 @@ const NODE_CONNECTION_TYPES = {
 }
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const REQUIRED_CONFIG_FIELDS = {
-  LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], RAG: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold', 'modelMode'],
+  LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], RAG: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold', 'modelMode'], EMBEDDING: ['modelMode', 'input'],
   KNOWLEDGE_RETRIEVAL: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold'], KNOWLEDGE_UPSERT: ['knowledgeBaseId', 'inputMode', 'fileName', 'contentType'], CONDITION: ['condition'], ITERATION: ['collection'], LOOP: ['condition'],
   SWITCH: ['cases', 'defaultBranch'], MERGE: ['mode', 'values'], SUB_WORKFLOW: ['workflowCode'], WAIT: ['durationMode'], SET_VARIABLE: ['output'], TEMPLATE: ['template'],
   JSON_PARSE: ['value'], JSON_VALIDATE: ['value', 'schema'], TRANSFORM: ['output'], FILTER: ['collection', 'condition'],
@@ -137,7 +138,7 @@ const REQUIRED_CONFIG_FIELDS = {
 }
 const CONDITIONAL_CONFIG_FIELDS = {
   LLM: ['featureCode', 'modelType', 'modelId'], AGENT: ['featureCode', 'modelType', 'modelId'], RAG: ['featureCode', 'modelType', 'modelId'],
-  QUESTION_CLASSIFIER: ['featureCode', 'modelType', 'modelId'], PARAMETER_EXTRACTOR: ['featureCode', 'modelType', 'modelId'],
+  QUESTION_CLASSIFIER: ['featureCode', 'modelType', 'modelId'], PARAMETER_EXTRACTOR: ['featureCode', 'modelType', 'modelId'], EMBEDDING: ['featureCode', 'modelType', 'modelId'],
   WAIT: ['seconds', 'milliseconds'], DOCUMENT_EXTRACTOR: ['content', 'base64'], KNOWLEDGE_UPSERT: ['content', 'base64'],
   S3_OBJECT: ['key', 'contentMode', 'content', 'base64'], RABBITMQ_PUBLISH: ['destinationMode', 'exchange', 'routingKey'],
   TAVILY_TOOL: ['query', 'searchDepth', 'maxResults', 'urls', 'extractDepth', 'format']
@@ -157,7 +158,7 @@ export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
   const type = String(nodeType || '').toUpperCase()
   const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
   const modelMode = String(value.modelMode || '').toUpperCase()
-  if (['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR'].includes(type)) {
+  if (['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR', 'EMBEDDING'].includes(type)) {
     if (['featureCode', 'modelType'].includes(key)) return modelMode === 'ROUTE'
     if (key === 'modelId') return modelMode === 'DIRECT'
   }
@@ -207,7 +208,7 @@ export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
   if (config === undefined) return 'conditional'
   const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
   const modelMode = String(value.modelMode || '').toUpperCase()
-  if (['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR'].includes(type)) {
+  if (['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR', 'EMBEDDING'].includes(type)) {
     if (['featureCode', 'modelType'].includes(key)) return modelMode === 'ROUTE' ? 'required' : ''
     if (key === 'modelId') return modelMode === 'DIRECT' ? 'required' : ''
   }
@@ -280,6 +281,7 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
     case 'CSV': requireEnum('operation', ['PARSE', 'STRINGIFY']); requirePresent('value'); break
     case 'QUESTION_CLASSIFIER': requireAiModel(value, missing); requireText('input'); requireCategories(); break
     case 'PARAMETER_EXTRACTOR': requireAiModel(value, missing); requireText('input'); requireObject('schema'); break
+    case 'EMBEDDING': requireAiModel(value, missing); requireEmbeddingInput(); break
     case 'DOCUMENT_EXTRACTOR': requireDocument(); break
     case 'WEBHOOK_TRIGGER': case 'IM_NOTIFY': case 'SQL_QUERY': case 'REDIS_COMMAND': case 'S3_OBJECT':
     case 'KAFKA_PUBLISH': case 'KAFKA_TRIGGER': case 'RABBITMQ_PUBLISH': case 'RABBITMQ_TRIGGER':
@@ -305,6 +307,12 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
     if (!['ROUTE', 'DIRECT'].includes(mode)) { target.push('modelMode'); return }
     if (mode === 'ROUTE') { requireText('featureCode'); requireText('modelType') }
     else requirePositive('modelId')
+  }
+  /** 校验向量化输入为单文本或受限文本数组。 */
+  function requireEmbeddingInput() {
+    if (typeof value.input === 'string') { if (!value.input.trim() || value.input.trim().length > 500) missing.push('input'); return }
+    if (!Array.isArray(value.input) || !value.input.length || value.input.length > 256
+      || value.input.some(item => typeof item !== 'string' || !item.trim() || item.trim().length > 500)) missing.push('input')
   }
   /** 校验等待单位与对应时长。 */
   function requireWait() {
@@ -383,6 +391,7 @@ function withValidDefaults(nodeType, config) {
     case 'LLM': case 'AGENT': case 'RAG': case 'QUESTION_CLASSIFIER': case 'PARAMETER_EXTRACTOR':
       setDefault('featureCode', 'DEFAULT'); setDefault('modelType', 'text_model');
       if (nodeType === 'RAG') { setDefault('topK', 5); setDefault('scoreThreshold', 0) } break
+    case 'EMBEDDING': setDefault('featureCode', 'DEFAULT'); setDefault('modelType', 'embedding_model'); break
     case 'KNOWLEDGE_RETRIEVAL': setDefault('topK', 5); setDefault('scoreThreshold', 0); break
     case 'HTTP': setDefault('method', 'GET'); break
     case 'ITERATION': setDefault('collection', '{{input.items}}'); break

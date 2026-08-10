@@ -21,6 +21,7 @@ final class WorkflowNodeConfigDefaults {
                 putIfAbsent(config, "featureCode", "DEFAULT"); putIfAbsent(config, "modelType", "text_model");
                 if ("RAG".equals(type)) { putIfAbsent(config, "topK", 5); putIfAbsent(config, "scoreThreshold", 0); }
             }
+            case "EMBEDDING" -> { putIfAbsent(config, "featureCode", "DEFAULT"); putIfAbsent(config, "modelType", "embedding_model"); }
             case "KNOWLEDGE_RETRIEVAL" -> { putIfAbsent(config, "topK", 5); putIfAbsent(config, "scoreThreshold", 0); }
             case "HTTP" -> putIfAbsent(config, "method", "GET");
             case "ITERATION" -> putIfAbsent(config, "collection", "{{input.items}}");

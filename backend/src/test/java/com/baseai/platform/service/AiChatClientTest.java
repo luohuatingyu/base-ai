@@ -161,6 +161,22 @@ class AiChatClientTest {
         verify(management).resolveModel(12L, "embedding_model", false, null);
     }
 
+    /** 向量路由模式必须固定按 embedding_model 解析候选并调用向量协议。 */
+    @Test
+    void embedsBatchWithConfiguredEmbeddingRoute() {
+        LlmManagementService management = mock(LlmManagementService.class);
+        LlmManagementService.WorkerCandidate candidate = new LlmManagementService.WorkerCandidate(
+            "embedding-provider", "https://embedding.example/v1", List.of("key"), "embed-x", 4, "API_KEY", 45, "", "", List.of("embedding_model"));
+        when(management.resolveActive("VECTOR", "embedding_model"))
+            .thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), null, true));
+
+        AiChatClient.EmbeddingResult result = client(management).embed("VECTOR", null, List.of("first", "second"));
+
+        assertEquals(List.of(List.of(1D, 0D), List.of(0D, 1D)), result.embeddings());
+        assertTrue(requestBody.contains("\"providerCode\":\"embedding-provider\""));
+        verify(management).resolveActive("VECTOR", "embedding_model");
+    }
+
     /** 创建使用 HTTP/1.1 Worker 客户端的待测对象。 */
     private AiChatClient client(LlmManagementService management) {
         PlatformProperties properties = new PlatformProperties();

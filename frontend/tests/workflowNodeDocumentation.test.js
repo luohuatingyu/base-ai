@@ -87,12 +87,21 @@ test('Tavily 专用配置字段具备完整双语名称',()=>{
 test('独立文档页面覆盖完整使用说明、响应式目录和安全异常状态',()=>{
   for(const token of ['workflowNodeDocs.search','workflowNodeDocs.overview','workflowNodeDocs.quickStart','workflowNodeDocs.prerequisites','workflowNodeDocs.input','workflowNodeDocs.output','workflowNodeDocs.configuration','workflowNodeDocs.defaultValue','workflowNodeDocs.options','workflowNodeDocs.examples','workflowNodeDocs.inputExample','workflowNodeDocs.outputExample','workflowNodeDocs.troubleshooting','workflowNodeDocs.limitations','workflowNodeDocs.loadFailed','workflowNodeDocs.noResults'])assert.match(viewSource,new RegExp(token.replaceAll('.', '\\.')))
   assert.match(viewSource,/http\.get\('\/workflow\/node-docs'\)/)
-  assert.match(viewSource,/catch\{rows\.value=\[\];selected\.value=null;error\.value=true\}/)
+  assert.match(viewSource,/http\.get\('\/workflow\/node-model-compatibility'\)/)
+  assert.match(viewSource,/catch\{rows\.value=\[\];compatibilityRows\.value=\[\];selected\.value=null;error\.value=true\}/)
   assert.match(viewSource,/aria-current/)
   assert.match(viewSource,/docs-field-card/)
   assert.match(viewSource,/@media\(max-width:800px\)/)
   assert.doesNotMatch(viewSource,/<el-table/)
   assert.doesNotMatch(viewSource,/v-html|marked|markdown-it/)
+})
+
+test('模型节点文档展示后端统一兼容目录表格',()=>{
+  for(const token of ['workflowNodeDocs.modelCompatibility','workflowNodeDocs.modelProtocol','workflowNodeDocs.recommendedModelType','workflowNodeDocs.allowedModelTypes','workflowNodeDocs.modelSources','workflowNodeDocs.filteringRule'])assert.match(viewSource,new RegExp(token.replaceAll('.', '\\.')))
+  assert.match(viewSource,/v-if="currentCompatibility" class="docs-model-compatibility"/)
+  assert.match(viewSource,/<table>/)
+  assert.match(viewSource,/currentCompatibility\.allowedModelTypes\.map\(modelTypeLabel\)/)
+  for(const locale of [zhCN,enUS]) assert.ok(locale.workflowNodeDocs.protocols.EMBEDDINGS)
 })
 
 test('桌面文档目录固定且说明区域独立滚动并在窄屏恢复自然布局',()=>{

@@ -30,6 +30,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -124,10 +125,47 @@ class LlmManagementServiceTest {
         List<LlmManagementService.WorkflowRouteOption> options = service.workflowRouteOptions();
 
         assertEquals(List.of(
-            new LlmManagementService.WorkflowRouteOption(2L, "CHAT", "Chat route"),
-            new LlmManagementService.WorkflowRouteOption(1L, "DEFAULT", "Default route")
+            new LlmManagementService.WorkflowRouteOption(2L, "CHAT", "Chat route", List.of()),
+            new LlmManagementService.WorkflowRouteOption(1L, "DEFAULT", "Default route", List.of())
         ), options);
-        verifyNoInteractions(providerRepository, modelRepository, cryptoService);
+        verifyNoInteractions(cryptoService);
+    }
+
+    /** 工作流候选必须按节点允许能力和用户选择类型共同过滤。 */
+    @Test
+    void workflowModelOptionsFilterKnownCompatibleCapabilities() {
+        LlmProvider enabledProvider=provider("secret");ReflectionTestUtils.setField(enabledProvider,"id",1L);enabledProvider.setEnabled(true);
+        LlmModel text=model(1L,"MIDDLE");ReflectionTestUtils.setField(text,"id",1L);text.setSupportedModelTypes(List.of("text_model"));
+        LlmModel embedding=model(1L,"MIDDLE");ReflectionTestUtils.setField(embedding,"id",2L);embedding.setSupportedModelTypes(List.of("embedding_model"));
+        LlmModel unknown=model(1L,"MIDDLE");ReflectionTestUtils.setField(unknown,"id",3L);unknown.setSupportedModelTypes(List.of("audio_model"));
+        when(providerRepository.findAll()).thenReturn(List.of(enabledProvider));when(modelRepository.findAll()).thenReturn(List.of(text,embedding,unknown));
+
+        assertEquals(List.of(1L),service.workflowModelOptions(List.of("text_model","vision_model"),"").stream().map(LlmManagementService.WorkflowModelOption::id).toList());
+        assertEquals(List.of(2L),service.workflowModelOptions(List.of("embedding_model"),"embedding_model").stream().map(LlmManagementService.WorkflowModelOption::id).toList());
+        assertTrue(service.workflowModelOptions(List.of("text_model"),"embedding_model").isEmpty());
+    }
+
+    /** 工作流路由候选必须按路由中的真实模型能力筛选，未知类型不能误入已知节点。 */
+    @Test
+    void workflowRouteOptionsFilterKnownCompatibleCapabilities() {
+        LlmRoute chat=route("1");ReflectionTestUtils.setField(chat,"id",1L);chat.setFeatureCode("CHAT");chat.setName("Chat");chat.setEnabled(true);
+        LlmRoute vector=route("2");ReflectionTestUtils.setField(vector,"id",2L);vector.setFeatureCode("VECTOR");vector.setName("Vector");vector.setEnabled(true);
+        LlmRoute unknown=route("3");ReflectionTestUtils.setField(unknown,"id",3L);unknown.setFeatureCode("AUDIO");unknown.setName("Audio");unknown.setEnabled(true);
+        LlmModel text=model(1L,"MIDDLE");text.setSupportedModelTypes(List.of("text_model"));
+        LlmModel embedding=model(2L,"MIDDLE");embedding.setSupportedModelTypes(List.of("embedding_model"));
+        LlmModel audio=model(3L,"MIDDLE");audio.setSupportedModelTypes(List.of("audio_model"));
+        LlmProvider first=provider("secret");ReflectionTestUtils.setField(first,"id",1L);first.setEnabled(true);
+        LlmProvider second=provider("secret");ReflectionTestUtils.setField(second,"id",2L);second.setEnabled(true);
+        LlmProvider third=provider("secret");ReflectionTestUtils.setField(third,"id",3L);third.setEnabled(true);
+        when(routeRepository.findAll()).thenReturn(List.of(chat,vector,unknown));
+        when(routeRepository.findByFeatureCode("CHAT")).thenReturn(Optional.of(chat));
+        when(routeRepository.findByFeatureCode("VECTOR")).thenReturn(Optional.of(vector));
+        when(routeRepository.findByFeatureCode("AUDIO")).thenReturn(Optional.of(unknown));
+        when(modelRepository.findAll()).thenReturn(List.of(text,embedding,audio));
+        when(providerRepository.findAll()).thenReturn(List.of(first,second,third));
+
+        assertEquals(List.of("CHAT"),service.workflowRouteOptions(List.of("text_model","vision_model"),"").stream().map(LlmManagementService.WorkflowRouteOption::featureCode).toList());
+        assertEquals(List.of("VECTOR"),service.workflowRouteOptions(List.of("embedding_model"),"embedding_model").stream().map(LlmManagementService.WorkflowRouteOption::featureCode).toList());
     }
 
     /** 查看单个供应商时，应解密并将逗号、换行分隔的密钥统一为一行一个。 */

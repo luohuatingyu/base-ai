@@ -26,7 +26,7 @@ test('模板和画布节点配置统一使用可视化编辑器', () => {
 })
 
 test('全部原生节点都有可视化配置定义', () => {
-  const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'RAG', 'KNOWLEDGE_RETRIEVAL', 'KNOWLEDGE_UPSERT', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']
+  const expected = ['START', 'END', 'LLM', 'HTTP', 'AGENT', 'RAG', 'EMBEDDING', 'KNOWLEDGE_RETRIEVAL', 'KNOWLEDGE_UPSERT', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE', 'SQL_QUERY', 'RABBITMQ_TRIGGER', 'TAVILY_TOOL']
   expected.forEach(type => assert.ok(WORKFLOW_NODE_TYPES.includes(type), type))
   assert.equal(nodeConfigFields('unknown').length, 0)
   assert.deepEqual(nodeConfigFields('WAIT').map(field => field.key), ['durationMode', 'seconds', 'milliseconds'])
@@ -34,8 +34,9 @@ test('全部原生节点都有可视化配置定义', () => {
   assert.deepEqual(nodeConfigFields('WEBHOOK_TRIGGER').map(field => field.key), ['connectionId'])
   assert.deepEqual(nodeConfigFields('SCHEDULE_TRIGGER').map(field => field.key), ['cron', 'zoneId'])
   assert.deepEqual(nodeConfigFields('LLM').slice(-3).map(field => field.key), ['maxAttempts', 'retryDelayMillis', 'onError'])
-  for (const type of ['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR']) {
+  for (const type of ['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR', 'EMBEDDING']) {
     assert.equal(nodeConfigFields(type).find(field => field.key === 'featureCode').editor, 'modelRoute', type)
+    assert.equal(nodeConfigFields(type).find(field => field.key === 'modelType').editor, 'modelType', type)
     assert.equal(nodeConfigFields(type).find(field => field.key === 'modelId').editor, 'model', type)
   }
   assert.equal(nodeConfigFields('EMAIL_SEND').find(field => field.key === 'routeId').editor, 'mailRoute')
@@ -106,23 +107,32 @@ test('邮件路由和连接资源 ID 仅保留现有数字选项', () => {
 test('全部 AI 节点指定模型使用可搜索可清空下拉并在类型不兼容时移除旧值', () => {
   assert.match(configEditorSource, /field\.editor === 'model'/)
   assert.match(configEditorSource, /filterable clearable[^>]*:loading="modelOptionsLoading"/)
-  assert.match(configEditorSource, /http\.get\('\/workflow\/model-options'\)/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/model-options'/)
   assert.match(configEditorSource, /@update:model-value="setModelId"/)
   assert.match(configEditorSource, /compatibleWorkflowModelId\(modelOptions\.value, type, config\.value\.modelId\) === null/)
   assert.match(configEditorSource, /removeField\('modelId'\)/)
   assert.doesNotMatch(configEditorSource, /field\.editor === 'model'[\s\S]{0,300}<el-input-number/)
 })
 
+test('节点模型类型、路由和指定模型均使用后端兼容目录动态筛选', () => {
+  assert.match(configEditorSource, /field\.editor === 'modelType'/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/model-type-options',\{params:\{nodeType:props\.nodeType\}\}\)/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/model-options',\{params:\{nodeType:props\.nodeType,modelType\}\}\)/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/route-options',\{params:\{nodeType:props\.nodeType,modelType:currentModelType\.value\}\}\)/)
+  assert.match(configEditorSource, /modelTypeOptions\.value\.some\(option => option\.value === config\.value\.modelType\)/)
+  assert.doesNotMatch(nodeConfigFields('LLM').find(field => field.key === 'modelType').options.join(','), /text_model|vision_model/)
+})
+
 test('全部 AI 节点的模型路由功能编码使用精简路由选项下拉', () => {
   assert.match(configEditorSource, /field\.editor === 'modelRoute'/)
   assert.match(configEditorSource, /filterable clearable fit-input-width :loading="routeOptionsLoading"/)
-  assert.match(configEditorSource, /http\.get\('\/workflow\/route-options'\)/)
+  assert.match(configEditorSource, /http\.get\('\/workflow\/route-options'/)
   assert.match(configEditorSource, /workflowRouteOptionLabel\(option\)/)
   assert.match(configEditorSource, /@update:model-value="setFeatureCode"/)
   assert.match(configEditorSource, /const compatibleCode = compatibleWorkflowRouteCode\(routeOptions\.value, config\.value\.featureCode\)/)
   assert.match(configEditorSource, /if \(compatibleCode === null\) removeField\('featureCode'\)[\s\S]*setFeatureCode\(compatibleCode\)/)
   assert.match(configEditorSource, /if \(!routeOptionsLoaded\.value \|\| !hasField\('featureCode'\)\) return/)
-  assert.match(configEditorSource, /catch \{ routeOptionsError\.value = true \}/)
+  assert.match(configEditorSource, /catch \{ if\(request===routeRequest\)routeOptionsError\.value=true \}/)
   assert.doesNotMatch(configEditorSource, /field\.key === 'featureCode'[\s\S]{0,300}<el-input/)
 })
 
@@ -180,6 +190,14 @@ test('AI 节点按模型路由或指定模型方案校验且提示词必填', ()
   assert.deepEqual(missingNodeConfigRequirements('AGENT', {
     modelMode: 'DIRECT', modelId: 7, prompt: 'complete task', tools: []
   }), ['tools'])
+})
+
+test('向量化节点固定向量模型默认值并校验单文本和批量边界', () => {
+  assert.equal(effectiveNodeConfigDefaultValue('EMBEDDING', 'modelType', { modelMode: 'ROUTE' }), 'embedding_model')
+  assert.deepEqual(missingNodeConfigRequirements('EMBEDDING', { modelMode: 'ROUTE', input: 'hello' }), [])
+  assert.deepEqual(missingNodeConfigRequirements('EMBEDDING', { modelMode: 'DIRECT', modelId: 7, input: ['a', 'b'] }), [])
+  assert.deepEqual(missingNodeConfigRequirements('EMBEDDING', { modelMode: 'DIRECT', modelId: 7, input: [] }), ['input'])
+  assert.deepEqual(missingNodeConfigRequirements('EMBEDDING', { modelMode: 'DIRECT', modelId: 7, input: ['x'.repeat(501)] }), ['input'])
 })
 
 test('方案选择只展示当前方案适用字段', () => {

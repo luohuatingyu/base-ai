@@ -105,15 +105,32 @@ public class WorkflowController {
     /** 查询 AI 节点可选择的启用模型，不返回供应商密钥或健康错误。 */
     @GetMapping("/model-options")
     @RequiredPermission("workflow:node:list")
-    public List<LlmManagementService.WorkflowModelOption> modelOptions() {
-        return llmManagementService.workflowModelOptions();
+    public List<LlmManagementService.WorkflowModelOption> modelOptions(
+        @RequestParam(defaultValue = "") String nodeType,@RequestParam(defaultValue = "") String modelType) {
+        return llmManagementService.workflowModelOptions(WorkflowModelCompatibility.allowedModelTypes(nodeType),modelType);
     }
 
-    /** 查询 AI 节点可选择的启用模型路由，不返回供应商池等管理配置。 */
+    /** 查询 AI 节点可选择且包含真实模型能力的启用路由。 */
     @GetMapping("/route-options")
     @RequiredPermission("workflow:node:list")
-    public List<LlmManagementService.WorkflowRouteOption> routeOptions() {
-        return llmManagementService.workflowRouteOptions();
+    public List<LlmManagementService.WorkflowRouteOption> routeOptions(
+        @RequestParam(defaultValue = "") String nodeType,@RequestParam(defaultValue = "") String modelType) {
+        return llmManagementService.workflowRouteOptions(WorkflowModelCompatibility.allowedModelTypes(nodeType),modelType);
+    }
+
+    /** 从动态字典返回当前节点已验证兼容的模型类型。 */
+    @GetMapping("/model-type-options")
+    @RequiredPermission("workflow:node:list")
+    public List<LlmManagementService.ModelTypeOption> modelTypeOptions(@RequestParam String nodeType) {
+        List<String> allowed=WorkflowModelCompatibility.allowedModelTypes(nodeType);
+        return llmManagementService.modelTypes().stream().filter(item->allowed.contains(item.value())).toList();
+    }
+
+    /** 返回节点文档使用的统一模型兼容目录。 */
+    @GetMapping("/node-model-compatibility")
+    @RequiredPermission("workflow:node:docs")
+    public List<WorkflowModelCompatibility.Policy> nodeModelCompatibility() {
+        return WorkflowModelCompatibility.policies();
     }
 
     /** 查询邮件发送节点可选择的启用可发送路由，不返回账户或收件人配置。 */

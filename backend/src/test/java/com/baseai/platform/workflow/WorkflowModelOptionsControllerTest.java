@@ -15,7 +15,7 @@ class WorkflowModelOptionsControllerTest {
     /** 模型选项接口必须保持只读并复用工作流节点查看权限。 */
     @Test
     void modelOptionsRequireWorkflowNodeListPermission() throws Exception {
-        Method method = WorkflowController.class.getMethod("modelOptions");
+        Method method = WorkflowController.class.getMethod("modelOptions",String.class,String.class);
 
         assertArrayEquals(new String[]{"/model-options"}, method.getAnnotation(GetMapping.class).value());
         assertEquals("workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
@@ -24,10 +24,21 @@ class WorkflowModelOptionsControllerTest {
     /** 模型路由选项接口必须保持只读并复用工作流节点查看权限。 */
     @Test
     void routeOptionsRequireWorkflowNodeListPermission() throws Exception {
-        Method method = WorkflowController.class.getMethod("routeOptions");
+        Method method = WorkflowController.class.getMethod("routeOptions",String.class,String.class);
 
         assertArrayEquals(new String[]{"/route-options"}, method.getAnnotation(GetMapping.class).value());
         assertEquals("workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
+    }
+
+    /** 模型类型选择与文档兼容目录必须使用各自只读权限。 */
+    @Test
+    void modelCompatibilityEndpointsUseSeparatedReadPermissions() throws Exception {
+        Method options=WorkflowController.class.getMethod("modelTypeOptions",String.class);
+        Method documentation=WorkflowController.class.getMethod("nodeModelCompatibility");
+        assertArrayEquals(new String[]{"/model-type-options"},options.getAnnotation(GetMapping.class).value());
+        assertEquals("workflow:node:list",options.getAnnotation(RequiredPermission.class).value());
+        assertArrayEquals(new String[]{"/node-model-compatibility"},documentation.getAnnotation(GetMapping.class).value());
+        assertEquals("workflow:node:docs",documentation.getAnnotation(RequiredPermission.class).value());
     }
 
     /** 邮件路由和连接选项接口必须保持只读并复用节点查看权限。 */

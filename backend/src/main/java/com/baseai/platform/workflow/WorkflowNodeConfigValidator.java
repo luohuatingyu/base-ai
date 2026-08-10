@@ -17,14 +17,7 @@ import java.util.Set;
 @Component
 public class WorkflowNodeConfigValidator {
     private static final Set<String> UNARY_CONDITION_OPERATORS = Set.of("EXISTS", "EMPTY");
-    private static final Set<String> SUPPORTED_TYPES = Set.of(
-        "START", "END", "LLM", "HTTP", "AGENT", "CONDITION", "ITERATION", "LOOP", "SWITCH", "MERGE",
-        "SUB_WORKFLOW", "WAIT", "SET_VARIABLE", "TEMPLATE", "JSON_PARSE", "JSON_VALIDATE", "TRANSFORM",
-        "FILTER", "SORT", "AGGREGATE", "CSV", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT",
-        "DOCUMENT_EXTRACTOR", "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER", "EMAIL_SEND", "IM_NOTIFY", "SQL_QUERY",
-        "REDIS_COMMAND", "S3_OBJECT", "KAFKA_PUBLISH", "KAFKA_TRIGGER", "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER",
-        "TAVILY_TOOL", "RAG", "KNOWLEDGE_RETRIEVAL", "KNOWLEDGE_UPSERT"
-    );
+    private static final Set<String> SUPPORTED_TYPES = WorkflowNodeTypes.ALL;
     private final ObjectMapper objectMapper;
 
     /** 注入 JSON 工具以创建隔离的有效配置副本。 */
@@ -71,9 +64,9 @@ public class WorkflowNodeConfigValidator {
         if (!SUPPORTED_TYPES.contains(type)) { missing.add("nodeType"); return missing; }
         switch (type) {
             case "START", "END" -> { }
-            case "LLM" -> { requireAiModel(config, missing); requireText(config, missing, "prompt"); }
+            case "LLM" -> { requireAiModel(type, config, missing); requireText(config, missing, "prompt"); }
             case "HTTP" -> { requireEnum(config, missing, "method", Set.of("GET", "POST", "PUT", "PATCH", "DELETE")); requireText(config, missing, "url"); }
-            case "AGENT" -> { requireAiModel(config, missing); requireText(config, missing, "prompt"); requireTools(config, missing); }
+            case "AGENT" -> { requireAiModel(type, config, missing); requireText(config, missing, "prompt"); requireTools(config, missing); }
             case "CONDITION" -> requireCondition(config, missing, "condition");
             case "ITERATION" -> { requireText(config, missing, "collection"); requireObject(config, missing, "bodyGraph"); }
             case "LOOP" -> { requireCondition(config, missing, "condition"); requireObject(config, missing, "bodyGraph"); }
@@ -89,8 +82,8 @@ public class WorkflowNodeConfigValidator {
             case "SORT" -> { requirePresent(config, missing, "collection"); requireEnum(config, missing, "direction", Set.of("ASC", "DESC")); }
             case "AGGREGATE" -> { requirePresent(config, missing, "collection"); requireEnum(config, missing, "operation", Set.of("COUNT", "SUM", "AVG", "MIN", "MAX")); }
             case "CSV" -> { requireEnum(config, missing, "operation", Set.of("PARSE", "STRINGIFY")); requirePresent(config, missing, "value"); }
-            case "QUESTION_CLASSIFIER" -> { requireAiModel(config, missing); requireText(config, missing, "input"); requireCategories(config, missing); }
-            case "PARAMETER_EXTRACTOR" -> { requireAiModel(config, missing); requireText(config, missing, "input"); requireObject(config, missing, "schema"); }
+            case "QUESTION_CLASSIFIER" -> { requireAiModel(type, config, missing); requireText(config, missing, "input"); requireCategories(config, missing); }
+            case "PARAMETER_EXTRACTOR" -> { requireAiModel(type, config, missing); requireText(config, missing, "input"); requireObject(config, missing, "schema"); }
             case "DOCUMENT_EXTRACTOR" -> requireDocument(config, missing);
             case "WEBHOOK_TRIGGER", "IM_NOTIFY" -> requirePositive(config, missing, "connectionId");
             case "SCHEDULE_TRIGGER" -> requireText(config, missing, "cron");
@@ -103,20 +96,38 @@ public class WorkflowNodeConfigValidator {
             case "RABBITMQ_PUBLISH" -> { requirePositive(config, missing, "connectionId"); requireRabbitDestination(config, missing); requirePresent(config, missing, "value"); }
             case "RABBITMQ_TRIGGER" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "queue"); }
             case "TAVILY_TOOL" -> requireTavily(config, missing);
-            case "RAG" -> { requireAiModel(config,missing);requirePositive(config,missing,"knowledgeBaseId");requireText(config,missing,"query");requireIntegerRange(config,missing,"topK",1,50);if(!config.has("scoreThreshold")||!config.path("scoreThreshold").isNumber()||config.path("scoreThreshold").asDouble()<0||config.path("scoreThreshold").asDouble()>1)missing.add("scoreThreshold"); }
+            case "RAG" -> { requireAiModel(type,config,missing);requirePositive(config,missing,"knowledgeBaseId");requireText(config,missing,"query");requireIntegerRange(config,missing,"topK",1,50);if(!config.has("scoreThreshold")||!config.path("scoreThreshold").isNumber()||config.path("scoreThreshold").asDouble()<0||config.path("scoreThreshold").asDouble()>1)missing.add("scoreThreshold"); }
             case "KNOWLEDGE_RETRIEVAL" -> { requirePositive(config,missing,"knowledgeBaseId");requireText(config,missing,"query");requireIntegerRange(config,missing,"topK",1,50);if(!config.has("scoreThreshold")||!config.path("scoreThreshold").isNumber()||config.path("scoreThreshold").asDouble()<0||config.path("scoreThreshold").asDouble()>1)missing.add("scoreThreshold"); }
             case "KNOWLEDGE_UPSERT" -> { requirePositive(config,missing,"knowledgeBaseId");requireDocument(config,missing);requireText(config,missing,"fileName");requireText(config,missing,"contentType"); }
+            case "EMBEDDING" -> { requireAiModel(type,config,missing);requireEmbeddingInput(config,missing); }
             default -> missing.add("nodeType");
         }
         return missing;
     }
 
     /** 校验模型路由或指定模型二选一方案。 */
-    private static void requireAiModel(ObjectNode config, Set<String> missing) {
+    private static void requireAiModel(String nodeType, ObjectNode config, Set<String> missing) {
         String mode = text(config, "modelMode").toUpperCase(Locale.ROOT);
         if ("ROUTE".equals(mode)) { requireText(config, missing, "featureCode"); requireText(config, missing, "modelType"); }
         else if ("DIRECT".equals(mode)) requirePositive(config, missing, "modelId");
         else missing.add("modelMode");
+        if (!WorkflowModelCompatibility.supports(nodeType, text(config, "modelType"))) missing.add("modelType");
+    }
+
+    /** 校验向量化输入为单个短文本或受限短文本数组。 */
+    private static void requireEmbeddingInput(ObjectNode config, Set<String> missing) {
+        JsonNode input = config.path("input");
+        if (input.isTextual()) {
+            String value = input.asText().trim();
+            if (value.isBlank() || value.length() > 500) missing.add("input");
+            return;
+        }
+        if (!input.isArray() || input.isEmpty() || input.size() > 256) { missing.add("input"); return; }
+        for (JsonNode item : input) {
+            if (!item.isTextual() || item.asText().trim().isBlank() || item.asText().trim().length() > 500) {
+                missing.add("input"); return;
+            }
+        }
     }
 
     /** 校验等待单位和对应的正数时长。 */

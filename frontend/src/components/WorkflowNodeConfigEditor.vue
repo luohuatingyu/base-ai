@@ -33,6 +33,14 @@
             <el-select v-else-if="field.editor === 'select'" :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)">
               <el-option v-for="option in field.options" :key="option" :label="fieldOption(field.key, option)" :value="option" />
             </el-select>
+            <template v-else-if="field.editor === 'modelType'">
+              <el-select :model-value="fieldValue(field)" :loading="modelTypeOptionsLoading"
+                         :placeholder="t('workflowConfig.selectModelType')" :no-data-text="t('workflowConfig.noCompatibleModelTypes')"
+                         @update:model-value="setField(field.key, $event)">
+                <el-option v-for="option in modelTypeOptions" :key="option.value" :label="modelTypeOptionLabel(option)" :value="option.value" />
+              </el-select>
+              <el-alert v-if="modelTypeOptionsError" :title="t('workflowConfig.modelTypeOptionsFailed')" type="error" show-icon :closable="false" />
+            </template>
             <template v-else-if="field.editor === 'model'">
               <el-select :model-value="fieldValue(field)" filterable clearable fit-input-width :loading="modelOptionsLoading"
                          :placeholder="t('workflowConfig.selectModel')" :no-data-text="t('workflowConfig.noCompatibleModels')"
@@ -137,7 +145,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import WorkflowConfigValueEditor from './WorkflowConfigValueEditor.vue'
-import { compatibleWorkflowModelId, compatibleWorkflowResourceId, compatibleWorkflowRouteCode, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, effectiveNodeConfigDefaultValue, extraConfigKeys, filterWorkflowConnectionOptions, filterWorkflowModelOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFields, nodeConfigUsesEffectiveDefault, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, workflowRouteOptionLabel } from '../utils/workflowNodeConfig'
+import { compatibleWorkflowModelId, compatibleWorkflowResourceId, compatibleWorkflowRouteCode, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, effectiveNodeConfigDefaultValue, extraConfigKeys, filterWorkflowConnectionOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFields, nodeConfigUsesEffectiveDefault, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, workflowRouteOptionLabel } from '../utils/workflowNodeConfig'
 
 const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, nodeType: { type: String, required: true } })
 const emit = defineEmits(['update:modelValue'])
@@ -148,6 +156,10 @@ const openExtra = ref([])
 const newKey = ref('')
 const newType = ref('string')
 const keyError = ref('')
+const modelTypeOptions = ref([])
+const modelTypeOptionsLoading = ref(false)
+const modelTypeOptionsLoaded = ref(false)
+const modelTypeOptionsError = ref(false)
 const modelOptions = ref([])
 const modelOptionsLoading = ref(false)
 const modelOptionsLoaded = ref(false)
@@ -173,10 +185,10 @@ const extraKeys = computed(() => extraConfigKeys(config.value, props.nodeType))
 const missingRequirements = computed(() => missingNodeConfigRequirements(props.nodeType, config.value))
 const requiredHint = computed(() => t('workflowConfig.requiredHint', { fields: missingRequirements.value.map(requirementLabel).join(t('workflowConfig.fieldSeparator')) }))
 const currentModelType = computed(() => config.value.modelType || 'text_model')
-const compatibleModelOptions = computed(() => config.value.modelMode === 'DIRECT'
-  ? modelOptions.value : filterWorkflowModelOptions(modelOptions.value, currentModelType.value))
+const compatibleModelOptions = computed(() => modelOptions.value)
 const compatibleConnectionOptions = computed(() => filterWorkflowConnectionOptions(connectionOptions.value, props.nodeType))
 const hasModelSelector = computed(() => fields.value.some(field => field.editor === 'model'))
+const hasModelTypeSelector = computed(() => fields.value.some(field => field.editor === 'modelType'))
 const hasRouteSelector = computed(() => fields.value.some(field => field.editor === 'modelRoute'))
 const hasMailRouteSelector = computed(() => fields.value.some(field => field.editor === 'mailRoute'))
 const hasConnectionSelector = computed(() => fields.value.some(field => field.editor === 'connection'))
@@ -186,8 +198,9 @@ watch(() => props.modelValue, value => {
   const next = cloneConfig(value)
   if (JSON.stringify(next) !== JSON.stringify(config.value)) config.value = next
 }, { deep: true })
-watch(hasModelSelector, enabled => { if (enabled) loadModelOptions() }, { immediate: true })
-watch(hasRouteSelector, enabled => { if (enabled) loadRouteOptions() }, { immediate: true })
+watch([hasModelTypeSelector,() => props.nodeType],([enabled]) => { if (enabled) loadModelTypeOptions() }, { immediate: true })
+watch([hasModelSelector,currentModelType,() => props.nodeType,() => config.value.modelMode],([enabled]) => { if (enabled) loadModelOptions() }, { immediate: true })
+watch([hasRouteSelector,currentModelType,() => props.nodeType],([enabled]) => { if (enabled) loadRouteOptions() }, { immediate: true })
 watch(hasMailRouteSelector, enabled => { if (enabled) loadMailRouteOptions() }, { immediate: true })
 watch(hasConnectionSelector, enabled => { if (enabled) loadConnectionOptions() }, { immediate: true })
 watch(hasKnowledgeBaseSelector, enabled => { if (enabled) loadKnowledgeBaseOptions() }, { immediate: true })
@@ -195,6 +208,10 @@ watch([currentModelType, compatibleModelOptions], () => {
   if (!hasModelSelector.value || !modelOptionsLoaded.value || !hasField('modelId')) return
   const type = config.value.modelMode === 'DIRECT' ? null : currentModelType.value
   if (compatibleWorkflowModelId(modelOptions.value, type, config.value.modelId) === null) removeField('modelId')
+})
+watch([hasModelTypeSelector,modelTypeOptions], () => {
+  if (!hasModelTypeSelector.value || !modelTypeOptionsLoaded.value || !hasField('modelType')) return
+  if (!modelTypeOptions.value.some(option => option.value === config.value.modelType)) removeField('modelType')
 })
 watch([hasRouteSelector, routeOptions], () => {
   if (!hasRouteSelector.value) return
@@ -218,22 +235,30 @@ watch([hasKnowledgeBaseSelector, knowledgeBaseOptions], () => {
   if (compatibleWorkflowResourceId(knowledgeBaseOptions.value, config.value.knowledgeBaseId) === null) removeField('knowledgeBaseId')
 })
 
-/** 按需加载 AI 节点可选择的启用模型，失败时保留当前配置避免误清理。 */
-async function loadModelOptions() {
-  if (modelOptionsLoaded.value || modelOptionsLoading.value) return
-  modelOptionsLoading.value = true; modelOptionsError.value = false
-  try { modelOptions.value = (await http.get('/workflow/model-options')).data || []; modelOptionsLoaded.value = true }
-  catch { modelOptionsError.value = true }
-  finally { modelOptionsLoading.value = false }
+let modelTypeRequest=0,modelRequest=0,routeRequest=0
+/** 按节点加载动态字典中已验证兼容的模型类型。 */
+async function loadModelTypeOptions() {
+  const request=++modelTypeRequest;modelTypeOptionsLoading.value=true;modelTypeOptionsLoaded.value=false;modelTypeOptionsError.value=false
+  try { const rows=(await http.get('/workflow/model-type-options',{params:{nodeType:props.nodeType}})).data||[];if(request===modelTypeRequest){modelTypeOptions.value=rows;modelTypeOptionsLoaded.value=true} }
+  catch { if(request===modelTypeRequest)modelTypeOptionsError.value=true }
+  finally { if(request===modelTypeRequest)modelTypeOptionsLoading.value=false }
 }
 
-/** 按需加载 AI 节点可选择的启用模型路由，失败时保留当前功能编码。 */
+/** 按节点和当前方案加载可选择的启用模型，失败时保留当前配置避免误清理。 */
+async function loadModelOptions() {
+  const request=++modelRequest,modelType=config.value.modelMode==='ROUTE'?currentModelType.value:''
+  modelOptionsLoading.value=true;modelOptionsLoaded.value=false;modelOptionsError.value=false
+  try { const rows=(await http.get('/workflow/model-options',{params:{nodeType:props.nodeType,modelType}})).data||[];if(request===modelRequest){modelOptions.value=rows;modelOptionsLoaded.value=true} }
+  catch { if(request===modelRequest)modelOptionsError.value=true }
+  finally { if(request===modelRequest)modelOptionsLoading.value=false }
+}
+
+/** 按节点和当前类型加载真实兼容的模型路由，失败时保留当前功能编码。 */
 async function loadRouteOptions() {
-  if (routeOptionsLoaded.value || routeOptionsLoading.value) return
-  routeOptionsLoading.value = true; routeOptionsError.value = false
-  try { routeOptions.value = (await http.get('/workflow/route-options')).data || []; routeOptionsLoaded.value = true }
-  catch { routeOptionsError.value = true }
-  finally { routeOptionsLoading.value = false }
+  const request=++routeRequest;routeOptionsLoading.value=true;routeOptionsLoaded.value=false;routeOptionsError.value=false
+  try { const rows=(await http.get('/workflow/route-options',{params:{nodeType:props.nodeType,modelType:currentModelType.value}})).data||[];if(request===routeRequest){routeOptions.value=rows;routeOptionsLoaded.value=true} }
+  catch { if(request===routeRequest)routeOptionsError.value=true }
+  finally { if(request===routeRequest)routeOptionsLoading.value=false }
 }
 
 /** 按需加载邮件节点可选择的可发送路由，失败时保留当前配置。 */
@@ -327,6 +352,8 @@ function toggleConfigured(field, enabled) { enabled ? setField(field.key, cloneV
 function setModelId(value) { value === null || value === undefined || value === '' ? removeField('modelId') : setField('modelId', Number(value)) }
 /** 保存模型路由功能编码；清空选择时移除显式值并恢复默认路由。 */
 function setFeatureCode(value) { value === null || value === undefined || value === '' ? removeField('featureCode') : setField('featureCode', String(value)) }
+/** 优先使用当前语言内置词条，未知兼容类型回退后端字典标签。 */
+function modelTypeOptionLabel(option) { const path=`workflowConfig.options.modelType.${option.value}`;return te(path)?t(path):option.label||option.value }
 /** 保存资源下拉选择的数字 ID；清空选择时移除字段并恢复缺失提示。 */
 function setResourceId(key, value) { value === null || value === undefined || value === '' ? removeField(key) : setField(key, Number(value)) }
 /** 删除配置字段并保留其他未知字段。 */

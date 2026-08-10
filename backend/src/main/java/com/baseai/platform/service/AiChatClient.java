@@ -141,11 +141,19 @@ public class AiChatClient {
 
     /** 使用固定向量模型调用 Worker，并保持批量输入和响应顺序一致。 */
     public EmbeddingResult embed(Long modelId, List<String> input) {
+        if (modelId == null) throw new BusinessException("knowledge.embeddingInputInvalid");
+        return embed("", modelId, input);
+    }
+
+    /** 使用向量能力路由或指定模型调用 Worker，并保持批量响应顺序一致。 */
+    public EmbeddingResult embed(String featureCode, Long modelId, List<String> input) {
         TraceContextHolder.checkpoint();
-        if (modelId == null || input == null || input.isEmpty() || input.size() > 256) {
+        if (input == null || input.isEmpty() || input.size() > 256) {
             throw new BusinessException("knowledge.embeddingInputInvalid");
         }
-        LlmManagementService.WorkerRoute route = llmManagementService.resolveModel(modelId, "embedding_model", false, null);
+        LlmManagementService.WorkerRoute route = modelId==null
+            ?llmManagementService.resolveActive(featureCode==null||featureCode.isBlank()?"DEFAULT":featureCode,"embedding_model")
+            :llmManagementService.resolveModel(modelId,"embedding_model",false,null);
         String parentTraceId = TraceContextHolder.currentTraceId().orElse(null);
         String pythonTraceId = UUID.randomUUID().toString().replace("-", "");
         taskTraceService.registerPython(parentTraceId, pythonTraceId, "/llm/embeddings");

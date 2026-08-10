@@ -95,7 +95,8 @@ export function localizeTaskType(taskType, translate) {
 
 const modelTypeKeys = Object.freeze({
   text_model: 'models.types.text_model',
-  vision_model: 'models.types.vision_model'
+  vision_model: 'models.types.vision_model',
+  embedding_model: 'models.types.embedding_model'
 })
 
 /** 本地化内置模型类型，自定义类型优先回退管理员维护的字典标签。 */

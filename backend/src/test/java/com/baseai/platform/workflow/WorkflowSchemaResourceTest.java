@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkflowSchemaResourceTest {
     private static final Set<String> POST_CATALOG_MIGRATION_TYPES = Set.of(
-        "RAG", "KNOWLEDGE_RETRIEVAL", "KNOWLEDGE_UPSERT");
+        "RAG", "KNOWLEDGE_RETRIEVAL", "KNOWLEDGE_UPSERT", "EMBEDDING");
 
     /** MySQL V4 必须包含模板、版本、运行和节点日志，并初始化全部节点类型。 */
     @Test
@@ -144,5 +144,16 @@ class WorkflowSchemaResourceTest {
         assertTrue(schema.contains("'KNOWLEDGE_RETRIEVAL'"));
         assertTrue(schema.contains("'KNOWLEDGE_UPSERT'"));
         assertTrue(schema.contains("'DATA_STORAGE'"));
+    }
+
+    /** MySQL V14 必须幂等增加原生向量化节点模板。 */
+    @Test
+    void addsWorkflowEmbeddingNode() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V14__add_workflow_embedding_node.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        assertTrue(schema.contains("'EMBEDDING'"));
+        assertTrue(schema.contains("'AI'"));
+        assertTrue(schema.contains("ON DUPLICATE KEY UPDATE"));
     }
 }

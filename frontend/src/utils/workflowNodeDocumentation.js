@@ -2,7 +2,7 @@ import { nodeConfigFieldApplicable, nodeConfigFields, WORKFLOW_NODE_TYPES } from
 
 /** 显式维护已完成人工审阅的节点说明目录，新增节点时测试会要求同步登记。 */
 export const DOCUMENTED_WORKFLOW_NODE_TYPES = Object.freeze([
-  'START', 'END', 'LLM', 'HTTP', 'AGENT', 'RAG', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE',
+  'START', 'END', 'LLM', 'HTTP', 'AGENT', 'RAG', 'EMBEDDING', 'CONDITION', 'ITERATION', 'LOOP', 'SWITCH', 'MERGE',
   'SUB_WORKFLOW', 'WAIT', 'SET_VARIABLE', 'TEMPLATE', 'JSON_PARSE', 'JSON_VALIDATE', 'TRANSFORM', 'FILTER',
   'SORT', 'AGGREGATE', 'CSV', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR', 'STRUCTURED_OUTPUT',
   'DOCUMENT_EXTRACTOR', 'WEBHOOK_TRIGGER', 'SCHEDULE_TRIGGER', 'EMAIL_SEND', 'IM_NOTIFY', 'SQL_QUERY',
@@ -17,6 +17,7 @@ const WORKFLOW_NODE_EXAMPLE_OVERRIDES = Object.freeze({
   HTTP: { name: '查询订单', method: 'GET', url: 'https://api.example.com/orders/{{input.orderId}}' },
   AGENT: { modelMode: 'ROUTE', featureCode: 'DEFAULT', modelType: 'text_model', prompt: '{{input.task}}', tools: [{ name: 'query_order', toolType: 'HTTP', config: { method: 'GET', url: 'https://api.example.com/orders/{{input.orderId}}' } }] },
   RAG: { knowledgeBaseId: 1, query: '{{input.query}}', modelMode: 'ROUTE', featureCode: 'DEFAULT', modelType: 'text_model' },
+  EMBEDDING: { modelMode: 'ROUTE', featureCode: 'DEFAULT', modelType: 'embedding_model', input: '{{input.texts}}' },
   KNOWLEDGE_RETRIEVAL: { knowledgeBaseId: 1, query: '{{input.query}}', topK: 5, scoreThreshold: 0 },
   KNOWLEDGE_UPSERT: { knowledgeBaseId: 1, inputMode: 'TEXT', content: '{{input.document}}', fileName: 'document.txt', contentType: 'text/plain' },
   CONDITION: { condition: { left: '{{input.status}}', operator: 'EQ', right: 'READY' } },
@@ -58,6 +59,7 @@ const WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({
   HTTP: pair({ orderId: 'ORD-1001' }, { httpStatus: 200, durationMs: 86, body: '{"status":"SHIPPED"}', json: { status: 'SHIPPED' } }),
   AGENT: pair({ task: '查询订单并生成回复', orderId: 'ORD-1001' }, { content: '订单已发货。', toolResults: [{ name: 'query_order', success: true }] }),
   RAG: pair({ query: '退款规则是什么？' }, { answer: '签收后 7 天内可以申请退款。[1]', citations: [{ index: 1, source: 'refund-policy.md' }], matches: [] }),
+  EMBEDDING: pair({ texts: ['退款规则', '物流时效'] }, { embeddings: [[0.12, -0.08], [0.04, 0.21]], model: 'embedding-model', count: 2, dimension: 2 }),
   KNOWLEDGE_RETRIEVAL: pair({ query: '退款规则' }, { knowledgeBaseId: 1, count: 1, matches: [{ source: 'refund-policy.md', score: 0.91 }] }),
   KNOWLEDGE_UPSERT: pair({ document: '退款申请应在签收后 7 天内提交。' }, { documentId: 42, fileName: 'document.txt', status: 'INDEXED', chunkCount: 1 }),
   CONDITION: pair({ status: 'READY' }, { matched: true }),
