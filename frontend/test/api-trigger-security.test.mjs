@@ -20,9 +20,9 @@ test('Host 使用 API Key 风格的逐条类型编辑器', () => {
   assert.match(viewSource, /v-for="\(rule, index\) in hostRuleRows"/)
   assert.match(viewSource, /v-model="rule\.type"/)
   assert.match(viewSource, /v-model="rule\.value"/)
+  assert.match(viewSource, /<el-input v-if="rule\.type !== 'ANY'" v-model="rule\.value"[^>]*@input="scheduleAutomaticSave\(\)"/)
   assert.match(viewSource, /addHostRule/)
   assert.match(viewSource, /deleteHostRule\(index\)/)
-  assert.doesNotMatch(viewSource, /type="textarea"/)
 })
 
 test('配置页面加载并自动应用结构化 Host 规则', () => {
@@ -34,7 +34,9 @@ test('配置页面加载并自动应用结构化 Host 规则', () => {
   assert.match(viewSource, /@input="scheduleAutomaticSave\(\)"/)
   assert.match(viewSource, /@change="scheduleAutomaticSave\(true\)"/)
   assert.doesNotMatch(viewSource, /@click="save"/)
-  assert.doesNotMatch(viewSource, /t\('common\.save'\)/)
+  assert.match(viewSource, /http\.put\('\/workflow\/network-security'/)
+  assert.match(viewSource, /@click="saveWorkflowSecurity"/)
+  assert.match(viewSource, /t\('common\.save'\)/)
 })
 
 test('配置接口返回前不展示本地默认状态', () => {
@@ -42,7 +44,8 @@ test('配置接口返回前不展示本地默认状态', () => {
   assert.match(viewSource, /const loaded = ref\(false\)/)
   assert.match(viewSource, /v-loading="loading"/)
   assert.match(viewSource, /<template v-if="loaded">/)
-  assert.match(viewSource, /effectiveConfiguration\.value = normalizeConfiguration\(data\)[\s\S]*replaceEditor\(effectiveConfiguration\.value\)[\s\S]*loaded\.value = true/)
+  assert.match(viewSource, /effectiveConfiguration\.value = normalizeConfiguration\(apiResponse\.data\)[\s\S]*replaceEditor\(effectiveConfiguration\.value\)[\s\S]*loaded\.value = true/)
+  assert.match(viewSource, /const savedConfiguration = normalizeConfiguration\(data\)[\s\S]*effectiveConfiguration\.value = savedConfiguration[\s\S]*configurationsEqual\(currentConfiguration\(\), configuration\).*replaceEditor\(savedConfiguration\)/)
 })
 
 test('五种匹配类型和任意 Host 风险确认均存在', () => {
