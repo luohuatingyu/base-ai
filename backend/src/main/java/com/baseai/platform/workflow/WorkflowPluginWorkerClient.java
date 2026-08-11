@@ -91,6 +91,18 @@ public class WorkflowPluginWorkerClient {
         return response.path("output");
     }
 
+    /** 删除数据库已确认未被安装记录引用的过期探测包。 */
+    public void remove(String source, String fingerprint) {
+        if (fingerprint == null || !fingerprint.matches("[a-f0-9]{64}")) {
+            throw new BusinessException("workflow.pluginWorkerResponseInvalid");
+        }
+        ObjectNode body = objectMapper.createObjectNode().put("fingerprint", fingerprint);
+        JsonNode response = post(worker(source).resolve("/packages/remove"), body);
+        if (!response.path("removed").asBoolean(false)) {
+            throw new BusinessException("workflow.pluginWorkerResponseInvalid");
+        }
+    }
+
     private static final List<String> COMPONENT_TYPES = List.of(
         "ACTION", "TOOL", "TRIGGER", "MODEL", "DATASOURCE", "AGENT_STRATEGY", "EXTENSION");
 

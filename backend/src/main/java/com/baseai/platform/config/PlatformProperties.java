@@ -272,6 +272,10 @@ public class PlatformProperties {
         private String difyPluginWorkerUrl = "http://dify-plugin-worker:8101";
         private String n8nPluginWorkerUrl = "http://n8n-plugin-worker:8102";
         private String pluginWorkerInternalToken = "";
+        private int marketplaceProbeConcurrency = 2;
+        private int marketplaceProbeQueueCapacity = 100;
+        private int marketplaceProbeMaxAttempts = 3;
+        private int marketplaceProbeRetentionHours = 168;
         /** 读取执行线程数量。 */
         public int getExecutorPoolSize() { return executorPoolSize; }
         /** 设置执行线程数量。 */
@@ -376,5 +380,21 @@ public class PlatformProperties {
         public String getPluginWorkerInternalToken() { return pluginWorkerInternalToken; }
         /** 设置插件 Worker 内部鉴权令牌。 */
         public void setPluginWorkerInternalToken(String value) { pluginWorkerInternalToken = value; }
+        /** 读取市场插件后台探测并发数。 */
+        public int getMarketplaceProbeConcurrency() { return marketplaceProbeConcurrency; }
+        /** 设置市场插件后台探测并发数。 */
+        public void setMarketplaceProbeConcurrency(int value) { marketplaceProbeConcurrency = value; }
+        /** 读取后台探测线程池的有界等待容量。 */
+        public int getMarketplaceProbeQueueCapacity() { return marketplaceProbeQueueCapacity; }
+        /** 设置后台探测线程池的有界等待容量。 */
+        public void setMarketplaceProbeQueueCapacity(int value) { marketplaceProbeQueueCapacity = value; }
+        /** 读取单个固定版本允许的最大探测次数。 */
+        public int getMarketplaceProbeMaxAttempts() { return marketplaceProbeMaxAttempts; }
+        /** 设置单个固定版本允许的最大探测次数。 */
+        public void setMarketplaceProbeMaxAttempts(int value) { marketplaceProbeMaxAttempts = value; }
+        /** 读取未安装探测包的缓存保留小时数。 */
+        public int getMarketplaceProbeRetentionHours() { return marketplaceProbeRetentionHours; }
+        /** 设置未安装探测包的缓存保留小时数。 */
+        public void setMarketplaceProbeRetentionHours(int value) { marketplaceProbeRetentionHours = value; }
     }
 }

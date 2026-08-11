@@ -174,4 +174,20 @@ class WorkflowSchemaResourceTest {
         assertTrue(!schema.contains("DROP TABLE"));
         assertTrue(!schema.contains("DROP COLUMN"));
     }
+
+    /** MySQL V16 必须增加独立探测队列、固定版本唯一键、租约和缓存清理索引。 */
+    @Test
+    void addsMarketplacePluginProbeCache() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V16__add_marketplace_plugin_probe_cache.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS workflow_marketplace_plugin_probe"));
+        for (String invariant : new String[]{"catalog_external_key", "package_fingerprint", "probe_status",
+            "attempt_count", "lease_owner", "lease_expires_at", "last_accessed_at"}) {
+            assertTrue(schema.contains(invariant), invariant);
+        }
+        assertTrue(schema.contains("UNIQUE (source, package_key, package_version)"));
+        assertTrue(!schema.contains("DROP TABLE"));
+        assertTrue(!schema.contains("DROP COLUMN"));
+    }
 }

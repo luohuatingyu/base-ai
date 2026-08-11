@@ -164,6 +164,16 @@ test('市场目录全量可浏览但只有原生兼容节点可以选中导入',
   assert.match(nodeManagementSource, /marketplaceHint/)
 })
 
+test('市场页面自动轮询异步探测且导入不负责触发探测', () => {
+  assert.match(nodeManagementSource, /data\?\.probePending/)
+  assert.match(nodeManagementSource, /scheduleMarketplacePolling/)
+  assert.match(nodeManagementSource, /window\.setTimeout\(\(\) => loadMarketplace\(\), 2000\)/)
+  assert.match(nodeManagementSource, /@closed="stopMarketplacePolling"/)
+  assert.match(nodeManagementSource, /onBeforeUnmount\(stopMarketplacePolling\)/)
+  assert.match(nodeManagementSource, /\['NOT_PROBED', 'QUEUED', 'PROBING'\]/)
+  assert.doesNotMatch(nodeManagementSource, /probeRequired/)
+})
+
 test('市场卡片约束长标题描述和能力项且不覆盖相邻卡片', () => {
   assert.match(nodeManagementSource, /\.marketplace-card\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/)
   assert.match(nodeManagementSource, /\.marketplace-card-head\s*\{[^}]*min-width:\s*0;/)

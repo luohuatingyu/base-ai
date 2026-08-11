@@ -72,6 +72,7 @@ createServer(async (request, response) => {
     if (request.headers['x-internal-token'] !== token) { respond(response, 401, { error: 'UNAUTHORIZED' }); return }
     const value = await body(request)
     if (request.method === 'POST' && request.url === '/packages/inspect') respond(response, 200, await store.install(value))
+    else if (request.method === 'POST' && request.url === '/packages/remove') respond(response, 200, await store.remove(value.fingerprint))
     else if (request.method === 'POST' && request.url === '/invocations') respond(response, 200, await invoke(value))
     else respond(response, 404, { error: 'NOT_FOUND' })
   } catch (error) {

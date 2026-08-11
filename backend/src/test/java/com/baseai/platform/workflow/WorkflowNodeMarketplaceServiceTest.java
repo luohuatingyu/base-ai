@@ -1,6 +1,9 @@
 package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,9 +26,8 @@ import static org.mockito.Mockito.when;
 class WorkflowNodeMarketplaceServiceTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private WorkflowMarketplaceClients clients;
-    private WorkflowMarketplacePackageParser packageParser;
     private WorkflowService workflowService;
-    private WorkflowPluginWorkerClient pluginWorkers;
+    private WorkflowPluginProbeService pluginProbes;
     private WorkflowPluginRegistryService pluginRegistry;
     private WorkflowNodeMarketplaceService service;
 
@@ -33,12 +35,17 @@ class WorkflowNodeMarketplaceServiceTest {
     @BeforeEach
     void setUp() {
         clients = mock(WorkflowMarketplaceClients.class);
-        packageParser = mock(WorkflowMarketplacePackageParser.class);
         workflowService = mock(WorkflowService.class);
-        pluginWorkers = mock(WorkflowPluginWorkerClient.class);
+        pluginProbes = mock(WorkflowPluginProbeService.class);
         pluginRegistry = mock(WorkflowPluginRegistryService.class);
-        service = new WorkflowNodeMarketplaceService(clients, packageParser, workflowService, pluginWorkers, pluginRegistry, mapper);
+        service = new WorkflowNodeMarketplaceService(clients, workflowService, pluginProbes, pluginRegistry, mapper);
+        AuthContext.set(new AuthUser(1L, "admin", java.util.Set.of("ADMIN"), java.util.Set.of(),
+            AuthenticationType.TOKEN, null, null));
     }
+
+    /** 清理当前线程测试身份，避免权限泄漏到其他用例。 */
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() { AuthContext.clear(); }
 
     /** n8n 全量目录必须同时标记可导入和不兼容节点。 */
     @Test
@@ -47,6 +54,8 @@ class WorkflowNodeMarketplaceServiceTest {
         var slack = entry("n8n-nodes-base.slack", "Slack", "", "n8n", "integration");
         when(clients.searchN8n("", 1, 20)).thenReturn(
             new WorkflowMarketplaceClients.SearchResult(List.of(redis, slack), 2));
+        when(pluginProbes.snapshot("N8N", slack, true)).thenReturn(
+            new WorkflowPluginProbeService.ProbeSnapshot("QUEUED", "PROBING", "", null));
 
         WorkflowModels.MarketplacePage page = service.nodes("n8n", "", "", 1, 20, false);
 
@@ -54,8 +63,9 @@ class WorkflowNodeMarketplaceServiceTest {
         assertTrue(page.items().get(0).compatible());
         assertEquals("REDIS_COMMAND", page.items().get(0).targetNodeType());
         assertEquals("NATIVE_SUBSET", page.items().get(0).compatibilityLevel());
-        assertTrue(page.items().get(1).compatible());
-        assertEquals("PROBE_REQUIRED", page.items().get(1).compatibilityLevel());
+        assertFalse(page.items().get(1).compatible());
+        assertEquals("QUEUED", page.items().get(1).probeStatus());
+        verify(pluginProbes).snapshot("N8N", slack, true);
     }
 
     /** 仅兼容筛选必须按白名单统计总数，而不是过滤市场当前页。 */
@@ -73,15 +83,32 @@ class WorkflowNodeMarketplaceServiceTest {
         assertTrue(page.items().get(0).compatible());
     }
 
+    /** 只有导入权限可以通过只读市场接口产生新的后台探测任务。 */
+    @Test
+    void listOnlyPermissionDoesNotEnqueuePluginProbe() {
+        AuthContext.set(new AuthUser(2L, "reader", java.util.Set.of("USER"),
+            java.util.Set.of("workflow:node:list"), AuthenticationType.TOKEN, null, null));
+        var plugin = entry("n8n-nodes-example.action", "Example", "1.0.0", "vendor", "community-node",
+            Map.of("packageName", "n8n-nodes-example"));
+        when(clients.searchN8n("", 1, 20)).thenReturn(
+            new WorkflowMarketplaceClients.SearchResult(List.of(plugin), 1));
+        when(pluginProbes.snapshot("N8N", plugin, false)).thenReturn(
+            new WorkflowPluginProbeService.ProbeSnapshot("NOT_PROBED", "PROBING", "", null));
+
+        WorkflowModels.MarketplacePage page = service.nodes("N8N", "", "", 1, 20, false);
+
+        assertFalse(page.items().get(0).compatible());
+        assertTrue(page.probePending());
+        verify(pluginProbes).snapshot("N8N", plugin, false);
+    }
+
     /** 插件探测没有任何可执行组件时必须拒绝且不创建模板。 */
     @Test
     void rejectsPackageWithoutExecutableComponents() {
         var slack = entry("n8n-nodes-slack.slack", "Slack", "1.0.0", "vendor", "community-node",
             Map.of("packageName", "n8n-nodes-slack"));
         when(clients.findN8n(slack.externalId())).thenReturn(Optional.of(slack));
-        when(clients.downloadN8nPackage(slack)).thenReturn(
-            new WorkflowMarketplaceClients.PackageDownload(new byte[]{1}, "a".repeat(64)));
-        when(pluginWorkers.inspect(any(), any(), any(), any(), any())).thenReturn(workerPackage("N8N",
+        when(pluginProbes.requireCompleted("N8N", slack)).thenReturn(workerPackage("N8N",
             "n8n-nodes-slack", "1.0.0", "a".repeat(64), "PARTIAL"));
         when(pluginRegistry.register(any(), any(), any(), any(Boolean.class))).thenReturn(
             new WorkflowPluginRegistryService.Registration(1L, false, List.of(component("PARTIAL"))));
@@ -91,19 +118,15 @@ class WorkflowNodeMarketplaceServiceTest {
         verify(workflowService, never()).importMarketplaceTemplates(any(), any(Boolean.class));
     }
 
-    /** 社区节点包必须经过摘要校验和 ABI 探测后生成固定版本通用模板。 */
+    /** 社区节点导入必须只消费既有探测结果并生成固定版本通用模板。 */
     @Test
     void importsProbedN8nPluginComponent() {
         var entry = entry("n8n-nodes-example.action", "Example", "1.2.3", "vendor", "community-node",
             Map.of("packageName", "n8n-nodes-example"));
         String fingerprint = "b".repeat(64);
         when(clients.findN8n(entry.externalId())).thenReturn(Optional.of(entry));
-        when(clients.downloadN8nPackage(entry)).thenReturn(
-            new WorkflowMarketplaceClients.PackageDownload(new byte[]{1}, fingerprint));
-        when(pluginWorkers.inspect(org.mockito.ArgumentMatchers.eq("N8N"),
-            org.mockito.ArgumentMatchers.eq("n8n-nodes-example"), org.mockito.ArgumentMatchers.eq("1.2.3"),
-            org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.eq(fingerprint)))
-            .thenReturn(workerPackage("N8N", "n8n-nodes-example", "1.2.3", fingerprint, "SUPPORTED"));
+        when(pluginProbes.requireCompleted("N8N", entry)).thenReturn(
+            workerPackage("N8N", "n8n-nodes-example", "1.2.3", fingerprint, "SUPPORTED"));
         when(pluginRegistry.register(any(), any(), any(), org.mockito.ArgumentMatchers.eq(false))).thenReturn(
             new WorkflowPluginRegistryService.Registration(3L, false, List.of(component("SUPPORTED"))));
         when(workflowService.importMarketplaceTemplates(any(), org.mockito.ArgumentMatchers.eq(false))).thenReturn(
@@ -120,6 +143,7 @@ class WorkflowNodeMarketplaceServiceTest {
         assertEquals(7L, drafts.getValue().get(0).config().path("pluginComponentId").asLong());
         assertFalse(drafts.getValue().get(0).config().toString().contains("secret"));
         verify(pluginRegistry).setEnabled(3L, true);
+        verify(clients, never()).downloadN8nPackage(any());
     }
 
     /** Dify 白名单工具必须校验官方包声明后再保存原生 Tavily 模板。 */
@@ -127,9 +151,8 @@ class WorkflowNodeMarketplaceServiceTest {
     void importsValidatedDifyTool() {
         var plugin = entry("langgenius/tavily", "Tavily", "0.1.11", "langgenius", "tool");
         when(clients.findDify("langgenius/tavily")).thenReturn(Optional.of(plugin));
-        when(clients.downloadDifyPackage("langgenius/tavily", "0.1.11")).thenReturn(new byte[]{1});
-        when(packageParser.requireTool(any(), any(), any(), any())).thenReturn(
-            new WorkflowMarketplacePackageParser.ToolDeclaration("tavily_search", "Tavily Search", "Search"));
+        when(pluginProbes.requireCompleted("DIFY", plugin)).thenReturn(workerPackage("DIFY", "langgenius/tavily",
+            "0.1.11", "d".repeat(64), "SUPPORTED", "tavily_search"));
         when(workflowService.importMarketplaceTemplates(any(), any(Boolean.class))).thenReturn(
             List.of(new WorkflowModels.MarketplaceTemplatePersistence(9L, "CREATED")));
 
@@ -138,7 +161,7 @@ class WorkflowNodeMarketplaceServiceTest {
 
         assertEquals("CREATED", result.items().get(0).status());
         assertEquals(9L, result.items().get(0).templateId());
-        verify(packageParser).requireTool(any(), any(), any(), any());
+        verify(clients, never()).downloadDifyPackage(any(), any());
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<WorkflowModels.MarketplaceTemplateDraft>> drafts = ArgumentCaptor.forClass(List.class);
         verify(workflowService).importMarketplaceTemplates(drafts.capture(), org.mockito.ArgumentMatchers.eq(false));
@@ -153,6 +176,9 @@ class WorkflowNodeMarketplaceServiceTest {
         var plugin = entry("langgenius/tavily", "Tavily", "0.1.11", "langgenius", "tool");
         when(clients.searchDify("", "", 1, 20)).thenReturn(
             new WorkflowMarketplaceClients.SearchResult(List.of(plugin), 1));
+        when(pluginProbes.snapshot("DIFY", plugin, true)).thenReturn(new WorkflowPluginProbeService.ProbeSnapshot(
+            "COMPLETE", "SUPPORTED", "", workerPackage("DIFY", "langgenius/tavily", "0.1.11",
+            "e".repeat(64), "SUPPORTED", "tavily_search", "tavily_extract")));
 
         WorkflowModels.MarketplacePage page = service.nodes("DIFY", "", "", 1, 20, false);
 
@@ -179,9 +205,17 @@ class WorkflowNodeMarketplaceServiceTest {
     /** 构造单组件 Worker 探测结果。 */
     private WorkflowPluginWorkerClient.WorkerPackage workerPackage(String source, String packageId, String version,
                                                                    String fingerprint, String status) {
+        return workerPackage(source, packageId, version, fingerprint, status, "action");
+    }
+
+    /** 构造包含指定组件身份的 Worker 探测结果。 */
+    private WorkflowPluginWorkerClient.WorkerPackage workerPackage(String source, String packageId, String version,
+                                                                   String fingerprint, String status,
+                                                                   String... componentIds) {
         return new WorkflowPluginWorkerClient.WorkerPackage(source, packageId, version, fingerprint, "node",
-            List.of(new WorkflowPluginWorkerClient.WorkerComponent("action", "Action", "", "ACTION",
-                mapper.createArrayNode(), mapper.createArrayNode(), "node.js", status, "")));
+            java.util.Arrays.stream(componentIds).map(componentId -> new WorkflowPluginWorkerClient.WorkerComponent(
+                componentId, componentId, "", "ACTION", mapper.createArrayNode(), mapper.createArrayNode(),
+                "node.js", status, "")).toList());
     }
 
     /** 构造已持久化组件。 */

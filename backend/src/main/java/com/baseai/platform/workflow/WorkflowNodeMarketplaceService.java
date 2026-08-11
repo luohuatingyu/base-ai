@@ -1,6 +1,7 @@
 package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.security.AuthContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -10,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -31,21 +31,18 @@ public class WorkflowNodeMarketplaceService {
         "n8n-nodes-base.rabbitmqTrigger", "RABBITMQ_TRIGGER"
     );
     private final WorkflowMarketplaceClients clients;
-    private final WorkflowMarketplacePackageParser packageParser;
     private final WorkflowService workflowService;
-    private final WorkflowPluginWorkerClient pluginWorkers;
+    private final WorkflowPluginProbeService pluginProbes;
     private final WorkflowPluginRegistryService pluginRegistry;
     private final ObjectMapper objectMapper;
 
-    /** 注入市场客户端、包解析器和模板持久化服务。 */
+    /** 注入市场客户端、异步探测、注册表和模板持久化服务。 */
     public WorkflowNodeMarketplaceService(WorkflowMarketplaceClients clients,
-                                          WorkflowMarketplacePackageParser packageParser,
-                                          WorkflowService workflowService, WorkflowPluginWorkerClient pluginWorkers,
+                                          WorkflowService workflowService, WorkflowPluginProbeService pluginProbes,
                                           WorkflowPluginRegistryService pluginRegistry, ObjectMapper objectMapper) {
         this.clients = clients;
-        this.packageParser = packageParser;
         this.workflowService = workflowService;
-        this.pluginWorkers = pluginWorkers;
+        this.pluginProbes = pluginProbes;
         this.pluginRegistry = pluginRegistry;
         this.objectMapper = objectMapper;
     }
@@ -58,17 +55,22 @@ public class WorkflowNodeMarketplaceService {
         int pageSize = Math.min(50, Math.max(1, rawPageSize));
         WorkflowMarketplaceClients.SearchResult result = "N8N".equals(source)
             ? clients.searchN8n(query, page, pageSize) : clients.searchDify(query, category, page, pageSize);
+        boolean enqueue = AuthContext.current() != null
+            && AuthContext.current().hasPermission("workflow:node:import");
         List<WorkflowModels.MarketplaceNodeView> items = new ArrayList<>();
         for (WorkflowMarketplaceClients.MarketplaceEntry entry : result.items()) {
             if ("N8N".equals(source)) items.add(adaptN8n(entry).map(draft -> view(entry, draft))
-                .orElseGet(() -> probeView(entry, "PLUGIN_ACTION")));
-            else if (DIFY_TAVILY.equals(entry.externalId())) items.add(difyPluginView(entry));
-            else items.add(probeView(entry, pluginNodeType(entry.category())));
+                .orElseGet(() -> probeView(source, entry, enqueue)));
+            else if (DIFY_TAVILY.equals(entry.externalId())) {
+                items.add(difyPluginView(entry, pluginProbes.snapshot(source, entry, enqueue)));
+            } else items.add(probeView(source, entry, enqueue));
         }
         List<WorkflowModels.MarketplaceNodeView> filtered = compatibleOnly
             ? items.stream().filter(WorkflowModels.MarketplaceNodeView::compatible).toList() : items;
+        boolean probePending = items.stream().anyMatch(item -> List.of("NOT_PROBED", "QUEUED", "PROBING")
+            .contains(item.probeStatus()));
         return new WorkflowModels.MarketplacePage(source, List.copyOf(filtered), page, pageSize,
-            compatibleOnly ? filtered.size() : result.total());
+            compatibleOnly ? filtered.size() : result.total(), probePending);
     }
 
     /** 逐项重新确认市场条目和适配器，并返回幂等导入结果。 */
@@ -83,7 +85,6 @@ public class WorkflowNodeMarketplaceService {
         if (ids.size() > 50 || ids.stream().anyMatch(id -> id == null || id.isBlank() || id.length() > 255)) {
             throw new BusinessException("workflow.marketplaceNodeNotFound");
         }
-        Map<String, byte[]> packageCache = new LinkedHashMap<>();
         List<WorkflowModels.MarketplaceTemplateDraft> drafts = new ArrayList<>();
         List<PreparedImport> prepared = new ArrayList<>();
         for (String externalId : ids) {
@@ -97,7 +98,7 @@ public class WorkflowNodeMarketplaceService {
                     prepared.add(new PreparedImport(externalId, draft, null));
                 } else preparePlugin(source, externalId, entry, Boolean.TRUE.equals(command.replaceExisting()), drafts, prepared);
             } else if (externalId.startsWith(DIFY_TAVILY + "/")) {
-                WorkflowModels.MarketplaceTemplateDraft draft = requireDify(externalId, packageCache);
+                WorkflowModels.MarketplaceTemplateDraft draft = requireDify(externalId);
                 drafts.add(draft);
                 prepared.add(new PreparedImport(externalId, draft, null));
             } else {
@@ -126,30 +127,23 @@ public class WorkflowNodeMarketplaceService {
         return pluginRegistry.componentOptions();
     }
 
-    /** 下载并探测插件包，把可执行组件转换为固定版本模板。 */
+    /** 只消费后台已完成的探测结果，把可执行组件转换为固定版本模板。 */
     private void preparePlugin(String source, String requestExternalId,
                                WorkflowMarketplaceClients.MarketplaceEntry catalogEntry, boolean replaceExisting,
                                List<WorkflowModels.MarketplaceTemplateDraft> drafts, List<PreparedImport> prepared) {
         WorkflowMarketplaceClients.MarketplaceEntry packageEntry = catalogEntry;
-        byte[] archive;
-        String fingerprint;
         String packageId;
         if ("N8N".equals(source)) {
             packageId = catalogEntry.raw().path("packageName").asText("");
             if (packageId.isBlank()) throw new BusinessException("workflow.marketplacePackageInvalid");
-            WorkflowMarketplaceClients.PackageDownload download = clients.downloadN8nPackage(catalogEntry);
-            archive = download.bytes();
-            fingerprint = download.fingerprint();
             packageEntry = new WorkflowMarketplaceClients.MarketplaceEntry(packageId, catalogEntry.name(),
                 catalogEntry.description(), catalogEntry.version(), catalogEntry.publisher(), catalogEntry.category(),
                 catalogEntry.trustLevel(), catalogEntry.raw());
         } else {
             packageId = catalogEntry.externalId();
-            archive = clients.downloadDifyPackage(packageId, catalogEntry.version());
-            fingerprint = sha256(archive);
         }
-        WorkflowPluginWorkerClient.WorkerPackage inspected = pluginWorkers.inspect(source, packageId,
-            catalogEntry.version(), archive, fingerprint);
+        WorkflowPluginWorkerClient.WorkerPackage inspected = pluginProbes.requireCompleted(source, catalogEntry);
+        String fingerprint = inspected.fingerprint();
         WorkflowPluginRegistryService.Registration registration = pluginRegistry.register(source, packageEntry,
             inspected, replaceExisting);
         if (registration.updateAvailable()) {
@@ -216,7 +210,7 @@ public class WorkflowNodeMarketplaceService {
     }
 
     /** 只接受已登记的 Tavily 工具，并通过官方插件包声明再次确认工具身份。 */
-    private WorkflowModels.MarketplaceTemplateDraft requireDify(String externalId, Map<String, byte[]> packageCache) {
+    private WorkflowModels.MarketplaceTemplateDraft requireDify(String externalId) {
         int separator = externalId.lastIndexOf('/');
         if (separator <= 0) throw new BusinessException("workflow.marketplaceNodeUnsupported");
         String pluginId = externalId.substring(0, separator);
@@ -226,12 +220,17 @@ public class WorkflowNodeMarketplaceService {
         }
         WorkflowMarketplaceClients.MarketplaceEntry plugin = clients.findDify(pluginId)
             .orElseThrow(() -> new BusinessException("workflow.marketplaceNodeNotFound"));
-        byte[] archive = packageCache.computeIfAbsent(pluginId + "@" + plugin.version(),
-            key -> clients.downloadDifyPackage(pluginId, plugin.version()));
-        WorkflowMarketplacePackageParser.ToolDeclaration declaration = packageParser.requireTool(archive,
-            "provider/tavily.yaml", "tools/" + toolName + ".yaml", toolName);
-        NativeDraft nativeDraft = difyTool(plugin, toolName, declaration.label(), declaration.description());
-        return draft("DIFY", plugin, externalId, nativeDraft);
+        WorkflowPluginWorkerClient.WorkerPackage inspected = pluginProbes.requireCompleted("DIFY", plugin);
+        WorkflowPluginWorkerClient.WorkerComponent component = inspected.components().stream()
+            .filter(item -> toolName.equals(item.externalId()) && "SUPPORTED".equals(item.compatibilityStatus()))
+            .findFirst().orElseThrow(() -> new BusinessException("workflow.marketplaceNodeUnsupported"));
+        NativeDraft nativeDraft = difyTool(plugin, toolName,
+            component.name().isBlank() ? toolName : component.name(), component.description());
+        String fingerprint = sha256(inspected.fingerprint() + "\n" + toolName + "\n" + component.schema());
+        return new WorkflowModels.MarketplaceTemplateDraft("DIFY", externalId, plugin.version(), plugin.publisher(),
+            fingerprint, "DIFY_" + sha256(externalId).substring(0, 16).toUpperCase(Locale.ROOT),
+            nativeDraft.name(), nativeDraft.description(), nativeDraft.nodeType(), nativeDraft.functionalCategory(),
+            nativeDraft.config().deepCopy());
     }
 
     /** 把 n8n 数据连接类节点映射为现有原生连接执行器。 */
@@ -264,39 +263,70 @@ public class WorkflowNodeMarketplaceService {
         return draft == null
             ? new WorkflowModels.MarketplaceNodeView(entry.externalId(), entry.name(), entry.description(),
                 entry.version(), entry.publisher(), entry.category(), false, "NO_NATIVE_ADAPTER", "", "",
-                "NONE", List.of())
+                "NONE", List.of(), "NOT_REQUIRED")
             : view(draft, entry.version(), entry.publisher(), entry.category());
     }
 
-    /** 构造需要导入时进行 ABI 探测的市场卡片。 */
-    private WorkflowModels.MarketplaceNodeView probeView(WorkflowMarketplaceClients.MarketplaceEntry entry,
-                                                          String targetNodeType) {
+    /** 根据后台探测快照构造市场卡片，未完成探测的条目始终不可导入。 */
+    private WorkflowModels.MarketplaceNodeView probeView(String source,
+                                                          WorkflowMarketplaceClients.MarketplaceEntry entry,
+                                                          boolean enqueue) {
+        WorkflowPluginProbeService.ProbeSnapshot snapshot = pluginProbes.snapshot(source, entry, enqueue);
+        WorkflowPluginWorkerClient.WorkerComponent supported = snapshot.inspected() == null ? null
+            : snapshot.inspected().components().stream()
+                .filter(item -> "SUPPORTED".equals(item.compatibilityStatus())).findFirst().orElse(null);
+        boolean compatible = "COMPLETE".equals(snapshot.probeStatus()) && supported != null;
+        String targetNodeType = compatible ? pluginNodeType(supported.componentType())
+            : pluginNodeType(entry.category());
         return new WorkflowModels.MarketplaceNodeView(entry.externalId(), entry.name(), entry.description(),
-            entry.version(), entry.publisher(), entry.category(), true, "", targetNodeType,
-            WorkflowTemplateCatalog.defaultCategory(targetNodeType), "PROBE_REQUIRED", List.of());
+            entry.version(), entry.publisher(), entry.category(), compatible,
+            compatible ? "" : incompatibility(snapshot), targetNodeType,
+            WorkflowTemplateCatalog.defaultCategory(targetNodeType), snapshot.compatibilityStatus(), List.of(),
+            snapshot.probeStatus());
     }
 
     /** 构造兼容市场节点卡片。 */
     private WorkflowModels.MarketplaceNodeView view(NativeDraft draft, String version, String publisher, String category) {
         return new WorkflowModels.MarketplaceNodeView(draft.externalId(), draft.name(), draft.description(), version,
-            publisher, category, true, "", draft.nodeType(), draft.functionalCategory(), "NATIVE_SUBSET", List.of());
+            publisher, category, true, "", draft.nodeType(), draft.functionalCategory(), "NATIVE_SUBSET", List.of(),
+            "NOT_REQUIRED");
     }
 
     /** 以插件为分页单位展示 Dify，并把受支持工具作为可选择动作返回。 */
-    private WorkflowModels.MarketplaceNodeView difyPluginView(WorkflowMarketplaceClients.MarketplaceEntry plugin) {
+    private WorkflowModels.MarketplaceNodeView difyPluginView(WorkflowMarketplaceClients.MarketplaceEntry plugin,
+                                                               WorkflowPluginProbeService.ProbeSnapshot snapshot) {
         List<WorkflowModels.MarketplaceActionView> actions = List.of(
-            action(difyTool(plugin, "tavily_search", "Tavily Search", "Search the web with Tavily")),
-            action(difyTool(plugin, "tavily_extract", "Tavily Extract", "Extract content from web pages with Tavily"))
+            action(difyTool(plugin, "tavily_search", "Tavily Search", "Search the web with Tavily"), snapshot),
+            action(difyTool(plugin, "tavily_extract", "Tavily Extract", "Extract content from web pages with Tavily"), snapshot)
         );
+        boolean compatible = actions.stream().anyMatch(WorkflowModels.MarketplaceActionView::compatible);
         return new WorkflowModels.MarketplaceNodeView(plugin.externalId(), plugin.name(), plugin.description(),
-            plugin.version(), plugin.publisher(), plugin.category(), true, "", "TAVILY_TOOL", "NETWORK_API",
-            "NATIVE_SUBSET", actions);
+            plugin.version(), plugin.publisher(), plugin.category(), compatible,
+            compatible ? "" : incompatibility(snapshot), "TAVILY_TOOL", "NETWORK_API",
+            compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus(), actions, snapshot.probeStatus());
     }
 
-    /** 把单个原生适配动作转换为市场子项。 */
-    private WorkflowModels.MarketplaceActionView action(NativeDraft draft) {
-        return new WorkflowModels.MarketplaceActionView(draft.externalId(), draft.name(), draft.description(), true,
-            "", draft.nodeType(), draft.functionalCategory(), "NATIVE_SUBSET");
+    /** 把单个原生适配动作与真实 ABI 组件探测结果合并。 */
+    private WorkflowModels.MarketplaceActionView action(NativeDraft draft,
+                                                         WorkflowPluginProbeService.ProbeSnapshot snapshot) {
+        String toolName = draft.externalId().substring(draft.externalId().lastIndexOf('/') + 1);
+        boolean compatible = "COMPLETE".equals(snapshot.probeStatus()) && snapshot.inspected() != null
+            && snapshot.inspected().components().stream().anyMatch(item -> toolName.equals(item.externalId())
+                && "SUPPORTED".equals(item.compatibilityStatus()));
+        return new WorkflowModels.MarketplaceActionView(draft.externalId(), draft.name(), draft.description(), compatible,
+            compatible ? "" : incompatibility(snapshot), draft.nodeType(), draft.functionalCategory(),
+            compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus());
+    }
+
+    /** 把内部探测错误收敛为不会泄漏 Worker 细节的稳定前端原因码。 */
+    private String incompatibility(WorkflowPluginProbeService.ProbeSnapshot snapshot) {
+        return switch (snapshot.probeStatus()) {
+            case "QUEUED", "PROBING", "NOT_PROBED" -> "PROBE_PENDING";
+            case "REJECTED" -> "PACKAGE_REJECTED";
+            case "FAILED" -> "PROBE_FAILED";
+            case "COMPLETE" -> "NO_EXECUTABLE_COMPONENT";
+            default -> "PROBE_FAILED";
+        };
     }
 
     /** 搜索同时匹配插件身份和受支持动作。 */
@@ -349,8 +379,8 @@ public class WorkflowNodeMarketplaceService {
         }
     }
 
-    /** 计算插件压缩包的稳定 SHA-256 标识。 */
-    private String sha256(byte[] value) {
+    /** 计算插件压缩包的稳定 SHA-256 标识，供后台探测服务复用。 */
+    static String sha256Bytes(byte[] value) {
         try {
             return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
         } catch (Exception exception) {

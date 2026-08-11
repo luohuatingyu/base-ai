@@ -24,8 +24,10 @@ public final class WorkflowModels {
     public record MarketplaceNodeView(String externalId, String name, String description, String version,
                                       String publisher, String marketplaceCategory, boolean compatible,
                                       String incompatibilityReason, String targetNodeType, String functionalCategory,
-                                      String compatibilityLevel, List<MarketplaceActionView> actions) {}
-    public record MarketplacePage(String source, List<MarketplaceNodeView> items, int page, int pageSize, long total) {}
+                                      String compatibilityLevel, List<MarketplaceActionView> actions,
+                                      String probeStatus) {}
+    public record MarketplacePage(String source, List<MarketplaceNodeView> items, int page, int pageSize, long total,
+                                  boolean probePending) {}
     public record MarketplaceImportCommand(List<String> externalIds, Boolean replaceExisting) {}
     public record MarketplaceImportItem(String externalId, String status, Long templateId) {}
     public record MarketplaceImportResult(String source, List<MarketplaceImportItem> items) {}

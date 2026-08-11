@@ -9,6 +9,7 @@ import zipfile
 import json
 import subprocess
 import sys
+from unittest.mock import patch
 from pathlib import Path
 
 from app.abi import Runtime, Tool, normalize_output
@@ -163,6 +164,36 @@ class OAuth(Endpoint):
         })
         result = self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
         self.assertEqual("SUPPORTED", result["components"][0]["compatibilityStatus"])
+
+    def test_removes_only_strict_fingerprint_cache_directory(self) -> None:
+        """缓存清理不得接受路径、短摘要或其他目录名称。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": "identity:\n  name: removable\nextra:\n  python:\n    source: tool.py\n",
+            "tool.py": "from dify_plugin import Tool\nclass ToolImpl(Tool):\n    def _invoke(self, tool_parameters):\n        return {}\n",
+        })
+        result = self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
+        with self.assertRaisesRegex(PackageError, "PACKAGE_NOT_FOUND"):
+            self.store.remove("../escape")
+        self.assertEqual({"removed": True}, self.store.remove(result["fingerprint"]))
+        with self.assertRaisesRegex(PackageError, "PACKAGE_NOT_FOUND"):
+            self.store.metadata(result["fingerprint"])
+
+    def test_retries_cached_dependency_install_failure(self) -> None:
+        """相同包的后台重试必须重新安装临时失败的依赖。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": "identity:\n  name: retry\nextra:\n  python:\n    source: tool.py\n",
+            "tool.py": "from dify_plugin import Tool\nclass ToolImpl(Tool):\n    def _invoke(self, tool_parameters):\n        return {}\n",
+            "requirements.txt": "requests==2.32.5\n",
+        })
+        request = {"archiveBase64": base64.b64encode(raw).decode()}
+        with patch.object(self.store, "_install_dependencies",
+                          side_effect=["DEPENDENCY_INSTALL_FAILED", ""]):
+            first = self.store.install(request)
+            second = self.store.install(request)
+        self.assertEqual("PARTIAL", first["components"][0]["compatibilityStatus"])
+        self.assertEqual("SUPPORTED", second["components"][0]["compatibilityStatus"])
 
 
 if __name__ == "__main__":

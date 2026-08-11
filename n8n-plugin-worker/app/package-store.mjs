@@ -33,7 +33,13 @@ export class PackageStore {
     await mkdir(this.root, { recursive: true })
     const target = join(this.root, fingerprint)
     const metadataFile = join(target, '.base-ai-metadata.json')
-    if (existsSync(metadataFile)) return JSON.parse(await readFile(metadataFile, 'utf8'))
+    if (existsSync(metadataFile)) {
+      const cached = JSON.parse(await readFile(metadataFile, 'utf8'))
+      const reasons = new Set((cached.components || []).map(item => item.compatibilityReason))
+      if (reasons.size && [...reasons].every(reason => ['DEPENDENCY_INSTALL_FAILED', 'DEPENDENCY_INSTALL_TIMEOUT'].includes(reason))) {
+        await rm(target, { recursive: true, force: true })
+      } else return cached
+    }
     const temporary = await mkdtemp(join(this.root, '.n8n-plugin-'))
     try {
       const archiveFile = join(temporary, 'package.tgz')
@@ -58,6 +64,15 @@ export class PackageStore {
     const metadataFile = join(target, '.base-ai-metadata.json')
     if (!existsSync(metadataFile)) throw new PackageError('PACKAGE_NOT_FOUND')
     return { root: join(target, 'package'), metadata: JSON.parse(await readFile(metadataFile, 'utf8')) }
+  }
+
+  /** 删除严格指纹对应的未引用缓存包；引用关系由后端数据库在调用前确认。 */
+  async remove(fingerprint) {
+    if (!/^[a-f0-9]{64}$/.test(String(fingerprint || ''))) throw new PackageError('PACKAGE_NOT_FOUND')
+    const target = join(this.root, fingerprint)
+    if (relative(this.root, target).startsWith('..')) throw new PackageError('PACKAGE_NOT_FOUND')
+    await rm(target, { recursive: true, force: true })
+    return { removed: true }
   }
 
   /** 读取并限制 Base64 压缩包。 */
@@ -98,8 +113,10 @@ export class PackageStore {
     const nodes = Array.isArray(declared.nodes) ? declared.nodes : []
     const credentials = Array.isArray(declared.credentials) ? declared.credentials : []
     if (!nodes.length && !credentials.length) throw new PackageError('PLUGIN_COMPONENTS_MISSING')
+    let dependencyError = ''
     try { await this.#installDependencies(packageRoot, manifest.dependencies) } catch (error) {
       if (!(error instanceof PackageError)) throw error
+      dependencyError = error.message
     }
     await this.#installShim(packageRoot)
     const credentialSchemas = new Map()
@@ -112,7 +129,7 @@ export class PackageStore {
       })
     }
     const components = []
-    for (const relative of nodes) components.push(await this.#component(packageRoot, relative, credentialSchemas))
+    for (const relative of nodes) components.push(await this.#component(packageRoot, relative, credentialSchemas, dependencyError))
     if (!nodes.length) {
       for (const [name, credential] of credentialSchemas) components.push({
         externalId: name, name, description: '', componentType: 'EXTENSION', schema: [], credentialSchema: credential.schema,
@@ -200,12 +217,12 @@ export class PackageStore {
   }
 
   /** 规范化节点描述和兼容状态。 */
-  async #component(packageRoot, relative, credentialSchemas) {
+  async #component(packageRoot, relative, credentialSchemas, dependencyError = '') {
     const loaded = await this.#load(packageRoot, relative)
     if (loaded.error) return {
       externalId: String(relative), name: String(relative), description: '', componentType: 'ACTION', schema: [],
       credentialSchema: [], sourcePath: String(relative), exportName: '', compatibilityStatus: 'UNSUPPORTED',
-      compatibilityReason: loaded.error,
+      compatibilityReason: dependencyError || loaded.error,
     }
     const instance = this.#instance(loaded.module)
     const description = instance?.description || {}

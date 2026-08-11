@@ -89,3 +89,15 @@ test('声明式节点不得在尚未执行其路由时误报完全兼容', async
     assert.equal(result.components[0].compatibilityReason, 'DECLARATIVE_ROUTING_NOT_IMPLEMENTED')
   } finally { await rm(root, { recursive: true, force: true }); await rm(storeRoot, { recursive: true, force: true }) }
 })
+
+test('仅允许使用严格指纹删除缓存包', async () => {
+  const item = await fixture(); const storeRoot = await mkdtemp(join(tmpdir(), 'base-ai-n8n-store-'))
+  try {
+    const store = new PackageStore(storeRoot)
+    const bytes = await (await import('node:fs/promises')).readFile(item.archive)
+    const result = await store.install({ archiveBase64: bytes.toString('base64') })
+    await assert.rejects(() => store.remove('../escape'), /PACKAGE_NOT_FOUND/)
+    assert.deepEqual(await store.remove(result.fingerprint), { removed: true })
+    await assert.rejects(() => store.metadata(result.fingerprint), /PACKAGE_NOT_FOUND/)
+  } finally { await rm(item.root, { recursive: true, force: true }); await rm(storeRoot, { recursive: true, force: true }) }
+})

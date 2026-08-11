@@ -65,7 +65,12 @@ class PackageStore:
         target = self.root / fingerprint
         metadata_file = target / ".base-ai-metadata.json"
         if metadata_file.exists():
-            return json.loads(metadata_file.read_text(encoding="utf-8"))
+            cached = json.loads(metadata_file.read_text(encoding="utf-8"))
+            reasons = {str(item.get("compatibilityReason", "")) for item in cached.get("components", [])}
+            if reasons and reasons.issubset({"DEPENDENCY_INSTALL_FAILED", "DEPENDENCY_INSTALL_TIMEOUT"}):
+                shutil.rmtree(target)
+            else:
+                return cached
         with tempfile.TemporaryDirectory(prefix="dify-plugin-", dir=self.root) as temporary:
             extracted = Path(temporary)
             self._extract(archive, extracted)
@@ -85,6 +90,16 @@ class PackageStore:
         if not metadata_file.exists():
             raise PackageError("PACKAGE_NOT_FOUND")
         return target, json.loads(metadata_file.read_text(encoding="utf-8"))
+
+    def remove(self, fingerprint: str) -> dict[str, bool]:
+        """删除严格 SHA-256 指纹对应的未引用缓存包。"""
+        if not re.fullmatch(r"[a-f0-9]{64}", fingerprint or ""):
+            raise PackageError("PACKAGE_NOT_FOUND")
+        target = (self.root / fingerprint).resolve()
+        if self.root not in target.parents:
+            raise PackageError("PACKAGE_NOT_FOUND")
+        shutil.rmtree(target, ignore_errors=True)
+        return {"removed": True}
 
     def _extract(self, archive: bytes, target: Path) -> None:
         """拒绝路径穿越、链接、文件数和解压体积超限。"""

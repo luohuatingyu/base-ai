@@ -58,7 +58,7 @@
       <template #footer><el-button @click="visible=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="save">{{ t('common.save') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="marketplaceVisible" :title="t('workflowNodes.marketplaceTitle', { source: t(`workflowCatalog.sources.${selectedSource}`) })" width="min(1040px, 95vw)" top="4vh">
+    <el-dialog v-model="marketplaceVisible" :title="t('workflowNodes.marketplaceTitle', { source: t(`workflowCatalog.sources.${selectedSource}`) })" width="min(1040px, 95vw)" top="4vh" @closed="stopMarketplacePolling">
       <div class="marketplace-toolbar">
         <el-input v-model="marketplaceQuery" clearable :placeholder="t('workflowNodes.marketplaceSearch')" @keyup.enter="searchMarketplace" />
         <el-checkbox v-model="compatibleOnly" @change="searchMarketplace">{{ t('workflowNodes.compatibleOnly') }}</el-checkbox>
@@ -77,7 +77,8 @@
               <strong v-else>{{ item.name }}</strong>
             </div>
             <div class="marketplace-card-status">
-              <el-tag v-if="item.compatible" type="success" size="small">{{ t('workflowNodes.compatible') }}</el-tag>
+              <el-tag v-if="isProbePending(item)" type="warning" size="small">{{ t('workflowNodes.probing') }}</el-tag>
+              <el-tag v-else-if="item.compatible" type="success" size="small">{{ t('workflowNodes.compatible') }}</el-tag>
               <el-tag v-else type="info" size="small">{{ t('workflowNodes.unsupported') }}</el-tag>
             </div>
           </div>
@@ -98,7 +99,8 @@
           </div>
           <div class="marketplace-card-footer">
           <el-tag v-if="item.compatibilityLevel === 'NATIVE_SUBSET'" type="warning" size="small">{{ t('workflowNodes.nativeSubset') }}</el-tag>
-          <el-tag v-else-if="item.compatibilityLevel === 'PROBE_REQUIRED'" type="info" size="small">{{ t('workflowNodes.probeRequired') }}</el-tag>
+          <el-tag v-else-if="item.compatibilityLevel === 'PARTIAL'" type="warning" size="small">{{ t('workflowNodes.partialCompatibility') }}</el-tag>
+          <el-tag v-else-if="isProbePending(item)" type="info" size="small">{{ t('workflowNodes.probePending') }}</el-tag>
             <small v-if="!item.compatible">{{ t(`workflowNodes.incompatibility.${item.incompatibilityReason}`) }}</small>
           </div>
         </article>
@@ -118,7 +120,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
@@ -147,6 +149,8 @@ const selectedMarketplaceIds = ref([])
 const marketplacePage = ref(1)
 const marketplacePageSize = 20
 const marketplaceTotal = ref(0)
+const marketplaceProbePending = ref(false)
+let marketplacePollTimer = null
 /** 返回同时匹配必选来源和功能分类的节点，并保留停用模板供管理员维护。 */
 const filteredRows = computed(() => filterWorkflowTemplates(rows.value, selectedSource.value, selectedCategory.value, true))
 
@@ -160,6 +164,9 @@ function marketplaceDescription(item) { return marketplaceItemDescription(item, 
 
 /** 返回市场适配器对应的本地化原生能力名称。 */
 function marketplaceTypeLabel(item) { return marketplaceNodeTypeLabel(item, t, te) }
+
+/** 判断市场项是否仍在后台队列或 ABI 探测中。 */
+function isProbePending(item) { return ['NOT_PROBED', 'QUEUED', 'PROBING'].includes(item?.probeStatus) }
 
 /** 使用当前语言的功能名称生成卡片图标文字。 */
 function templateIcon(template) { return templateText(template, 'name').trim().slice(0, 2).toUpperCase() || '·' }
@@ -178,6 +185,7 @@ async function searchMarketplace() { marketplacePage.value = 1; selectedMarketpl
 /** 通过后端代理加载市场目录，避免浏览器直接访问第三方。 */
 async function loadMarketplace() {
   if (!['N8N', 'DIFY'].includes(selectedSource.value)) return
+  stopMarketplacePolling()
   marketplaceLoading.value = true
   try {
     const { data } = await http.get(`/workflow/node-marketplaces/${selectedSource.value}/nodes`, { params: {
@@ -185,8 +193,23 @@ async function loadMarketplace() {
       compatibleOnly: compatibleOnly.value
     } })
     marketplaceItems.value = data?.items || []; marketplaceTotal.value = Number(data?.total || 0)
-  } catch (error) { marketplaceItems.value = []; marketplaceTotal.value = 0; showHttpError(error) }
+    marketplaceProbePending.value = Boolean(data?.probePending)
+    const compatibleIds = new Set(marketplaceItems.value.filter(item => item.compatible).flatMap(item =>
+      item.actions?.length ? item.actions.filter(action => action.compatible).map(action => action.externalId) : [item.externalId]))
+    selectedMarketplaceIds.value = selectedMarketplaceIds.value.filter(id => compatibleIds.has(id))
+    scheduleMarketplacePolling()
+  } catch (error) { marketplaceItems.value = []; marketplaceTotal.value = 0; marketplaceProbePending.value = false; showHttpError(error) }
   finally { marketplaceLoading.value = false }
+}
+/** 当前页存在未完成探测时自动刷新，避免由导入按钮触发探测。 */
+function scheduleMarketplacePolling() {
+  if (!marketplaceVisible.value || !marketplaceProbePending.value) return
+  marketplacePollTimer = window.setTimeout(() => loadMarketplace(), 2000)
+}
+/** 清除市场轮询定时器，关闭弹窗或离开页面后不再请求。 */
+function stopMarketplacePolling() {
+  if (marketplacePollTimer !== null) window.clearTimeout(marketplacePollTimer)
+  marketplacePollTimer = null
 }
 /** 导入服务端重新确认过的白名单节点，并刷新当前来源卡片。 */
 async function importMarketplaceNodes() {
@@ -244,6 +267,7 @@ async function remove(row) {
 function emptyForm() { return { id: null, code: '', name: '', nodeType: 'LLM', description: '', config: {}, enabled: true,
   systemTemplate: false, importedTemplate: false, source: 'SYSTEM', functionalCategory: defaultTemplateCategory('LLM') } }
 onMounted(load)
+onBeforeUnmount(stopMarketplacePolling)
 </script>
 
 <style scoped>

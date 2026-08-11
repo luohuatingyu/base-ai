@@ -39,6 +39,8 @@ class Handler(BaseHTTPRequestHandler):
             request = self._request()
             if self.path == "/packages/inspect":
                 self._write(200, STORE.install(request))
+            elif self.path == "/packages/remove":
+                self._write(200, STORE.remove(str(request.get("fingerprint", ""))))
             elif self.path == "/invocations":
                 self._write(200, self._invoke(request))
             else:
