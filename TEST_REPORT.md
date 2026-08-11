@@ -1,5 +1,100 @@
 # 最近分支覆盖测试报告
 
+## 📋 Dify 市场插件探测性能优化测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: 9750a2c483ebc8cc6cc9b5ce8da0fab29d157be1
+- 提交说明: Speed up Dify plugin probing
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一测试报告基准点: `09b6757792727088fec142590882c6265759c523`
+- Backend 业务代码差异: 市场探测默认并发由 2 提升为 4，并增加队列、下载和 Worker 阶段耗时日志；市场接口、状态机、重试次数和兼容聚合规则保持不变。
+
+### 变更范围
+
+- Dify Worker 使用插件持久卷下的共享 pip 下载缓存，继续把每个插件安装到独立 `.deps` 目录；插件运行时依赖不共享，临时目录仍位于对应插件目录，不占用 64 MiB tmpfs。
+- `.env` 的 `PIP_INDEX_URL` 与 `PIP_TRUSTED_HOST` 在构建期和 Worker 运行期均显式生效；未输出或写入镜像代理的具体部署值。
+- Backend 市场探测默认并发从 2 提升为 4；Dify Worker 默认资源边界提升为 2 CPU、1 GiB，并兼容既有通用 `PLUGIN_WORKER_MEMORY_LIMIT` 与 `PLUGIN_WORKER_CPU_LIMIT` 覆盖项。
+- Backend 记录排队、市场下载、Worker 和总耗时；Dify Worker 记录缓存命中、依赖安装、组件加载、组件数和总耗时，日志只使用任务 ID 或包指纹前缀，不包含插件内容、凭据或代理地址。
+- 未修改数据库结构、前端、市场接口、导入行为、组件兼容规则、最大尝试次数或单组件隔离策略；未导入任何实测插件，也未删除或重置已有探测数据。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 重复依赖复用持久下载缓存 | Dify Worker Python 3.12 单元测试；临时插件卷 | 安装含安全 requirements 的插件 | pip 使用持久 `PIP_CACHE_DIR` 且不带 `--no-cache-dir`，插件 `.deps` 仍隔离；通过 | 正常、性能、兼容 |
+| 缓存和临时目录不突破安全边界 | Dify Worker 单元测试；卷内与卷外缓存路径 | 使用合法缓存路径、卷外逃逸路径、非法依赖源和 Dify SDK 依赖 | 合法缓存持久化、临时目录调用后删除；卷外路径和非法依赖拒绝；通过 | 边界、安全、异常 |
+| 当前页最多四个包同时探测 | Backend Probe Service；默认配置与显式并发 1 | 构造默认线程池及阻塞探测队列 | 默认核心/最大线程均为 4；显式并发 1 时仍仅 1 条 PROBING；通过 | 并发、配置、回归 |
+| 探测状态与兼容结果不变 | Backend/双 Worker 定向与完整回归 | 正常、混合兼容、依赖失败、市场拒绝、重试耗尽 | 原有 COMPLETE/PARTIAL/UNSUPPORTED/QUEUED/FAILED/REJECTED 语义保持；通过 | 正常、异常、兼容、回归 |
+| 运行配置和镜像代理生效 | Compose 配置、统一重建和容器运行态 | 构建六个镜像并检查容器配置、健康与 readiness | Backend 并发 4；Dify Worker 2 CPU/1 GiB、缓存与镜像变量生效；六服务 healthy，readiness 为 UP；通过 | 构建、部署、配置 |
+| 冷页探测总耗时下降 | 真实 Dify 市场第 7 页；20 个此前未缓存固定版本 | 管理员只读打开并每 2 秒轮询，不调用导入 | 100 秒全部收敛；修改前相同规模最近两批为 145 秒和 241 秒，分别缩短约 31% 和 59%；通过 | 性能、外部依赖、端到端 |
+
+### 测试执行结果
+
+- 正式自动化回归共 828 项，828 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：533/533 通过；统一镜像构建阶段再次执行 533/533 并完成打包。
+- Frontend 两套完整回归：109/109、168/168 通过；本次未修改前端。
+- Dify Worker 使用 Python 3.12：14/14 通过；n8n Worker：4/4 通过。
+- Backend 定向回归：24/24 通过，覆盖 Probe Service 13、Worker Client 1、Marketplace Service 7、Marketplace Client 3。
+- 缺陷复现阶段两项新增测试均稳定失败：pip 命令仍包含 `--no-cache-dir`；默认线程池实际为 2。实现后两项及完整回归全部通过。
+
+### 关键模块测试
+
+- Dify 依赖层：验证持久 pip 下载缓存、镜像代理变量、插件级 `.deps` 隔离、卷内临时目录、缓存路径逃逸拒绝、禁止 SDK 和外部依赖源、失败与超时清理。
+- Dify ABI 层：覆盖 Tool、Model、Agent Strategy、Datasource、Trigger、Extension、未知 Dify SDK 子模块、包内相对导入、OAuth 生命周期、旧 ABI 缓存重建和调用输出。
+- Backend 队列层：覆盖默认 4 并发、显式资源边界、幂等入队、立即执行槽位、固定版本直下、租约、依赖故障重试、重试耗尽和安全拒绝。
+- 配置与部署层：验证 Compose 解析、Python 3.12 镜像、运行期 pip 镜像配置、2 CPU/1 GiB 资源限制、六服务健康与 HTTPS readiness。
+
+### 真实性能验收
+
+- 修改前运行态基线：Dify 默认并发 2；最近两个 20 项规模批次从入队到整页收敛约 145 秒和 241 秒；69 个包中共 197 个组件，插件依赖目录约 4.2 GiB，`requests`、`pydantic` 等依赖在约 60 个包中重复声明。
+- 修改后选择市场第 7 页，20 个包此前均无数据库探测记录；17 秒时为 1 COMPLETE/4 PROBING/15 QUEUED，34 秒时 6 COMPLETE，51 秒时 12 COMPLETE，68 秒时 16 COMPLETE，100 秒全部进入终态。
+- 运行态始终最多 4 个 PROBING；观察峰值约 195% CPU、333 MiB/1 GiB 内存，未触发 OOM、容器重启、tmpfs 占满或线程池拒绝。
+- 17 个成功进入 Dify Worker 的包全部返回规范结果；缓存变热后，多数重复依赖安装阶段约 3–5 秒。共享 pip 缓存新增约 169 MiB。
+- 最终状态为 17 COMPLETE、2 REJECTED、1 FAILED。两个 REJECTED 为官方市场下载返回无效包；FAILED 包连续三次触发 8 秒市场下载超时，稍后只读直连同一固定版本在 1.4 秒返回 HTTP 200，确认是瞬态外部市场波动，不是 Worker 缓存或并发失败。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 缺陷复现 | Python 3.12 单用例；Maven 容器执行新增默认并发用例 | 2 项按预期失败，分别捕获禁用缓存和默认并发 2 |
+| Backend 定向回归 | Maven 3.9.9 / Java 17 容器执行 Probe、Worker Client、Marketplace Service 和 Marketplace Client | 24/24 通过，BUILD SUCCESS |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn test -B -ntp` | 533/533 通过，BUILD SUCCESS |
+| Frontend 完整回归 | `npm test`；`node --test test/*.mjs` | 109/109、168/168 通过 |
+| Dify Worker | `python3.12 -m unittest discover -s tests -v` | 14/14 通过 |
+| n8n Worker | `npm test` | 4/4 通过 |
+| Compose 配置与重建 | `docker compose config --quiet`；`docker compose up --build -d` | 解析成功；Backend 构建内 533/533；六服务 healthy |
+| 真实 Dify 冷页 | 登录后只读请求此前未缓存的第 7 页并轮询状态 | 20 项在 100 秒收敛；未导入、删除或重置数据 |
+| 运行态健康与资源 | `docker compose ps`、HTTPS readiness、容器配置和 `docker stats` | readiness 为 UP；并发 4；Dify 2 CPU/1 GiB；峰值约 195%/333 MiB |
+| 差异与清理 | `git diff --check`、路径限定暂存、Cookie trap、`__pycache__` 检查 | 本任务提交未夹带并发工作树变更；临时 Cookie 与 Python 缓存均已清理 |
+
+### 测试过程问题与处理
+
+- 首轮 Python 定向回归在 macOS 上因 `/var` 与 `/private/var` 指向同一真实目录而出现 1 个路径字符串断言失败；改为比较 `resolve()` 后的真实路径，安全边界断言未弱化，14/14 通过。
+- 首次真实验收脚本把统一 API 成功码 200 误按 0 判断并在市场请求前退出；Cookie trap 正常清理且未产生探测任务。修正响应契约后重新执行完整冷页验收。
+- 冷页中的 1 个包因 Dify 市场连续三次 8 秒超时进入 FAILED；随后同一下载地址 1.4 秒成功，已按外部瞬态波动记录，未通过删除记录、重置状态或修改重试上限掩盖结果。
+- 测试报告提交前出现另一项任务的未提交 Backend/Frontend 变更；本任务使用路径限定提交，不暂存、不覆盖，也不把这些并发变更计入上述测试基准。
+
+### 已知问题与限制
+
+- pip 缓存减少重复下载，但每个插件仍保留独立运行依赖；真实冷页后共享缓存约 169 MiB，插件卷从约 4.2 GiB 增至约 5.7 GiB，依赖较重的插件仍会占用明显磁盘空间。
+- 当前共享 pip 缓存没有自动容量上限或独立清理周期；部署方可通过 `PLUGIN_PIP_CACHE_DIR` 放置在受监控的插件持久卷中，删除缓存属于数据清理操作，需另行确认。
+- 四并发默认需要比原配置更多资源；Dify Worker 默认提高到 2 CPU/1 GiB，资源较小的环境可用 `WORKFLOW_MARKETPLACE_PROBE_CONCURRENCY`、`DIFY_PLUGIN_WORKER_CPU_LIMIT` 和 `DIFY_PLUGIN_WORKER_MEMORY_LIMIT` 下调。
+- 外部市场下载仍使用 8 秒请求超时和最多三次尝试；短时网络波动可能让单包进入 FAILED，本次未扩大到自动恢复耗尽任务或修改下载超时。
+- 性能结果来自当前网络、镜像代理和官方市场包集合，不能保证所有环境固定为 100 秒；确定性验收是持久缓存生效、并发 4、资源不越界和状态机保持。
+
+### 下次测试建议
+
+1. 为共享 pip 缓存增加可配置容量上限、空闲期 LRU 清理和磁盘水位监控，避免长期运行后无界增长。
+2. 评估对 `workflow.marketplaceUnavailable` 耗尽任务增加带冷却的页面访问恢复机制，避免短时市场抖动永久保留 FAILED。
+3. 在稳定隔离网络中连续测试多个完全未缓存页面，统计 P50/P95、下载缓存命中率、依赖安装耗时和峰值磁盘增长。
+
+### 重测触发条件与回滚
+
+- 修改 pip 缓存目录/清理、依赖过滤、插件隔离、Dify 镜像代理、探测并发、Worker 资源、队列领取、租约、阶段日志、市场下载超时或失败恢复时，必须重跑 Backend/Dify Worker 定向测试、完整回归、Compose 重建和真实冷页验收。
+- 应用代码可撤销提交 `9750a2c483ebc8cc6cc9b5ce8da0fab29d157be1`，默认并发与资源恢复为原值；回滚后执行 `docker compose up --build -d`。共享 pip 缓存可以保留且不会被旧代码加载；如需释放空间，必须另行确认后再删除缓存目录。
+
 ## 📋 市场节点导入默认启用修复测试结果（2026-08-11）
 
 ### Git 基准点
