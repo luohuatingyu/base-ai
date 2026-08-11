@@ -56,6 +56,8 @@ class WorkflowNodeMarketplaceServiceTest {
             new WorkflowMarketplaceClients.SearchResult(List.of(redis, slack), 2));
         when(pluginProbes.snapshot("N8N", slack, true)).thenReturn(
             new WorkflowPluginProbeService.ProbeSnapshot("QUEUED", "PROBING", "", null));
+        when(workflowService.activeMarketplaceTemplateFingerprints("N8N")).thenReturn(Map.of(
+            redis.externalId(), sha256("N8N\n" + redis.externalId() + "\n\nREDIS_COMMAND\n{}")));
 
         WorkflowModels.MarketplacePage page = service.nodes("n8n", "", "", 1, 20, false);
 
@@ -63,6 +65,7 @@ class WorkflowNodeMarketplaceServiceTest {
         assertTrue(page.items().get(0).compatible());
         assertEquals("REDIS_COMMAND", page.items().get(0).targetNodeType());
         assertEquals("NATIVE_SUBSET", page.items().get(0).compatibilityLevel());
+        assertTrue(page.items().get(0).imported());
         assertFalse(page.items().get(1).compatible());
         assertEquals("QUEUED", page.items().get(1).probeStatus());
         verify(pluginProbes).snapshot("N8N", slack, true);
@@ -101,6 +104,26 @@ class WorkflowNodeMarketplaceServiceTest {
         assertTrue(page.probePending());
         verify(pluginProbes).snapshot("N8N", plugin, false);
     }
+
+    /** 已完成探测的安全原因码应传给市场页面，未知内部细节仍使用通用提示。 */
+    @Test
+    void exposesOnlyStablePluginProbeReason() {
+        var plugin = entry("n8n-nodes-example.action", "Example", "1.0.0", "vendor", "community-node",
+            Map.of("packageName", "n8n-nodes-example"));
+        when(clients.searchN8n("", 1, 20)).thenReturn(
+            new WorkflowMarketplaceClients.SearchResult(List.of(plugin), 1));
+        when(pluginProbes.snapshot("N8N", plugin, true)).thenReturn(
+            new WorkflowPluginProbeService.ProbeSnapshot("COMPLETE", "UNSUPPORTED", "ROUTING_UNSUPPORTED", null));
+
+        assertEquals("ROUTING_UNSUPPORTED",
+            service.nodes("N8N", "", "", 1, 20, false).items().get(0).incompatibilityReason());
+
+        when(pluginProbes.snapshot("N8N", plugin, true)).thenReturn(
+            new WorkflowPluginProbeService.ProbeSnapshot("REJECTED", "UNSUPPORTED", "/private/path", null));
+        assertEquals("PACKAGE_REJECTED",
+            service.nodes("N8N", "", "", 1, 20, false).items().get(0).incompatibilityReason());
+    }
+
 
     /** 插件探测没有任何可执行组件时必须拒绝且不创建模板。 */
     @Test
@@ -190,6 +213,62 @@ class WorkflowNodeMarketplaceServiceTest {
         assertEquals("TAVILY_TOOL", page.items().get(0).targetNodeType());
     }
 
+    /** 只有当前插件全部受支持组件均存在且指纹一致时，市场卡片才算完整导入。 */
+    @Test
+    void marksMultiComponentPluginImportedOnlyWhenEveryCurrentTemplateExists() {
+        var plugin = entry("n8n-nodes-example.action", "Example", "1.2.3", "vendor", "community-node",
+            Map.of("packageName", "n8n-nodes-example"));
+        String packageFingerprint = "f".repeat(64);
+        var inspected = workerPackage("N8N", "n8n-nodes-example", "1.2.3", packageFingerprint,
+            "SUPPORTED", "action", "trigger");
+        when(clients.searchN8n("", 1, 20)).thenReturn(
+            new WorkflowMarketplaceClients.SearchResult(List.of(plugin), 1));
+        when(pluginProbes.snapshot("N8N", plugin, true)).thenReturn(
+            new WorkflowPluginProbeService.ProbeSnapshot("COMPLETE", "SUPPORTED", "", inspected));
+        String actionFingerprint = pluginTemplateFingerprint(packageFingerprint, "ACTION");
+        when(workflowService.activeMarketplaceTemplateFingerprints("N8N")).thenReturn(Map.of(
+            "n8n-nodes-example/action", actionFingerprint,
+            "n8n-nodes-example/trigger", actionFingerprint));
+
+        assertTrue(service.nodes("N8N", "", "", 1, 20, false).items().get(0).imported());
+
+        when(workflowService.activeMarketplaceTemplateFingerprints("N8N")).thenReturn(Map.of(
+            "n8n-nodes-example/action", actionFingerprint));
+        assertFalse(service.nodes("N8N", "", "", 1, 20, false).items().get(0).imported());
+
+        when(workflowService.activeMarketplaceTemplateFingerprints("N8N")).thenReturn(Map.of(
+            "n8n-nodes-example/action", actionFingerprint,
+            "n8n-nodes-example/trigger", "0".repeat(64)));
+        assertFalse(service.nodes("N8N", "", "", 1, 20, false).items().get(0).imported());
+    }
+
+    /** Dify 子能力分别标记导入状态，父插件只在全部兼容能力均导入时聚合为已导入。 */
+    @Test
+    void aggregatesImportedStateForDifyActions() {
+        var plugin = entry("langgenius/tavily", "Tavily", "0.1.11", "langgenius", "tool");
+        String packageFingerprint = "e".repeat(64);
+        var inspected = workerPackage("DIFY", "langgenius/tavily", "0.1.11", packageFingerprint,
+            "SUPPORTED", "tavily_search", "tavily_extract");
+        when(clients.searchDify("", "", 1, 20)).thenReturn(
+            new WorkflowMarketplaceClients.SearchResult(List.of(plugin), 1));
+        when(pluginProbes.snapshot("DIFY", plugin, true)).thenReturn(new WorkflowPluginProbeService.ProbeSnapshot(
+            "COMPLETE", "SUPPORTED", "", inspected));
+        String searchFingerprint = sha256(packageFingerprint + "\n" + "tavily_search" + "\n[]");
+        String extractFingerprint = sha256(packageFingerprint + "\n" + "tavily_extract" + "\n[]");
+        when(workflowService.activeMarketplaceTemplateFingerprints("DIFY")).thenReturn(Map.of(
+            "langgenius/tavily/tavily_search", searchFingerprint));
+
+        WorkflowModels.MarketplaceNodeView partial = service.nodes("DIFY", "", "", 1, 20, false).items().get(0);
+        assertTrue(partial.actions().get(0).imported());
+        assertFalse(partial.actions().get(1).imported());
+        assertFalse(partial.imported());
+
+        when(workflowService.activeMarketplaceTemplateFingerprints("DIFY")).thenReturn(Map.of(
+            "langgenius/tavily/tavily_search", searchFingerprint,
+            "langgenius/tavily/tavily_extract", extractFingerprint));
+        assertTrue(service.nodes("DIFY", "", "", 1, 20, false).items().get(0).imported());
+    }
+
     /** 构造最小市场条目。 */
     private WorkflowMarketplaceClients.MarketplaceEntry entry(String id, String name, String version,
                                                                String publisher, String category) {
@@ -223,5 +302,20 @@ class WorkflowNodeMarketplaceServiceTest {
     private WorkflowPluginRegistryService.RegisteredComponent component(String status) {
         return new WorkflowPluginRegistryService.RegisteredComponent(7L, "action", "ACTION", "Action", "",
             mapper.createArrayNode(), mapper.createArrayNode(), status, "", "c".repeat(64));
+    }
+
+    /** 按注册表和模板服务的现有算法计算通用插件模板指纹。 */
+    private String pluginTemplateFingerprint(String packageFingerprint, String componentType) {
+        return sha256(packageFingerprint + "\n" + sha256(componentType + "\n[]\n[]"));
+    }
+
+    /** 计算测试数据使用的稳定 SHA-256。 */
+    private String sha256(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 }

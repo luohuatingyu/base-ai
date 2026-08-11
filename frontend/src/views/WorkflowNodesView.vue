@@ -75,13 +75,14 @@
           <div class="marketplace-card-head">
             <span class="marketplace-source-mark" aria-hidden="true">{{ selectedSource === 'N8N' ? 'n8n' : 'Dify' }}</span>
             <div class="marketplace-card-identity">
-              <el-checkbox v-if="!item.actions?.length" :value="item.externalId" :disabled="!item.compatible">
+              <el-checkbox v-if="!item.actions?.length" :value="item.externalId" :disabled="!item.compatible || item.imported">
                 <strong>{{ item.name }}</strong>
               </el-checkbox>
               <strong v-else>{{ item.name }}</strong>
             </div>
             <div class="marketplace-card-status">
               <el-tag v-if="isProbePending(item)" type="warning" size="small">{{ t('workflowNodes.probing') }}</el-tag>
+              <el-tag v-else-if="item.imported" type="info" size="small">{{ t('workflowNodes.imported') }}</el-tag>
               <el-tag v-else-if="item.compatible" type="success" size="small">{{ t('workflowNodes.compatible') }}</el-tag>
               <el-tag v-else type="info" size="small">{{ t('workflowNodes.unsupported') }}</el-tag>
             </div>
@@ -98,8 +99,8 @@
               <small>{{ t('workflowNodes.marketplaceCapabilityHint') }}</small>
             </div>
             <div class="marketplace-action-list">
-              <el-checkbox v-for="action in item.actions" :key="action.externalId" :value="action.externalId" :disabled="!action.compatible">
-                <span><strong>{{ action.name }}</strong><small>{{ action.description }}</small></span>
+              <el-checkbox v-for="action in item.actions" :key="action.externalId" :value="action.externalId" :disabled="!action.compatible || action.imported">
+                <span><strong>{{ action.name }}</strong><small>{{ action.description }}</small><el-tag v-if="action.imported" type="info" size="small">{{ t('workflowNodes.imported') }}</el-tag></span>
               </el-checkbox>
             </div>
           </div>
@@ -207,8 +208,8 @@ async function loadMarketplace() {
     } })
     marketplaceItems.value = data?.items || []; marketplaceTotal.value = Number(data?.total || 0)
     marketplaceProbePending.value = Boolean(data?.probePending)
-    const compatibleIds = new Set(marketplaceItems.value.filter(item => item.compatible).flatMap(item =>
-      item.actions?.length ? item.actions.filter(action => action.compatible).map(action => action.externalId) : [item.externalId]))
+    const compatibleIds = new Set(marketplaceItems.value.filter(item => item.compatible && !item.imported).flatMap(item =>
+      item.actions?.length ? item.actions.filter(action => action.compatible && !action.imported).map(action => action.externalId) : [item.externalId]))
     selectedMarketplaceIds.value = selectedMarketplaceIds.value.filter(id => compatibleIds.has(id))
     scheduleMarketplacePolling()
   } catch (error) { marketplaceItems.value = []; marketplaceTotal.value = 0; marketplaceProbePending.value = false; showHttpError(error) }

@@ -57,13 +57,14 @@ public class WorkflowNodeMarketplaceService {
             ? clients.searchN8n(query, page, pageSize) : clients.searchDify(query, category, page, pageSize);
         boolean enqueue = AuthContext.current() != null
             && AuthContext.current().hasPermission("workflow:node:import");
+        Map<String, String> activeTemplates = workflowService.activeMarketplaceTemplateFingerprints(source);
         List<WorkflowModels.MarketplaceNodeView> items = new ArrayList<>();
         for (WorkflowMarketplaceClients.MarketplaceEntry entry : result.items()) {
-            if ("N8N".equals(source)) items.add(adaptN8n(entry).map(draft -> view(entry, draft))
-                .orElseGet(() -> probeView(source, entry, enqueue)));
+            if ("N8N".equals(source)) items.add(adaptN8n(entry).map(draft -> view(entry, draft, activeTemplates))
+                .orElseGet(() -> probeView(source, entry, enqueue, activeTemplates)));
             else if (DIFY_TAVILY.equals(entry.externalId())) {
-                items.add(difyPluginView(entry, pluginProbes.snapshot(source, entry, enqueue)));
-            } else items.add(probeView(source, entry, enqueue));
+                items.add(difyPluginView(entry, pluginProbes.snapshot(source, entry, enqueue), activeTemplates));
+            } else items.add(probeView(source, entry, enqueue, activeTemplates));
         }
         List<WorkflowModels.MarketplaceNodeView> filtered = compatibleOnly
             ? items.stream().filter(WorkflowModels.MarketplaceNodeView::compatible).toList() : items;
@@ -261,18 +262,20 @@ public class WorkflowNodeMarketplaceService {
 
     /** 构造统一市场卡片；未兼容项只返回稳定原因码。 */
     private WorkflowModels.MarketplaceNodeView view(WorkflowMarketplaceClients.MarketplaceEntry entry,
-                                                     NativeDraft draft) {
+                                                     NativeDraft draft, Map<String, String> activeTemplates) {
         return draft == null
             ? new WorkflowModels.MarketplaceNodeView(entry.externalId(), entry.name(), entry.description(),
                 entry.version(), entry.publisher(), entry.category(), false, "NO_NATIVE_ADAPTER", "", "",
-                "NONE", List.of(), "NOT_REQUIRED")
-            : view(draft, entry.version(), entry.publisher(), entry.category());
+                "NONE", List.of(), "NOT_REQUIRED", false)
+            : view(draft, entry.version(), entry.publisher(), entry.category(),
+                templateImported(activeTemplates, draft("N8N", entry, entry.externalId(), draft)));
     }
 
     /** 根据后台探测快照构造市场卡片，未完成探测的条目始终不可导入。 */
     private WorkflowModels.MarketplaceNodeView probeView(String source,
                                                           WorkflowMarketplaceClients.MarketplaceEntry entry,
-                                                          boolean enqueue) {
+                                                          boolean enqueue,
+                                                          Map<String, String> activeTemplates) {
         WorkflowPluginProbeService.ProbeSnapshot snapshot = pluginProbes.snapshot(source, entry, enqueue);
         WorkflowPluginWorkerClient.WorkerComponent supported = snapshot.inspected() == null ? null
             : snapshot.inspected().components().stream()
@@ -284,51 +287,106 @@ public class WorkflowNodeMarketplaceService {
             entry.version(), entry.publisher(), entry.category(), compatible,
             compatible ? "" : incompatibility(snapshot), targetNodeType,
             WorkflowTemplateCatalog.defaultCategory(targetNodeType), snapshot.compatibilityStatus(), List.of(),
-            snapshot.probeStatus());
+            snapshot.probeStatus(),
+            compatible && pluginImported(source, entry, snapshot.inspected(), activeTemplates));
     }
 
     /** 构造兼容市场节点卡片。 */
-    private WorkflowModels.MarketplaceNodeView view(NativeDraft draft, String version, String publisher, String category) {
+    private WorkflowModels.MarketplaceNodeView view(NativeDraft draft, String version, String publisher,
+                                                     String category, boolean imported) {
         return new WorkflowModels.MarketplaceNodeView(draft.externalId(), draft.name(), draft.description(), version,
             publisher, category, true, "", draft.nodeType(), draft.functionalCategory(), "NATIVE_SUBSET", List.of(),
-            "NOT_REQUIRED");
+            "NOT_REQUIRED", imported);
     }
 
     /** 以插件为分页单位展示 Dify，并把受支持工具作为可选择动作返回。 */
     private WorkflowModels.MarketplaceNodeView difyPluginView(WorkflowMarketplaceClients.MarketplaceEntry plugin,
-                                                               WorkflowPluginProbeService.ProbeSnapshot snapshot) {
+                                                               WorkflowPluginProbeService.ProbeSnapshot snapshot,
+                                                               Map<String, String> activeTemplates) {
         List<WorkflowModels.MarketplaceActionView> actions = List.of(
-            action(difyTool(plugin, "tavily_search", "Tavily Search", "Search the web with Tavily"), snapshot),
-            action(difyTool(plugin, "tavily_extract", "Tavily Extract", "Extract content from web pages with Tavily"), snapshot)
+            action(difyTool(plugin, "tavily_search", "Tavily Search", "Search the web with Tavily"), snapshot,
+                activeTemplates),
+            action(difyTool(plugin, "tavily_extract", "Tavily Extract", "Extract content from web pages with Tavily"),
+                snapshot, activeTemplates)
         );
         boolean compatible = actions.stream().anyMatch(WorkflowModels.MarketplaceActionView::compatible);
+        boolean imported = compatible && actions.stream().filter(WorkflowModels.MarketplaceActionView::compatible)
+            .allMatch(WorkflowModels.MarketplaceActionView::imported);
         return new WorkflowModels.MarketplaceNodeView(plugin.externalId(), plugin.name(), plugin.description(),
             plugin.version(), plugin.publisher(), plugin.category(), compatible,
             compatible ? "" : incompatibility(snapshot), "TAVILY_TOOL", "NETWORK_API",
-            compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus(), actions, snapshot.probeStatus());
+            compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus(), actions, snapshot.probeStatus(), imported);
     }
 
     /** 把单个原生适配动作与真实 ABI 组件探测结果合并。 */
     private WorkflowModels.MarketplaceActionView action(NativeDraft draft,
-                                                         WorkflowPluginProbeService.ProbeSnapshot snapshot) {
+                                                         WorkflowPluginProbeService.ProbeSnapshot snapshot,
+                                                         Map<String, String> activeTemplates) {
         String toolName = draft.externalId().substring(draft.externalId().lastIndexOf('/') + 1);
-        boolean compatible = "COMPLETE".equals(snapshot.probeStatus()) && snapshot.inspected() != null
-            && snapshot.inspected().components().stream().anyMatch(item -> toolName.equals(item.externalId())
-                && "SUPPORTED".equals(item.compatibilityStatus()));
+        WorkflowPluginWorkerClient.WorkerComponent component = snapshot.inspected() == null ? null
+            : snapshot.inspected().components().stream().filter(item -> toolName.equals(item.externalId())
+                && "SUPPORTED".equals(item.compatibilityStatus())).findFirst().orElse(null);
+        boolean compatible = "COMPLETE".equals(snapshot.probeStatus()) && component != null;
+        String fingerprint = compatible
+            ? sha256(snapshot.inspected().fingerprint() + "\n" + toolName + "\n" + component.schema()) : "";
         return new WorkflowModels.MarketplaceActionView(draft.externalId(), draft.name(), draft.description(), compatible,
             compatible ? "" : incompatibility(snapshot), draft.nodeType(), draft.functionalCategory(),
-            compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus());
+            compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus(),
+            compatible && fingerprintMatches(activeTemplates, draft.externalId(), fingerprint));
+    }
+
+    /** 校验通用插件当前全部受支持组件均有未作废且指纹一致的模板。 */
+    private boolean pluginImported(String source, WorkflowMarketplaceClients.MarketplaceEntry entry,
+                                   WorkflowPluginWorkerClient.WorkerPackage inspected,
+                                   Map<String, String> activeTemplates) {
+        if (inspected == null) return false;
+        String packageKey = "N8N".equals(source) ? entry.raw().path("packageName").asText("") : entry.externalId();
+        if (packageKey.isBlank()) return false;
+        List<WorkflowPluginWorkerClient.WorkerComponent> supported = inspected.components().stream()
+            .filter(component -> "SUPPORTED".equals(component.compatibilityStatus())).toList();
+        return !supported.isEmpty() && supported.stream().allMatch(component -> {
+            String schemaFingerprint = sha256(component.componentType() + "\n" + schemaJson(component.schema())
+                + "\n" + schemaJson(component.credentialSchema()));
+            String templateFingerprint = sha256(inspected.fingerprint() + "\n" + schemaFingerprint);
+            return fingerprintMatches(activeTemplates, packageKey + "/" + component.externalId(), templateFingerprint);
+        });
+    }
+
+    /** 校验单个原生市场模板仍存在且身份指纹没有变化。 */
+    private boolean templateImported(Map<String, String> activeTemplates,
+                                     WorkflowModels.MarketplaceTemplateDraft draft) {
+        return fingerprintMatches(activeTemplates, draft.externalKey(), draft.externalFingerprint());
+    }
+
+    /** 使用大小写不敏感的十六进制比较识别当前市场模板。 */
+    private boolean fingerprintMatches(Map<String, String> activeTemplates, String externalKey,
+                                       String expectedFingerprint) {
+        String storedFingerprint = activeTemplates.get(externalKey);
+        return storedFingerprint != null && expectedFingerprint != null
+            && storedFingerprint.equalsIgnoreCase(expectedFingerprint);
+    }
+
+    /** 复用注册表的空 Schema 规范化规则生成稳定组件指纹。 */
+    private String schemaJson(JsonNode schema) {
+        return schema == null || schema.isMissingNode() ? "[]" : schema.toString();
     }
 
     /** 把内部探测错误收敛为不会泄漏 Worker 细节的稳定前端原因码。 */
     private String incompatibility(WorkflowPluginProbeService.ProbeSnapshot snapshot) {
         return switch (snapshot.probeStatus()) {
             case "QUEUED", "PROBING", "NOT_PROBED" -> "PROBE_PENDING";
-            case "REJECTED" -> "PACKAGE_REJECTED";
+            case "REJECTED" -> publicProbeReason(snapshot.compatibilityReason(), "PACKAGE_REJECTED");
             case "FAILED" -> "PROBE_FAILED";
-            case "COMPLETE" -> "NO_EXECUTABLE_COMPONENT";
+            case "COMPLETE" -> publicProbeReason(snapshot.compatibilityReason(), "NO_EXECUTABLE_COMPONENT");
             default -> "PROBE_FAILED";
         };
+    }
+
+    /** 只向前端返回已审查的稳定探测原因，未知 Worker 细节统一收敛。 */
+    private String publicProbeReason(String reason, String fallback) {
+        return List.of("PACKAGE_SIZE_LIMIT", "PACKAGE_CONTENT_LIMIT", "PACKAGE_DEPENDENCY_REJECTED",
+            "PACKAGE_ARCHIVE_INVALID", "PACKAGE_REJECTED", "ROUTING_UNSUPPORTED", "PLUGIN_ABI_UNSUPPORTED",
+            "DEPENDENCY_UNAVAILABLE", "NO_EXECUTABLE_COMPONENT").contains(reason) ? reason : fallback;
     }
 
     /** 搜索同时匹配插件身份和受支持动作。 */

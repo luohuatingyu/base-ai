@@ -155,13 +155,24 @@ test('节点来源切换后系统使用新增入口且外部来源使用官方�
 
 test('市场目录全量可浏览但只有原生兼容节点可以选中导入', () => {
   assert.match(nodeManagementSource, /v-model="compatibleOnly"/)
-  assert.match(nodeManagementSource, /:disabled="!item\.compatible"/)
+  assert.match(nodeManagementSource, /:disabled="!item\.compatible \|\| item\.imported"/)
   assert.match(nodeManagementSource, /item\.actions\?\.length/)
-  assert.match(nodeManagementSource, /:disabled="!action\.compatible"/)
+  assert.match(nodeManagementSource, /:disabled="!action\.compatible \|\| action\.imported"/)
   assert.match(nodeManagementSource, /compatibilityLevel === 'NATIVE_SUBSET'/)
   assert.match(nodeManagementSource, /item\.incompatibilityReason/)
   assert.match(nodeManagementSource, /externalIds:\s*\[\.\.\.selectedMarketplaceIds\.value\]/)
   assert.match(nodeManagementSource, /marketplaceHint/)
+})
+
+test('市场中完整导入的插件和能力显示已导入且不可重复选择', () => {
+  assert.equal(zhCN.workflowNodes.imported, '已导入')
+  assert.equal(enUS.workflowNodes.imported, 'Imported')
+  assert.match(nodeManagementSource, /item\.imported[^\n]*workflowNodes\.imported/)
+  assert.match(nodeManagementSource, /:disabled="!item\.compatible \|\| item\.imported"/)
+  assert.match(nodeManagementSource, /:disabled="!action\.compatible \|\| action\.imported"/)
+  assert.match(nodeManagementSource, /action\.imported[^\n]*workflowNodes\.imported/)
+  assert.match(nodeManagementSource, /!item\.imported/)
+  assert.match(nodeManagementSource, /!action\.imported/)
 })
 
 test('市场页面自动轮询异步探测且导入不负责触发探测', () => {

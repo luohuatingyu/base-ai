@@ -20,12 +20,12 @@ public final class WorkflowModels {
                                    LocalDateTime createdAt, LocalDateTime updatedAt) {}
     public record MarketplaceActionView(String externalId, String name, String description, boolean compatible,
                                         String incompatibilityReason, String targetNodeType,
-                                        String functionalCategory, String compatibilityLevel) {}
+                                        String functionalCategory, String compatibilityLevel, boolean imported) {}
     public record MarketplaceNodeView(String externalId, String name, String description, String version,
                                       String publisher, String marketplaceCategory, boolean compatible,
                                       String incompatibilityReason, String targetNodeType, String functionalCategory,
                                       String compatibilityLevel, List<MarketplaceActionView> actions,
-                                      String probeStatus) {}
+                                      String probeStatus, boolean imported) {}
     public record MarketplacePage(String source, List<MarketplaceNodeView> items, int page, int pageSize, long total,
                                   boolean probePending) {}
     public record MarketplaceImportCommand(List<String> externalIds, Boolean replaceExisting) {}

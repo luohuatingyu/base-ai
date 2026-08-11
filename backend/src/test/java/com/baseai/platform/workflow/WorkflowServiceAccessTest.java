@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -133,6 +134,27 @@ class WorkflowServiceAccessTest {
 
         assertEquals("RESTORED", restored.status());
         assertTrue(service.template(id).enabled());
+    }
+
+    /** 导入状态查询包含停用但未删除模板，并排除已经软删除的组件。 */
+    @Test
+    void listsOnlyNonVoidedMarketplaceTemplateFingerprints() {
+        authenticate(1L, Set.of("ADMIN"));
+        WorkflowModels.MarketplaceTemplateDraft active = new WorkflowModels.MarketplaceTemplateDraft(
+            "N8N", "n8n-nodes-example/action", "1", "vendor", "a".repeat(64), "N8N_ACTION", "Action", "",
+            "PLUGIN_ACTION", "NETWORK_API", new ObjectMapper().createObjectNode());
+        WorkflowModels.MarketplaceTemplateDraft deleted = new WorkflowModels.MarketplaceTemplateDraft(
+            "N8N", "n8n-nodes-example/trigger", "1", "vendor", "b".repeat(64), "N8N_TRIGGER", "Trigger", "",
+            "PLUGIN_TRIGGER", "TRIGGER", new ObjectMapper().createObjectNode());
+        Long activeId = service.importMarketplaceTemplate(active).templateId();
+        Long deletedId = service.importMarketplaceTemplate(deleted).templateId();
+        service.updateTemplate(activeId, new WorkflowModels.NodeTemplateCommand(
+            "IGNORED", "Action", "PLUGIN_ACTION", "", new ObjectMapper().createObjectNode(), false,
+            "N8N", "NETWORK_API"));
+        service.deleteTemplate(deletedId);
+
+        assertEquals(Map.of("n8n-nodes-example/action", "a".repeat(64)),
+            service.activeMarketplaceTemplateFingerprints("N8N"));
     }
 
     /** 市场模板的来源、编码和节点类型必须由后端锁定，不能通过更新接口伪造。 */

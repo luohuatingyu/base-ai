@@ -64,6 +64,23 @@ public class WorkflowService {
             : jdbcTemplate.query(sql, (rs, row) -> mapTemplate(rs), user.id());
     }
 
+    /** 查询指定市场来源下未作废模板的外部键和指纹，不暴露加密配置。 */
+    public Map<String, String> activeMarketplaceTemplateFingerprints(String rawSource) {
+        String source = WorkflowTemplateCatalog.source(rawSource);
+        return jdbcTemplate.query("""
+            SELECT external_key,external_fingerprint FROM workflow_node_template
+            WHERE template_source=? AND external_key IS NOT NULL AND voided=false
+            """, resultSet -> {
+                Map<String, String> fingerprints = new LinkedHashMap<>();
+                while (resultSet.next()) {
+                    String externalKey = resultSet.getString("external_key");
+                    String fingerprint = resultSet.getString("external_fingerprint");
+                    if (externalKey != null && fingerprint != null) fingerprints.put(externalKey, fingerprint);
+                }
+                return Map.copyOf(fingerprints);
+            }, source);
+    }
+
     /** 创建可复用节点模板。 */
     @Transactional
     public WorkflowModels.NodeTemplateView createTemplate(WorkflowModels.NodeTemplateCommand command) {
