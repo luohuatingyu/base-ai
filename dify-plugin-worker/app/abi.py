@@ -26,12 +26,49 @@ class Runtime:
         return str(self.context.get("userId") or self.context.get("workflowOwnerId") or "")
 
 
-@dataclass
+@dataclass(init=False)
 class ToolInvokeMessage:
     """表示插件产生的一条规范化消息。"""
 
-    type: str
+    type: Any
     value: Any
+
+    class MessageType(str, Enum):
+        """Dify 工具消息的公开输出类型。"""
+
+        TEXT = "text"
+        JSON = "json"
+        LINK = "link"
+        IMAGE_LINK = "image-link"
+        IMAGE = "image"
+        BLOB = "blob"
+        VARIABLE = "variable"
+        LOG = "log"
+
+    class LogMessage:
+        """保存 Agent 执行日志的公开字段。"""
+
+        class LogStatus(str, Enum):
+            """Agent 日志生命周期状态。"""
+
+            START = "start"
+            SUCCESS = "success"
+            ERROR = "error"
+
+        def __init__(self, **kwargs: Any) -> None:
+            """接受不同 SDK 版本使用的日志字段。"""
+            self.__dict__.update(kwargs)
+
+        def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            """返回可序列化的日志字段。"""
+            return dict(vars(self))
+
+    def __init__(self, type: Any, value: Any = None, message: Any = None, **kwargs: Any) -> None:
+        """同时兼容 value 与历史 message 构造参数。"""
+        self.type = type
+        self.value = value if value is not None else message
+        for key, item in kwargs.items():
+            setattr(self, key, item)
 
     @property
     def message(self) -> Any:

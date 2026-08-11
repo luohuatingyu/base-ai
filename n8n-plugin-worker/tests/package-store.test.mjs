@@ -167,7 +167,7 @@ module.exports = { Declarative }
     const bytes = await (await import('node:fs/promises')).readFile(join(root, 'fixture.tgz'))
     const store = new PackageStore(storeRoot)
     const result = await store.install({ archiveBase64: bytes.toString('base64') })
-    assert.equal(result.hostAbiVersion, 3)
+    assert.equal(result.hostAbiVersion, 4)
     assert.equal(result.components[0].compatibilityStatus, 'SUPPORTED')
     const installed = await store.metadata(result.fingerprint)
     const invoked = await invokeChild({

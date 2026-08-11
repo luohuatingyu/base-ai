@@ -13,7 +13,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 from app.abi import Runtime, Tool, normalize_output
-from app.package_store import PackageError, PackageStore
+from app.package_store import HOST_ABI_VERSION, PackageError, PackageStore
 
 
 def archive(entries: dict[str, str]) -> bytes:
@@ -107,7 +107,7 @@ class FixtureLlm(LargeLanguageModel):
         result = self.store.install({"packageId": "fixture/model", "version": "1",
                                      "archiveBase64": base64.b64encode(raw).decode()})
 
-        self.assertEqual(4, result["hostAbiVersion"])
+        self.assertEqual(HOST_ABI_VERSION, result["hostAbiVersion"])
         self.assertEqual(1, len(result["components"]))
         item = result["components"][0]
         self.assertEqual("SUPPORTED", item["compatibilityStatus"])
@@ -207,6 +207,7 @@ extra:
 from dify_plugin.entities.model import (PARAMETER_RULE_TEMPLATE, AIModelEntity, DefaultParameterName, FetchFrom,
                                         ModelFeature, ModelPropertyKey, PriceType)
 from dify_plugin.entities.model.llm import LLMMode
+from dify_plugin.entities.tool import ToolInvokeMessage
 from dify_plugin.interfaces.agent import AgentModelConfig, AgentScratchpadUnit, AgentStrategy
 from pydantic import BaseModel
 
@@ -224,6 +225,7 @@ class ContractAgent(AgentStrategy):
     temperature = DefaultParameterName.TEMPERATURE
     price_type = PriceType.INPUT
     temperature_rule = {**PARAMETER_RULE_TEMPLATE[DefaultParameterName.TEMPERATURE]}
+    log_status = ToolInvokeMessage.LogMessage.LogStatus.START
     def _invoke(self, parameters):
         action = self.action_type(action_name='finish', action_input={'answer': 'ok'})
         scratchpad = AgentScratchpadUnit(action=action, thought='done')
@@ -468,7 +470,7 @@ class OAuth(Endpoint):
             second = self.store.install(request)
 
         metadata.assert_called_once()
-        self.assertEqual(4, second["hostAbiVersion"])
+        self.assertEqual(HOST_ABI_VERSION, second["hostAbiVersion"])
 
 
 if __name__ == "__main__":

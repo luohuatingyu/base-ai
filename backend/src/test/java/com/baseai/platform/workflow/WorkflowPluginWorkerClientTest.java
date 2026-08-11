@@ -64,7 +64,7 @@ class WorkflowPluginWorkerClientTest {
     void validatesWorkerHostAbiVersion() throws Exception {
         String fingerprint = "a".repeat(64);
         int[] requestCount = {0};
-        int[] versions = {3, 4, 3};
+        int[] versions = {4, 5, 4};
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/packages/inspect", exchange -> {
             byte[] body = ("""
@@ -85,8 +85,8 @@ class WorkflowPluginWorkerClientTest {
         properties.getWorkflow().setPluginWorkerInternalToken("x".repeat(24));
         WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties, lifecycle());
 
-        assertEquals(3, client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
-        assertEquals(4, client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
+        assertEquals(4, client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
+        assertEquals(5, client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
         BusinessException outdated = assertThrows(BusinessException.class,
             () -> client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint));
         assertEquals("workflow.pluginWorkerResponseInvalid", outdated.getMessageKey());
