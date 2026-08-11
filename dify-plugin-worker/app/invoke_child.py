@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import inspect
 import json
 import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -22,11 +24,22 @@ def load_component(root: Path, source_path: str) -> PluginComponent:
     dependencies = root / ".deps"
     if dependencies.is_dir():
         sys.path.insert(1, str(dependencies))
-    specification = importlib.util.spec_from_file_location("base_ai_plugin_component", source)
-    if specification is None or specification.loader is None:
-        raise ValueError("PYTHON_SOURCE_INVALID")
-    module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
+    relative = source.relative_to(root).with_suffix("")
+    module_parts = list(relative.parts)
+    if source.suffix == ".py" and module_parts and all(part.isidentifier() for part in module_parts):
+        # 使用隔离的合成根包保留目录包语义，使 .helper 等相对导入只落在当前插件目录。
+        package_name = "_base_ai_plugin"
+        package = types.ModuleType(package_name)
+        package.__path__ = [str(root)]
+        package.__package__ = package_name
+        sys.modules[package_name] = package
+        module = importlib.import_module(package_name + "." + ".".join(module_parts))
+    else:
+        specification = importlib.util.spec_from_file_location("base_ai_plugin_component", source)
+        if specification is None or specification.loader is None:
+            raise ValueError("PYTHON_SOURCE_INVALID")
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
     candidates = [value for value in vars(module).values() if inspect.isclass(value)
                   and issubclass(value, PluginComponent) and value is not PluginComponent
                   and value.__module__ == module.__name__]

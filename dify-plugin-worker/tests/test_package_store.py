@@ -182,6 +182,19 @@ class OAuth(Endpoint):
         result = self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
         self.assertEqual("SUPPORTED", result["components"][0]["compatibilityStatus"])
 
+    def test_loads_component_with_relative_package_import(self) -> None:
+        """位于子目录的组件必须能够相对导入同一插件包内模块。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": "identity:\n  name: relative\nextra:\n  python:\n    source: tools/tool.py\n",
+            "tools/helper.py": "VALUE = 'ok'\n",
+            "tools/tool.py": "from .helper import VALUE\nfrom dify_plugin import Tool\nclass ToolImpl(Tool):\n    def _invoke(self, tool_parameters):\n        return {'value': VALUE}\n",
+        })
+
+        result = self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
+
+        self.assertEqual("SUPPORTED", result["components"][0]["compatibilityStatus"])
+
     def test_removes_only_strict_fingerprint_cache_directory(self) -> None:
         """缓存清理不得接受路径、短摘要或其他目录名称。"""
         raw = archive({
@@ -211,6 +224,27 @@ class OAuth(Endpoint):
             second = self.store.install(request)
         self.assertEqual("PARTIAL", first["components"][0]["compatibilityStatus"])
         self.assertEqual("SUPPORTED", second["components"][0]["compatibilityStatus"])
+
+    def test_reinspects_cache_from_previous_host_abi(self) -> None:
+        """宿主 ABI 升级后必须重新探测旧缓存，不能永久保留过时兼容结论。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": "identity:\n  name: cached\nextra:\n  python:\n    source: tool.py\n",
+            "tool.py": "from dify_plugin import Tool\nclass ToolImpl(Tool):\n    def _invoke(self, tool_parameters):\n        return {}\n",
+        })
+        request = {"archiveBase64": base64.b64encode(raw).decode()}
+        first = self.store.install(request)
+        root, _ = self.store.metadata(first["fingerprint"])
+        metadata_file = root / ".base-ai-metadata.json"
+        old_metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        old_metadata.pop("hostAbiVersion")
+        metadata_file.write_text(json.dumps(old_metadata), encoding="utf-8")
+
+        with patch.object(self.store, "_metadata", wraps=self.store._metadata) as metadata:
+            second = self.store.install(request)
+
+        metadata.assert_called_once()
+        self.assertEqual(2, second["hostAbiVersion"])
 
 
 if __name__ == "__main__":

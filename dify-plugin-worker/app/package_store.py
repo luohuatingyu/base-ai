@@ -31,6 +31,7 @@ TYPE_KEYS = {
 
 REQUIREMENT_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9_,.-]+\])?(.*)$")
 FORBIDDEN_REQUIREMENTS = {"dify-plugin", "dify_plugin"}
+HOST_ABI_VERSION = 2
 
 
 class PackageError(ValueError):
@@ -67,7 +68,9 @@ class PackageStore:
         if metadata_file.exists():
             cached = json.loads(metadata_file.read_text(encoding="utf-8"))
             reasons = {str(item.get("compatibilityReason", "")) for item in cached.get("components", [])}
-            if reasons and reasons.issubset({"DEPENDENCY_INSTALL_FAILED", "DEPENDENCY_INSTALL_TIMEOUT"}):
+            if cached.get("hostAbiVersion") != HOST_ABI_VERSION or (
+                reasons and reasons.issubset({"DEPENDENCY_INSTALL_FAILED", "DEPENDENCY_INSTALL_TIMEOUT"})
+            ):
                 shutil.rmtree(target)
             else:
                 return cached
@@ -151,6 +154,7 @@ class PackageStore:
             "version": str(request.get("version") or manifest.get("version") or ""),
             "fingerprint": fingerprint,
             "runtimeLanguage": "python",
+            "hostAbiVersion": HOST_ABI_VERSION,
             "components": components,
         }
 
