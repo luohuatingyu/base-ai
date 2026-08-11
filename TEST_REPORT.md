@@ -1,5 +1,87 @@
 # 最近分支覆盖测试报告
 
+## 📋 Dify 模型 ABI 与 n8n 声明式路由兼容性测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: 47eb917b8f55d60733b10575bde06edd5a8382b5
+- 提交说明: Improve Dify and n8n plugin compatibility
+- 测试日期: 2026-08-11
+- 分支: master
+- Backend 业务代码差异: 插件探测结果增加 Worker ABI 版本校验和旧缓存重探测，并将内部失败细节聚合为稳定、安全的公开原因码。
+
+### 变更范围
+
+- Dify Worker ABI 3 支持模型提供方源码，覆盖 LLM、文本嵌入、语音转文本、内容审核、文本转语音和重排序模型的发现、Schema 与调用参数适配。
+- n8n Worker ABI 3 支持声明式 routing 的安全表达式子集、`preSend`/`postReceive` hook、输出整理指令、二进制输入输出和 multipart 请求；解释器未使用 `eval` 或动态函数构造。
+- Backend 拒绝低于当前来源要求的 Worker ABI，读取旧持久化 JSON 时自动排队重探测；探测失败仅向前端暴露白名单原因码。
+- 前端为包大小、内容限制、依赖拒绝、包结构、routing、运行时 ABI 和依赖不可用提供中英文提示。
+- 未新增依赖、数据库迁移、公开接口或配置；未修改第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| Dify 模型插件可发现并调用 | Dify Worker 单元/集成测试；构造模型提供方包 | LLM、Embedding 等模型声明和标准消息参数 | 生成稳定组件 ID、Schema，并由隔离子进程完成参数适配；通过 | 正常、分支、兼容 |
+| n8n 声明式 routing 可安全执行 | n8n Worker 集成测试；本地 HTTP 服务 | 条件表达式、JSON.parse、preSend/postReceive、输出指令、二进制和 multipart | 请求与响应符合声明，危险表达式和非函数 hook 被拒绝；通过 | 正常、边界、异常、安全 |
+| Worker 升级后旧缓存失效 | Backend Service/Client 测试；旧 ABI JSON | Dify/N8N 低版本结果和 ABI 3 结果 | 低版本拒绝或重新排队，ABI 3 可复用；通过 | 兼容、状态、副作用 |
+| 前端只展示安全原因 | Backend 聚合测试、Marketplace 回归、Frontend 双语测试 | 原始路径/依赖错误、routing 与 ABI 错误 | 返回稳定白名单原因码，不泄露路径、URL 或堆栈，并有双语文案；通过 | 异常、安全、回归 |
+| 真实市场包兼容性改善 | 运行态 MySQL 探测缓存；确认抽检包均未安装 | 3 个 Dify 包、5 个 n8n 包重新探测 | 8/8 为 COMPLETE/SUPPORTED，结果 ABI 均为 3；通过 | 真实数据、兼容、回归 |
+| 既有功能和部署无回归 | Backend/Frontend 完整测试与 Compose 重建 | 全套自动化测试、生产构建和 HTTPS 入口 | 856/856 通过，六服务 healthy，HTTPS 200；通过 | 回归、部署 |
+
+### 测试执行结果
+
+- 正式自动化用例总数：856；通过 856，通过率 100%；失败 0，错误 0，跳过 0。
+- Backend 完整回归：556/556；最终 ABI 定向回归：17/17。
+- Frontend 应用回归：111/111；前端 Node 回归：168/168。
+- Dify Worker：15/15；n8n Worker：6/6。
+- Compose 统一构建和启动成功；Backend 镜像构建执行完整测试，Frontend 生产构建成功，最终六个服务全部 healthy，HTTPS 首页返回 200。
+
+### 关键模块测试
+
+- Dify Worker：模型源码发现、六类模型组件、消息/工具/模型参数转换、隔离调用、无效包和缓存版本。
+- n8n Worker：routing 兼容性分析、安全表达式、请求 hook、响应 hook、输出指令、二进制、multipart、危险输入拒绝和缓存指纹。
+- Backend：ABI 响应验证、旧 JSON 重探测、依赖状态、并发领取、重试、公开失败原因与兼容性聚合。
+- Frontend：新增公开原因码的中英文完整性及现有模板目录回归。
+- 运行态：真实 Worker、MySQL 探测队列、Caddy HTTPS 与六服务健康检查。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Dify Worker | `python3.12 -m unittest discover -s tests` | 15/15 通过 |
+| n8n Worker | `cd n8n-plugin-worker && npm test` | 6/6 通过 |
+| Backend 定向 | Maven 3.9.9 / Java 容器执行 Worker Client 与 Probe Service | 17/17 通过 |
+| Backend 完整 | Maven 3.9.9 / Java 容器执行 `mvn -B -ntp test` | 556/556 通过，0 失败、0 错误、0 跳过 |
+| Frontend 完整 | `cd frontend && npm test`；`node --test test/*.mjs` | 111/111、168/168 通过 |
+| Compose 重建 | `docker compose up --build -d` | 六镜像构建成功，六服务 healthy |
+| 真实插件抽检 | 重置 8 条未安装插件的探测缓存并等待后台重新探测 | Dify DeepSeek/Gemini/OpenAI 与 n8n ElevenLabs/Netgsm/AIScraper/JigsawStack/Templated 全部 ABI 3、SUPPORTED |
+| 入口与差异 | `curl -k https://localhost/`、`docker compose ps`、`git diff --check` | HTTP 200、六服务 healthy、差异检查通过 |
+
+### 测试过程问题与处理
+
+- 首次统一启动时 80/443 端口被 `domestic-trade-caddy` 占用；按项目规则停止占用容器后重新执行 Compose，最终启动成功。
+- routing 实现扩展后发现仍沿用 n8n ABI 2，可能复用旧缓存；提升至 ABI 3 后重跑定向、完整、Compose 和真实插件测试，旧结果已正确失效。
+- 主机未直接使用 Maven，采用项目既有 Maven 3.9.9 / Java 容器执行完整测试；Python Worker 使用 3.12。
+- 未创建持久调试脚本或临时仓库文件。
+
+### 已知问题与限制
+
+- n8n 声明式表达式只实现已审计的常用安全子集；需要任意 JavaScript、未支持 hook 形态或复杂运行时上下文的节点仍会安全标记为不支持。
+- Dify 模型抽检验证了真实包加载、组件契约和隔离参数转换，但没有使用生产密钥调用外部收费模型 API；供应商侧鉴权、配额和实时响应仍由部署环境决定。
+- 真实抽检只覆盖 8 个代表包，不能证明市场全部历史版本均兼容；其余包会按 ABI 版本和访问节奏逐步重探测。
+
+### 下次测试建议
+
+1. 基于仍为 `ROUTING_UNSUPPORTED` 的真实包样本，逐项增加经过安全审计的表达式或 hook 语义，并保持拒绝测试。
+2. 在具备测试密钥和预算隔离的环境增加 Dify 六类模型的供应商沙箱调用测试。
+3. 监控 ABI 3 重探测后的支持率、失败原因分布和探测耗时，优先处理高使用量插件。
+
+### 重测触发条件与回滚
+
+- 修改 Worker ABI、Dify 模型适配、n8n routing 解释器、探测缓存、公开原因码或插件调用参数时，必须重跑两个 Worker、Backend/Frontend 完整回归、Compose 重建和代表包抽检。
+- 代码可回退提交 `47eb917`；运行态无需反向数据库迁移，旧 ABI 结果会按当前 Backend 要求重新探测。
+
 ## 📋 插件市场完整导入状态修复测试结果（2026-08-11）
 
 ### Git 基准点
