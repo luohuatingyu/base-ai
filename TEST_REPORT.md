@@ -1,5 +1,100 @@
 # 最近分支覆盖测试报告
 
+## 📋 n8n 与 Dify 市场插件 ABI 兼容测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
+- 提交说明: Expand marketplace plugin compatibility
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一测试报告基准点: `1fe40abc0e00a8e660af27bca040a5da9f284caf`
+- Backend 业务代码差异: 新增市场插件注册表、固定包指纹与组件 Schema、通用插件执行器、OAuth 生命周期、n8n/Dify 市场下载和双隔离 Worker 调用；不引入或运行 n8n/Dify 引擎与 SDK。
+
+### 变更范围
+
+- 新增 Base AI 自研 Python 3.12 Dify ABI 与 Node 24 n8n ABI Worker；插件包在非 root、只读根文件系统、能力移除、PID/CPU/内存限制和短生命周期子进程中探测与执行。
+- n8n 使用认证社区节点目录和 npm 官方注册表，固定版本并校验 SRI；支持程序式节点及常见声明式 `requestDefaults`、`routing.request/send`、凭据认证和 HTTP helper 子集。
+- Dify 支持 Tool、Model、Agent Strategy、Datasource、Trigger、Extension 六类声明解析，安装插件自身 PyPI 依赖，但过滤 `dify-plugin`；未知 `dify_plugin.*` 路径由 Base AI 惰性 ABI 接管。
+- 市场导入持久化包摘要、版本、组件身份、参数/凭据 Schema 和兼容状态；版本变化必须显式确认，PARTIAL/UNSUPPORTED 不伪装为可执行模板。
+- 工作流新增六类通用插件节点、动态参数表单、动态加密插件连接和固定身份执行校验；凭据只从工作流所有者的同组件连接解密后发送给 Worker。
+- OAuth 使用一次性高熵 state、数据库 SHA-256 索引、AES-GCM 加密 PKCE verifier、十分钟有效期、单次消费和 HTTPS 回调限制；插件不得覆盖宿主 state。
+- V15 新增插件、组件、OAuth 状态和触发订阅表，并为插件连接增加组件外键；运行环境已应用 V15。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 不复用两套引擎与 SDK | Worker 单元测试、镜像与依赖检查 | 加载引用 `n8n-workflow`、`dify_plugin` 及未知子模块的测试插件 | 由 Base AI 同名 ABI shim 加载；依赖安装过滤引擎/SDK；通过 | 兼容、安全、回归 |
+| 全类型声明可解析和调用 | 两个 Worker 的参数化/循环 E2E | Action/Tool、Trigger、Model、Datasource、Agent Strategy、Extension | 每类生成统一 Schema，并至少执行一次对应 ABI 方法；通过 | 正常、分支、兼容 |
+| 市场包安全且版本固定 | Backend 市场客户端、Worker 包测试 | npm SRI、Dify SHA-256、路径穿越、链接、超限、非法依赖源和版本更新 | 恶意包在落盘/执行前拒绝，已安装版本不被静默覆盖；通过 | 边界、异常、安全 |
+| 动态节点和连接可配置 | Backend 配置/执行器与 Frontend 表单测试 | 必填、条件显示、空值、类型错误、同/异组件连接、密钥脱敏 | 动态字段正确展示并在发布与执行时校验；跨组件和跨所有者拒绝；通过 | 正常、边界、权限 |
+| OAuth 状态不可伪造或重放 | Backend OAuth Service 与 Frontend 回调契约测试 | 合法回调、非 HTTPS 地址、伪造 state、重复消费 | verifier 加密、state 哈希保存且只消费一次，伪造与重放拒绝；通过 | 正常、异常、权限、安全 |
+| 真实市场插件按能力分级 | 官方市场临时包探测 | n8n LogSnag、Dify JSON Process、Dify DeepSeek | LogSnag 与 JSON Process 为 SUPPORTED 且可调用；DeepSeek Provider 因缺少 SDK 基类执行语义为 PARTIAL；符合预期 | 兼容、真实回归 |
+| 完整构建与运行无回归 | Backend、Frontend、双 Worker、Compose、Flyway | 完整测试、生产构建、重建启动和健康检查 | 802 项正式测试通过；六服务 healthy；MySQL Schema V15；通过 | 回归、构建、部署 |
+
+### 测试执行结果
+
+- 正式完整回归共 802 项，802 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：516/516 通过；包含市场客户端、注册表、连接外键、节点执行、OAuth、防重放和 Schema 测试。
+- Frontend 两套正式回归：107/107、168/168 通过；覆盖动态节点/凭据表单、OAuth 回调、目录、权限和容器安全契约。
+- Dify Worker（Python 3.12）：8/8 通过；n8n Worker（Node 24）：3/3 通过。
+- `docker compose up --build -d` 成功；Backend 镜像内再次执行 516/516，Frontend Vite 生产构建成功，六服务全部 healthy。
+- Flyway 日志确认 MySQL 当前 Schema 为 V15；两个插件 Worker 健康接口分别返回 Base AI Python ABI/Python 3.12 和 Base AI Node ABI/Node 24。
+
+### 关键模块测试
+
+- Domain/Schema 层：未修改 Domain；Schema 资源测试 12/12 通过，覆盖 V15 四张插件相关表和连接组件外键。
+- Service/执行器层：插件注册表 2/2、OAuth 4/4、节点执行器 4/4、连接服务 7/7、市场服务 6/6、市场客户端 3/3 通过。
+- Repository/持久化层：未新增 Repository；使用现有 `JdbcTemplate`，H2 隔离测试覆盖注册、固定版本、PARTIAL 拒绝、OAuth 单次消费和插件连接外键。
+- Controller/权限层：新增接口均使用既有 `workflow:connection:update` 或 `workflow:node:list/import` 权限；完整权限契约回归通过。
+- Worker 层：覆盖真实加载、全部类型调用、声明式路由、依赖缺失、非法依赖源、摘要错误、路径穿越、OAuth 生命周期和输出规范化。
+- Frontend 层：动态参数/凭据 Schema、条件字段、必填提示、插件连接、OAuth 跳转回调、双语节点文档和市场探测状态通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 相关回归 | Maven 3.9.9 / Java 17 容器执行市场、注册表、连接、执行器、OAuth 和配置校验套件 | 最终相关套件全部通过 |
+| Backend 完整回归 | Maven 容器执行 `mvn -B -ntp test`；Compose Backend 构建执行 `mvn -B -ntp package` | 516/516 通过，BUILD SUCCESS |
+| Frontend 正式回归 | `cd frontend && npm test`；`cd frontend && node --test test/*.mjs` | 107/107、168/168 通过 |
+| Dify Worker | Python 3.12 执行 `python3.12 -m unittest discover -s tests -v` | 8/8 通过 |
+| n8n Worker | Node 24 执行 `npm test` | 3/3 通过 |
+| 真实市场冒烟 | 官方市场下载固定版本到 `/tmp`，使用当前 PackageStore 探测并调用，命令结束自动删除临时目录 | LogSnag SUPPORTED；JSON Process 4 个 Tool SUPPORTED 且调用成功；DeepSeek MODEL PARTIAL |
+| 统一重建 | `docker compose up --build -d` | 成功，未发生端口冲突；Backend 516/516，Frontend 构建成功 |
+| 数据库与健康检查 | Backend Flyway 日志、Worker 健康接口、`docker compose ps`、HTTPS 首页 | MySQL V15；六服务 healthy；两个 Worker ABI 正常；HTTPS 200 |
+| 差异与清理 | `git diff --check`、`git diff --cached --check`、工作区状态和 `__pycache__` 检查 | 无空白错误、冲突、调试文件或 Python 缓存 |
+
+### 测试过程问题与处理
+
+- 插件连接外键上线后，首轮 H2 连接测试仍使用旧表结构，导致 5 条 SQL 错误；同步正式 V15 列并增加创建/改绑外键断言后 7/7 通过。
+- 插件触发入口首条测试错误地把 `input` 子对象本身作为上下文，导致断言读取路径错误；修正测试请求构造后通过，未弱化生产逻辑。
+- 真实 LogSnag 首次探测为声明式路由 PARTIAL；补充受控 HTTP 路由解释器和凭据认证后重新探测为 SUPPORTED。
+- 真实 DeepSeek 能加载 Provider 和生成 Schema，但其模型调用依赖 Dify SDK 的模型基类语义；保持 PARTIAL，未通过占位实现误报支持。
+- 所有 `/tmp/base-ai-*` 市场探测目录均由 shell trap 删除；测试产生的 `__pycache__` 已清理，插件测试包未写入工作区。
+
+### 已知问题与限制
+
+- n8n 声明式节点当前覆盖常见 request/send/authenticate 路由；依赖 `preSend`、`postReceive`、复杂表达式或未实现 helper 的节点会标记 PARTIAL 或在明确 ABI 错误处停止。
+- Dify Tool 类插件兼容度较高；依赖 Dify SDK 内部模型基类、守护进程服务或复杂实体行为的 Model Provider（真实 DeepSeek 样本）仍为 PARTIAL。
+- Plugin Trigger 已具备类型、Schema、subscribe/refresh/dispatch ABI 和工作流入口数据传递，但需要常驻原引擎语义的长连接订阅不复用原引擎，因此不能保证兼容；此类插件应依据探测结果和真实事件回归使用。
+- OAuth 仅支持插件自身提供授权/换码 ABI；n8n 仅声明通用 OAuth2 Credential、没有可调用扩展源码的条目仍为 PARTIAL。
+- 插件代码具有第三方代码固有风险；当前使用独立非 root 容器、只读根、资源限制、包校验和短生命周期子进程隔离，但不是内核级逐插件微虚机沙箱。
+- Frontend 构建保留既有 runtime-config 非 module 和大分块警告，不影响构建成功，与本次改造无直接关系。
+
+### 下次测试建议
+
+1. 在独立测试环境对两个市场各 Top 100 固定版本执行批量探测，按 ABI 缺失原因统计 SUPPORTED/PARTIAL/UNSUPPORTED，并据最高频缺口迭代兼容层。
+2. 增加浏览器 E2E，覆盖真实 OAuth 供应商跳转、回调刷新、密钥脱敏编辑和授权失败恢复。
+3. 为轮询型与 Webhook 型插件 Trigger 增加 Base AI 原生订阅调度和公开回调路由，再使用真实事件完成端到端验证。
+4. 按真实市场高频模型 Provider 实现独立模型协议适配，避免引入 Dify SDK 的同时逐步提升 MODEL 可执行比例。
+
+### 重测触发条件与回滚
+
+- 修改市场契约、包下载校验、任一 ABI shim、动态 Schema、插件注册/执行/OAuth、连接加密、Worker 安全参数或 V15 后续迁移时，必须重跑相关套件、Backend/Frontend 完整回归、双 Worker 测试和 Compose 重建。
+- 应用代码可依次撤销功能提交 `2c5e37653f944cf488889c6eef7d68a2d159f714` 与基础设施提交 `8df671d` 后执行 `docker compose up --build -d`。
+- V15 是前向数据迁移；回滚前必须停用插件模板和连接并备份四张插件表。删除表、外键或已安装包属于数据删除，本次未自动执行，需单独确认。
+
 ## 📋 工作流模型兼容路由与向量节点测试结果（2026-08-10）
 
 ### Git 基准点
