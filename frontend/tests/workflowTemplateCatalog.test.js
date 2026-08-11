@@ -181,6 +181,13 @@ test('Dify 市场使用两列插件卡片并把可导入能力展示为独立分
   assert.match(nodeManagementSource, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.marketplace-grid--dify\s*\{[^}]*grid-template-columns:\s*1fr/)
 })
 
+test('市场卡片重置复选框组的零字号行高并保持插件文字分层可读', () => {
+  assert.match(nodeManagementSource, /\.marketplace-card\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.5;/)
+  assert.match(nodeManagementSource, /\.marketplace-card-identity > strong\s*\{[^}]*display:\s*block;[^}]*font-size:\s*14px;[^}]*line-height:\s*1\.5;/)
+  assert.match(nodeManagementSource, /\.marketplace-actions-head strong\s*\{[^}]*line-height:\s*1\.4;/)
+  assert.match(nodeManagementSource, /\.marketplace-actions-head small\s*\{[^}]*line-height:\s*1\.4;/)
+})
+
 test('市场导入模板锁定外部身份但继续使用原生配置编辑器', () => {
   assert.match(nodeManagementSource, /form\.systemTemplate \|\| form\.importedTemplate/)
   assert.match(nodeManagementSource, /:disabled="form\.importedTemplate \|\| !form\.id"/)

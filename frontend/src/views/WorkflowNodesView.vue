@@ -276,22 +276,23 @@ onMounted(load)
 .marketplace-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 12px; align-items: center; margin-bottom: 14px; }
 .marketplace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
 .marketplace-grid--dify { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.marketplace-card { display: grid; min-width: 0; min-height: 150px; align-content: start; gap: 12px; overflow: hidden; padding: 16px; border: 1px solid #dfe6f0; border-radius: 14px; background: #fff; box-shadow: 0 4px 14px rgb(31 53 91 / 5%); }
+.marketplace-card { display: grid; min-width: 0; min-height: 150px; align-content: start; gap: 12px; overflow: hidden; padding: 16px; border: 1px solid #dfe6f0; border-radius: 14px; color: var(--app-text); background: #fff; box-shadow: 0 4px 14px rgb(31 53 91 / 5%); font-size: 13px; line-height: 1.5; }
 .marketplace-card.unsupported { background: #f8f9fb; opacity: .78; }
 .marketplace-card-head { display: flex; min-width: 0; gap: 8px; align-items: flex-start; justify-content: space-between; }
 .marketplace-card-identity { min-width: 0; flex: 1; }
 .marketplace-card-head :deep(.el-checkbox), .marketplace-card-identity > strong { min-width: 0; max-width: 100%; }
 .marketplace-card-head :deep(.el-checkbox) { height: auto; align-items: flex-start; white-space: normal; }
 .marketplace-card-head :deep(.el-checkbox__label), .marketplace-card-identity > strong { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.marketplace-card-identity > strong { display: block; color: #344054; font-size: 14px; line-height: 1.5; }
 .marketplace-card-status { display: flex; flex: 0 0 auto; align-items: center; }
 .marketplace-card p { margin: 0; overflow-wrap: anywhere; color: var(--app-muted); font-size: 13px; line-height: 1.55; }
 .marketplace-card-description { display: -webkit-box; min-height: 60px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.marketplace-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-start; color: var(--app-muted); font-size: 12px; }
+.marketplace-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-start; color: var(--app-muted); font-size: 12px; line-height: 1.4; }
 .marketplace-meta span { padding: 3px 8px; border-radius: 999px; background: #f1f4f9; color: #64748b; }
 .marketplace-actions { display: grid; min-width: 0; gap: 8px; overflow: hidden; padding: 12px; border: 1px solid #e3eaf5; border-radius: 10px; background: #f8faff; }
 .marketplace-actions-head { display: grid; gap: 2px; margin-bottom: 2px; }
-.marketplace-actions-head strong { color: #344054; font-size: 13px; }
-.marketplace-actions-head small { color: var(--app-muted); font-size: 11px; font-weight: 400; }
+.marketplace-actions-head strong { color: #344054; font-size: 13px; line-height: 1.4; }
+.marketplace-actions-head small { color: var(--app-muted); font-size: 11px; font-weight: 400; line-height: 1.4; }
 .marketplace-actions :deep(.el-checkbox) { width: 100%; min-width: 0; height: auto; align-items: flex-start; margin-right: 0; padding: 10px; border: 1px solid #e4eaf3; border-radius: 8px; background: #fff; white-space: normal; }
 .marketplace-actions :deep(.el-checkbox__input) { margin-top: 2px; }
 .marketplace-actions :deep(.el-checkbox__label) { min-width: 0; white-space: normal; }
