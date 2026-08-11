@@ -1,5 +1,95 @@
 # 最近分支覆盖测试报告
 
+## 📋 插件市场完整导入状态修复测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: fa785c9aa313d7ca0b283bf247b2ba3d5d05d4ed
+- 提交说明: Classify marketplace plugins by capability；Mark fully imported marketplace plugins；Align marketplace preview categories
+- 本功能提交: `a1236ab84e780bccf29ec390fc9c37ba13cb7751`
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一测试报告基准点: `9750a2c483ebc8cc6cc9b5ce8da0fab29d157be1`
+- Backend 业务代码差异: 市场查询聚合未作废模板的外部键和指纹；只有当前插件全部受支持组件均存在且指纹一致时返回 `imported=true`；同一基准范围还包含插件能力分类与市场预览分类对齐。
+
+### 变更范围
+
+- 市场节点和 Dify 子能力响应新增 `imported` 状态；原生节点按单模板判定，通用插件按当前全部 `SUPPORTED` 组件聚合，Dify 父卡片按兼容子能力聚合。
+- 导入状态查询只读取未作废模板的 `external_key` 和 `external_fingerprint`，不读取或返回加密配置；模板仅停用但未删除时仍视为已导入。
+- 任一组件被软删除、缺失或指纹与当前包版本/Schema 不一致时，市场项保持可导入，以便恢复组件或进入既有版本更新确认流程。
+- Frontend 对完整导入的卡片和能力显示“已导入”并禁止重复勾选；轮询刷新会清理已经导入或不兼容的临时选择。
+- 本次未新增依赖、配置、数据库迁移或数据修复；接口仅向现有市场响应追加布尔字段，现有字段和权限保持兼容。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 全部组件未删除时显示已导入 | Backend Marketplace Service；当前包含两个受支持组件且模板指纹一致 | 再次查询同一市场插件 | 父卡片 `imported=true`；通过 | 正常、核心验收、回归 |
+| 删除任一组件后恢复可导入 | Backend Marketplace/Template Service；两组件中一条模板软删除 | 再次查询市场插件 | 父卡片 `imported=false`，允许重新导入恢复；通过 | 边界、状态恢复 |
+| 停用不等同于删除 | Backend H2 Service；模板 `enabled=false`、`voided=false` | 查询当前来源导入指纹 | 停用模板仍返回，已删除模板被排除；通过 | 状态边界、兼容 |
+| 版本或 Schema 变化不误标 | Backend Marketplace Service；全部外部键存在但一个指纹变化 | 查询当前市场版本 | 父卡片 `imported=false`，保留更新确认入口；通过 | 状态冲突、兼容 |
+| 原生与 Dify 子能力正确聚合 | Backend Marketplace Service；原生节点和含两个动作的 Dify 插件 | 分别只导入一个动作、再导入全部动作 | 原生节点正确标记；子能力分别标记，全部完成后父卡片已导入；通过 | 分支、兼容、回归 |
+| 已导入项不可重复选择 | Frontend 契约测试；市场响应带 `imported=true` | 渲染卡片并刷新选择集合 | 显示中英文“已导入”，节点和动作复选框禁用且选择被过滤；通过 | 交互、幂等 |
+| 完整构建与部署无回归 | 当前基准点、功能提交、集成工作区和 Compose | 完整自动化、六镜像重建、健康检查 | 当前基准点 849/849、功能提交 848/848；六服务 healthy，readiness 为 UP；通过 | 构建、部署、回归 |
+
+### 测试执行结果
+
+- 当前基准点 `fa785c9` 自动化回归共 849 项，849 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- 本功能提交 `a1236ab` 自动化回归共 848 项，848 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：当前基准点 553/553、功能提交 552/552 通过；本功能市场定向回归 18/18 通过。
+- Frontend 两套完整回归：110/110、168/168 通过。
+- Dify Worker 使用 Python 3.12：14/14 通过；n8n Worker：4/4 通过。
+- 包含并行未提交 Worker/探测改动的集成快照中，Dify Worker 15/15、n8n Worker 5/5 通过；这些新增用例不归因于本提交，且并行工作在此后仍继续变化，因此不把该快照总数作为 Git 基准点总数。
+- 缺陷复现阶段 Frontend 新用例稳定失败，实际值缺少“已导入”文案；实现后通过。Backend 主机无 Maven，后续统一使用项目固定 Maven 3.9.9 / Java 17 容器执行。
+
+### 关键模块测试
+
+- Service 层：验证只返回指定来源、未作废且具有指纹的模板；停用模板保留，软删除模板排除。
+- Marketplace 层：覆盖原生模板、通用一插件多组件、缺组件、指纹变化、Dify 子能力部分/全部导入和探测中状态。
+- Frontend 层：覆盖状态文案、禁选逻辑、刷新后选择过滤以及既有市场兼容、探测、布局和表单回归。
+- 权限与安全层：市场接口权限不变；新增查询不读取 `config_encrypted`，不返回组件凭据或内部 Worker 错误。
+- 兼容层：版本或 ABI Schema 变化继续进入原有 `UPDATE_AVAILABLE` 确认流程；未兼容和探测中条目行为不变。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 缺陷复现 | `node --test tests/workflowTemplateCatalog.test.js` | 新增用例按预期失败：中文 `workflowNodes.imported` 不存在 |
+| Backend 定向回归 | Maven 3.9.9 / Java 17 容器执行 `WorkflowServiceAccessTest`、`WorkflowNodeMarketplaceServiceTest` | 18/18 通过，BUILD SUCCESS |
+| 当前基准点 Backend 完整回归 | `fa785c9` 临时 detached worktree 执行 `mvn -B -ntp test` | 553/553 通过，BUILD SUCCESS |
+| 功能提交 Backend 完整回归 | `a1236ab` 临时 detached worktree 执行 `mvn -B -ntp test` | 552/552 通过，BUILD SUCCESS |
+| 精确提交 Frontend 完整回归 | `npm test`；`node --test test/*.mjs` | 110/110、168/168 通过 |
+| 精确提交双 Worker | `python3.12 -m unittest discover -s tests -v`；`npm test` | 14/14、4/4 通过 |
+| 当前集成工作区双 Worker | 相同 Python 3.12 与 npm 命令 | 15/15、5/5 通过；包含并行未提交改动 |
+| 统一重建 | `docker compose up --build -d` | 六镜像构建完成并重新创建服务，命令成功 |
+| 运行态健康 | `docker compose ps`；容器内 `/api/open/health/ready` | 六服务全部 healthy；readiness 返回 `{"status":"UP"}` |
+| 差异与提交检查 | `git diff --check`、精确暂存检查、独立 worktree 验证 | 本任务代码提交仅含 9 个相关文件；临时 worktree 已删除 |
+
+### 测试过程问题与处理
+
+- 主机未安装 Maven，首次 Backend 定向命令返回 `mvn: command not found`；未据此判定完成，改用项目 Dockerfile 固定的 Maven 3.9.9 / Java 17 镜像并完成定向、完整和精确提交回归。
+- 新 Frontend 规则使一条旧契约仍要求 `:disabled="!item.compatible"`；将其加强为“不兼容或已导入均禁用”后全部通过，未删除或弱化断言。
+- 首次 Backend 数据层测试使用了与插件节点类型不匹配的功能分类，触发现有分类校验；修正测试数据为合法分类后通过，业务实现未绕过校验。
+- 外部 HTTPS readiness 路径因当前入口保护返回 401；依据 Compose 实际 Backend 健康检查路径，在容器内验证 `/api/open/health/ready` 返回 UP，Caddy 随后也进入 healthy。
+- 实施期间并行任务先后提交了插件分类与预览分类变更，并继续修改 Worker/探测文件；本任务重新基于新 HEAD 精确暂存，并分别用 detached worktree 验证功能提交和最终基准点。未覆盖、清理或提交并行工作。
+
+### 已知问题与限制
+
+- “已导入”要求当前市场包探测完成后才能校验全部组件及指纹；探测缓存缺失时会先显示探测中，完成轮询后再显示已导入。
+- 完整导入项不可重复勾选；如果需要恢复已删除组件，任一组件软删除后整包会恢复可导入。仅停用组件不会触发恢复入口，符合本次“删除组件”边界。
+- 当前工作区仍有与本任务无关的 Worker、探测服务和 Frontend 文案测试改动；它们未包含在 `a1236ab` 或基准点 `fa785c9`，需由对应任务自行验证和提交。
+
+### 下次测试建议
+
+1. 增加登录态浏览器 E2E，覆盖导入多组件插件、关闭并重开市场、删除单个模板后重新导入恢复的完整交互。
+2. 为市场目录增加批量状态查询的真实 MySQL 集成测试，观察模板数量增长后的查询耗时并按需增加只覆盖查询条件的索引。
+3. 如未来希望“停用”也允许重新导入，应先区分停用与删除的产品语义，并调整卡片状态和恢复入口。
+
+### 重测触发条件与回滚
+
+- 修改市场模板软删除语义、外部指纹算法、插件组件聚合规则、市场响应模型或 Frontend 选择过滤时，必须重跑本节 Backend 定向测试、完整回归、Frontend 两套测试和 Compose 重建。
+- 应用代码可撤销提交 `a1236ab84e780bccf29ec390fc9c37ba13cb7751` 后执行 `docker compose up --build -d`；本次无数据库迁移，无需数据回滚。
+
 ## 📋 Dify 市场插件探测性能优化测试结果（2026-08-11）
 
 ### Git 基准点
