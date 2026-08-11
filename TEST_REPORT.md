@@ -1,5 +1,87 @@
 # 最近分支覆盖测试报告
 
+## 📋 市场节点导入默认启用修复测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: 09b6757792727088fec142590882c6265759c523
+- 提交说明: Enable imported marketplace templates
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一测试报告基准点: `92c5ce191ef18cd89358f99493f5679e46f5cc96`
+- Backend 业务代码差异: n8n/Dify 市场模板在新建、恢复、确认更新或同版本再次导入成功后立即启用；未确认的版本更新保持原状态。
+
+### 变更范围
+
+- 市场模板新建不再显式写入停用状态，导入结果为 `CREATED` 时可立即出现在默认启用节点目录中。
+- 已删除模板重新导入时恢复并启用；确认市场版本更新时重置既有配置并启用。
+- 同指纹模板再次导入时执行显式启用，修复旧版本导入后仍停用的记录；未再次导入的历史停用记录不会被批量修改。
+- 插件注册表原有的导入成功后启用逻辑保持不变；未通过探测、无可执行组件和未确认版本更新均不会被错误启用。
+- 未修改前端、接口模型、配置、数据库结构或依赖，未新增数据迁移。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 新导入模板默认启用 | Backend Service H2 测试；管理员身份 | 导入新的 n8n 市场模板 | 返回 `CREATED`，外部身份固定且 `enabled=true`；通过 | 正常、核心验收 |
+| 重复导入恢复启用 | Backend Service H2 测试；同指纹模板已由管理员停用 | 再次导入相同固定版本 | 返回 `ALREADY_IMPORTED`，模板恢复启用；通过 | 幂等、兼容、回归 |
+| 已删除模板恢复启用 | Backend Service H2 测试；导入模板已软删除 | 再次导入相同模板 | 返回 `RESTORED`，`voided=false` 且 `enabled=true`；通过 | 恢复、状态边界 |
+| 确认更新后启用 | Backend Service H2 测试；市场指纹发生变化 | 先拒绝替换，再以 `replaceExisting=true` 导入 | 未确认时返回 `UPDATE_AVAILABLE` 且原版本和状态不变；确认后返回 `UPDATED` 并启用；通过 | 状态冲突、兼容 |
+| 插件和不兼容路径无回归 | Marketplace/Registry Service 测试 | SUPPORTED、PARTIAL 和无可执行组件包 | 支持插件启用并生成模板；不支持包拒绝导入且不创建模板；通过 | 异常、安全、回归 |
+| 完整构建与部署无回归 | Backend、Frontend、双 Worker、Compose | 完整测试、镜像构建、健康与 readiness 检查 | 826 项正式测试全部通过，六服务 healthy，readiness 为 UP；通过 | 回归、构建、部署 |
+
+### 测试执行结果
+
+- 正式完整回归共 826 项，826 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：532/532 通过；最终 Backend 镜像构建内再次执行 532/532 并完成打包。
+- Frontend 两套完整回归：109/109、168/168 通过。
+- Dify Worker 使用 Python 3.12：13/13 通过；n8n Worker：4/4 通过。
+- Backend 定向回归：16/16 通过，包括市场模板持久化 7、市场导入编排 7、插件注册表 2。
+- 缺陷复现阶段 7 项定向测试中新增的 3 个状态断言稳定失败，分别证明新建、恢复和确认更新均返回 `enabled=false`；修复后全部通过。
+
+### 关键模块测试
+
+- Service 层：覆盖 `CREATED`、`ALREADY_IMPORTED`、`RESTORED`、`UPDATE_AVAILABLE` 和 `UPDATED` 全部分支及启用副作用。
+- Marketplace/Registry 层：确认导入只消费已完成探测结果，支持插件注册表继续启用，不支持组件不进入运行态。
+- 权限与安全层：测试继续使用管理员身份；市场模板外部来源、编码和节点类型保持后端锁定，普通更新接口不能伪造身份。
+- 兼容与数据层：未修改表结构；历史停用模板不会在部署时批量启用，只有显式再次导入才恢复启用。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 缺陷复现 | Maven 3.9.9 / Java 17 容器执行 `WorkflowServiceAccessTest` | 修复前 7 项中 3 项按预期失败，均为启用状态不符 |
+| Backend 定向回归 | Maven 容器执行 `WorkflowServiceAccessTest`、`WorkflowNodeMarketplaceServiceTest`、`WorkflowPluginRegistryServiceTest` | 16/16 通过，BUILD SUCCESS |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 532/532 通过，BUILD SUCCESS |
+| Frontend 完整回归 | `npm test`；`node --test test/*.mjs` | 109/109、168/168 通过 |
+| Dify Worker | `python3.12 -m unittest discover -s tests -v` | 13/13 通过 |
+| n8n Worker | `npm test` | 4/4 通过 |
+| 统一重建 | `docker compose up --build -d` | Backend 镜像内 532/532；六服务最终全部 healthy |
+| 运行态健康 | HTTPS readiness 与 `docker compose ps` | readiness 返回 `UP`；Backend、Frontend、Python Worker、Dify Worker、n8n Worker、Caddy 全部 healthy |
+| 差异检查 | `git diff --check`、暂存区和工作区检查 | 代码提交仅包含本次两个 Backend 文件；未纳入与本任务无关的脚本状态 |
+
+### 测试过程问题与处理
+
+- 首次修复后定向测试使用了无效的模板来源构造停用场景，产生 1 个测试数据错误；改为合法且被后端锁定的 n8n 来源后重新执行，16/16 通过。未弱化业务断言。
+- 第一次统一重建在等待 Frontend 健康检查时被交互中断，Caddy 尚未启动；重新执行完整 `docker compose up --build -d` 后六服务全部 healthy。
+- readiness 首次按非当前配置的 444 端口检查失败；依据 Compose 实际映射改用 443 后返回 `UP`，不是应用故障或端口占用。
+
+### 已知问题与限制
+
+- 按确认方案不增加数据迁移：历史已导入且当前停用的模板保持原状，管理员再次执行同版本导入后才会启用。
+- 再次导入是显式用户操作，因此会恢复管理员此前手动停用的同版本模板；如需继续停用，应避免重新导入或在导入后再次停用。
+- 确认版本更新仍会沿用既有行为重置模板配置；本次只调整更新完成后的启用状态。
+
+### 下次测试建议
+
+1. 增加浏览器 E2E，覆盖市场探测完成、点击导入、列表刷新后卡片立即显示启用的完整交互。
+2. 如未来需要自动处理历史停用记录，应先区分系统遗留停用与管理员主动停用，再设计可审计的数据迁移。
+
+### 重测触发条件与回滚
+
+- 修改市场模板导入状态、版本确认语义、插件注册启用条件、模板查询过滤或节点管理启停交互时，必须重跑相关 Backend 定向测试、完整回归和 Compose 重建。
+- 应用代码可撤销提交 `09b6757792727088fec142590882c6265759c523` 后执行 `docker compose up --build -d`；本次无数据库迁移，无需数据回滚。
+
 ## 📋 Dify 市场插件探测修复测试结果（2026-08-11）
 
 ### Git 基准点
