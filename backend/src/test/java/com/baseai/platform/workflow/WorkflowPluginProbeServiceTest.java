@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -330,6 +331,30 @@ class WorkflowPluginProbeServiceTest {
         assertEquals("QUEUED", snapshot.probeStatus());
         assertEquals(0, jdbc.queryForObject(
             "SELECT attempt_count FROM workflow_marketplace_plugin_probe", Integer.class));
+    }
+
+    /** 旧文件数策略产生的拒绝只允许在新策略下额外重试一次。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"PACKAGE_CONTENT_LIMIT", "workflow.pluginWorkerRejected"})
+    void retriesLegacyContentLimitRejectionOnce(String reason) {
+        var entry = difyEntry();
+        jdbc.update("""
+            INSERT INTO workflow_marketplace_plugin_probe(source,catalog_external_key,package_key,package_version,
+                probe_status,compatibility_status,compatibility_reason,attempt_count,next_attempt_at,last_accessed_at)
+            VALUES ('DIFY',?,?,?,'REJECTED','UNSUPPORTED',?,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+            """, entry.externalId(), entry.externalId(), entry.version(), reason);
+
+        WorkflowPluginProbeService.ProbeSnapshot retry = service.snapshot("DIFY", entry, true);
+
+        assertEquals("QUEUED", retry.probeStatus());
+        assertEquals(1, jdbc.queryForObject(
+            "SELECT attempt_count FROM workflow_marketplace_plugin_probe", Integer.class));
+
+        jdbc.update("""
+            UPDATE workflow_marketplace_plugin_probe SET probe_status='REJECTED',compatibility_status='UNSUPPORTED',
+                compatibility_reason=?,attempt_count=2
+            """, reason);
+        assertEquals("REJECTED", service.snapshot("DIFY", entry, true).probeStatus());
     }
 
     /** 过期未安装缓存可清理，已安装指纹必须保留。 */

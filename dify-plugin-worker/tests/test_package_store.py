@@ -132,6 +132,61 @@ class FixtureLlm(LargeLanguageModel):
         self.assertFalse(output["stream"])
         self.assertEqual("user-1", output["user"])
 
+    def test_loads_volcengine_pydantic_model_contract(self) -> None:
+        """火山方舟使用的枚举和价格对象必须能够参与 Pydantic 建模。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  models: [provider/model.yaml]\n",
+            "provider/model.yaml": """
+provider: volcengine_fixture
+label: {en_US: Volcengine Fixture}
+supported_model_types: [llm]
+extra:
+  python:
+    model_sources: [models/llm/llm.py]
+""",
+            "models/llm/llm.py": """
+from decimal import Decimal
+from pydantic import BaseModel
+from dify_plugin.entities.model import ModelFeature, PriceConfig
+from dify_plugin.entities.model.llm import LLMMode
+from dify_plugin.interfaces.model.large_language_model import LargeLanguageModel
+
+class ModelProperties(BaseModel):
+    mode: LLMMode
+
+class ModelConfig(BaseModel):
+    properties: ModelProperties
+    features: list[ModelFeature]
+    pricing: PriceConfig | None = None
+
+CONFIG = ModelConfig(
+    properties=ModelProperties(mode=LLMMode.CHAT),
+    features=[ModelFeature.STRUCTURED_OUTPUT],
+    pricing=PriceConfig(input=Decimal('0.0032'), output=Decimal('0.0160'),
+                        unit=Decimal('0.001'), currency='RMB'),
+)
+
+class VolcengineFixtureLlm(LargeLanguageModel):
+    def _invoke(self, model, credentials, prompt_messages, model_parameters, **kwargs):
+        return {'mode': CONFIG.properties.mode.value, 'currency': CONFIG.pricing.currency,
+                'features': [feature.value for feature in CONFIG.features]}
+""",
+        })
+
+        result = self.store.install({"packageId": "fixture/volcengine", "version": "1",
+                                     "archiveBase64": base64.b64encode(raw).decode()})
+
+        item = result["components"][0]
+        self.assertEqual("SUPPORTED", item["compatibilityStatus"], item["compatibilityReason"])
+
+    def test_reports_file_count_limit_separately_from_unpacked_size(self) -> None:
+        """文件条目超限必须返回独立原因，不能误报为解压体积超限。"""
+        self.store.maximum_files = 2
+        raw = archive({"manifest.yaml": "plugins: {}\n", "first.txt": "1", "second.txt": "2"})
+
+        with self.assertRaisesRegex(PackageError, "ARCHIVE_FILE_LIMIT"):
+            self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
+
     def test_loads_pydantic_agent_and_model_entities(self) -> None:
         """真实 Agent 与模型插件使用的 Pydantic 类型和嵌套动作必须能够安全建模。"""
         raw = archive({

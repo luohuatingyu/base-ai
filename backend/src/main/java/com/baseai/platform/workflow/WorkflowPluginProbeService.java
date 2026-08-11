@@ -56,16 +56,25 @@ public class WorkflowPluginProbeService {
         PackageIdentity identity = identity(source, entry);
         if (enqueue) enqueue(identity);
         List<ProbeRow> rows = jdbcTemplate.query("""
-            SELECT id,probe_status,compatibility_status,compatibility_reason,result_json
+            SELECT id,probe_status,compatibility_status,compatibility_reason,result_json,attempt_count
             FROM workflow_marketplace_plugin_probe WHERE source=? AND package_key=? AND package_version=?
             """, (rs, row) -> new ProbeRow(rs.getLong("id"), rs.getString("probe_status"),
             rs.getString("compatibility_status"), rs.getString("compatibility_reason"),
-            rs.getString("result_json")), source, identity.packageKey(), identity.version());
+            rs.getString("result_json"), rs.getInt("attempt_count")), source, identity.packageKey(), identity.version());
         if (rows.isEmpty()) return new ProbeSnapshot("NOT_PROBED", "PROBING", "", null);
         ProbeRow row = rows.get(0);
         jdbcTemplate.update("UPDATE workflow_marketplace_plugin_probe SET last_accessed_at=?,updated_at=? WHERE id=?",
             timestamp(Instant.now()), timestamp(Instant.now()), row.id());
         WorkflowPluginWorkerClient.WorkerPackage inspected = row.resultJson() == null ? null : parse(row.resultJson());
+        if (enqueue && retryAfterFileLimitUpgrade(source, row)) {
+            int updated = jdbcTemplate.update("""
+                UPDATE workflow_marketplace_plugin_probe SET probe_status='QUEUED',compatibility_status='PROBING',
+                    compatibility_reason='',result_json=NULL,package_fingerprint=NULL,next_attempt_at=?,
+                    lease_owner=NULL,lease_expires_at=NULL,updated_at=?
+                WHERE id=? AND probe_status='REJECTED' AND attempt_count<?
+                """, timestamp(Instant.now()), timestamp(Instant.now()), row.id(), maximumAttempts);
+            if (updated == 1) return new ProbeSnapshot("QUEUED", "PROBING", "", null);
+        }
         if (enqueue && "COMPLETE".equals(row.probeStatus()) && inspected != null
             && (dependencyUnavailable(inspected) || abiOutdated(source, inspected))) {
             jdbcTemplate.update("""
@@ -295,6 +304,14 @@ public class WorkflowPluginProbeService {
         return inspected.hostAbiVersion() < WorkflowPluginWorkerClient.expectedHostAbiVersion(source);
     }
 
+    /** 文件数上限升级后只为旧 Dify 内容拒绝追加一次有界重试。 */
+    private boolean retryAfterFileLimitUpgrade(String source, ProbeRow row) {
+        return "DIFY".equals(source) && "REJECTED".equals(row.probeStatus())
+            && row.attemptCount() < maximumAttempts
+            && List.of("PACKAGE_CONTENT_LIMIT", "workflow.pluginWorkerRejected")
+                .contains(row.compatibilityReason());
+    }
+
     /** 汇总全不兼容组件的首要稳定原因，避免前端只能显示笼统失败。 */
     private String compatibilityReason(WorkflowPluginWorkerClient.WorkerPackage inspected, String compatibility) {
         if (!"UNSUPPORTED".equals(compatibility)) return "";
@@ -366,7 +383,7 @@ public class WorkflowPluginProbeService {
     private Timestamp timestamp(Instant value) { return Timestamp.from(value); }
 
     private record ProbeRow(long id, String probeStatus, String compatibilityStatus,
-                            String compatibilityReason, String resultJson) {}
+                            String compatibilityReason, String resultJson, int attemptCount) {}
     private record ProbeTask(long id, String source, String catalogExternalKey, String packageKey,
                              String version, int attempt, Instant createdAt) {}
     private record ExpiredProbe(long id, String source, String fingerprint) {}

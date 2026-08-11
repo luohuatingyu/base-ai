@@ -145,7 +145,9 @@ class PackageStore:
                         continue
                     files += 1
                     total += entry.file_size
-                    if files > self.maximum_files or total > self.maximum_unpacked:
+                    if files > self.maximum_files:
+                        raise PackageError("ARCHIVE_FILE_LIMIT")
+                    if total > self.maximum_unpacked:
                         raise PackageError("ARCHIVE_UNPACKED_LIMIT")
                     destination = (target / normalized).resolve()
                     if target not in destination.parents:

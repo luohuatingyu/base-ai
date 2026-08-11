@@ -75,6 +75,35 @@ class WorkflowMarketplacePackageParserTest {
             "provider/tavily.yaml", "tools/tavily_search.yaml", "tavily_search"));
     }
 
+    /** 默认允许官方通义规模的包，但超过 512 个文件仍必须拒绝。 */
+    @Test
+    void acceptsDefaultFileLimitAndRejectsNextEntry() throws Exception {
+        PlatformProperties properties = new PlatformProperties();
+        assertEquals(512, properties.getWorkflow().getMarketplaceMaxPackageFiles());
+        WorkflowMarketplacePackageParser parser = new WorkflowMarketplacePackageParser(properties);
+        Map<String, String> entries = validToolEntries();
+        for (int index = entries.size(); index < 512; index++) entries.put("filler/" + index, "");
+
+        assertEquals("tavily_search", parser.requireTool(zip(entries),
+            "provider/tavily.yaml", "tools/tavily_search.yaml", "tavily_search").name());
+
+        entries.put("filler/overflow", "");
+        byte[] oversized = zip(entries);
+        assertThrows(BusinessException.class, () -> parser.requireTool(oversized,
+            "provider/tavily.yaml", "tools/tavily_search.yaml", "tavily_search"));
+    }
+
+    /** 构造满足原生适配器契约的声明集合。 */
+    private Map<String, String> validToolEntries() {
+        Map<String, String> entries = new LinkedHashMap<>();
+        entries.put("manifest.yaml", "plugins:\n  tools:\n    - provider/tavily.yaml\n");
+        entries.put("provider/tavily.yaml", "credentials_for_provider:\n  tavily_api_key:\n"
+            + "    type: secret-input\n    required: true\ntools:\n  - tools/tavily_search.yaml\n");
+        entries.put("tools/tavily_search.yaml", "identity:\n  name: tavily_search\nparameters:\n"
+            + "  - name: query\n    type: string\n    required: true\n");
+        return entries;
+    }
+
     /** 在内存创建测试 ZIP，避免产生调试文件。 */
     private byte[] zip(Map<String, String> entries) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();

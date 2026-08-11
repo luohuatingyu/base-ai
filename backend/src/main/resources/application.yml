@@ -133,7 +133,7 @@ app:
     marketplace-cache-seconds: ${WORKFLOW_MARKETPLACE_CACHE_SECONDS:300}
     marketplace-max-package-bytes: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_BYTES:5242880}
     marketplace-max-unpacked-bytes: ${WORKFLOW_MARKETPLACE_MAX_UNPACKED_BYTES:10485760}
-    marketplace-max-package-files: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_FILES:128}
+    marketplace-max-package-files: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_FILES:512}
     dify-plugin-worker-url: ${DIFY_PLUGIN_WORKER_URL:http://dify-plugin-worker:8101}
     n8n-plugin-worker-url: ${N8N_PLUGIN_WORKER_URL:http://n8n-plugin-worker:8102}
     plugin-worker-internal-token: ${PLUGIN_WORKER_INTERNAL_TOKEN:${PYTHON_WORKER_INTERNAL_TOKEN}}

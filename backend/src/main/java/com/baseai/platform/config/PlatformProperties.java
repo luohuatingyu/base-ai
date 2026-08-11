@@ -268,7 +268,7 @@ public class PlatformProperties {
         private int marketplaceCacheSeconds = 300;
         private int marketplaceMaxPackageBytes = 5 * 1024 * 1024;
         private int marketplaceMaxUnpackedBytes = 10 * 1024 * 1024;
-        private int marketplaceMaxPackageFiles = 128;
+        private int marketplaceMaxPackageFiles = 512;
         private String difyPluginWorkerUrl = "http://dify-plugin-worker:8101";
         private String n8nPluginWorkerUrl = "http://n8n-plugin-worker:8102";
         private String pluginWorkerInternalToken = "";
