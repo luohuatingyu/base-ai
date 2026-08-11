@@ -30,7 +30,7 @@ Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
 | 市场包安全且版本固定 | Backend 市场客户端、Worker 包测试 | npm SRI、Dify SHA-256、路径穿越、链接、超限、非法依赖源和版本更新 | 恶意包在落盘/执行前拒绝，已安装版本不被静默覆盖；通过 | 边界、异常、安全 |
 | 动态节点和连接可配置 | Backend 配置/执行器与 Frontend 表单测试 | 必填、条件显示、空值、类型错误、同/异组件连接、密钥脱敏 | 动态字段正确展示并在发布与执行时校验；跨组件和跨所有者拒绝；通过 | 正常、边界、权限 |
 | OAuth 状态不可伪造或重放 | Backend OAuth Service 与 Frontend 回调契约测试 | 合法回调、非 HTTPS 地址、伪造 state、重复消费 | verifier 加密、state 哈希保存且只消费一次，伪造与重放拒绝；通过 | 正常、异常、权限、安全 |
-| 真实市场插件按能力分级 | 官方市场临时包探测 | n8n LogSnag、Dify JSON Process、Dify DeepSeek | LogSnag 与 JSON Process 为 SUPPORTED 且可调用；DeepSeek Provider 因缺少 SDK 基类执行语义为 PARTIAL；符合预期 | 兼容、真实回归 |
+| 真实市场插件按能力分级 | 官方市场临时包与 Top 100 探测 | Top 100 固定版本；n8n LogSnag、Dify JSON Process、Dify DeepSeek | n8n 包加载/Schema 100%，Dify 98%，均高于 80%；真实样本按 SUPPORTED/PARTIAL 正确分级 | 兼容、真实回归 |
 | 完整构建与运行无回归 | Backend、Frontend、双 Worker、Compose、Flyway | 完整测试、生产构建、重建启动和健康检查 | 802 项正式测试通过；六服务 healthy；MySQL Schema V15；通过 | 回归、构建、部署 |
 
 ### 测试执行结果
@@ -39,6 +39,7 @@ Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
 - Backend 完整回归：516/516 通过；包含市场客户端、注册表、连接外键、节点执行、OAuth、防重放和 Schema 测试。
 - Frontend 两套正式回归：107/107、168/168 通过；覆盖动态节点/凭据表单、OAuth 回调、目录、权限和容器安全契约。
 - Dify Worker（Python 3.12）：8/8 通过；n8n Worker（Node 24）：3/3 通过。
+- 市场 Top 100 结构兼容探测：n8n 100/100（100%）成功加载并生成 138 个组件 Schema，其中 128 个组件判定 SUPPORTED；Dify 98/100（98%）成功加载并生成 391 个组件 Schema，两个失败包超过当前压缩包安全上限。
 - `docker compose up --build -d` 成功；Backend 镜像内再次执行 516/516，Frontend Vite 生产构建成功，六服务全部 healthy。
 - Flyway 日志确认 MySQL 当前 Schema 为 V15；两个插件 Worker 健康接口分别返回 Base AI Python ABI/Python 3.12 和 Base AI Node ABI/Node 24。
 
@@ -60,7 +61,8 @@ Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
 | Frontend 正式回归 | `cd frontend && npm test`；`cd frontend && node --test test/*.mjs` | 107/107、168/168 通过 |
 | Dify Worker | Python 3.12 执行 `python3.12 -m unittest discover -s tests -v` | 8/8 通过 |
 | n8n Worker | Node 24 执行 `npm test` | 3/3 通过 |
-| 真实市场冒烟 | 官方市场下载固定版本到 `/tmp`，使用当前 PackageStore 探测并调用，命令结束自动删除临时目录 | LogSnag SUPPORTED；JSON Process 4 个 Tool SUPPORTED 且调用成功；DeepSeek MODEL PARTIAL |
+| Top 100 兼容探测 | n8n 按下载量、Dify 按安装量读取前 100 个固定版本到 `/tmp`；n8n 使用当前依赖安装与 PackageStore，Dify 本轮仅验证包结构和 Schema，不安装依赖或执行第三方网络逻辑 | n8n 100/100（100%）；Dify 98/100（98%）；均达到 ≥80% |
+| 真实市场执行冒烟 | 官方市场下载固定版本到 `/tmp`，使用当前 PackageStore 探测并调用，命令结束自动删除临时目录 | LogSnag SUPPORTED；JSON Process 4 个 Tool SUPPORTED 且调用成功；DeepSeek MODEL PARTIAL |
 | 统一重建 | `docker compose up --build -d` | 成功，未发生端口冲突；Backend 516/516，Frontend 构建成功 |
 | 数据库与健康检查 | Backend Flyway 日志、Worker 健康接口、`docker compose ps`、HTTPS 首页 | MySQL V15；六服务 healthy；两个 Worker ABI 正常；HTTPS 200 |
 | 差异与清理 | `git diff --check`、`git diff --cached --check`、工作区状态和 `__pycache__` 检查 | 无空白错误、冲突、调试文件或 Python 缓存 |
@@ -71,6 +73,7 @@ Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
 - 插件触发入口首条测试错误地把 `input` 子对象本身作为上下文，导致断言读取路径错误；修正测试请求构造后通过，未弱化生产逻辑。
 - 真实 LogSnag 首次探测为声明式路由 PARTIAL；补充受控 HTTP 路由解释器和凭据认证后重新探测为 SUPPORTED。
 - 真实 DeepSeek 能加载 Provider 和生成 Schema，但其模型调用依赖 Dify SDK 的模型基类语义；保持 PARTIAL，未通过占位实现误报支持。
+- Dify Top 100 有 2 个包因超过 `PLUGIN_MAX_PACKAGE_BYTES` 被安全拒绝；未临时放宽上线限制以追求覆盖率。
 - 所有 `/tmp/base-ai-*` 市场探测目录均由 shell trap 删除；测试产生的 `__pycache__` 已清理，插件测试包未写入工作区。
 
 ### 已知问题与限制
@@ -84,7 +87,7 @@ Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
 
 ### 下次测试建议
 
-1. 在独立测试环境对两个市场各 Top 100 固定版本执行批量探测，按 ABI 缺失原因统计 SUPPORTED/PARTIAL/UNSUPPORTED，并据最高频缺口迭代兼容层。
+1. 在独立测试环境为 Dify Top 100 安装完整插件依赖并执行无外部副作用的组件级调用，按 ABI 缺失原因细分 SUPPORTED/PARTIAL/UNSUPPORTED；当前 98% 指标仅代表包加载和 Schema 生成。
 2. 增加浏览器 E2E，覆盖真实 OAuth 供应商跳转、回调刷新、密钥脱敏编辑和授权失败恢复。
 3. 为轮询型与 Webhook 型插件 Trigger 增加 Base AI 原生订阅调度和公开回调路由，再使用真实事件完成端到端验证。
 4. 按真实市场高频模型 Provider 实现独立模型协议适配，避免引入 Dify SDK 的同时逐步提升 MODEL 可执行比例。
