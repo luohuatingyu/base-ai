@@ -1,5 +1,99 @@
 # 最近分支覆盖测试报告
 
+## 📋 n8n 与 Dify 市场插件自动探测测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: 721d8b2c3a7443ec598cf3aac9fe8cf9ef9576d5
+- 提交说明: Probe marketplace plugins asynchronously
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一测试报告基准点: `2c5e37653f944cf488889c6eef7d68a2d159f714`
+- Backend 业务代码差异: 市场列表自动把当前页未探测 n8n/Dify 固定版本包写入持久化队列，由独立线程池异步执行安全与 ABI 探测；导入仅消费完成结果，不再下载或探测插件包。
+
+### 变更范围
+
+- 打开、搜索或翻页 n8n/Dify 市场时，具有导入权限的用户会幂等排队当前页全部未探测包；只读用户只能查看已有状态。前端每两秒轮询，关闭弹窗或离开页面后清理定时器。
+- V16 新增独立 `workflow_marketplace_plugin_probe` 表，按来源、包和版本唯一保存 QUEUED、PROBING、COMPLETE、REJECTED、FAILED 状态、包指纹、脱敏组件结果、重试次数、租约和访问时间；自动探测不会写入已安装插件注册表。
+- 探测线程池默认并发 2、队列 100、最大尝试 3 次；租约过期任务可恢复。依赖安装失败或超时按临时基础设施故障重试，不固化为永久 ABI 不兼容；包结构、安全和 Worker 响应错误直接拒绝。
+- 导入只重新确认市场元数据和版本，并从 V16 读取 Worker 结果；未探测、探测中、失败或没有 SUPPORTED 组件的插件返回明确冲突或不兼容结果。已安装版本更新继续要求人工确认。
+- 未安装探测包默认保留 168 小时；清理任务先领取缓存记录，再通过内部鉴权 Worker 接口删除严格 SHA-256 目录。已被插件注册表引用的指纹永远不清理。
+- 双 Worker 仍使用 Base AI 自研 Node/Python 3.12 ABI，不引入 n8n/Dify 引擎或 SDK，也未新增第三方依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 当前页插件自动异步探测 | Backend Marketplace/Probe Service 与 Frontend 页面测试 | 管理员打开含插件的 n8n/Dify 页、重复刷新、切换兼容筛选 | 固定版本只入队一次，接口立即返回，前端自动轮询至完成；通过 | 正常、边界、并发 |
+| 导入不产生包探测 | Backend Marketplace Service 测试 | 已完成、缺失、排队中和拒绝状态分别调用导入 | 仅完成结果可进入注册；导入路径未调用包下载或 Worker inspect；通过 | 核心验收、异常、副作用 |
+| 权限与资源受控 | Backend Service、线程池和迁移测试 | 只有 list 权限、具有 import 权限、队列重复任务、租约过期 | 只读访问不产生任务；导入权限可入队；唯一键、并发、队列和租约生效；通过 | 权限、安全、边界 |
+| 安全与 ABI 结果准确 | Backend 参数化聚合与双 Worker 测试 | 全 SUPPORTED、混合 PARTIAL、全不支持、路径穿越、摘要不匹配 | 包级结果分别为 SUPPORTED/PARTIAL/UNSUPPORTED；恶意包在落盘或执行前拒绝；通过 | 正常、分支、安全 |
+| 临时依赖故障可恢复 | Backend 与 Dify Worker 测试 | DEPENDENCY_INSTALL_FAILED/TIMEOUT、缓存失败元数据、达到重试上限 | 重新安装依赖并按上限重试；成功后正常兼容，耗尽后 FAILED；通过 | 异常、超时、恢复 |
+| 版本更新不覆盖运行版本 | Marketplace 与既有 Registry 回归 | 市场出现新版本、旧插件已安装、replaceExisting=false/true | 新版本独立探测；旧版本继续运行；只有确认后替换；通过 | 状态冲突、兼容、回归 |
+| 缓存清理不影响已安装包 | Backend 与双 Worker 测试 | 过期未安装包、已安装指纹、非法删除指纹 | 仅未引用严格指纹目录可删除；路径和已安装包保留；通过 | 安全、边界、副作用 |
+| 完整构建与部署无回归 | Backend、Frontend、双 Worker、Compose、Flyway | 完整测试、生产构建、V16迁移、健康检查 | 818项正式测试通过，六服务 healthy，MySQL Schema V16；通过 | 回归、构建、部署 |
+
+### 测试执行结果
+
+- 正式完整回归共 818 项，818 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：528/528 通过；最终 Compose Backend 镜像构建内再次执行 528/528 并完成打包。
+- Frontend 两套正式回归：108/108、168/168 通过；生产构建成功。
+- Dify Worker（Python 3.12）：10/10 通过；n8n Worker（Node 24）：4/4 通过。
+- 相关定向 Backend 最终 30/30 通过，覆盖探测队列 10 项、市场服务 7 项和 Schema 13 项。
+- 真实市场运行态：访问 n8n LogSnag 页面项和 Dify Google Calendar 页面项后，均由后台自动完成固定包下载、安全/ABI 探测，并返回 `COMPLETE`、`SUPPORTED`、可导入；未点击导入。
+- `docker compose up --build -d` 成功；Flyway 确认从 V15 应用 V16，Backend readiness 为 UP，Backend、Frontend、Python Worker、Dify Worker、n8n Worker、Caddy 六服务全部 healthy。
+
+### 关键模块测试
+
+- Domain/Schema 层：未修改 Domain；Schema 资源测试 13/13 通过，V16 仅新增探测缓存表、唯一键和索引，不删除既有表或列。
+- Service/队列层：Probe Service 10/10、Marketplace Service 7/7 通过；覆盖幂等入队、权限、聚合状态、重试耗尽、旧失败缓存恢复、缓存清理和导入零探测调用。
+- Registry/执行层：既有插件注册、动态连接、OAuth 和固定指纹执行完整回归通过；自动探测与安装状态相互隔离。
+- Worker 层：Dify 10/10、n8n 4/4；覆盖全部组件类型、安全解压、依赖源过滤、真实加载、严格指纹清理和依赖失败缓存重试。
+- Frontend 层：108/108 与 168/168；覆盖探测状态标签、禁用未完成项、兼容筛选仍持续轮询、选择清理及页面卸载停止轮询。
+- 权限与安全层：只有 `workflow:node:import` 权限能产生探测任务；原因码不向浏览器暴露 Worker 路径、依赖输出或凭据。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向回归 | Maven 3.9.9 / Java 17 容器执行 `WorkflowPluginProbeServiceTest`、`WorkflowNodeMarketplaceServiceTest`、`WorkflowSchemaResourceTest` | 最终 30/30 通过 |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 528/528 通过，BUILD SUCCESS |
+| Frontend 正式回归 | `cd frontend && npm test`；`cd frontend && node --test test/*.mjs` | 108/108、168/168 通过 |
+| Dify Worker | `python3.12 -m unittest discover -s tests -v` | 10/10 通过 |
+| n8n Worker | `npm test` | 4/4 通过 |
+| 真实市场自动探测 | 通过 HTTPS 登录后只请求 n8n `logs` 与 Dify `time` 市场页面并轮询列表状态 | LogSnag 与 Google Calendar 均 COMPLETE/SUPPORTED；未调用导入接口 |
+| 统一重建 | `docker compose up --build -d` | Backend 构建内 528/528；Frontend 构建成功；最终六服务 healthy |
+| 数据库与健康检查 | Backend Flyway 日志、readiness、`docker compose ps` | MySQL V16、readiness UP、六服务 healthy |
+| 差异与清理 | `git diff --check`、暂存区检查、工作区状态、Cookie trap 与 `__pycache__` 检查 | 无空白错误、无无关提交、无临时 Cookie 或 Python 缓存 |
+
+### 测试过程问题与处理
+
+- 首次真实探测脚本尝试直接读取 `.env` 时，密码中的 shell 特殊字符导致解析失败；未输出密码，随后改为从运行中 Backend 容器安全读取环境变量并用 Node JSON 序列化。Cookie 始终位于 `/tmp/base-ai-plugin-probe-cookie.*`，由 shell trap 自动删除。
+- Dify JSON Process、Database 和 Tavily 真实包首次返回 `DEPENDENCY_INSTALL_FAILED`。该结果可能是临时依赖源故障，因此新增可恢复分类、失败元数据重新安装及最大三次重试；仍不会把未加载组件误报为兼容。另选无该故障的 Google Calendar 完成真实 Dify 自动探测。
+- 最终 Compose 重建收尾阶段与一次紧接着执行的 `docker compose up -d` 发生容器删除竞态，Docker 返回“removal already in progress”；待当前状态稳定后重试成功，未发生端口占用，最终六服务 healthy。
+- Python 3.12 单元测试生成的 `__pycache__` 和 `.pyc` 已在提交前全部清理；未创建或提交其他调试文件。
+
+### 已知问题与限制
+
+- 自动探测只覆盖用户实际打开、搜索或翻到的当前页，不会定时扫描完整市场；这是本次确认的资源控制范围。
+- 完整插件包会被下载并探测全部组件，不能只下载单个组件。导入通用插件时仅为 SUPPORTED 组件生成模板；PARTIAL/UNSUPPORTED 不会伪装为可执行。
+- 外部 npm/PyPI 或市场不可用时会按上限重试并显示 FAILED；再次发布相同版本但更改包内容不属于正常市场契约，当前以官方固定版本为缓存键。
+- 探测 Worker 仍是受限容器和短生命周期子进程，不是逐插件微虚机；第三方插件代码的固有风险继续由非 root、只读根、能力移除、资源限制和包校验降低。
+- Frontend 构建保留既有 runtime-config 非 module 与大分块警告，不影响构建成功，与本次功能无直接关系。
+
+### 下次测试建议
+
+1. 增加浏览器 E2E，真实覆盖连续翻页、关闭重开弹窗、兼容筛选和长时间探测的视觉状态。
+2. 在具备稳定 PyPI/npm 镜像的隔离环境重测依赖较多的 Dify/n8n 插件，区分永久依赖声明错误与临时依赖源故障。
+3. 为多 Backend 实例增加数据库级并发集成测试，验证两个实例同时读取相同页时只有一个租约持有者执行 Worker 调用。
+4. 结合磁盘监控评估默认 168 小时保留期；如市场浏览量较大，可降低保留期或增加插件缓存容量告警。
+
+### 重测触发条件与回滚
+
+- 修改市场分页/版本契约、V16、探测状态机、线程池/租约、重试分类、Worker 包缓存、导入前置条件、前端轮询或缓存清理时，必须重跑相关定向测试、Backend/Frontend/双 Worker 完整回归和 Compose 重建。
+- 应用代码可撤销提交 `721d8b2c3a7443ec598cf3aac9fe8cf9ef9576d5` 后执行 `docker compose up --build -d`。
+- V16 是前向新增表；旧代码不会引用该表。删除探测记录、Worker 包目录或 V16 表属于数据删除，回滚时不会自动执行，必须另行确认并先备份。
+
 ## 📋 n8n 与 Dify 市场插件 ABI 兼容测试结果（2026-08-11）
 
 ### Git 基准点
