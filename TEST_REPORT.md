@@ -1,5 +1,98 @@
 # 最近分支覆盖测试报告
 
+## 📋 n8n 与 Dify 适配服务按需启停测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: 848d8157b7d1423d97723e0c399db90a40f6f768
+- 提交说明: Add on-demand workflow adapter services
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一代码基准点: `bb68113e`（Require Dify worker ABI version four）
+- Backend 业务代码差异: 新增适配器期望状态、实际容器状态、独立权限、在途任务锁和市场/Worker 调用保护；n8n 与 Dify 默认关闭并由节点管理页分别控制。
+
+### 变更范围
+
+- Docker Compose 将 n8n 与 Dify Worker 放入 `plugin-adapters` profile，默认不启动；Backend 不再把两个 Worker 作为启动健康依赖。
+- 新增隔离的 Go `adapter-manager`，使用内部令牌、固定来源白名单和 Docker Compose CLI 启停两个 Worker；Backend 本身不挂载 Docker Socket。
+- 新增两个系统托管开关，首次启动默认均为 `false`，并增加 `workflow:adapter:manage` 独立权限及节点管理页双开关。
+- 所有 Worker 探测、删除与执行请求持有来源读锁；关闭操作必须取得写锁，存在在途任务时返回冲突且不停止容器。
+- 关闭状态禁止浏览或导入对应市场，并拒绝需要该 Worker 的插件调用；启停失败保留明确状态且由定时对账恢复期望状态。
+- Dify ABI 现有改动使用 Pydantic v2 扩展点，生产依赖固定为 Pydantic 2.13.4；无数据库表迁移或业务数据迁移。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 默认不启动两个 Worker | Compose 契约与真实重建 | 不启用 profile 执行标准 Compose 重建 | 两个 Worker 最终均为 Exited/STOPPED，五个基础服务 healthy；通过 | 正常、部署、兼容 |
+| n8n 与 Dify 分别控制 | manager 单元测试与真实运行态 | 依次启动/停止 N8N、DIFY 并查询另一来源 | 目标来源独立 ENABLING→RUNNING→STOPPED，另一来源始终 STOPPED；通过 | 正常、分支、回归 |
+| 在途任务阻止关闭 | Backend 并发单元测试；一个请求持有来源读锁 | 在任务未释放时关闭同一来源 | 返回 HTTP 409 业务异常，不调用 manager、不写 false；通过 | 状态冲突、并发、副作用 |
+| 关闭后不得访问适配能力 | Backend Service/Client 测试 | 关闭 Dify 执行 Worker 动作；关闭 N8N 浏览市场 | 在访问 Worker 或第三方市场前返回 adapterDisabled；通过 | 异常、安全、回归 |
+| 权限和命令输入受限 | Controller/Client/manager 测试 | 无令牌、错误权限、恶意来源、额外 JSON 字段 | 独立管理权限生效；令牌常量时间校验；任意服务名和命令注入被拒绝；通过 | 权限、安全、恶意输入 |
+| 启停失败不伪造持久状态 | Backend 和 manager 失败测试 | manager 拒绝、命令失败、畸形状态响应 | 不提前保存期望值，仅暴露有限错误码且不返回 Compose 输出；通过 | 异常、安全、兼容 |
+| 页面正确展示实际状态 | Frontend 完整与源码契约测试 | 来源切换、启停过渡、失败、离开页面 | 独立开关、权限、轮询清理、运行前禁用市场按钮均符合预期；通过 | 正常、边界、回归 |
+
+### 测试执行结果
+
+- 正式自动化用例总数：708；通过 708，通过率 100%；失败 0，错误 0，跳过 0。
+- Backend 完整回归：567/567；适配器、系统参数、市场和 Worker Client 定向回归：47/47，最终新增 manager/lifecycle 定向复测：7/7。
+- Frontend 完整回归：114/114，其中适配器与 Compose 新增契约测试 3/3。
+- Dify Worker：17/17；n8n Worker：6/6；adapter-manager Go 测试：4/4。
+- 标准 Compose 统一构建成功，构建内 Backend 再次 567/567，Frontend 生产构建和 adapter-manager 镜像内测试通过。
+- 最终运行态：Adapter Manager、Backend、Frontend、Python Worker、Caddy 全部 healthy；n8n 与 Dify Worker 均为 Exited/STOPPED；HTTPS health 与 readiness 均返回 `UP`。
+
+### 关键模块测试
+
+- Lifecycle Service：默认值、来源隔离、关闭保护、读写锁竞态、失败不落库和实际/期望状态合并。
+- Adapter Manager：固定命令白名单、异步操作串行化、Compose JSON 兼容解析、令牌鉴权、请求体限制和错误脱敏。
+- Controller/权限：状态读取复用节点查看权限，启停使用独立 `workflow:adapter:manage` 权限，非法命令和来源被拒绝。
+- Marketplace/Worker Client：关闭时不访问第三方或 Worker，开启时所有探测与插件调用计入在途任务。
+- Frontend：双开关、实际状态标签、过渡轮询、页面卸载清理、权限控制和未运行时禁止市场导入。
+- 部署：默认 profile、manager Docker Socket 隔离边界、独立实际启停、基础服务健康和 HTTPS readiness。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向 | Maven 3.9.9 / Java 17 容器执行 Adapter Lifecycle/Manager Client、Marketplace、Worker Client、Controller、System Configuration 和 Data Initializer | 47/47 通过；新增最终复测 7/7 通过 |
+| Backend 完整 | Maven 3.9.9 / Java 17 容器执行 `mvn test -B -ntp` | 567/567 通过，0 失败、0 错误、0 跳过 |
+| Frontend 完整 | `cd frontend && npm test` | 114/114 通过 |
+| n8n Worker | `cd n8n-plugin-worker && npm test` | 6/6 通过 |
+| Dify Worker | Python 3.12 Dify 镜像执行 `python -m unittest discover -s tests` | 17/17 通过 |
+| Adapter Manager | 固定 Go 1.26.5 镜像与 manager Dockerfile 内执行 `go test ./...` | 4/4 通过；镜像构建成功 |
+| Compose 静态 | 默认及 `plugin-adapters` profile 执行 `docker compose config --quiet` | 均通过；默认服务清单不含两个 Worker |
+| 统一重建 | `docker compose up --build -d`，异步替换完成后执行 `docker compose up -d` | 五个基础服务 healthy；构建内 Backend 567/567 通过 |
+| 实际独立启停 | 通过受鉴权 manager 接口依次控制 N8N、DIFY 并轮询状态 | 两个来源均独立完成启动与停止，未联动另一 Worker |
+| 健康与最终状态 | HTTPS health/readiness、manager 状态、`docker compose ps -a` | 两个端点 `UP`；两个 Worker STOPPED；基础服务 healthy |
+| 差异与提交 | `git diff --check`、`git diff --cached --check`、路径限定暂存 | 检查通过；功能提交未包含并行测试报告和无关依赖改动 |
+
+### 测试过程问题与处理
+
+- 宿主机未安装 Maven 和 Go 命令，按项目固定 digest 的 Maven/Go 容器执行，未降低测试范围。
+- 首次前端完整测试因既有契约要求保留 `onBeforeUnmount(stopMarketplacePolling)` 调用形式失败；改为注册两个等价卸载钩子后 114/114 通过。
+- Dify 完整测试最初因既有 ABI 代码使用 Pydantic 但生产镜像未声明依赖而 16/17；经用户确认扩大范围，固定 Pydantic 2.13.4 后 17/17 通过。
+- 统一重建完成镜像后容器仍处于异步替换和健康依赖等待；再次执行 `docker compose up -d` 后依赖链全部 healthy，未发生端口冲突。
+- 本任务期间 master 有并行提交进入；提交前重新基于最新 HEAD 执行完整测试和 Compose 重建，并通过路径限定暂存避免夹带并行改动。
+- 未创建持久调试脚本或仓库内临时文件。
+
+### 已知问题与限制
+
+- manager 必须挂载 Docker Socket 才能让网页开关真正启停容器；Socket 等同宿主机高权限，风险通过独立服务、内部令牌、固定服务白名单、只读项目挂载和不暴露宿主机端口进行收敛，但不能完全消除。
+- Worker 首次启用会按需构建镜像，耗时取决于镜像缓存和依赖网络；页面通过异步状态轮询展示过程，未运行完成前禁止市场操作。
+- 在途锁以当前单 Backend 实例为边界；现有 Compose 使用固定 Backend 容器且不支持水平扩容。未来若支持多实例，必须改为分布式租约或统一任务计数后才能保持关闭保护语义。
+- 关闭只保护由 Backend 发起并持锁的探测和插件任务；管理员绕过应用直接操作 Docker 不受该业务锁约束。
+
+### 下次测试建议
+
+1. 在受控 CI Docker 主机增加 manager 真实启停集成测试，并模拟构建失败、Docker Daemon 不可用和容器健康超时。
+2. 若计划支持多 Backend 实例，先增加 Redis/数据库分布式在途计数与原子关闭协议，再开放扩容配置。
+3. 为节点管理页补充浏览器级测试，覆盖启用耗时、失败重试、在途任务冲突提示和权限不足状态。
+
+### 重测触发条件与回滚
+
+- 修改适配器开关键、manager 协议、Docker profile/服务名、Worker Client 调用边界、在途锁、权限或节点管理开关时，必须重跑 Backend/Frontend/两个 Worker/manager 完整测试、Compose 重建及实际双来源启停。
+- 代码可回退提交 `848d815`，随后停止并移除遗留 adapter-manager/Worker 容器，再执行回退版本的 `docker compose up --build -d`；本次无数据库表迁移，两个系统托管参数可保留或在确认无新版本使用后删除。
+
 ## 📋 Dify 模型 ABI 与 n8n 声明式路由兼容性测试结果（2026-08-11）
 
 ### Git 基准点
