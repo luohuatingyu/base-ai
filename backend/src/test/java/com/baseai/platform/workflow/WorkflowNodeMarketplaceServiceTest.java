@@ -140,6 +140,7 @@ class WorkflowNodeMarketplaceServiceTest {
         ArgumentCaptor<List<WorkflowModels.MarketplaceTemplateDraft>> drafts = ArgumentCaptor.forClass(List.class);
         verify(workflowService).importMarketplaceTemplates(drafts.capture(), org.mockito.ArgumentMatchers.eq(false));
         assertEquals("PLUGIN_ACTION", drafts.getValue().get(0).nodeType());
+        assertEquals("BASIC", drafts.getValue().get(0).functionalCategory());
         assertEquals(7L, drafts.getValue().get(0).config().path("pluginComponentId").asLong());
         assertFalse(drafts.getValue().get(0).config().toString().contains("secret"));
         verify(pluginRegistry).setEnabled(3L, true);

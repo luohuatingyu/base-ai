@@ -190,4 +190,23 @@ class WorkflowSchemaResourceTest {
         assertTrue(!schema.contains("DROP TABLE"));
         assertTrue(!schema.contains("DROP COLUMN"));
     }
+
+    /** MySQL V17 只整理仍误放在网络分类的市场插件，并保留管理员已调整的其他分类。 */
+    @Test
+    void recategorizesExistingMarketplacePluginTemplates() throws Exception {
+        String schema = new ClassPathResource(
+            "db/migration/mysql/V17__recategorize_marketplace_plugin_templates.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        assertTrue(schema.contains("template_source IN ('N8N', 'DIFY')"));
+        assertTrue(schema.contains("functional_category = 'NETWORK_API'"));
+        for (String nodeType : new String[]{"PLUGIN_ACTION", "PLUGIN_TRIGGER", "PLUGIN_MODEL",
+            "PLUGIN_DATASOURCE", "PLUGIN_AGENT_STRATEGY", "PLUGIN_EXTENSION"}) {
+            assertTrue(schema.contains("'" + nodeType + "'"), nodeType);
+        }
+        for (String category : new String[]{"BASIC", "AI", "DATA_TRANSFORM", "TEXT_DOCUMENT", "NETWORK_API",
+            "TRIGGER", "NOTIFICATION", "DATA_STORAGE", "MESSAGE_QUEUE"}) {
+            assertTrue(schema.contains("'" + category + "'"), category);
+        }
+    }
 }

@@ -180,10 +180,12 @@ public class WorkflowNodeMarketplaceService {
         String externalKey = entry.externalId() + "/" + component.externalKey();
         String fingerprint = sha256(packageFingerprint + "\n" + component.schemaFingerprint());
         String nodeType = pluginNodeType(component.componentType());
+        String category = marketplaceCategory(entry, component.componentType(), component.externalKey(),
+            component.name(), component.description());
         return new WorkflowModels.MarketplaceTemplateDraft(source, externalKey, entry.version(), entry.publisher(),
             fingerprint, source + "_" + sha256(externalKey).substring(0, 16).toUpperCase(Locale.ROOT),
             component.name(), component.description(), nodeType,
-            WorkflowTemplateCatalog.defaultCategory(nodeType), config);
+            category, config);
     }
 
     /** 从插件字段 Schema 提取不含空值的声明默认值。 */
@@ -348,6 +350,13 @@ public class WorkflowNodeMarketplaceService {
             case "EXTENSION" -> "PLUGIN_EXTENSION";
             default -> "PLUGIN_ACTION";
         };
+    }
+
+    /** 使用包身份、市场说明和组件声明推导插件实际功能分类。 */
+    private String marketplaceCategory(WorkflowMarketplaceClients.MarketplaceEntry entry, String componentType,
+                                       String componentExternalId, String componentName, String componentDescription) {
+        return WorkflowTemplateCatalog.marketplaceCategory(componentType, entry.externalId(), entry.name(),
+            entry.description(), entry.category(), componentExternalId, componentName, componentDescription);
     }
 
     /** 把市场元数据和原生转换结果固化为不可伪造的持久化命令。 */
