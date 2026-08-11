@@ -63,7 +63,7 @@ Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
 | n8n Worker | Node 24 执行 `npm test` | 3/3 通过 |
 | Top 100 兼容探测 | n8n 按下载量、Dify 按安装量读取前 100 个固定版本到 `/tmp`；n8n 使用当前依赖安装与 PackageStore，Dify 本轮仅验证包结构和 Schema，不安装依赖或执行第三方网络逻辑 | n8n 100/100（100%）；Dify 98/100（98%）；均达到 ≥80% |
 | 真实市场执行冒烟 | 官方市场下载固定版本到 `/tmp`，使用当前 PackageStore 探测并调用，命令结束自动删除临时目录 | LogSnag SUPPORTED；JSON Process 4 个 Tool SUPPORTED 且调用成功；DeepSeek MODEL PARTIAL |
-| 统一重建 | `docker compose up --build -d` | 成功，未发生端口冲突；Backend 516/516，Frontend 构建成功 |
+| 统一重建 | `docker compose up --build -d` | 初次成功；最终复核时清理外部端口占用并重建 Caddy；Backend 516/516，Frontend 构建成功 |
 | 数据库与健康检查 | Backend Flyway 日志、Worker 健康接口、`docker compose ps`、HTTPS 首页 | MySQL V15；六服务 healthy；两个 Worker ABI 正常；HTTPS 200 |
 | 差异与清理 | `git diff --check`、`git diff --cached --check`、工作区状态和 `__pycache__` 检查 | 无空白错误、冲突、调试文件或 Python 缓存 |
 
@@ -74,6 +74,7 @@ Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
 - 真实 LogSnag 首次探测为声明式路由 PARTIAL；补充受控 HTTP 路由解释器和凭据认证后重新探测为 SUPPORTED。
 - 真实 DeepSeek 能加载 Provider 和生成 Schema，但其模型调用依赖 Dify SDK 的模型基类语义；保持 PARTIAL，未通过占位实现误报支持。
 - Dify Top 100 有 2 个包因超过 `PLUGIN_MAX_PACKAGE_BYTES` 被安全拒绝；未临时放宽上线限制以追求覆盖率。
+- 最终健康复核时 Caddy 曾收到外部 SIGTERM，随后 80/443 被 `domestic-trade-caddy` 占用；按仓库规则停止占用容器并 `--force-recreate` 本项目 Caddy，最终六服务 healthy、HTTPS 200。
 - 所有 `/tmp/base-ai-*` 市场探测目录均由 shell trap 删除；测试产生的 `__pycache__` 已清理，插件测试包未写入工作区。
 
 ### 已知问题与限制
