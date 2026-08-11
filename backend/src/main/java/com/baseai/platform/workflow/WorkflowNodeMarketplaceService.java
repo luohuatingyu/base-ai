@@ -283,11 +283,12 @@ public class WorkflowNodeMarketplaceService {
         boolean compatible = "COMPLETE".equals(snapshot.probeStatus()) && supported != null;
         String targetNodeType = compatible ? pluginNodeType(supported.componentType())
             : pluginNodeType(entry.category());
+        String category = compatible ? marketplaceCategory(entry, supported.componentType(), supported.externalId(),
+            supported.name(), supported.description()) : WorkflowTemplateCatalog.defaultCategory(targetNodeType);
         return new WorkflowModels.MarketplaceNodeView(entry.externalId(), entry.name(), entry.description(),
             entry.version(), entry.publisher(), entry.category(), compatible,
             compatible ? "" : incompatibility(snapshot), targetNodeType,
-            WorkflowTemplateCatalog.defaultCategory(targetNodeType), snapshot.compatibilityStatus(), List.of(),
-            snapshot.probeStatus(),
+            category, snapshot.compatibilityStatus(), List.of(), snapshot.probeStatus(),
             compatible && pluginImported(source, entry, snapshot.inspected(), activeTemplates));
     }
 

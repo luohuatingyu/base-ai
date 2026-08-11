@@ -124,6 +124,22 @@ class WorkflowNodeMarketplaceServiceTest {
             service.nodes("N8N", "", "", 1, 20, false).items().get(0).incompatibilityReason());
     }
 
+    /** 市场预览必须按照组件实际语义展示分类，而不是把所有动作归入网络接口。 */
+    @Test
+    void previewsPluginCategoryFromComponentCapability() {
+        var slack = entry("n8n-nodes-slack.send", "Slack", "1.0.0", "vendor", "community-node",
+            Map.of("packageName", "n8n-nodes-slack"));
+        when(clients.searchN8n("", 1, 20)).thenReturn(
+            new WorkflowMarketplaceClients.SearchResult(List.of(slack), 1));
+        when(pluginProbes.snapshot("N8N", slack, true)).thenReturn(new WorkflowPluginProbeService.ProbeSnapshot(
+            "COMPLETE", "SUPPORTED", "", workerPackage("N8N", "n8n-nodes-slack", "1.0.0",
+            "f".repeat(64), "SUPPORTED", "send_slack_message")));
+
+        WorkflowModels.MarketplaceNodeView item = service.nodes("N8N", "", "", 1, 20, false).items().get(0);
+
+        assertTrue(item.compatible());
+        assertEquals("NOTIFICATION", item.functionalCategory());
+    }
 
     /** 插件探测没有任何可执行组件时必须拒绝且不创建模板。 */
     @Test
