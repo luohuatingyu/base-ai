@@ -20,6 +20,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 class WorkflowServiceAccessTest {
@@ -92,7 +93,7 @@ class WorkflowServiceAccessTest {
         assertEquals(3, service.templates().size());
     }
 
-    /** 市场模板导入必须幂等保存外部身份并默认停用。 */
+    /** 市场模板导入必须幂等保存外部身份并默认启用。 */
     @Test
     void importsMarketplaceTemplateIdempotently() {
         authenticate(1L, Set.of("ADMIN"));
@@ -101,15 +102,37 @@ class WorkflowServiceAccessTest {
             "REDIS_COMMAND", "DATA_STORAGE", new ObjectMapper().createObjectNode());
 
         WorkflowModels.MarketplaceTemplatePersistence first = service.importMarketplaceTemplate(draft);
-        WorkflowModels.MarketplaceTemplatePersistence second = service.importMarketplaceTemplate(draft);
 
         assertEquals("CREATED", first.status());
-        assertEquals("ALREADY_IMPORTED", second.status());
         WorkflowModels.NodeTemplateView imported = service.templates().stream()
             .filter(template -> "n8n-nodes-base.redis".equals(template.externalKey())).findFirst().orElseThrow();
         assertEquals(true, imported.importedTemplate());
-        assertEquals(false, imported.enabled());
+        assertEquals(true, imported.enabled());
         assertEquals("n8n-nodes-base.redis", imported.externalKey());
+
+        service.updateTemplate(first.templateId(), new WorkflowModels.NodeTemplateCommand(
+            "IGNORED", "Redis", "REDIS_COMMAND", "", new ObjectMapper().createObjectNode(), false, "N8N", "DATA_STORAGE"));
+        assertFalse(service.template(first.templateId()).enabled());
+
+        WorkflowModels.MarketplaceTemplatePersistence second = service.importMarketplaceTemplate(draft);
+        assertEquals("ALREADY_IMPORTED", second.status());
+        assertTrue(service.template(first.templateId()).enabled());
+    }
+
+    /** 重新导入已删除的市场模板必须恢复记录并立即启用。 */
+    @Test
+    void restoresMarketplaceTemplateAsEnabled() {
+        authenticate(1L, Set.of("ADMIN"));
+        WorkflowModels.MarketplaceTemplateDraft draft = new WorkflowModels.MarketplaceTemplateDraft(
+            "N8N", "n8n-nodes-base.redis", "1", "n8n", "a".repeat(64), "N8N_REDIS", "Redis", "",
+            "REDIS_COMMAND", "DATA_STORAGE", new ObjectMapper().createObjectNode());
+        Long id = service.importMarketplaceTemplate(draft).templateId();
+        service.deleteTemplate(id);
+
+        WorkflowModels.MarketplaceTemplatePersistence restored = service.importMarketplaceTemplate(draft);
+
+        assertEquals("RESTORED", restored.status());
+        assertTrue(service.template(id).enabled());
     }
 
     /** 市场模板的来源、编码和节点类型必须由后端锁定，不能通过更新接口伪造。 */
@@ -130,7 +153,7 @@ class WorkflowServiceAccessTest {
         assertEquals("Renamed", updated.name());
     }
 
-    /** 市场指纹变化必须先提示，确认后才重置配置、更新版本并保持停用。 */
+    /** 市场指纹变化必须先提示，确认后才重置配置、更新版本并启用。 */
     @Test
     void requiresConfirmationBeforeReplacingChangedMarketplaceTemplate() {
         authenticate(1L, Set.of("ADMIN"));
@@ -144,9 +167,10 @@ class WorkflowServiceAccessTest {
 
         assertEquals("UPDATE_AVAILABLE", service.importMarketplaceTemplates(java.util.List.of(changed), false).get(0).status());
         assertEquals("1", service.template(id).externalVersion());
+        assertTrue(service.template(id).enabled());
         assertEquals("UPDATED", service.importMarketplaceTemplates(java.util.List.of(changed), true).get(0).status());
         assertEquals("2", service.template(id).externalVersion());
-        assertFalse(service.template(id).enabled());
+        assertTrue(service.template(id).enabled());
     }
 
     /** 通用创建接口不能伪造 n8n 或 Dify 市场来源。 */

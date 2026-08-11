@@ -154,6 +154,7 @@ public class WorkflowService {
             boolean changed = current.fingerprint() == null
                 || !current.fingerprint().equalsIgnoreCase(fingerprint(draft.externalFingerprint()));
             if (!current.voided() && !changed) {
+                jdbcTemplate.update("UPDATE workflow_node_template SET enabled=true,updated_at=NOW() WHERE id=?", id);
                 return new WorkflowModels.MarketplaceTemplatePersistence(id, "ALREADY_IMPORTED");
             }
             if (!current.voided() && !replaceExisting) {
@@ -162,7 +163,7 @@ public class WorkflowService {
             jdbcTemplate.update("""
                 UPDATE workflow_node_template SET code=?,name=?,node_type=?,description=?,config_encrypted=?,system_template=false,
                     functional_category=?,external_version=?,external_publisher=?,external_fingerprint=?,imported_at=NOW(),
-                    enabled=false,voided=false,created_by=?,updated_at=NOW() WHERE id=?
+                    enabled=true,voided=false,created_by=?,updated_at=NOW() WHERE id=?
                 """, code(draft.code()), marketplaceText(draft.name(), 120), nodeType,
                 marketplaceText(draft.description(), 500), encryptJson(draft.config()), category,
                 marketplaceText(draft.externalVersion(), 64), marketplaceText(draft.externalPublisher(), 120),
@@ -174,7 +175,7 @@ public class WorkflowService {
                 INSERT INTO workflow_node_template(code,name,node_type,description,config_encrypted,system_template,
                     template_source,functional_category,external_key,external_version,external_publisher,
                     external_fingerprint,imported_at,enabled,created_by)
-                VALUES (?,?,?,?,?,false,?,?,?,?,?,?,NOW(),false,?)
+                VALUES (?,?,?,?,?,false,?,?,?,?,?,?,NOW(),true,?)
                 """, code(draft.code()), marketplaceText(draft.name(), 120), nodeType,
                 marketplaceText(draft.description(), 500), encryptJson(draft.config()), source, category,
                 marketplaceText(draft.externalKey(), 255), marketplaceText(draft.externalVersion(), 64),
