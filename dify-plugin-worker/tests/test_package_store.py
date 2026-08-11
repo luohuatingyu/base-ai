@@ -86,8 +86,8 @@ class PackageStoreTest(unittest.TestCase):
         with self.assertRaisesRegex(PackageError, "DEPENDENCY_SOURCE_FORBIDDEN"):
             self.store._safe_requirements("sample @ https://example.com/sample.whl\n")
 
-    def test_installs_dependencies_without_tmpfs_cache(self) -> None:
-        """依赖安装必须禁用 pip 缓存，并把临时文件限制在插件持久化目录。"""
+    def test_installs_dependencies_with_persistent_download_cache(self) -> None:
+        """依赖安装应复用持久下载缓存，同时把临时文件限制在插件持久化目录。"""
         root = Path(self.temporary.name) / "package"
         root.mkdir()
         (root / "requirements.txt").write_text("requests==2.32.5\n", encoding="utf-8")
@@ -98,8 +98,9 @@ class PackageStoreTest(unittest.TestCase):
 
         command = run.call_args.args[0]
         environment = run.call_args.kwargs["env"]
-        self.assertIn("--no-cache-dir", command)
-        self.assertEqual("1", environment["PIP_NO_CACHE_DIR"])
+        self.assertNotIn("--no-cache-dir", command)
+        self.assertEqual(str(Path(self.temporary.name) / ".pip-cache"), environment["PIP_CACHE_DIR"])
+        self.assertTrue((Path(self.temporary.name) / ".pip-cache").is_dir())
         self.assertTrue(Path(environment["TMPDIR"]).is_relative_to(root))
         self.assertFalse(Path(environment["TMPDIR"]).exists())
 

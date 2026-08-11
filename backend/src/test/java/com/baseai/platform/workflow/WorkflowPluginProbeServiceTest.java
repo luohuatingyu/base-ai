@@ -68,6 +68,19 @@ class WorkflowPluginProbeServiceTest {
     @AfterEach
     void tearDown() { executor.shutdown(); }
 
+    /** 默认线程池应允许四个市场包并发探测，缩短当前页排队时间。 */
+    @Test
+    void usesFourProbeWorkersByDefault() {
+        ThreadPoolTaskExecutor defaultExecutor = new WorkflowPluginProbeExecutorConfig()
+            .workflowPluginProbeExecutor(new PlatformProperties());
+        try {
+            assertEquals(4, defaultExecutor.getCorePoolSize());
+            assertEquals(4, defaultExecutor.getMaxPoolSize());
+        } finally {
+            defaultExecutor.shutdown();
+        }
+    }
+
     /** 当前页重复读取只应创建一个固定版本任务，并异步持久化兼容结果。 */
     @Test
     void queuesOnceAndCompletesProbeAsynchronously() throws Exception {
