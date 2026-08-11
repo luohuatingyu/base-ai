@@ -1,5 +1,104 @@
 # 最近分支覆盖测试报告
 
+## 📋 Dify 市场插件探测修复测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: 92c5ce191ef18cd89358f99493f5679e46f5cc96
+- 提交说明: Fix Dify plugin probing；Support Dify package imports
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一测试报告基准点: `721d8b2c3a7443ec598cf3aac9fe8cf9ef9576d5`
+- Backend 业务代码差异: 探测调度只领取可立即执行的任务，Dify 固定版本不再逐任务重复检索市场，Worker 请求使用独立 240 秒默认硬超时。
+
+### 变更范围
+
+- Dify pip 安装禁用缓存，并把 HOME、TMPDIR 和安装临时文件放入当前插件持久化目录；安装完成、失败或超时后均清理临时目录，不再占满 64 MiB `/data/tmp`。
+- 数据库继续承担持久化排队职责；线程池并发为 2 时最多只有 2 条记录进入 PROBING，其余保持 QUEUED，租约从真正提交执行时开始。
+- Dify 已持久化插件 ID 和版本后直接下载固定版本包，不再为每个后台任务调用高级搜索；n8n 目录查询、npm SRI 和固定版本校验保持原逻辑。
+- Backend Worker 请求超时与 8 秒市场请求超时解耦，新增 `WORKFLOW_PLUGIN_WORKER_TIMEOUT_SECONDS`，默认 240 秒、代码硬上限 600 秒。
+- Dify Python 组件通过隔离合成根包加载，支持包内相对导入；ABI 元数据版本升级为 2，旧 Worker 缓存再次探测时会自动失效重建。
+- 未新增第三方依赖或数据库迁移；Python Worker 仍使用 Python 3.12，n8n Worker 行为未改。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| Dify 依赖安装不耗尽 tmpfs | Dify Worker 单元测试；模拟含 requirements.txt 的插件 | 检查 pip 命令、HOME、TMPDIR、缓存开关及清理结果 | 使用 `--no-cache-dir`，临时目录位于插件卷且调用后删除；通过 | 正常、边界、资源 |
+| 探测状态与实际并发一致 | Backend Probe Service；并发 1、三条固定版本任务 | 第一条 Worker 调用阻塞时执行 dispatch | 仅 1 条 PROBING、2 条 QUEUED；通过 | 并发、边界、副作用 |
+| Dify 固定版本不重复搜索 | Backend Probe Service；已从当前页写入插件 ID 和版本 | 异步探测 Dify 包 | 直接下载固定版本并调用 Worker，findDify 未调用；通过 | 正常、兼容、外部依赖 |
+| 慢 Worker 使用独立超时 | Backend Worker Client 本地 HTTP 测试 | 市场超时 30 秒、Worker 超时 1 秒、服务延迟 1.5 秒 | 按 Worker 独立配置超时并返回稳定不可用原因；通过 | 超时、异常 |
+| 包内相对导入可执行 | Dify Worker 单元与真实市场验证 | 组件从 `.helper` 或同包工具模块导入 | 测试组件及 GitHub、Firecrawl、DOCX Generator 完整 SUPPORTED；通过 | 兼容、回归 |
+| 旧 ABI 缓存不会永久误判 | Dify Worker 缓存测试 | 删除已缓存元数据的 hostAbiVersion 后再次探测 | 旧缓存被重建并写入 hostAbiVersion=2；通过 | 升级、缓存、回归 |
+| n8n 和平台功能无回归 | Backend、Frontend、双 Worker 完整测试和 Compose | 完整测试、镜像构建、六服务启动 | 825 项正式测试全部通过，六服务 healthy；通过 | 回归、构建、部署 |
+
+### 测试执行结果
+
+- 正式完整回归共 825 项，825 项通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：531/531 通过；最终 Backend 镜像构建内再次执行 531/531 并完成打包。
+- Frontend 两套正式回归：109/109、168/168 通过。
+- Dify Worker（Python 3.12）：13/13 通过；n8n Worker（Node 24）：4/4 通过。
+- Backend 定向回归：36/36 通过，包括 Probe Service 12、Worker Client 1、Marketplace Service 7、Marketplace Client 3、Schema 13。
+- 缺陷测试先稳定失败：pip 未禁用缓存；并发 1 时错误出现 3 条 PROBING；Dify 固定任务因再次搜索缺失而 REJECTED；相对导入组件被误判 PARTIAL。修复后对应测试全部通过。
+
+### 关键模块测试
+
+- Dify 依赖层：验证安全 requirements 过滤、无缓存安装、持久卷临时目录、失败重试、超时分类和旧 ABI 缓存重建。
+- Dify ABI 层：覆盖 Tool、Model、Agent Strategy、Datasource、Trigger、Extension、未知 Dify SDK 子模块、包内相对导入、OAuth 生命周期及调用输出。
+- Backend 队列层：覆盖幂等入队、立即执行槽位、租约、重试耗尽、终止拒绝、Dify 固定版本直下和 n8n 原路径。
+- Backend 网络层：市场请求和 Worker 请求使用独立超时；固定来源校验、包摘要和响应体限制保持有效。
+- 前端与 n8n 回归：市场轮询、状态标签、动态插件字段、导入选择及 n8n ABI 全部通过。
+
+### 真实运行态验证
+
+- 一次性将 34 条 Dify 瞬态 FAILED 任务重置为 QUEUED；未修改 COMPLETE、REJECTED 或插件注册表记录。
+- 重置后调度始终保持最多 2 条 PROBING；`/data/tmp` 从修复前 59/64 MiB 降为 0/64 MiB，两个并发 pip 进程均明确使用 `--no-cache-dir`。
+- 34 条任务全部结束；当前 Dify 记录包括 16 个 COMPLETE/SUPPORTED、21 个 COMPLETE/UNSUPPORTED、1 个历史 COMPLETE/PARTIAL、2 个市场包无效拒绝和 1 个 Worker 安全拒绝。
+- JSON Process 的 4 个组件全部 SUPPORTED；GitHub 21 个、Firecrawl 7 个、DOCX Generator 4 个、Feishu Spreadsheet 8 个组件均完成真实依赖安装和探测并达到包级 SUPPORTED。
+- GitHub、Firecrawl 和 DOCX Generator 源码包含包内相对导入，证明合成包加载逻辑已在真实市场包生效。
+- `docker compose up --build -d` 两次成功，六个服务最终全部 healthy；未发生端口占用。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 缺陷复现 | Python 3.12 单用例；Maven 容器执行新增 Probe Service 用例 | 修复前按预期 3 项失败，确认缺陷可复现 |
+| Backend 定向回归 | Maven 3.9.9 / Java 17 容器执行 5 个相关测试类 | 36/36 通过 |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 531/531 通过，BUILD SUCCESS |
+| Frontend 正式回归 | `npm test`；`node --test test/*.mjs` | 109/109、168/168 通过 |
+| Dify Worker | `python3.12 -m unittest discover -s tests -v` | 13/13 通过 |
+| n8n Worker | `npm test` | 4/4 通过 |
+| Compose 配置与重建 | `docker compose config -q`；`docker compose up --build -d` | 配置有效；Backend 镜像内 531/531；六服务 healthy |
+| 真实 Dify 队列 | 事务重置 34 条瞬态缓存并查询状态、进程、tmpfs 和组件结果 | 全部收敛；16 个包 SUPPORTED；并发和临时空间符合预期 |
+| 差异与清理 | `git diff --check`、Git 状态、Python `__pycache__` 检查 | 无空白错误；测试缓存已清理；无调试文件 |
+
+### 测试过程问题与处理
+
+- 宿主机未安装 Maven，Backend 测试统一改用项目既有 Maven 3.9.9 / Java 17 容器和 Maven 缓存卷执行。
+- 首轮真实探测恢复后，Tavily 暴露此前被依赖安装失败掩盖的相对导入错误；增加失败测试后改为隔离合成根包加载，并通过多个真实相对导入插件验证。
+- Compose 重建会中断当时正在执行的两个 Dify 请求；Backend 将其按瞬态故障重新排队，最终全部任务正常收敛。
+- Python 3.12 单元测试产生的 `__pycache__` 已在每次重建和提交前清理，未创建其他调试文件。
+
+### 已知问题与限制
+
+- 21 个 COMPLETE/UNSUPPORTED 包已经完成下载和依赖安装，但当前自研 ABI 仍无法构造可执行组件；这属于具体插件 ABI 能力差异，不再是 tmpfs、超时或队列故障。
+- Tavily 是相对导入修复部署前写入的唯一历史 COMPLETE/PARTIAL 记录；其中 2 个组件已支持、3 个组件保留旧相对导入结论。根据本次确认范围未自动重置 COMPLETE 记录。
+- 两个市场包超过现有限制或响应无效，另一个包被 Worker 安全校验拒绝；终止拒绝不会自动重试。
+- Dify 每个固定版本保存独立依赖目录，依赖较多时会占用明显磁盘空间；现有 168 小时未安装探测缓存清理策略继续适用。
+
+### 下次测试建议
+
+1. 为当前 21 个 UNSUPPORTED 包按原因聚类，优先补充高频 Dify Model Provider 与 Tool Provider ABI 实体。
+2. 增加 Dify 依赖目录磁盘配额或共享只读 wheel 缓存设计，同时保持插件运行时依赖隔离。
+3. 增加浏览器 E2E，验证 20 个 Dify 当前页任务从 QUEUED 到 COMPLETE 的状态展示和可导入动作。
+4. 为多 Backend 实例补充真实 MySQL 并发租约测试，确认每实例立即执行槽位与全局租约共同生效。
+
+### 重测触发条件与回滚
+
+- 修改 Dify requirements 过滤、pip 目录、ABI 加载、缓存版本、Worker 超时、探测领取、租约、固定版本下载或兼容聚合时，必须重跑 Backend/双 Worker 相关测试、Backend 完整回归及 Compose 重建。
+- 应用代码可依次撤销 `92c5ce191ef18cd89358f99493f5679e46f5cc96` 和 `e327afd` 后执行 `docker compose up --build -d`。
+- 本次无数据库结构迁移；一次性重置只修改探测缓存的状态和尝试次数，不影响已安装插件或工作流业务数据。
+
 ## 📋 n8n 与 Dify 市场插件自动探测测试结果（2026-08-11）
 
 ### Git 基准点
