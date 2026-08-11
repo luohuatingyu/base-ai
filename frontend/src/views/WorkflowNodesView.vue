@@ -66,10 +66,14 @@
       </div>
       <el-alert :title="t('workflowNodes.marketplaceHint')" type="info" show-icon :closable="false" />
       <el-checkbox-group v-if="marketplaceItems.length" v-model="selectedMarketplaceIds" class="marketplace-grid"
-        :class="{ 'marketplace-grid--dify': selectedSource === 'DIFY' }">
+        :class="{ 'marketplace-grid--n8n': selectedSource === 'N8N', 'marketplace-grid--dify': selectedSource === 'DIFY' }">
         <article v-for="item in marketplaceItems" :key="item.externalId" class="marketplace-card"
-          :class="{ unsupported: !item.compatible, 'marketplace-card--plugin': item.actions?.length }">
+          :class="[`marketplace-card--${selectedSource.toLowerCase()}`, {
+            selected: marketplaceItemSelected(item), probing: isProbePending(item), unsupported: !item.compatible,
+            'marketplace-card--plugin': item.actions?.length
+          }]">
           <div class="marketplace-card-head">
+            <span class="marketplace-source-mark" aria-hidden="true">{{ selectedSource === 'N8N' ? 'n8n' : 'Dify' }}</span>
             <div class="marketplace-card-identity">
               <el-checkbox v-if="!item.actions?.length" :value="item.externalId" :disabled="!item.compatible">
                 <strong>{{ item.name }}</strong>
@@ -93,14 +97,16 @@
               <strong>{{ t('workflowNodes.marketplaceCapabilities') }}</strong>
               <small>{{ t('workflowNodes.marketplaceCapabilityHint') }}</small>
             </div>
-            <el-checkbox v-for="action in item.actions" :key="action.externalId" :value="action.externalId" :disabled="!action.compatible">
-              <span><strong>{{ action.name }}</strong><small>{{ action.description }}</small></span>
-            </el-checkbox>
+            <div class="marketplace-action-list">
+              <el-checkbox v-for="action in item.actions" :key="action.externalId" :value="action.externalId" :disabled="!action.compatible">
+                <span><strong>{{ action.name }}</strong><small>{{ action.description }}</small></span>
+              </el-checkbox>
+            </div>
           </div>
           <div class="marketplace-card-footer">
-          <el-tag v-if="item.compatibilityLevel === 'NATIVE_SUBSET'" type="warning" size="small">{{ t('workflowNodes.nativeSubset') }}</el-tag>
-          <el-tag v-else-if="item.compatibilityLevel === 'PARTIAL'" type="warning" size="small">{{ t('workflowNodes.partialCompatibility') }}</el-tag>
-          <el-tag v-else-if="isProbePending(item)" type="info" size="small">{{ t('workflowNodes.probePending') }}</el-tag>
+            <el-tag v-if="item.compatibilityLevel === 'NATIVE_SUBSET'" type="warning" size="small">{{ t('workflowNodes.nativeSubset') }}</el-tag>
+            <el-tag v-else-if="item.compatibilityLevel === 'PARTIAL'" type="warning" size="small">{{ t('workflowNodes.partialCompatibility') }}</el-tag>
+            <el-tag v-else-if="isProbePending(item)" type="info" size="small">{{ t('workflowNodes.probePending') }}</el-tag>
             <small v-if="!item.compatible">{{ t(`workflowNodes.incompatibility.${item.incompatibilityReason}`) }}</small>
           </div>
         </article>
@@ -167,6 +173,13 @@ function marketplaceTypeLabel(item) { return marketplaceNodeTypeLabel(item, t, t
 
 /** 判断市场项是否仍在后台队列或 ABI 探测中。 */
 function isProbePending(item) { return ['NOT_PROBED', 'QUEUED', 'PROBING'].includes(item?.probeStatus) }
+
+/** 判断节点或插件任一能力是否已选中，用于同步整张市场卡片的视觉反馈。 */
+function marketplaceItemSelected(item) {
+  const selectedIds = new Set(selectedMarketplaceIds.value)
+  if (selectedIds.has(item?.externalId)) return true
+  return item?.actions?.some(action => selectedIds.has(action.externalId)) || false
+}
 
 /** 使用当前语言的功能名称生成卡片图标文字。 */
 function templateIcon(template) { return templateText(template, 'name').trim().slice(0, 2).toUpperCase() || '·' }
@@ -299,34 +312,50 @@ onBeforeUnmount(stopMarketplacePolling)
 :deep(.workflow-config-editor) { width: 100%; }
 .node-template-required-hint { margin-bottom: 16px; }
 .marketplace-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 12px; align-items: center; margin-bottom: 14px; }
-.marketplace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
+.marketplace-grid { display: grid; gap: 14px; margin-top: 16px; }
+.marketplace-grid--n8n { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .marketplace-grid--dify { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.marketplace-card { display: grid; min-width: 0; min-height: 150px; align-content: start; gap: 12px; overflow: hidden; padding: 16px; border: 1px solid #dfe6f0; border-radius: 14px; color: var(--app-text); background: #fff; box-shadow: 0 4px 14px rgb(31 53 91 / 5%); font-size: 13px; line-height: 1.5; }
-.marketplace-card.unsupported { background: #f8f9fb; opacity: .78; }
-.marketplace-card-head { display: flex; min-width: 0; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.marketplace-card { --marketplace-accent: #52637a; --marketplace-soft: #f4f6f9; display: grid; min-width: 0; min-height: 180px; align-content: start; gap: 12px; overflow: hidden; padding: 16px; border: 1px solid #dfe6f0; border-top: 3px solid color-mix(in srgb, var(--marketplace-accent) 55%, #fff); border-radius: 14px; color: var(--app-text); background: #fff; box-shadow: 0 5px 16px rgb(31 53 91 / 7%); font-size: 13px; line-height: 1.5; transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
+.marketplace-card--n8n { --marketplace-accent: #ea4b35; --marketplace-soft: #fff2ef; }
+.marketplace-card--dify { --marketplace-accent: #6750d8; --marketplace-soft: #f2f0ff; }
+.marketplace-card:not(.unsupported):hover { border-color: color-mix(in srgb, var(--marketplace-accent) 62%, #fff); transform: translateY(-2px); box-shadow: 0 10px 24px rgb(31 53 91 / 12%); }
+.marketplace-card.selected { border-color: var(--marketplace-accent); background: linear-gradient(180deg, var(--marketplace-soft) 0, #fff 96px); box-shadow: 0 0 0 2px color-mix(in srgb, var(--marketplace-accent) 14%, transparent), 0 9px 22px rgb(31 53 91 / 10%); }
+.marketplace-card.probing { border-top-style: dashed; }
+.marketplace-card.unsupported { border-color: #e3e7ee; border-top-color: #c7ced9; background: #f8f9fb; box-shadow: none; }
+.marketplace-card-head { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: flex-start; }
+.marketplace-source-mark { display: grid; min-width: 42px; height: 32px; place-items: center; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--marketplace-accent) 22%, #fff); border-radius: 9px; color: var(--marketplace-accent); background: var(--marketplace-soft); font-size: 11px; font-weight: 800; letter-spacing: -.02em; }
+.marketplace-card.unsupported .marketplace-source-mark { border-color: #dce1e9; color: #7c8797; background: #eef1f5; }
 .marketplace-card-identity { min-width: 0; flex: 1; }
 .marketplace-card-head :deep(.el-checkbox), .marketplace-card-identity > strong { min-width: 0; max-width: 100%; }
 .marketplace-card-head :deep(.el-checkbox) { height: auto; align-items: flex-start; white-space: normal; }
 .marketplace-card-head :deep(.el-checkbox__label), .marketplace-card-identity > strong { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
-.marketplace-card-identity > strong { display: block; color: #344054; font-size: 14px; line-height: 1.5; }
+.marketplace-card-identity strong { color: #344054; font-size: 14px; line-height: 1.5; }
+.marketplace-card-identity > strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.marketplace-card :deep(.el-checkbox__input.is-checked .el-checkbox__inner), .marketplace-card :deep(.el-checkbox__input.is-indeterminate .el-checkbox__inner) { border-color: var(--marketplace-accent); background-color: var(--marketplace-accent); }
+.marketplace-card :deep(.el-checkbox__input.is-focus .el-checkbox__inner) { box-shadow: 0 0 0 2px color-mix(in srgb, var(--marketplace-accent) 22%, transparent); }
 .marketplace-card-status { display: flex; flex: 0 0 auto; align-items: center; }
 .marketplace-card p { margin: 0; overflow-wrap: anywhere; color: var(--app-muted); font-size: 13px; line-height: 1.55; }
 .marketplace-card-description { display: -webkit-box; min-height: 60px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .marketplace-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-start; color: var(--app-muted); font-size: 12px; line-height: 1.4; }
-.marketplace-meta span { padding: 3px 8px; border-radius: 999px; background: #f1f4f9; color: #64748b; }
+.marketplace-meta span { max-width: 100%; overflow: hidden; padding: 3px 8px; border-radius: 999px; background: #f1f4f9; color: #64748b; text-overflow: ellipsis; white-space: nowrap; }
 .marketplace-actions { display: grid; min-width: 0; gap: 8px; overflow: hidden; padding: 12px; border: 1px solid #e3eaf5; border-radius: 10px; background: #f8faff; }
 .marketplace-actions-head { display: grid; gap: 2px; margin-bottom: 2px; }
 .marketplace-actions-head strong { color: #344054; font-size: 13px; line-height: 1.4; }
 .marketplace-actions-head small { color: var(--app-muted); font-size: 11px; font-weight: 400; line-height: 1.4; }
+.marketplace-action-list { display: grid; max-height: 250px; gap: 8px; overflow-x: hidden; overflow-y: auto; padding-right: 2px; scrollbar-gutter: stable; }
 .marketplace-actions :deep(.el-checkbox) { width: 100%; min-width: 0; height: auto; align-items: flex-start; margin-right: 0; padding: 10px; border: 1px solid #e4eaf3; border-radius: 8px; background: #fff; white-space: normal; }
+.marketplace-actions :deep(.el-checkbox.is-checked) { border-color: color-mix(in srgb, var(--marketplace-accent) 45%, #fff); background: var(--marketplace-soft); }
 .marketplace-actions :deep(.el-checkbox__input) { margin-top: 2px; }
 .marketplace-actions :deep(.el-checkbox__label) { min-width: 0; white-space: normal; }
 .marketplace-actions span { display: grid; min-width: 0; gap: 3px; }
 .marketplace-actions strong, .marketplace-actions small { overflow-wrap: anywhere; }
 .marketplace-actions small { color: var(--app-muted); font-weight: 400; }
-.marketplace-card-footer { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 8px; }
+.marketplace-card-footer { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: auto; }
 .marketplace-card-footer > small { min-width: 0; overflow-wrap: anywhere; color: var(--el-color-warning-dark-2); }
 .marketplace-pagination { justify-content: center; margin-top: 18px; }
+@media (max-width: 880px) {
+  .marketplace-grid--n8n { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 800px) {
   .node-template-source-filter { display: grid; gap: 8px; }
   .node-template-source-filter > strong, .node-template-category-filter > strong { padding-top: 0; }
@@ -339,6 +368,7 @@ onBeforeUnmount(stopMarketplacePolling)
   .node-template-grid { grid-template-columns: 1fr; }
   .marketplace-toolbar { grid-template-columns: 1fr; }
   .marketplace-grid { grid-template-columns: 1fr; }
+  .marketplace-grid--n8n { grid-template-columns: 1fr; }
   .marketplace-grid--dify { grid-template-columns: 1fr; }
 }
 </style>

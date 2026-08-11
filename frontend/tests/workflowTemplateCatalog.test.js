@@ -182,18 +182,35 @@ test('市场卡片约束长标题描述和能力项且不覆盖相邻卡片', ()
   assert.match(nodeManagementSource, /\.marketplace-actions[^}]*\.el-checkbox__label[^}]*min-width:\s*0;[^}]*white-space:\s*normal;/)
 })
 
-test('Dify 市场使用两列插件卡片并把可导入能力展示为独立分区', () => {
+test('Dify 与 n8n 市场使用来源化响应式网格并把可导入能力展示为独立分区', () => {
+  assert.match(nodeManagementSource, /'marketplace-grid--n8n':\s*selectedSource === 'N8N'/)
   assert.match(nodeManagementSource, /'marketplace-grid--dify':\s*selectedSource === 'DIFY'/)
+  assert.match(nodeManagementSource, /class="marketplace-source-mark"/)
   assert.match(nodeManagementSource, /class="marketplace-card-description"/)
   assert.match(nodeManagementSource, /class="marketplace-actions-head"/)
+  assert.match(nodeManagementSource, /class="marketplace-action-list"/)
   assert.match(nodeManagementSource, /workflowNodes\.marketplaceCapabilities/)
+  assert.match(nodeManagementSource, /\.marketplace-grid--n8n\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/)
   assert.match(nodeManagementSource, /\.marketplace-grid--dify\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
+  assert.match(nodeManagementSource, /@media\s*\(max-width:\s*880px\)[\s\S]*?\.marketplace-grid--n8n\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
   assert.match(nodeManagementSource, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.marketplace-grid--dify\s*\{[^}]*grid-template-columns:\s*1fr/)
+})
+
+test('市场卡片展示来源色以及清晰的选中、探测和不可用状态', () => {
+  assert.match(nodeManagementSource, /selected:\s*marketplaceItemSelected\(item\)/)
+  assert.match(nodeManagementSource, /probing:\s*isProbePending\(item\)/)
+  assert.match(nodeManagementSource, /\.marketplace-card--n8n\s*\{[^}]*--marketplace-accent:\s*#ea4b35;/)
+  assert.match(nodeManagementSource, /\.marketplace-card--dify\s*\{[^}]*--marketplace-accent:\s*#6750d8;/)
+  assert.match(nodeManagementSource, /\.marketplace-card\.selected\s*\{[^}]*border-color:\s*var\(--marketplace-accent\);/)
+  assert.match(nodeManagementSource, /\.marketplace-card\.unsupported\s*\{[^}]*box-shadow:\s*none;/)
+  assert.match(nodeManagementSource, /\.marketplace-action-list\s*\{[^}]*overflow-y:\s*auto;/)
+  assert.match(nodeManagementSource, /\.marketplace-actions[^}]*\.el-checkbox\.is-checked/)
 })
 
 test('市场卡片重置复选框组的零字号行高并保持插件文字分层可读', () => {
   assert.match(nodeManagementSource, /\.marketplace-card\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.5;/)
-  assert.match(nodeManagementSource, /\.marketplace-card-identity > strong\s*\{[^}]*display:\s*block;[^}]*font-size:\s*14px;[^}]*line-height:\s*1\.5;/)
+  assert.match(nodeManagementSource, /\.marketplace-card-identity strong\s*\{[^}]*font-size:\s*14px;[^}]*line-height:\s*1\.5;/)
+  assert.match(nodeManagementSource, /\.marketplace-card-identity > strong\s*\{[^}]*display:\s*-webkit-box;[^}]*-webkit-line-clamp:\s*2;/)
   assert.match(nodeManagementSource, /\.marketplace-actions-head strong\s*\{[^}]*line-height:\s*1\.4;/)
   assert.match(nodeManagementSource, /\.marketplace-actions-head small\s*\{[^}]*line-height:\s*1\.4;/)
 })
