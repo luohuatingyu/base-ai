@@ -137,6 +137,7 @@ app:
     dify-plugin-worker-url: ${DIFY_PLUGIN_WORKER_URL:http://dify-plugin-worker:8101}
     n8n-plugin-worker-url: ${N8N_PLUGIN_WORKER_URL:http://n8n-plugin-worker:8102}
     plugin-worker-internal-token: ${PLUGIN_WORKER_INTERNAL_TOKEN:${PYTHON_WORKER_INTERNAL_TOKEN}}
+    plugin-worker-timeout-seconds: ${WORKFLOW_PLUGIN_WORKER_TIMEOUT_SECONDS:240}
     marketplace-probe-concurrency: ${WORKFLOW_MARKETPLACE_PROBE_CONCURRENCY:2}
     marketplace-probe-queue-capacity: ${WORKFLOW_MARKETPLACE_PROBE_QUEUE_CAPACITY:100}
     marketplace-probe-max-attempts: ${WORKFLOW_MARKETPLACE_PROBE_MAX_ATTEMPTS:3}

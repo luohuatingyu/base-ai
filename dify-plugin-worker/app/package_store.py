@@ -218,18 +218,21 @@ class PackageStore:
         sanitized = root / ".base-ai-requirements.txt"
         sanitized.write_text("\n".join(lines) + "\n", encoding="utf-8")
         dependencies = root / ".deps"
-        environment = {
-            "PATH": os.getenv("PATH", ""), "HOME": "/data/tmp", "TMPDIR": "/data/tmp",
-            "PIP_INDEX_URL": os.getenv("PIP_INDEX_URL", "https://pypi.org/simple"),
-            "PIP_TRUSTED_HOST": os.getenv("PIP_TRUSTED_HOST", ""),
-            "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8",
-        }
         try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--no-input", "--no-compile", "--target",
-                 str(dependencies), "-r", str(sanitized)], capture_output=True, text=True,
-                timeout=max(10, min(self.install_timeout, 600)), env=environment, check=False,
-            )
+            with tempfile.TemporaryDirectory(prefix=".pip-", dir=root) as pip_temporary:
+                environment = {
+                    "PATH": os.getenv("PATH", ""), "HOME": pip_temporary, "TMPDIR": pip_temporary,
+                    "PIP_INDEX_URL": os.getenv("PIP_INDEX_URL", "https://pypi.org/simple"),
+                    "PIP_TRUSTED_HOST": os.getenv("PIP_TRUSTED_HOST", ""),
+                    "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PIP_NO_CACHE_DIR": "1",
+                    "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8",
+                }
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--no-input", "--no-compile",
+                     "--no-cache-dir", "--target", str(dependencies), "-r", str(sanitized)],
+                    capture_output=True, text=True, timeout=max(10, min(self.install_timeout, 600)),
+                    env=environment, check=False,
+                )
         except subprocess.TimeoutExpired:
             return "DEPENDENCY_INSTALL_TIMEOUT"
         finally:

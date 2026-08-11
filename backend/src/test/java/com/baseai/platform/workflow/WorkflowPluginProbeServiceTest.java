@@ -16,6 +16,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -87,6 +89,54 @@ class WorkflowPluginProbeServiceTest {
         assertEquals("SUPPORTED", completed.compatibilityStatus());
         assertEquals(fingerprint, service.requireCompleted("N8N", entry).fingerprint());
         verify(workers).inspect("N8N", "n8n-nodes-example", "1.2.3", new byte[]{1}, fingerprint);
+    }
+
+    /** 数据库已承担排队职责时，只允许立即可执行的任务进入 PROBING。 */
+    @Test
+    void claimsOnlyImmediatelyExecutableTasks() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        String fingerprint = "7".repeat(64);
+        for (int index = 0; index < 3; index++) {
+            var entry = n8nEntry("node-" + index, "n8n-nodes-example-" + index);
+            when(clients.findN8n(entry.externalId())).thenReturn(Optional.of(entry));
+            when(clients.downloadN8nPackage(entry)).thenReturn(
+                new WorkflowMarketplaceClients.PackageDownload(new byte[]{1}, fingerprint));
+            service.snapshot("N8N", entry, true);
+        }
+        when(workers.inspect(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            started.countDown();
+            release.await(2, TimeUnit.SECONDS);
+            return workerPackage(fingerprint, "SUPPORTED");
+        });
+
+        service.dispatch();
+        started.await(1, TimeUnit.SECONDS);
+
+        assertEquals(1, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM workflow_marketplace_plugin_probe WHERE probe_status='PROBING'", Integer.class));
+        assertEquals(2, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM workflow_marketplace_plugin_probe WHERE probe_status='QUEUED'", Integer.class));
+        release.countDown();
+    }
+
+    /** Dify 已固定包与版本后应直接下载，不得为每个后台任务重复执行市场搜索。 */
+    @Test
+    void probesPinnedDifyPackageWithoutCatalogResearch() throws Exception {
+        var entry = difyEntry();
+        byte[] archive = new byte[]{4, 2};
+        String fingerprint = WorkflowNodeMarketplaceService.sha256Bytes(archive);
+        when(clients.downloadDifyPackage(entry.externalId(), entry.version())).thenReturn(archive);
+        when(workers.inspect("DIFY", entry.externalId(), entry.version(), archive, fingerprint))
+            .thenReturn(new WorkflowPluginWorkerClient.WorkerPackage("DIFY", entry.externalId(), entry.version(),
+                fingerprint, "python", workerPackage(fingerprint, "SUPPORTED").components()));
+
+        service.snapshot("DIFY", entry, true);
+        service.dispatch();
+        awaitStatus("COMPLETE");
+
+        verify(clients, never()).findDify(entry.externalId());
+        verify(clients).downloadDifyPackage(entry.externalId(), entry.version());
     }
 
     /** 安全拒绝必须终止重试，并且导入读取接口不得退化为同步探测。 */
@@ -243,9 +293,20 @@ class WorkflowPluginProbeServiceTest {
 
     /** 构造稳定 n8n 市场包身份。 */
     private WorkflowMarketplaceClients.MarketplaceEntry n8nEntry() {
-        return new WorkflowMarketplaceClients.MarketplaceEntry("n8n-nodes-example.action", "Example", "",
+        return n8nEntry("n8n-nodes-example.action", "n8n-nodes-example");
+    }
+
+    /** 构造可区分节点身份与包身份的 n8n 市场条目。 */
+    private WorkflowMarketplaceClients.MarketplaceEntry n8nEntry(String externalId, String packageName) {
+        return new WorkflowMarketplaceClients.MarketplaceEntry(externalId, "Example", "",
             "1.2.3", "vendor", "community-node", "community",
-            mapper.valueToTree(Map.of("packageName", "n8n-nodes-example")));
+            mapper.valueToTree(Map.of("packageName", packageName)));
+    }
+
+    /** 构造固定版本 Dify 市场包。 */
+    private WorkflowMarketplaceClients.MarketplaceEntry difyEntry() {
+        return new WorkflowMarketplaceClients.MarketplaceEntry("langgenius/example", "Example", "",
+            "1.2.3", "langgenius", "tool", "verified", mapper.createObjectNode());
     }
 
     /** 构造一个不含凭据的规范 Worker 探测结果。 */

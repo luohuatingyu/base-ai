@@ -86,6 +86,23 @@ class PackageStoreTest(unittest.TestCase):
         with self.assertRaisesRegex(PackageError, "DEPENDENCY_SOURCE_FORBIDDEN"):
             self.store._safe_requirements("sample @ https://example.com/sample.whl\n")
 
+    def test_installs_dependencies_without_tmpfs_cache(self) -> None:
+        """依赖安装必须禁用 pip 缓存，并把临时文件限制在插件持久化目录。"""
+        root = Path(self.temporary.name) / "package"
+        root.mkdir()
+        (root / "requirements.txt").write_text("requests==2.32.5\n", encoding="utf-8")
+        completed = subprocess.CompletedProcess([], 0, "", "")
+
+        with patch("app.package_store.subprocess.run", return_value=completed) as run:
+            self.assertEqual("", self.store._install_dependencies(root))
+
+        command = run.call_args.args[0]
+        environment = run.call_args.kwargs["env"]
+        self.assertIn("--no-cache-dir", command)
+        self.assertEqual("1", environment["PIP_NO_CACHE_DIR"])
+        self.assertTrue(Path(environment["TMPDIR"]).is_relative_to(root))
+        self.assertFalse(Path(environment["TMPDIR"]).exists())
+
     def test_reads_current_provider_credential_schema(self) -> None:
         """当前 Dify Provider 凭据声明中的 variable 必须成为动态连接字段名。"""
         raw = archive({

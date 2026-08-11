@@ -93,8 +93,7 @@ public class WorkflowPluginProbeService {
     public void dispatch() {
         Instant now = Instant.now();
         recoverExpired(now);
-        int available = Math.max(0, executor.getMaxPoolSize() + executor.getThreadPoolExecutor().getQueue()
-            .remainingCapacity() - executor.getActiveCount());
+        int available = Math.max(0, executor.getMaxPoolSize() - executor.getActiveCount());
         if (available == 0) return;
         List<ProbeTask> tasks = jdbcTemplate.query("""
             SELECT id,source,catalog_external_key,package_key,package_version,attempt_count
@@ -197,18 +196,15 @@ public class WorkflowPluginProbeService {
     /** 下载、校验并探测一个固定版本插件包，将完整结果一次性写回。 */
     private void probe(ProbeTask task) {
         try {
-            WorkflowMarketplaceClients.MarketplaceEntry entry = "N8N".equals(task.source())
-                ? clients.findN8n(task.catalogExternalKey()).orElseThrow(
-                    () -> new BusinessException("workflow.marketplaceNodeNotFound"))
-                : clients.findDify(task.catalogExternalKey()).orElseThrow(
-                    () -> new BusinessException("workflow.marketplaceNodeNotFound"));
-            PackageIdentity current = identity(task.source(), entry);
-            if (!current.packageKey().equals(task.packageKey()) || !current.version().equals(task.version())) {
-                throw new BusinessException("workflow.marketplaceProbeVersionChanged");
-            }
             byte[] archive;
             String fingerprint;
             if ("N8N".equals(task.source())) {
+                WorkflowMarketplaceClients.MarketplaceEntry entry = clients.findN8n(task.catalogExternalKey())
+                    .orElseThrow(() -> new BusinessException("workflow.marketplaceNodeNotFound"));
+                PackageIdentity current = identity(task.source(), entry);
+                if (!current.packageKey().equals(task.packageKey()) || !current.version().equals(task.version())) {
+                    throw new BusinessException("workflow.marketplaceProbeVersionChanged");
+                }
                 WorkflowMarketplaceClients.PackageDownload download = clients.downloadN8nPackage(entry);
                 archive = download.bytes();
                 fingerprint = download.fingerprint();

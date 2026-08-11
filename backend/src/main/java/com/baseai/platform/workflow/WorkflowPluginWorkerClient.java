@@ -36,7 +36,7 @@ public class WorkflowPluginWorkerClient {
         difyWorker = workerUri(workflow.getDifyPluginWorkerUrl());
         n8nWorker = workerUri(workflow.getN8nPluginWorkerUrl());
         token = workflow.getPluginWorkerInternalToken() == null ? "" : workflow.getPluginWorkerInternalToken();
-        timeout = Duration.ofSeconds(Math.max(1, Math.min(workflow.getMarketplaceTimeoutSeconds() * 8L, 300L)));
+        timeout = Duration.ofSeconds(Math.max(1, Math.min(workflow.getPluginWorkerTimeoutSeconds(), 600)));
         maxResponseBytes = Math.max(1024, workflow.getMaxPayloadBytes() * 4);
         httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
