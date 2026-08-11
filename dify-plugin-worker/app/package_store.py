@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -49,10 +50,15 @@ class PackageStore:
         self.maximum_files = int(os.getenv("PLUGIN_MAX_PACKAGE_FILES", "512"))
         self.install_timeout = int(os.getenv("PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS", "180"))
         self.probe_timeout = int(os.getenv("PLUGIN_PROBE_TIMEOUT_SECONDS", "20"))
+        self.pip_cache = Path(os.getenv("PLUGIN_PIP_CACHE_DIR", str(self.root / ".pip-cache"))).resolve()
+        if self.root not in self.pip_cache.parents:
+            raise RuntimeError("PLUGIN_PIP_CACHE_DIR 必须位于插件持久化目录内")
         self.root.mkdir(parents=True, exist_ok=True)
+        self.pip_cache.mkdir(parents=True, exist_ok=True)
 
     def install(self, request: dict[str, Any]) -> dict[str, Any]:
         """校验、解压并解析一个 Base64 编码插件包。"""
+        started = time.monotonic()
         try:
             archive = base64.b64decode(str(request.get("archiveBase64", "")), validate=True)
         except Exception as exception:
@@ -73,16 +79,33 @@ class PackageStore:
             ):
                 shutil.rmtree(target)
             else:
+                self._log_timing(fingerprint, True, 0, 0, started, len(cached.get("components", [])))
                 return cached
         with tempfile.TemporaryDirectory(prefix="dify-plugin-", dir=self.root) as temporary:
             extracted = Path(temporary)
             self._extract(archive, extracted)
+            dependency_started = time.monotonic()
             dependency_error = self._install_dependencies(extracted)
+            dependency_milliseconds = round((time.monotonic() - dependency_started) * 1000)
+            probe_started = time.monotonic()
             metadata = self._metadata(extracted, request, fingerprint, dependency_error)
+            probe_milliseconds = round((time.monotonic() - probe_started) * 1000)
             metadata_file = extracted / ".base-ai-metadata.json"
             metadata_file.write_text(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
             os.replace(extracted, target)
+        self._log_timing(fingerprint, False, dependency_milliseconds, probe_milliseconds, started,
+                         len(metadata["components"]))
         return metadata
+
+    def _log_timing(self, fingerprint: str, cache_hit: bool, dependency_milliseconds: int,
+                    probe_milliseconds: int, started: float, components: int) -> None:
+        """记录不含插件内容和凭据的阶段耗时，便于区分缓存、依赖和组件加载瓶颈。"""
+        total_milliseconds = round((time.monotonic() - started) * 1000)
+        sys.stderr.write(
+            f"plugin_probe fingerprint={fingerprint[:12]} cache_hit={str(cache_hit).lower()} "
+            f"dependencies_ms={dependency_milliseconds} components_ms={probe_milliseconds} "
+            f"components={components} total_ms={total_milliseconds}\n"
+        )
 
     def metadata(self, fingerprint: str) -> tuple[Path, dict[str, Any]]:
         """读取已安装包目录和元数据。"""
@@ -228,12 +251,12 @@ class PackageStore:
                     "PATH": os.getenv("PATH", ""), "HOME": pip_temporary, "TMPDIR": pip_temporary,
                     "PIP_INDEX_URL": os.getenv("PIP_INDEX_URL", "https://pypi.org/simple"),
                     "PIP_TRUSTED_HOST": os.getenv("PIP_TRUSTED_HOST", ""),
-                    "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PIP_NO_CACHE_DIR": "1",
+                    "PIP_CACHE_DIR": str(self.pip_cache), "PIP_DISABLE_PIP_VERSION_CHECK": "1",
                     "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8",
                 }
                 result = subprocess.run(
                     [sys.executable, "-m", "pip", "install", "--no-input", "--no-compile",
-                     "--no-cache-dir", "--target", str(dependencies), "-r", str(sanitized)],
+                     "--target", str(dependencies), "-r", str(sanitized)],
                     capture_output=True, text=True, timeout=max(10, min(self.install_timeout, 600)),
                     env=environment, check=False,
                 )

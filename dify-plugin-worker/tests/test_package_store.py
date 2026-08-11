@@ -99,10 +99,20 @@ class PackageStoreTest(unittest.TestCase):
         command = run.call_args.args[0]
         environment = run.call_args.kwargs["env"]
         self.assertNotIn("--no-cache-dir", command)
-        self.assertEqual(str(Path(self.temporary.name) / ".pip-cache"), environment["PIP_CACHE_DIR"])
+        self.assertEqual((Path(self.temporary.name) / ".pip-cache").resolve(),
+                         Path(environment["PIP_CACHE_DIR"]).resolve())
         self.assertTrue((Path(self.temporary.name) / ".pip-cache").is_dir())
         self.assertTrue(Path(environment["TMPDIR"]).is_relative_to(root))
         self.assertFalse(Path(environment["TMPDIR"]).exists())
+
+    def test_rejects_pip_cache_outside_package_volume(self) -> None:
+        """pip 缓存不得借配置逃逸到插件持久化目录以外。"""
+        os.environ["PLUGIN_PIP_CACHE_DIR"] = str(Path(self.temporary.name).parent / "outside-cache")
+        try:
+            with self.assertRaisesRegex(RuntimeError, "PLUGIN_PIP_CACHE_DIR"):
+                PackageStore()
+        finally:
+            os.environ.pop("PLUGIN_PIP_CACHE_DIR", None)
 
     def test_reads_current_provider_credential_schema(self) -> None:
         """当前 Dify Provider 凭据声明中的 variable 必须成为动态连接字段名。"""

@@ -273,7 +273,7 @@ public class PlatformProperties {
         private String n8nPluginWorkerUrl = "http://n8n-plugin-worker:8102";
         private String pluginWorkerInternalToken = "";
         private int pluginWorkerTimeoutSeconds = 240;
-        private int marketplaceProbeConcurrency = 2;
+        private int marketplaceProbeConcurrency = 4;
         private int marketplaceProbeQueueCapacity = 100;
         private int marketplaceProbeMaxAttempts = 3;
         private int marketplaceProbeRetentionHours = 168;

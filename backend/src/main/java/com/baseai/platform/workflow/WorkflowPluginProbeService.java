@@ -96,12 +96,13 @@ public class WorkflowPluginProbeService {
         int available = Math.max(0, executor.getMaxPoolSize() - executor.getActiveCount());
         if (available == 0) return;
         List<ProbeTask> tasks = jdbcTemplate.query("""
-            SELECT id,source,catalog_external_key,package_key,package_version,attempt_count
+            SELECT id,source,catalog_external_key,package_key,package_version,attempt_count,created_at
             FROM workflow_marketplace_plugin_probe
             WHERE probe_status='QUEUED' AND next_attempt_at<=? ORDER BY id LIMIT ?
             """, (rs, row) -> new ProbeTask(rs.getLong("id"), rs.getString("source"),
             rs.getString("catalog_external_key"), rs.getString("package_key"),
-            rs.getString("package_version"), rs.getInt("attempt_count") + 1), timestamp(now), available);
+            rs.getString("package_version"), rs.getInt("attempt_count") + 1,
+            rs.getTimestamp("created_at").toInstant()), timestamp(now), available);
         for (ProbeTask task : tasks) submit(task, now);
     }
 
@@ -195,6 +196,8 @@ public class WorkflowPluginProbeService {
 
     /** 下载、校验并探测一个固定版本插件包，将完整结果一次性写回。 */
     private void probe(ProbeTask task) {
+        long started = System.nanoTime();
+        long downloadStarted = started;
         try {
             byte[] archive;
             String fingerprint;
@@ -212,8 +215,10 @@ public class WorkflowPluginProbeService {
                 archive = clients.downloadDifyPackage(task.packageKey(), task.version());
                 fingerprint = WorkflowNodeMarketplaceService.sha256Bytes(archive);
             }
+            long downloaded = System.nanoTime();
             WorkflowPluginWorkerClient.WorkerPackage inspected = workers.inspect(task.source(), task.packageKey(),
                 task.version(), archive, fingerprint);
+            long inspectedAt = System.nanoTime();
             if (dependencyUnavailable(inspected)) {
                 throw new BusinessException("workflow.pluginWorkerUnavailable");
             }
@@ -225,9 +230,20 @@ public class WorkflowPluginProbeService {
                 """, inspected.fingerprint(), compatibility,
                 "UNSUPPORTED".equals(compatibility) ? "NO_EXECUTABLE_COMPONENT" : "", json(inspected),
                 timestamp(Instant.now()), timestamp(Instant.now()), timestamp(Instant.now()), task.id(), instanceId);
+            log.info("plugin probe completed id={} source={} attempt={} queueMs={} downloadMs={} workerMs={} totalMs={}",
+                task.id(), task.source(), task.attempt(),
+                Math.max(0, Duration.between(task.createdAt(), Instant.now()).toMillis()
+                    - Duration.ofNanos(inspectedAt - started).toMillis()),
+                Duration.ofNanos(downloaded - downloadStarted).toMillis(),
+                Duration.ofNanos(inspectedAt - downloaded).toMillis(),
+                Duration.ofNanos(inspectedAt - started).toMillis());
         } catch (BusinessException exception) {
+            log.warn("plugin probe failed id={} source={} attempt={} elapsedMs={} reason={}", task.id(), task.source(),
+                task.attempt(), Duration.ofNanos(System.nanoTime() - started).toMillis(), exception.getMessageKey());
             fail(task, exception.getMessageKey(), terminal(exception));
         } catch (RuntimeException exception) {
+            log.warn("plugin probe failed id={} source={} attempt={} elapsedMs={} reason=unexpected", task.id(),
+                task.source(), task.attempt(), Duration.ofNanos(System.nanoTime() - started).toMillis());
             fail(task, "workflow.pluginWorkerUnavailable", false);
         }
     }
@@ -311,7 +327,7 @@ public class WorkflowPluginProbeService {
     private record ProbeRow(long id, String probeStatus, String compatibilityStatus,
                             String compatibilityReason, String resultJson) {}
     private record ProbeTask(long id, String source, String catalogExternalKey, String packageKey,
-                             String version, int attempt) {}
+                             String version, int attempt, Instant createdAt) {}
     private record ExpiredProbe(long id, String source, String fingerprint) {}
     public record PackageIdentity(String source, String catalogExternalKey, String packageKey, String version) {}
     public record ProbeSnapshot(String probeStatus, String compatibilityStatus, String compatibilityReason,
