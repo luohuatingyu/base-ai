@@ -4615,3 +4615,80 @@ Commit: 29662482c198e28688c7220188ce6531affabae1
 2. 补充登录后的浏览器端到端测试，验证五种周期切换、无限制保存和编辑回显。
 3. 如业务需要严格平滑流量，评估滑动窗口或令牌桶算法，并增加突发流量性能测试。
 4. 在可信代理配置下继续验证 `X-Forwarded-For` 来源解析和 API Key 全链路调用。
+
+## 📋 Tongyi 与 Volcengine 市场插件兼容性修复测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: 28cb1901a0feafc1bd39fd8f0ea8ff1514bb0fb2
+- 提交说明: Complete plugin adapter compatibility；包含包限制、ABI 兼容和旧探测结果重试修复。
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一测试报告基准点: `484c6bf`
+
+### 变更范围
+
+- Dify 市场包文件数上限从 128 提升到 512，仍保持压缩包 5 MiB、解压后 10 MiB、路径穿越、软链接和依赖来源限制。
+- Dify 自研 ABI 补齐 Tongyi 与 Volcengine 使用的 Pydantic 模型实体、枚举、工具消息和兼容的构造参数；Worker ABI 版本升至 5，n8n Worker ABI 版本升至 4。
+- 宿主按 Worker ABI 重新探测旧缓存；对历史 `PACKAGE_CONTENT_LIMIT` 和 `workflow.pluginWorkerRejected` 拒绝结果最多自动重新排队一次，避免旧结论永久阻塞市场导入。
+- 文件数超限与解压体积超限使用独立公开原因码，便于用户区分包结构问题和大小问题。
+- 未改变真实模型调用、凭据存储、网络策略或第三方 SDK 安装策略；本次未新增数据库迁移。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| Tongyi 组件可被识别为完全兼容 | 官方 Tongyi 0.2.9 包；Python 3.12；默认依赖安装超时 | 下载 748084 字节、143 文件的官方包并探测 5 个模型组件 | `tongyi.llm`、`rerank`、`text-embedding`、`tts`、`speech2text` 均 `SUPPORTED`；通过 | 正常、兼容、真实包 |
+| Volcengine 组件可被识别为完全兼容 | 官方 Volcengine MaaS 0.0.53 包；Python 3.12 | 探测 295468 字节、33 文件的官方包 | LLM、文本向量、语音转文字 3 个组件均 `SUPPORTED`；通过 | 正常、兼容、真实包 |
+| 包限制仍安全且边界明确 | Dify Worker PackageStore 单元测试和 Backend 解析测试 | 512/513 文件、5 MiB 压缩包、10 MiB 解压体积、路径穿越和软链接 | 临界值通过，超限返回独立原因，恶意路径被拒绝；通过 | 边界、异常、安全 |
+| 旧缓存不会永久保留部分兼容 | Dify Worker ABI 缓存测试、Backend Probe Service 定向测试 | 旧 ABI 缓存、历史内容限制拒绝记录和达到最大尝试次数的记录 | ABI 变化重新探测；历史拒绝只重试一次，已达上限不重复排队；通过 | 回归、状态冲突、兼容 |
+| 现有服务和插件路径无回归 | 两个 Worker、Backend/Frontend 完整测试、Compose 重建 | 完整测试套件及 manager 启停 DIFY/N8N | 所有自动化测试通过，核心服务健康，两个 Worker 可启停并健康；通过 | 回归、部署、权限 |
+
+### 测试执行结果
+
+- Dify Worker 完整回归：19/19 通过，通过率 100%，失败 0，错误 0，跳过 0。
+- n8n Worker 完整回归：6/6 通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 完整回归：570/570 通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 兼容性定向回归：24/24 通过，覆盖包解析、探测重试和 Worker ABI 客户端。
+- Frontend 完整回归：114/114 通过，通过率 100%，失败 0，错误 0，跳过 0。
+- 官方包只读探测：Tongyi 5/5、Volcengine 3/3 均 `SUPPORTED`；未使用 API Key，也未执行付费模型请求。
+- Compose 构建与运行态：`docker compose up --build -d` 成功；Backend、Frontend、Python Worker、Adapter Manager、Caddy 均 healthy；DIFY/N8N 通过 manager 启动后健康，再按 on-demand 设计停止。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Dify Worker 完整回归 | `PYTHONPATH=. python3.12 -m unittest discover -s tests -v`（在 `dify-plugin-worker/`） | 19 通过，0 失败，0 错误，0 跳过 |
+| n8n Worker 完整回归 | `npm test`（在 `n8n-plugin-worker/`） | 6 通过，0 失败，0 错误，0 跳过 |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn test -B -ntp` | 570 通过，0 失败，0 错误，0 跳过 |
+| Backend 兼容性定向回归 | Maven 容器执行 `-Dtest=WorkflowMarketplacePackageParserTest,WorkflowPluginProbeServiceTest,WorkflowPluginWorkerClientTest test` | 24 通过，0 失败，0 错误，0 跳过 |
+| Frontend 完整回归 | `npm test -- --runInBand`（在 `frontend/`） | 114 通过，0 失败，0 错误，0 跳过 |
+| 官方 Tongyi 包 | 公共 Marketplace 下载后在临时目录用 Python 3.12 PackageStore 探测 | 默认 240 秒依赖安装上限下 5/5 `SUPPORTED` |
+| 官方 Volcengine 包 | 公共 Marketplace 下载后在临时目录用 Python 3.12 PackageStore 探测 | 3/3 `SUPPORTED` |
+| Compose 重建 | `docker compose up --build -d` | 镜像构建和启动成功 |
+| 运行态启停 | 通过 Backend 容器调用 Adapter Manager DIFY/N8N 固定来源接口 | 两个 Worker 均可 `RUNNING`，健康检查通过，随后 `STOPPED` |
+| 服务就绪 | Backend 容器和 HTTPS 入口请求 `/api/open/health/ready` | 两次均返回 `{"status":"UP"}` |
+
+### 测试过程问题与处理
+
+- 首次官方 Tongyi 探测人为将依赖安装超时设为 60 秒，因首次下载完整依赖锁定集返回 `DEPENDENCY_INSTALL_TIMEOUT`；恢复项目默认上限后重新探测，5 个组件全部 `SUPPORTED`。这属于依赖下载环境限制，不是组件导入失败。
+- Marketplace 下载接口对默认 Python User-Agent 返回 403，改用公开浏览器 User-Agent 后下载成功；未使用认证凭据。
+- Compose 默认启用 on-demand Worker profile，因此构建后两个 Worker 初始为停止状态；通过 Adapter Manager 启动并完成健康检查后再停止，符合设计。
+
+### 覆盖范围与已知限制
+
+- 正常、边界、异常、安全和兼容性均有可执行测试；路径穿越、软链接、非法依赖来源、缓存指纹和 ABI 版本分支均覆盖。
+- 兼容性验证包含官方包的声明解析、真实模块导入和组件构造；未执行需要供应商 API Key 的真实模型计费调用。
+- 依赖首次安装受网络和镜像速度影响，生产环境应使用持久 PIP 缓存并保留足够的安装超时；缓存命中后探测不重复安装。
+- 包仍受 5 MiB 压缩、10 MiB 解压和 512 文件硬限制；超过限制的插件需要拆包或缩减资源。
+
+### 重测触发条件与回滚
+
+- 修改 Dify/n8n ABI 实体、Worker ABI 版本、包大小限制、依赖安全校验、探测缓存或拒绝重试逻辑时，必须重跑两个 Worker、Backend/Frontend 完整回归、Compose 重建和官方代表包探测。
+- 代码可回退到 `484c6bf` 之前的兼容性基线；回退后旧 Worker 缓存应按 ABI 版本重新探测，不应手工修改缓存目录。
+
+### 下次测试建议
+
+1. 在 CI 中预热官方插件依赖缓存，增加 Tongyi/Volcengine 每个版本的定期探测矩阵。
+2. 在配置供应商测试凭据的隔离环境补充一次非付费或沙箱模型调用，验证调用 ABI 与导入 ABI 的一致性。
+3. 对接 Marketplace API 的集成测试使用固定下载快照，避免网络 403、版本漂移和上游包变更影响回归结果。
