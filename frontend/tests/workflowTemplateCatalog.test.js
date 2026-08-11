@@ -5,8 +5,9 @@ import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
 import { WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 import {
-  defaultTemplateCategory, filterWorkflowTemplates, groupWorkflowTemplates, localizedTemplateText, normalizeTemplateMetadata,
-  systemTemplateTranslationKey, workflowTemplateCategoryStyle,
+  defaultTemplateCategory, filterWorkflowTemplates, groupWorkflowTemplates, localizedTemplateText,
+  marketplaceItemDescription, marketplaceNodeTypeLabel, normalizeTemplateMetadata, systemTemplateTranslationKey,
+  workflowTemplateCategoryStyle,
   WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES
 } from '../src/utils/workflowTemplateCatalog.js'
 
@@ -76,6 +77,21 @@ test('系统节点按当前语言展示且自定义或缺失词条安全回退�
   assert.equal(localizedTemplateText({ ...systemStart, systemTemplate: false }, 'name', en.translate, en.hasTranslation), '数据库名称')
   assert.equal(localizedTemplateText({ ...systemStart, nodeType: 'UNKNOWN' }, 'name', en.translate, en.hasTranslation), '数据库名称')
   assert.equal(systemTemplateTranslationKey(systemStart, 'code'), '')
+})
+
+test('市场说明优先使用官方内容并为 n8n 缺失说明提供可信本地回退', () => {
+  const zh = localeAccessors(zhCN)
+  const official = { description: 'Official description', compatible: true, targetNodeType: 'REDIS_COMMAND' }
+  const compatibleN8n = { description: '', compatible: true, targetNodeType: 'REDIS_COMMAND' }
+  const unsupportedN8n = { description: '', compatible: false, targetNodeType: '' }
+
+  assert.equal(marketplaceItemDescription(official, 'N8N', zh.translate, zh.hasTranslation), 'Official description')
+  assert.equal(marketplaceItemDescription(compatibleN8n, 'N8N', zh.translate, zh.hasTranslation),
+    zhCN.workflowCatalog.templates.REDIS_COMMAND.description)
+  assert.equal(marketplaceItemDescription(unsupportedN8n, 'N8N', zh.translate, zh.hasTranslation),
+    zhCN.workflowNodes.n8nDescriptionUnavailable)
+  assert.equal(marketplaceNodeTypeLabel(compatibleN8n, zh.translate, zh.hasTranslation),
+    zhCN.workflowCatalog.templates.REDIS_COMMAND.name)
 })
 
 test('功能分组保持固定顺序并默认隐藏停用节点', () => {
@@ -154,6 +170,15 @@ test('市场卡片约束长标题描述和能力项且不覆盖相邻卡片', ()
   assert.match(nodeManagementSource, /\.marketplace-card-head[^}]*\.el-checkbox__label[^}]*overflow-wrap:\s*anywhere;/)
   assert.match(nodeManagementSource, /\.marketplace-card p\s*\{[^}]*overflow-wrap:\s*anywhere;/)
   assert.match(nodeManagementSource, /\.marketplace-actions[^}]*\.el-checkbox__label[^}]*min-width:\s*0;[^}]*white-space:\s*normal;/)
+})
+
+test('Dify 市场使用两列插件卡片并把可导入能力展示为独立分区', () => {
+  assert.match(nodeManagementSource, /'marketplace-grid--dify':\s*selectedSource === 'DIFY'/)
+  assert.match(nodeManagementSource, /class="marketplace-card-description"/)
+  assert.match(nodeManagementSource, /class="marketplace-actions-head"/)
+  assert.match(nodeManagementSource, /workflowNodes\.marketplaceCapabilities/)
+  assert.match(nodeManagementSource, /\.marketplace-grid--dify\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
+  assert.match(nodeManagementSource, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.marketplace-grid--dify\s*\{[^}]*grid-template-columns:\s*1fr/)
 })
 
 test('市场导入模板锁定外部身份但继续使用原生配置编辑器', () => {

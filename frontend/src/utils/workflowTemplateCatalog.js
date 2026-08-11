@@ -71,6 +71,29 @@ export function localizedTemplateText(template, field, translate, hasTranslation
   return String(template?.[field] || '')
 }
 
+/** 返回市场条目的可信说明，n8n 官方缺失说明时仅回退到已验证的原生能力文案。 */
+export function marketplaceItemDescription(item, source, translate, hasTranslation) {
+  const officialDescription = String(item?.description || '').trim()
+  if (officialDescription) return officialDescription
+  const normalizedSource = String(source || '').toUpperCase()
+  const nodeType = String(item?.targetNodeType || '').toUpperCase()
+  const nativeDescriptionKey = `workflowCatalog.templates.${nodeType}.description`
+  if (normalizedSource === 'N8N' && item?.compatible && nodeType && hasTranslation(nativeDescriptionKey)) {
+    return translate(nativeDescriptionKey)
+  }
+  const fallbackKey = normalizedSource === 'N8N'
+    ? 'workflowNodes.n8nDescriptionUnavailable' : 'workflowNodes.noDescription'
+  return translate(fallbackKey)
+}
+
+/** 将市场适配器的技术节点类型转换为当前语言的原生能力名称。 */
+export function marketplaceNodeTypeLabel(item, translate, hasTranslation) {
+  const nodeType = String(item?.targetNodeType || '').toUpperCase()
+  if (!nodeType) return ''
+  const key = `workflowCatalog.templates.${nodeType}.name`
+  return hasTranslation(key) ? translate(key) : nodeType
+}
+
 /** 按固定功能顺序对模板分组，并可按需保留停用模板。 */
 export function groupWorkflowTemplates(templates, includeDisabled = false) {
   const normalized = (templates || []).map(normalizeTemplateMetadata)

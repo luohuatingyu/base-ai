@@ -65,29 +65,41 @@
         <el-button :loading="marketplaceLoading" @click="searchMarketplace">{{ t('common.search') }}</el-button>
       </div>
       <el-alert :title="t('workflowNodes.marketplaceHint')" type="info" show-icon :closable="false" />
-      <el-checkbox-group v-if="marketplaceItems.length" v-model="selectedMarketplaceIds" class="marketplace-grid">
-        <article v-for="item in marketplaceItems" :key="item.externalId" class="marketplace-card" :class="{ unsupported: !item.compatible }">
+      <el-checkbox-group v-if="marketplaceItems.length" v-model="selectedMarketplaceIds" class="marketplace-grid"
+        :class="{ 'marketplace-grid--dify': selectedSource === 'DIFY' }">
+        <article v-for="item in marketplaceItems" :key="item.externalId" class="marketplace-card"
+          :class="{ unsupported: !item.compatible, 'marketplace-card--plugin': item.actions?.length }">
           <div class="marketplace-card-head">
-            <el-checkbox v-if="!item.actions?.length" :value="item.externalId" :disabled="!item.compatible">
-              <strong>{{ item.name }}</strong>
-            </el-checkbox>
-            <strong v-else>{{ item.name }}</strong>
-            <el-tag v-if="item.compatible" type="success" size="small">{{ t('workflowNodes.compatible') }}</el-tag>
-            <el-tag v-else type="info" size="small">{{ t('workflowNodes.unsupported') }}</el-tag>
+            <div class="marketplace-card-identity">
+              <el-checkbox v-if="!item.actions?.length" :value="item.externalId" :disabled="!item.compatible">
+                <strong>{{ item.name }}</strong>
+              </el-checkbox>
+              <strong v-else>{{ item.name }}</strong>
+            </div>
+            <div class="marketplace-card-status">
+              <el-tag v-if="item.compatible" type="success" size="small">{{ t('workflowNodes.compatible') }}</el-tag>
+              <el-tag v-else type="info" size="small">{{ t('workflowNodes.unsupported') }}</el-tag>
+            </div>
           </div>
-          <p>{{ item.description || t('workflowNodes.noDescription') }}</p>
+          <p class="marketplace-card-description" :title="marketplaceDescription(item)">{{ marketplaceDescription(item) }}</p>
           <div class="marketplace-meta">
             <span>{{ item.publisher || selectedSource }}</span>
             <span v-if="item.version">v{{ item.version }}</span>
-            <span v-if="item.targetNodeType">{{ item.targetNodeType }}</span>
+            <span v-if="marketplaceTypeLabel(item)">{{ marketplaceTypeLabel(item) }}</span>
           </div>
           <div v-if="item.actions?.length" class="marketplace-actions">
+            <div class="marketplace-actions-head">
+              <strong>{{ t('workflowNodes.marketplaceCapabilities') }}</strong>
+              <small>{{ t('workflowNodes.marketplaceCapabilityHint') }}</small>
+            </div>
             <el-checkbox v-for="action in item.actions" :key="action.externalId" :value="action.externalId" :disabled="!action.compatible">
               <span><strong>{{ action.name }}</strong><small>{{ action.description }}</small></span>
             </el-checkbox>
           </div>
-          <el-tag v-if="item.compatibilityLevel === 'NATIVE_SUBSET'" type="warning" size="small">{{ t('workflowNodes.nativeSubset') }}</el-tag>
-          <small v-if="!item.compatible">{{ t(`workflowNodes.incompatibility.${item.incompatibilityReason}`) }}</small>
+          <div class="marketplace-card-footer">
+            <el-tag v-if="item.compatibilityLevel === 'NATIVE_SUBSET'" type="warning" size="small">{{ t('workflowNodes.nativeSubset') }}</el-tag>
+            <small v-if="!item.compatible">{{ t(`workflowNodes.incompatibility.${item.incompatibilityReason}`) }}</small>
+          </div>
         </article>
       </el-checkbox-group>
       <el-empty v-else-if="!marketplaceLoading" :description="t('workflowNodes.marketplaceEmpty')" :image-size="56" />
@@ -112,7 +124,7 @@ import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import WorkflowNodeConfigEditor from '../components/WorkflowNodeConfigEditor.vue'
 import { cloneConfig, WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
-import { defaultTemplateCategory, filterWorkflowTemplates, localizedTemplateText, normalizeTemplateMetadata, workflowTemplateCategoryStyle, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
+import { defaultTemplateCategory, filterWorkflowTemplates, localizedTemplateText, marketplaceItemDescription, marketplaceNodeTypeLabel, normalizeTemplateMetadata, workflowTemplateCategoryStyle, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
 
 const { t, te } = useI18n()
 const auth = useAuthStore()
@@ -141,6 +153,12 @@ const filteredRows = computed(() => filterWorkflowTemplates(rows.value, selected
 function templateText(template, field) {
   return localizedTemplateText(template, field, t, te)
 }
+
+/** 返回市场条目的官方说明或来源感知的可信回退文案。 */
+function marketplaceDescription(item) { return marketplaceItemDescription(item, selectedSource.value, t, te) }
+
+/** 返回市场适配器对应的本地化原生能力名称。 */
+function marketplaceTypeLabel(item) { return marketplaceNodeTypeLabel(item, t, te) }
 
 /** 使用当前语言的功能名称生成卡片图标文字。 */
 function templateIcon(template) { return templateText(template, 'name').trim().slice(0, 2).toUpperCase() || '·' }
@@ -257,22 +275,31 @@ onMounted(load)
 .node-template-required-hint { margin-bottom: 16px; }
 .marketplace-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; gap: 12px; align-items: center; margin-bottom: 14px; }
 .marketplace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
-.marketplace-card { display: grid; min-width: 0; min-height: 150px; align-content: start; gap: 10px; overflow: hidden; padding: 14px; border: 1px solid #dfe6f0; border-radius: 12px; background: #fff; }
+.marketplace-grid--dify { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.marketplace-card { display: grid; min-width: 0; min-height: 150px; align-content: start; gap: 12px; overflow: hidden; padding: 16px; border: 1px solid #dfe6f0; border-radius: 14px; background: #fff; box-shadow: 0 4px 14px rgb(31 53 91 / 5%); }
 .marketplace-card.unsupported { background: #f8f9fb; opacity: .78; }
 .marketplace-card-head { display: flex; min-width: 0; gap: 8px; align-items: flex-start; justify-content: space-between; }
-.marketplace-card-head :deep(.el-checkbox), .marketplace-card-head > strong { min-width: 0; flex: 1; }
+.marketplace-card-identity { min-width: 0; flex: 1; }
+.marketplace-card-head :deep(.el-checkbox), .marketplace-card-identity > strong { min-width: 0; max-width: 100%; }
 .marketplace-card-head :deep(.el-checkbox) { height: auto; align-items: flex-start; white-space: normal; }
-.marketplace-card-head :deep(.el-checkbox__label), .marketplace-card-head > strong { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
-.marketplace-card-head > .el-tag { flex: 0 0 auto; }
-.marketplace-card p { min-height: 42px; margin: 0; overflow-wrap: anywhere; color: var(--app-muted); font-size: 13px; line-height: 1.5; }
+.marketplace-card-head :deep(.el-checkbox__label), .marketplace-card-identity > strong { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.marketplace-card-status { display: flex; flex: 0 0 auto; align-items: center; }
+.marketplace-card p { margin: 0; overflow-wrap: anywhere; color: var(--app-muted); font-size: 13px; line-height: 1.55; }
+.marketplace-card-description { display: -webkit-box; min-height: 60px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .marketplace-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-start; color: var(--app-muted); font-size: 12px; }
-.marketplace-card > small { color: var(--el-color-warning-dark-2); }
-.marketplace-actions { display: grid; min-width: 0; gap: 8px; overflow: hidden; padding: 10px; border-radius: 8px; background: #f8faff; }
-.marketplace-actions :deep(.el-checkbox) { width: 100%; min-width: 0; height: auto; align-items: flex-start; white-space: normal; }
+.marketplace-meta span { padding: 3px 8px; border-radius: 999px; background: #f1f4f9; color: #64748b; }
+.marketplace-actions { display: grid; min-width: 0; gap: 8px; overflow: hidden; padding: 12px; border: 1px solid #e3eaf5; border-radius: 10px; background: #f8faff; }
+.marketplace-actions-head { display: grid; gap: 2px; margin-bottom: 2px; }
+.marketplace-actions-head strong { color: #344054; font-size: 13px; }
+.marketplace-actions-head small { color: var(--app-muted); font-size: 11px; font-weight: 400; }
+.marketplace-actions :deep(.el-checkbox) { width: 100%; min-width: 0; height: auto; align-items: flex-start; margin-right: 0; padding: 10px; border: 1px solid #e4eaf3; border-radius: 8px; background: #fff; white-space: normal; }
+.marketplace-actions :deep(.el-checkbox__input) { margin-top: 2px; }
 .marketplace-actions :deep(.el-checkbox__label) { min-width: 0; white-space: normal; }
 .marketplace-actions span { display: grid; min-width: 0; gap: 3px; }
 .marketplace-actions strong, .marketplace-actions small { overflow-wrap: anywhere; }
 .marketplace-actions small { color: var(--app-muted); font-weight: 400; }
+.marketplace-card-footer { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 8px; }
+.marketplace-card-footer > small { min-width: 0; overflow-wrap: anywhere; color: var(--el-color-warning-dark-2); }
 .marketplace-pagination { justify-content: center; margin-top: 18px; }
 @media (max-width: 800px) {
   .node-template-source-filter { display: grid; gap: 8px; }
@@ -286,5 +313,6 @@ onMounted(load)
   .node-template-grid { grid-template-columns: 1fr; }
   .marketplace-toolbar { grid-template-columns: 1fr; }
   .marketplace-grid { grid-template-columns: 1fr; }
+  .marketplace-grid--dify { grid-template-columns: 1fr; }
 }
 </style>
