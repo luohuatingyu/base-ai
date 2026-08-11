@@ -25,6 +25,7 @@ public class WorkflowController {
     private final WorkflowConnectionService connectionService;
     private final WorkflowConnectionTester connectionTester;
     private final WorkflowNodeMarketplaceService marketplaceService;
+    private final WorkflowPluginOAuthService pluginOAuthService;
     private final LlmManagementService llmManagementService;
     private final MailManagementService mailManagementService;
 
@@ -32,7 +33,8 @@ public class WorkflowController {
     public WorkflowController(WorkflowService workflowService, WorkflowExecutionService executionService,
                               WorkflowConnectionService connectionService, WorkflowConnectionTester connectionTester,
                               LlmManagementService llmManagementService, MailManagementService mailManagementService,
-                              WorkflowNodeMarketplaceService marketplaceService) {
+                              WorkflowNodeMarketplaceService marketplaceService,
+                              WorkflowPluginOAuthService pluginOAuthService) {
         this.workflowService = workflowService;
         this.executionService = executionService;
         this.connectionService = connectionService;
@@ -40,6 +42,7 @@ public class WorkflowController {
         this.llmManagementService = llmManagementService;
         this.mailManagementService = mailManagementService;
         this.marketplaceService = marketplaceService;
+        this.pluginOAuthService = pluginOAuthService;
     }
 
     /** 查询当前用户可见的脱敏连接配置。 */
@@ -72,9 +75,25 @@ public class WorkflowController {
     @RequiredPermission("workflow:connection:update")
     public java.util.Map<String, Object> testConnection(@PathVariable Long id) { return connectionTester.test(id); }
 
+    /** 为当前用户拥有的插件连接创建一次性 OAuth 授权请求。 */
+    @PostMapping("/connections/{id}/oauth/authorize")
+    @RequiredPermission("workflow:connection:update")
+    public WorkflowModels.PluginOAuthAuthorization authorizePluginConnection(
+        @PathVariable Long id, @RequestBody WorkflowModels.PluginOAuthAuthorizeCommand command) {
+        return pluginOAuthService.authorize(id, command);
+    }
+
+    /** 消费一次性 OAuth state 并把交换结果加密写回插件连接。 */
+    @PostMapping("/plugin-oauth/callback")
+    @RequiredPermission("workflow:connection:update")
+    public WorkflowModels.PluginOAuthCallbackResult pluginOAuthCallback(
+        @RequestBody WorkflowModels.PluginOAuthCallbackCommand command) {
+        return pluginOAuthService.callback(command);
+    }
+
     /** 查询可复用节点模板。 */
     @GetMapping("/nodes")
-    @RequiredPermission("workflow:node:list")
+    @RequiredPermission("workflow:connection:list")
     public List<WorkflowModels.NodeTemplateView> templates() { return workflowService.templates(); }
 
     /** 使用独立只读权限查询节点文档所需的模板元数据。 */
@@ -100,6 +119,13 @@ public class WorkflowController {
     public WorkflowModels.MarketplaceImportResult importMarketplaceNodes(
         @PathVariable String source, @RequestBody WorkflowModels.MarketplaceImportCommand command) {
         return marketplaceService.importNodes(source, command);
+    }
+
+    /** 查询已安装且可用于节点和凭据配置的插件组件。 */
+    @GetMapping("/plugin-component-options")
+    @RequiredPermission("workflow:node:list")
+    public List<WorkflowModels.PluginComponentOption> pluginComponentOptions() {
+        return marketplaceService.componentOptions();
     }
 
     /** 查询 AI 节点可选择的启用模型，不返回供应商密钥或健康错误。 */

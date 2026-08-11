@@ -411,6 +411,8 @@ public class WorkflowService {
                     case "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER" -> Set.of("RABBITMQ");
                     case "IM_NOTIFY", "WEBHOOK_TRIGGER" -> Set.of("WEBHOOK");
                     case "TAVILY_TOOL" -> Set.of("TAVILY");
+                    case "PLUGIN_ACTION", "PLUGIN_TRIGGER", "PLUGIN_MODEL", "PLUGIN_DATASOURCE",
+                         "PLUGIN_AGENT_STRATEGY", "PLUGIN_EXTENSION" -> Set.of("PLUGIN");
                     default -> Set.of();
                 };
                 if (allowed.isEmpty()) throw new BusinessException("workflow.connectionForbidden");

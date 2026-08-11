@@ -289,7 +289,11 @@ async function loadKnowledgeBaseOptions() {
 }
 
 /** 返回字段是否已写入当前配置。 */
-function hasField(key) { return Object.prototype.hasOwnProperty.call(config.value, key) }
+function hasField(key) {
+  const [parent, child] = String(key).split('.', 2)
+  return child ? Boolean(config.value[parent] && Object.prototype.hasOwnProperty.call(config.value[parent], child))
+    : Object.prototype.hasOwnProperty.call(config.value, key)
+}
 /** 判断字段定义是否声明默认值，包含 null、false、零和空容器。 */
 function hasDefault(field) { return Object.prototype.hasOwnProperty.call(field, 'defaultValue') }
 /** 判断字段是否允许由用户启用或禁用；固定必填字段始终启用。 */
@@ -312,17 +316,24 @@ function defaultPreview(field) {
   return String(value)
 }
 /** 返回已配置值或仅供编辑展示的字段默认值，不因展开卡片写入配置。 */
-function fieldValue(field) { return hasField(field.key) ? config.value[field.key] : cloneValue(field.defaultValue) }
+function fieldValue(field) {
+  const [parent, child] = String(field.key).split('.', 2)
+  return hasField(field.key) ? (child ? config.value[parent][child] : config.value[field.key]) : cloneValue(field.defaultValue)
+}
 /** 深复制可序列化字段值，避免可视化编辑器污染共享默认值。 */
 function cloneValue(value) { return value === undefined ? null : JSON.parse(JSON.stringify(value)) }
 /** 返回当前语言下的标准字段名称。 */
 function fieldLabel(key) {
+  const dynamic = fields.value.find(field => field.key === key)?.label
+  if (dynamic) return dynamic
   const tavilyPath = `tavilyConfig.fields.${key}`
   if (props.nodeType === 'TAVILY_TOOL' && te(tavilyPath)) return t(tavilyPath)
   const path = `workflowConfig.fieldLabels.${key}`; return te(path) ? t(path) : key
 }
 /** 返回当前语言下的标准字段说明。 */
-function fieldDescription(key) { return t('workflowConfig.standardParameterDescription', { key }) }
+function fieldDescription(key) {
+  return fields.value.find(field => field.key === key)?.description || t('workflowConfig.standardParameterDescription', { key })
+}
 /** 返回必填汇总中使用的本地化字段或组合条件名称。 */
 function requirementLabel(key) { const path = `workflowConfig.requirementLabels.${key}`; return te(path) ? t(path) : fieldLabel(key) }
 /** 判断当前卡片对应的必填或条件必填要求是否仍未满足。 */
@@ -343,7 +354,12 @@ function toggleField(key) { openFields.value = openFields.value.includes(key) ? 
 /** 展开或收起附加参数卡片。 */
 function toggleExtra(key) { openExtra.value = openExtra.value.includes(key) ? openExtra.value.filter(item => item !== key) : [...openExtra.value, key] }
 /** 更新配置字段并向父组件发送隔离副本。 */
-function setField(key, value) { config.value = { ...config.value, [key]: value }; emit('update:modelValue', cloneConfig(config.value)) }
+function setField(key, value) {
+  const [parent, child] = String(key).split('.', 2)
+  config.value = child ? { ...config.value, [parent]: { ...(config.value[parent] || {}), [child]: value } }
+    : { ...config.value, [key]: value }
+  emit('update:modelValue', cloneConfig(config.value))
+}
 /** 规范数字字段后更新配置。 */
 function setNumber(key, value) { setField(key, Number.isFinite(value) ? value : 0) }
 /** 启用时写入隔离的默认值，禁用时从配置中移除字段。 */
@@ -357,7 +373,12 @@ function modelTypeOptionLabel(option) { const path=`workflowConfig.options.model
 /** 保存资源下拉选择的数字 ID；清空选择时移除字段并恢复缺失提示。 */
 function setResourceId(key, value) { value === null || value === undefined || value === '' ? removeField(key) : setField(key, Number(value)) }
 /** 删除配置字段并保留其他未知字段。 */
-function removeField(key) { const next = { ...config.value }; delete next[key]; config.value = next; emit('update:modelValue', cloneConfig(next)) }
+function removeField(key) {
+  const [parent, child] = String(key).split('.', 2)
+  const next = { ...config.value }
+  if (child) { const nested = { ...(next[parent] || {}) }; delete nested[child]; next[parent] = nested } else delete next[key]
+  config.value = next; emit('update:modelValue', cloneConfig(next))
+}
 /** 返回结构化条件并补齐默认操作符。 */
 function condition(field) { const value = fieldValue(field); return value && typeof value === 'object' && !Array.isArray(value) ? { operator: 'EQ', ...value } : { left: '', operator: 'EQ', right: '' } }
 /** 更新结构化条件的一个组成部分。 */

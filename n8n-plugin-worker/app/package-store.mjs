@@ -2,9 +2,9 @@
 
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, normalize, resolve, sep } from 'node:path'
+import { dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 
@@ -20,6 +20,7 @@ export class PackageStore {
     this.maximumArchive = Number(process.env.PLUGIN_MAX_PACKAGE_BYTES || 10 * 1024 * 1024)
     this.maximumFiles = Number(process.env.PLUGIN_MAX_PACKAGE_FILES || 2048)
     this.maximumUnpacked = Number(process.env.PLUGIN_MAX_UNPACKED_BYTES || 100 * 1024 * 1024)
+    this.installTimeout = Number(process.env.PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS || 180) * 1000
   }
 
   /** 校验、解压并探测一个 npm tgz 插件包。 */
@@ -97,19 +98,24 @@ export class PackageStore {
     const nodes = Array.isArray(declared.nodes) ? declared.nodes : []
     const credentials = Array.isArray(declared.credentials) ? declared.credentials : []
     if (!nodes.length && !credentials.length) throw new PackageError('PLUGIN_COMPONENTS_MISSING')
+    try { await this.#installDependencies(packageRoot, manifest.dependencies) } catch (error) {
+      if (!(error instanceof PackageError)) throw error
+    }
     await this.#installShim(packageRoot)
     const credentialSchemas = new Map()
     for (const relative of credentials) {
       const loaded = await this.#load(packageRoot, relative)
       if (loaded.error) continue
       const instance = this.#instance(loaded.module)
-      if (instance?.name) credentialSchemas.set(instance.name, this.#fields(instance.properties || []))
+      if (instance?.name) credentialSchemas.set(instance.name, {
+        schema: this.#fields(instance.properties || [], true), authenticate: instance.authenticate || {},
+      })
     }
     const components = []
     for (const relative of nodes) components.push(await this.#component(packageRoot, relative, credentialSchemas))
     if (!nodes.length) {
-      for (const [name, schema] of credentialSchemas) components.push({
-        externalId: name, name, description: '', componentType: 'EXTENSION', schema: [], credentialSchema: schema,
+      for (const [name, credential] of credentialSchemas) components.push({
+        externalId: name, name, description: '', componentType: 'EXTENSION', schema: [], credentialSchema: credential.schema,
         sourcePath: '', exportName: '', compatibilityStatus: 'PARTIAL', compatibilityReason: 'CREDENTIAL_ONLY_EXTENSION',
       })
     }
@@ -125,6 +131,49 @@ export class PackageStore {
     await mkdir(target, { recursive: true })
     await copyFile(SHIM, join(target, 'index.cjs'))
     await writeFile(join(target, 'package.json'), JSON.stringify({ name: 'n8n-workflow', version: '0.0.0-base-ai', main: 'index.cjs' }))
+  }
+
+  /** 在独立目录安装插件依赖，排除 n8n 引擎/SDK 并禁用生命周期脚本。 */
+  async #installDependencies(packageRoot, declaredDependencies) {
+    const dependencies = this.#safeDependencies(declaredDependencies)
+    if (!dependencies.length) return
+    const dependencyRoot = join(packageRoot, '.base-ai-deps')
+    await mkdir(dependencyRoot, { recursive: true })
+    await writeFile(join(dependencyRoot, 'package.json'), JSON.stringify({ private: true }))
+    const result = spawnSync('npm', [
+      'install', '--prefix', dependencyRoot, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund',
+      '--package-lock=false', '--no-save', ...dependencies.map(item => `${item.name}@${item.version}`),
+    ], {
+      encoding: 'utf8', timeout: Math.max(10000, Math.min(this.installTimeout, 600000)),
+      env: { PATH: process.env.PATH || '', HOME: '/data/tmp', npm_config_cache: '/data/tmp/npm-cache', LANG: 'C.UTF-8' },
+      maxBuffer: 1024 * 1024,
+    })
+    if (result.error?.code === 'ETIMEDOUT') throw new PackageError('DEPENDENCY_INSTALL_TIMEOUT')
+    if (result.status !== 0) throw new PackageError('DEPENDENCY_INSTALL_FAILED')
+    for (const dependency of dependencies) {
+      const source = join(dependencyRoot, 'node_modules', ...dependency.name.split('/'))
+      const destination = join(packageRoot, 'node_modules', ...dependency.name.split('/'))
+      await mkdir(dirname(destination), { recursive: true })
+      await symlink(relative(dirname(destination), source), destination, 'dir')
+    }
+  }
+
+  /** 仅接受 npm 注册表包名和版本范围，禁止引擎、SDK、路径、URL 与别名来源。 */
+  #safeDependencies(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+    const entries = []
+    for (const [name, rawVersion] of Object.entries(value)) {
+      const normalized = String(name).toLowerCase()
+      if (['n8n', 'n8n-core', 'n8n-workflow'].includes(normalized) || normalized.startsWith('@n8n/')) continue
+      if (!/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(name)) {
+        throw new PackageError('DEPENDENCY_DECLARATION_INVALID')
+      }
+      const version = String(rawVersion || '').trim()
+      if (!version || !/^[A-Za-z0-9*^~<>=| .+-]+$/.test(version)) throw new PackageError('DEPENDENCY_SOURCE_FORBIDDEN')
+      entries.push({ name, version })
+      if (entries.length > 128) throw new PackageError('DEPENDENCY_COUNT_INVALID')
+    }
+    return entries
   }
 
   /** 加载受限包内模块并收敛缺失依赖错误。 */
@@ -161,13 +210,15 @@ export class PackageStore {
     const instance = this.#instance(loaded.module)
     const description = instance?.description || {}
     const externalId = String(description.name || relative)
-    const credentialSchema = (description.credentials || []).flatMap(item => credentialSchemas.get(item.name) || [])
+    const credentialEntries = (description.credentials || []).map(item => credentialSchemas.get(item.name)).filter(Boolean)
+    const credentialSchema = credentialEntries.flatMap(item => item.schema)
     const componentType = this.#type(instance, description)
     const executable = this.#executable(instance, componentType, description)
     return {
       externalId, name: String(description.displayName || externalId), description: String(description.description || ''),
       componentType, schema: this.#fields(description.properties || []), credentialSchema,
       sourcePath: String(relative), exportName: this.#exportName(loaded.module, instance),
+      credentialAuthentications: credentialEntries.map(item => item.authenticate),
       compatibilityStatus: executable ? 'SUPPORTED' : 'PARTIAL',
       compatibilityReason: executable ? '' : description.requestDefaults ? 'DECLARATIVE_ROUTING_NOT_IMPLEMENTED' : 'NODE_EXECUTION_METHOD_MISSING',
     }
@@ -188,10 +239,19 @@ export class PackageStore {
 
   /** 判断当前宿主是否具备组件需要的入口方法。 */
   #executable(instance, componentType, description) {
-    if (componentType === 'ACTION') return typeof instance?.execute === 'function' || Boolean(description.requestDefaults)
+    if (componentType === 'ACTION') return typeof instance?.execute === 'function' || this.#declarative(description)
     if (componentType === 'TRIGGER') return ['trigger', 'webhook', 'poll'].some(name => typeof instance?.[name] === 'function')
     if (['MODEL', 'DATASOURCE', 'AGENT_STRATEGY'].includes(componentType)) return typeof instance?.supplyData === 'function' || typeof instance?.execute === 'function'
     return typeof instance?.execute === 'function'
+  }
+
+  /** 判断节点声明是否至少包含一条可安全解释的 HTTP 路由。 */
+  #declarative(description) {
+    if (!description?.requestDefaults || !Array.isArray(description.properties)) return false
+    const routed = description.properties.some(property => property?.routing?.request
+      || (Array.isArray(property?.options) && property.options.some(option => option?.routing?.request)))
+    const unsupported = JSON.stringify(description).includes('preSend') || JSON.stringify(description).includes('postReceive')
+    return routed && !unsupported
   }
 
   /** 查找实例对应的导出名称。 */
@@ -200,11 +260,12 @@ export class PackageStore {
   }
 
   /** 把 n8n 属性定义转换为受控动态字段。 */
-  #fields(properties) {
+  #fields(properties, credential = false) {
     return (Array.isArray(properties) ? properties : []).filter(item => item && typeof item === 'object').map(item => ({
       name: String(item.name || ''), label: String(item.displayName || item.name || ''),
       description: String(item.description || ''), type: String(item.type || 'string'),
-      required: Boolean(item.required), default: item.default, options: Array.isArray(item.options) ? item.options : [],
+      required: Boolean(item.required) || credential && item.required !== false && item.type !== 'hidden',
+      default: item.default, options: Array.isArray(item.options) ? item.options : [],
       displayOptions: item.displayOptions || {}, secret: Boolean(item.typeOptions?.password),
     }))
   }

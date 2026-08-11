@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -32,15 +33,20 @@ public class WorkflowNodeMarketplaceService {
     private final WorkflowMarketplaceClients clients;
     private final WorkflowMarketplacePackageParser packageParser;
     private final WorkflowService workflowService;
+    private final WorkflowPluginWorkerClient pluginWorkers;
+    private final WorkflowPluginRegistryService pluginRegistry;
     private final ObjectMapper objectMapper;
 
     /** 注入市场客户端、包解析器和模板持久化服务。 */
     public WorkflowNodeMarketplaceService(WorkflowMarketplaceClients clients,
                                           WorkflowMarketplacePackageParser packageParser,
-                                          WorkflowService workflowService, ObjectMapper objectMapper) {
+                                          WorkflowService workflowService, WorkflowPluginWorkerClient pluginWorkers,
+                                          WorkflowPluginRegistryService pluginRegistry, ObjectMapper objectMapper) {
         this.clients = clients;
         this.packageParser = packageParser;
         this.workflowService = workflowService;
+        this.pluginWorkers = pluginWorkers;
+        this.pluginRegistry = pluginRegistry;
         this.objectMapper = objectMapper;
     }
 
@@ -50,38 +56,23 @@ public class WorkflowNodeMarketplaceService {
         String source = importSource(rawSource);
         int page = Math.max(1, rawPage);
         int pageSize = Math.min(50, Math.max(1, rawPageSize));
-        if (compatibleOnly) return compatibleNodes(source, query, category, page, pageSize);
         WorkflowMarketplaceClients.SearchResult result = "N8N".equals(source)
             ? clients.searchN8n(query, page, pageSize) : clients.searchDify(query, category, page, pageSize);
         List<WorkflowModels.MarketplaceNodeView> items = new ArrayList<>();
         for (WorkflowMarketplaceClients.MarketplaceEntry entry : result.items()) {
-            if ("N8N".equals(source)) items.add(view(entry, adaptN8n(entry).orElse(null)));
+            if ("N8N".equals(source)) items.add(adaptN8n(entry).map(draft -> view(entry, draft))
+                .orElseGet(() -> probeView(entry, "PLUGIN_ACTION")));
             else if (DIFY_TAVILY.equals(entry.externalId())) items.add(difyPluginView(entry));
-            else items.add(view(entry, null));
+            else items.add(probeView(entry, pluginNodeType(entry.category())));
         }
-        return new WorkflowModels.MarketplacePage(source, List.copyOf(items), page, pageSize, result.total());
-    }
-
-    /** 从服务端白名单先生成兼容目录，再执行检索和稳定分页。 */
-    private WorkflowModels.MarketplacePage compatibleNodes(String source, String query, String category,
-                                                            int page, int pageSize) {
-        List<WorkflowModels.MarketplaceNodeView> items = new ArrayList<>();
-        if ("N8N".equals(source)) {
-            N8N_NATIVE_TYPES.keySet().stream().sorted().map(clients::findN8n).flatMap(Optional::stream)
-                .map(entry -> view(entry, adaptN8n(entry).orElseThrow())).forEach(items::add);
-        } else if (category == null || category.isBlank() || "tool".equalsIgnoreCase(category)) {
-            clients.findDify(DIFY_TAVILY).map(this::difyPluginView).ifPresent(items::add);
-        }
-        String needle = normalized(query);
-        List<WorkflowModels.MarketplaceNodeView> filtered = items.stream()
-            .filter(item -> matches(item, needle)).toList();
-        int from = Math.min(filtered.size(), (page - 1) * pageSize);
-        int to = Math.min(filtered.size(), from + pageSize);
-        return new WorkflowModels.MarketplacePage(source, List.copyOf(filtered.subList(from, to)),
-            page, pageSize, filtered.size());
+        List<WorkflowModels.MarketplaceNodeView> filtered = compatibleOnly
+            ? items.stream().filter(WorkflowModels.MarketplaceNodeView::compatible).toList() : items;
+        return new WorkflowModels.MarketplacePage(source, List.copyOf(filtered), page, pageSize,
+            compatibleOnly ? filtered.size() : result.total());
     }
 
     /** 逐项重新确认市场条目和适配器，并返回幂等导入结果。 */
+    @Transactional
     public WorkflowModels.MarketplaceImportResult importNodes(String rawSource,
                                                                WorkflowModels.MarketplaceImportCommand command) {
         String source = importSource(rawSource);
@@ -94,18 +85,125 @@ public class WorkflowNodeMarketplaceService {
         }
         Map<String, byte[]> packageCache = new LinkedHashMap<>();
         List<WorkflowModels.MarketplaceTemplateDraft> drafts = new ArrayList<>();
+        List<PreparedImport> prepared = new ArrayList<>();
         for (String externalId : ids) {
-            drafts.add("N8N".equals(source) ? requireN8n(externalId) : requireDify(externalId, packageCache));
+            if ("N8N".equals(source)) {
+                WorkflowMarketplaceClients.MarketplaceEntry entry = clients.findN8n(externalId)
+                    .orElseThrow(() -> new BusinessException("workflow.marketplaceNodeNotFound"));
+                Optional<NativeDraft> nativeDraft = adaptN8n(entry);
+                if (nativeDraft.isPresent()) {
+                    WorkflowModels.MarketplaceTemplateDraft draft = draft("N8N", entry, externalId, nativeDraft.get());
+                    drafts.add(draft);
+                    prepared.add(new PreparedImport(externalId, draft, null));
+                } else preparePlugin(source, externalId, entry, Boolean.TRUE.equals(command.replaceExisting()), drafts, prepared);
+            } else if (externalId.startsWith(DIFY_TAVILY + "/")) {
+                WorkflowModels.MarketplaceTemplateDraft draft = requireDify(externalId, packageCache);
+                drafts.add(draft);
+                prepared.add(new PreparedImport(externalId, draft, null));
+            } else {
+                WorkflowMarketplaceClients.MarketplaceEntry entry = clients.findDify(externalId)
+                    .orElseThrow(() -> new BusinessException("workflow.marketplaceNodeNotFound"));
+                preparePlugin(source, externalId, entry, Boolean.TRUE.equals(command.replaceExisting()), drafts, prepared);
+            }
         }
-        List<WorkflowModels.MarketplaceTemplatePersistence> persisted = workflowService.importMarketplaceTemplates(
-            List.copyOf(drafts), Boolean.TRUE.equals(command.replaceExisting()));
+        List<WorkflowModels.MarketplaceTemplatePersistence> persisted = drafts.isEmpty() ? List.of()
+            : workflowService.importMarketplaceTemplates(List.copyOf(drafts), Boolean.TRUE.equals(command.replaceExisting()));
         List<WorkflowModels.MarketplaceImportItem> imported = new ArrayList<>();
         int index = 0;
-        for (String externalId : ids) {
-            WorkflowModels.MarketplaceTemplatePersistence result = persisted.get(index++);
-            imported.add(new WorkflowModels.MarketplaceImportItem(externalId, result.status(), result.templateId()));
+        for (PreparedImport item : prepared) {
+            if (item.status() != null) {
+                imported.add(new WorkflowModels.MarketplaceImportItem(item.requestExternalId(), item.status(), null));
+            } else {
+                WorkflowModels.MarketplaceTemplatePersistence result = persisted.get(index++);
+                imported.add(new WorkflowModels.MarketplaceImportItem(item.requestExternalId(), result.status(), result.templateId()));
+            }
         }
         return new WorkflowModels.MarketplaceImportResult(source, List.copyOf(imported));
+    }
+
+    /** 返回已安装且通过 ABI 探测的非敏感插件组件。 */
+    public List<WorkflowModels.PluginComponentOption> componentOptions() {
+        return pluginRegistry.componentOptions();
+    }
+
+    /** 下载并探测插件包，把可执行组件转换为固定版本模板。 */
+    private void preparePlugin(String source, String requestExternalId,
+                               WorkflowMarketplaceClients.MarketplaceEntry catalogEntry, boolean replaceExisting,
+                               List<WorkflowModels.MarketplaceTemplateDraft> drafts, List<PreparedImport> prepared) {
+        WorkflowMarketplaceClients.MarketplaceEntry packageEntry = catalogEntry;
+        byte[] archive;
+        String fingerprint;
+        String packageId;
+        if ("N8N".equals(source)) {
+            packageId = catalogEntry.raw().path("packageName").asText("");
+            if (packageId.isBlank()) throw new BusinessException("workflow.marketplacePackageInvalid");
+            WorkflowMarketplaceClients.PackageDownload download = clients.downloadN8nPackage(catalogEntry);
+            archive = download.bytes();
+            fingerprint = download.fingerprint();
+            packageEntry = new WorkflowMarketplaceClients.MarketplaceEntry(packageId, catalogEntry.name(),
+                catalogEntry.description(), catalogEntry.version(), catalogEntry.publisher(), catalogEntry.category(),
+                catalogEntry.trustLevel(), catalogEntry.raw());
+        } else {
+            packageId = catalogEntry.externalId();
+            archive = clients.downloadDifyPackage(packageId, catalogEntry.version());
+            fingerprint = sha256(archive);
+        }
+        WorkflowPluginWorkerClient.WorkerPackage inspected = pluginWorkers.inspect(source, packageId,
+            catalogEntry.version(), archive, fingerprint);
+        WorkflowPluginRegistryService.Registration registration = pluginRegistry.register(source, packageEntry,
+            inspected, replaceExisting);
+        if (registration.updateAvailable()) {
+            prepared.add(new PreparedImport(requestExternalId, null, "UPDATE_AVAILABLE"));
+            return;
+        }
+        boolean supported = false;
+        for (WorkflowPluginRegistryService.RegisteredComponent component : registration.components()) {
+            if (!"SUPPORTED".equals(component.compatibilityStatus())) {
+                prepared.add(new PreparedImport(requestExternalId, null, component.compatibilityStatus()));
+                continue;
+            }
+            supported = true;
+            WorkflowModels.MarketplaceTemplateDraft draft = pluginDraft(source, packageEntry, fingerprint, component);
+            drafts.add(draft);
+            prepared.add(new PreparedImport(requestExternalId, draft, null));
+        }
+        if (!supported) throw new BusinessException("workflow.marketplaceNodeUnsupported");
+        pluginRegistry.setEnabled(registration.pluginId(), true);
+    }
+
+    /** 把已持久化插件组件转换为通用工作流模板。 */
+    private WorkflowModels.MarketplaceTemplateDraft pluginDraft(String source,
+                                                                 WorkflowMarketplaceClients.MarketplaceEntry entry,
+                                                                 String packageFingerprint,
+                                                                 WorkflowPluginRegistryService.RegisteredComponent component) {
+        ObjectNode config = objectMapper.createObjectNode();
+        config.put("pluginComponentId", component.id()).put("packageFingerprint", packageFingerprint)
+            .put("componentExternalId", component.externalKey()).put("componentType", component.componentType());
+        config.putNull("connectionId");
+        config.set("parameters", defaults(component.schema()));
+        config.set("parameterSchema", component.schema());
+        config.set("credentialSchema", component.credentialSchema());
+        String externalKey = entry.externalId() + "/" + component.externalKey();
+        String fingerprint = sha256(packageFingerprint + "\n" + component.schemaFingerprint());
+        String nodeType = pluginNodeType(component.componentType());
+        return new WorkflowModels.MarketplaceTemplateDraft(source, externalKey, entry.version(), entry.publisher(),
+            fingerprint, source + "_" + sha256(externalKey).substring(0, 16).toUpperCase(Locale.ROOT),
+            component.name(), component.description(), nodeType,
+            WorkflowTemplateCatalog.defaultCategory(nodeType), config);
+    }
+
+    /** 从插件字段 Schema 提取不含空值的声明默认值。 */
+    private ObjectNode defaults(JsonNode schema) {
+        ObjectNode defaults = objectMapper.createObjectNode();
+        if (schema != null && schema.isArray()) {
+            for (JsonNode field : schema) {
+                String name = field.path("name").asText("");
+                if (!name.isBlank() && field.has("default") && !field.path("default").isNull()) {
+                    defaults.set(name, field.path("default").deepCopy());
+                }
+            }
+        }
+        return defaults;
     }
 
     /** 重新读取 n8n 条目并拒绝未进入精确映射表的节点。 */
@@ -170,6 +268,14 @@ public class WorkflowNodeMarketplaceService {
             : view(draft, entry.version(), entry.publisher(), entry.category());
     }
 
+    /** 构造需要导入时进行 ABI 探测的市场卡片。 */
+    private WorkflowModels.MarketplaceNodeView probeView(WorkflowMarketplaceClients.MarketplaceEntry entry,
+                                                          String targetNodeType) {
+        return new WorkflowModels.MarketplaceNodeView(entry.externalId(), entry.name(), entry.description(),
+            entry.version(), entry.publisher(), entry.category(), true, "", targetNodeType,
+            WorkflowTemplateCatalog.defaultCategory(targetNodeType), "PROBE_REQUIRED", List.of());
+    }
+
     /** 构造兼容市场节点卡片。 */
     private WorkflowModels.MarketplaceNodeView view(NativeDraft draft, String version, String publisher, String category) {
         return new WorkflowModels.MarketplaceNodeView(draft.externalId(), draft.name(), draft.description(), version,
@@ -201,6 +307,19 @@ public class WorkflowNodeMarketplaceService {
                 || normalized(action.externalId()).contains(needle));
     }
 
+    /** 把市场分类或组件类型映射为通用插件节点类型。 */
+    private String pluginNodeType(String value) {
+        String type = value == null ? "" : value.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        return switch (type) {
+            case "TRIGGER" -> "PLUGIN_TRIGGER";
+            case "MODEL" -> "PLUGIN_MODEL";
+            case "DATASOURCE" -> "PLUGIN_DATASOURCE";
+            case "AGENT_STRATEGY" -> "PLUGIN_AGENT_STRATEGY";
+            case "EXTENSION" -> "PLUGIN_EXTENSION";
+            default -> "PLUGIN_ACTION";
+        };
+    }
+
     /** 把市场元数据和原生转换结果固化为不可伪造的持久化命令。 */
     private WorkflowModels.MarketplaceTemplateDraft draft(String source,
                                                            WorkflowMarketplaceClients.MarketplaceEntry entry,
@@ -230,6 +349,15 @@ public class WorkflowNodeMarketplaceService {
         }
     }
 
+    /** 计算插件压缩包的稳定 SHA-256 标识。 */
+    private String sha256(byte[] value) {
+        try {
+            return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
+    }
+
     /** 生成大小写无关的市场搜索文本。 */
     private String normalized(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
@@ -237,4 +365,6 @@ public class WorkflowNodeMarketplaceService {
 
     private record NativeDraft(String externalId, String name, String description, String nodeType,
                                String functionalCategory, JsonNode config) {}
+    private record PreparedImport(String requestExternalId, WorkflowModels.MarketplaceTemplateDraft draft,
+                                  String status) {}
 }

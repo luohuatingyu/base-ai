@@ -28,7 +28,7 @@ import java.util.Set;
 public class WorkflowConnectionService {
     private static final String MASK = "******";
     private static final Set<String> TYPES = Set.of("MYSQL", "POSTGRESQL", "REDIS", "S3", "KAFKA", "RABBITMQ", "WEBHOOK", "TAVILY",
-        "QDRANT", "MILVUS", "ELASTICSEARCH");
+        "QDRANT", "MILVUS", "ELASTICSEARCH", "PLUGIN");
     private static final Set<String> SECRET_FIELDS = Set.of(
         "password", "secret", "secretkey", "accesskey", "token", "apikey", "saslpassword", "privatekey"
     );
@@ -75,10 +75,10 @@ public class WorkflowConnectionService {
         networkPolicy.validate(connectionType, command.config());
         try {
             jdbcTemplate.update("""
-                INSERT INTO workflow_connection(code,name,connection_type,config_encrypted,owner_user_id,enabled)
-                VALUES (?,?,?,?,?,?)
-                """, code(command.code()), text(command.name()), connectionType, encrypt(command.config()),
-                AuthContext.require().id(), !Boolean.FALSE.equals(command.enabled()));
+                INSERT INTO workflow_connection(code,name,connection_type,plugin_component_id,config_encrypted,owner_user_id,enabled)
+                VALUES (?,?,?,?,?,?,?)
+                """, code(command.code()), text(command.name()), connectionType, pluginComponentId(connectionType, command.config()),
+                encrypt(command.config()), AuthContext.require().id(), !Boolean.FALSE.equals(command.enabled()));
             Long id = jdbcTemplate.queryForObject("SELECT id FROM workflow_connection WHERE code=?", Long.class, code(command.code()));
             return view(id);
         } catch (DataIntegrityViolationException exception) {
@@ -99,13 +99,13 @@ public class WorkflowConnectionService {
             || existing.enabled() != enabled;
         try {
             jdbcTemplate.update("""
-                UPDATE workflow_connection SET code=?,name=?,connection_type=?,config_encrypted=?,enabled=?,
+                UPDATE workflow_connection SET code=?,name=?,connection_type=?,plugin_component_id=?,config_encrypted=?,enabled=?,
                     security_revision=security_revision+?,vector_status=CASE WHEN ? THEN 'UNKNOWN' ELSE vector_status END,
                     vector_engine=CASE WHEN ? THEN NULL ELSE vector_engine END,vector_version=CASE WHEN ? THEN NULL ELSE vector_version END,
                     vector_checked_at=CASE WHEN ? THEN NULL ELSE vector_checked_at END,vector_error=CASE WHEN ? THEN '' ELSE vector_error END,
                     updated_at=NOW()
                 WHERE id=? AND voided=false
-                """, code(command.code()), text(command.name()), connectionType, encrypt(merged),
+                """, code(command.code()), text(command.name()), connectionType, pluginComponentId(connectionType, merged), encrypt(merged),
                 enabled, securityChanged ? 1 : 0, securityChanged, securityChanged, securityChanged, securityChanged, securityChanged, id);
             return view(id);
         } catch (DataIntegrityViolationException exception) {
@@ -153,6 +153,20 @@ public class WorkflowConnectionService {
         return connection;
     }
 
+    /** 用 OAuth 回调产生的新凭据原子替换同一插件连接的 credentials 子对象。 */
+    @Transactional
+    public void replacePluginCredentials(Long id, Long componentId, JsonNode credentials) {
+        StoredConnection existing = requireOwned(id);
+        if (!"PLUGIN".equals(existing.connectionType()) || existing.config().path("pluginComponentId").asLong() != componentId
+            || credentials == null || !credentials.isObject()) throw new BusinessException("workflow.connectionForbidden");
+        ObjectNode updated = existing.config().deepCopy();
+        updated.set("credentials", credentials.deepCopy());
+        jdbcTemplate.update("""
+            UPDATE workflow_connection SET config_encrypted=?,security_revision=security_revision+1,updated_at=NOW()
+            WHERE id=? AND voided=false
+            """, encrypt(updated), id);
+    }
+
     /** 保存非敏感向量能力探测结果，供连接列表和知识库选择器使用。 */
     public void recordVectorCapability(Long id, String status, String engine, String version, String error) {
         jdbcTemplate.update("""
@@ -191,6 +205,10 @@ public class WorkflowConnectionService {
         if ("ELASTICSEARCH".equals(connectionType) && command.config() instanceof ObjectNode object
             && object.path("product").asText("").isBlank()) object.put("product", "ELASTICSEARCH");
         if ("MILVUS".equals(connectionType) && command.config().path("token").asText("").isBlank()) {
+            throw new BusinessException("workflow.connectionInvalid");
+        }
+        if ("PLUGIN".equals(connectionType) && (command.config().path("pluginComponentId").asLong() <= 0
+            || !command.config().path("credentials").isObject())) {
             throw new BusinessException("workflow.connectionInvalid");
         }
     }
@@ -251,6 +269,11 @@ public class WorkflowConnectionService {
         String normalized = text(value).toUpperCase(Locale.ROOT);
         if (!TYPES.contains(normalized)) throw new BusinessException("workflow.connectionTypeInvalid");
         return normalized;
+    }
+
+    /** 只为插件连接固化组件外键，其他连接保持空值。 */
+    private Long pluginComponentId(String connectionType, JsonNode config) {
+        return "PLUGIN".equals(connectionType) ? config.path("pluginComponentId").asLong() : null;
     }
 
     /** 规范可选文本。 */

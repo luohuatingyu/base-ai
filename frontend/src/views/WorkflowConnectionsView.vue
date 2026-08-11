@@ -11,8 +11,9 @@
       <el-table-column prop="connectionType" :label="t('common.type')" width="130" />
       <el-table-column :label="t('workflowConnections.vectorCapability')" min-width="190"><template #default="scope"><el-tag :type="vectorStatusType(scope.row.vectorStatus)">{{ t(`workflowConnections.vectorStatuses.${scope.row.vectorStatus || 'UNKNOWN'}`) }}</el-tag><small v-if="scope.row.vectorEngine" class="vector-detail">{{ scope.row.vectorEngine }} {{ scope.row.vectorVersion }}</small></template></el-table-column>
       <el-table-column :label="t('common.status')" width="100"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'info'">{{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag></template></el-table-column>
-      <el-table-column :label="t('common.operation')" width="220" fixed="right"><template #default="scope"><div class="table-actions">
+      <el-table-column :label="t('common.operation')" width="280" fixed="right"><template #default="scope"><div class="table-actions">
         <el-button v-if="auth.hasPermission('workflow:connection:update')" link type="success" @click="test(scope.row)">{{ t('workflowConnections.test') }}</el-button>
+        <el-button v-if="scope.row.connectionType === 'PLUGIN' && auth.hasPermission('workflow:connection:update')" link type="warning" @click="oauth(scope.row)">{{ t('workflowConnections.oauth') }}</el-button>
         <el-button v-if="auth.hasPermission('workflow:connection:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
         <el-button v-if="auth.hasPermission('workflow:connection:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
       </div></template></el-table-column>
@@ -22,18 +23,23 @@
       <el-form label-position="top">
         <div class="connection-grid"><el-form-item :label="t('common.code')"><el-input v-model="form.code" /></el-form-item><el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item></div>
         <el-form-item :label="t('common.type')"><el-select v-model="form.connectionType" class="full" @change="resetConfig"><el-option v-for="type in connectionTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+        <el-form-item v-if="form.connectionType === 'PLUGIN'" :label="t('workflowConnections.pluginComponent')">
+          <el-select :model-value="form.config.pluginComponentId" class="full" filterable @update:model-value="selectPluginComponent">
+            <el-option v-for="component in pluginComponents" :key="component.id" :value="component.id" :label="pluginComponentLabel(component)" />
+          </el-select>
+        </el-form-item>
         <section class="connection-config-section">
           <div class="connection-config-head"><div><h3>{{ t('workflowConnections.config') }}</h3><p>{{ t('workflowConnections.configHelp') }}</p></div><el-tag>{{ form.connectionType }}</el-tag></div>
           <div class="connection-config-grid">
             <article v-for="field in configFields" :key="field.key" class="connection-config-card">
-              <div class="connection-card-head"><strong>{{ fieldLabel(field.key) }}</strong><small>{{ fieldDescription(field.key) }}</small></div>
+              <div class="connection-card-head"><strong>{{ fieldLabel(field.key) }} <span v-if="field.required" class="connection-required">*</span></strong><small>{{ fieldDescription(field.key) }}</small></div>
               <div class="connection-card-body">
-                <el-input v-if="['text', 'password'].includes(field.editor)" :model-value="form.config[field.key]"
+                <el-input v-if="['text', 'password'].includes(field.editor)" :model-value="configFieldValue(field.key)"
                           :type="field.editor" :show-password="field.editor === 'password'" autocomplete="off"
                           @update:model-value="setConfigField(field.key, $event)" />
-                <el-switch v-else-if="field.editor === 'boolean'" :model-value="form.config[field.key]"
+                <el-switch v-else-if="field.editor === 'boolean'" :model-value="configFieldValue(field.key)"
                            @update:model-value="setConfigField(field.key, $event)" />
-                <el-select v-else-if="field.editor === 'select'" :model-value="form.config[field.key]" class="full"
+                <el-select v-else-if="field.editor === 'select'" :model-value="configFieldValue(field.key)" class="full"
                            @update:model-value="setConfigField(field.key, $event)">
                   <el-option v-for="option in field.options" :key="option || '__empty'" :label="option || t('workflowConnections.notSet')" :value="option" />
                 </el-select>
@@ -92,15 +98,23 @@ import { cloneConnectionConfig, CONNECTION_TYPES, connectionConfigFields, create
 const { t, te } = useI18n()
 const auth = useAuthStore()
 const rows = ref([]), visible = ref(false)
+const pluginComponents = ref([])
 const connectionTypes = CONNECTION_TYPES
 const form = reactive(emptyForm())
 const mapDraft = reactive({ key: '', value: '' })
 const mapError = ref(''), customKey = ref(''), customType = ref('string'), customError = ref('')
-const configFields = computed(() => connectionConfigFields(form.connectionType))
+const selectedPluginComponent = computed(() => pluginComponents.value.find(item => item.id === Number(form.config.pluginComponentId)))
+const configFields = computed(() => form.connectionType === 'PLUGIN' ? pluginCredentialFields(selectedPluginComponent.value)
+  : connectionConfigFields(form.connectionType))
 const customKeys = computed(() => extraConnectionConfigKeys(form.config, form.connectionType))
 
 /** 加载当前用户可见的脱敏连接。 */
-async function load() { rows.value = (await http.get('/workflow/connections')).data || [] }
+async function load() {
+  const [connections, components] = await Promise.all([
+    http.get('/workflow/connections'), http.get('/workflow/plugin-component-options')
+  ])
+  rows.value = connections.data || []; pluginComponents.value = components.data || []
+}
 /** 打开连接编辑器并保留服务端脱敏占位符。 */
 function open(row) {
   const connectionType = row?.connectionType || 'MYSQL'
@@ -108,10 +122,14 @@ function open(row) {
   clearDrafts(); visible.value = true
 }
 /** 切换类型时使用安全默认配置。 */
-function resetConfig(type) { form.config = createConnectionConfig(type); clearDrafts() }
+function resetConfig(type) { form.config = type === 'PLUGIN' ? { pluginComponentId: null, credentials: {} } : createConnectionConfig(type); clearDrafts() }
 /** 创建或更新结构化连接配置。 */
 async function save() {
-  if (!form.code.trim() || !form.name.trim()) return ElMessage.warning(t('workflowConnections.required'))
+  if (!form.code.trim() || !form.name.trim() || form.connectionType === 'PLUGIN' && !selectedPluginComponent.value) return ElMessage.warning(t('workflowConnections.required'))
+  if (form.connectionType === 'PLUGIN' && configFields.value.some(field => field.required
+    && (configFieldValue(field.key) === undefined || configFieldValue(field.key) === null || String(configFieldValue(field.key)).trim() === ''))) {
+    return ElMessage.warning(t('workflowConnections.required'))
+  }
   const command = { code: form.code, name: form.name, connectionType: form.connectionType, config: cloneConnectionConfig(form.config), enabled: form.enabled }
   try {
     if (form.id) await http.put(`/workflow/connections/${form.id}`, command)
@@ -121,16 +139,66 @@ async function save() {
 }
 /** 执行无副作用连接测试。 */
 async function test(row) { try { const { data } = await http.post(`/workflow/connections/${row.id}/test`); await load(); data.vectorSupported === false && ['POSTGRESQL','QDRANT','MILVUS','ELASTICSEARCH'].includes(row.connectionType) ? ElMessage.warning(t('workflowConnections.vectorUnsupported')) : ElMessage.success(t('workflowConnections.connected')) } catch (error) { showHttpError(error, 'workflowConnections.testFailed') } }
+/** 启动插件提供的 OAuth 生命周期并跳转到经过后端校验的授权地址。 */
+async function oauth(row) {
+  try {
+    const redirectUri = `${window.location.origin}${window.location.pathname}`
+    const { data } = await http.post(`/workflow/connections/${row.id}/oauth/authorize`, { redirectUri })
+    window.location.assign(data.authorizationUrl)
+  } catch (error) { showHttpError(error, 'workflowConnections.oauthFailed') }
+}
+/** 在连接页面消费授权方回传的一次性 code/state，并清理浏览器地址。 */
+async function completeOAuthCallback() {
+  const query = new URLSearchParams(window.location.search)
+  const code = query.get('code'), state = query.get('state')
+  if (!code || !state) return
+  try {
+    await http.post('/workflow/plugin-oauth/callback', { code, state })
+    ElMessage.success(t('workflowConnections.oauthConnected'))
+  } catch (error) { showHttpError(error, 'workflowConnections.oauthFailed') }
+  finally { window.history.replaceState({}, '', window.location.pathname) }
+}
 /** 将向量能力状态映射为稳定标签颜色。 */
 function vectorStatusType(status) { return status === 'SUPPORTED' ? 'success' : status === 'UNSUPPORTED' ? 'danger' : 'info' }
 /** 删除未被工作流引用的连接。 */
 async function remove(row) { try { await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm')); await http.delete(`/workflow/connections/${row.id}`); await load() } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) } }
 /** 返回当前语言下的连接字段名称。 */
-function fieldLabel(key) { const path = `workflowConnections.fields.${key}`; return te(path) ? t(path) : key }
+function fieldLabel(key) {
+  const dynamic = configFields.value.find(field => field.key === key)?.label
+  if (dynamic) return dynamic
+  const path = `workflowConnections.fields.${key}`; return te(path) ? t(path) : key
+}
 /** 返回当前语言下的连接字段说明。 */
-function fieldDescription(key) { const path = `workflowConnections.fieldDescriptions.${key}`; return te(path) ? t(path) : key }
+function fieldDescription(key) {
+  const dynamic = configFields.value.find(field => field.key === key)?.description
+  if (dynamic) return dynamic
+  const path = `workflowConnections.fieldDescriptions.${key}`; return te(path) ? t(path) : key
+}
 /** 更新一个标准或自定义配置字段。 */
-function setConfigField(key, value) { form.config = { ...form.config, [key]: value } }
+function setConfigField(key, value) {
+  form.config = form.connectionType === 'PLUGIN'
+    ? { ...form.config, credentials: { ...(form.config.credentials || {}), [key]: value } }
+    : { ...form.config, [key]: value }
+}
+/** 返回普通连接字段或插件嵌套凭据值。 */
+function configFieldValue(key) { return form.connectionType === 'PLUGIN' ? form.config.credentials?.[key] : form.config[key] }
+/** 选择插件组件并按凭据 Schema 重置非敏感默认值。 */
+function selectPluginComponent(id) {
+  const component = pluginComponents.value.find(item => item.id === Number(id))
+  const credentials = Object.fromEntries((component?.credentialSchema || []).filter(item => item.default !== null && item.default !== undefined)
+    .map(item => [item.name, item.default]))
+  form.config = { pluginComponentId: Number(id), credentials }
+}
+/** 把插件凭据 Schema 转换为受控连接字段。 */
+function pluginCredentialFields(component) {
+  return (component?.credentialSchema || []).filter(item => String(item.type || '').toLowerCase() !== 'hidden')
+    .map(item => ({ key: item.name, label: item.label || item.name, required: Boolean(item.required),
+    description: item.description || '', editor: item.secret ? 'password' : item.type === 'boolean' ? 'boolean'
+      : ['select', 'options'].includes(String(item.type || '').toLowerCase()) ? 'select' : 'text',
+    options: (item.options || []).map(option => option && typeof option === 'object' ? option.value : option) }))
+}
+/** 生成包含来源、包和版本的插件组件标签。 */
+function pluginComponentLabel(component) { return `${component.name} · ${component.source}/${component.packageKey}@${component.packageVersion}` }
 /** 返回对象型配置的键值列表。 */
 function mapEntries(key) { return Object.entries(form.config[key] || {}) }
 /** 更新对象型配置中的值。 */
@@ -157,7 +225,7 @@ function removeCustomField(key) { const next = { ...form.config }; delete next[k
 function clearDrafts() { mapDraft.key = ''; mapDraft.value = ''; mapError.value = ''; customKey.value = ''; customType.value = 'string'; customError.value = '' }
 /** 创建空连接表单。 */
 function emptyForm() { return { id: null, code: '', name: '', connectionType: 'MYSQL', config: createConnectionConfig('MYSQL'), enabled: true } }
-onMounted(load)
+onMounted(async () => { await completeOAuthCallback(); await load() })
 </script>
 
 <style scoped>
@@ -181,6 +249,7 @@ onMounted(load)
 .connection-custom-head strong { overflow-wrap: anywhere; }
 .connection-custom-add { display: grid; grid-template-columns: minmax(160px, 1fr) 150px auto; gap: 8px; }
 .connection-error { color: var(--el-color-danger); }
+.connection-required { color: var(--el-color-danger); }
 .vector-detail { display: block; margin-top: 4px; color: var(--app-muted); }
 @media (max-width: 720px) {
   .connection-grid, .connection-config-grid, .connection-key-value, .connection-custom-add { grid-template-columns: 1fr; }

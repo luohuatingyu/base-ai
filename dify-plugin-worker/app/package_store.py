@@ -6,8 +6,11 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
+import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -26,6 +29,9 @@ TYPE_KEYS = {
     "extensions": "EXTENSION",
 }
 
+REQUIREMENT_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9_,.-]+\])?(.*)$")
+FORBIDDEN_REQUIREMENTS = {"dify-plugin", "dify_plugin"}
+
 
 class PackageError(ValueError):
     """表示插件包未通过安全或结构校验。"""
@@ -40,6 +46,8 @@ class PackageStore:
         self.maximum_archive = int(os.getenv("PLUGIN_MAX_PACKAGE_BYTES", str(5 * 1024 * 1024)))
         self.maximum_unpacked = int(os.getenv("PLUGIN_MAX_UNPACKED_BYTES", str(20 * 1024 * 1024)))
         self.maximum_files = int(os.getenv("PLUGIN_MAX_PACKAGE_FILES", "512"))
+        self.install_timeout = int(os.getenv("PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS", "180"))
+        self.probe_timeout = int(os.getenv("PLUGIN_PROBE_TIMEOUT_SECONDS", "20"))
         self.root.mkdir(parents=True, exist_ok=True)
 
     def install(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -61,7 +69,8 @@ class PackageStore:
         with tempfile.TemporaryDirectory(prefix="dify-plugin-", dir=self.root) as temporary:
             extracted = Path(temporary)
             self._extract(archive, extracted)
-            metadata = self._metadata(extracted, request, fingerprint)
+            dependency_error = self._install_dependencies(extracted)
+            metadata = self._metadata(extracted, request, fingerprint, dependency_error)
             metadata_file = extracted / ".base-ai-metadata.json"
             metadata_file.write_text(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
             os.replace(extracted, target)
@@ -107,7 +116,8 @@ class PackageStore:
             raise PackageError("ARCHIVE_FORMAT_INVALID") from exception
         archive_file.unlink(missing_ok=True)
 
-    def _metadata(self, root: Path, request: dict[str, Any], fingerprint: str) -> dict[str, Any]:
+    def _metadata(self, root: Path, request: dict[str, Any], fingerprint: str,
+                  dependency_error: str) -> dict[str, Any]:
         """把多类 Dify 声明转换为统一组件模型。"""
         manifest = self._yaml(root, "manifest.yaml")
         plugins = manifest.get("plugins") if isinstance(manifest.get("plugins"), dict) else {}
@@ -117,7 +127,7 @@ class PackageStore:
             if not isinstance(references, list):
                 continue
             for reference in references:
-                components.extend(self._components(root, str(reference), component_type))
+                components.extend(self._components(root, str(reference), component_type, dependency_error))
         if not components:
             raise PackageError("PLUGIN_COMPONENTS_MISSING")
         return {
@@ -129,26 +139,34 @@ class PackageStore:
             "components": components,
         }
 
-    def _components(self, root: Path, reference: str, component_type: str) -> list[dict[str, Any]]:
+    def _components(self, root: Path, reference: str, component_type: str,
+                    dependency_error: str) -> list[dict[str, Any]]:
         """解析 Provider 声明及其子组件声明。"""
         provider = self._yaml(root, reference)
-        credential_schema = self._fields(provider.get("credentials_for_provider", {}))
+        credential_value = provider.get("credentials_for_provider", {})
+        provider_schema = provider.get("provider_credential_schema")
+        if not credential_value and isinstance(provider_schema, dict):
+            credential_value = provider_schema.get("credential_form_schemas", [])
+        credential_schema = self._fields(credential_value)
         child_key = {
             "TOOL": "tools", "AGENT_STRATEGY": "strategies", "DATASOURCE": "datasources",
             "TRIGGER": "triggers", "EXTENSION": "endpoints",
         }.get(component_type)
         children = provider.get(child_key, []) if child_key else []
         if isinstance(children, list) and children:
-            return [self._component(root, str(child), component_type, credential_schema) for child in children]
-        return [self._component_from_data(root, reference, provider, component_type, credential_schema)]
+            return [self._component(root, str(child), component_type, credential_schema, dependency_error)
+                    for child in children]
+        return [self._component_from_data(root, reference, provider, component_type, credential_schema,
+                                          dependency_error)]
 
     def _component(self, root: Path, reference: str, component_type: str,
-                   credential_schema: list[dict[str, Any]]) -> dict[str, Any]:
+                   credential_schema: list[dict[str, Any]], dependency_error: str) -> dict[str, Any]:
         """解析单个组件 YAML。"""
-        return self._component_from_data(root, reference, self._yaml(root, reference), component_type, credential_schema)
+        return self._component_from_data(root, reference, self._yaml(root, reference), component_type,
+                                         credential_schema, dependency_error)
 
     def _component_from_data(self, root: Path, reference: str, data: dict[str, Any], component_type: str,
-                             credential_schema: list[dict[str, Any]]) -> dict[str, Any]:
+                             credential_schema: list[dict[str, Any]], dependency_error: str) -> dict[str, Any]:
         """规范化组件身份、参数 Schema 和 Python 源文件。"""
         identity = data.get("identity") if isinstance(data.get("identity"), dict) else {}
         source = self._source(data)
@@ -157,6 +175,7 @@ class PackageStore:
         description = data.get("description") if isinstance(data.get("description"), dict) else {}
         human = description.get("human") if isinstance(description, dict) else description
         source_exists = bool(source) and (root / source).is_file()
+        probe_error = self._probe(root, source, component_type) if source_exists and not dependency_error else dependency_error
         return {
             "externalId": name,
             "name": label,
@@ -165,9 +184,99 @@ class PackageStore:
             "schema": self._fields(data.get("parameters", [])),
             "credentialSchema": credential_schema,
             "sourcePath": source,
-            "compatibilityStatus": "SUPPORTED" if source_exists else "PARTIAL",
-            "compatibilityReason": "" if source_exists else "PYTHON_SOURCE_MISSING",
+            "compatibilityStatus": "SUPPORTED" if source_exists and not probe_error else "PARTIAL",
+            "compatibilityReason": "" if source_exists and not probe_error
+            else probe_error or "PYTHON_SOURCE_MISSING",
         }
+
+    def _install_dependencies(self, root: Path) -> str:
+        """安装插件声明的第三方 Python 依赖，同时排除 Dify SDK 和非注册表来源。"""
+        requirements = root / "requirements.txt"
+        if not requirements.is_file():
+            return ""
+        try:
+            lines = self._safe_requirements(requirements.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, PackageError) as exception:
+            return str(exception)
+        if not lines:
+            return ""
+        sanitized = root / ".base-ai-requirements.txt"
+        sanitized.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        dependencies = root / ".deps"
+        environment = {
+            "PATH": os.getenv("PATH", ""), "HOME": "/data/tmp", "TMPDIR": "/data/tmp",
+            "PIP_INDEX_URL": os.getenv("PIP_INDEX_URL", "https://pypi.org/simple"),
+            "PIP_TRUSTED_HOST": os.getenv("PIP_TRUSTED_HOST", ""),
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8",
+        }
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--no-input", "--no-compile", "--target",
+                 str(dependencies), "-r", str(sanitized)], capture_output=True, text=True,
+                timeout=max(10, min(self.install_timeout, 600)), env=environment, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return "DEPENDENCY_INSTALL_TIMEOUT"
+        finally:
+            sanitized.unlink(missing_ok=True)
+        if result.returncode != 0:
+            return "DEPENDENCY_INSTALL_FAILED"
+        self._remove_forbidden_sdk(dependencies)
+        return ""
+
+    def _safe_requirements(self, content: str) -> list[str]:
+        """接受 PyPI 名称与版本约束，拒绝 URL、路径、选项和 Dify SDK。"""
+        if len(content.encode("utf-8")) > 128 * 1024:
+            raise PackageError("REQUIREMENTS_SIZE_INVALID")
+        result: list[str] = []
+        for raw in content.splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if line.startswith("-") or " @ " in line or "://" in line or line.startswith((".", "/")):
+                raise PackageError("DEPENDENCY_SOURCE_FORBIDDEN")
+            requirement = line.split(";", 1)[0].strip()
+            matched = REQUIREMENT_NAME.fullmatch(requirement)
+            if not matched:
+                raise PackageError("DEPENDENCY_DECLARATION_INVALID")
+            name = matched.group(1).lower().replace("_", "-")
+            if name in {item.replace("_", "-") for item in FORBIDDEN_REQUIREMENTS}:
+                continue
+            result.append(line)
+            if len(result) > 128:
+                raise PackageError("DEPENDENCY_COUNT_INVALID")
+        return result
+
+    def _remove_forbidden_sdk(self, dependencies: Path) -> None:
+        """防止传递依赖把被禁止的 Dify SDK 带入插件运行目录。"""
+        for child in dependencies.iterdir() if dependencies.exists() else []:
+            normalized = child.name.lower().replace("_", "-")
+            if normalized == "dify-plugin" or normalized.startswith("dify-plugin-"):
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink(missing_ok=True)
+
+    def _probe(self, root: Path, source: str, component_type: str) -> str:
+        """在短生命周期子进程中实际导入并构造组件，避免仅凭文件存在误报。"""
+        environment = {
+            "PATH": os.getenv("PATH", ""), "PYTHONPATH": str(Path(__file__).resolve().parent.parent),
+            "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1", "LANG": "C.UTF-8",
+        }
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "app.probe_child", str(root), source, component_type], capture_output=True, text=True,
+                timeout=max(1, min(self.probe_timeout, 60)), env=environment, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return "PLUGIN_PROBE_TIMEOUT"
+        if result.returncode == 0:
+            return ""
+        try:
+            error = str(json.loads(result.stdout).get("error", "PLUGIN_IMPORT_FAILED"))
+        except Exception:
+            error = "PLUGIN_IMPORT_FAILED"
+        return error[:300]
 
     def _yaml(self, root: Path, reference: str) -> dict[str, Any]:
         """安全读取包内 YAML 映射。"""
@@ -188,7 +297,7 @@ class PackageStore:
         fields = []
         for key, raw in entries:
             item = raw if isinstance(raw, dict) else {}
-            name = str(item.get("name") or key)
+            name = str(item.get("name") or item.get("variable") or key)
             fields.append({
                 "name": name,
                 "label": self._localized(item.get("label"), name),

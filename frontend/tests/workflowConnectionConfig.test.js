@@ -14,8 +14,8 @@ import {
 
 const viewSource = readFileSync(new URL('../src/views/WorkflowConnectionsView.vue', import.meta.url), 'utf8')
 
-test('十一类连接均提供类型化标准字段和安全默认值', () => {
-  assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH'])
+test('十二类连接均提供类型化标准字段和安全默认值', () => {
+  assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH', 'PLUGIN'])
   assert.deepEqual(connectionConfigFields('MYSQL').map(field => field.key), ['url', 'username', 'password', 'allowWrite'])
   assert.deepEqual(connectionConfigFields('WEBHOOK').map(field => field.key), ['url', 'method', 'testMethod', 'headers', 'secret'])
   assert.deepEqual(connectionConfigFields('TAVILY').map(field => field.key), ['apiKey'])
@@ -25,6 +25,7 @@ test('十一类连接均提供类型化标准字段和安全默认值', () => {
   assert.equal(connectionConfigDefaults('MYSQL').allowWrite, false)
   assert.equal(connectionConfigDefaults('S3').pathStyle, true)
   assert.deepEqual(connectionConfigDefaults('WEBHOOK').headers, {})
+  assert.deepEqual(connectionConfigFields('PLUGIN'), [])
 })
 
 test('编辑配置时保留脱敏密钥、嵌套值和未知自定义字段', () => {
@@ -48,6 +49,12 @@ test('连接页面只使用卡片及键值输入并由结构化配置直接保�
   assert.doesNotMatch(viewSource, /configText|JSON\.parse|type="textarea"/)
   assert.doesNotMatch(zhCN.workflowConnections.config, /JSON/i)
   assert.doesNotMatch(enUS.workflowConnections.config, /JSON/i)
+  assert.match(viewSource, /plugin-component-options/)
+  assert.match(viewSource, /pluginCredentialFields/)
+  assert.match(viewSource, /field\.required/)
+  assert.match(viewSource, /configFields\.value\.some\(field => field\.required/)
+  assert.match(viewSource, /oauth\/authorize/)
+  assert.match(viewSource, /plugin-oauth\/callback/)
 })
 
 test('中英文资源覆盖标准卡片、自定义卡片和校验提示', () => {

@@ -38,6 +38,8 @@ final class WorkflowNodeConfigDefaults {
                 putIfAbsent(config, "searchDepth", "basic"); putIfAbsent(config, "maxResults", 5);
                 putIfAbsent(config, "extractDepth", "basic"); putIfAbsent(config, "format", "markdown");
             }
+            case "PLUGIN_ACTION", "PLUGIN_TRIGGER", "PLUGIN_MODEL", "PLUGIN_DATASOURCE", "PLUGIN_AGENT_STRATEGY", "PLUGIN_EXTENSION" ->
+                putIfAbsentObject(config, "parameters");
             default -> { }
         }
         return config;

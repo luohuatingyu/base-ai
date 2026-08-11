@@ -19,6 +19,9 @@ def load_component(root: Path, source_path: str) -> PluginComponent:
         raise ValueError("PYTHON_SOURCE_MISSING")
     install_modules()
     sys.path.insert(0, str(root))
+    dependencies = root / ".deps"
+    if dependencies.is_dir():
+        sys.path.insert(1, str(dependencies))
     specification = importlib.util.spec_from_file_location("base_ai_plugin_component", source)
     if specification is None or specification.loader is None:
         raise ValueError("PYTHON_SOURCE_INVALID")
@@ -60,6 +63,7 @@ def invoke_method(component: PluginComponent, operation: str, payload: dict[str,
         "user_id": str(context.get("userId", "")), "context": context,
         "event": payload.get("event", {}), "payload": payload.get("event", {}),
         "redirect_uri": payload.get("redirectUri", ""), "code": payload.get("code", ""),
+        "state": payload.get("state", ""), "code_verifier": payload.get("codeVerifier", ""),
     }
     signature = inspect.signature(method)
     kwargs = {name: available[name] for name in signature.parameters if name in available}

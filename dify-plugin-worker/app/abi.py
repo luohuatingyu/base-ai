@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import importlib.abc
+import importlib.util
 import sys
 import types
 from dataclasses import dataclass
@@ -140,6 +142,25 @@ class DynamicModule(types.ModuleType):
         return value
 
 
+class DifyModuleFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """为插件导入的任意 dify_plugin 子模块提供受控惰性 ABI 模块。"""
+
+    def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> Any:
+        """仅接管被禁止安装的 dify_plugin 命名空间。"""
+        if fullname.startswith("dify_plugin.") and fullname not in sys.modules:
+            return importlib.util.spec_from_loader(fullname, self, is_package=True)
+        return None
+
+    def create_module(self, spec: Any) -> DynamicModule:
+        """创建具备惰性符号解析的模块。"""
+        return DynamicModule(spec.name)
+
+    def exec_module(self, module: DynamicModule) -> None:
+        """标记模块为包，使更深层子模块仍可被解析。"""
+        module.__package__ = module.__name__
+        module.__path__ = []
+
+
 ABI_EXPORTS = {
     "Plugin": Plugin,
     "DifyPluginEnv": DifyPluginEnv,
@@ -156,6 +177,8 @@ ABI_EXPORTS = {
 
 def install_modules() -> None:
     """向当前子进程注册自研 dify_plugin 模块树。"""
+    if not any(isinstance(finder, DifyModuleFinder) for finder in sys.meta_path):
+        sys.meta_path.insert(0, DifyModuleFinder())
     paths = [
         "dify_plugin", "dify_plugin.entities", "dify_plugin.entities.tool", "dify_plugin.entities.model",
         "dify_plugin.entities.model.llm", "dify_plugin.entities.model.text_embedding",

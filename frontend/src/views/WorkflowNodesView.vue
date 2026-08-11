@@ -97,7 +97,8 @@
             </el-checkbox>
           </div>
           <div class="marketplace-card-footer">
-            <el-tag v-if="item.compatibilityLevel === 'NATIVE_SUBSET'" type="warning" size="small">{{ t('workflowNodes.nativeSubset') }}</el-tag>
+          <el-tag v-if="item.compatibilityLevel === 'NATIVE_SUBSET'" type="warning" size="small">{{ t('workflowNodes.nativeSubset') }}</el-tag>
+          <el-tag v-else-if="item.compatibilityLevel === 'PROBE_REQUIRED'" type="info" size="small">{{ t('workflowNodes.probeRequired') }}</el-tag>
             <small v-if="!item.compatible">{{ t(`workflowNodes.incompatibility.${item.incompatibilityReason}`) }}</small>
           </div>
         </article>

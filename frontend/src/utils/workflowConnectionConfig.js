@@ -69,7 +69,8 @@ export const CONNECTION_CONFIG_FIELDS = {
     field('password', 'password', ''),
     field('apiKey', 'password', ''),
     field('product', 'text', 'ELASTICSEARCH')
-  ]
+  ],
+  PLUGIN: []
 }
 
 export const CONNECTION_TYPES = Object.keys(CONNECTION_CONFIG_FIELDS)
@@ -98,6 +99,9 @@ export function createConnectionConfig(connectionType, value = {}) {
 /** 列出不属于当前连接类型标准字段的自定义配置键。 */
 export function extraConnectionConfigKeys(config, connectionType) {
   const standardKeys = new Set(connectionConfigFields(connectionType).map(item => item.key))
+  if (String(connectionType || '').toUpperCase() === 'PLUGIN') {
+    standardKeys.add('pluginComponentId'); standardKeys.add('credentials')
+  }
   return Object.keys(config || {}).filter(key => !standardKeys.has(key))
 }
 

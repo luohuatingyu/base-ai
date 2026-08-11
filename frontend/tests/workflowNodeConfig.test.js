@@ -51,6 +51,27 @@ test('全部原生节点都有可视化配置定义', () => {
     .some(field => ['modelId', 'routeId', 'connectionId'].includes(field.key) && field.editor === 'number'), false)
 })
 
+test('插件节点按已固定 Schema 生成动态表单、条件展示和发布校验', () => {
+  const config = {
+    pluginComponentId: 7, packageFingerprint: 'a'.repeat(64), componentExternalId: 'search',
+    parameters: { mode: 'advanced', query: '' }, credentialSchema: [{ name: 'apiKey', required: true }],
+    parameterSchema: [
+      { name: 'mode', label: 'Mode', type: 'options', required: true, options: [{ value: 'basic' }, { value: 'advanced' }] },
+      { name: 'query', label: 'Query', type: 'string', required: true, displayOptions: { show: { mode: ['advanced'] } } },
+      { name: 'limit', label: 'Limit', type: 'integer', required: true, displayOptions: { hide: { mode: ['basic'] } } }
+    ]
+  }
+  const fields = nodeConfigFields('PLUGIN_ACTION', config)
+  assert.deepEqual(fields.map(field => field.key), ['connectionId', 'parameters.mode', 'parameters.query', 'parameters.limit'])
+  assert.equal(fields[1].editor, 'select')
+  assert.equal(fields[3].editor, 'number')
+  assert.equal(nodeConfigFieldApplicable('PLUGIN_ACTION', 'parameters.query', config), true)
+  assert.deepEqual(missingNodeConfigRequirements('PLUGIN_ACTION', config), ['parameters.query', 'parameters.limit', 'connectionId'])
+  config.parameters.mode = 'basic'
+  assert.equal(nodeConfigFieldApplicable('PLUGIN_ACTION', 'parameters.limit', config), false)
+  assert.deepEqual(missingNodeConfigRequirements('PLUGIN_ACTION', config), ['connectionId'])
+})
+
 test('Agent 模型下拉按动态模型类型过滤并生成可识别标签', () => {
   const options = [
     { id: 1, name: 'Text', modelName: 'text-v1', providerName: 'OpenAI', supportedModelTypes: ['text_model'] },

@@ -16,12 +16,18 @@ class WorkflowMarketplaceClientsTest {
     @Test
     void parsesRecordedN8nCatalogContract() throws Exception {
         var result = clients.parseN8n(objectMapper.readTree("""
-            [{"id":"n8n-nodes-base.postgres","label":"Postgres"}]
+            {"data":[{"attributes":{"name":"n8n-nodes-example.action","displayName":"Example",
+              "description":"Run example","packageName":"n8n-nodes-example","npmVersion":"1.2.3",
+              "checksum":"abc","authorName":"vendor","isOfficialNode":true}}],
+              "meta":{"pagination":{"total":1}}}
             """));
 
         assertEquals(1, result.total());
-        assertEquals("n8n-nodes-base.postgres", result.items().get(0).externalId());
-        assertEquals("Postgres", result.items().get(0).name());
+        assertEquals("n8n-nodes-example.action", result.items().get(0).externalId());
+        assertEquals("Example", result.items().get(0).name());
+        assertEquals("1.2.3", result.items().get(0).version());
+        assertEquals("verified", result.items().get(0).trustLevel());
+        assertEquals("n8n-nodes-example", result.items().get(0).raw().path("packageName").asText());
     }
 
     /** 录制的 Dify 插件字段必须保留版本、发布组织与插件级总数。 */

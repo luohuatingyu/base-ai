@@ -39,7 +39,8 @@ async function invoke(request) {
   const installed = await store.metadata(String(request.fingerprint || ''))
   const component = installed.metadata.components.find(item => item.externalId === request.componentId)
   if (!component || component.compatibilityStatus === 'UNSUPPORTED') throw new PackageError('PLUGIN_COMPONENT_UNSUPPORTED')
-  const payload = JSON.stringify({ ...request, root: installed.root, sourcePath: component.sourcePath, exportName: component.exportName })
+  const payload = JSON.stringify({ ...request, root: installed.root, sourcePath: component.sourcePath,
+    exportName: component.exportName, credentialAuthentications: component.credentialAuthentications || [] })
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [resolve(root, 'invoke-child.mjs')], {
       env: { PATH: process.env.PATH || '', NODE_ENV: 'production', LANG: 'C.UTF-8' }, stdio: ['pipe', 'pipe', 'pipe'],

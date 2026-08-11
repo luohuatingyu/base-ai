@@ -6,6 +6,9 @@ import os
 import tempfile
 import unittest
 import zipfile
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 from app.abi import Runtime, Tool, normalize_output
@@ -44,12 +47,93 @@ class PackageStoreTest(unittest.TestCase):
         entries = {"manifest.yaml": "plugins:\n" + "".join(f"  {key}: [{value}]\n" for key, value in plugins.items())}
         for index, (key, reference) in enumerate(plugins.items()):
             entries[reference] = f"identity:\n  name: {key}\n  label:\n    en_US: {key}\nextra:\n  python:\n    source: components/c{index}.py\nparameters:\n  - name: value\n    type: string\n    required: true\n"
-            entries[f"components/c{index}.py"] = "class Component:\n    pass\n"
+            method = "_subscribe" if key == "triggers" else "_get_schema" if key == "endpoints" else "_invoke"
+            entries[f"components/c{index}.py"] = (
+                "from dify_plugin import Tool\nclass Component(Tool):\n"
+                f"    def {method}(self, parameters=None, tool_parameters=None, **kwargs):\n"
+                "        return {'ok': True}\n")
         raw = archive(entries)
         result = self.store.install({"packageId": "fixture/all", "version": "1", "archiveBase64": base64.b64encode(raw).decode()})
         self.assertEqual({"TOOL", "MODEL", "AGENT_STRATEGY", "DATASOURCE", "TRIGGER", "EXTENSION"},
                          {item["componentType"] for item in result["components"]})
         self.assertTrue(all(item["compatibilityStatus"] == "SUPPORTED" for item in result["components"]))
+        root, _ = self.store.metadata(result["fingerprint"])
+        for item in result["components"]:
+            operation = "subscribe" if item["componentType"] == "TRIGGER" else "schema" if item["componentType"] == "EXTENSION" else "invoke"
+            payload = {"root": str(root), "sourcePath": item["sourcePath"], "operation": operation,
+                       "parameters": {}, "credentials": {}, "context": {}}
+            invoked = subprocess.run([sys.executable, "-m", "app.invoke_child"], input=json.dumps(payload),
+                                     text=True, capture_output=True, check=False)
+            self.assertEqual(0, invoked.returncode, invoked.stdout)
+            self.assertTrue(json.loads(invoked.stdout)["success"])
+
+    def test_marks_component_partial_when_source_cannot_load(self) -> None:
+        """组件依赖缺失时必须通过真实导入探测暴露为部分兼容。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": "identity:\n  name: broken\nextra:\n  python:\n    source: broken.py\n",
+            "broken.py": "import dependency_that_does_not_exist\nfrom dify_plugin import Tool\nclass Broken(Tool):\n    pass\n",
+        })
+        result = self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
+        self.assertEqual("PARTIAL", result["components"][0]["compatibilityStatus"])
+        self.assertIn("dependency_that_does_not_exist", result["components"][0]["compatibilityReason"])
+
+    def test_filters_dify_sdk_and_rejects_external_dependency_sources(self) -> None:
+        """依赖清单不得安装 Dify SDK，也不得绕过 PyPI 使用任意代码源。"""
+        self.assertEqual(["requests==2.32.5"], self.store._safe_requirements(
+            "dify_plugin~=0.6.0\nrequests==2.32.5\n"))
+        with self.assertRaisesRegex(PackageError, "DEPENDENCY_SOURCE_FORBIDDEN"):
+            self.store._safe_requirements("sample @ https://example.com/sample.whl\n")
+
+    def test_reads_current_provider_credential_schema(self) -> None:
+        """当前 Dify Provider 凭据声明中的 variable 必须成为动态连接字段名。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": """
+identity:
+  name: provider
+provider_credential_schema:
+  credential_form_schemas:
+    - variable: api_key
+      label:
+        en_US: API Key
+      type: secret-input
+      required: true
+extra:
+  python:
+    source: tool.py
+""",
+            "tool.py": "from dify_plugin import Tool\nclass ToolImpl(Tool):\n    def _invoke(self, tool_parameters):\n        return {}\n",
+        })
+        result = self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
+        self.assertEqual("api_key", result["components"][0]["credentialSchema"][0]["name"])
+        self.assertTrue(result["components"][0]["credentialSchema"][0]["secret"])
+
+    def test_invokes_extension_oauth_lifecycle_without_dify_sdk(self) -> None:
+        """扩展组件应通过自研 ABI 接收 state、PKCE 和授权码。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  endpoints: [extension.yaml]\n",
+            "extension.yaml": "identity:\n  name: oauth\nextra:\n  python:\n    source: oauth.py\n",
+            "oauth.py": """
+from dify_plugin import Endpoint
+class OAuth(Endpoint):
+    def _get_authorization_url(self, redirect_uri, state, code_verifier):
+        return {'authorizationUrl': 'https://accounts.example.com/auth?state=' + state}
+    def _get_credentials(self, code, code_verifier):
+        return {'credentials': {'accessToken': code + ':' + code_verifier}}
+""",
+        })
+        result = self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
+        item = result["components"][0]
+        root, _ = self.store.metadata(result["fingerprint"])
+        for operation in ("oauth_authorize", "oauth_exchange"):
+            payload = {"root": str(root), "sourcePath": item["sourcePath"], "operation": operation,
+                       "parameters": {}, "credentials": {}, "context": {}, "redirectUri": "https://base.test/cb",
+                       "state": "state", "codeVerifier": "verifier", "code": "code"}
+            invoked = subprocess.run([sys.executable, "-m", "app.invoke_child"], input=json.dumps(payload),
+                                     text=True, capture_output=True, check=False)
+            self.assertEqual(0, invoked.returncode, invoked.stdout)
+            self.assertTrue(json.loads(invoked.stdout)["success"])
 
     def test_rejects_path_traversal_and_fingerprint_mismatch(self) -> None:
         """路径穿越和摘要不匹配必须在落盘前失败。"""
@@ -69,6 +153,16 @@ class PackageStoreTest(unittest.TestCase):
         self.assertEqual("ok", result[0]["value"])
         self.assertEqual(1, result[1]["value"]["count"])
         self.assertEqual("78", result[2]["value"]["hex"])
+
+    def test_supports_unlisted_dify_sdk_import_paths_with_local_abi(self) -> None:
+        """插件新增的 SDK 子模块路径应由本地惰性 ABI 接管而非安装官方 SDK。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": "identity:\n  name: nested\nextra:\n  python:\n    source: nested.py\n",
+            "nested.py": "from dify_plugin.future.deep.module import FutureType\nfrom dify_plugin import Tool\nclass Nested(Tool):\n    def _invoke(self, tool_parameters):\n        return FutureType()\n",
+        })
+        result = self.store.install({"archiveBase64": base64.b64encode(raw).decode()})
+        self.assertEqual("SUPPORTED", result["components"][0]["compatibilityStatus"])
 
 
 if __name__ == "__main__":

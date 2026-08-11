@@ -253,8 +253,17 @@ class WorkflowNodeConfigValidatorTest {
             Map.entry("KAFKA_TRIGGER", "{\"connectionId\":1,\"topic\":\"events\"}"),
             Map.entry("RABBITMQ_PUBLISH", "{\"connectionId\":1,\"destinationMode\":\"DEFAULT_EXCHANGE\",\"routingKey\":\"events\",\"value\":null}"),
             Map.entry("RABBITMQ_TRIGGER", "{\"connectionId\":1,\"queue\":\"events\"}"),
-            Map.entry("TAVILY_TOOL", "{\"connectionId\":1,\"operation\":\"SEARCH\",\"query\":\"hello\",\"maxResults\":20}")
+            Map.entry("TAVILY_TOOL", "{\"connectionId\":1,\"operation\":\"SEARCH\",\"query\":\"hello\",\"maxResults\":20}"),
+            Map.entry("PLUGIN_ACTION", pluginConfig()), Map.entry("PLUGIN_TRIGGER", pluginConfig()),
+            Map.entry("PLUGIN_MODEL", pluginConfig()), Map.entry("PLUGIN_DATASOURCE", pluginConfig()),
+            Map.entry("PLUGIN_AGENT_STRATEGY", pluginConfig()), Map.entry("PLUGIN_EXTENSION", pluginConfig())
         );
         return configurations.entrySet().stream().map(entry -> Arguments.of(entry.getKey(), entry.getValue()));
+    }
+
+    /** 返回通用插件节点的最小合法配置。 */
+    private static String pluginConfig() {
+        return "{\"pluginComponentId\":1,\"packageFingerprint\":\"" + "a".repeat(64)
+            + "\",\"componentExternalId\":\"action\",\"parameters\":{}}";
     }
 }

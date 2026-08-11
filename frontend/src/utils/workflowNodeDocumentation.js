@@ -7,7 +7,8 @@ export const DOCUMENTED_WORKFLOW_NODE_TYPES = Object.freeze([
   'SORT', 'AGGREGATE', 'CSV', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR', 'STRUCTURED_OUTPUT',
   'DOCUMENT_EXTRACTOR', 'WEBHOOK_TRIGGER', 'SCHEDULE_TRIGGER', 'EMAIL_SEND', 'IM_NOTIFY', 'SQL_QUERY',
   'REDIS_COMMAND', 'S3_OBJECT', 'KAFKA_PUBLISH', 'KAFKA_TRIGGER', 'RABBITMQ_PUBLISH', 'RABBITMQ_TRIGGER',
-  'TAVILY_TOOL', 'KNOWLEDGE_RETRIEVAL', 'KNOWLEDGE_UPSERT'
+  'TAVILY_TOOL', 'KNOWLEDGE_RETRIEVAL', 'KNOWLEDGE_UPSERT', 'PLUGIN_ACTION', 'PLUGIN_TRIGGER',
+  'PLUGIN_MODEL', 'PLUGIN_DATASOURCE', 'PLUGIN_AGENT_STRATEGY', 'PLUGIN_EXTENSION'
 ])
 
 /** 为每种原生节点提供可执行配置示例中的关键业务参数。 */
@@ -48,7 +49,10 @@ const WORKFLOW_NODE_EXAMPLE_OVERRIDES = Object.freeze({
   KAFKA_TRIGGER: { connectionId: 1, topic: 'order-events', groupId: 'workflow-consumer' },
   RABBITMQ_PUBLISH: { connectionId: 1, destinationMode: 'EXCHANGE', exchange: 'order.events', routingKey: 'order.updated', value: '{{input}}' },
   RABBITMQ_TRIGGER: { connectionId: 1, queue: 'order.workflow', exchange: 'order.events', routingKey: 'order.created' },
-  TAVILY_TOOL: { connectionId: 1, operation: 'SEARCH', query: '{{input.query}}', searchDepth: 'basic', maxResults: 5 }
+  TAVILY_TOOL: { connectionId: 1, operation: 'SEARCH', query: '{{input.query}}', searchDepth: 'basic', maxResults: 5 },
+  PLUGIN_ACTION: pluginExample('ACTION'), PLUGIN_TRIGGER: pluginExample('TRIGGER'),
+  PLUGIN_MODEL: pluginExample('MODEL'), PLUGIN_DATASOURCE: pluginExample('DATASOURCE'),
+  PLUGIN_AGENT_STRATEGY: pluginExample('AGENT_STRATEGY'), PLUGIN_EXTENSION: pluginExample('EXTENSION')
 })
 
 /** 为节点文档提供可直接理解的数据输入与输出示例，示例不包含真实凭据或敏感信息。 */
@@ -93,8 +97,20 @@ const WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({
   KAFKA_TRIGGER: pair({ topic: 'order-events', value: { orderId: 'ORD-1001' } }, { topic: 'order-events', value: { orderId: 'ORD-1001' } }),
   RABBITMQ_PUBLISH: pair({ orderId: 'ORD-1001', status: 'CREATED' }, { published: true, exchange: 'order.events' }),
   RABBITMQ_TRIGGER: pair({ queue: 'order.workflow', value: { orderId: 'ORD-1001' } }, { queue: 'order.workflow', value: { orderId: 'ORD-1001' } }),
-  TAVILY_TOOL: pair({ query: 'Base AI workflow' }, { httpStatus: 200, durationMs: 310, json: { results: [{ title: 'Example result', url: 'https://example.com' }] } })
+  TAVILY_TOOL: pair({ query: 'Base AI workflow' }, { httpStatus: 200, durationMs: 310, json: { results: [{ title: 'Example result', url: 'https://example.com' }] } }),
+  PLUGIN_ACTION: pair({ query: 'example' }, { result: 'plugin action output' }),
+  PLUGIN_TRIGGER: pair({ event: 'example.created' }, { event: 'example.created' }),
+  PLUGIN_MODEL: pair({ messages: [{ role: 'user', content: 'hello' }] }, { content: 'model output' }),
+  PLUGIN_DATASOURCE: pair({ cursor: null }, { records: [{ id: 'example' }] }),
+  PLUGIN_AGENT_STRATEGY: pair({ task: 'complete the request' }, { content: 'strategy output', toolCalls: [] }),
+  PLUGIN_EXTENSION: pair({ callback: 'example' }, { handled: true })
 })
+
+/** 构造不包含真实市场身份的插件文档示例。 */
+function pluginExample(componentType) {
+  return { pluginComponentId: 1, packageFingerprint: '0'.repeat(64), componentExternalId: 'example',
+    componentType, parameters: {}, parameterSchema: [], credentialSchema: [] }
+}
 
 /** 每个原生节点都使用独立的双语行为、输入、输出和限制说明。 */
 export const WORKFLOW_NODE_DOCUMENTATION = Object.freeze(Object.fromEntries(DOCUMENTED_WORKFLOW_NODE_TYPES.map(nodeType => [nodeType, Object.freeze({

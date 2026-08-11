@@ -98,7 +98,9 @@ export const NODE_CONFIG_FIELDS = {
   TAVILY_TOOL: [field('connectionId', 'connection', null), field('operation', 'select', null, ['SEARCH', 'EXTRACT']),
     field('query', 'text', '{{input.query}}'), field('searchDepth', 'select', 'basic', ['basic', 'advanced', 'fast', 'ultra-fast']),
     field('maxResults', 'number', 5), field('urls', 'text', '{{input.urls}}'),
-    field('extractDepth', 'select', 'basic', ['basic', 'advanced']), field('format', 'select', 'markdown', ['markdown', 'text'])]
+    field('extractDepth', 'select', 'basic', ['basic', 'advanced']), field('format', 'select', 'markdown', ['markdown', 'text'])],
+  PLUGIN_ACTION: [], PLUGIN_TRIGGER: [], PLUGIN_MODEL: [], PLUGIN_DATASOURCE: [],
+  PLUGIN_AGENT_STRATEGY: [], PLUGIN_EXTENSION: []
 }
 
 const COMMON_EXECUTION_FIELDS = [
@@ -121,8 +123,11 @@ const NODE_CONNECTION_TYPES = {
   SQL_QUERY: ['MYSQL', 'POSTGRESQL'], REDIS_COMMAND: ['REDIS'], S3_OBJECT: ['S3'],
   KAFKA_PUBLISH: ['KAFKA'], KAFKA_TRIGGER: ['KAFKA'],
   RABBITMQ_PUBLISH: ['RABBITMQ'], RABBITMQ_TRIGGER: ['RABBITMQ'],
-  IM_NOTIFY: ['WEBHOOK'], WEBHOOK_TRIGGER: ['WEBHOOK'], TAVILY_TOOL: ['TAVILY']
+  IM_NOTIFY: ['WEBHOOK'], WEBHOOK_TRIGGER: ['WEBHOOK'], TAVILY_TOOL: ['TAVILY'],
+  PLUGIN_ACTION: ['PLUGIN'], PLUGIN_TRIGGER: ['PLUGIN'], PLUGIN_MODEL: ['PLUGIN'],
+  PLUGIN_DATASOURCE: ['PLUGIN'], PLUGIN_AGENT_STRATEGY: ['PLUGIN'], PLUGIN_EXTENSION: ['PLUGIN']
 }
+const PLUGIN_NODE_TYPES = new Set(['PLUGIN_ACTION', 'PLUGIN_TRIGGER', 'PLUGIN_MODEL', 'PLUGIN_DATASOURCE', 'PLUGIN_AGENT_STRATEGY', 'PLUGIN_EXTENSION'])
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const REQUIRED_CONFIG_FIELDS = {
   LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], RAG: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold', 'modelMode'], EMBEDDING: ['modelMode', 'input'],
@@ -150,13 +155,37 @@ function field(key, editor, defaultValue, options = []) { return { key, editor, 
 /** 返回节点类型支持的标准配置字段，并附加必填展示元数据。 */
 export function nodeConfigFields(nodeType, config = undefined) {
   const type = String(nodeType || '').toUpperCase()
+  if (PLUGIN_NODE_TYPES.has(type)) return pluginConfigFields(config)
   return (NODE_CONFIG_FIELDS[type] || []).map(item => ({ ...item, requirement: nodeConfigFieldRequirement(type, item.key, config) }))
+}
+
+/** 把导入时固定的插件 Schema 转换为嵌套参数字段。 */
+function pluginConfigFields(config = {}) {
+  const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  const fields = Array.isArray(value.parameterSchema) ? value.parameterSchema.map(item => {
+    const rawType = String(item?.type || 'string').toLowerCase()
+    const editor = ['number', 'integer'].includes(rawType) ? 'number' : rawType === 'boolean' ? 'boolean'
+      : ['select', 'options'].includes(rawType) ? 'select' : ['paragraph', 'text-area'].includes(rawType) ? 'textarea' : 'text'
+    const options = (Array.isArray(item?.options) ? item.options : []).map(option =>
+      option && typeof option === 'object' ? option.value : option).filter(option => option !== undefined)
+    return { key: `parameters.${item?.name || ''}`, editor, defaultValue: item?.default,
+      options, requirement: item?.required ? 'required' : '', label: item?.label || item?.name || '',
+      description: item?.description || '', displayOptions: item?.displayOptions || {} }
+  }).filter(item => item.key !== 'parameters.') : []
+  if (Array.isArray(value.credentialSchema) && value.credentialSchema.length) {
+    fields.unshift({ ...field('connectionId', 'connection', null), requirement: 'required' })
+  }
+  return fields
 }
 
 /** 判断字段是否属于当前已选择的节点方案，避免不同方案字段同时造成歧义。 */
 export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
   const type = String(nodeType || '').toUpperCase()
   const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  if (PLUGIN_NODE_TYPES.has(type) && key.startsWith('parameters.')) {
+    const definition = pluginConfigFields(value).find(item => item.key === key)
+    return matchesDisplayOptions(definition?.displayOptions, value.parameters || {})
+  }
   const modelMode = String(value.modelMode || '').toUpperCase()
   if (['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR', 'EMBEDDING'].includes(type)) {
     if (['featureCode', 'modelType'].includes(key)) return modelMode === 'ROUTE'
@@ -186,6 +215,17 @@ export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
   return true
 }
 
+/** 按 n8n show/hide 规则决定动态字段是否适用。 */
+function matchesDisplayOptions(displayOptions, parameters) {
+  if (!displayOptions || typeof displayOptions !== 'object') return true
+  const matches = conditions => Object.entries(conditions || {}).every(([key, expected]) => {
+    const values = Array.isArray(expected) ? expected : [expected]
+    return values.includes(parameters?.[key])
+  })
+  const hidden = displayOptions.hide && Object.keys(displayOptions.hide).length ? matches(displayOptions.hide) : false
+  return matches(displayOptions.show) && !hidden
+}
+
 /** 判断字段是否会使用可直接执行的运行默认值，而非仅使用编辑器占位值。 */
 export function nodeConfigUsesEffectiveDefault(nodeType, key, config = {}) {
   const type = String(nodeType || '').toUpperCase()
@@ -203,6 +243,7 @@ export function effectiveNodeConfigDefaultValue(nodeType, key, config = {}) {
 /** 返回标准字段在当前节点中的必填级别。 */
 export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
   const type = String(nodeType || '').toUpperCase()
+  if (PLUGIN_NODE_TYPES.has(type)) return pluginConfigFields(config).find(item => item.key === key)?.requirement || ''
   if (REQUIRED_CONFIG_FIELDS[type]?.includes(key)) return 'required'
   if (!CONDITIONAL_CONFIG_FIELDS[type]?.includes(key)) return ''
   if (config === undefined) return 'conditional'
@@ -289,6 +330,18 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
       requirePositive('connectionId'); break
     case 'EMAIL_SEND': requirePositive('routeId'); requireText('subject'); break
     case 'SCHEDULE_TRIGGER': requireText('cron'); break
+    case 'PLUGIN_ACTION': case 'PLUGIN_TRIGGER': case 'PLUGIN_MODEL': case 'PLUGIN_DATASOURCE':
+    case 'PLUGIN_AGENT_STRATEGY': case 'PLUGIN_EXTENSION':
+      requirePositive('pluginComponentId'); requireText('packageFingerprint'); requireText('componentExternalId'); requireObject('parameters')
+      for (const definition of Array.isArray(value.parameterSchema) ? value.parameterSchema : []) {
+        if (!definition?.required || !nodeConfigFieldApplicable(type, `parameters.${definition.name}`, value)) continue
+        const fieldValue = value.parameters?.[definition.name]
+        if (fieldValue === undefined || fieldValue === null || (typeof fieldValue === 'string' && !fieldValue.trim())) {
+          missing.push(`parameters.${definition.name}`)
+        }
+      }
+      if (Array.isArray(value.credentialSchema) && value.credentialSchema.length) requirePositive('connectionId')
+      break
     default: break
   }
   if (type === 'SQL_QUERY') requireText('query')
@@ -405,6 +458,8 @@ function withValidDefaults(nodeType, config) {
     case 'CSV': setDefault('operation', 'PARSE'); break
     case 'KAFKA_PUBLISH': case 'RABBITMQ_PUBLISH': setDefault('value', null); break
     case 'TAVILY_TOOL': setDefault('searchDepth', 'basic'); setDefault('maxResults', 5); setDefault('extractDepth', 'basic'); setDefault('format', 'markdown'); break
+    case 'PLUGIN_ACTION': case 'PLUGIN_TRIGGER': case 'PLUGIN_MODEL': case 'PLUGIN_DATASOURCE':
+    case 'PLUGIN_AGENT_STRATEGY': case 'PLUGIN_EXTENSION': setDefault('parameters', {}); break
     default: break
   }
   return value
@@ -420,7 +475,10 @@ function redisArgumentMinimum(command) {
 
 /** 返回由专用交互维护、不应出现在附加参数中的字段。 */
 export function hiddenConfigKeys(nodeType) {
-  return ['ITERATION', 'LOOP'].includes(String(nodeType || '').toUpperCase()) ? ['bodyGraph'] : []
+  const type = String(nodeType || '').toUpperCase()
+  if (PLUGIN_NODE_TYPES.has(type)) return ['pluginComponentId', 'packageFingerprint', 'componentExternalId',
+    'componentType', 'parameterSchema', 'credentialSchema', 'parameters']
+  return ['ITERATION', 'LOOP'].includes(type) ? ['bodyGraph'] : []
 }
 
 /** 深复制可序列化配置，避免编辑器直接污染调用方状态。 */

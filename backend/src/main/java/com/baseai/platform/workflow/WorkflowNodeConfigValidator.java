@@ -96,6 +96,12 @@ public class WorkflowNodeConfigValidator {
             case "RABBITMQ_PUBLISH" -> { requirePositive(config, missing, "connectionId"); requireRabbitDestination(config, missing); requirePresent(config, missing, "value"); }
             case "RABBITMQ_TRIGGER" -> { requirePositive(config, missing, "connectionId"); requireText(config, missing, "queue"); }
             case "TAVILY_TOOL" -> requireTavily(config, missing);
+            case "PLUGIN_ACTION", "PLUGIN_TRIGGER", "PLUGIN_MODEL", "PLUGIN_DATASOURCE", "PLUGIN_AGENT_STRATEGY", "PLUGIN_EXTENSION" -> {
+                requirePositive(config, missing, "pluginComponentId");
+                requireText(config, missing, "packageFingerprint");
+                requireText(config, missing, "componentExternalId");
+                requireObject(config, missing, "parameters");
+            }
             case "RAG" -> { requireAiModel(type,config,missing);requirePositive(config,missing,"knowledgeBaseId");requireText(config,missing,"query");requireIntegerRange(config,missing,"topK",1,50);if(!config.has("scoreThreshold")||!config.path("scoreThreshold").isNumber()||config.path("scoreThreshold").asDouble()<0||config.path("scoreThreshold").asDouble()>1)missing.add("scoreThreshold"); }
             case "KNOWLEDGE_RETRIEVAL" -> { requirePositive(config,missing,"knowledgeBaseId");requireText(config,missing,"query");requireIntegerRange(config,missing,"topK",1,50);if(!config.has("scoreThreshold")||!config.path("scoreThreshold").isNumber()||config.path("scoreThreshold").asDouble()<0||config.path("scoreThreshold").asDouble()>1)missing.add("scoreThreshold"); }
             case "KNOWLEDGE_UPSERT" -> { requirePositive(config,missing,"knowledgeBaseId");requireDocument(config,missing);requireText(config,missing,"fileName");requireText(config,missing,"contentType"); }

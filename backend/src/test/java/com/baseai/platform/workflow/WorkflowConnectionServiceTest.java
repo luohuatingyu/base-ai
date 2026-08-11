@@ -34,7 +34,7 @@ class WorkflowConnectionServiceTest {
         jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("""
             CREATE TABLE workflow_connection(id BIGINT AUTO_INCREMENT PRIMARY KEY,code VARCHAR(80) UNIQUE,name VARCHAR(120),
-            connection_type VARCHAR(24),config_encrypted CLOB,owner_user_id BIGINT,enabled BOOLEAN,voided BOOLEAN DEFAULT FALSE,
+            connection_type VARCHAR(24),plugin_component_id BIGINT,config_encrypted CLOB,owner_user_id BIGINT,enabled BOOLEAN,voided BOOLEAN DEFAULT FALSE,
             security_revision BIGINT DEFAULT 1,vector_status VARCHAR(16) DEFAULT 'UNKNOWN',vector_engine VARCHAR(32),
             vector_version VARCHAR(64),vector_checked_at TIMESTAMP,vector_error VARCHAR(500) DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
@@ -84,6 +84,22 @@ class WorkflowConnectionServiceTest {
         assertEquals("workflow.connectionInvalid", assertThrows(BusinessException.class, () -> service.create(
             new WorkflowModels.ConnectionCommand("missing", "Missing", "TAVILY",
                 new ObjectMapper().createObjectNode(), true))).getMessageKey());
+    }
+
+    /** 插件连接必须把组件身份同步到专用外键列，改绑时不能只改密文 JSON。 */
+    @Test
+    void persistsPluginComponentIdentity() throws Exception {
+        WorkflowModels.ConnectionView created = service.create(new WorkflowModels.ConnectionCommand(
+            "plugin", "Plugin", "PLUGIN", new ObjectMapper().readTree(
+                "{\"pluginComponentId\":21,\"credentials\":{\"apiKey\":\"secret\"}}"), true));
+        assertEquals(21L, jdbcTemplate.queryForObject(
+            "SELECT plugin_component_id FROM workflow_connection WHERE id=?", Long.class, created.id()));
+
+        service.update(created.id(), new WorkflowModels.ConnectionCommand("PLUGIN", "Plugin", "PLUGIN",
+            new ObjectMapper().readTree("{\"pluginComponentId\":22,\"credentials\":{\"apiKey\":\"******\"}}"), true));
+        assertEquals(22L, jdbcTemplate.queryForObject(
+            "SELECT plugin_component_id FROM workflow_connection WHERE id=?", Long.class, created.id()));
+        assertEquals("secret", service.resolved(created.id(), Set.of("PLUGIN")).config().path("credentials").path("apiKey").asText());
     }
 
     /** 其他用户不能维护不属于自己的连接。 */

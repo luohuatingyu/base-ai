@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { PackageError, PackageStore } from '../app/package-store.mjs'
 
@@ -36,6 +37,17 @@ test('探测全部组件类型且不安装 n8n SDK', async () => {
     assert.deepEqual(new Set(result.components.map(component => component.componentType)),
       new Set(['ACTION', 'TRIGGER', 'MODEL', 'DATASOURCE', 'AGENT_STRATEGY', 'EXTENSION']))
     assert.ok(result.components.every(component => component.compatibilityStatus === 'SUPPORTED'))
+    const installed = await store.metadata(result.fingerprint)
+    for (const component of result.components) {
+      const operation = component.componentType === 'TRIGGER' ? 'subscribe' : 'invoke'
+      const invoked = spawnSync(process.execPath, [fileURLToPath(new URL('../app/invoke-child.mjs', import.meta.url))], {
+        input: JSON.stringify({ root: installed.root, sourcePath: component.sourcePath, exportName: component.exportName,
+          componentId: component.externalId, operation, parameters: {}, credentials: {}, input: {}, context: {} }),
+        encoding: 'utf8',
+      })
+      assert.equal(invoked.status, 0, invoked.stdout)
+      assert.equal(JSON.parse(invoked.stdout).success, true)
+    }
   } finally { await rm(item.root, { recursive: true, force: true }); await rm(storeRoot, { recursive: true, force: true }) }
 })
 
@@ -56,4 +68,24 @@ test('拒绝摘要不匹配和路径穿越', async () => {
     }
     await rm(badRoot, { recursive: true, force: true })
   } finally { await rm(item.root, { recursive: true, force: true }); await rm(storeRoot, { recursive: true, force: true }) }
+})
+
+test('声明式节点不得在尚未执行其路由时误报完全兼容', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'base-ai-n8n-declarative-'))
+  const packageRoot = join(root, 'package'); const storeRoot = await mkdtemp(join(tmpdir(), 'base-ai-n8n-store-'))
+  try {
+    await mkdir(join(packageRoot, 'nodes'), { recursive: true })
+    await writeFile(join(packageRoot, 'nodes/Declarative.node.cjs'),
+      "class Declarative { constructor(){ this.description={name:'declarative',displayName:'Declarative',requestDefaults:{baseURL:'https://example.com'},properties:[]} } } module.exports={Declarative}")
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: 'n8n-nodes-declarative', version: '1.0.0', dependencies: { 'n8n-workflow': '^1.0.0' },
+      n8n: { nodes: ['nodes/Declarative.node.cjs'] },
+    }))
+    const packed = spawnSync('tar', ['-czf', join(root, 'fixture.tgz'), '-C', root, 'package'])
+    assert.equal(packed.status, 0)
+    const bytes = await (await import('node:fs/promises')).readFile(join(root, 'fixture.tgz'))
+    const result = await new PackageStore(storeRoot).install({ archiveBase64: bytes.toString('base64') })
+    assert.equal(result.components[0].compatibilityStatus, 'PARTIAL')
+    assert.equal(result.components[0].compatibilityReason, 'DECLARATIVE_ROUTING_NOT_IMPLEMENTED')
+  } finally { await rm(root, { recursive: true, force: true }); await rm(storeRoot, { recursive: true, force: true }) }
 })

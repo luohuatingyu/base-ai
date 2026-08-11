@@ -261,12 +261,17 @@ public class PlatformProperties {
         private int webhookRateLimitPerMinute = 60;
         private int triggerDeliveryRetentionDays = 30;
         private String marketplaceN8nUrl = "https://n8n.io";
+        private String marketplaceN8nApiUrl = "https://api.n8n.io";
+        private String marketplaceNpmRegistryUrl = "https://registry.npmjs.org";
         private String marketplaceDifyUrl = "https://marketplace.dify.ai";
         private int marketplaceTimeoutSeconds = 8;
         private int marketplaceCacheSeconds = 300;
         private int marketplaceMaxPackageBytes = 5 * 1024 * 1024;
         private int marketplaceMaxUnpackedBytes = 10 * 1024 * 1024;
         private int marketplaceMaxPackageFiles = 128;
+        private String difyPluginWorkerUrl = "http://dify-plugin-worker:8101";
+        private String n8nPluginWorkerUrl = "http://n8n-plugin-worker:8102";
+        private String pluginWorkerInternalToken = "";
         /** 读取执行线程数量。 */
         public int getExecutorPoolSize() { return executorPoolSize; }
         /** 设置执行线程数量。 */
@@ -327,6 +332,14 @@ public class PlatformProperties {
         public String getMarketplaceN8nUrl() { return marketplaceN8nUrl; }
         /** 设置 n8n 官方市场根地址。 */
         public void setMarketplaceN8nUrl(String value) { marketplaceN8nUrl = value; }
+        /** 读取 n8n 认证社区节点 API 根地址。 */
+        public String getMarketplaceN8nApiUrl() { return marketplaceN8nApiUrl; }
+        /** 设置 n8n 认证社区节点 API 根地址。 */
+        public void setMarketplaceN8nApiUrl(String value) { marketplaceN8nApiUrl = value; }
+        /** 读取只允许下载 npm 插件包的注册表根地址。 */
+        public String getMarketplaceNpmRegistryUrl() { return marketplaceNpmRegistryUrl; }
+        /** 设置只允许下载 npm 插件包的注册表根地址。 */
+        public void setMarketplaceNpmRegistryUrl(String value) { marketplaceNpmRegistryUrl = value; }
         /** 读取 Dify 官方市场根地址。 */
         public String getMarketplaceDifyUrl() { return marketplaceDifyUrl; }
         /** 设置 Dify 官方市场根地址。 */
@@ -351,5 +364,17 @@ public class PlatformProperties {
         public int getMarketplaceMaxPackageFiles() { return marketplaceMaxPackageFiles; }
         /** 设置 Dify 插件压缩包文件数量上限。 */
         public void setMarketplaceMaxPackageFiles(int value) { marketplaceMaxPackageFiles = value; }
+        /** 读取 Base AI 自研 Dify ABI Worker 地址。 */
+        public String getDifyPluginWorkerUrl() { return difyPluginWorkerUrl; }
+        /** 设置 Base AI 自研 Dify ABI Worker 地址。 */
+        public void setDifyPluginWorkerUrl(String value) { difyPluginWorkerUrl = value; }
+        /** 读取 Base AI 自研 n8n ABI Worker 地址。 */
+        public String getN8nPluginWorkerUrl() { return n8nPluginWorkerUrl; }
+        /** 设置 Base AI 自研 n8n ABI Worker 地址。 */
+        public void setN8nPluginWorkerUrl(String value) { n8nPluginWorkerUrl = value; }
+        /** 读取插件 Worker 内部鉴权令牌。 */
+        public String getPluginWorkerInternalToken() { return pluginWorkerInternalToken; }
+        /** 设置插件 Worker 内部鉴权令牌。 */
+        public void setPluginWorkerInternalToken(String value) { pluginWorkerInternalToken = value; }
     }
 }

@@ -29,6 +29,13 @@ public final class WorkflowModels {
     public record MarketplaceImportCommand(List<String> externalIds, Boolean replaceExisting) {}
     public record MarketplaceImportItem(String externalId, String status, Long templateId) {}
     public record MarketplaceImportResult(String source, List<MarketplaceImportItem> items) {}
+    public record PluginComponentOption(Long id, String source, String packageKey, String packageVersion,
+                                        String externalKey, String name, String componentType,
+                                        JsonNode parameterSchema, JsonNode credentialSchema) {}
+    public record PluginOAuthAuthorizeCommand(String redirectUri) {}
+    public record PluginOAuthAuthorization(String authorizationUrl, String state, LocalDateTime expiresAt) {}
+    public record PluginOAuthCallbackCommand(String state, String code) {}
+    public record PluginOAuthCallbackResult(Long connectionId, boolean connected) {}
     public record MarketplaceTemplateDraft(String source, String externalKey, String externalVersion,
                                            String externalPublisher, String externalFingerprint, String code,
                                            String name, String description, String nodeType,
