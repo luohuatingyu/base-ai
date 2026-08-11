@@ -12,6 +12,7 @@ import com.baseai.platform.repository.SystemSettingRepository;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.security.AuthenticationType;
+import com.baseai.platform.workflow.WorkflowAdapterLifecycleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -60,8 +61,9 @@ class SystemConfigurationServiceTest {
     @Test
     void settingsHideApiTriggerSecurityKeys() {
         SystemSetting reserved = setting(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY);
+        SystemSetting adapter = setting(WorkflowAdapterLifecycleService.N8N_SETTING_KEY);
         SystemSetting normal = setting("system.timezone");
-        when(settingRepository.findAll()).thenReturn(List.of(reserved, normal));
+        when(settingRepository.findAll()).thenReturn(List.of(reserved, adapter, normal));
 
         List<SystemConfigurationService.SettingView> settings = service.settings();
 
@@ -74,6 +76,17 @@ class SystemConfigurationServiceTest {
         SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
             "api-trigger", ApiTriggerSecurityConfigurationService.HOST_RULES_KEY,
             "Host 规则", "[]", false, true);
+
+        assertThrows(BusinessException.class, () -> service.createSetting(command));
+        verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 通用系统参数入口不得创建节点管理页专用的适配器开关。 */
+    @Test
+    void createSettingRejectsWorkflowAdapterKeys() {
+        SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
+            "workflow-adapter", WorkflowAdapterLifecycleService.N8N_SETTING_KEY,
+            "n8n 适配服务", "true", false, true);
 
         assertThrows(BusinessException.class, () -> service.createSetting(command));
         verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());

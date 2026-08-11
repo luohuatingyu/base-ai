@@ -3,6 +3,7 @@ package com.baseai.platform.service;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.domain.DictionaryData;
 import com.baseai.platform.domain.Menu;
+import com.baseai.platform.domain.SystemSetting;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.repository.DepartmentRepository;
 import com.baseai.platform.repository.DictionaryDataRepository;
@@ -11,6 +12,7 @@ import com.baseai.platform.repository.MenuRepository;
 import com.baseai.platform.repository.RoleRepository;
 import com.baseai.platform.repository.SystemSettingRepository;
 import com.baseai.platform.repository.UserRepository;
+import com.baseai.platform.workflow.WorkflowAdapterLifecycleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -79,6 +81,7 @@ class DataInitializerTest {
         when(dictionaryTypeRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type"))
             .thenReturn(List.of());
+        when(systemSettingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         initializer = new DataInitializer(properties, menuRepository, roleRepository, userRepository,
             departmentRepository, dictionaryTypeRepository, dictionaryDataRepository, passwordEncoder,
@@ -266,10 +269,28 @@ class DataInitializerTest {
         assertEquals(workflow.getId(), menusByPermission.get("workflow:canvas:list").getParentId());
         assertEquals(menusByPermission.get("workflow:node:list").getId(),
             menusByPermission.get("workflow:node:update").getParentId());
+        assertEquals(menusByPermission.get("workflow:node:list").getId(),
+            menusByPermission.get("workflow:adapter:manage").getParentId());
         assertEquals(menusByPermission.get("workflow:connection:list").getId(),
             menusByPermission.get("workflow:connection:update").getParentId());
         assertEquals(menusByPermission.get("workflow:canvas:list").getId(),
             menusByPermission.get("workflow:canvas:execute").getParentId());
+    }
+
+    /** 首次启动必须创建两个默认关闭且不可由通用参数页面修改的适配器开关。 */
+    @Test
+    void seedsDisabledSystemManagedAdapterSettings() {
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        initializer.run(null);
+
+        ArgumentCaptor<SystemSetting> captor = ArgumentCaptor.forClass(SystemSetting.class);
+        verify(systemSettingRepository, atLeastOnce()).save(captor.capture());
+        Map<String, SystemSetting> settings = captor.getAllValues().stream()
+            .collect(Collectors.toMap(SystemSetting::getConfigKey, Function.identity()));
+        assertEquals("false", settings.get(WorkflowAdapterLifecycleService.N8N_SETTING_KEY).getConfigValue());
+        assertEquals("false", settings.get(WorkflowAdapterLifecycleService.DIFY_SETTING_KEY).getConfigValue());
+        assertTrue(settings.values().stream().allMatch(SystemSetting::getSystemManaged));
     }
 
     /** 创建满足启动安全校验的测试配置。 */

@@ -9,9 +9,14 @@ import org.junit.jupiter.api.Test;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class WorkflowPluginWorkerClientTest {
     private HttpServer server;
@@ -46,7 +51,7 @@ class WorkflowPluginWorkerClientTest {
         properties.getWorkflow().setPluginWorkerInternalToken("x".repeat(24));
         properties.getWorkflow().setMarketplaceTimeoutSeconds(30);
         properties.getWorkflow().setPluginWorkerTimeoutSeconds(1);
-        WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties);
+        WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties, lifecycle());
 
         BusinessException exception = assertThrows(BusinessException.class,
             () -> client.inspect("DIFY", "vendor/plugin", "1.0.0", new byte[]{1}, "a".repeat(64)));
@@ -59,6 +64,7 @@ class WorkflowPluginWorkerClientTest {
     void validatesWorkerHostAbiVersion() throws Exception {
         String fingerprint = "a".repeat(64);
         int[] requestCount = {0};
+        int[] versions = {3, 4, 3};
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/packages/inspect", exchange -> {
             byte[] body = ("""
@@ -66,7 +72,7 @@ class WorkflowPluginWorkerClientTest {
                   {"externalId":"action","name":"Action","componentType":"ACTION","schema":[],
                    "credentialSchema":[],"sourcePath":"node.js","compatibilityStatus":"SUPPORTED",
                    "compatibilityReason":""}]}
-                """).formatted(fingerprint, requestCount[0]++ == 0 ? 3 : 2).getBytes(StandardCharsets.UTF_8);
+                """).formatted(fingerprint, versions[requestCount[0]++]).getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
@@ -77,11 +83,21 @@ class WorkflowPluginWorkerClientTest {
         properties.getWorkflow().setDifyPluginWorkerUrl(workerUrl);
         properties.getWorkflow().setN8nPluginWorkerUrl(workerUrl);
         properties.getWorkflow().setPluginWorkerInternalToken("x".repeat(24));
-        WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties);
+        WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties, lifecycle());
 
         assertEquals(3, client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
+        assertEquals(4, client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
         BusinessException outdated = assertThrows(BusinessException.class,
             () -> client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint));
         assertEquals("workflow.pluginWorkerResponseInvalid", outdated.getMessageKey());
+    }
+
+    /** 创建允许测试请求进入本地 HTTP Worker 的适配器生命周期替身。 */
+    @SuppressWarnings("unchecked")
+    private WorkflowAdapterLifecycleService lifecycle() {
+        WorkflowAdapterLifecycleService lifecycle = mock(WorkflowAdapterLifecycleService.class);
+        when(lifecycle.withEnabled(anyString(), any(Supplier.class)))
+            .thenAnswer(invocation -> ((Supplier<Object>) invocation.getArgument(1)).get());
+        return lifecycle;
     }
 }

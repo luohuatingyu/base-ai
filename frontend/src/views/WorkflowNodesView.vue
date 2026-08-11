@@ -4,13 +4,21 @@
       <div><h2>{{ t('workflowNodes.title') }}</h2><p>{{ t('workflowNodes.description') }}</p></div>
       <router-link to="/workflow/node-docs"><el-button>{{ t('workflowNodeDocs.title') }}</el-button></router-link>
       <el-button v-if="selectedSource === 'SYSTEM' && auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
-      <el-button v-else-if="selectedSource !== 'SYSTEM' && auth.hasPermission('workflow:node:import')" type="primary" @click="openMarketplace">{{ t('workflowNodes.importFrom', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</el-button>
+      <el-button v-else-if="selectedSource !== 'SYSTEM' && auth.hasPermission('workflow:node:import')" type="primary"
+        :disabled="selectedAdapter?.status !== 'RUNNING'" @click="openMarketplace">{{ t('workflowNodes.importFrom', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</el-button>
     </div>
     <div class="node-template-source-filter" :aria-label="t('workflowNodes.source')">
       <strong>{{ t('workflowNodes.source') }}</strong>
       <el-radio-group v-model="selectedSource" class="node-template-source-options">
         <el-radio-button v-for="source in sources" :key="source" :value="source">{{ t(`workflowCatalog.sources.${source}`) }}</el-radio-button>
       </el-radio-group>
+      <div v-if="selectedAdapter" class="adapter-control">
+        <span><strong>{{ t(`workflowCatalog.sources.${selectedAdapter.source}`) }} Worker</strong><small>{{ adapterStateLabel(selectedAdapter) }}</small></span>
+        <el-tag :type="adapterStateTag(selectedAdapter)" size="small">{{ adapterStateLabel(selectedAdapter) }}</el-tag>
+        <el-switch :model-value="selectedAdapter.enabled" :loading="adapterUpdating === selectedAdapter.source"
+          :disabled="!auth.hasPermission('workflow:adapter:manage') || adapterTransitioning(selectedAdapter)"
+          @change="toggleAdapter(selectedAdapter, $event)" />
+      </div>
     </div>
     <div class="node-template-layout">
       <aside class="node-template-category-filter" :aria-label="t('workflowNodes.category')">
@@ -157,9 +165,14 @@ const marketplacePage = ref(1)
 const marketplacePageSize = 20
 const marketplaceTotal = ref(0)
 const marketplaceProbePending = ref(false)
+const adapters = ref([])
+const adapterUpdating = ref('')
 let marketplacePollTimer = null
+let adapterPollTimer = null
 /** 返回同时匹配必选来源和功能分类的节点，并保留停用模板供管理员维护。 */
 const filteredRows = computed(() => filterWorkflowTemplates(rows.value, selectedSource.value, selectedCategory.value, true))
+/** 返回当前外部来源对应的适配器状态，系统节点不需要 Worker。 */
+const selectedAdapter = computed(() => adapters.value.find(item => item.source === selectedSource.value))
 
 /** 按当前界面语言返回系统模板文案，自定义模板保留管理员录入内容。 */
 function templateText(template, field) {
@@ -187,10 +200,57 @@ function templateIcon(template) { return templateText(template, 'name').trim().s
 
 /** 加载未作废节点模板。 */
 async function load() { rows.value = (await http.get('/workflow/nodes')).data || [] }
+/** 加载两个适配器的期望开关和实际容器状态。 */
+async function loadAdapters() {
+  try {
+    adapters.value = (await http.get('/workflow/adapters', { silentError: true })).data || []
+    scheduleAdapterPolling()
+  } catch (error) { showHttpError(error) }
+}
+/** 切换指定 Worker；后端会在存在在途任务时拒绝关闭。 */
+async function toggleAdapter(adapter, enabled) {
+  adapterUpdating.value = adapter.source
+  try {
+    const { data } = await http.put(`/workflow/adapters/${adapter.source}`, { enabled })
+    adapters.value = adapters.value.map(item => item.source === data.source ? data : item)
+    scheduleAdapterPolling()
+  } catch (error) {
+    await loadAdapters()
+    showHttpError(error)
+  } finally { adapterUpdating.value = '' }
+}
+/** 判断容器是否仍处于异步启停阶段。 */
+function adapterTransitioning(adapter) { return ['ENABLING', 'STARTING', 'DISABLING'].includes(adapter?.status) }
+/** 使用通用本地化文案展示容器生命周期状态。 */
+function adapterStateLabel(adapter) {
+  if (adapter?.status === 'RUNNING') return t('common.enabled')
+  if (adapter?.status === 'STOPPED') return t('common.disabled')
+  if (adapter?.status === 'FAILED') return adapter.error || t('common.failed')
+  return t('common.loading')
+}
+/** 将容器状态映射为统一标签颜色。 */
+function adapterStateTag(adapter) {
+  if (adapter?.status === 'RUNNING') return 'success'
+  if (adapter?.status === 'FAILED') return 'danger'
+  if (adapterTransitioning(adapter)) return 'warning'
+  return 'info'
+}
+/** 启停过渡期间轮询实际容器状态，稳定后立即停止。 */
+function scheduleAdapterPolling() {
+  stopAdapterPolling()
+  if (!adapters.value.some(adapterTransitioning)) return
+  adapterPollTimer = window.setTimeout(() => loadAdapters(), 2000)
+}
+/** 清理适配器状态轮询定时器。 */
+function stopAdapterPolling() {
+  if (adapterPollTimer !== null) window.clearTimeout(adapterPollTimer)
+  adapterPollTimer = null
+}
 /** 打开新增或编辑表单，并隔离默认配置副本。 */
 function open(row) { Object.assign(form, emptyForm(), normalizeTemplateMetadata(row), { config: cloneConfig(row?.config) }); visible.value = true }
 /** 打开当前来源的官方市场并重置临时选择。 */
 async function openMarketplace() {
+  if (selectedAdapter.value?.status !== 'RUNNING') return
   marketplaceVisible.value = true; marketplaceQuery.value = ''; compatibleOnly.value = false
   marketplacePage.value = 1; selectedMarketplaceIds.value = []; await loadMarketplace()
 }
@@ -280,14 +340,18 @@ async function remove(row) {
 /** 创建隔离的空表单。 */
 function emptyForm() { return { id: null, code: '', name: '', nodeType: 'LLM', description: '', config: {}, enabled: true,
   systemTemplate: false, importedTemplate: false, source: 'SYSTEM', functionalCategory: defaultTemplateCategory('LLM') } }
-onMounted(load)
+onMounted(() => { load(); loadAdapters() })
 onBeforeUnmount(stopMarketplacePolling)
+onBeforeUnmount(stopAdapterPolling)
 </script>
 
 <style scoped>
 .node-template-source-filter { display: flex; gap: 18px; align-items: flex-start; margin-bottom: 20px; padding: 18px; border: 1px solid #dfe6f0; border-radius: 14px; background: #f8faff; }
 .node-template-source-filter > strong, .node-template-category-filter > strong { flex: 0 0 auto; padding-top: 7px; color: #344054; }
 .node-template-source-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.adapter-control { display: flex; min-width: 250px; align-items: center; gap: 10px; margin-left: auto; padding-left: 18px; border-left: 1px solid #dfe6f0; }
+.adapter-control > span:first-child { display: grid; min-width: 0; gap: 2px; }
+.adapter-control small { overflow: hidden; max-width: 180px; color: var(--app-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .node-template-layout { display: grid; grid-template-columns: minmax(180px, 220px) minmax(0, 1fr); gap: 24px; align-items: start; }
 .node-template-category-filter { display: grid; gap: 12px; padding: 18px; border: 1px solid #dfe6f0; border-radius: 14px; background: #f8faff; }
 .node-template-category-options { display: grid; width: 100%; gap: 8px; }
@@ -359,6 +423,7 @@ onBeforeUnmount(stopMarketplacePolling)
 }
 @media (max-width: 800px) {
   .node-template-source-filter { display: grid; gap: 8px; }
+  .adapter-control { width: 100%; margin-left: 0; padding: 12px 0 0; border-top: 1px solid #dfe6f0; border-left: 0; }
   .node-template-source-filter > strong, .node-template-category-filter > strong { padding-top: 0; }
   .node-template-layout { grid-template-columns: 1fr; gap: 18px; }
   .node-template-category-options { display: flex; flex-wrap: wrap; }

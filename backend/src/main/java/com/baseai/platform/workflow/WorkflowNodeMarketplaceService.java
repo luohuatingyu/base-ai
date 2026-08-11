@@ -34,23 +34,27 @@ public class WorkflowNodeMarketplaceService {
     private final WorkflowService workflowService;
     private final WorkflowPluginProbeService pluginProbes;
     private final WorkflowPluginRegistryService pluginRegistry;
+    private final WorkflowAdapterLifecycleService adapterLifecycleService;
     private final ObjectMapper objectMapper;
 
     /** 注入市场客户端、异步探测、注册表和模板持久化服务。 */
     public WorkflowNodeMarketplaceService(WorkflowMarketplaceClients clients,
                                           WorkflowService workflowService, WorkflowPluginProbeService pluginProbes,
-                                          WorkflowPluginRegistryService pluginRegistry, ObjectMapper objectMapper) {
+                                          WorkflowPluginRegistryService pluginRegistry, ObjectMapper objectMapper,
+                                          WorkflowAdapterLifecycleService adapterLifecycleService) {
         this.clients = clients;
         this.workflowService = workflowService;
         this.pluginProbes = pluginProbes;
         this.pluginRegistry = pluginRegistry;
         this.objectMapper = objectMapper;
+        this.adapterLifecycleService = adapterLifecycleService;
     }
 
     /** 查询指定来源的全量市场目录，并可只保留当前已兼容节点。 */
     public WorkflowModels.MarketplacePage nodes(String rawSource, String query, String category,
                                                 int rawPage, int rawPageSize, boolean compatibleOnly) {
         String source = importSource(rawSource);
+        adapterLifecycleService.requireEnabled(source);
         int page = Math.max(1, rawPage);
         int pageSize = Math.min(50, Math.max(1, rawPageSize));
         WorkflowMarketplaceClients.SearchResult result = "N8N".equals(source)
@@ -79,6 +83,7 @@ public class WorkflowNodeMarketplaceService {
     public WorkflowModels.MarketplaceImportResult importNodes(String rawSource,
                                                                WorkflowModels.MarketplaceImportCommand command) {
         String source = importSource(rawSource);
+        adapterLifecycleService.requireEnabled(source);
         if (command == null || command.externalIds() == null || command.externalIds().isEmpty()) {
             throw new BusinessException("workflow.marketplaceNodeNotFound");
         }

@@ -2,6 +2,7 @@ package com.baseai.platform.service;
 
 import com.baseai.platform.automation.ApiTriggerSecurityConfigurationService;
 import com.baseai.platform.workflow.WorkflowNetworkSecurityService;
+import com.baseai.platform.workflow.WorkflowAdapterLifecycleService;
 import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
@@ -111,7 +112,8 @@ public class SystemConfigurationService {
     private List<SystemSetting> sortedSettings() {
         return settingRepository.findAll().stream()
             .filter(item -> !ApiTriggerSecurityConfigurationService.isReservedKey(item.getConfigKey())
-                && !WorkflowNetworkSecurityService.isReservedKey(item.getConfigKey()))
+                && !WorkflowNetworkSecurityService.isReservedKey(item.getConfigKey())
+                && !WorkflowAdapterLifecycleService.isReservedKey(item.getConfigKey()))
             .sorted(Comparator.comparing(SystemSetting::getGroupCode)
                 .thenComparing(SystemSetting::getSortOrder, Comparator.nullsFirst(Integer::compareTo))
                 .thenComparing(SystemSetting::getConfigKey))
@@ -475,7 +477,8 @@ public class SystemConfigurationService {
     /** 阻止通用系统参数入口修改接口触发专用安全配置。 */
     private void rejectReservedKey(String key) {
         if (ApiTriggerSecurityConfigurationService.isReservedKey(key == null ? null : key.trim())
-            || WorkflowNetworkSecurityService.isReservedKey(key == null ? null : key.trim())) {
+            || WorkflowNetworkSecurityService.isReservedKey(key == null ? null : key.trim())
+            || WorkflowAdapterLifecycleService.isReservedKey(key == null ? null : key.trim())) {
             throw BusinessException.forbidden("apiTrigger.securityDedicatedPageOnly");
         }
     }

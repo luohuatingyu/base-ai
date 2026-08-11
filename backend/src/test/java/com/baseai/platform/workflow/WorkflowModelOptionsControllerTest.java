@@ -4,6 +4,7 @@ import com.baseai.platform.security.RequiredPermission;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -67,5 +68,18 @@ class WorkflowModelOptionsControllerTest {
         assertEquals("workflow:node:list", list.getAnnotation(RequiredPermission.class).value());
         assertArrayEquals(new String[]{"/node-marketplaces/{source}/imports"}, imports.getAnnotation(PostMapping.class).value());
         assertEquals("workflow:node:import", imports.getAnnotation(RequiredPermission.class).value());
+    }
+
+    /** 适配器状态复用只读权限，容器启停必须使用独立管理权限。 */
+    @Test
+    void adapterEndpointsUseSeparatedPermissions() throws Exception {
+        Method list = WorkflowController.class.getMethod("adapters");
+        Method update = WorkflowController.class.getMethod("updateAdapter", String.class,
+            WorkflowController.AdapterCommand.class);
+
+        assertArrayEquals(new String[]{"/adapters"}, list.getAnnotation(GetMapping.class).value());
+        assertEquals("workflow:node:list", list.getAnnotation(RequiredPermission.class).value());
+        assertArrayEquals(new String[]{"/adapters/{source}"}, update.getAnnotation(PutMapping.class).value());
+        assertEquals("workflow:adapter:manage", update.getAnnotation(RequiredPermission.class).value());
     }
 }

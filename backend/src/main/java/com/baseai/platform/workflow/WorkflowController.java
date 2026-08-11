@@ -25,6 +25,7 @@ public class WorkflowController {
     private final WorkflowConnectionService connectionService;
     private final WorkflowConnectionTester connectionTester;
     private final WorkflowNodeMarketplaceService marketplaceService;
+    private final WorkflowAdapterLifecycleService adapterLifecycleService;
     private final WorkflowPluginOAuthService pluginOAuthService;
     private final LlmManagementService llmManagementService;
     private final MailManagementService mailManagementService;
@@ -34,7 +35,8 @@ public class WorkflowController {
                               WorkflowConnectionService connectionService, WorkflowConnectionTester connectionTester,
                               LlmManagementService llmManagementService, MailManagementService mailManagementService,
                               WorkflowNodeMarketplaceService marketplaceService,
-                              WorkflowPluginOAuthService pluginOAuthService) {
+                              WorkflowPluginOAuthService pluginOAuthService,
+                              WorkflowAdapterLifecycleService adapterLifecycleService) {
         this.workflowService = workflowService;
         this.executionService = executionService;
         this.connectionService = connectionService;
@@ -43,6 +45,7 @@ public class WorkflowController {
         this.mailManagementService = mailManagementService;
         this.marketplaceService = marketplaceService;
         this.pluginOAuthService = pluginOAuthService;
+        this.adapterLifecycleService = adapterLifecycleService;
     }
 
     /** 查询当前用户可见的脱敏连接配置。 */
@@ -100,6 +103,24 @@ public class WorkflowController {
     @GetMapping("/node-docs")
     @RequiredPermission("workflow:node:docs")
     public List<WorkflowModels.NodeTemplateView> nodeDocumentation() { return workflowService.templates(); }
+
+    /** 查询 n8n 与 Dify 适配器的期望开关、容器状态和在途任务数。 */
+    @GetMapping("/adapters")
+    @RequiredPermission("workflow:node:list")
+    public List<WorkflowAdapterLifecycleService.AdapterView> adapters() {
+        return adapterLifecycleService.adapters();
+    }
+
+    /** 从节点管理页按来源启动或停止适配器容器。 */
+    @PutMapping("/adapters/{source}")
+    @RequiredPermission("workflow:adapter:manage")
+    public WorkflowAdapterLifecycleService.AdapterView updateAdapter(
+        @PathVariable String source, @RequestBody AdapterCommand command) {
+        if (command == null || command.enabled() == null) {
+            throw new com.baseai.platform.common.BusinessException("workflow.adapterCommandInvalid");
+        }
+        return adapterLifecycleService.setEnabled(source, command.enabled());
+    }
 
     /** 代理查询 n8n 或 Dify 官方市场节点目录。 */
     @GetMapping("/node-marketplaces/{source}/nodes")
@@ -192,6 +213,9 @@ public class WorkflowController {
     @DeleteMapping("/nodes/{id}")
     @RequiredPermission("workflow:node:delete")
     public void deleteTemplate(@PathVariable Long id) { workflowService.deleteTemplate(id); }
+
+    /** 节点管理页提交的适配器目标状态。 */
+    public record AdapterCommand(Boolean enabled) {}
 
     /** 查询工作流画布列表。 */
     @GetMapping("/canvases")

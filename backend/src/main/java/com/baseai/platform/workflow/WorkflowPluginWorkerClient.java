@@ -28,10 +28,13 @@ public class WorkflowPluginWorkerClient {
     private final String token;
     private final Duration timeout;
     private final int maxResponseBytes;
+    private final WorkflowAdapterLifecycleService adapterLifecycleService;
 
     /** 创建只接受 HTTP(S) 内部地址并设置硬超时的 Worker 客户端。 */
-    public WorkflowPluginWorkerClient(ObjectMapper objectMapper, PlatformProperties properties) {
+    public WorkflowPluginWorkerClient(ObjectMapper objectMapper, PlatformProperties properties,
+                                      WorkflowAdapterLifecycleService adapterLifecycleService) {
         this.objectMapper = objectMapper;
+        this.adapterLifecycleService = adapterLifecycleService;
         PlatformProperties.Workflow workflow = properties.getWorkflow();
         difyWorker = workerUri(workflow.getDifyPluginWorkerUrl());
         n8nWorker = workerUri(workflow.getN8nPluginWorkerUrl());
@@ -45,7 +48,8 @@ public class WorkflowPluginWorkerClient {
     public WorkerPackage inspect(String source, String packageId, String version, byte[] archive, String fingerprint) {
         ObjectNode body = objectMapper.createObjectNode().put("packageId", packageId).put("version", version)
             .put("fingerprint", fingerprint).put("archiveBase64", Base64.getEncoder().encodeToString(archive));
-        JsonNode root = post(worker(source).resolve("/packages/inspect"), body);
+        JsonNode root = adapterLifecycleService.withEnabled(source,
+            () -> post(worker(source).resolve("/packages/inspect"), body));
         if (!root.path("components").isArray() || !fingerprint.equalsIgnoreCase(root.path("fingerprint").asText())) {
             throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         }
@@ -88,7 +92,8 @@ public class WorkflowPluginWorkerClient {
         body.set("input", input == null ? objectMapper.nullNode() : input);
         body.set("context", context == null ? objectMapper.createObjectNode() : context);
         if (lifecycle != null) lifecycle.fields().forEachRemaining(entry -> body.set(entry.getKey(), entry.getValue()));
-        JsonNode response = post(worker(source).resolve("/invocations"), body);
+        JsonNode response = adapterLifecycleService.withEnabled(source,
+            () -> post(worker(source).resolve("/invocations"), body));
         if (!response.path("success").asBoolean(false) || !response.has("output")) {
             throw new BusinessException("workflow.pluginExecutionFailed");
         }
@@ -101,7 +106,8 @@ public class WorkflowPluginWorkerClient {
             throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         }
         ObjectNode body = objectMapper.createObjectNode().put("fingerprint", fingerprint);
-        JsonNode response = post(worker(source).resolve("/packages/remove"), body);
+        JsonNode response = adapterLifecycleService.withEnabled(source,
+            () -> post(worker(source).resolve("/packages/remove"), body));
         if (!response.path("removed").asBoolean(false)) {
             throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         }

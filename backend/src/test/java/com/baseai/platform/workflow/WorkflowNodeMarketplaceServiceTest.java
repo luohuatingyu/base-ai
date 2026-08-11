@@ -29,6 +29,7 @@ class WorkflowNodeMarketplaceServiceTest {
     private WorkflowService workflowService;
     private WorkflowPluginProbeService pluginProbes;
     private WorkflowPluginRegistryService pluginRegistry;
+    private WorkflowAdapterLifecycleService adapterLifecycleService;
     private WorkflowNodeMarketplaceService service;
 
     /** 创建隔离的市场、包解析和模板持久化替身。 */
@@ -38,7 +39,9 @@ class WorkflowNodeMarketplaceServiceTest {
         workflowService = mock(WorkflowService.class);
         pluginProbes = mock(WorkflowPluginProbeService.class);
         pluginRegistry = mock(WorkflowPluginRegistryService.class);
-        service = new WorkflowNodeMarketplaceService(clients, workflowService, pluginProbes, pluginRegistry, mapper);
+        adapterLifecycleService = mock(WorkflowAdapterLifecycleService.class);
+        service = new WorkflowNodeMarketplaceService(clients, workflowService, pluginProbes, pluginRegistry, mapper,
+            adapterLifecycleService);
         AuthContext.set(new AuthUser(1L, "admin", java.util.Set.of("ADMIN"), java.util.Set.of(),
             AuthenticationType.TOKEN, null, null));
     }
@@ -46,6 +49,19 @@ class WorkflowNodeMarketplaceServiceTest {
     /** 清理当前线程测试身份，避免权限泄漏到其他用例。 */
     @org.junit.jupiter.api.AfterEach
     void tearDown() { AuthContext.clear(); }
+
+    /** 访问市场前必须先确认对应适配器已开启，避免关闭状态仍请求第三方。 */
+    @Test
+    void requiresEnabledAdapterBeforeMarketplaceAccess() {
+        org.mockito.Mockito.doThrow(new BusinessException("workflow.adapterDisabled"))
+            .when(adapterLifecycleService).requireEnabled("N8N");
+
+        BusinessException exception = assertThrows(BusinessException.class,
+            () -> service.nodes("N8N", "", "", 1, 20, false));
+
+        assertEquals("workflow.adapterDisabled", exception.getMessageKey());
+        verify(clients, never()).searchN8n(any(), any(Integer.class), any(Integer.class));
+    }
 
     /** n8n 全量目录必须同时标记可导入和不兼容节点。 */
     @Test

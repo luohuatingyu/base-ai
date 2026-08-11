@@ -7,6 +7,7 @@ import com.baseai.platform.domain.Role;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.domain.DictionaryData;
 import com.baseai.platform.domain.DictionaryType;
+import com.baseai.platform.domain.SystemSetting;
 import com.baseai.platform.repository.SystemSettingRepository;
 import com.baseai.platform.repository.DictionaryDataRepository;
 import com.baseai.platform.repository.DictionaryTypeRepository;
@@ -14,6 +15,7 @@ import com.baseai.platform.repository.MenuRepository;
 import com.baseai.platform.repository.DepartmentRepository;
 import com.baseai.platform.repository.RoleRepository;
 import com.baseai.platform.repository.UserRepository;
+import com.baseai.platform.workflow.WorkflowAdapterLifecycleService;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -134,6 +136,9 @@ public class DataInitializer implements ApplicationRunner {
         // 初始化可扩展的模型类型目录，后续类型可直接通过字典管理追加
         seedModelTypes();
 
+        // 初始化默认关闭的插件适配器开关，仅允许节点管理专用接口切换。
+        seedWorkflowAdapterSettings();
+
         // 获取所有菜单，用于分配给管理员角色
         List<Menu> menus = menuRepository.findAll();
 
@@ -195,6 +200,29 @@ public class DataInitializer implements ApplicationRunner {
         seedModelType("text_model","文本模型",10);
         seedModelType("vision_model","视觉模型",20);
         seedModelType("embedding_model","向量模型",30);
+    }
+
+    /** 初始化两个系统托管适配器开关，已有期望状态不会被应用重启覆盖。 */
+    private void seedWorkflowAdapterSettings() {
+        seedWorkflowAdapterSetting(WorkflowAdapterLifecycleService.N8N_SETTING_KEY, "n8n 适配服务", 10);
+        seedWorkflowAdapterSetting(WorkflowAdapterLifecycleService.DIFY_SETTING_KEY, "Dify 适配服务", 20);
+    }
+
+    /** 仅在缺失时默认关闭，并持续保护适配器参数的固定身份元数据。 */
+    private void seedWorkflowAdapterSetting(String key, String name, int sortOrder) {
+        SystemSetting setting = systemSettingRepository.findByConfigKey(key).orElseGet(() -> {
+            SystemSetting created = new SystemSetting();
+            created.setConfigValue("false");
+            return created;
+        });
+        setting.setGroupCode("workflow-adapter");
+        setting.setConfigKey(key);
+        setting.setName(name);
+        setting.setSensitive(false);
+        setting.setEnabled(true);
+        setting.setSortOrder(sortOrder);
+        setting.setSystemManaged(true);
+        systemSettingRepository.save(setting);
     }
 
     /** 仅在缺失时写入内置模型类型，保留管理员对已有字典项的调整。 */
@@ -313,6 +341,7 @@ public class DataInitializer implements ApplicationRunner {
         menu(node.getId(), "更新节点模板", "BUTTON", null, null, null, "workflow:node:update", 612, false);
         menu(node.getId(), "删除节点模板", "BUTTON", null, null, null, "workflow:node:delete", 613, false);
         menu(node.getId(), "导入市场节点", "BUTTON", null, null, null, "workflow:node:import", 614, false);
+        menu(node.getId(), "管理插件适配服务", "BUTTON", null, null, null, "workflow:adapter:manage", 615, false);
         menu(workflow.getId(), "节点文档", "MENU", "/workflow/node-docs", "WorkflowNodeDocsView", "Document",
             "workflow:node:docs", 64, true);
         Menu connection = menu(workflow.getId(), "连接配置", "MENU", "/workflow/connections", "WorkflowConnectionsView", "Link",

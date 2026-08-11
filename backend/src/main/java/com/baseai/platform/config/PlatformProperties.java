@@ -272,6 +272,8 @@ public class PlatformProperties {
         private String difyPluginWorkerUrl = "http://dify-plugin-worker:8101";
         private String n8nPluginWorkerUrl = "http://n8n-plugin-worker:8102";
         private String pluginWorkerInternalToken = "";
+        private String adapterManagerUrl = "http://adapter-manager:8090";
+        private String adapterManagerInternalToken = "";
         private int pluginWorkerTimeoutSeconds = 240;
         private int marketplaceProbeConcurrency = 4;
         private int marketplaceProbeQueueCapacity = 100;
@@ -381,6 +383,14 @@ public class PlatformProperties {
         public String getPluginWorkerInternalToken() { return pluginWorkerInternalToken; }
         /** 设置插件 Worker 内部鉴权令牌。 */
         public void setPluginWorkerInternalToken(String value) { pluginWorkerInternalToken = value; }
+        /** 读取按需启停插件 Worker 的隔离控制服务地址。 */
+        public String getAdapterManagerUrl() { return adapterManagerUrl; }
+        /** 设置按需启停插件 Worker 的隔离控制服务地址。 */
+        public void setAdapterManagerUrl(String value) { adapterManagerUrl = value; }
+        /** 读取隔离控制服务内部鉴权令牌。 */
+        public String getAdapterManagerInternalToken() { return adapterManagerInternalToken; }
+        /** 设置隔离控制服务内部鉴权令牌。 */
+        public void setAdapterManagerInternalToken(String value) { adapterManagerInternalToken = value; }
         /** 读取插件 Worker 探测与调用硬超时秒数。 */
         public int getPluginWorkerTimeoutSeconds() { return pluginWorkerTimeoutSeconds; }
         /** 设置插件 Worker 探测与调用硬超时秒数。 */
