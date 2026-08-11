@@ -67,7 +67,7 @@ public class WorkflowPluginProbeService {
             timestamp(Instant.now()), timestamp(Instant.now()), row.id());
         WorkflowPluginWorkerClient.WorkerPackage inspected = row.resultJson() == null ? null : parse(row.resultJson());
         if (enqueue && "COMPLETE".equals(row.probeStatus()) && inspected != null
-            && dependencyUnavailable(inspected)) {
+            && (dependencyUnavailable(inspected) || abiOutdated(source, inspected))) {
             jdbcTemplate.update("""
                 UPDATE workflow_marketplace_plugin_probe SET probe_status='QUEUED',compatibility_status='PROBING',
                     compatibility_reason='',result_json=NULL,package_fingerprint=NULL,attempt_count=0,next_attempt_at=?,
@@ -223,12 +223,13 @@ public class WorkflowPluginProbeService {
                 throw new BusinessException("workflow.pluginWorkerUnavailable");
             }
             String compatibility = compatibility(inspected);
+            String reason = compatibilityReason(inspected, compatibility);
             jdbcTemplate.update("""
                 UPDATE workflow_marketplace_plugin_probe SET package_fingerprint=?,probe_status='COMPLETE',
                     compatibility_status=?,compatibility_reason=?,result_json=?,lease_owner=NULL,lease_expires_at=NULL,
                     probed_at=?,last_accessed_at=?,updated_at=? WHERE id=? AND lease_owner=?
                 """, inspected.fingerprint(), compatibility,
-                "UNSUPPORTED".equals(compatibility) ? "NO_EXECUTABLE_COMPONENT" : "", json(inspected),
+                reason, json(inspected),
                 timestamp(Instant.now()), timestamp(Instant.now()), timestamp(Instant.now()), task.id(), instanceId);
             log.info("plugin probe completed id={} source={} attempt={} queueMs={} downloadMs={} workerMs={} totalMs={}",
                 task.id(), task.source(), task.attempt(),
@@ -240,7 +241,7 @@ public class WorkflowPluginProbeService {
         } catch (BusinessException exception) {
             log.warn("plugin probe failed id={} source={} attempt={} elapsedMs={} reason={}", task.id(), task.source(),
                 task.attempt(), Duration.ofNanos(System.nanoTime() - started).toMillis(), exception.getMessageKey());
-            fail(task, exception.getMessageKey(), terminal(exception));
+            fail(task, publicReason(exception), terminal(exception));
         } catch (RuntimeException exception) {
             log.warn("plugin probe failed id={} source={} attempt={} elapsedMs={} reason=unexpected", task.id(),
                 task.source(), task.attempt(), Duration.ofNanos(System.nanoTime() - started).toMillis());
@@ -287,6 +288,46 @@ public class WorkflowPluginProbeService {
         return inspected.components().stream().noneMatch(item -> "SUPPORTED".equals(item.compatibilityStatus()))
             && inspected.components().stream().allMatch(item -> List.of("DEPENDENCY_INSTALL_FAILED",
                 "DEPENDENCY_INSTALL_TIMEOUT").contains(item.compatibilityReason()));
+    }
+
+    /** Worker ABI 升级后重新探测旧 JSON 缓存，当前或更高版本保持稳定复用。 */
+    private boolean abiOutdated(String source, WorkflowPluginWorkerClient.WorkerPackage inspected) {
+        return inspected.hostAbiVersion() < WorkflowPluginWorkerClient.expectedHostAbiVersion(source);
+    }
+
+    /** 汇总全不兼容组件的首要稳定原因，避免前端只能显示笼统失败。 */
+    private String compatibilityReason(WorkflowPluginWorkerClient.WorkerPackage inspected, String compatibility) {
+        if (!"UNSUPPORTED".equals(compatibility)) return "";
+        List<String> reasons = inspected.components().stream().map(item -> item.compatibilityReason() == null
+            ? "" : item.compatibilityReason()).toList();
+        if (reasons.stream().anyMatch(reason -> reason.contains("DECLARATIVE_ROUTING")
+            || reason.startsWith("N8N_ROUTING") || reason.startsWith("N8N_EXPRESSION"))) {
+            return "ROUTING_UNSUPPORTED";
+        }
+        if (reasons.stream().anyMatch(reason -> reason.contains("PLUGIN_ABI_METHOD")
+            || reason.contains("NODE_EXECUTION_METHOD"))) return "PLUGIN_ABI_UNSUPPORTED";
+        if (reasons.stream().anyMatch(reason -> reason.contains("DEPENDENCY")
+            || reason.startsWith("No module named"))) return "DEPENDENCY_UNAVAILABLE";
+        return "NO_EXECUTABLE_COMPONENT";
+    }
+
+    /** 把 Worker 原始安全错误映射为不会泄露路径、URL 或堆栈的公开原因码。 */
+    private String publicReason(BusinessException exception) {
+        if (!"workflow.pluginWorkerRejected".equals(exception.getMessageKey())) return exception.getMessageKey();
+        Object[] arguments = exception.getMessageArguments();
+        String detail = arguments.length == 0 || arguments[0] == null ? "" : arguments[0].toString();
+        if ("ARCHIVE_SIZE_INVALID".equals(detail)) return "PACKAGE_SIZE_LIMIT";
+        if (List.of("ARCHIVE_FILE_LIMIT", "ARCHIVE_UNPACKED_LIMIT").contains(detail)) {
+            return "PACKAGE_CONTENT_LIMIT";
+        }
+        if (detail.startsWith("DEPENDENCY_") || detail.startsWith("REQUIREMENTS_")) {
+            return "PACKAGE_DEPENDENCY_REJECTED";
+        }
+        if (detail.startsWith("ARCHIVE_") || "PACKAGE_JSON_MISSING".equals(detail)
+            || "DECLARATION_INVALID".equals(detail) || "PLUGIN_COMPONENTS_MISSING".equals(detail)) {
+            return "PACKAGE_ARCHIVE_INVALID";
+        }
+        return "PACKAGE_REJECTED";
     }
 
     /** 安全拒绝类错误不做自动重试，网络和 Worker 可用性错误允许重试。 */

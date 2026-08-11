@@ -131,6 +131,15 @@ class WorkflowPluginProbeServiceTest {
         assertEquals(2, jdbc.queryForObject(
             "SELECT COUNT(*) FROM workflow_marketplace_plugin_probe WHERE probe_status='QUEUED'", Integer.class));
         release.countDown();
+        for (int attempt = 0; attempt < 100; attempt++) {
+            if (jdbc.queryForObject(
+                "SELECT COUNT(*) FROM workflow_marketplace_plugin_probe WHERE probe_status='PROBING'", Integer.class) == 0) {
+                break;
+            }
+            Thread.sleep(20);
+        }
+        assertEquals(0, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM workflow_marketplace_plugin_probe WHERE probe_status='PROBING'", Integer.class));
     }
 
     /** Dify 已固定包与版本后应直接下载，不得为每个后台任务重复执行市场搜索。 */
@@ -168,6 +177,7 @@ class WorkflowPluginProbeServiceTest {
 
         WorkflowPluginProbeService.ProbeSnapshot rejected = service.snapshot("N8N", entry, false);
         assertEquals("UNSUPPORTED", rejected.compatibilityStatus());
+        assertEquals("PACKAGE_ARCHIVE_INVALID", rejected.compatibilityReason());
         assertThrows(BusinessException.class, () -> service.requireCompleted("N8N", entry));
         assertEquals(1, jdbc.queryForObject(
             "SELECT attempt_count FROM workflow_marketplace_plugin_probe", Integer.class));
@@ -200,6 +210,30 @@ class WorkflowPluginProbeServiceTest {
         awaitStatus("COMPLETE");
 
         assertEquals(expected, service.snapshot("N8N", entry, false).compatibilityStatus());
+    }
+
+    /** 全部组件缺少声明式路由能力时应保存可公开原因，而不是笼统不可执行。 */
+    @Test
+    void summarizesUnsupportedRoutingReason() throws Exception {
+        var entry = n8nEntry();
+        String fingerprint = "6".repeat(64);
+        when(clients.findN8n(entry.externalId())).thenReturn(Optional.of(entry));
+        when(clients.downloadN8nPackage(entry)).thenReturn(
+            new WorkflowMarketplaceClients.PackageDownload(new byte[]{1}, fingerprint));
+        WorkflowPluginWorkerClient.WorkerComponent failed = new WorkflowPluginWorkerClient.WorkerComponent(
+            "action", "Action", "", "ACTION", mapper.createArrayNode(), mapper.createArrayNode(), "node.js",
+            "PARTIAL", "DECLARATIVE_ROUTING_NOT_IMPLEMENTED");
+        when(workers.inspect(any(), any(), any(), any(), any())).thenReturn(
+            new WorkflowPluginWorkerClient.WorkerPackage("N8N", "pkg", "1", fingerprint, "node", 2,
+                List.of(failed)));
+
+        service.snapshot("N8N", entry, true);
+        service.dispatch();
+        awaitStatus("COMPLETE");
+
+        WorkflowPluginProbeService.ProbeSnapshot snapshot = service.snapshot("N8N", entry, false);
+        assertEquals("UNSUPPORTED", snapshot.compatibilityStatus());
+        assertEquals("ROUTING_UNSUPPORTED", snapshot.compatibilityReason());
     }
 
     /** 短暂 Worker 故障按上限重试，耗尽后收敛为 FAILED。 */
@@ -267,6 +301,29 @@ class WorkflowPluginProbeServiceTest {
                 package_fingerprint,probe_status,compatibility_status,result_json,next_attempt_at,last_accessed_at)
             VALUES ('N8N',?,?,? ,?,'COMPLETE','UNSUPPORTED',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
             """, entry.externalId(), "n8n-nodes-example", entry.version(), "8".repeat(64), result);
+
+        WorkflowPluginProbeService.ProbeSnapshot snapshot = service.snapshot("N8N", entry, true);
+
+        assertEquals("QUEUED", snapshot.probeStatus());
+        assertEquals(0, jdbc.queryForObject(
+            "SELECT attempt_count FROM workflow_marketplace_plugin_probe", Integer.class));
+    }
+
+    /** 旧 Worker ABI 结果必须在再次访问市场时失效，避免历史误判永久保留。 */
+    @Test
+    void requeuesCachedResultFromPreviousWorkerAbi() throws Exception {
+        var entry = n8nEntry();
+        WorkflowPluginWorkerClient.WorkerComponent failed = new WorkflowPluginWorkerClient.WorkerComponent(
+            "action", "Action", "", "ACTION", mapper.createArrayNode(), mapper.createArrayNode(), "node.js",
+            "PARTIAL", "DECLARATIVE_ROUTING_NOT_IMPLEMENTED");
+        String result = mapper.writeValueAsString(new WorkflowPluginWorkerClient.WorkerPackage("N8N",
+            "n8n-nodes-example", "1.2.3", "7".repeat(64), "node", 1, List.of(failed)));
+        jdbc.update("""
+            INSERT INTO workflow_marketplace_plugin_probe(source,catalog_external_key,package_key,package_version,
+                package_fingerprint,probe_status,compatibility_status,compatibility_reason,result_json,
+                next_attempt_at,last_accessed_at)
+            VALUES ('N8N',?,?,? ,?,'COMPLETE','UNSUPPORTED','ROUTING_UNSUPPORTED',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+            """, entry.externalId(), "n8n-nodes-example", entry.version(), "7".repeat(64), result);
 
         WorkflowPluginProbeService.ProbeSnapshot snapshot = service.snapshot("N8N", entry, true);
 

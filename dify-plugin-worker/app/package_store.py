@@ -32,7 +32,7 @@ TYPE_KEYS = {
 
 REQUIREMENT_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9_,.-]+\])?(.*)$")
 FORBIDDEN_REQUIREMENTS = {"dify-plugin", "dify_plugin"}
-HOST_ABI_VERSION = 2
+HOST_ABI_VERSION = 3
 
 
 class PackageError(ValueError):
@@ -190,6 +190,8 @@ class PackageStore:
         if not credential_value and isinstance(provider_schema, dict):
             credential_value = provider_schema.get("credential_form_schemas", [])
         credential_schema = self._fields(credential_value)
+        if component_type == "MODEL":
+            return self._model_components(root, reference, provider, credential_schema, dependency_error)
         child_key = {
             "TOOL": "tools", "AGENT_STRATEGY": "strategies", "DATASOURCE": "datasources",
             "TRIGGER": "triggers", "EXTENSION": "endpoints",
@@ -200,6 +202,90 @@ class PackageStore:
                     for child in children]
         return [self._component_from_data(root, reference, provider, component_type, credential_schema,
                                           dependency_error)]
+
+    def _model_components(self, root: Path, reference: str, provider: dict[str, Any],
+                          credential_schema: list[dict[str, Any]], dependency_error: str) -> list[dict[str, Any]]:
+        """把 Dify 模型 Provider 展开为真正声明在 model_sources 中的可执行模型组件。"""
+        extra = provider.get("extra") if isinstance(provider.get("extra"), dict) else {}
+        python = extra.get("python") if isinstance(extra.get("python"), dict) else {}
+        sources = python.get("model_sources", [])
+        if not isinstance(sources, list) or not sources:
+            return [self._component_from_data(root, reference, provider, "MODEL", credential_schema,
+                                              dependency_error)]
+        provider_id = str(provider.get("provider") or Path(reference).stem)
+        label = self._localized(provider.get("label"), provider_id)
+        description = self._localized(provider.get("description"), "")
+        supported = provider.get("supported_model_types", [])
+        supported_types = [self._model_type(str(value)) for value in supported] if isinstance(supported, list) else []
+        components = []
+        for index, raw_source in enumerate(sources):
+            source = str(raw_source).replace("\\", "/")
+            model_type = self._model_type_from_source(source, supported_types, index)
+            source_exists = bool(source) and (root / source).is_file()
+            probe_error = self._probe(root, source, "MODEL") if source_exists and not dependency_error else dependency_error
+            components.append({
+                "externalId": f"{provider_id}.{model_type}",
+                "name": f"{label} {self._model_type_label(model_type)}",
+                "description": description,
+                "componentType": "MODEL",
+                "modelType": model_type,
+                "schema": self._model_schema(model_type),
+                "credentialSchema": credential_schema,
+                "sourcePath": source,
+                "compatibilityStatus": "SUPPORTED" if source_exists and not probe_error else "PARTIAL",
+                "compatibilityReason": "" if source_exists and not probe_error
+                else probe_error or "PYTHON_SOURCE_MISSING",
+            })
+        return components
+
+    def _model_schema(self, model_type: str) -> list[dict[str, Any]]:
+        """生成统一模型字段，并补充各协议调用所需的可配置参数。"""
+        fields = [
+            {"name": "model", "label": "模型", "description": "", "type": "string",
+             "required": True, "default": None, "options": [], "secret": False},
+            {"name": "model_parameters", "label": "模型参数", "description": "", "type": "object",
+             "required": False, "default": {}, "options": [], "secret": False},
+        ]
+        if model_type == "llm":
+            fields.extend([
+                {"name": "tools", "label": "工具", "description": "", "type": "array", "required": False,
+                 "default": [], "options": [], "secret": False},
+                {"name": "stop", "label": "停止词", "description": "", "type": "array", "required": False,
+                 "default": [], "options": [], "secret": False},
+            ])
+        elif model_type == "text-embedding":
+            fields.append({"name": "input_type", "label": "输入用途", "description": "", "type": "select",
+                           "required": False, "default": "document", "options": [
+                               {"value": "document", "label": {"zh_Hans": "文档", "en_US": "Document"}},
+                               {"value": "query", "label": {"zh_Hans": "查询", "en_US": "Query"}}],
+                           "secret": False})
+        elif model_type == "tts":
+            fields.append({"name": "voice", "label": "音色", "description": "", "type": "string",
+                           "required": True, "default": None, "options": [], "secret": False})
+        return fields
+
+    def _model_type_from_source(self, source: str, supported: list[str], index: int) -> str:
+        """根据标准目录名识别模型协议，并在单源 Provider 中回退声明类型。"""
+        normalized = source.lower().replace("-", "_")
+        aliases = (("text_embedding", "text-embedding"), ("speech2text", "speech2text"),
+                   ("speech_to_text", "speech2text"), ("moderation", "moderation"),
+                   ("rerank", "rerank"), ("tts", "tts"), ("llm", "llm"))
+        for needle, value in aliases:
+            if needle in normalized:
+                return value
+        if len(supported) == 1:
+            return supported[0]
+        return supported[index] if index < len(supported) else f"model-{index + 1}"
+
+    def _model_type(self, value: str) -> str:
+        """规范化 Dify 模型类型名称。"""
+        return value.strip().lower().replace("_", "-")
+
+    def _model_type_label(self, value: str) -> str:
+        """生成简短稳定的模型组件显示类型。"""
+        return {"llm": "LLM", "text-embedding": "Embedding", "speech2text": "Speech To Text",
+                "moderation": "Moderation", "tts": "Text To Speech", "rerank": "Rerank"}.get(
+                    value, value.replace("-", " ").title())
 
     def _component(self, root: Path, reference: str, component_type: str,
                    credential_schema: list[dict[str, Any]], dependency_error: str) -> dict[str, Any]:

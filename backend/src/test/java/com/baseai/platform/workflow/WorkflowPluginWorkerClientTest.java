@@ -53,4 +53,35 @@ class WorkflowPluginWorkerClientTest {
 
         assertEquals("workflow.pluginWorkerUnavailable", exception.getMessageKey());
     }
+
+    /** Worker 结果必须携带来源对应的 ABI 版本，旧版本不得进入持久化缓存。 */
+    @Test
+    void validatesWorkerHostAbiVersion() throws Exception {
+        String fingerprint = "a".repeat(64);
+        int[] requestCount = {0};
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/packages/inspect", exchange -> {
+            byte[] body = ("""
+                {"fingerprint":"%s","runtimeLanguage":"node","hostAbiVersion":%d,"components":[
+                  {"externalId":"action","name":"Action","componentType":"ACTION","schema":[],
+                   "credentialSchema":[],"sourcePath":"node.js","compatibilityStatus":"SUPPORTED",
+                   "compatibilityReason":""}]}
+                """).formatted(fingerprint, requestCount[0]++ == 0 ? 3 : 2).getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        PlatformProperties properties = new PlatformProperties();
+        String workerUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        properties.getWorkflow().setDifyPluginWorkerUrl(workerUrl);
+        properties.getWorkflow().setN8nPluginWorkerUrl(workerUrl);
+        properties.getWorkflow().setPluginWorkerInternalToken("x".repeat(24));
+        WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties);
+
+        assertEquals(3, client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
+        BusinessException outdated = assertThrows(BusinessException.class,
+            () -> client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint));
+        assertEquals("workflow.pluginWorkerResponseInvalid", outdated.getMessageKey());
+    }
 }

@@ -8,6 +8,7 @@ import importlib.util
 import sys
 import types
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 
@@ -30,6 +31,158 @@ class ToolInvokeMessage:
     def message(self) -> Any:
         """兼容读取历史 SDK 的 message 属性。"""
         return self.value
+
+
+class StringEnum(str, Enum):
+    """提供与 Dify/Pydantic 字符串枚举相近的比较和序列化语义。"""
+
+
+class PromptMessageRole(StringEnum):
+    """模型消息角色。"""
+
+    SYSTEM = "system"
+    DEVELOPER = "developer"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+class PromptMessageContentType(StringEnum):
+    """模型消息内容类型。"""
+
+    TEXT = "text"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
+    DOCUMENT = "document"
+
+
+class ModelType(StringEnum):
+    """Dify 常用模型类型。"""
+
+    LLM = "llm"
+    TEXT_EMBEDDING = "text-embedding"
+    RERANK = "rerank"
+    SPEECH2TEXT = "speech2text"
+    MODERATION = "moderation"
+    TTS = "tts"
+
+
+class ModelFeature(StringEnum):
+    """真实模型插件在导入阶段读取的能力枚举。"""
+
+    TOOL_CALL = "tool-call"
+    MULTI_TOOL_CALL = "multi-tool-call"
+    AGENT_THOUGHT = "agent-thought"
+    VISION = "vision"
+    STREAM_TOOL_CALL = "stream-tool-call"
+    DOCUMENT = "document"
+    VIDEO = "video"
+    AUDIO = "audio"
+
+
+class EmbeddingInputType(StringEnum):
+    """向量模型输入用途。"""
+
+    DOCUMENT = "document"
+    QUERY = "query"
+
+
+class PromptMessage:
+    """保存插件可读取的基础消息字段。"""
+
+    role = PromptMessageRole.USER
+
+    def __init__(self, content: Any = "", **kwargs: Any) -> None:
+        """接受 Dify 消息实体的宽松关键字参数。"""
+        self.content = content
+        self.name = kwargs.pop("name", None)
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class SystemPromptMessage(PromptMessage):
+    """系统消息。"""
+    role = PromptMessageRole.SYSTEM
+
+
+class DeveloperPromptMessage(PromptMessage):
+    """开发者消息。"""
+    role = PromptMessageRole.DEVELOPER
+
+
+class UserPromptMessage(PromptMessage):
+    """用户消息。"""
+    role = PromptMessageRole.USER
+
+
+class AssistantPromptMessage(PromptMessage):
+    """助手消息。"""
+    role = PromptMessageRole.ASSISTANT
+
+    class ToolCall:
+        """保存助手工具调用。"""
+        class ToolCallFunction:
+            """保存工具函数名与参数。"""
+            def __init__(self, **kwargs: Any) -> None:
+                self.__dict__.update(kwargs)
+
+        def __init__(self, **kwargs: Any) -> None:
+            self.__dict__.update(kwargs)
+
+
+class ToolPromptMessage(PromptMessage):
+    """工具结果消息。"""
+    role = PromptMessageRole.TOOL
+
+
+class PromptMessageTool:
+    """保存模型工具声明。"""
+    def __init__(self, **kwargs: Any) -> None:
+        self.__dict__.update(kwargs)
+
+
+class PromptMessageContent:
+    """保存多模态内容。"""
+    type = PromptMessageContentType.TEXT
+
+    def __init__(self, data: Any = None, **kwargs: Any) -> None:
+        self.data = data
+        self.__dict__.update(kwargs)
+
+
+class TextPromptMessageContent(PromptMessageContent):
+    """文本内容。"""
+    type = PromptMessageContentType.TEXT
+
+
+class ImagePromptMessageContent(PromptMessageContent):
+    """图片内容。"""
+    type = PromptMessageContentType.IMAGE
+
+
+class AudioPromptMessageContent(PromptMessageContent):
+    """音频内容。"""
+    type = PromptMessageContentType.AUDIO
+
+
+class VideoPromptMessageContent(PromptMessageContent):
+    """视频内容。"""
+    type = PromptMessageContentType.VIDEO
+
+
+class DocumentPromptMessageContent(PromptMessageContent):
+    """文档内容。"""
+    type = PromptMessageContentType.DOCUMENT
+
+
+def prompt_message(value: dict[str, Any]) -> PromptMessage:
+    """把公开 JSON 消息转换为对应 Dify 消息实体。"""
+    role = str(value.get("role", "user")).lower()
+    message_type = {"system": SystemPromptMessage, "developer": DeveloperPromptMessage,
+                    "assistant": AssistantPromptMessage, "tool": ToolPromptMessage}.get(role, UserPromptMessage)
+    extra = {key: item for key, item in value.items() if key not in {"role", "content"}}
+    return message_type(content=value.get("content", ""), **extra)
 
 
 class PluginComponent:
@@ -83,6 +236,30 @@ class ToolProvider(PluginComponent):
 
 class ModelProvider(PluginComponent):
     """兼容 Dify ModelProvider 插件基类。"""
+
+
+class LargeLanguageModel(PluginComponent):
+    """兼容 Dify LLM 模型基类。"""
+
+
+class TextEmbeddingModel(PluginComponent):
+    """兼容 Dify向量模型基类。"""
+
+
+class Speech2TextModel(PluginComponent):
+    """兼容 Dify 语音转文字模型基类。"""
+
+
+class ModerationModel(PluginComponent):
+    """兼容 Dify审核模型基类。"""
+
+
+class TTSModel(PluginComponent):
+    """兼容 Dify 文本转语音模型基类。"""
+
+
+class RerankModel(PluginComponent):
+    """兼容 Dify 重排模型基类。"""
 
 
 class AgentStrategy(PluginComponent):
@@ -167,6 +344,29 @@ ABI_EXPORTS = {
     "Tool": Tool,
     "ToolProvider": ToolProvider,
     "ModelProvider": ModelProvider,
+    "LargeLanguageModel": LargeLanguageModel,
+    "TextEmbeddingModel": TextEmbeddingModel,
+    "Speech2TextModel": Speech2TextModel,
+    "ModerationModel": ModerationModel,
+    "TTSModel": TTSModel,
+    "RerankModel": RerankModel,
+    "ModelType": ModelType,
+    "ModelFeature": ModelFeature,
+    "EmbeddingInputType": EmbeddingInputType,
+    "PromptMessage": PromptMessage,
+    "PromptMessageRole": PromptMessageRole,
+    "PromptMessageContentType": PromptMessageContentType,
+    "PromptMessageTool": PromptMessageTool,
+    "SystemPromptMessage": SystemPromptMessage,
+    "DeveloperPromptMessage": DeveloperPromptMessage,
+    "UserPromptMessage": UserPromptMessage,
+    "AssistantPromptMessage": AssistantPromptMessage,
+    "ToolPromptMessage": ToolPromptMessage,
+    "TextPromptMessageContent": TextPromptMessageContent,
+    "ImagePromptMessageContent": ImagePromptMessageContent,
+    "AudioPromptMessageContent": AudioPromptMessageContent,
+    "VideoPromptMessageContent": VideoPromptMessageContent,
+    "DocumentPromptMessageContent": DocumentPromptMessageContent,
     "AgentStrategy": AgentStrategy,
     "Datasource": Datasource,
     "Trigger": Trigger,

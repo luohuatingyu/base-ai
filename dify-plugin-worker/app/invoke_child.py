@@ -5,13 +5,15 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import io
 import json
 import sys
 import types
 from pathlib import Path
 from typing import Any
 
-from app.abi import PluginComponent, Runtime, install_modules, normalize_output
+from app.abi import (EmbeddingInputType, PluginComponent, PromptMessageTool, Runtime,
+                     install_modules, normalize_output, prompt_message)
 
 
 def load_component(root: Path, source_path: str) -> PluginComponent:
@@ -78,12 +80,57 @@ def invoke_method(component: PluginComponent, operation: str, payload: dict[str,
         "redirect_uri": payload.get("redirectUri", ""), "code": payload.get("code", ""),
         "state": payload.get("state", ""), "code_verifier": payload.get("codeVerifier", ""),
     }
+    if payload.get("componentType") == "MODEL" and operation == "invoke":
+        available.update(model_arguments(payload, parameters, credentials, context))
     signature = inspect.signature(method)
     kwargs = {name: available[name] for name in signature.parameters if name in available}
     result = method(**kwargs)
     if inspect.isgenerator(result):
         result = list(result)
     return normalize_output(result)
+
+
+def model_arguments(payload: dict[str, Any], parameters: dict[str, Any], credentials: dict[str, Any],
+                    context: dict[str, Any]) -> dict[str, Any]:
+    """把 Base AI 的统一模型输入转换为 Dify 各模型协议使用的公开参数。"""
+    model_type = str(payload.get("modelType", "llm")).lower()
+    input_value = payload.get("input")
+    input_data = input_value if isinstance(input_value, dict) else {}
+    common = {
+        "model": str(parameters.get("model", "")), "credentials": credentials,
+        "user": str(context.get("userId") or context.get("workflowOwnerId") or ""),
+    }
+    if model_type == "llm":
+        raw_messages = input_data.get("messages", input_value if isinstance(input_value, list) else [])
+        messages = raw_messages if isinstance(raw_messages, list) else []
+        raw_tools = parameters.get("tools", input_data.get("tools", []))
+        tools = [PromptMessageTool(**item) for item in raw_tools if isinstance(item, dict)] \
+            if isinstance(raw_tools, list) else []
+        model_parameters = parameters.get("model_parameters")
+        if not isinstance(model_parameters, dict):
+            reserved = {"model", "tools", "stop", "stream", "model_parameters"}
+            model_parameters = {key: value for key, value in parameters.items() if key not in reserved}
+        return {**common, "prompt_messages": [prompt_message(item) for item in messages if isinstance(item, dict)],
+                "model_parameters": model_parameters, "tools": tools or None,
+                "stop": parameters.get("stop"), "stream": False}
+    if model_type == "text-embedding":
+        texts = input_data.get("texts", parameters.get("texts", []))
+        if isinstance(texts, str):
+            texts = [texts]
+        input_type = str(parameters.get("input_type", "document")).lower()
+        return {**common, "texts": texts if isinstance(texts, list) else [],
+                "input_type": EmbeddingInputType.QUERY if input_type == "query" else EmbeddingInputType.DOCUMENT}
+    if model_type == "speech2text":
+        encoded = input_data.get("base64", input_data.get("data", ""))
+        import base64
+        return {**common, "file": io.BytesIO(base64.b64decode(encoded, validate=True))}
+    if model_type == "moderation":
+        return {**common, "text": str(input_data.get("text", input_value if isinstance(input_value, str) else ""))}
+    if model_type == "tts":
+        return {**common, "tenant_id": str(context.get("workflowOwnerId", "")),
+                "content_text": str(input_data.get("text", input_value if isinstance(input_value, str) else "")),
+                "voice": str(parameters.get("voice", ""))}
+    return common
 
 
 def main() -> None:

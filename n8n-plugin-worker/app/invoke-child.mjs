@@ -40,20 +40,86 @@ function displayed(item, parameters) {
 }
 
 /** 解析常见 n8n 参数和凭据插值，拒绝执行任意 JavaScript 表达式。 */
-function interpolate(value, parameters, credentials, currentValue) {
-  if (Array.isArray(value)) return value.map(item => interpolate(item, parameters, credentials, currentValue))
+function interpolate(value, parameters, credentials, currentValue, responseItem) {
+  if (Array.isArray(value)) return value.map(item => interpolate(item, parameters, credentials, currentValue, responseItem))
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
-    .map(([key, item]) => [key, interpolate(item, parameters, credentials, currentValue)]))
+    .map(([key, item]) => [key, interpolate(item, parameters, credentials, currentValue, responseItem)]))
   if (typeof value !== 'string') return value
-  const exact = value.match(/^=\{\{\s*\$(credentials|parameter)(?:\["([^"]+)"\]|\.([A-Za-z0-9_.-]+))\s*\}\}$/)
-  if (exact) return parameter(exact[1] === 'credentials' ? credentials : parameters, exact[2] || exact[3], '')
-  if (/^=\{\{\s*["']([^"']*)["']\s*\+\s*\$credentials\.([A-Za-z0-9_.-]+)\s*\}\}$/.test(value)) {
-    const match = value.match(/^=\{\{\s*["']([^"']*)["']\s*\+\s*\$credentials\.([A-Za-z0-9_.-]+)\s*\}\}$/)
-    return match[1] + parameter(credentials, match[2], '')
-  }
-  return value.replace(/\{\{\s*\$parameter(?:\["([^"]+)"\]|\.([A-Za-z0-9_.-]+))\s*\}\}/g,
+  const exact = value.match(/^=\{\{\s*(.+)\s*\}\}$/s)
+  if (exact) return evaluateExpression(exact[1], { parameters, credentials, currentValue, responseItem })
+  const rendered = value.replace(/\{\{\s*\$parameter(?:\["([^"]+)"\]|\.([A-Za-z0-9_.-]+))\s*\}\}/g,
     (_, bracket, dotted) => String(parameter(parameters, bracket || dotted, '')))
     .replace(/\{\{\s*\$value\s*\}\}/g, String(currentValue ?? ''))
+  const normalized = rendered.startsWith('=') && !rendered.startsWith('={{') ? rendered.slice(1) : rendered
+  if (normalized.includes('{{') || normalized.startsWith('=')) throw new Error('N8N_EXPRESSION_UNSUPPORTED')
+  return normalized
+}
+
+/** 解释受限的引用、比较、逻辑、三元、拼接和 JSON.parse 表达式。 */
+function evaluateExpression(raw, environment) {
+  const expression = raw.trim()
+  const question = expression.indexOf('?')
+  if (question >= 0) {
+    const colon = expression.lastIndexOf(':')
+    if (colon <= question) throw new Error('N8N_EXPRESSION_UNSUPPORTED')
+    return condition(expression.slice(0, question), environment)
+      ? operand(expression.slice(question + 1, colon), environment)
+      : operand(expression.slice(colon + 1), environment)
+  }
+  if (expression.includes('||')) {
+    for (const part of expression.split('||')) {
+      const value = operand(part, environment)
+      if (value) return value
+    }
+    return undefined
+  }
+  if (expression.includes('+')) return expression.split('+')
+    .map(part => String(operand(part, environment) ?? '')).join('')
+  return operand(expression, environment)
+}
+
+/** 计算三元表达式中受限的布尔条件。 */
+function condition(raw, environment) {
+  const expression = raw.trim()
+  if (expression.includes('||')) return expression.split('||').some(part => condition(part, environment))
+  if (expression.includes('&&')) return expression.split('&&').every(part => condition(part, environment))
+  const includes = expression.match(/^(.+)\.includes\((.+)\)$/s)
+  if (includes) return String(operand(includes[1], environment) ?? '').includes(String(operand(includes[2], environment)))
+  const comparison = expression.match(/^(.+?)\s*(===|!==|>=|<=|>|<)\s*(.+)$/s)
+  if (comparison) {
+    const left = operand(comparison[1], environment); const right = operand(comparison[3], environment)
+    return comparison[2] === '===' ? left === right : comparison[2] === '!==' ? left !== right
+      : comparison[2] === '>=' ? left >= right : comparison[2] === '<=' ? left <= right
+        : comparison[2] === '>' ? left > right : left < right
+  }
+  return Boolean(operand(expression, environment))
+}
+
+/** 读取不执行代码的表达式操作数。 */
+function operand(raw, environment) {
+  const token = raw.trim()
+  if (token === 'undefined') return undefined
+  if (token === 'null') return null
+  if (token === 'true') return true
+  if (token === 'false') return false
+  if (/^-?\d+(?:\.\d+)?$/.test(token)) return Number(token)
+  if (/^"[^"]*"$/.test(token)) return JSON.parse(token)
+  if (/^'[^']*'$/.test(token)) return token.slice(1, -1)
+  const parsed = token.match(/^JSON\.parse\((.+)\)$/s)
+  if (parsed) {
+    const value = operand(parsed[1], environment)
+    if (typeof value !== 'string') return value
+    try { return JSON.parse(value) } catch { throw new Error('N8N_EXPRESSION_JSON_INVALID') }
+  }
+  if (token === '$value') return environment.currentValue
+  let reference = token; let length = false
+  if (reference.endsWith('.length')) { reference = reference.slice(0, -7); length = true }
+  const matched = reference.match(/^\$(parameter|credentials|responseItem)(?:\["([^"]+)"\]|\.([A-Za-z0-9_.-]+))$/)
+  if (!matched) throw new Error('N8N_EXPRESSION_UNSUPPORTED')
+  const root = matched[1] === 'parameter' ? environment.parameters
+    : matched[1] === 'credentials' ? environment.credentials : environment.responseItem
+  const value = parameter(root || {}, matched[2] || matched[3], undefined)
+  return length ? value?.length : value
 }
 
 /** 把路由字段写入 HTTP 请求的 body/query/header/path。 */
@@ -68,23 +134,46 @@ function sendValue(options, send, value) {
 }
 
 /** 递归应用顶层与 collection 属性的声明式路由。 */
-function applyProperties(properties, parameters, credentials, options, parent) {
+function applyProperties(properties, parameters, credentials, options, hooks, parent) {
   for (const property of Array.isArray(properties) ? properties : []) {
     if (!displayed(property, parameters)) continue
     const value = parent ? parent[property.name] : parameter(parameters, property.name, property.default)
     const selected = Array.isArray(property.options)
       ? property.options.find(option => option.value === value && displayed(option, parameters)) : undefined
-    if (selected?.routing?.request) Object.assign(options, interpolate(selected.routing.request, parameters, credentials, value))
-    if (property.routing?.request) Object.assign(options, interpolate(property.routing.request, parameters, credentials, value))
-    if (property.routing?.send) {
-      const sent = property.routing.send.value === undefined ? value
-        : interpolate(property.routing.send.value, parameters, credentials, value)
-      sendValue(options, property.routing.send, sent)
-    }
+    applyRouting(selected?.routing, parameters, credentials, options, hooks, value)
+    applyRouting(property.routing, parameters, credentials, options, hooks, value)
     if (value && typeof value === 'object' && Array.isArray(property.options)) {
-      applyProperties(property.options, parameters, credentials, options, value)
+      applyProperties(property.options, parameters, credentials, options, hooks, value)
     }
   }
+}
+
+/** 合并单条 routing 声明并收集受控生命周期 hook。 */
+function applyRouting(routing, parameters, credentials, options, hooks, value) {
+  if (!routing || typeof routing !== 'object') return
+  if (routing.request) Object.assign(options, interpolate(routing.request, parameters, credentials, value))
+  if (routing.send) {
+    const sent = routing.send.value === undefined ? value
+      : interpolate(routing.send.value, parameters, credentials, value)
+    sendValue(options, routing.send, sent)
+    collectHooks(hooks.preSend, routing.send.preSend)
+  }
+  collectPostReceivers(hooks.postReceive, routing.output?.postReceive)
+}
+
+/** 只接受插件包实际导出的函数 hook。 */
+function collectHooks(target, value) {
+  if (value === undefined) return
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'function')) throw new Error('N8N_ROUTING_HOOK_INVALID')
+  target.push(...value)
+}
+
+/** 接受函数 hook 以及 n8n 内置的 rootProperty/setKeyValue 输出声明。 */
+function collectPostReceivers(target, value) {
+  if (value === undefined) return
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'function'
+    && !['rootProperty', 'setKeyValue'].includes(item?.type))) throw new Error('N8N_ROUTING_HOOK_INVALID')
+  target.push(...value)
 }
 
 /** 解释 n8n 声明式 HTTP 节点的常用 request/send/authenticate 子集。 */
@@ -93,19 +182,58 @@ async function invokeDeclarative(instance, request, context) {
   const parameters = request.parameters && typeof request.parameters === 'object' ? request.parameters : {}
   const credentials = request.credentials && typeof request.credentials === 'object' ? request.credentials : {}
   const options = interpolate(structuredClone(description.requestDefaults || {}), parameters, credentials)
-  applyProperties(description.properties, parameters, credentials, options)
+  const hooks = { preSend: [], postReceive: [] }
+  applyProperties(description.properties, parameters, credentials, options, hooks)
   for (const authentication of request.credentialAuthentications || []) {
     const properties = interpolate(authentication?.properties || {}, parameters, credentials)
     options.headers = { ...(options.headers || {}), ...(properties.headers || {}) }
     options.qs = { ...(options.qs || {}), ...(properties.qs || properties.query || {}) }
   }
+  for (const hook of hooks.preSend) {
+    const updated = await hook.call(context, options)
+    if (updated !== undefined) {
+      if (!updated || typeof updated !== 'object' || Array.isArray(updated)) throw new Error('N8N_PRESEND_OUTPUT_INVALID')
+      Object.assign(options, updated)
+    }
+  }
   const base = String(options.baseURL || options.baseUrl || '')
   const path = String(options.url || '')
   const url = new URL(path, base.endsWith('/') ? base : base + '/')
-  for (const [name, value] of Object.entries(options.qs || {})) url.searchParams.set(name, String(value))
+  for (const [name, value] of Object.entries(options.qs || {})) {
+    if (Array.isArray(value)) value.forEach(item => url.searchParams.append(name, String(item)))
+    else url.searchParams.set(name, String(value))
+  }
   options.url = url.toString(); delete options.baseURL; delete options.baseUrl; delete options.qs
   const response = await context.helpers.httpRequest(options)
-  return [[{ json: response && typeof response === 'object' ? response : { data: response } }]]
+  let items = Array.isArray(response)
+    ? response.map(item => ({ json: item && typeof item === 'object' ? item : { data: item } }))
+    : [{ json: response && typeof response === 'object' && !Buffer.isBuffer(response) ? response : { data: response } }]
+  for (const hook of hooks.postReceive) {
+    const updated = typeof hook === 'function' ? await hook.call(context, items, response)
+      : applyPostReceiveDirective(hook, items, parameters, credentials)
+    if (updated !== undefined) items = updated
+    if (!Array.isArray(items)) throw new Error('N8N_POSTRECEIVE_OUTPUT_INVALID')
+  }
+  return [items]
+}
+
+/** 执行 n8n 内置的根属性展开和键值筛选输出声明。 */
+function applyPostReceiveDirective(directive, items, parameters, credentials) {
+  if (directive.type === 'rootProperty') {
+    const propertyName = String(directive.properties?.property || '')
+    return items.flatMap(item => {
+      const value = parameter(item.json || {}, propertyName, [])
+      return (Array.isArray(value) ? value : [value]).map(entry => ({ json: entry && typeof entry === 'object'
+        ? entry : { data: entry } }))
+    })
+  }
+  if (directive.type === 'setKeyValue') return items.map(item => {
+    const enabled = directive.enabled === undefined
+      ? true : Boolean(interpolate(directive.enabled, parameters, credentials, undefined, item.json))
+    if (!enabled) return item
+    return { ...item, json: interpolate(directive.properties || {}, parameters, credentials, undefined, item.json) }
+  })
+  throw new Error('N8N_ROUTING_HOOK_INVALID')
 }
 
 /** 构造常用 IExecuteFunctions 兼容上下文。 */
@@ -113,17 +241,24 @@ function executionContext(request) {
   const parameters = request.parameters && typeof request.parameters === 'object' ? request.parameters : {}
   const credentials = request.credentials && typeof request.credentials === 'object' ? request.credentials : {}
   const inputs = Array.isArray(request.input) ? request.input : [request.input ?? {}]
-  const items = inputs.map(value => value && value.json ? value : { json: value })
+  const items = inputs.map(value => value && (value.json || value.binary)
+    ? { json: value.json || {}, ...(value.binary ? { binary: value.binary } : {}) } : { json: value })
   const helpers = {
     /** 通过标准 fetch 执行插件 HTTP 请求。 */
     async httpRequest(options) {
       const url = new URL(options.url || options.uri)
       for (const [name, value] of Object.entries(options.qs || options.query || {})) {
-        if (value !== undefined && value !== null) url.searchParams.set(name, String(value))
+        if (value === undefined || value === null) continue
+        if (Array.isArray(value)) value.forEach(item => url.searchParams.append(name, String(item)))
+        else url.searchParams.set(name, String(value))
       }
       const headers = { ...(options.headers || {}) }
       let body = options.body
-      if (options.form && typeof options.form === 'object') {
+      if (typeof FormData !== 'undefined' && body instanceof FormData) {
+        for (const name of Object.keys(headers)) {
+          if (name.toLowerCase() === 'content-type') delete headers[name]
+        }
+      } else if (options.form && typeof options.form === 'object') {
         body = new URLSearchParams(Object.entries(options.form).map(([key, value]) => [key, String(value)]))
         if (!Object.keys(headers).some(key => key.toLowerCase() === 'content-type')) headers['content-type'] = 'application/x-www-form-urlencoded'
       } else if (body !== undefined && options.json !== false && typeof body !== 'string' && !Buffer.isBuffer(body)) {
@@ -134,9 +269,18 @@ function executionContext(request) {
         method: options.method || 'GET', headers, body,
         signal: AbortSignal.timeout(Math.min(Number(options.timeout || 30000), 120000)),
       })
-      const text = await response.text()
       if (!response.ok && !options.ignoreHttpStatusErrors) throw new Error(`HTTP_${response.status}`)
-      if (options.returnFullResponse) return { statusCode: response.status, headers: Object.fromEntries(response.headers), body: options.json === false ? text : JSON.parse(text) }
+      if (String(options.encoding || '').toLowerCase() === 'arraybuffer') {
+        const binary = Buffer.from(await response.arrayBuffer())
+        return options.returnFullResponse
+          ? { statusCode: response.status, headers: Object.fromEntries(response.headers), body: binary } : binary
+      }
+      const text = await response.text()
+      if (options.returnFullResponse) {
+        let parsed = text
+        if (options.json !== false) { try { parsed = JSON.parse(text) } catch {} }
+        return { statusCode: response.status, headers: Object.fromEntries(response.headers), body: parsed }
+      }
       if (options.json === false) return text
       try { return JSON.parse(text) } catch { return text }
     },
@@ -165,6 +309,8 @@ function executionContext(request) {
     },
     /** 从 Base64 二进制描述恢复 Buffer。 */
     async getBinaryDataBuffer(itemIndex, propertyName) {
+      if (typeof itemIndex === 'string') { propertyName = itemIndex; itemIndex = 0 }
+      if (!Number.isInteger(itemIndex)) itemIndex = 0
       const value = items[itemIndex]?.binary?.[propertyName]?.data
       if (typeof value !== 'string') throw new Error('N8N_BINARY_DATA_MISSING')
       return Buffer.from(value, 'base64')

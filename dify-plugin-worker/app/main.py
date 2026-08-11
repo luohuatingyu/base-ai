@@ -78,6 +78,8 @@ class Handler(BaseHTTPRequestHandler):
         child_request = dict(request)
         child_request["root"] = str(root)
         child_request["sourcePath"] = component["sourcePath"]
+        child_request["componentType"] = component.get("componentType", "")
+        child_request["modelType"] = component.get("modelType", "")
         environment = {
             "PATH": os.getenv("PATH", ""), "PYTHONPATH": "/app", "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONUNBUFFERED": "1", "LANG": "C.UTF-8",

@@ -49,6 +49,10 @@ public class WorkflowPluginWorkerClient {
         if (!root.path("components").isArray() || !fingerprint.equalsIgnoreCase(root.path("fingerprint").asText())) {
             throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         }
+        int hostAbiVersion = root.path("hostAbiVersion").asInt(0);
+        if (hostAbiVersion < expectedHostAbiVersion(source)) {
+            throw new BusinessException("workflow.pluginWorkerResponseInvalid");
+        }
         List<WorkerComponent> components = new ArrayList<>();
         for (JsonNode item : root.path("components")) {
             String externalId = text(item, "externalId");
@@ -64,7 +68,7 @@ public class WorkflowPluginWorkerClient {
         }
         if (components.isEmpty()) throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         return new WorkerPackage(source.toUpperCase(Locale.ROOT), packageId, version, fingerprint,
-            text(root, "runtimeLanguage"), List.copyOf(components));
+            text(root, "runtimeLanguage"), hostAbiVersion, List.copyOf(components));
     }
 
     /** 调用指定来源 Worker 中已固定版本的组件。 */
@@ -162,8 +166,19 @@ public class WorkflowPluginWorkerClient {
         return node.path(field).asText("").trim();
     }
 
+    /** 返回 Backend 当前能够解释的最低 Worker ABI 版本。 */
+    public static int expectedHostAbiVersion(String source) {
+        return "DIFY".equalsIgnoreCase(source) ? 3 : "N8N".equalsIgnoreCase(source) ? 3 : Integer.MAX_VALUE;
+    }
+
     public record WorkerPackage(String source, String packageId, String version, String fingerprint,
-                                String runtimeLanguage, List<WorkerComponent> components) {}
+                                String runtimeLanguage, int hostAbiVersion, List<WorkerComponent> components) {
+        /** 兼容旧持久化结果；缺失版本会在再次浏览市场时触发重探测。 */
+        public WorkerPackage(String source, String packageId, String version, String fingerprint,
+                             String runtimeLanguage, List<WorkerComponent> components) {
+            this(source, packageId, version, fingerprint, runtimeLanguage, 0, components);
+        }
+    }
     public record WorkerComponent(String externalId, String name, String description, String componentType,
                                   JsonNode schema, JsonNode credentialSchema, String sourcePath,
                                   String compatibilityStatus, String compatibilityReason) {}

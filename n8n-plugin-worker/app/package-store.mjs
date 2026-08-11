@@ -10,6 +10,7 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const SHIM = resolve(dirname(new URL(import.meta.url).pathname), 'abi-shim.cjs')
+const HOST_ABI_VERSION = 3
 
 export class PackageError extends Error {}
 
@@ -36,7 +37,8 @@ export class PackageStore {
     if (existsSync(metadataFile)) {
       const cached = JSON.parse(await readFile(metadataFile, 'utf8'))
       const reasons = new Set((cached.components || []).map(item => item.compatibilityReason))
-      if (reasons.size && [...reasons].every(reason => ['DEPENDENCY_INSTALL_FAILED', 'DEPENDENCY_INSTALL_TIMEOUT'].includes(reason))) {
+      if (cached.hostAbiVersion !== HOST_ABI_VERSION
+          || reasons.size && [...reasons].every(reason => ['DEPENDENCY_INSTALL_FAILED', 'DEPENDENCY_INSTALL_TIMEOUT'].includes(reason))) {
         await rm(target, { recursive: true, force: true })
       } else return cached
     }
@@ -138,7 +140,8 @@ export class PackageStore {
     }
     return {
       source: 'N8N', packageId: String(request.packageId || manifest.name || ''),
-      version: String(request.version || manifest.version || ''), fingerprint, runtimeLanguage: 'node', components,
+      version: String(request.version || manifest.version || ''), fingerprint, runtimeLanguage: 'node',
+      hostAbiVersion: HOST_ABI_VERSION, components,
     }
   }
 
@@ -265,10 +268,53 @@ export class PackageStore {
   /** 判断节点声明是否至少包含一条可安全解释的 HTTP 路由。 */
   #declarative(description) {
     if (!description?.requestDefaults || !Array.isArray(description.properties)) return false
-    const routed = description.properties.some(property => property?.routing?.request
-      || (Array.isArray(property?.options) && property.options.some(option => option?.routing?.request)))
-    const unsupported = JSON.stringify(description).includes('preSend') || JSON.stringify(description).includes('postReceive')
-    return routed && !unsupported
+    if (!this.#declarativeValue(description.requestDefaults)) return false
+    let routed = false
+    const visit = properties => (Array.isArray(properties) ? properties : []).every(property => {
+      const routes = [property?.routing, ...(Array.isArray(property?.options)
+        ? property.options.map(option => option?.routing) : [])].filter(Boolean)
+      for (const routing of routes) {
+        if (routing.request) routed = true
+        if (!this.#routing(routing)) return false
+      }
+      return !Array.isArray(property?.options) || visit(property.options)
+    })
+    return visit(description.properties) && routed
+  }
+
+  /** 判断声明式路由只包含宿主可安全解释的字段和函数 hook。 */
+  #routing(routing) {
+    if (!routing || typeof routing !== 'object') return true
+    if (routing.request && !this.#declarativeValue(routing.request)) return false
+    if (routing.send) {
+      const { preSend, ...send } = routing.send
+      if (preSend !== undefined && (!Array.isArray(preSend) || preSend.some(hook => typeof hook !== 'function'))) return false
+      if (!this.#declarativeValue(send)) return false
+    }
+    const postReceive = routing.output?.postReceive
+    if (postReceive !== undefined
+      && (!Array.isArray(postReceive) || postReceive.some(hook => typeof hook !== 'function'
+        && (!['rootProperty', 'setKeyValue'].includes(hook?.type) || !this.#declarativeValue(hook))))) return false
+    return true
+  }
+
+  /** 静态确认路由值不要求执行任意 JavaScript 表达式。 */
+  #declarativeValue(value) {
+    if (Array.isArray(value)) return value.every(item => this.#declarativeValue(item))
+    if (value && typeof value === 'object') return Object.values(value).every(item => this.#declarativeValue(item))
+    if (typeof value !== 'string' || !value.includes('{{') && !value.startsWith('=')) return true
+    if (/^=\{\{\s*\$(?:parameter|credentials|responseItem)(?:\["[^"]+"\]|\.[A-Za-z0-9_.-]+)\s*\}\}$/.test(value)) return true
+    if (/^=?[^{}]*(?:\{\{\s*\$parameter(?:\["[^"]+"\]|\.[A-Za-z0-9_.-]+)\s*\}\}[^{}]*)+$/.test(value)) return true
+    const expression = value.match(/^=\{\{\s*(.+)\s*\}\}$/s)?.[1]
+    if (!expression) return false
+    const remaining = expression
+      .replace(/\$(?:parameter|credentials|responseItem)(?:\["[^"]+"\]|\.[A-Za-z0-9_.-]+)(?:\.length)?/g, '')
+      .replace(/\$value/g, '')
+      .replace(/"[^"]*"|'[^']*'/g, '')
+      .replace(/JSON\.parse|\.includes/g, '')
+      .replace(/\b(?:true|false|null|undefined)\b/g, '')
+      .replace(/[0-9.\s+?:|&!=<>()[\],-]/g, '')
+    return remaining === ''
   }
 
   /** 查找实例对应的导出名称。 */

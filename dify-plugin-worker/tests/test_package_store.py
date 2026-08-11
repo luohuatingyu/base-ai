@@ -68,6 +68,70 @@ class PackageStoreTest(unittest.TestCase):
             self.assertEqual(0, invoked.returncode, invoked.stdout)
             self.assertTrue(json.loads(invoked.stdout)["success"])
 
+    def test_discovers_and_invokes_declared_model_source(self) -> None:
+        """模型 Provider 必须使用 model_sources，而不是把凭据 Provider 误当成模型实现。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  models: [provider/model.yaml]\n",
+            "provider/model.yaml": """
+provider: fixture
+label:
+  en_US: Fixture Models
+supported_model_types: [llm]
+provider_credential_schema:
+  credential_form_schemas:
+    - variable: api_key
+      label: {en_US: API Key}
+      type: secret-input
+      required: true
+models:
+  llm:
+    predefined: [models/llm/*.yaml]
+extra:
+  python:
+    provider_source: provider/model.py
+    model_sources: [models/llm/llm.py]
+""",
+            "provider/model.py": "from dify_plugin import ModelProvider\nclass Provider(ModelProvider):\n    def validate_provider_credentials(self, credentials): return None\n",
+            "models/llm/fixture.yaml": "model: fixture-chat\nlabel: {en_US: Fixture Chat}\nmodel_type: llm\n",
+            "models/llm/llm.py": """
+from dify_plugin.interfaces.model.large_language_model import LargeLanguageModel
+class FixtureLlm(LargeLanguageModel):
+    def _invoke(self, model, credentials, prompt_messages, model_parameters, tools=None,
+                stop=None, stream=True, user=None):
+        return {'model': model, 'api_key': credentials.get('api_key'),
+                'messages': [{'role': item.role.value, 'content': item.content} for item in prompt_messages],
+                'temperature': model_parameters.get('temperature'), 'stream': stream, 'user': user}
+""",
+        })
+
+        result = self.store.install({"packageId": "fixture/model", "version": "1",
+                                     "archiveBase64": base64.b64encode(raw).decode()})
+
+        self.assertEqual(3, result["hostAbiVersion"])
+        self.assertEqual(1, len(result["components"]))
+        item = result["components"][0]
+        self.assertEqual("SUPPORTED", item["compatibilityStatus"])
+        self.assertEqual("models/llm/llm.py", item["sourcePath"])
+        self.assertEqual("llm", item["modelType"])
+        root, _ = self.store.metadata(result["fingerprint"])
+        payload = {
+            "root": str(root), "sourcePath": item["sourcePath"], "componentType": "MODEL",
+            "modelType": item["modelType"], "operation": "invoke",
+            "parameters": {"model": "fixture-chat", "model_parameters": {"temperature": 0.2}},
+            "credentials": {"api_key": "secret"},
+            "input": {"messages": [{"role": "system", "content": "rules"},
+                                     {"role": "user", "content": "hello"}]},
+            "context": {"userId": "user-1"},
+        }
+        invoked = subprocess.run([sys.executable, "-m", "app.invoke_child"], input=json.dumps(payload),
+                                 text=True, capture_output=True, check=False)
+        self.assertEqual(0, invoked.returncode, invoked.stdout)
+        output = json.loads(invoked.stdout)["output"]
+        self.assertEqual("fixture-chat", output["model"])
+        self.assertEqual(["system", "user"], [message["role"] for message in output["messages"]])
+        self.assertFalse(output["stream"])
+        self.assertEqual("user-1", output["user"])
+
     def test_marks_component_partial_when_source_cannot_load(self) -> None:
         """组件依赖缺失时必须通过真实导入探测暴露为部分兼容。"""
         raw = archive({
@@ -255,7 +319,7 @@ class OAuth(Endpoint):
             second = self.store.install(request)
 
         metadata.assert_called_once()
-        self.assertEqual(2, second["hostAbiVersion"])
+        self.assertEqual(3, second["hostAbiVersion"])
 
 
 if __name__ == "__main__":

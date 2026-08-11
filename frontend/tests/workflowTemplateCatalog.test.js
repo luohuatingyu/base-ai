@@ -175,6 +175,14 @@ test('市场中完整导入的插件和能力显示已导入且不可重复选�
   assert.match(nodeManagementSource, /!action\.imported/)
 })
 
+test('市场插件失败原因提供安全且可理解的双语提示', () => {
+  for (const reason of ['PACKAGE_SIZE_LIMIT', 'PACKAGE_CONTENT_LIMIT', 'PACKAGE_DEPENDENCY_REJECTED',
+    'PACKAGE_ARCHIVE_INVALID', 'ROUTING_UNSUPPORTED', 'PLUGIN_ABI_UNSUPPORTED', 'DEPENDENCY_UNAVAILABLE']) {
+    assert.ok(zhCN.workflowNodes.incompatibility[reason])
+    assert.ok(enUS.workflowNodes.incompatibility[reason])
+  }
+})
+
 test('市场页面自动轮询异步探测且导入不负责触发探测', () => {
   assert.match(nodeManagementSource, /data\?\.probePending/)
   assert.match(nodeManagementSource, /scheduleMarketplacePolling/)
