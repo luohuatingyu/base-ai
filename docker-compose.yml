@@ -59,6 +59,9 @@ services:
       APP_MAX_REQUEST_HEADER_SIZE: ${APP_MAX_REQUEST_HEADER_SIZE:-16KB}
       PYTHON_WORKER_URL: ${PYTHON_WORKER_URL:-http://python-worker:8000}
       PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
+      DIFY_PLUGIN_WORKER_URL: ${DIFY_PLUGIN_WORKER_URL:-http://dify-plugin-worker:8101}
+      N8N_PLUGIN_WORKER_URL: ${N8N_PLUGIN_WORKER_URL:-http://n8n-plugin-worker:8102}
+      PLUGIN_WORKER_INTERNAL_TOKEN: ${PLUGIN_WORKER_INTERNAL_TOKEN:-${PYTHON_WORKER_INTERNAL_TOKEN}}
       JAVA_INSTANCE_ID: ${JAVA_INSTANCE_ID:-java-backend-1}
       LLM_ROUTE_HEALTH_CHECK_ENABLED: ${LLM_ROUTE_HEALTH_CHECK_ENABLED:-true}
       LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS: ${LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS:-3600000}
@@ -105,6 +108,10 @@ services:
     depends_on:
       python-worker:
         condition: service_healthy
+      dify-plugin-worker:
+        condition: service_healthy
+      n8n-plugin-worker:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/open/health/ready"]
       interval: 15s
@@ -148,6 +155,86 @@ services:
       retries: 10
     stop_signal: SIGTERM
     stop_grace_period: 20s
+    networks:
+      - app-network
+
+  dify-plugin-worker:
+    build:
+      context: ./dify-plugin-worker
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${PLUGIN_WORKER_PIDS_LIMIT:-128}
+    mem_limit: ${PLUGIN_WORKER_MEMORY_LIMIT:-512m}
+    cpus: ${PLUGIN_WORKER_CPU_LIMIT:-1.0}
+    logging: *default-logging
+    environment:
+      PORT: 8101
+      PLUGIN_WORKER_INTERNAL_TOKEN: ${PLUGIN_WORKER_INTERNAL_TOKEN:-${PYTHON_WORKER_INTERNAL_TOKEN}}
+      PLUGIN_WORKER_MAX_REQUEST_BYTES: ${PLUGIN_WORKER_MAX_REQUEST_BYTES:-15728640}
+      PLUGIN_MAX_PACKAGE_BYTES: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_BYTES:-5242880}
+      PLUGIN_MAX_UNPACKED_BYTES: ${WORKFLOW_MARKETPLACE_MAX_UNPACKED_BYTES:-10485760}
+      PLUGIN_MAX_PACKAGE_FILES: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_FILES:-128}
+      PLUGIN_INVOCATION_TIMEOUT_SECONDS: ${PLUGIN_INVOCATION_TIMEOUT_SECONDS:-60}
+    volumes:
+      - dify-plugin-packages:/data/packages
+    tmpfs:
+      - /data/tmp:size=64m,mode=1700,uid=10001,gid=10001
+      - /tmp:size=64m,mode=1700,uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8101/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app-network
+
+  n8n-plugin-worker:
+    build:
+      context: ./n8n-plugin-worker
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${PLUGIN_WORKER_PIDS_LIMIT:-128}
+    mem_limit: ${PLUGIN_WORKER_MEMORY_LIMIT:-512m}
+    cpus: ${PLUGIN_WORKER_CPU_LIMIT:-1.0}
+    logging: *default-logging
+    environment:
+      PORT: 8102
+      PLUGIN_WORKER_INTERNAL_TOKEN: ${PLUGIN_WORKER_INTERNAL_TOKEN:-${PYTHON_WORKER_INTERNAL_TOKEN}}
+      PLUGIN_WORKER_MAX_REQUEST_BYTES: ${PLUGIN_WORKER_MAX_REQUEST_BYTES:-15728640}
+      PLUGIN_MAX_PACKAGE_BYTES: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_BYTES:-5242880}
+      PLUGIN_MAX_UNPACKED_BYTES: ${WORKFLOW_MARKETPLACE_MAX_UNPACKED_BYTES:-10485760}
+      PLUGIN_MAX_PACKAGE_FILES: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_FILES:-128}
+      PLUGIN_INVOCATION_TIMEOUT_SECONDS: ${PLUGIN_INVOCATION_TIMEOUT_SECONDS:-60}
+    volumes:
+      - n8n-plugin-packages:/data/packages
+    tmpfs:
+      - /data/tmp:size=64m,mode=1700,uid=10001,gid=10001
+      - /tmp:size=64m,mode=1700,uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8102/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - app-network
 
@@ -252,3 +339,5 @@ volumes:
   caddy-data:
   caddy-config:
   caddy-public-ca:
+  dify-plugin-packages:
+  n8n-plugin-packages:

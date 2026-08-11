@@ -156,4 +156,22 @@ class WorkflowSchemaResourceTest {
         assertTrue(schema.contains("'AI'"));
         assertTrue(schema.contains("ON DUPLICATE KEY UPDATE"));
     }
+
+    /** MySQL V15 必须增加插件、组件、OAuth 与触发订阅状态且仅做增量扩展。 */
+    @Test
+    void addsMarketplacePluginRuntimeSchema() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V15__add_marketplace_plugin_runtime.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        for (String table : new String[]{"workflow_marketplace_plugin", "workflow_marketplace_component",
+            "workflow_plugin_oauth_state", "workflow_plugin_trigger_subscription"}) {
+            assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS " + table), table);
+        }
+        for (String invariant : new String[]{"package_fingerprint", "schema_fingerprint", "verifier_encrypted",
+            "subscription_encrypted", "lease_expires_at", "plugin_component_id"}) {
+            assertTrue(schema.contains(invariant), invariant);
+        }
+        assertTrue(!schema.contains("DROP TABLE"));
+        assertTrue(!schema.contains("DROP COLUMN"));
+    }
 }
