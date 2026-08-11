@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import importlib.abc
 import importlib.util
+import logging
 import sys
 import types
 from dataclasses import dataclass
@@ -18,6 +19,11 @@ class Runtime:
 
     credentials: dict[str, Any]
     context: dict[str, Any]
+
+    @property
+    def user_id(self) -> str:
+        """兼容插件从运行时直接读取当前用户标识。"""
+        return str(self.context.get("userId") or self.context.get("workflowOwnerId") or "")
 
 
 @dataclass
@@ -35,6 +41,11 @@ class ToolInvokeMessage:
 
 class StringEnum(str, Enum):
     """提供与 Dify/Pydantic 字符串枚举相近的比较和序列化语义。"""
+
+    @classmethod
+    def value_of(cls, value: Any) -> "StringEnum":
+        """按字符串值查找枚举，兼容模型插件的动态模式选择。"""
+        return cls(str(value))
 
 
 class PromptMessageRole(StringEnum):
@@ -68,6 +79,41 @@ class ModelType(StringEnum):
     TTS = "tts"
 
 
+class LLMMode(StringEnum):
+    """Dify LLM 的对话与续写模式。"""
+
+    CHAT = "chat"
+    COMPLETION = "completion"
+
+
+class FetchFrom(StringEnum):
+    """模型声明的预定义与用户自定义来源。"""
+
+    PREDEFINED_MODEL = "predefined-model"
+    CUSTOMIZABLE_MODEL = "customizable-model"
+
+
+class DefaultParameterName(StringEnum):
+    """Dify 模型通用采样参数名称。"""
+
+    TEMPERATURE = "temperature"
+    TOP_P = "top_p"
+    MAX_TOKENS = "max_tokens"
+    PRESENCE_PENALTY = "presence_penalty"
+    FREQUENCY_PENALTY = "frequency_penalty"
+
+
+class PriceType(StringEnum):
+    """模型计费规则的输入与输出方向。"""
+
+    INPUT = "input"
+    OUTPUT = "output"
+
+
+PARAMETER_RULE_TEMPLATE = {name: {} for name in DefaultParameterName}
+"""保留通用参数模板键；具体模型插件可在空安全基线之上覆盖约束。"""
+
+
 class ModelFeature(StringEnum):
     """真实模型插件在导入阶段读取的能力枚举。"""
 
@@ -79,6 +125,22 @@ class ModelFeature(StringEnum):
     DOCUMENT = "document"
     VIDEO = "video"
     AUDIO = "audio"
+    STRUCTURED_OUTPUT = "structured-output"
+
+
+class ModelPropertyKey(StringEnum):
+    """模型实体 properties 中使用的稳定字段键。"""
+
+    MODE = "mode"
+    CONTEXT_SIZE = "context_size"
+    MAX_CHUNKS = "max_chunks"
+    FILE_UPLOAD_LIMIT = "file_upload_limit"
+    SUPPORTED_FILE_EXTENSIONS = "supported_file_extensions"
+    AUDIO_TYPE = "audio_type"
+    MAX_WORKERS = "max_workers"
+    DEFAULT_VOICE = "default_voice"
+    VOICES = "voices"
+    WORD_LIMIT = "word_limit"
 
 
 class EmbeddingInputType(StringEnum):
@@ -189,8 +251,9 @@ class PluginComponent:
     """为各类插件组件提供统一运行时和消息工厂。"""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """接受第三方组件的宽松构造参数并初始化空运行时。"""
-        self.runtime = Runtime({}, {})
+        """接受宽松构造参数，并保留调用器在构造前注入的受控运行时。"""
+        if not isinstance(getattr(self, "runtime", None), Runtime):
+            self.runtime = Runtime({}, {})
 
     @classmethod
     def from_credentials(cls, credentials: dict[str, Any], user_id: str = "") -> "PluginComponent":
@@ -289,6 +352,44 @@ class Placeholder(PluginComponent):
         for key, value in kwargs.items():
             setattr(self, key, value)
 
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type: Any, handler: Any) -> Any:
+        """向插件自带的 Pydantic 暴露仅构造普通 ABI 实体的安全 Schema。"""
+        from pydantic_core import core_schema
+        return core_schema.no_info_plain_validator_function(cls._pydantic_value)
+
+    @classmethod
+    def _pydantic_value(cls, value: Any) -> Any:
+        """把 JSON 对象转换为受控 ABI 实体，其余标量保持原值供枚举式类型使用。"""
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, dict):
+            return cls(**value)
+        return value
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """兼容插件实体常用的 Pydantic 序列化入口。"""
+        return {key: value for key, value in vars(self).items() if key not in {"runtime", "args", "kwargs"}}
+
+    def to_dict(self) -> dict[str, Any]:
+        """兼容 Agent 动作和模型实体的字典转换入口。"""
+        return self.model_dump()
+
+
+class AgentScratchpadUnit(Placeholder):
+    """保存 ReAct Agent 的思考、动作与观察状态。"""
+
+    class Action(Placeholder):
+        """保存 Agent 选择的动作名和公开输入。"""
+
+
+class AgentModelConfig(Placeholder):
+    """承接 Agent 参数中的模型配置并允许 Pydantic 安全建模。"""
+
+
+class AIModelEntity(Placeholder):
+    """承接模型能力元数据并允许 Pydantic 安全建模。"""
+
 
 class Plugin:
     """阻止插件自行启动 Dify 运行循环。"""
@@ -351,8 +452,15 @@ ABI_EXPORTS = {
     "TTSModel": TTSModel,
     "RerankModel": RerankModel,
     "ModelType": ModelType,
+    "FetchFrom": FetchFrom,
+    "DefaultParameterName": DefaultParameterName,
+    "PriceType": PriceType,
+    "PARAMETER_RULE_TEMPLATE": PARAMETER_RULE_TEMPLATE,
     "ModelFeature": ModelFeature,
+    "ModelPropertyKey": ModelPropertyKey,
     "EmbeddingInputType": EmbeddingInputType,
+    "AIModelEntity": AIModelEntity,
+    "LLMMode": LLMMode,
     "PromptMessage": PromptMessage,
     "PromptMessageRole": PromptMessageRole,
     "PromptMessageContentType": PromptMessageContentType,
@@ -368,10 +476,13 @@ ABI_EXPORTS = {
     "VideoPromptMessageContent": VideoPromptMessageContent,
     "DocumentPromptMessageContent": DocumentPromptMessageContent,
     "AgentStrategy": AgentStrategy,
+    "AgentModelConfig": AgentModelConfig,
+    "AgentScratchpadUnit": AgentScratchpadUnit,
     "Datasource": Datasource,
     "Trigger": Trigger,
     "Endpoint": Endpoint,
     "ToolInvokeMessage": ToolInvokeMessage,
+    "plugin_logger_handler": logging.NullHandler(),
 }
 
 

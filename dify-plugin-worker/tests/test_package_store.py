@@ -107,7 +107,7 @@ class FixtureLlm(LargeLanguageModel):
         result = self.store.install({"packageId": "fixture/model", "version": "1",
                                      "archiveBase64": base64.b64encode(raw).decode()})
 
-        self.assertEqual(3, result["hostAbiVersion"])
+        self.assertEqual(4, result["hostAbiVersion"])
         self.assertEqual(1, len(result["components"]))
         item = result["components"][0]
         self.assertEqual("SUPPORTED", item["compatibilityStatus"])
@@ -131,6 +131,100 @@ class FixtureLlm(LargeLanguageModel):
         self.assertEqual(["system", "user"], [message["role"] for message in output["messages"]])
         self.assertFalse(output["stream"])
         self.assertEqual("user-1", output["user"])
+
+    def test_loads_pydantic_agent_and_model_entities(self) -> None:
+        """真实 Agent 与模型插件使用的 Pydantic 类型和嵌套动作必须能够安全建模。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  agent_strategies: [provider.yaml]\n",
+            "provider.yaml": """
+identity:
+  name: agent_contract
+strategies: [strategy.yaml]
+""",
+            "strategy.yaml": """
+identity:
+  name: agent_contract
+extra:
+  python:
+    source: strategy.py
+""",
+            "strategy.py": """
+from dify_plugin.entities.model import (PARAMETER_RULE_TEMPLATE, AIModelEntity, DefaultParameterName, FetchFrom,
+                                        ModelFeature, ModelPropertyKey, PriceType)
+from dify_plugin.entities.model.llm import LLMMode
+from dify_plugin.interfaces.agent import AgentModelConfig, AgentScratchpadUnit, AgentStrategy
+from pydantic import BaseModel
+
+class Contract(BaseModel):
+    model: AgentModelConfig
+    entity: AIModelEntity
+    mode: LLMMode
+
+class ContractAgent(AgentStrategy):
+    action_type = AgentScratchpadUnit.Action
+    fetch_from = FetchFrom.CUSTOMIZABLE_MODEL
+    llm_mode = LLMMode.CHAT
+    mode_key = ModelPropertyKey.MODE
+    structured_output = ModelFeature.STRUCTURED_OUTPUT
+    temperature = DefaultParameterName.TEMPERATURE
+    price_type = PriceType.INPUT
+    temperature_rule = {**PARAMETER_RULE_TEMPLATE[DefaultParameterName.TEMPERATURE]}
+    def _invoke(self, parameters):
+        action = self.action_type(action_name='finish', action_input={'answer': 'ok'})
+        scratchpad = AgentScratchpadUnit(action=action, thought='done')
+        return {'action': action.to_dict(), 'thought': scratchpad.thought}
+""",
+        })
+
+        result = self.store.install({"packageId": "fixture/agent-contract", "version": "1",
+                                     "archiveBase64": base64.b64encode(raw).decode()})
+
+        item = result["components"][0]
+        self.assertEqual("SUPPORTED", item["compatibilityStatus"], item["compatibilityReason"])
+        root, _ = self.store.metadata(result["fingerprint"])
+        invoked = subprocess.run([sys.executable, "-m", "app.invoke_child"], input=json.dumps({
+            "root": str(root), "sourcePath": item["sourcePath"], "componentType": "AGENT_STRATEGY",
+            "operation": "invoke", "parameters": {}, "credentials": {}, "input": {}, "context": {},
+        }), text=True, capture_output=True, check=False)
+        self.assertEqual(0, invoked.returncode, invoked.stdout)
+        output = json.loads(invoked.stdout)["output"]
+        self.assertEqual("finish", output["action"]["action_name"])
+        self.assertEqual("done", output["thought"])
+
+    def test_initializes_component_with_invocation_credentials(self) -> None:
+        """探测不应使用空凭据执行构造器，真实调用必须在构造前注入已校验凭据。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": "identity:\n  name: credential_init\nextra:\n  python:\n    source: tool.py\n",
+            "tool.py": """
+import logging
+from dify_plugin import Tool
+from dify_plugin.config.logger_format import plugin_logger_handler
+class CredentialTool(Tool):
+    def __init__(self):
+        super().__init__()
+        self.logger = logging.getLogger(__name__)
+        self.logger.addHandler(plugin_logger_handler)
+        self.endpoint = self.runtime.credentials.get('endpoint').rstrip('/')
+    def _invoke(self, tool_parameters):
+        return {'endpoint': self.endpoint, 'value': tool_parameters.get('value')}
+""",
+        })
+
+        result = self.store.install({"packageId": "fixture/credential-init", "version": "1",
+                                     "archiveBase64": base64.b64encode(raw).decode()})
+
+        item = result["components"][0]
+        self.assertEqual("SUPPORTED", item["compatibilityStatus"], item["compatibilityReason"])
+        root, _ = self.store.metadata(result["fingerprint"])
+        invoked = subprocess.run([sys.executable, "-m", "app.invoke_child"], input=json.dumps({
+            "root": str(root), "sourcePath": item["sourcePath"], "componentType": "TOOL",
+            "operation": "invoke", "parameters": {"value": "ok"},
+            "credentials": {"endpoint": "https://api.example.com/"}, "input": {}, "context": {},
+        }), text=True, capture_output=True, check=False)
+        self.assertEqual(0, invoked.returncode, invoked.stdout)
+        self.assertEqual({"endpoint": "https://api.example.com", "value": "ok"},
+                         json.loads(invoked.stdout)["output"])
 
     def test_marks_component_partial_when_source_cannot_load(self) -> None:
         """组件依赖缺失时必须通过真实导入探测暴露为部分兼容。"""
@@ -319,7 +413,7 @@ class OAuth(Endpoint):
             second = self.store.install(request)
 
         metadata.assert_called_once()
-        self.assertEqual(3, second["hostAbiVersion"])
+        self.assertEqual(4, second["hostAbiVersion"])
 
 
 if __name__ == "__main__":

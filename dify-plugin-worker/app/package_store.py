@@ -32,7 +32,7 @@ TYPE_KEYS = {
 
 REQUIREMENT_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9_,.-]+\])?(.*)$")
 FORBIDDEN_REQUIREMENTS = {"dify-plugin", "dify_plugin"}
-HOST_ABI_VERSION = 3
+HOST_ABI_VERSION = 4
 
 
 class PackageError(ValueError):

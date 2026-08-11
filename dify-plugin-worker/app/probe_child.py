@@ -6,12 +6,12 @@ import json
 import sys
 from pathlib import Path
 
-from app.invoke_child import load_component
+from app.invoke_child import load_component_class
 
 
 def main() -> None:
-    """加载并实例化指定组件，同时确认目标类型存在可调用 ABI 方法。"""
-    component = load_component(Path(sys.argv[1]).resolve(), sys.argv[2])
+    """加载指定组件类并确认 ABI 方法，构造器留待凭据已注入的真实调用阶段。"""
+    component = load_component_class(Path(sys.argv[1]).resolve(), sys.argv[2])
     component_type = sys.argv[3]
     methods = {
         "TOOL": ("_invoke", "invoke"), "MODEL": ("_invoke", "invoke"),

@@ -10,14 +10,14 @@ import json
 import sys
 import types
 from pathlib import Path
-from typing import Any
+from typing import Any, Type
 
 from app.abi import (EmbeddingInputType, PluginComponent, PromptMessageTool, Runtime,
                      install_modules, normalize_output, prompt_message)
 
 
-def load_component(root: Path, source_path: str) -> PluginComponent:
-    """从已校验包目录加载唯一插件组件类。"""
+def load_component_class(root: Path, source_path: str) -> Type[PluginComponent]:
+    """从已校验包目录加载唯一插件组件类，但不提前执行依赖凭据的构造器。"""
     source = (root / source_path).resolve()
     if root not in source.parents or not source.is_file():
         raise ValueError("PYTHON_SOURCE_MISSING")
@@ -47,7 +47,17 @@ def load_component(root: Path, source_path: str) -> PluginComponent:
                   and value.__module__ == module.__name__]
     if not candidates:
         raise ValueError("PYTHON_COMPONENT_CLASS_MISSING")
-    return candidates[0]()
+    return candidates[0]
+
+
+def load_component(root: Path, source_path: str, credentials: dict[str, Any] | None = None,
+                   context: dict[str, Any] | None = None) -> PluginComponent:
+    """在构造器运行前注入后端已校验的凭据与上下文，再创建插件组件。"""
+    component_class = load_component_class(root, source_path)
+    component = component_class.__new__(component_class)
+    component.runtime = Runtime(credentials or {}, context or {})
+    component_class.__init__(component)
+    return component
 
 
 def invoke_method(component: PluginComponent, operation: str, payload: dict[str, Any]) -> Any:
@@ -136,7 +146,9 @@ def model_arguments(payload: dict[str, Any], parameters: dict[str, Any], credent
 def main() -> None:
     """从标准输入读取一次调用并只向标准输出写 JSON。"""
     request = json.loads(sys.stdin.read())
-    component = load_component(Path(request["root"]).resolve(), request["sourcePath"])
+    credentials = request.get("credentials") if isinstance(request.get("credentials"), dict) else {}
+    context = request.get("context") if isinstance(request.get("context"), dict) else {}
+    component = load_component(Path(request["root"]).resolve(), request["sourcePath"], credentials, context)
     output = invoke_method(component, request.get("operation", "invoke"), request)
     sys.stdout.write(json.dumps({"success": True, "output": output}, ensure_ascii=False))
 
