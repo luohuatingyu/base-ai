@@ -148,7 +148,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
             body.put("urls", config.path("urls").asText());
             body.put("extract_depth", config.path("extractDepth").asText("basic"));
             body.put("format", config.path("format").asText("markdown"));
-        } else throw new BusinessException("workflow.nodeConfigRequired", "TAVILY_TOOL：operation");
+        } else throw new BusinessException("workflow.nodeConfigRequired", "TAVILY_TOOL: operation");
         ObjectNode headers = objectMapper.createObjectNode()
             .put("Authorization", "Bearer " + connection.config().path("apiKey").asText())
             .put("Content-Type", "application/json");

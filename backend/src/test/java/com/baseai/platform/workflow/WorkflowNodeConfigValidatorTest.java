@@ -62,8 +62,10 @@ class WorkflowNodeConfigValidatorTest {
             () -> validator.validateForPublish(graph, objectMapper.createObjectNode()));
 
         assertEquals("workflow.nodeConfigRequired", exception.getMessageKey());
-        assertTrue(exception.getMessage().contains("调用接口（HTTP）：url"));
-        assertTrue(exception.getMessage().contains("查询明细（SQL_QUERY）：query"));
+        assertTrue(exception.getMessage().contains("调用接口 (HTTP): url"));
+        assertTrue(exception.getMessage().contains("查询明细 (SQL_QUERY): query"));
+        String details = String.valueOf(exception.getMessageArguments()[0]);
+        assertTrue(!details.contains("；") && !details.contains("："));
     }
 
     /** 组合条件和操作条件满足时允许发布，缺失时返回稳定字段标识。 */

@@ -50,6 +50,7 @@ class WorkflowAdapterLifecycleServiceTest {
 
         assertTrue(adapters.get(0).enabled());
         assertEquals("RUNNING", adapters.get(0).status());
+        assertEquals("", adapters.get(0).error());
         assertFalse(adapters.get(1).enabled());
         assertEquals("STOPPED", adapters.get(1).status());
     }

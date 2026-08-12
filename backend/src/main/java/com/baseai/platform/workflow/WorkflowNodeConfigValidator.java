@@ -32,7 +32,7 @@ public class WorkflowNodeConfigValidator {
     public void validateForPublish(JsonNode graph, JsonNode templateSnapshots) {
         List<String> errors = new ArrayList<>();
         validateGraph(graph, templateSnapshots, errors);
-        if (!errors.isEmpty()) throw new BusinessException("workflow.nodeConfigRequired", String.join("；", errors));
+        if (!errors.isEmpty()) throw new BusinessException("workflow.nodeConfigRequired", String.join("; ", errors));
     }
 
     /** 在节点参数经表达式解析后复用同一份规则，阻止空值触发外部行为。 */
@@ -40,7 +40,7 @@ public class WorkflowNodeConfigValidator {
         ObjectMapper objectMapper = new ObjectMapper();
         ObjectNode value = WorkflowNodeConfigDefaults.withDefaults(objectMapper, type, config);
         LinkedHashSet<String> missing = missingRequirements(type, value);
-        if (!missing.isEmpty()) throw new BusinessException("workflow.nodeConfigRequired", type + "：" + String.join(", ", missing));
+        if (!missing.isEmpty()) throw new BusinessException("workflow.nodeConfigRequired", type + ": " + String.join(", ", missing));
     }
 
     /** 校验一层画布节点，并递归检查迭代和循环节点的有效子画布。 */
@@ -50,7 +50,7 @@ public class WorkflowNodeConfigValidator {
             String id = node.path("id").asText();
             ObjectNode config = effectiveConfig(node, templateSnapshots.path(id));
             LinkedHashSet<String> missing = missingRequirements(type, config);
-            if (!missing.isEmpty()) errors.add(nodeName(node, id) + "（" + type + "）：" + String.join(", ", missing));
+            if (!missing.isEmpty()) errors.add(nodeName(node, id) + " (" + type + "): " + String.join(", ", missing));
             if (WorkflowNodeTypes.NESTED_GRAPH.contains(type) && config.path("bodyGraph").isObject()) {
                 validateGraph(config.path("bodyGraph"), objectMapper.createObjectNode(), errors);
             }

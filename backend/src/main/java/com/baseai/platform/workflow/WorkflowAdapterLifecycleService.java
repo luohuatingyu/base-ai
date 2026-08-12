@@ -127,7 +127,7 @@ public class WorkflowAdapterLifecycleService {
     /** 合并期望值、manager 状态与本进程在途计数。 */
     private AdapterView toView(String source, boolean desiredEnabled,
                                WorkflowAdapterManagerClient.ManagerState state) {
-        return new AdapterView(source, desiredEnabled, state.status(), locks.get(source).getReadLockCount(), state.error());
+        return new AdapterView(source, desiredEnabled, state.status(), locks.get(source).getReadLockCount(), "");
     }
 
     /** 读取由启动初始化器创建的系统托管参数。 */
