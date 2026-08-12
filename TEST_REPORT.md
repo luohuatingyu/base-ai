@@ -1,5 +1,65 @@
 # 最近分支覆盖测试报告
 
+## 📋 n8n 与 Dify 安全合格组件全兼容测试结果（2026-08-12）
+
+### Git 基准点
+
+Commit: 1125abc635fc8ba0ceab346f4952de09f0947a28
+- 提交说明: Complete n8n node compatibility；Align n8n worker ABI version
+- 测试日期: 2026-08-12
+- 分支: master
+- 关联 Worker 提交: `e4f238d2758f46ae24ec84ed8d332f9b0158fa0b`
+- 验收边界: 仅要求通过现有包大小、路径、依赖来源、结构、表达式和准入安全校验的组件全部兼容；不合格包继续拒绝。
+
+### 变更范围
+
+- Dify ABI 5 补齐 Agent、模型、Pydantic 实体、日志消息、构造期凭据和官方 SDK 常用导入路径；插件依赖继续在受限持久目录安装，官方 Dify SDK 和任意依赖来源继续拒绝。
+- n8n ABI 5 展开 `VersionedNodeType` 默认版本，支持真实包使用的数组 join/split、数字转换、有限日期格式化、JSON.parse 与混合模板表达式；不使用 `eval` 或动态函数构造。
+- n8n 为运行环境隐式提供的 `lodash/set` 增加最小本地兼容层，并显式拒绝 `__proto__`、`prototype` 和 `constructor` 路径，避免原型污染。
+- Backend 同步要求 n8n ABI 5；ABI 4 及更旧缓存会重新探测，不能继续复用旧的部分兼容结论。
+- 未放宽路径穿越、链接、包大小、解压体积、文件数、依赖来源、危险表达式、非法 hook 和插件准入审批规则。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| Dify 安全合格组件全部可加载 | Worker 全量缓存复检；86 个已缓存安全合格包 | 重新解析并用隔离子进程加载全部组件 | 310/310 通过，失败 0；通过 | 正常、兼容、真实数据 |
+| n8n 剩余部分兼容节点全部转为支持 | Worker 隔离重打包；10 个当前非完全兼容包 | 版本节点、routing、Mailtrap 依赖重新探测 | 10 包、13 组件全部 ABI 5 / SUPPORTED；通过 | 正常、兼容、真实数据 |
+| 版本节点选择稳定 | n8n Worker 正式集成测试 | 两个版本且默认版本为 2 的 VersionedNodeType | 探测身份正确，真实调用返回版本 2；通过 | 分支、兼容 |
+| 声明式转换安全执行 | n8n Worker HTTP 集成测试 | join、split、Number/isNaN、日期、JSON 和混合模板 | 请求路径、查询参数和业务输出正确；通过 | 正常、边界、业务结果 |
+| 最小依赖不引入原型污染 | n8n Worker 安全测试 | `lodash/set` 正常路径与 `__proto__` 恶意路径 | 正常字段写入，污染路径无副作用；通过 | 安全、恶意输入 |
+| 危险包和表达式继续拒绝 | 两个 Worker 既有安全回归 | 路径穿越、摘要不符、任意依赖源、任意表达式和非法 hook | 保持拒绝或 PARTIAL/UNSUPPORTED；通过 | 异常、安全、回归 |
+| 历史缓存自动失效 | Backend Worker Client/Probe 测试 | n8n ABI 5、Dify ABI 5 与旧 ABI 响应 | 当前版本接受，旧版本拒绝并进入重探测；通过 | 状态、兼容、副作用 |
+
+### 测试执行结果
+
+- 正式自动化用例总数：720；通过 720，通过率 100%；失败 0，错误 0，跳过 0。
+- Backend 完整回归：576/576；最终 Worker Client/Probe 定向回归：21/21。
+- Frontend 完整回归：115/115；Dify Worker（Python 3.12）：20/20；n8n Worker：9/9。
+- 真实缓存复检：Dify 86 包、310 组件全部通过；n8n 原 10 个非完全兼容包共 13 个组件全部 ABI 5 / SUPPORTED。
+- `docker compose up --build -d` 成功；Backend、Frontend、Python Worker、Adapter Manager、Caddy 全部 healthy。两个插件 Worker 最新镜像单独启动均达到 healthy，随后由按需管理器恢复 STOPPED。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Dify Worker | Python 3.12 执行 `python3.12 -m unittest discover -s tests -v` | 20/20 通过 |
+| n8n Worker | 执行 `npm test` | 9/9 通过 |
+| Backend 定向 | Maven 3.9.9 / Java 17 容器执行 Worker Client 与 Probe Service | 21/21 通过 |
+| Backend 完整 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 576/576 通过 |
+| Frontend 完整 | 执行 `npm test` | 115/115 通过 |
+| n8n 真实缓存 | 在 Worker 数据卷的隔离目录重打包并使用最新镜像重新探测 | 10 包、13/13 组件 SUPPORTED，ABI 5 |
+| Dify 真实缓存 | 最新镜像逐包重解析元数据并以隔离子进程加载组件 | 86 包、310/310 组件通过 |
+| 统一重建与运行态 | `docker compose up --build -d`、Worker profile 单独健康检查 | 五个基础服务 healthy；两个 Worker 镜像 healthy 后恢复 STOPPED |
+
+### 已知限制、清理与回滚
+
+- 兼容验证不使用生产凭据，也不调用收费或第三方业务 API；供应商鉴权、配额和实时响应仍由实际连接配置与外部服务决定。
+- 只对当前缓存版本和正式测试夹具作出结论；新市场版本会按 ABI 与安全校验重新探测，结构或安全不合格的包仍被拒绝。
+- n8n 日期与表达式解释器只实现已审计白名单；新增语法必须先增加正常、边界和危险表达式测试，禁止改为任意 JavaScript 执行。
+- 真实缓存复检使用的数据卷隔离目录和临时归档已清理；一次误在根目录执行 npm 产生的宿主日志也已删除，仓库无调试文件。
+- 回滚可依次回退 `1125abc` 与 `e4f238d`；回滚后必须重建服务，旧 ABI 5 缓存会因 Backend/Worker 版本变化重新探测。
+
 ## 📋 插件准入清单与强制审批测试结果（2026-08-12）
 
 ### Git 基准点
@@ -223,6 +283,89 @@ Commit: 47eb917b8f55d60733b10575bde06edd5a8382b5
 
 - 修改 Worker ABI、Dify 模型适配、n8n routing 解释器、探测缓存、公开原因码或插件调用参数时，必须重跑两个 Worker、Backend/Frontend 完整回归、Compose 重建和代表包抽检。
 - 代码可回退提交 `47eb917`；运行态无需反向数据库迁移，旧 ABI 结果会按当前 Backend 要求重新探测。
+
+## 📋 市场插件按实际能力分类测试结果（2026-08-11）
+
+### Git 基准点
+
+Commit: fa785c9aa313d7ca0b283bf247b2ba3d5d05d4ed
+- 提交说明: Classify marketplace plugins by capability；Align marketplace preview categories
+- 测试日期: 2026-08-11
+- 分支: master
+- 上一测试报告基准点: `a1236abde93d3ccce5ca516c6cd212fedd397e5f`
+- Backend 业务代码差异: 市场插件模板不再仅按通用节点类型落入“网络与接口”；导入和市场预览统一依据组件技术类型、包身份、组件身份、名称与说明推导受控功能分类。
+
+### 变更范围
+
+- `TRIGGER` 固定归入触发器，`MODEL` 与 `AGENT_STRATEGY` 固定归入 AI 能力，`DATASOURCE` 固定归入数据库、缓存与存储。
+- `ACTION`、`TOOL` 与 `EXTENSION` 按高可信语义依次识别消息队列、通知通信、数据存储、文本文档、数据转换、AI 和网络接口；无法可靠判断时归入基础节点，不再默认归入网络接口。
+- 市场列表在插件完成探测后使用与导入草稿相同的分类入口，单组件插件的预览分类和最终模板分类保持一致。
+- V17 只处理来源为 N8N/DIFY、当前仍为 `NETWORK_API` 且节点类型为通用插件类型的历史模板；管理员已调整到其他分类的模板、系统模板和 Tavily 等原生市场节点保持不变。
+- 未新增功能分类、依赖、公开接口或前端分类配置；插件执行、权限、凭据、探测状态和固定版本语义保持不变。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 技术类型优先分类 | Backend Catalog 参数化测试 | TRIGGER、MODEL、AGENT_STRATEGY、DATASOURCE 及普通名称 | 分别进入 TRIGGER、AI、AI、DATA_STORAGE；通过 | 正常、分支、兼容 |
+| 动作按实际能力分类 | Backend Catalog 参数化测试 | Slack、RabbitMQ、PostgreSQL、PDF、JSON/YAML、OpenAI、Tavily | 分别进入通知、消息队列、存储、文档、转换、AI、网络接口；通过 | 正常、参数化、业务结果 |
+| 未知或空元数据不再误入网络 | Backend Catalog 与 Marketplace Service 测试 | 空值、未知生产力助手、无语义 Example 动作 | 安全回退 BASIC；导入草稿保存 BASIC；通过 | 边界、异常、兼容 |
+| 市场预览与导入规则一致 | Backend Marketplace Service；插件已 COMPLETE/SUPPORTED | 浏览 Slack 组件并导入通用组件 | 预览返回 NOTIFICATION，导入调用同一分类器；通过 | 正常、接口、回归 |
+| 历史误分类安全整理 | H2 MySQL 模式执行真实 V17 SQL | N8N Slack、Dify Datasource、未知动作、管理员分类、系统模板、Tavily | 前三项分别为 NOTIFICATION、DATA_STORAGE、BASIC；后三项保持原分类；通过 | 数据迁移、边界、安全、兼容 |
+| 原有市场和模板能力无回归 | Backend 完整测试、Frontend 完整测试、Compose 重建 | 市场浏览、探测、导入、注册、模板维护及页面目录 | Backend 552/552、Frontend 110/110；六服务 healthy；通过 | 回归、权限、部署 |
+
+### 测试执行结果
+
+- Backend 正式自动化回归：552/552 通过，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 分类与市场定向回归：49/49 通过；并行市场状态变更合入后再次执行 Marketplace Service 11/11 通过。
+- Frontend 完整回归：110/110 通过；本次分类功能未修改前端代码。
+- 缺陷复现阶段新增分类测试按预期编译失败，明确缺少 `marketplaceCategory` 能力入口；实现后全部通过。
+- Compose 统一构建成功，构建阶段完成 Backend 编译与测试、Frontend 生产构建；最终六个服务全部 healthy。
+
+### 关键模块测试
+
+- Catalog 层：覆盖技术类型优先、七类语义规则、大小写与分隔符规范化、空值和未知能力回退。
+- Marketplace Service 层：验证通用插件草稿分类、市场预览分类、固定组件身份、敏感配置不泄漏、原生 n8n 和 Dify Tavily 路径回归。
+- 数据迁移层：V17 在可执行 H2 MySQL 兼容数据库中验证更新结果，并由 Schema Resource 测试验证来源、旧分类和插件节点类型约束。
+- 权限与安全层：分类只消费已下载市场条目和 Worker 返回的非敏感组件元数据，不读取凭据、参数值或执行第三方代码；既有权限测试完整通过。
+- 部署层：真实 MySQL Flyway 日志确认从 V16 成功应用 V17，随后重建确认当前 Schema 为 V17；HTTPS readiness 返回 `UP`。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 缺陷复现 | Maven 3.9.9 / Java 17 容器执行 Catalog 与 Marketplace Service 新增测试 | 测试编译按预期失败，缺少实际能力分类入口 |
+| Backend 定向回归 | Maven 容器执行 Catalog、Marketplace Service、Schema、V17 Migration、Service Access | 49/49 通过；最终 Marketplace Service 11/11 通过 |
+| Backend 完整回归 | Maven 容器执行 `mvn test -B -ntp` | 552/552 通过，0 失败、0 错误、0 跳过 |
+| Frontend 完整回归 | `cd frontend && npm test` | 110/110 通过 |
+| Compose 重建 | `docker compose up --build -d` | 六个镜像构建成功；Backend 与 Frontend 构建成功；六服务 healthy |
+| Flyway 与运行态 | Backend 启动日志、`docker compose ps`、HTTPS readiness | V17 在真实 MySQL 成功应用；Schema 当前为 17；readiness HTTP 200 / UP |
+| 差异与清理 | `git diff --check`、隔离索引与路径限定提交、临时索引检查 | 本任务两个代码提交未夹带并行 Worker 改动；临时索引已删除 |
+
+### 测试过程问题与处理
+
+- 主机未安装 Maven，按项目既有方式改用固定 Maven 3.9.9 / Java 17 容器执行，未降低测试范围。
+- 并行市场“已导入状态”功能一度处于测试先于生产代码的中间状态，并有测试夹具使用不存在的 `INTEGRATION` 分类；其代码完成并把夹具改为合法 BASIC 后，本任务重新执行定向和完整回归。
+- Compose 重建期间另一个并行任务再次触发统一重建；最终等待第二次重建完全结束，并重新确认六服务 healthy、MySQL Schema 为 V17 和 HTTPS readiness 为 UP。
+- 未创建持久调试脚本或仓库内临时文件；提交隔离使用的临时 Git 索引已经清理。
+
+### 已知问题与限制
+
+- 分类是确定性的高可信规则，不使用不透明模型推断；市场元数据过少或能力跨多个业务域时会回退到基础节点，管理员仍可在导入后手工调整。
+- 通用插件卡片当前以首个受支持组件展示预览类型；同一插件包含多个不同能力组件时，各导入模板仍会分别按自身组件元数据分类。
+- V17 是前向数据迁移，只自动整理仍在网络接口分类的通用插件模板；已经手工放入其他分类的模板不会自动重新判断。
+- V17 已在当前运行数据库执行；若需回滚历史分类，只能依据迁移前数据库备份或业务确认后的反向 SQL 恢复，单纯回退 Java 提交不会反转已迁移数据。
+
+### 下次测试建议
+
+1. 收集回退到 BASIC 的真实插件样本，基于明确业务语义增补高可信词条并为每个新词条增加参数化用例。
+2. 若后续市场接口支持组件级卡片，分别展示每个组件的实际分类，避免多组件插件只显示首个组件类型。
+3. 对管理员手工调整过的分类保留人工优先策略；如增加“重新自动分类”操作，应提供变更预览、选择范围和审计记录。
+
+### 重测触发条件与回滚
+
+- 修改市场分类词条、优先级、组件类型映射、市场预览聚合、导入草稿分类、模板分类枚举或 V17 后续数据整理时，必须重跑 Catalog、Marketplace Service、Migration、Schema 定向测试、Backend/Frontend 完整回归和 Compose 重建。
+- 代码回滚可依次回退 `fa785c9` 和 `111c658`；V17 数据需从备份恢复或另行确认反向迁移，禁止直接删除 Flyway 历史记录。
 
 ## 📋 插件市场完整导入状态修复测试结果（2026-08-11）
 
