@@ -4692,3 +4692,47 @@ Commit: 28cb1901a0feafc1bd39fd8f0ea8ff1514bb0fb2
 1. 在 CI 中预热官方插件依赖缓存，增加 Tongyi/Volcengine 每个版本的定期探测矩阵。
 2. 在配置供应商测试凭据的隔离环境补充一次非付费或沙箱模型调用，验证调用 ABI 与导入 ABI 的一致性。
 3. 对接 Marketplace API 的集成测试使用固定下载快照，避免网络 403、版本漂移和上游包变更影响回归结果。
+
+## 📋 Worker 短暂不可用后的插件探测恢复测试结果（2026-08-12）
+
+### Git 基准点
+
+Commit: 474cd6a
+- 提交说明: Retry cached plugin probes after worker recovery
+- 测试日期: 2026-08-12
+- 分支: master
+- 上一测试报告基准点: `28cb190`
+
+### 变更范围
+
+- 当 DIFY/N8N Worker 因适配器停止、连接失败等瞬时原因耗尽重试后，下一次用户访问市场会把历史 `FAILED` 记录重新置为 `QUEUED`，并清除旧错误、结果和尝试次数。
+- 只处理 `workflow.pluginWorkerUnavailable` 与 `workflow.adapterDisabled`；安全拒绝、包格式错误、ABI 不兼容等永久性失败不自动放行。
+- 重试仍由既有最大尝试次数、租约和异步探测队列控制，不执行同步下载或绕过适配器开关。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| Worker 恢复后旧失败可重新探测 | Backend `WorkflowPluginProbeServiceTest` 参数化测试 | `workflow.pluginWorkerUnavailable`、`workflow.adapterDisabled` 且已达到最大尝试次数 | 页面访问将记录置为 `QUEUED/PROBING`，attempt 重置为 0；19/19 定向测试通过 | 异常恢复、状态冲突、兼容 |
+| 安全拒绝不被错误重试 | 既有探测拒绝回归测试 | 路径穿越、依赖来源、非法包内容 | 保持 `REJECTED/UNSUPPORTED`；通过 | 安全、回归 |
+| 正常探测和旧 ABI/依赖恢复不回归 | Backend 完整回归、两个 Worker 回归 | 完整市场探测、ABI 缓存和依赖重试测试 | Backend 572/572，Dify 19/19，n8n 6/6；通过 | 正常、兼容、回归 |
+| 服务重建后核心运行态正常 | 干净提交快照 Compose 重建 | `docker compose up --build -d`、readiness 检查 | 镜像构建成功，Backend/Frontend/Python Worker/Adapter Manager/Caddy healthy，readiness `UP`；通过 | 部署、运行态 |
+
+### 测试执行结果
+
+- Backend 定向探测恢复：19/19 通过。
+- Backend 完整回归（干净提交快照）：572/572 通过，失败 0，错误 0，跳过 0。
+- Dify Worker：19/19 通过；n8n Worker：6/6 通过。
+- Compose 干净快照重建成功，核心服务健康；DIFY/N8N 默认停止，符合 on-demand profile 设计。
+- 运行数据库中确认 Tongyi 已恢复为 `COMPLETE/SUPPORTED`；Volcengine 旧失败来自 Worker 停止期间的瞬时不可用，下一次访问会按本次逻辑重新排队。
+
+### 测试过程问题与处理
+
+- 主工作区同时存在未提交的插件准入功能改动，其新增准入表测试夹具尚未合入，因此在主工作区直接跑完整 Backend 测试出现 2 个 H2 表缺失错误和 1 个旧 Mock 预期失败；该结果不属于本提交，已在干净提交快照上重新执行并通过 572/572。
+- 临时 Compose 工作树首次启动因缺少 `.env` 挂载点失败；补充临时 symlink 后重建成功，验证完成后已删除工作树和 symlink。
+- 未执行任何供应商付费模型调用；本修复只改变探测失败后的队列恢复。
+
+### 重测触发条件与回滚
+
+- 修改探测状态机、错误公开原因、适配器生命周期、Worker 客户端重试或最大尝试次数时，必须重跑探测定向/完整测试、两个 Worker 回归、Compose 重建和运行态健康检查。
+- 可回退提交 `474cd6a`；回退不会修改数据库结构，已有失败记录仍保留原状态。
