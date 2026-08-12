@@ -56,8 +56,16 @@ test('插件准入清单使用独立权限并强制保存后审批', async () =>
   assert.match(source, /\/review`/)
   assert.match(source, /'NO_DATA'/)
   assert.match(source, /normalizeAdmissionDataTypes/)
+  assert.match(source, /PLUGIN_LICENSE_OPTIONS/)
+  assert.match(source, /CUSTOM_PLUGIN_LICENSE/)
+  assert.match(source, /applyPluginLicenseSelection/)
+  assert.match(source, /pluginAdmissionLicenseValid/)
+  assert.match(source, /:disabled="admissionLicenseSelection !== CUSTOM_PLUGIN_LICENSE"/)
   for (const locale of [zh, en]) {
     assert.match(locale, /pluginAdmission:/)
+    assert.match(locale, /selectLicense:/)
+    assert.match(locale, /customLicense:/)
+    assert.match(locale, /licenseRequired:/)
     assert.match(locale, /SENSITIVE_PERSONAL_INFORMATION/)
     assert.match(locale, /CREDENTIALS/)
   }
