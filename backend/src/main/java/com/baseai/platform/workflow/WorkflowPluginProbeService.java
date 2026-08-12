@@ -72,6 +72,15 @@ public class WorkflowPluginProbeService {
                     compatibility_reason='',result_json=NULL,package_fingerprint=NULL,next_attempt_at=?,
                     lease_owner=NULL,lease_expires_at=NULL,updated_at=?
                 WHERE id=? AND probe_status='REJECTED' AND attempt_count<?
+            """, timestamp(Instant.now()), timestamp(Instant.now()), row.id(), maximumAttempts);
+            if (updated == 1) return new ProbeSnapshot("QUEUED", "PROBING", "", null);
+        }
+        if (enqueue && retryAfterWorkerRecovery(row)) {
+            int updated = jdbcTemplate.update("""
+                UPDATE workflow_marketplace_plugin_probe SET probe_status='QUEUED',compatibility_status='PROBING',
+                    compatibility_reason='',result_json=NULL,package_fingerprint=NULL,attempt_count=0,
+                    next_attempt_at=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=?
+                WHERE id=? AND probe_status='FAILED' AND attempt_count>=?
                 """, timestamp(Instant.now()), timestamp(Instant.now()), row.id(), maximumAttempts);
             if (updated == 1) return new ProbeSnapshot("QUEUED", "PROBING", "", null);
         }
@@ -309,6 +318,13 @@ public class WorkflowPluginProbeService {
         return "DIFY".equals(source) && "REJECTED".equals(row.probeStatus())
             && row.attemptCount() < maximumAttempts
             && List.of("PACKAGE_CONTENT_LIMIT", "workflow.pluginWorkerRejected")
+                .contains(row.compatibilityReason());
+    }
+
+    /** Worker 短暂不可用导致的耗尽失败只在用户重新访问时恢复一次探测队列。 */
+    private boolean retryAfterWorkerRecovery(ProbeRow row) {
+        return "FAILED".equals(row.probeStatus()) && row.attemptCount() >= maximumAttempts
+            && List.of("workflow.pluginWorkerUnavailable", "workflow.adapterDisabled")
                 .contains(row.compatibilityReason());
     }
 

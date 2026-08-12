@@ -310,6 +310,24 @@ class WorkflowPluginProbeServiceTest {
             "SELECT attempt_count FROM workflow_marketplace_plugin_probe", Integer.class));
     }
 
+    /** Worker 曾短暂不可用并耗尽重试后，适配器恢复时访问市场应重新排队。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"workflow.pluginWorkerUnavailable", "workflow.adapterDisabled"})
+    void requeuesCachedWorkerUnavailableFailureOnPageVisit(String reason) {
+        var entry = difyEntry();
+        jdbc.update("""
+            INSERT INTO workflow_marketplace_plugin_probe(source,catalog_external_key,package_key,package_version,
+                probe_status,compatibility_status,compatibility_reason,attempt_count,next_attempt_at,last_accessed_at)
+            VALUES ('DIFY',?,?,?,'FAILED','UNSUPPORTED',?,2,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+            """, entry.externalId(), entry.externalId(), entry.version(), reason);
+
+        WorkflowPluginProbeService.ProbeSnapshot retry = service.snapshot("DIFY", entry, true);
+
+        assertEquals("QUEUED", retry.probeStatus());
+        assertEquals(0, jdbc.queryForObject(
+            "SELECT attempt_count FROM workflow_marketplace_plugin_probe", Integer.class));
+    }
+
     /** 旧 Worker ABI 结果必须在再次访问市场时失效，避免历史误判永久保留。 */
     @Test
     void requeuesCachedResultFromPreviousWorkerAbi() throws Exception {
