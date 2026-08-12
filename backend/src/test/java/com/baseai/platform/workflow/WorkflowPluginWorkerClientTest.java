@@ -64,7 +64,7 @@ class WorkflowPluginWorkerClientTest {
     void validatesWorkerHostAbiVersion() throws Exception {
         String fingerprint = "a".repeat(64);
         int[] requestCount = {0};
-        int[] versions = {4, 5, 4};
+        int[] versions = {5, 5, 4};
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/packages/inspect", exchange -> {
             byte[] body = ("""
@@ -87,7 +87,7 @@ class WorkflowPluginWorkerClientTest {
         WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties, lifecycle());
 
         WorkflowPluginWorkerClient.WorkerPackage n8n = client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint);
-        assertEquals(4, n8n.hostAbiVersion());
+        assertEquals(5, n8n.hostAbiVersion());
         assertEquals("MIT", n8n.licenseName());
         assertEquals("api.example.com", n8n.externalServices().get(0).domain());
         assertEquals(5, client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());

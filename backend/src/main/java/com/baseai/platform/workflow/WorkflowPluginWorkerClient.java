@@ -186,7 +186,7 @@ public class WorkflowPluginWorkerClient {
 
     /** 返回 Backend 当前能够解释的最低 Worker ABI 版本。 */
     public static int expectedHostAbiVersion(String source) {
-        return "DIFY".equalsIgnoreCase(source) ? 5 : "N8N".equalsIgnoreCase(source) ? 4 : Integer.MAX_VALUE;
+        return "DIFY".equalsIgnoreCase(source) ? 5 : "N8N".equalsIgnoreCase(source) ? 5 : Integer.MAX_VALUE;
     }
 
     public record WorkerPackage(String source, String packageId, String version, String fingerprint,
