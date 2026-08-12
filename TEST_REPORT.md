@@ -4,11 +4,11 @@
 
 ### Git 基准点
 
-Commit: 1125abc635fc8ba0ceab346f4952de09f0947a28
+Commit: 1125abc683970b9bc0bc74ff2df2b73e51554052
 - 提交说明: Complete n8n node compatibility；Align n8n worker ABI version
 - 测试日期: 2026-08-12
 - 分支: master
-- 关联 Worker 提交: `e4f238d2758f46ae24ec84ed8d332f9b0158fa0b`
+- 关联 Worker 提交: `e4f238d024b891c1b1bb38301850edee0770cd62`
 - 验收边界: 仅要求通过现有包大小、路径、依赖来源、结构、表达式和准入安全校验的组件全部兼容；不合格包继续拒绝。
 
 ### 变更范围
@@ -64,7 +64,7 @@ Commit: 1125abc635fc8ba0ceab346f4952de09f0947a28
 
 ### Git 基准点
 
-Commit: 1125abc8e816230284fa39923a667b54dafd500b
+Commit: 1125abc683970b9bc0bc74ff2df2b73e51554052
 - 提交说明: Add plugin admission controls；Align n8n worker ABI version
 - 测试日期: 2026-08-12
 - 分支: master
