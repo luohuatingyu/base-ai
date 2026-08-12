@@ -10,7 +10,7 @@ import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
 const SHIM = resolve(dirname(new URL(import.meta.url).pathname), 'abi-shim.cjs')
-const HOST_ABI_VERSION = 3
+const HOST_ABI_VERSION = 5
 
 export class PackageError extends Error {}
 
@@ -138,11 +138,46 @@ export class PackageStore {
         sourcePath: '', exportName: '', compatibilityStatus: 'PARTIAL', compatibilityReason: 'CREDENTIAL_ONLY_EXTENSION',
       })
     }
+    const externalServices = this.#externalServices(components.flatMap(item => item.serviceCandidates || []))
+    for (const component of components) delete component.serviceCandidates
+    const license = this.#license(manifest.license)
     return {
       source: 'N8N', packageId: String(request.packageId || manifest.name || ''),
       version: String(request.version || manifest.version || ''), fingerprint, runtimeLanguage: 'node',
-      hostAbiVersion: HOST_ABI_VERSION, components,
+      hostAbiVersion: HOST_ABI_VERSION, licenseName: license.name, licenseUrl: license.url,
+      externalServices, components,
     }
+  }
+
+  /** 只接受包清单明确声明的许可证名称与 HTTPS 地址。 */
+  #license(raw) {
+    const value = Array.isArray(raw) ? raw[0] : raw
+    const name = typeof value === 'string' ? value : value && typeof value === 'object' ? value.type || value.name : ''
+    const candidate = value && typeof value === 'object' ? value.url : ''
+    let url = ''
+    try {
+      const parsed = new URL(String(candidate || ''))
+      if (parsed.protocol === 'https:' && !parsed.username && !parsed.password) url = parsed.toString().slice(0, 500)
+    } catch { /* 缺失或非法地址保持为空，等待人工确认。 */ }
+    return { name: String(name || '').trim().slice(0, 160), url }
+  }
+
+  /** 从节点声明中的固定 HTTPS 字面量提取待人工确认的外部服务域名。 */
+  #externalServices(values) {
+    const domains = new Set()
+    const visit = value => {
+      if (typeof value === 'string') {
+        for (const matched of value.matchAll(/https:\/\/[^\s"'<>)}\]]+/gi)) {
+          try {
+            const url = new URL(matched[0])
+            if (url.hostname) domains.add(url.hostname.toLowerCase())
+          } catch { /* 非完整 URL 不是可靠候选。 */ }
+        }
+      } else if (Array.isArray(value)) value.forEach(visit)
+      else if (value && typeof value === 'object') Object.values(value).forEach(visit)
+    }
+    values.forEach(visit)
+    return [...domains].sort().slice(0, 64).map(domain => ({ name: domain, domain }))
   }
 
   /** 在插件局部依赖目录安装 Base AI 自研同名 ABI 模块。 */
@@ -151,6 +186,27 @@ export class PackageStore {
     await mkdir(target, { recursive: true })
     await copyFile(SHIM, join(target, 'index.cjs'))
     await writeFile(join(target, 'package.json'), JSON.stringify({ name: 'n8n-workflow', version: '0.0.0-base-ai', main: 'index.cjs' }))
+    const lodash = join(packageRoot, 'node_modules', 'lodash')
+    const lodashSet = join(lodash, 'set.js')
+    if (!existsSync(lodashSet)) {
+      await mkdir(lodash, { recursive: true })
+      await writeFile(lodashSet, `'use strict'
+module.exports = function set(target, path, value) {
+  if (!target || typeof target !== 'object') return target
+  const parts = Array.isArray(path) ? path.map(String) : String(path || '').replace(/\\[([^\\]]+)\\]/g, '.$1').split('.').filter(Boolean)
+  if (!parts.length || parts.some(part => ['__proto__', 'prototype', 'constructor'].includes(part))) return target
+  let current = target
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const part = parts[index]
+    if (!current[part] || typeof current[part] !== 'object') current[part] = {}
+    current = current[part]
+  }
+  current[parts.at(-1)] = value
+  return target
+}
+`)
+      await writeFile(join(lodash, 'package.json'), JSON.stringify({ name: 'lodash', version: '0.0.0-base-ai' }))
+    }
   }
 
   /** 在独立目录安装插件依赖，排除 n8n 引擎/SDK 并禁用生命周期脚本。 */
@@ -212,11 +268,22 @@ export class PackageStore {
   #instance(module) {
     for (const value of Object.values(module || {})) {
       if (typeof value === 'function') {
-        try { return new value() } catch { continue }
+        try { return this.#versioned(new value()) } catch { continue }
       }
-      if (value && typeof value === 'object') return value
+      if (value && typeof value === 'object') return this.#versioned(value)
     }
     return null
+  }
+
+  /** 展开 VersionedNodeType，并选择清单声明的默认版本实现。 */
+  #versioned(instance) {
+    if (!instance || typeof instance !== 'object') return instance
+    if (typeof instance.getNodeType === 'function') return instance.getNodeType() || instance
+    const versions = instance.nodeVersions || (instance.name === 'VersionedNodeType' ? instance.args?.[0] : undefined)
+    const base = instance.baseDescription || (instance.name === 'VersionedNodeType' ? instance.args?.[1] : undefined) || {}
+    if (!versions || typeof versions !== 'object') return instance
+    return versions[String(base.defaultVersion)] || versions[base.defaultVersion]
+      || Object.entries(versions).sort(([left], [right]) => Number(right) - Number(left))[0]?.[1] || instance
   }
 
   /** 规范化节点描述和兼容状态。 */
@@ -239,6 +306,7 @@ export class PackageStore {
       componentType, schema: this.#fields(description.properties || []), credentialSchema,
       sourcePath: String(relative), exportName: this.#exportName(loaded.module, instance),
       credentialAuthentications: credentialEntries.map(item => item.authenticate),
+      serviceCandidates: [description, ...credentialEntries.map(item => item.authenticate)],
       compatibilityStatus: executable ? 'SUPPORTED' : 'PARTIAL',
       compatibilityReason: executable ? '' : description.requestDefaults ? 'DECLARATIVE_ROUTING_NOT_IMPLEMENTED' : 'NODE_EXECUTION_METHOD_MISSING',
     }
@@ -277,7 +345,11 @@ export class PackageStore {
         if (routing.request) routed = true
         if (!this.#routing(routing)) return false
       }
-      return !Array.isArray(property?.options) || visit(property.options)
+      const optionChildren = (Array.isArray(property?.options) ? property.options : [])
+        .flatMap(option => [...(Array.isArray(option?.values) ? option.values : []),
+          ...(Array.isArray(option?.options) ? option.options : [])])
+      return (!Array.isArray(property?.options) || visit(property.options))
+        && (!Array.isArray(property?.values) || visit(property.values)) && visit(optionChildren)
     })
     return visit(description.properties) && routed
   }
@@ -303,23 +375,35 @@ export class PackageStore {
     if (Array.isArray(value)) return value.every(item => this.#declarativeValue(item))
     if (value && typeof value === 'object') return Object.values(value).every(item => this.#declarativeValue(item))
     if (typeof value !== 'string' || !value.includes('{{') && !value.startsWith('=')) return true
-    if (/^=\{\{\s*\$(?:parameter|credentials|responseItem)(?:\["[^"]+"\]|\.[A-Za-z0-9_.-]+)\s*\}\}$/.test(value)) return true
-    if (/^=?[^{}]*(?:\{\{\s*\$parameter(?:\["[^"]+"\]|\.[A-Za-z0-9_.-]+)\s*\}\}[^{}]*)+$/.test(value)) return true
-    const expression = value.match(/^=\{\{\s*(.+)\s*\}\}$/s)?.[1]
-    if (!expression) return false
-    const remaining = expression
-      .replace(/\$(?:parameter|credentials|responseItem)(?:\["[^"]+"\]|\.[A-Za-z0-9_.-]+)(?:\.length)?/g, '')
+    if (/^=[^{}]*$/.test(value)) return true
+    const exact = value.match(/^=\{\{\s*(.*)\s*\}\}$/s)
+    if (exact) return this.#declarativeExpression(exact[1])
+    const expressions = [...value.matchAll(/\{\{\s*(.*?)\s*\}\}/gs)]
+    const outside = value.replace(/\{\{\s*.*?\s*\}\}/gs, '')
+    if (!expressions.length || outside.includes('{') || outside.includes('}')) return false
+    return expressions.every(match => this.#declarativeExpression(match[1]))
+  }
+
+  /** 白名单校验声明式表达式的引用、转换函数和运算符。 */
+  #declarativeExpression(expression) {
+    const remaining = String(expression || '')
+      .replace(/\$(?:parameter|credentials|responseItem)(?:\["[^"]+"\]|\.[A-Za-z0-9_.-]+)/g, '')
       .replace(/\$value/g, '')
-      .replace(/"[^"]*"|'[^']*'/g, '')
-      .replace(/JSON\.parse|\.includes/g, '')
+      .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '')
+      .replace(/\/\\\.\\d\{3\}Z\$\//g, '')
+      .replace(/\b(?:JSON\.parse|Number|isNaN|Math\.floor)\b/g, '')
+      .replace(/\bnew\s+Date\b/g, '')
+      .replace(/\.(?:includes|join|split|getTime|toISOString|slice|replace|length)\b/g, '')
       .replace(/\b(?:true|false|null|undefined)\b/g, '')
-      .replace(/[0-9.\s+?:|&!=<>()[\],-]/g, '')
+      .replace(/\{\}/g, '')
+      .replace(/[0-9.\s+?:|&!=<>()[\],\/-]/g, '')
     return remaining === ''
   }
 
   /** 查找实例对应的导出名称。 */
   #exportName(module, instance) {
-    return Object.entries(module || {}).find(([, value]) => typeof value === 'function' && instance instanceof value)?.[0] || ''
+    return Object.entries(module || {}).find(([, value]) => typeof value === 'function' && instance instanceof value)?.[0]
+      || Object.entries(module || {}).find(([, value]) => typeof value === 'function')?.[0] || ''
   }
 
   /** 把 n8n 属性定义转换为受控动态字段。 */

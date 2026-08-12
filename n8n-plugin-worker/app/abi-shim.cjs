@@ -17,6 +17,22 @@ class NodeApiError extends NodeOperationError {
   constructor(node, error, options = {}) { super(node, error, options); this.httpCode = error?.statusCode || error?.response?.status }
 }
 
+class VersionedNodeType {
+  /** 保存各版本实现，并由宿主固定选择声明的默认版本。 */
+  constructor(nodeVersions, baseDescription = {}) {
+    this.nodeVersions = nodeVersions && typeof nodeVersions === 'object' ? nodeVersions : {}
+    this.baseDescription = baseDescription && typeof baseDescription === 'object' ? baseDescription : {}
+    this.description = this.baseDescription
+  }
+
+  /** 返回指定版本、默认版本或最高可用版本。 */
+  getNodeType(version = this.baseDescription.defaultVersion) {
+    const selected = this.nodeVersions[String(version)] || this.nodeVersions[version]
+    if (selected) return selected
+    return Object.entries(this.nodeVersions).sort(([left], [right]) => Number(right) - Number(left))[0]?.[1]
+  }
+}
+
 /** 深复制可序列化插件数据。 */
 function deepCopy(value) { return value === undefined ? undefined : structuredClone(value) }
 
@@ -63,7 +79,7 @@ function placeholder(name) {
 }
 
 const known = {
-  ApplicationError, NodeOperationError, NodeApiError, NodeConnectionType, NodeHelpers,
+  ApplicationError, NodeOperationError, NodeApiError, VersionedNodeType, NodeConnectionType, NodeHelpers,
   BINARY_ENCODING: 'base64', deepCopy, jsonParse, sleep, updateDisplayOptions, createDeferredPromise,
 }
 

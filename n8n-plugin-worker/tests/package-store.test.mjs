@@ -37,7 +37,8 @@ async function fixture() {
     const method = type === 'TRIGGER' ? 'trigger' : ['MODEL', 'DATASOURCE', 'AGENT_STRATEGY'].includes(type) ? 'supplyData' : 'execute'
     await writeFile(join(packageRoot, file), `const { NodeConnectionType }=require('n8n-workflow'); class Fixture { constructor(){this.description={name:'${type.toLowerCase()}',displayName:'${type}',baseAiComponentType:'${type}',inputs:[NodeConnectionType.Main],outputs:[NodeConnectionType.Main],properties:[{name:'value',displayName:'Value',type:'string',required:true}]}} async ${method}(){return [[{json:{ok:true}}]]}} module.exports={Fixture}`)
   }
-  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name: 'n8n-nodes-base-ai-fixture', version: '1.0.0', n8n: { nodes } }))
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name: 'n8n-nodes-base-ai-fixture', version: '1.0.0',
+    license: { type: 'MIT', url: 'https://licenses.example.com/mit' }, n8n: { nodes } }))
   const archive = join(root, 'fixture.tgz')
   const packed = spawnSync('tar', ['-czf', archive, '-C', root, 'package'])
   assert.equal(packed.status, 0)
@@ -53,6 +54,8 @@ test('探测全部组件类型且不安装 n8n SDK', async () => {
     assert.deepEqual(new Set(result.components.map(component => component.componentType)),
       new Set(['ACTION', 'TRIGGER', 'MODEL', 'DATASOURCE', 'AGENT_STRATEGY', 'EXTENSION']))
     assert.ok(result.components.every(component => component.compatibilityStatus === 'SUPPORTED'))
+    assert.equal(result.licenseName, 'MIT')
+    assert.equal(result.licenseUrl, 'https://licenses.example.com/mit')
     const installed = await store.metadata(result.fingerprint)
     for (const component of result.components) {
       const operation = component.componentType === 'TRIGGER' ? 'subscribe' : 'invoke'
@@ -103,6 +106,7 @@ test('声明式节点不得在尚未执行其路由时误报完全兼容', async
     const result = await new PackageStore(storeRoot).install({ archiveBase64: bytes.toString('base64') })
     assert.equal(result.components[0].compatibilityStatus, 'PARTIAL')
     assert.equal(result.components[0].compatibilityReason, 'DECLARATIVE_ROUTING_NOT_IMPLEMENTED')
+    assert.deepEqual(result.externalServices, [{ name: 'example.com', domain: 'example.com' }])
   } finally { await rm(root, { recursive: true, force: true }); await rm(storeRoot, { recursive: true, force: true }) }
 })
 
@@ -167,7 +171,7 @@ module.exports = { Declarative }
     const bytes = await (await import('node:fs/promises')).readFile(join(root, 'fixture.tgz'))
     const store = new PackageStore(storeRoot)
     const result = await store.install({ archiveBase64: bytes.toString('base64') })
-    assert.equal(result.hostAbiVersion, 4)
+    assert.equal(result.hostAbiVersion, 5)
     assert.equal(result.components[0].compatibilityStatus, 'SUPPORTED')
     const installed = await store.metadata(result.fingerprint)
     const invoked = await invokeChild({

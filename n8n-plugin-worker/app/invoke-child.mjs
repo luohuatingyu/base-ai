@@ -16,10 +16,21 @@ async function readInput() {
 function component(module, exportName) {
   const values = exportName && module[exportName] ? [module[exportName]] : Object.values(module || {})
   for (const value of values) {
-    if (typeof value === 'function') { try { return new value() } catch { continue } }
-    if (value && typeof value === 'object') return value
+    if (typeof value === 'function') { try { return versioned(new value()) } catch { continue } }
+    if (value && typeof value === 'object') return versioned(value)
   }
   throw new Error('NODE_COMPONENT_CLASS_MISSING')
+}
+
+/** 展开 VersionedNodeType 并固定使用声明的默认版本。 */
+function versioned(instance) {
+  if (!instance || typeof instance !== 'object') return instance
+  if (typeof instance.getNodeType === 'function') return instance.getNodeType() || instance
+  const versions = instance.nodeVersions || (instance.name === 'VersionedNodeType' ? instance.args?.[0] : undefined)
+  const base = instance.baseDescription || (instance.name === 'VersionedNodeType' ? instance.args?.[1] : undefined) || {}
+  if (!versions || typeof versions !== 'object') return instance
+  return versions[String(base.defaultVersion)] || versions[base.defaultVersion]
+    || Object.entries(versions).sort(([left], [right]) => Number(right) - Number(left))[0]?.[1] || instance
 }
 
 /** 按点路径读取节点参数。 */
@@ -45,13 +56,12 @@ function interpolate(value, parameters, credentials, currentValue, responseItem)
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
     .map(([key, item]) => [key, interpolate(item, parameters, credentials, currentValue, responseItem)]))
   if (typeof value !== 'string') return value
-  const exact = value.match(/^=\{\{\s*(.+)\s*\}\}$/s)
+  const exact = value.match(/^=\{\{\s*(.*?)\s*\}\}$/s)
   if (exact) return evaluateExpression(exact[1], { parameters, credentials, currentValue, responseItem })
-  const rendered = value.replace(/\{\{\s*\$parameter(?:\["([^"]+)"\]|\.([A-Za-z0-9_.-]+))\s*\}\}/g,
-    (_, bracket, dotted) => String(parameter(parameters, bracket || dotted, '')))
-    .replace(/\{\{\s*\$value\s*\}\}/g, String(currentValue ?? ''))
+  const rendered = value.replace(/\{\{\s*(.*?)\s*\}\}/gs,
+    (_, expression) => String(evaluateExpression(expression, { parameters, credentials, currentValue, responseItem }) ?? ''))
   const normalized = rendered.startsWith('=') && !rendered.startsWith('={{') ? rendered.slice(1) : rendered
-  if (normalized.includes('{{') || normalized.startsWith('=')) throw new Error('N8N_EXPRESSION_UNSUPPORTED')
+  if (normalized.includes('{{') || normalized.includes('}}') || normalized.startsWith('=')) throw new Error('N8N_EXPRESSION_UNSUPPORTED')
   return normalized
 }
 
@@ -80,7 +90,7 @@ function evaluateExpression(raw, environment) {
 
 /** 计算三元表达式中受限的布尔条件。 */
 function condition(raw, environment) {
-  const expression = raw.trim()
+  const expression = unwrap(raw)
   if (expression.includes('||')) return expression.split('||').some(part => condition(part, environment))
   if (expression.includes('&&')) return expression.split('&&').every(part => condition(part, environment))
   const includes = expression.match(/^(.+)\.includes\((.+)\)$/s)
@@ -92,16 +102,19 @@ function condition(raw, environment) {
       : comparison[2] === '>=' ? left >= right : comparison[2] === '<=' ? left <= right
         : comparison[2] === '>' ? left > right : left < right
   }
+  const notNumber = expression.match(/^isNaN\(Number\((.+)\)\)$/s)
+  if (notNumber) return Number.isNaN(Number(operand(notNumber[1], environment)))
   return Boolean(operand(expression, environment))
 }
 
 /** 读取不执行代码的表达式操作数。 */
 function operand(raw, environment) {
-  const token = raw.trim()
+  const token = unwrap(raw)
   if (token === 'undefined') return undefined
   if (token === 'null') return null
   if (token === 'true') return true
   if (token === 'false') return false
+  if (token === '{}') return {}
   if (/^-?\d+(?:\.\d+)?$/.test(token)) return Number(token)
   if (/^"[^"]*"$/.test(token)) return JSON.parse(token)
   if (/^'[^']*'$/.test(token)) return token.slice(1, -1)
@@ -111,7 +124,26 @@ function operand(raw, environment) {
     if (typeof value !== 'string') return value
     try { return JSON.parse(value) } catch { throw new Error('N8N_EXPRESSION_JSON_INVALID') }
   }
+  const number = token.match(/^Number\((.+)\)$/s)
+  if (number) return Number(operand(number[1], environment))
+  const collection = token.match(/^(.+)\.(join|split)\(("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\)$/s)
+  if (collection) {
+    const value = operand(collection[1], environment)
+    const separator = collection[3][0] === '"' ? JSON.parse(collection[3]) : collection[3].slice(1, -1)
+    if (collection[2] === 'join') return Array.isArray(value) ? value.join(separator) : ''
+    return typeof value === 'string' ? value.split(separator) : []
+  }
+  const epoch = token.match(/^Math\.floor\(new Date\((.+)\)\.getTime\(\)\s*\/\s*1000\)$/s)
+  if (epoch) return Math.floor(date(operand(epoch[1], environment)).getTime() / 1000)
+  const slicedDate = token.match(/^new Date\((.+)\)\.toISOString\(\)\.slice\(0,\s*(-?\d+)\)(?:\s*\+\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'))?$/s)
+  if (slicedDate) {
+    const suffix = slicedDate[3] ? (slicedDate[3][0] === '"' ? JSON.parse(slicedDate[3]) : slicedDate[3].slice(1, -1)) : ''
+    return date(operand(slicedDate[1], environment)).toISOString().slice(0, Number(slicedDate[2])) + suffix
+  }
+  const normalizedDate = token.match(/^new Date\((.+)\)\.toISOString\(\)\.replace\(\/\\\.\\d\{3\}Z\$\/,\s*("Z"|'Z')\)$/s)
+  if (normalizedDate) return date(operand(normalizedDate[1], environment)).toISOString().replace(/\.\d{3}Z$/, 'Z')
   if (token === '$value') return environment.currentValue
+  if (token === '$value.length') return environment.currentValue?.length
   let reference = token; let length = false
   if (reference.endsWith('.length')) { reference = reference.slice(0, -7); length = true }
   const matched = reference.match(/^\$(parameter|credentials|responseItem)(?:\["([^"]+)"\]|\.([A-Za-z0-9_.-]+))$/)
@@ -120,6 +152,32 @@ function operand(raw, environment) {
     : matched[1] === 'credentials' ? environment.credentials : environment.responseItem
   const value = parameter(root || {}, matched[2] || matched[3], undefined)
   return length ? value?.length : value
+}
+
+/** 去掉完整包裹表达式的圆括号。 */
+function unwrap(raw) {
+  let value = String(raw || '').trim()
+  while (value.startsWith('(') && value.endsWith(')')) {
+    let depth = 0; let complete = true; let quote = ''
+    for (let index = 0; index < value.length; index += 1) {
+      const character = value[index]
+      if (quote) { if (character === quote && value[index - 1] !== '\\') quote = ''; continue }
+      if (character === '"' || character === "'") { quote = character; continue }
+      if (character === '(') depth += 1
+      if (character === ')') depth -= 1
+      if (depth === 0 && index < value.length - 1) { complete = false; break }
+    }
+    if (!complete) break
+    value = value.slice(1, -1).trim()
+  }
+  return value
+}
+
+/** 构造有效日期，非法输入返回明确兼容错误。 */
+function date(value) {
+  const result = new Date(value)
+  if (Number.isNaN(result.getTime())) throw new Error('N8N_EXPRESSION_DATE_INVALID')
+  return result
 }
 
 /** 把路由字段写入 HTTP 请求的 body/query/header/path。 */
@@ -143,7 +201,13 @@ function applyProperties(properties, parameters, credentials, options, hooks, pa
     applyRouting(selected?.routing, parameters, credentials, options, hooks, value)
     applyRouting(property.routing, parameters, credentials, options, hooks, value)
     if (value && typeof value === 'object' && Array.isArray(property.options)) {
-      applyProperties(property.options, parameters, credentials, options, hooks, value)
+      for (const option of property.options) {
+        const nested = option?.name && Object.prototype.hasOwnProperty.call(value, option.name) ? value[option.name] : value
+        applyProperties(option?.values || option?.options, parameters, credentials, options, hooks, nested)
+      }
+    }
+    if (value && typeof value === 'object' && Array.isArray(property.values)) {
+      applyProperties(property.values, parameters, credentials, options, hooks, value)
     }
   }
 }
@@ -151,7 +215,7 @@ function applyProperties(properties, parameters, credentials, options, hooks, pa
 /** 合并单条 routing 声明并收集受控生命周期 hook。 */
 function applyRouting(routing, parameters, credentials, options, hooks, value) {
   if (!routing || typeof routing !== 'object') return
-  if (routing.request) Object.assign(options, interpolate(routing.request, parameters, credentials, value))
+  if (routing.request) mergeRequest(options, interpolate(routing.request, parameters, credentials, value))
   if (routing.send) {
     const sent = routing.send.value === undefined ? value
       : interpolate(routing.send.value, parameters, credentials, value)
@@ -159,6 +223,17 @@ function applyRouting(routing, parameters, credentials, options, hooks, value) {
     collectHooks(hooks.preSend, routing.send.preSend)
   }
   collectPostReceivers(hooks.postReceive, routing.output?.postReceive)
+}
+
+/** 合并多个字段产生的请求片段，避免后一个查询或请求体覆盖前一个。 */
+function mergeRequest(options, request) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('N8N_ROUTING_REQUEST_INVALID')
+  const { qs, query, headers, body, ...rest } = request
+  Object.assign(options, rest)
+  if (qs || query) options.qs = { ...(options.qs || {}), ...(qs || query) }
+  if (headers) options.headers = { ...(options.headers || {}), ...headers }
+  if (body && typeof body === 'object' && !Array.isArray(body)) options.body = { ...(options.body || {}), ...body }
+  else if (body !== undefined) options.body = body
 }
 
 /** 只接受插件包实际导出的函数 hook。 */
