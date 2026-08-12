@@ -69,6 +69,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private final ThreadPoolTaskExecutor executor;
     private final TaskTraceService taskTraceService;
     private final TraceRuntimeRegistry runtimeRegistry;
+    private final WorkflowErrorMessageService errorMessages;
     private final PlatformProperties.Workflow limits;
     private final String instanceId;
     private final Map<String, Future<?>> futures = new ConcurrentHashMap<>();
@@ -83,6 +84,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
                                     WorkflowNodeExecutorRegistry nodeExecutors, WorkflowAccessService accessService,
                                     @Qualifier("workflowTaskExecutor") ThreadPoolTaskExecutor executor,
                                     TaskTraceService taskTraceService, TraceRuntimeRegistry runtimeRegistry,
+                                    WorkflowErrorMessageService errorMessages,
                                     PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -97,6 +99,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
         this.executor = executor;
         this.taskTraceService = taskTraceService;
         this.runtimeRegistry = runtimeRegistry;
+        this.errorMessages = errorMessages;
         this.limits = properties.getWorkflow();
         this.instanceId = properties.getPythonWorker().getJavaInstanceId() + ":" + UUID.randomUUID();
     }
@@ -148,12 +151,12 @@ public class WorkflowExecutionService implements ApplicationRunner {
             futures.put(runId, future);
             if (future.isDone()) futures.remove(runId, future);
         } catch (TaskRejectedException exception) {
-            String message = "工作流执行队列已满";
+            String message = errorMessages.encode("workflow.queueFull");
             jdbcTemplate.update("""
                 UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
                 WHERE id=? AND status='QUEUED'
                 """, message, runId);
-            taskTraceService.markFailed(traceId, message); runtimeRegistry.remove(traceId);
+            taskTraceService.markFailed(traceId, readableError(message)); runtimeRegistry.remove(traceId);
             throw new BusinessException(503, "workflow.queueFull");
         }
         return new WorkflowModels.RunAccepted(runId, "QUEUED");
@@ -187,12 +190,12 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 markCancelled(runId);
                 taskTraceService.completeCancellation(traceId);
             } else {
-                String message = truncate(exception.getMessage(), 2000);
+                String message = errorMessages.encode(exception);
                 int failed = jdbcTemplate.update("""
                     UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
                     WHERE id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false
                     """, message, runId);
-                if (failed == 1) taskTraceService.markFailed(traceId, message);
+                if (failed == 1) taskTraceService.markFailed(traceId, readableError(message));
                 else { markCancelled(runId); taskTraceService.completeCancellation(traceId); }
             }
         } finally {
@@ -280,7 +283,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 }
             } catch (WorkflowWaitSignal signal) { throw signal; }
             catch (RuntimeException exception) {
-                finishNodeRun(nodeRunId, "FAILED", null, truncate(exception.getMessage(), 2000));
+                finishNodeRun(nodeRunId, "FAILED", null, errorMessages.encode(exception));
                 throw exception;
             }
         }
@@ -307,10 +310,10 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 if (attempt < attempts) cancellableDelay(delay * attempt);
             }
         }
-        String message = truncate(last == null ? null : last.getMessage(), 2000);
+        String message = last == null ? errorMessages.encode("workflow.nodeExecutionFailed") : errorMessages.encode(last);
         String strategy = config.path("onError").asText("FAIL").toUpperCase(Locale.ROOT);
         if ("CONTINUE".equals(strategy) || "BRANCH".equals(strategy)) {
-            ObjectNode output = objectMapper.createObjectNode().put("failed", true).put("error", message);
+            ObjectNode output = objectMapper.createObjectNode().put("failed", true).put("error", readableError(message));
             return new NodeResult(output, "BRANCH".equals(strategy) ? "error" : null, message);
         }
         throw last == null ? new BusinessException("workflow.nodeExecutionFailed") : last;
@@ -472,7 +475,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
             markCancelled(childRunId);
             throw exception;
         } catch (RuntimeException exception) {
-            completeRunFailure(childRunId, exception.getMessage());
+            completeRunFailure(childRunId, errorMessages.encode(exception));
             throw exception;
         }
     }
@@ -566,7 +569,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 markCancelled(childRunId);
                 throw exception;
             } catch (RuntimeException exception) {
-                completeRunFailure(childRunId, exception.getMessage());
+                completeRunFailure(childRunId, errorMessages.encode(exception));
                 throw exception;
             }
         }
@@ -748,13 +751,13 @@ public class WorkflowExecutionService implements ApplicationRunner {
         for (Map<String, Object> row : expired) {
             String runId = String.valueOf(row.get("id"));
             String traceId = row.get("trace_id") == null ? null : String.valueOf(row.get("trace_id"));
-            String message = "工作流执行租约已过期";
+            String message = errorMessages.encode("workflow.executionLeaseExpired");
             int failed = jdbcTemplate.update("""
                 UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),execution_instance_id=NULL,
                     lease_expires_at=NULL,updated_at=NOW()
                 WHERE id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false AND lease_expires_at<NOW()
                 """, message, runId);
-            if (failed == 1 && traceId != null) taskTraceService.markFailed(traceId, message);
+            if (failed == 1 && traceId != null) taskTraceService.markFailed(traceId, readableError(message));
         }
     }
 
@@ -809,13 +812,13 @@ public class WorkflowExecutionService implements ApplicationRunner {
         } catch (TraceCancelledException exception) {
             markCancelled(row.runId()); taskTraceService.completeCancellation(row.traceId());
         } catch (Throwable exception) {
-            String message = truncate(exception.getMessage(), 2000);
+            String message = errorMessages.encode(exception);
             int failed = jdbcTemplate.update("""
                 UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),lease_expires_at=NULL,updated_at=NOW()
                 WHERE id=? AND status='RUNNING' AND cancel_requested=false AND execution_instance_id=?
                 """, message, row.runId(), instanceId);
             jdbcTemplate.update("DELETE FROM workflow_wait_state WHERE workflow_run_id=?", row.runId());
-            if (failed == 1) taskTraceService.markFailed(row.traceId(), message);
+            if (failed == 1) taskTraceService.markFailed(row.traceId(), readableError(message));
             else { markCancelled(row.runId()); taskTraceService.completeCancellation(row.traceId()); }
         } finally {
             futures.remove(row.runId()); runtime.unregisterThread(Thread.currentThread()); runtimeRegistry.remove(row.traceId());
@@ -919,7 +922,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
         return jdbcTemplate.query("SELECT * FROM workflow_node_run WHERE workflow_run_id=? ORDER BY sequence_no,id", (rs, row) ->
             new WorkflowModels.NodeRunView(rs.getLong("id"), rs.getString("node_id"), rs.getString("node_name"),
                 rs.getString("node_type"), rs.getInt("sequence_no"), rs.getString("iteration_path"), rs.getString("status"),
-                decrypt(rs.getString("input_encrypted")), decrypt(rs.getString("output_encrypted")), rs.getString("error_message"),
+                decrypt(rs.getString("input_encrypted")), decrypt(rs.getString("output_encrypted")), errorMessages.localize(rs.getString("error_message")),
                 timestamp(rs, "started_at"), timestamp(rs, "finished_at")), runId);
     }
 
@@ -928,7 +931,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
         return new WorkflowModels.RunView(rs.getString("id"), rs.getLong("workflow_id"), rs.getString("workflow_code"),
             rs.getInt("version_number"), rs.getString("parent_run_id"), rs.getString("trace_id"), rs.getString("trigger_type"),
             rs.getString("status"), decrypt(rs.getString("input_encrypted")), decrypt(rs.getString("output_encrypted")),
-            rs.getString("error_message"), rs.getLong("owner_user_id"), (Long) rs.getObject("api_key_id"),
+            errorMessages.localize(rs.getString("error_message")), rs.getLong("owner_user_id"), (Long) rs.getObject("api_key_id"),
             rs.getBoolean("cancel_requested"),
             timestamp(rs, "started_at"), timestamp(rs, "finished_at"), timestamp(rs, "created_at"), List.of());
     }
@@ -990,6 +993,10 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private String truncate(String value, int maximum) {
         String normalized = value == null || value.isBlank() ? "工作流执行失败" : value;
         return normalized.length() <= maximum ? normalized : normalized.substring(0, maximum);
+    }
+    /** 将持久化错误转换为稳定中文，避免异步任务追踪展示内部结构化标记。 */
+    private String readableError(String persisted) {
+        return errorMessages.localize(persisted, Locale.SIMPLIFIED_CHINESE);
     }
     /** 将 JDBC 时间戳安全映射为本地时间。 */
     private LocalDateTime timestamp(ResultSet rs, String column) throws SQLException {

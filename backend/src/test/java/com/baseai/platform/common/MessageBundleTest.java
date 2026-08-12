@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MessageBundleTest {
     private static final Pattern MESSAGE_KEY = Pattern.compile(
         "\\\"((?:error|auth|apiKey|internal|trace|user|role|menu|department|position|setting|dictionary|ai|apiTrigger|llm)\\.[A-Za-z][A-Za-z0-9]*)\\\"");
+    private static final Pattern WORKFLOW_MESSAGE_KEY = Pattern.compile(
+        "(?:BusinessException(?:\\.(?:unauthorized|forbidden|notFound))?|errorMessages\\.encode)\\s*\\(\\s*(?:\\d+\\s*,\\s*)?\\\"(workflow\\.[A-Za-z][A-Za-z0-9]*)\\\"");
 
     /** 中英文资源必须包含完全相同的消息键，避免特定语言请求运行时失败。 */
     @Test
@@ -45,8 +47,11 @@ class MessageBundleTest {
         Set<String> referencedKeys = new TreeSet<>();
         try (var paths = Files.walk(Path.of("src/main/java"))) {
             for (Path path : paths.filter(item -> item.toString().endsWith(".java")).toList()) {
-                Matcher matcher = MESSAGE_KEY.matcher(Files.readString(path));
+                String source = Files.readString(path);
+                Matcher matcher = MESSAGE_KEY.matcher(source);
                 while (matcher.find()) referencedKeys.add(matcher.group(1));
+                Matcher workflowMatcher = WORKFLOW_MESSAGE_KEY.matcher(source);
+                while (workflowMatcher.find()) referencedKeys.add(workflowMatcher.group(1));
             }
         }
 

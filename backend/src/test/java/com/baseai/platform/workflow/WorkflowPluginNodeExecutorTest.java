@@ -74,6 +74,28 @@ class WorkflowPluginNodeExecutorTest {
             """.formatted("a".repeat(64))));
     }
 
+    /** 非对象凭据配置必须返回稳定业务消息键，不能因缺失资源退化为 500。 */
+    @Test
+    void rejectsInvalidCredentialConfigurationWithLocalizedBusinessError() throws Exception {
+        var component = component(mapper.createArrayNode(), mapper.readTree("""
+            [{"name":"apiKey","type":"secret-input","required":true}]
+            """));
+        when(registry.requireRuntimeComponent(7L)).thenReturn(component);
+        when(connections.requireOwnedAndEnabled(9L, 3L, Set.of("PLUGIN"))).thenReturn(
+            new WorkflowConnectionService.StoredConnection(9L, "P", "Plugin", "PLUGIN",
+                mapper.readTree("{\"pluginComponentId\":7,\"credentials\":\"invalid\"}"),
+                3L, true, null, null));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> executor.execute(request("""
+            {"pluginComponentId":7,"packageFingerprint":"%s","componentExternalId":"action",
+             "componentType":"ACTION","connectionId":9,"parameters":{}}
+            """.formatted("a".repeat(64)))));
+
+        assertEquals(400, exception.getStatus());
+        assertEquals("workflow.connectionConfigInvalid", exception.getMessageKey());
+        verify(workers, never()).invoke(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
     /** 伪造包摘要或缺少必填参数必须在 Worker 调用前失败。 */
     @Test
     void rejectsForgedIdentityAndMissingParameters() throws Exception {

@@ -5,10 +5,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.web.servlet.LocaleResolver;
-import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-import org.springframework.web.servlet.i18n.LocaleChangeInterceptor;
 import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 import java.util.Locale;
@@ -18,7 +16,7 @@ import java.util.Locale;
  * 支持中文和英文两种语言
  */
 @Configuration
-public class I18nConfig implements WebMvcConfigurer {
+public class I18nConfig {
     private static final List<Locale> SUPPORTED_LOCALES = List.of(Locale.SIMPLIFIED_CHINESE, Locale.US);
     private final PlatformProperties properties;
 
@@ -31,7 +29,7 @@ public class I18nConfig implements WebMvcConfigurer {
      */
     @Bean
     public LocaleResolver localeResolver() {
-        AcceptHeaderLocaleResolver resolver = new AcceptHeaderLocaleResolver();
+        AcceptHeaderLocaleResolver resolver = new ParameterLocaleResolver();
         resolver.setDefaultLocale(resolveDefaultLocale(properties.getI18n().getDefaultLocale()));
         resolver.setSupportedLocales(SUPPORTED_LOCALES);
         return resolver;
@@ -44,17 +42,6 @@ public class I18nConfig implements WebMvcConfigurer {
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException(
                 "app.i18n.default-locale must be one of: en-US, zh-CN"));
-    }
-
-    /**
-     * 配置语言切换拦截器
-     * 支持通过请求参数 lang 切换语言
-     */
-    @Bean
-    public LocaleChangeInterceptor localeChangeInterceptor() {
-        LocaleChangeInterceptor interceptor = new LocaleChangeInterceptor();
-        interceptor.setParamName("lang"); // 参数名称
-        return interceptor;
     }
 
     /**
@@ -71,8 +58,19 @@ public class I18nConfig implements WebMvcConfigurer {
         return messageSource;
     }
 
-    @Override
-    public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(localeChangeInterceptor());
+    /** 支持单次请求 lang 参数，并在无效时回退标准 Accept-Language 解析。 */
+    private static final class ParameterLocaleResolver extends AcceptHeaderLocaleResolver {
+        /** lang 参数优先于请求头，只接受平台明确支持的语言。 */
+        @Override
+        public Locale resolveLocale(HttpServletRequest request) {
+            String value = request.getParameter("lang");
+            if (value != null) {
+                Locale requested = SUPPORTED_LOCALES.stream()
+                    .filter(locale -> locale.toLanguageTag().equalsIgnoreCase(value.trim()))
+                    .findFirst().orElse(null);
+                if (requested != null) return requested;
+            }
+            return super.resolveLocale(request);
+        }
     }
 }

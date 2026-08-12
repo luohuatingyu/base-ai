@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { reactive } from 'vue'
-import { cloneWorkflowData, createWorkflowGraph, removeWorkflowEdge, serializeWorkflowGraph, validateWorkflowGraph, withWorkflowEdgeInteractionWidth } from '../src/utils/workflowGraph.js'
+import { cloneWorkflowData, createWorkflowGraph, localizeWorkflowStatus, removeWorkflowEdge, serializeWorkflowGraph, validateWorkflowGraph, withWorkflowEdgeInteractionWidth } from '../src/utils/workflowGraph.js'
 import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
 
@@ -150,7 +150,7 @@ test('工作流画布拒绝悬空连线和普通循环', () => {
     nodes: [{ id: 'start', type: 'START' }, { id: 'end', type: 'END' }],
     edges: [{ id: 'edge', source: 'start', target: 'missing' }]
   }
-  assert.match(validateWorkflowGraph(dangling), /target/)
+  assert.equal(validateWorkflowGraph(dangling), 'edgeMissing')
 
   const cyclic = {
     nodes: [{ id: 'start', type: 'START' }, { id: 'llm', type: 'LLM' }, { id: 'end', type: 'END' }],
@@ -160,5 +160,21 @@ test('工作流画布拒绝悬空连线和普通循环', () => {
       { id: 'c', source: 'llm', target: 'end' }
     ]
   }
-  assert.match(validateWorkflowGraph(cyclic), /cycle/)
+  assert.equal(validateWorkflowGraph(cyclic), 'cycle')
+})
+
+test('画布校验错误和运行状态完整支持双语且未知状态安全回退', () => {
+  const translate = locale => key => key.split('.').reduce((value, part) => value?.[part], locale) || key
+  assert.equal(validateWorkflowGraph(null), 'graphInvalid')
+  assert.equal(zhCN.workflowCanvas.graphErrors.graphInvalid, '画布结构无效')
+  assert.equal(enUS.workflowCanvas.graphErrors.graphInvalid, 'The canvas structure is invalid')
+  for (const status of ['DRAFT', 'PUBLISHED', 'QUEUED', 'RUNNING', 'WAITING', 'SUCCESS', 'FAILED', 'FAILED_CONTINUED', 'CANCELLED']) {
+    assert.notEqual(localizeWorkflowStatus(status, translate(zhCN)), status)
+    assert.notEqual(localizeWorkflowStatus(status, translate(enUS)), status)
+  }
+  assert.equal(localizeWorkflowStatus('FUTURE_STATUS', translate(zhCN)), 'FUTURE_STATUS')
+  assert.match(canvasViewSource, /localizeWorkflowStatus\(item\.status, t\)/)
+  assert.match(canvasViewSource, /localizeWorkflowStatus\(activeRun\.status, t\)/)
+  assert.match(canvasViewSource, /:label="t\('workflowCanvas\.runId'\)"/)
+  assert.match(canvasViewSource, /:label="t\('workflowCanvas\.version'\)"/)
 })

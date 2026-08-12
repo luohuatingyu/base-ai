@@ -56,6 +56,28 @@ class I18nConfigTest {
         assertEquals(Locale.US, resolver.resolveLocale(request));
     }
 
+    /** lang 参数应覆盖请求头，供无需修改请求头的开放接口调用方使用。 */
+    @Test
+    void languageParameterOverridesRequestHeader() {
+        LocaleResolver resolver = resolver(properties("en-US"));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Accept-Language", "en-US");
+        request.setParameter("lang", "zh-CN");
+
+        assertEquals(Locale.SIMPLIFIED_CHINESE, resolver.resolveLocale(request));
+    }
+
+    /** 非法 lang 参数不得触发服务端异常，应安全回退请求头语言。 */
+    @Test
+    void unsupportedLanguageParameterFallsBackToRequestHeader() {
+        LocaleResolver resolver = resolver(properties("en-US"));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Accept-Language", "zh-CN");
+        request.setParameter("lang", "fr-FR");
+
+        assertEquals(Locale.SIMPLIFIED_CHINESE, resolver.resolveLocale(request));
+    }
+
     /** 空值和不支持语言必须阻止配置生效。 */
     @ParameterizedTest
     @NullAndEmptySource

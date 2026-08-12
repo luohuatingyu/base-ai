@@ -5,7 +5,7 @@
       <el-input v-model="keyword" clearable :placeholder="t('workflowCanvas.search')" />
       <div class="workflow-list">
         <button v-for="item in filteredRows" :key="item.id" :class="{ active: selected?.id === item.id }" @click="select(item)">
-          <strong>{{ item.name }}</strong><small>{{ item.code }}</small><el-tag size="small" :type="item.status === 'PUBLISHED' ? 'success' : 'info'">{{ item.status }}</el-tag>
+          <strong>{{ item.name }}</strong><small>{{ item.code }}</small><el-tag size="small" :type="item.status === 'PUBLISHED' ? 'success' : 'info'">{{ localizeWorkflowStatus(item.status, t) }}</el-tag>
         </button>
       </div>
     </section>
@@ -38,14 +38,14 @@
 
     <el-dialog v-model="runVisible" :title="t('workflowCanvas.run')" width="min(680px, 94vw)">
       <el-input v-model="runInputText" type="textarea" :rows="10" spellcheck="false" />
-      <el-alert v-if="activeRun" class="workflow-run-alert" :title="`${activeRun.status} · ${activeRun.id}`" :type="runAlertType" show-icon :closable="false" />
+      <el-alert v-if="activeRun" class="workflow-run-alert" :title="`${localizeWorkflowStatus(activeRun.status, t)} · ${activeRun.id}`" :type="runAlertType" show-icon :closable="false" />
       <pre v-if="activeRun?.output"><code>{{ JSON.stringify(activeRun.output, null, 2) }}</code></pre>
       <template #footer><el-button v-if="activeRun && ['QUEUED','RUNNING','WAITING'].includes(activeRun.status)" type="danger" @click="cancelRun">{{ t('workflowCanvas.cancel') }}</el-button><el-button type="primary" :loading="running" @click="startRun">{{ t('workflowCanvas.start') }}</el-button></template>
     </el-dialog>
 
     <el-drawer v-model="runsVisible" :title="t('workflowCanvas.logs')" size="min(900px, 96vw)">
-      <el-table :data="runs"><el-table-column prop="id" label="Run ID" min-width="290" /><el-table-column prop="versionNumber" label="Version" width="90" /><el-table-column prop="status" :label="t('common.status')" width="120" /><el-table-column prop="createdAt" :label="t('common.time')" min-width="170" /><el-table-column width="90"><template #default="scope"><el-button link type="primary" @click="openRun(scope.row.id)">{{ t('common.detail') }}</el-button></template></el-table-column></el-table>
-      <div v-if="runDetail" class="workflow-run-detail"><h3>{{ runDetail.id }}</h3><pre><code>{{ JSON.stringify(runDetail.output || runDetail.errorMessage, null, 2) }}</code></pre><el-table :data="runDetail.nodes"><el-table-column prop="sequenceNo" label="#" width="60" /><el-table-column prop="nodeName" :label="t('common.name')" /><el-table-column prop="nodeType" :label="t('common.type')" width="110" /><el-table-column prop="status" :label="t('common.status')" width="110" /><el-table-column prop="iterationPath" :label="t('workflowCanvas.iteration')" /></el-table></div>
+      <el-table :data="runs"><el-table-column prop="id" :label="t('workflowCanvas.runId')" min-width="290" /><el-table-column prop="versionNumber" :label="t('workflowCanvas.version')" width="90" /><el-table-column :label="t('common.status')" width="120"><template #default="scope">{{ localizeWorkflowStatus(scope.row.status, t) }}</template></el-table-column><el-table-column prop="createdAt" :label="t('common.time')" min-width="170" /><el-table-column width="90"><template #default="scope"><el-button link type="primary" @click="openRun(scope.row.id)">{{ t('common.detail') }}</el-button></template></el-table-column></el-table>
+      <div v-if="runDetail" class="workflow-run-detail"><h3>{{ runDetail.id }}</h3><pre><code>{{ JSON.stringify(runDetail.output || runDetail.errorMessage, null, 2) }}</code></pre><el-table :data="runDetail.nodes"><el-table-column prop="sequenceNo" label="#" width="60" /><el-table-column prop="nodeName" :label="t('common.name')" /><el-table-column prop="nodeType" :label="t('common.type')" width="110" /><el-table-column :label="t('common.status')" width="150"><template #default="scope">{{ localizeWorkflowStatus(scope.row.status, t) }}</template></el-table-column><el-table-column prop="iterationPath" :label="t('workflowCanvas.iteration')" /></el-table></div>
     </el-drawer>
   </div>
 </template>
@@ -56,7 +56,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import WorkflowGraphEditor from '../components/WorkflowGraphEditor.vue'
-import { cloneWorkflowData, createWorkflowGraph, serializeWorkflowGraph, validateWorkflowGraph } from '../utils/workflowGraph'
+import { cloneWorkflowData, createWorkflowGraph, localizeWorkflowStatus, serializeWorkflowGraph, validateWorkflowGraph } from '../utils/workflowGraph'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -79,7 +79,7 @@ function openCreate() { Object.assign(createForm, { code: '', name: '', descript
 async function createWorkflow() { if (!createForm.code.trim() || !createForm.name.trim()) return ElMessage.warning(t('workflowCanvas.required')); try { const response = await http.post('/workflow/canvases', { ...createForm, graph: createWorkflowGraph(), inputSchema: {} }); createVisible.value = false; await load(); select(response.data); ElMessage.success(t('common.successSaved')) } catch (error) { showHttpError(error, 'common.saveFailed') } }
 /** 校验并保存新的不可变草稿版本。 */
 async function save() {
-  const error = validateWorkflowGraph(graph.value); if (error) return ElMessage.warning(t('workflowCanvas.invalidGraph', { error }))
+  const error = validateWorkflowGraph(graph.value); if (error) return ElMessage.warning(t('workflowCanvas.invalidGraph', { error: t(`workflowCanvas.graphErrors.${error}`) }))
   let inputSchema; try { inputSchema = JSON.parse(inputSchemaText.value || '{}') } catch { return ElMessage.warning(t('workflowCanvas.invalidJson')) }
   try { const response = await http.put(`/workflow/canvases/${selected.value.id}`, { code: selected.value.code, name: selected.value.name, description: selected.value.description, graph: serializeWorkflowGraph(graph.value), inputSchema, revision: selected.value.revision }); await load(); select(response.data); ElMessage.success(t('common.successSaved')) } catch (error) { showHttpError(error, 'common.saveFailed') }
 }

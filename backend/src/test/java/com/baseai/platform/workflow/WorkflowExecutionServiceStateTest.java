@@ -15,6 +15,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.task.TaskRejectedException;
+import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -22,6 +24,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Set;
 import java.time.Instant;
 
@@ -32,6 +35,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 class WorkflowExecutionServiceStateTest {
     private JdbcTemplate jdbcTemplate;
@@ -78,13 +82,13 @@ class WorkflowExecutionServiceStateTest {
             new WorkflowExpressionService(objectMapper), mock(WorkflowAgentClient.class),
             mock(com.baseai.platform.service.AiChatClient.class), mock(com.baseai.platform.automation.ApiTriggerService.class),
             mock(WorkflowNodeExecutorRegistry.class), mock(WorkflowAccessService.class), executor, taskTraceService,
-            runtimeRegistry, properties);
+            runtimeRegistry, workflowErrors(), properties);
         AuthContext.set(new AuthUser(7L, "owner", Set.of("USER"), Set.of(), AuthenticationType.TOKEN, null, null));
     }
 
     /** 清理认证上下文。 */
     @AfterEach
-    void tearDown() { AuthContext.clear(); }
+    void tearDown() { AuthContext.clear(); LocaleContextHolder.resetLocaleContext(); }
 
     /** 已取消运行不能被迟到的执行线程覆盖为成功。 */
     @Test
@@ -126,6 +130,37 @@ class WorkflowExecutionServiceStateTest {
 
         assertEquals(503, exception.getStatus());
         assertEquals("FAILED", jdbcTemplate.queryForObject("SELECT status FROM workflow_run", String.class));
+        String persisted = jdbcTemplate.queryForObject("SELECT error_message FROM workflow_run", String.class);
+        assertEquals(true, persisted.startsWith("@i18n:") && persisted.contains("workflow.queueFull"));
+        verify(taskTraceService).markFailed("trace-2", "工作流执行队列已满，请稍后重试");
+    }
+
+    /** 结构化业务错误应按查询语言解析，历史纯文本继续原样返回。 */
+    @Test
+    void localizesPersistedBusinessErrorsAndPreservesLegacyText() {
+        WorkflowErrorMessageService errors = workflowErrors();
+        String persisted = errors.encode(new BusinessException("workflow.iterationLimit", 10));
+
+        jdbcTemplate.update("""
+            INSERT INTO workflow_run(id,workflow_id,workflow_version_id,trace_id,trigger_type,status,input_encrypted,
+            output_encrypted,error_message,owner_user_id,cancel_requested)
+            VALUES ('localized',1,2,'trace-localized','MANUAL','FAILED','','',?,7,false)
+            """, persisted);
+        jdbcTemplate.update("""
+            INSERT INTO workflow_node_run(workflow_run_id,node_id,node_name,node_type,sequence_no,iteration_path,status,
+            input_encrypted,output_encrypted,error_message)
+            VALUES ('localized','loop','Loop','ITERATION',1,'','FAILED','','',?)
+            """, persisted);
+
+        LocaleContextHolder.setLocale(Locale.US);
+        assertEquals("The iteration input exceeds the limit of 10", errors.localize(persisted));
+        assertEquals("The iteration input exceeds the limit of 10", service.run("localized").errorMessage());
+        assertEquals("The iteration input exceeds the limit of 10", service.run("localized").nodes().get(0).errorMessage());
+        LocaleContextHolder.setLocale(Locale.SIMPLIFIED_CHINESE);
+        assertEquals("数组迭代数量超过上限 10", errors.localize(persisted));
+        assertEquals("数组迭代数量超过上限 10", service.run("localized").errorMessage());
+        assertEquals("legacy failure", errors.localize("legacy failure"));
+        assertEquals("工作流执行失败", errors.localize("@i18n:{broken", Locale.SIMPLIFIED_CHINESE));
     }
 
     /** 节点日志按单次运行累计计费，不能通过多个合规小输出放大数据库占用。 */
@@ -178,5 +213,12 @@ class WorkflowExecutionServiceStateTest {
 
         assertEquals("WAITING", jdbcTemplate.queryForObject("SELECT status FROM workflow_run WHERE id='waiting'", String.class));
         assertEquals("WAITING", jdbcTemplate.queryForObject("SELECT status FROM workflow_wait_state WHERE workflow_run_id='waiting'", String.class));
+    }
+
+    /** 创建与生产配置一致的工作流错误消息解析器。 */
+    private WorkflowErrorMessageService workflowErrors() {
+        ResourceBundleMessageSource messages = new ResourceBundleMessageSource();
+        messages.setBasename("messages"); messages.setDefaultEncoding("UTF-8");
+        return new WorkflowErrorMessageService(objectMapper, messages);
     }
 }

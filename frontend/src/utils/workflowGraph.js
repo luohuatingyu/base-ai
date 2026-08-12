@@ -13,23 +13,23 @@ export function createWorkflowGraph() {
 
 /** 在前端快速检查结构错误，后端仍执行最终可信校验。 */
 export function validateWorkflowGraph(graph, maxNodes = 100) {
-  if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) return 'graph invalid'
-  if (graph.nodes.length < 2 || graph.nodes.length > maxNodes) return 'node limit exceeded'
+  if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) return 'graphInvalid'
+  if (graph.nodes.length < 2 || graph.nodes.length > maxNodes) return 'nodeLimit'
   const ids = new Set()
   const triggerTypes = new Set(['WEBHOOK_TRIGGER', 'SCHEDULE_TRIGGER', 'KAFKA_TRIGGER', 'RABBITMQ_TRIGGER'])
   let starts = 0
   let ends = 0
   for (const node of graph.nodes) {
-    if (!node?.id || ids.has(node.id)) return 'node id invalid'
+    if (!node?.id || ids.has(node.id)) return 'nodeIdInvalid'
     ids.add(node.id)
     if (node.type === 'START' || triggerTypes.has(node.type)) starts += 1
     if (node.type === 'END') ends += 1
   }
-  if (starts !== 1 || ends < 1) return 'start/end boundary invalid'
+  if (starts !== 1 || ends < 1) return 'boundaryInvalid'
   const incoming = new Map([...ids].map(id => [id, 0]))
   const outgoing = new Map([...ids].map(id => [id, []]))
   for (const edge of graph.edges) {
-    if (!edge?.id || !ids.has(edge.source) || !ids.has(edge.target)) return 'edge target or source missing'
+    if (!edge?.id || !ids.has(edge.source) || !ids.has(edge.target)) return 'edgeMissing'
     incoming.set(edge.target, incoming.get(edge.target) + 1)
     outgoing.get(edge.source).push(edge.target)
   }
@@ -43,8 +43,17 @@ export function validateWorkflowGraph(graph, maxNodes = 100) {
       if (incoming.get(target) === 0) queue.push(target)
     }
   }
-  if (visited !== ids.size) return 'cycle detected'
+  if (visited !== ids.size) return 'cycle'
   return ''
+}
+
+const WORKFLOW_STATUSES = new Set([
+  'DRAFT', 'PUBLISHED', 'QUEUED', 'RUNNING', 'WAITING', 'SUCCESS', 'FAILED', 'FAILED_CONTINUED', 'CANCELLED'
+])
+
+/** 本地化已知工作流状态，未知状态保留原值以兼容后端扩展。 */
+export function localizeWorkflowStatus(status, translate) {
+  return WORKFLOW_STATUSES.has(status) ? translate(`workflowCanvas.statuses.${status}`) : (status || '')
 }
 
 /** 深复制来自 JSON 接口的工作流数据，并兼容 Vue 响应式代理。 */
