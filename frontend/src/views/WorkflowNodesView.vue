@@ -152,8 +152,18 @@
     <el-dialog v-model="admissionEditVisible" :title="t('pluginAdmission.edit')" width="min(760px, 94vw)" top="5vh">
       <el-form label-width="150px">
         <el-form-item :label="t('pluginAdmission.plugin')"><strong>{{ admissionForm.packageKey }} · v{{ admissionForm.packageVersion }}</strong></el-form-item>
-        <el-form-item :label="t('pluginAdmission.license')" required><el-input v-model="admissionForm.licenseName" maxlength="160" /></el-form-item>
-        <el-form-item :label="t('pluginAdmission.licenseUrl')"><el-input v-model="admissionForm.licenseUrl" maxlength="500" placeholder="https://" /></el-form-item>
+        <el-form-item :label="t('pluginAdmission.license')" required>
+          <div class="admission-license-fields">
+            <el-select v-model="admissionLicenseSelection" :placeholder="t('pluginAdmission.selectLicense')" @change="changeAdmissionLicense">
+              <el-option v-for="license in pluginLicenseOptions" :key="license.name" :label="license.name" :value="license.name" />
+              <el-option :label="t('pluginAdmission.customLicense')" :value="CUSTOM_PLUGIN_LICENSE" />
+            </el-select>
+            <el-input v-if="admissionLicenseSelection === CUSTOM_PLUGIN_LICENSE" v-model="admissionForm.licenseName"
+              :placeholder="t('pluginAdmission.customLicenseName')" maxlength="160" />
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('pluginAdmission.licenseUrl')"><el-input v-model="admissionForm.licenseUrl" maxlength="500"
+          placeholder="https://" :disabled="admissionLicenseSelection !== CUSTOM_PLUGIN_LICENSE" /></el-form-item>
         <el-form-item :label="t('pluginAdmission.externalServices')" required>
           <div class="admission-services">
             <el-checkbox v-model="admissionForm.noExternalService" @change="clearAdmissionServices">{{ t('pluginAdmission.noExternalService') }}</el-checkbox>
@@ -191,6 +201,7 @@ import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import WorkflowNodeConfigEditor from '../components/WorkflowNodeConfigEditor.vue'
 import { cloneConfig, WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
+import { CUSTOM_PLUGIN_LICENSE, PLUGIN_LICENSE_OPTIONS, applyPluginLicenseSelection, pluginAdmissionLicenseValid, pluginLicenseSelection } from '../utils/pluginAdmissionLicense'
 import { defaultTemplateCategory, filterWorkflowTemplates, localizedTemplateText, marketplaceItemDescription, marketplaceNodeTypeLabel, normalizeTemplateMetadata, workflowTemplateCategoryStyle, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
 
 const { t, te } = useI18n()
@@ -223,6 +234,8 @@ const admissionSaving = ref(false)
 const admissions = ref([])
 const admissionDataTypes = ['PUBLIC_DATA', 'INTERNAL_DATA', 'CUSTOMER_DATA', 'PERSONAL_INFORMATION', 'SENSITIVE_PERSONAL_INFORMATION', 'CREDENTIALS', 'NO_DATA']
 const admissionForm = reactive(emptyAdmission())
+const pluginLicenseOptions = PLUGIN_LICENSE_OPTIONS
+const admissionLicenseSelection = ref('')
 let marketplacePollTimer = null
 let adapterPollTimer = null
 /** 返回同时匹配必选来源和功能分类的节点，并保留停用模板供管理员维护。 */
@@ -383,8 +396,11 @@ async function loadAdmissions() {
 /** 创建准入编辑副本，避免取消时污染表格行。 */
 function editAdmission(row) {
   Object.assign(admissionForm, emptyAdmission(), JSON.parse(JSON.stringify(row || {})))
-  admissionForm.externalServices ||= []; admissionForm.dataTypes ||= []; admissionEditVisible.value = true
+  admissionForm.externalServices ||= []; admissionForm.dataTypes ||= []
+  admissionLicenseSelection.value = pluginLicenseSelection(admissionForm); admissionEditVisible.value = true
 }
+/** 切换许可证后同步预置名称和固定 SPDX 地址，自定义模式保留可编辑空字段。 */
+function changeAdmissionLicense(value) { applyPluginLicenseSelection(admissionForm, value) }
 /** 选择无外部服务时清空候选项。 */
 function clearAdmissionServices(value) { if (value) admissionForm.externalServices = [] }
 /** 无数据分类和其他数据分类互斥。 */
@@ -393,6 +409,7 @@ function normalizeAdmissionDataTypes(values) {
 }
 /** 保存准入资料并强制回到待审批。 */
 async function saveAdmission() {
+  if (!pluginAdmissionLicenseValid(admissionForm)) { ElMessage.warning(t('pluginAdmission.licenseRequired')); return }
   admissionSaving.value = true
   try {
     const { data } = await http.put(`/workflow/plugin-admissions/${admissionForm.pluginId}`, admissionCommand())
@@ -402,6 +419,7 @@ async function saveAdmission() {
 }
 /** 保存最新资料后批准或拒绝，并同步插件启用状态。 */
 async function reviewAdmission(approved) {
+  if (approved && !pluginAdmissionLicenseValid(admissionForm)) { ElMessage.warning(t('pluginAdmission.licenseRequired')); return }
   admissionSaving.value = true
   try {
     if (approved) await http.put(`/workflow/plugin-admissions/${admissionForm.pluginId}`, admissionCommand())
@@ -418,6 +436,7 @@ function admissionCommand() { return { licenseName: admissionForm.licenseName, l
 function replaceAdmission(value) {
   admissions.value = admissions.value.map(item => item.pluginId === value.pluginId ? value : item)
   Object.assign(admissionForm, emptyAdmission(), JSON.parse(JSON.stringify(value)))
+  admissionLicenseSelection.value = pluginLicenseSelection(admissionForm)
 }
 /** 映射审批状态颜色。 */
 function admissionStatusType(status) { return status === 'APPROVED' ? 'success' : status === 'REJECTED' ? 'danger' : 'warning' }
@@ -530,6 +549,7 @@ onBeforeUnmount(stopAdapterPolling)
 .admission-table { margin-top: 16px; }
 .admission-table strong, .admission-table small { display: block; }
 .admission-table small { margin-top: 3px; color: var(--app-muted); }
+.admission-license-fields { display: grid; width: 100%; grid-template-columns: minmax(180px, .8fr) minmax(220px, 1fr); gap: 10px; }
 .admission-services { display: grid; width: 100%; gap: 10px; }
 .admission-service-row { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(200px, 1fr) auto; gap: 8px; }
 @media (max-width: 880px) {
@@ -550,5 +570,6 @@ onBeforeUnmount(stopAdapterPolling)
   .marketplace-grid { grid-template-columns: 1fr; }
   .marketplace-grid--n8n { grid-template-columns: 1fr; }
   .marketplace-grid--dify { grid-template-columns: 1fr; }
+  .admission-license-fields, .admission-service-row { grid-template-columns: 1fr; }
 }
 </style>
