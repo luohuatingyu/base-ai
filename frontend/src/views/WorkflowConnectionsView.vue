@@ -8,7 +8,12 @@
     <el-table :data="rows" table-layout="auto">
       <el-table-column prop="code" :label="t('common.code')" min-width="150" />
       <el-table-column prop="name" :label="t('common.name')" min-width="160" />
-      <el-table-column prop="connectionType" :label="t('common.type')" width="130" />
+      <el-table-column :label="t('workflowConnections.category')" min-width="150"><template #default="scope">
+        <el-tag class="connection-tag" :style="categoryStyle(preferredCategory(scope.row.connectionType))">{{ categoryLabel(preferredCategory(scope.row.connectionType)) }}</el-tag>
+      </template></el-table-column>
+      <el-table-column :label="t('workflowConnections.connectionType')" min-width="160"><template #default="scope">
+        <el-tag class="connection-tag" :style="typeStyle(scope.row.connectionType, preferredCategory(scope.row.connectionType))">{{ typeLabel(scope.row.connectionType) }}</el-tag>
+      </template></el-table-column>
       <el-table-column :label="t('workflowConnections.vectorCapability')" min-width="190"><template #default="scope"><el-tag :type="vectorStatusType(scope.row.vectorStatus)">{{ t(`workflowConnections.vectorStatuses.${scope.row.vectorStatus || 'UNKNOWN'}`) }}</el-tag><small v-if="scope.row.vectorEngine" class="vector-detail">{{ scope.row.vectorEngine }} {{ scope.row.vectorVersion }}</small></template></el-table-column>
       <el-table-column :label="t('common.status')" width="100"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'info'">{{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag></template></el-table-column>
       <el-table-column :label="t('common.operation')" width="280" fixed="right"><template #default="scope"><div class="table-actions">
@@ -22,14 +27,29 @@
     <el-dialog v-model="visible" :title="form.id ? t('workflowConnections.edit') : t('workflowConnections.add')" width="min(980px, 94vw)">
       <el-form label-position="top">
         <div class="connection-grid"><el-form-item :label="t('common.code')"><el-input v-model="form.code" /></el-form-item><el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item></div>
-        <el-form-item :label="t('common.type')"><el-select v-model="form.connectionType" class="full" @change="resetConfig"><el-option v-for="type in connectionTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+        <div class="connection-grid">
+          <el-form-item :label="t('workflowConnections.category')">
+            <el-select v-model="form.connectionCategory" class="full" :placeholder="t('workflowConnections.selectCategory')" @change="selectCategory">
+              <el-option v-for="category in connectionCategories" :key="category.key" :label="categoryLabel(category.key)" :value="category.key">
+                <el-tag class="connection-tag" :style="categoryStyle(category.key)">{{ categoryLabel(category.key) }}</el-tag>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('workflowConnections.connectionType')">
+            <el-select v-model="form.connectionType" class="full" :disabled="!form.connectionCategory" :placeholder="t('workflowConnections.selectConnectionType')" @change="resetConfig">
+              <el-option v-for="type in availableConnectionTypes" :key="type" :label="typeLabel(type)" :value="type">
+                <el-tag class="connection-tag" :style="typeStyle(type, form.connectionCategory)">{{ typeLabel(type) }}</el-tag>
+              </el-option>
+            </el-select>
+          </el-form-item>
+        </div>
         <el-form-item v-if="form.connectionType === 'PLUGIN'" :label="t('workflowConnections.pluginComponent')">
           <el-select :model-value="form.config.pluginComponentId" class="full" filterable @update:model-value="selectPluginComponent">
             <el-option v-for="component in pluginComponents" :key="component.id" :value="component.id" :label="pluginComponentLabel(component)" />
           </el-select>
         </el-form-item>
-        <section class="connection-config-section">
-          <div class="connection-config-head"><div><h3>{{ t('workflowConnections.config') }}</h3><p>{{ t('workflowConnections.configHelp') }}</p></div><el-tag>{{ form.connectionType }}</el-tag></div>
+        <section v-if="form.connectionType" class="connection-config-section">
+          <div class="connection-config-head"><div><h3>{{ t('workflowConnections.config') }}</h3><p>{{ t('workflowConnections.configHelp') }}</p></div><div class="connection-tag-group"><el-tag class="connection-tag" :style="categoryStyle(form.connectionCategory)">{{ categoryLabel(form.connectionCategory) }}</el-tag><el-tag class="connection-tag" :style="typeStyle(form.connectionType, form.connectionCategory)">{{ typeLabel(form.connectionType) }}</el-tag></div></div>
           <div class="connection-config-grid">
             <article v-for="field in configFields" :key="field.key" class="connection-config-card">
               <div class="connection-card-head"><strong>{{ fieldLabel(field.key) }} <span v-if="field.required" class="connection-required">*</span></strong><small>{{ fieldDescription(field.key) }}</small></div>
@@ -62,8 +82,8 @@
             </article>
           </div>
         </section>
-        <div class="form-help">{{ t('workflowConnections.maskHelp') }}</div>
-        <section class="connection-custom-section">
+        <div v-if="form.connectionType" class="form-help">{{ t('workflowConnections.maskHelp') }}</div>
+        <section v-if="form.connectionType" class="connection-custom-section">
           <div class="connection-config-head"><div><h3>{{ t('workflowConnections.customTitle') }}</h3><p>{{ t('workflowConnections.customHelp') }}</p></div><el-tag type="info">{{ customKeys.length }}</el-tag></div>
           <div class="connection-custom-list">
             <article v-for="key in customKeys" :key="key" class="connection-custom-card">
@@ -93,13 +113,15 @@ import http, { showHttpError } from '../api/http'
 import WorkflowConfigValueEditor from '../components/WorkflowConfigValueEditor.vue'
 import { useAuthStore } from '../stores/auth'
 import { CONFIG_VALUE_TYPES, createConfigValue, isSafeConfigKey } from '../utils/workflowNodeConfig'
-import { cloneConnectionConfig, CONNECTION_TYPES, connectionConfigFields, createConnectionConfig, extraConnectionConfigKeys } from '../utils/workflowConnectionConfig'
+import { cloneConnectionConfig, CONNECTION_CATEGORIES, connectionCategoriesForType, connectionCategoryStyle,
+  connectionConfigFields, connectionTypesForCategory, connectionTypeStyle, createConnectionConfig,
+  extraConnectionConfigKeys } from '../utils/workflowConnectionConfig'
 
 const { t, te } = useI18n()
 const auth = useAuthStore()
 const rows = ref([]), visible = ref(false)
 const pluginComponents = ref([])
-const connectionTypes = CONNECTION_TYPES
+const connectionCategories = CONNECTION_CATEGORIES
 const form = reactive(emptyForm())
 const mapDraft = reactive({ key: '', value: '' })
 const mapError = ref(''), customKey = ref(''), customType = ref('string'), customError = ref('')
@@ -107,6 +129,7 @@ const selectedPluginComponent = computed(() => pluginComponents.value.find(item 
 const configFields = computed(() => form.connectionType === 'PLUGIN' ? pluginCredentialFields(selectedPluginComponent.value)
   : connectionConfigFields(form.connectionType))
 const customKeys = computed(() => extraConnectionConfigKeys(form.config, form.connectionType))
+const availableConnectionTypes = computed(() => connectionTypesForCategory(form.connectionCategory))
 
 /** 加载当前用户可见的脱敏连接。 */
 async function load() {
@@ -117,15 +140,24 @@ async function load() {
 }
 /** 打开连接编辑器并保留服务端脱敏占位符。 */
 function open(row) {
-  const connectionType = row?.connectionType || 'MYSQL'
-  Object.assign(form, emptyForm(), row || {}, { connectionType, config: createConnectionConfig(connectionType, row?.config) })
+  const connectionType = row?.connectionType || ''
+  const connectionCategory = connectionType ? preferredCategory(connectionType) : ''
+  Object.assign(form, emptyForm(), row || {}, {
+    connectionCategory, connectionType, config: connectionType ? createConnectionConfig(connectionType, row?.config) : {}
+  })
   clearDrafts(); visible.value = true
+}
+/** 切换一级分类时选择该分类的首个连接类型并重置配置。 */
+function selectCategory(category) {
+  const [connectionType = ''] = connectionTypesForCategory(category)
+  form.connectionType = connectionType; resetConfig(connectionType)
 }
 /** 切换类型时使用安全默认配置。 */
 function resetConfig(type) { form.config = type === 'PLUGIN' ? { pluginComponentId: null, credentials: {} } : createConnectionConfig(type); clearDrafts() }
 /** 创建或更新结构化连接配置。 */
 async function save() {
-  if (!form.code.trim() || !form.name.trim() || form.connectionType === 'PLUGIN' && !selectedPluginComponent.value) return ElMessage.warning(t('workflowConnections.required'))
+  if (!form.code.trim() || !form.name.trim() || !form.connectionCategory || !form.connectionType
+    || form.connectionType === 'PLUGIN' && !selectedPluginComponent.value) return ElMessage.warning(t('workflowConnections.required'))
   if (form.connectionType === 'PLUGIN' && configFields.value.some(field => field.required
     && (configFieldValue(field.key) === undefined || configFieldValue(field.key) === null || String(configFieldValue(field.key)).trim() === ''))) {
     return ElMessage.warning(t('workflowConnections.required'))
@@ -160,6 +192,16 @@ async function completeOAuthCallback() {
 }
 /** 将向量能力状态映射为稳定标签颜色。 */
 function vectorStatusType(status) { return status === 'SUPPORTED' ? 'success' : status === 'UNSUPPORTED' ? 'danger' : 'info' }
+/** 返回连接类型的首选分类，兼容没有分类字段的历史连接。 */
+function preferredCategory(connectionType) { return connectionCategoriesForType(connectionType)[0] || 'OTHER' }
+/** 返回本地化分类名称。 */
+function categoryLabel(category) { return t(`workflowConnections.categories.${category || 'OTHER'}`) }
+/** 返回本地化连接类型名称。 */
+function typeLabel(type) { return t(`workflowConnections.types.${type || 'PLUGIN'}`) }
+/** 返回分类标签色板。 */
+function categoryStyle(category) { return connectionCategoryStyle(category) }
+/** 返回连接类型在当前分类中的同色系深浅样式。 */
+function typeStyle(type, category) { return connectionTypeStyle(type, category) }
 /** 删除未被工作流引用的连接。 */
 async function remove(row) { try { await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm')); await http.delete(`/workflow/connections/${row.id}`); await load() } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) } }
 /** 返回当前语言下的连接字段名称。 */
@@ -224,7 +266,7 @@ function removeCustomField(key) { const next = { ...form.config }; delete next[k
 /** 清空类型切换和弹窗复用产生的临时输入。 */
 function clearDrafts() { mapDraft.key = ''; mapDraft.value = ''; mapError.value = ''; customKey.value = ''; customType.value = 'string'; customError.value = '' }
 /** 创建空连接表单。 */
-function emptyForm() { return { id: null, code: '', name: '', connectionType: 'MYSQL', config: createConnectionConfig('MYSQL'), enabled: true } }
+function emptyForm() { return { id: null, code: '', name: '', connectionCategory: '', connectionType: '', config: {}, enabled: true } }
 onMounted(async () => { await completeOAuthCallback(); await load() })
 </script>
 
@@ -234,6 +276,8 @@ onMounted(async () => { await completeOAuthCallback(); await load() })
 .form-help { margin: -8px 0 18px; color: var(--app-muted); font-size: 13px; }
 .connection-config-section, .connection-custom-section { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; }
 .connection-config-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.connection-tag-group { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.connection-tag { font-weight: 600; }
 .connection-config-head h3, .connection-config-head p { margin: 0; }
 .connection-config-head p { margin-top: 4px; color: var(--app-muted); font-size: 13px; }
 .connection-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
