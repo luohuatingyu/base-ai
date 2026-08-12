@@ -86,7 +86,7 @@
             <div v-if="document.fields.length" class="docs-field-list">
               <article v-for="field in document.fields" :key="field.key" class="docs-field-card">
                 <div class="docs-field-head">
-                  <div><strong>{{ fieldLabel(field.key) }}</strong><code>{{ field.key }}</code></div>
+                  <div><strong>{{ fieldLabel(field) }}</strong><code>{{ field.key }}</code></div>
                   <div><el-tag size="small" effect="plain">{{ fieldType(field.editor) }}</el-tag><el-tag size="small" :type="field.requirement?'danger':'info'" effect="plain">{{ requirementLabel(field.requirement) }}</el-tag></div>
                 </div>
                 <p>{{ fieldDescription(field) }}</p>
@@ -126,10 +126,10 @@
 import { computed,onMounted,ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http from '../api/http'
-import { groupWorkflowTemplates,localizedTemplateText,normalizeTemplateMetadata } from '../utils/workflowTemplateCatalog'
+import { groupWorkflowTemplates,localizedMetadataOptionText,localizedMetadataText,localizedTemplateText,metadataOptionValue,normalizeTemplateMetadata } from '../utils/workflowTemplateCatalog'
 import { workflowNodeDocument } from '../utils/workflowNodeDocumentation'
 
-const { t,te }=useI18n(),rows=ref([]),compatibilityRows=ref([]),selected=ref(null),query=ref(''),loading=ref(false),error=ref(false)
+const { t,te,locale }=useI18n(),rows=ref([]),compatibilityRows=ref([]),selected=ref(null),query=ref(''),loading=ref(false),error=ref(false)
 const sections=[
   {id:'node-overview',label:'workflowNodeDocs.overview'},
   {id:'node-quick-start',label:'workflowNodeDocs.quickStart'},
@@ -141,11 +141,11 @@ const filtered=computed(()=>{const keyword=query.value.trim().toLowerCase();retu
 /** 将搜索结果按受控功能分类的固定顺序组织，并自动移除空分组。 */
 const grouped=computed(()=>groupWorkflowTemplates(filtered.value,true))
 const current=computed(()=>filtered.value.find(item=>item.id===selected.value?.id)||filtered.value[0]||null)
-const document=computed(()=>current.value?workflowNodeDocument({...current.value,name:templateText(current.value,'name'),description:templateText(current.value,'description')},t,te):null)
+const document=computed(()=>current.value?workflowNodeDocument({...current.value,name:templateText(current.value,'name'),description:templateText(current.value,'description')},t,te,locale.value):null)
 const currentCompatibility=computed(()=>compatibilityRows.value.find(item=>item.nodeType===document.value?.nodeType)||null)
 
 /** 返回系统本地化文案或模板原始文案。 */
-function templateText(item,field){return localizedTemplateText(item,field,t,te)}
+function templateText(item,field){return localizedTemplateText({...item,locale:locale.value},field,t,te)}
 /** 选择一个模板并生成只读说明。 */
 function select(item){selected.value=item}
 /** 返回模板来源的本地化名称并兼容自定义来源。 */
@@ -153,15 +153,15 @@ function sourceLabel(source){const path=`workflowCatalog.sources.${source}`;retu
 /** 返回功能分类的本地化名称。 */
 function categoryLabel(category){const path=`workflowCatalog.categories.${category}`;return te(path)?t(path):String(category||'-')}
 /** 返回配置字段本地化名称，并复用 Tavily 专用字段词条。 */
-function fieldLabel(key){const path=`workflowConfig.fieldLabels.${key}`,tavilyPath=`tavilyConfig.fields.${key}`;return te(path)?t(path):te(tavilyPath)?t(tavilyPath):key}
+function fieldLabel(value){const field=typeof value==='object'?value:document.value?.fields.find(item=>item.key===value),key=field?.key||value,dynamic=localizedMetadataText(field,'label',locale.value,field?.label);if(dynamic)return dynamic;const path=`workflowConfig.fieldLabels.${key}`,tavilyPath=`tavilyConfig.fields.${key}`;return te(path)?t(path):te(tavilyPath)?t(tavilyPath):key}
 /** 返回配置字段用途说明，优先使用专属词条并以编辑器类型说明安全回退。 */
-function fieldDescription(field){const path=`workflowNodeDocs.fieldDescriptions.${field.key}`,fallback=`workflowNodeDocs.editorDescriptions.${field.editor}`;return te(path)?t(path):t(te(fallback)?fallback:'workflowNodeDocs.editorDescriptions.generic',{field:fieldLabel(field.key)})}
+function fieldDescription(field){const dynamic=localizedMetadataText(field,'description',locale.value,field?.description);if(dynamic)return dynamic;const path=`workflowNodeDocs.fieldDescriptions.${field.key}`,fallback=`workflowNodeDocs.editorDescriptions.${field.editor}`;return te(path)?t(path):t(te(fallback)?fallback:'workflowNodeDocs.editorDescriptions.generic',{field:fieldLabel(field)})}
 /** 返回配置编辑器类型的用户可读名称。 */
 function fieldType(editor){const path=`workflowNodeDocs.editors.${editor}`;return te(path)?t(path):editor}
 /** 格式化字段默认值，明确区分空文本、空值和未提供默认值。 */
 function displayValue(value){return value===undefined?t('workflowNodeDocs.none'):JSON.stringify(value)}
 /** 本地化字段枚举选项；无枚举时显示“无”。 */
-function fieldOptions(field){if(!field.options?.length)return t('workflowNodeDocs.none');return field.options.map(value=>{const path=`workflowConfig.options.${field.key}.${value}`;return te(path)?t(path):value}).join(' / ')}
+function fieldOptions(field){if(!field.options?.length)return t('workflowNodeDocs.none');return field.options.map(option=>{const value=metadataOptionValue(option),path=`workflowConfig.options.${field.key}.${value}`;return te(path)?t(path):localizedMetadataOptionText(option,locale.value,value)}).join(' / ')}
 /** 将内部必填级别转换为本地化文案。 */
 function requirementLabel(requirement){return requirement?t(`workflowConfig.${requirement}`):t('workflowNodeDocs.optional')}
 /** 本地化兼容目录中的模型类型，未知值保留稳定编码。 */

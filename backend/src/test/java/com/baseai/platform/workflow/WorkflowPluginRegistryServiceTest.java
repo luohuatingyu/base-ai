@@ -5,6 +5,7 @@ import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.security.AuthenticationType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +40,7 @@ class WorkflowPluginRegistryServiceTest {
             """);
         jdbcTemplate.execute("""
             CREATE TABLE workflow_marketplace_component(id BIGINT AUTO_INCREMENT PRIMARY KEY,plugin_id BIGINT,external_key VARCHAR(255),
-            component_type VARCHAR(32),name VARCHAR(160),description VARCHAR(1000),schema_json CLOB,credential_schema_json CLOB,
+            component_type VARCHAR(32),name VARCHAR(160),description VARCHAR(1000),localization_json CLOB DEFAULT '{}',schema_json CLOB,credential_schema_json CLOB,
             compatibility_status VARCHAR(24),compatibility_reason VARCHAR(500),schema_fingerprint CHAR(64),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE(plugin_id,external_key))
             """);
@@ -113,6 +114,37 @@ class WorkflowPluginRegistryServiceTest {
         Long componentId = pending.components().get(0).id();
         assertEquals("workflow.pluginComponentUnsupported", assertThrows(BusinessException.class,
             () -> service.requireRuntimeComponent(componentId)).getMessageKey());
+    }
+
+    /** 同包展示元数据刷新不得重置已批准状态或改变执行 Schema 指纹。 */
+    @Test
+    void refreshesLocalizationWithoutResettingAdmissionOrIdentity() {
+        var registration = service.register("DIFY", entry("pkg", "1"),
+            inspected("1", "a".repeat(64), "SUPPORTED"), false);
+        service.updateAdmission(registration.pluginId(), new WorkflowModels.PluginAdmissionCommand("MIT", "",
+            List.of(), true, List.of("NO_DATA"), ""));
+        service.reviewAdmission(registration.pluginId(), new WorkflowModels.PluginAdmissionReviewCommand(true, "approved"));
+        String fingerprint = registration.components().get(0).schemaFingerprint();
+        ObjectNode localization = mapper.createObjectNode();
+        localization.putObject("name").put("zh-CN", "动作").put("en-US", "Action");
+        var component = new WorkflowPluginWorkerClient.WorkerComponent("action", "动作", "", "ACTION",
+            mapper.createArrayNode().add(mapper.createObjectNode().put("name", "query").put("required", true)
+                .set("localization", mapper.createObjectNode().set("label",
+                    mapper.createObjectNode().put("en-US", "Query")))),
+            mapper.createArrayNode().add(mapper.createObjectNode().put("name", "apiKey").put("type", "secret-input")),
+            "action.py", "SUPPORTED", "", localization);
+        var inspected = new WorkflowPluginWorkerClient.WorkerPackage("DIFY", "pkg", "1", "a".repeat(64),
+            "python", 6, List.of(component));
+
+        var templateFingerprints = service.refreshMetadata("DIFY", "pkg", inspected);
+
+        assertEquals("APPROVED", service.admissions().get(0).admissionStatus());
+        assertTrue(service.admissions().get(0).pluginEnabled());
+        assertEquals(fingerprint, jdbcTemplate.queryForObject(
+            "SELECT schema_fingerprint FROM workflow_marketplace_component WHERE plugin_id=?", String.class,
+            registration.pluginId()));
+        assertEquals("Action", service.componentOptions().get(0).localization().path("name").path("en-US").asText());
+        assertEquals(64, templateFingerprints.get("pkg/action").length());
     }
 
     /** 构造最小市场条目。 */

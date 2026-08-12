@@ -28,6 +28,8 @@ public class WorkflowPluginProbeService {
     private final ObjectMapper objectMapper;
     private final WorkflowMarketplaceClients clients;
     private final WorkflowPluginWorkerClient workers;
+    private final WorkflowPluginRegistryService registry;
+    private final WorkflowService workflowService;
     private final ThreadPoolTaskExecutor executor;
     private final int maximumAttempts;
     private final int retentionHours;
@@ -37,12 +39,16 @@ public class WorkflowPluginProbeService {
     public WorkflowPluginProbeService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate,
                                       ObjectMapper objectMapper, WorkflowMarketplaceClients clients,
                                       WorkflowPluginWorkerClient workers,
+                                      WorkflowPluginRegistryService registry,
+                                      WorkflowService workflowService,
                                       @Qualifier("workflowPluginProbeExecutor") ThreadPoolTaskExecutor executor,
                                       PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.clients = clients;
         this.workers = workers;
+        this.registry = registry;
+        this.workflowService = workflowService;
         this.executor = executor;
         maximumAttempts = Math.max(1, Math.min(properties.getWorkflow().getMarketplaceProbeMaxAttempts(), 10));
         retentionHours = Math.max(1, Math.min(properties.getWorkflow().getMarketplaceProbeRetentionHours(), 24 * 365));
@@ -242,6 +248,11 @@ public class WorkflowPluginProbeService {
             }
             String compatibility = compatibility(inspected);
             String reason = compatibilityReason(inspected, compatibility);
+            if ("DIFY".equals(task.source())) {
+                var templateFingerprints = registry.refreshMetadata(task.source(), task.packageKey(), inspected);
+                workflowService.refreshMarketplaceTemplateMetadata(task.source(), task.packageKey(), inspected,
+                    templateFingerprints);
+            }
             jdbcTemplate.update("""
                 UPDATE workflow_marketplace_plugin_probe SET package_fingerprint=?,probe_status='COMPLETE',
                     compatibility_status=?,compatibility_reason=?,result_json=?,lease_owner=NULL,lease_expires_at=NULL,

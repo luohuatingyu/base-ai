@@ -68,7 +68,8 @@ public class WorkflowPluginWorkerClient {
             }
             components.add(new WorkerComponent(externalId, text(item, "name"), text(item, "description"),
                 componentType, item.path("schema").deepCopy(), item.path("credentialSchema").deepCopy(),
-                text(item, "sourcePath"), status, text(item, "compatibilityReason")));
+                text(item, "sourcePath"), status, text(item, "compatibilityReason"),
+                localization(item.path("localization"))));
         }
         if (components.isEmpty()) throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         List<WorkerExternalService> services = new ArrayList<>();
@@ -186,7 +187,23 @@ public class WorkflowPluginWorkerClient {
 
     /** 返回 Backend 当前能够解释的最低 Worker ABI 版本。 */
     public static int expectedHostAbiVersion(String source) {
-        return "DIFY".equalsIgnoreCase(source) ? 5 : "N8N".equalsIgnoreCase(source) ? 5 : Integer.MAX_VALUE;
+        return "DIFY".equalsIgnoreCase(source) ? 6 : "N8N".equalsIgnoreCase(source) ? 5 : Integer.MAX_VALUE;
+    }
+
+    /** 只接受受控展示字段和语言的短文本映射。 */
+    private JsonNode localization(JsonNode value) {
+        ObjectNode result = objectMapper.createObjectNode();
+        if (value == null || !value.isObject()) return result;
+        for (String field : List.of("name", "description")) {
+            JsonNode entries = value.path(field);
+            if (!entries.isObject()) continue;
+            ObjectNode localized = result.putObject(field);
+            for (String locale : List.of("zh-CN", "en-US")) {
+                String text = entries.path(locale).asText("").trim();
+                if (!text.isBlank()) localized.put(locale, text.substring(0, Math.min(text.length(), 1000)));
+            }
+        }
+        return result;
     }
 
     public record WorkerPackage(String source, String packageId, String version, String fingerprint,
@@ -206,5 +223,13 @@ public class WorkflowPluginWorkerClient {
     public record WorkerExternalService(String name, String domain) {}
     public record WorkerComponent(String externalId, String name, String description, String componentType,
                                   JsonNode schema, JsonNode credentialSchema, String sourcePath,
-                                  String compatibilityStatus, String compatibilityReason) {}
+                                  String compatibilityStatus, String compatibilityReason, JsonNode localization) {
+        /** 兼容现有不关心展示元数据的测试和调用方。 */
+        public WorkerComponent(String externalId, String name, String description, String componentType,
+                               JsonNode schema, JsonNode credentialSchema, String sourcePath,
+                               String compatibilityStatus, String compatibilityReason) {
+            this(externalId, name, description, componentType, schema, credentialSchema, sourcePath,
+                compatibilityStatus, compatibilityReason, null);
+        }
+    }
 }

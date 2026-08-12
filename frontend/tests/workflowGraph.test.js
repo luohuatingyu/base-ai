@@ -142,7 +142,9 @@ test('主工作流画布填满工具栏下方的剩余空间', () => {
 test('工作流画布初始化唯一开始和结束节点', () => {
   const graph = createWorkflowGraph()
   assert.deepEqual(graph.nodes.map(node => node.type), ['START', 'END'])
+  assert.deepEqual(graph.nodes.map(node => node.data.label), ['START', 'END'])
   assert.equal(graph.edges.length, 1)
+  assert.match(workflowNodeSource, /localizedWorkflowNodeLabel/)
 })
 
 test('工作流画布拒绝悬空连线和普通循环', () => {
@@ -177,4 +179,11 @@ test('画布校验错误和运行状态完整支持双语且未知状态安全�
   assert.match(canvasViewSource, /localizeWorkflowStatus\(activeRun\.status, t\)/)
   assert.match(canvasViewSource, /:label="t\('workflowCanvas\.runId'\)"/)
   assert.match(canvasViewSource, /:label="t\('workflowCanvas\.version'\)"/)
+})
+
+test('历史运行节点名仅在保留默认名称身份时按当前语言展示', () => {
+  assert.match(canvasViewSource, /runNodeName\(scope\.row\)/)
+  assert.match(canvasViewSource, /defaultLabel: node\.defaultNodeName/)
+  assert.match(canvasViewSource, /localization: node\.localization/)
+  assert.match(canvasViewSource, /localizedWorkflowNodeLabel/)
 })

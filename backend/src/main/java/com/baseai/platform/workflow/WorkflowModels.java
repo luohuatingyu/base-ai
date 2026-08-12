@@ -17,15 +17,46 @@ public final class WorkflowModels {
                                    JsonNode config, boolean systemTemplate, String source, String functionalCategory,
                                    boolean enabled, boolean importedTemplate, String externalKey, String externalVersion,
                                    String externalPublisher, String externalFingerprint, LocalDateTime importedAt,
-                                   LocalDateTime createdAt, LocalDateTime updatedAt) {}
+                                   LocalDateTime createdAt, LocalDateTime updatedAt, JsonNode localization) {
+        /** 兼容未提供市场展示元数据的现有构造调用。 */
+        public NodeTemplateView(Long id, String code, String name, String nodeType, String description,
+                                JsonNode config, boolean systemTemplate, String source, String functionalCategory,
+                                boolean enabled, boolean importedTemplate, String externalKey, String externalVersion,
+                                String externalPublisher, String externalFingerprint, LocalDateTime importedAt,
+                                LocalDateTime createdAt, LocalDateTime updatedAt) {
+            this(id, code, name, nodeType, description, config, systemTemplate, source, functionalCategory,
+                enabled, importedTemplate, externalKey, externalVersion, externalPublisher, externalFingerprint,
+                importedAt, createdAt, updatedAt, null);
+        }
+    }
     public record MarketplaceActionView(String externalId, String name, String description, boolean compatible,
                                         String incompatibilityReason, String targetNodeType,
-                                        String functionalCategory, String compatibilityLevel, boolean imported) {}
+                                        String functionalCategory, String compatibilityLevel, boolean imported,
+                                        JsonNode localization) {
+        /** 兼容无本地化元数据的原生市场动作。 */
+        public MarketplaceActionView(String externalId, String name, String description, boolean compatible,
+                                     String incompatibilityReason, String targetNodeType, String functionalCategory,
+                                     String compatibilityLevel, boolean imported) {
+            this(externalId, name, description, compatible, incompatibilityReason, targetNodeType,
+                functionalCategory, compatibilityLevel, imported, null);
+        }
+    }
     public record MarketplaceNodeView(String externalId, String name, String description, String version,
                                       String publisher, String marketplaceCategory, boolean compatible,
                                       String incompatibilityReason, String targetNodeType, String functionalCategory,
                                       String compatibilityLevel, List<MarketplaceActionView> actions,
-                                      String probeStatus, boolean imported) {}
+                                      String probeStatus, boolean imported, JsonNode localization) {
+        /** 兼容无本地化元数据的原生市场节点。 */
+        public MarketplaceNodeView(String externalId, String name, String description, String version,
+                                   String publisher, String marketplaceCategory, boolean compatible,
+                                   String incompatibilityReason, String targetNodeType, String functionalCategory,
+                                   String compatibilityLevel, List<MarketplaceActionView> actions,
+                                   String probeStatus, boolean imported) {
+            this(externalId, name, description, version, publisher, marketplaceCategory, compatible,
+                incompatibilityReason, targetNodeType, functionalCategory, compatibilityLevel, actions,
+                probeStatus, imported, null);
+        }
+    }
     public record MarketplacePage(String source, List<MarketplaceNodeView> items, int page, int pageSize, long total,
                                   boolean probePending) {}
     public record MarketplaceImportCommand(List<String> externalIds, Boolean replaceExisting) {}
@@ -33,7 +64,7 @@ public final class WorkflowModels {
     public record MarketplaceImportResult(String source, List<MarketplaceImportItem> items) {}
     public record PluginComponentOption(Long id, String source, String packageKey, String packageVersion,
                                         String externalKey, String name, String componentType,
-                                        JsonNode parameterSchema, JsonNode credentialSchema) {}
+                                        JsonNode parameterSchema, JsonNode credentialSchema, JsonNode localization) {}
     public record PluginExternalService(String name, String domain) {}
     public record PluginAdmissionView(Long pluginId, String source, String packageKey, String packageVersion,
                                       String publisher, String licenseName, String licenseUrl,
@@ -52,7 +83,16 @@ public final class WorkflowModels {
     public record MarketplaceTemplateDraft(String source, String externalKey, String externalVersion,
                                            String externalPublisher, String externalFingerprint, String code,
                                            String name, String description, String nodeType,
-                                           String functionalCategory, JsonNode config) {}
+                                           String functionalCategory, JsonNode config, JsonNode localization) {
+        /** 兼容无本地化元数据的原生市场草稿。 */
+        public MarketplaceTemplateDraft(String source, String externalKey, String externalVersion,
+                                        String externalPublisher, String externalFingerprint, String code,
+                                        String name, String description, String nodeType,
+                                        String functionalCategory, JsonNode config) {
+            this(source, externalKey, externalVersion, externalPublisher, externalFingerprint, code,
+                name, description, nodeType, functionalCategory, config, null);
+        }
+    }
     public record MarketplaceTemplatePersistence(Long templateId, String status) {}
     public record WorkflowCommand(String code, String name, String description, JsonNode graph,
                                   JsonNode inputSchema, Long revision) {}
@@ -66,7 +106,8 @@ public final class WorkflowModels {
     public record RunAccepted(String runId, String status) {}
     public record NodeRunView(Long id, String nodeId, String nodeName, String nodeType, int sequenceNo,
                               String iterationPath, String status, JsonNode input, JsonNode output,
-                              String errorMessage, LocalDateTime startedAt, LocalDateTime finishedAt) {}
+                              String errorMessage, LocalDateTime startedAt, LocalDateTime finishedAt,
+                              String defaultNodeName, JsonNode localization) {}
     public record RunView(String id, Long workflowId, String workflowCode, int versionNumber,
                           String parentRunId, String traceId, String triggerType, String status,
                           JsonNode input, JsonNode output, String errorMessage, Long ownerUserId,

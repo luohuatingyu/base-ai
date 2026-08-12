@@ -63,7 +63,7 @@ class WorkflowExecutionServiceStateTest {
             """);
         jdbcTemplate.execute("""
             CREATE TABLE workflow_node_run(id BIGINT AUTO_INCREMENT PRIMARY KEY,workflow_run_id VARCHAR(36),node_id VARCHAR(100),
-            node_name VARCHAR(120),node_type VARCHAR(24),sequence_no INT,iteration_path VARCHAR(200),status VARCHAR(20),
+            node_name VARCHAR(120),default_node_name VARCHAR(120),localization_json CLOB,node_type VARCHAR(24),sequence_no INT,iteration_path VARCHAR(200),status VARCHAR(20),
             input_encrypted CLOB,output_encrypted CLOB,error_message VARCHAR(2000),started_at TIMESTAMP,finished_at TIMESTAMP)
             """);
         jdbcTemplate.execute("""
@@ -161,6 +161,26 @@ class WorkflowExecutionServiceStateTest {
         assertEquals("数组迭代数量超过上限 10", service.run("localized").errorMessage());
         assertEquals("legacy failure", errors.localize("legacy failure"));
         assertEquals("工作流执行失败", errors.localize("@i18n:{broken", Locale.SIMPLIFIED_CHINESE));
+    }
+
+    /** 节点运行记录应保留默认名称身份和受控本地化元数据，供前端安全区分自定义名称。 */
+    @Test
+    void persistsNodeRunDisplayIdentity() {
+        jdbcTemplate.update("""
+            INSERT INTO workflow_run(id,workflow_id,workflow_version_id,trace_id,trigger_type,status,input_encrypted,
+            output_encrypted,owner_user_id,cancel_requested) VALUES ('localized-name',1,2,'trace-name','MANUAL','RUNNING','','',7,false)
+            """);
+        var node = objectMapper.createObjectNode().put("id", "plugin").put("type", "PLUGIN_ACTION");
+        node.putObject("data").put("label", "添加参会人").put("defaultLabel", "添加参会人")
+            .putObject("localization").putObject("name").put("zh-CN", "添加参会人").put("en-US", "Add attendees");
+
+        ReflectionTestUtils.invokeMethod(service, "startNodeRun", "localized-name", node, "PLUGIN_ACTION", 1, "",
+            objectMapper.createObjectNode());
+
+        WorkflowModels.NodeRunView run = service.run("localized-name").nodes().get(0);
+        assertEquals("添加参会人", run.nodeName());
+        assertEquals("添加参会人", run.defaultNodeName());
+        assertEquals("Add attendees", run.localization().path("name").path("en-US").asText());
     }
 
     /** 节点日志按单次运行累计计费，不能通过多个合规小输出放大数据库占用。 */

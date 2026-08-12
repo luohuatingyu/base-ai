@@ -56,7 +56,10 @@ test('插件节点按已固定 Schema 生成动态表单、条件展示和发布
     pluginComponentId: 7, packageFingerprint: 'a'.repeat(64), componentExternalId: 'search',
     parameters: { mode: 'advanced', query: '' }, credentialSchema: [{ name: 'apiKey', required: true }],
     parameterSchema: [
-      { name: 'mode', label: 'Mode', type: 'options', required: true, options: [{ value: 'basic' }, { value: 'advanced' }] },
+      { name: 'mode', label: 'Mode', type: 'options', required: true, options: [
+        { value: 'basic', label: '基础', localization: { label: { 'zh-CN': '基础', 'en-US': 'Basic' } } },
+        { value: 'advanced', label: '高级', localization: { label: { 'zh-CN': '高级', 'en-US': 'Advanced' } } }
+      ] },
       { name: 'query', label: 'Query', type: 'string', required: true, displayOptions: { show: { mode: ['advanced'] } } },
       { name: 'limit', label: 'Limit', type: 'integer', required: true, displayOptions: { hide: { mode: ['basic'] } } }
     ]
@@ -64,12 +67,19 @@ test('插件节点按已固定 Schema 生成动态表单、条件展示和发布
   const fields = nodeConfigFields('PLUGIN_ACTION', config)
   assert.deepEqual(fields.map(field => field.key), ['connectionId', 'parameters.mode', 'parameters.query', 'parameters.limit'])
   assert.equal(fields[1].editor, 'select')
+  assert.equal(fields[1].options[1].value, 'advanced')
+  assert.equal(fields[1].options[1].localization.label['en-US'], 'Advanced')
   assert.equal(fields[3].editor, 'number')
   assert.equal(nodeConfigFieldApplicable('PLUGIN_ACTION', 'parameters.query', config), true)
   assert.deepEqual(missingNodeConfigRequirements('PLUGIN_ACTION', config), ['parameters.query', 'parameters.limit', 'connectionId'])
   config.parameters.mode = 'basic'
   assert.equal(nodeConfigFieldApplicable('PLUGIN_ACTION', 'parameters.limit', config), false)
   assert.deepEqual(missingNodeConfigRequirements('PLUGIN_ACTION', config), ['connectionId'])
+})
+
+test('插件下拉在展示层保留双语元数据且提交稳定值', () => {
+  assert.match(configEditorSource, /metadataOptionValue\(option\)/)
+  assert.match(configEditorSource, /localizedMetadataOptionText\(definitionOption, locale\.value/)
 })
 
 test('Agent 模型下拉按动态模型类型过滤并生成可识别标签', () => {

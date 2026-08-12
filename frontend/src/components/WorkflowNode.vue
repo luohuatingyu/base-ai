@@ -3,7 +3,7 @@
     <Handle v-if="!entryTypes.has(nodeType)" type="target" :position="Position.Left" />
     <span class="workflow-node-icon" :style="categoryStyle">{{ iconText }}</span>
     <span class="workflow-node-content">
-      <strong>{{ data?.label || nodeType }}</strong>
+      <strong>{{ displayLabel }}</strong>
       <small>{{ nodeType }}</small>
       <span v-if="missingRequirements.length" class="workflow-node-config-warning" :title="missingHint">
         {{ t('workflowConfig.requiredMissing') }}
@@ -22,13 +22,14 @@ import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { useI18n } from 'vue-i18n'
 import { missingNodeConfigRequirements } from '../utils/workflowNodeConfig'
-import { workflowTemplateCategoryStyle } from '../utils/workflowTemplateCatalog'
+import { localizedWorkflowNodeLabel, workflowTemplateCategoryStyle } from '../utils/workflowTemplateCatalog'
 
 const props = defineProps({ type: { type: String, required: true }, data: { type: Object, default: () => ({}) } })
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const nodeType = computed(() => props.data?.nodeType || props.type)
+const displayLabel = computed(() => localizedWorkflowNodeLabel({ ...props.data, nodeType: nodeType.value }, locale.value, t, te))
 const categoryStyle = computed(() => workflowTemplateCategoryStyle(props.data?.functionalCategory, nodeType.value))
-const iconText = computed(() => String(props.data?.label || nodeType.value).trim().slice(0, 2).toUpperCase() || '·')
+const iconText = computed(() => displayLabel.value.trim().slice(0, 2).toUpperCase() || '·')
 const missingRequirements = computed(() => missingNodeConfigRequirements(nodeType.value, props.data?.config))
 const missingHint = computed(() => `${t('workflowConfig.requiredMissing')}：${missingRequirements.value.map(requirementLabel).join(t('workflowConfig.fieldSeparator'))}`)
 const entryTypes = new Set(['START', 'WEBHOOK_TRIGGER', 'SCHEDULE_TRIGGER', 'KAFKA_TRIGGER', 'RABBITMQ_TRIGGER'])

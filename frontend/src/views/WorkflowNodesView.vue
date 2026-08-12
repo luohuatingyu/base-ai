@@ -85,9 +85,9 @@
             <span class="marketplace-source-mark" aria-hidden="true">{{ selectedSource === 'N8N' ? 'n8n' : 'Dify' }}</span>
             <div class="marketplace-card-identity">
               <el-checkbox v-if="!item.actions?.length" :value="item.externalId" :disabled="!item.compatible || item.imported">
-                <strong>{{ item.name }}</strong>
+                <strong>{{ marketplaceText(item, 'name') }}</strong>
               </el-checkbox>
-              <strong v-else>{{ item.name }}</strong>
+              <strong v-else>{{ marketplaceText(item, 'name') }}</strong>
             </div>
             <div class="marketplace-card-status">
               <el-tag v-if="isProbePending(item)" type="warning" size="small">{{ t('workflowNodes.probing') }}</el-tag>
@@ -109,7 +109,7 @@
             </div>
             <div class="marketplace-action-list">
               <el-checkbox v-for="action in item.actions" :key="action.externalId" :value="action.externalId" :disabled="!action.compatible || action.imported">
-                <span><strong>{{ action.name }}</strong><small>{{ action.description }}</small><el-tag v-if="action.imported" type="info" size="small">{{ t('workflowNodes.imported') }}</el-tag></span>
+                <span><strong>{{ marketplaceText(action, 'name') }}</strong><small>{{ marketplaceText(action, 'description') }}</small><el-tag v-if="action.imported" type="info" size="small">{{ t('workflowNodes.imported') }}</el-tag></span>
               </el-checkbox>
             </div>
           </div>
@@ -202,9 +202,9 @@ import { useAuthStore } from '../stores/auth'
 import WorkflowNodeConfigEditor from '../components/WorkflowNodeConfigEditor.vue'
 import { cloneConfig, WORKFLOW_NODE_TYPES } from '../utils/workflowNodeConfig'
 import { CUSTOM_PLUGIN_LICENSE, PLUGIN_LICENSE_OPTIONS, applyPluginLicenseSelection, pluginAdmissionLicenseValid, pluginLicenseSelection } from '../utils/pluginAdmissionLicense'
-import { defaultTemplateCategory, filterWorkflowTemplates, localizedTemplateText, marketplaceItemDescription, marketplaceNodeTypeLabel, normalizeTemplateMetadata, workflowTemplateCategoryStyle, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
+import { defaultTemplateCategory, filterWorkflowTemplates, localizedMetadataText, localizedTemplateText, marketplaceItemDescription, marketplaceNodeTypeLabel, normalizeTemplateMetadata, workflowTemplateCategoryStyle, WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES } from '../utils/workflowTemplateCatalog'
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
 const visible = ref(false)
@@ -245,11 +245,17 @@ const selectedAdapter = computed(() => adapters.value.find(item => item.source =
 
 /** 按当前界面语言返回系统模板文案，自定义模板保留管理员录入内容。 */
 function templateText(template, field) {
-  return localizedTemplateText(template, field, t, te)
+  return localizedTemplateText({ ...template, locale: locale.value }, field, t, te)
 }
 
-/** 返回市场条目的官方说明或来源感知的可信回退文案。 */
-function marketplaceDescription(item) { return marketplaceItemDescription(item, selectedSource.value, t, te) }
+/** 返回市场或动作声明的当前语言文案。 */
+function marketplaceText(item, field) { return localizedMetadataText(item, field, locale.value, item?.[field]) }
+
+/** 返回市场条目的当前语言官方说明或来源感知的可信回退文案。 */
+function marketplaceDescription(item) {
+  return marketplaceItemDescription({ ...item, description: marketplaceText(item, 'description') },
+    selectedSource.value, t, te)
+}
 
 /** 返回市场适配器对应的本地化原生能力名称。 */
 function marketplaceTypeLabel(item) { return marketplaceNodeTypeLabel(item, t, te) }
@@ -294,7 +300,7 @@ function adapterTransitioning(adapter) { return ['ENABLING', 'STARTING', 'DISABL
 function adapterStateLabel(adapter) {
   if (adapter?.status === 'RUNNING') return t('common.enabled')
   if (adapter?.status === 'STOPPED') return t('common.disabled')
-  if (adapter?.status === 'FAILED') return adapter.error || t('common.failed')
+  if (adapter?.status === 'FAILED') return t('common.failed')
   return t('common.loading')
 }
 /** 将容器状态映射为统一标签颜色。 */

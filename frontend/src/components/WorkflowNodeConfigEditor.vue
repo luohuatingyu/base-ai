@@ -31,7 +31,8 @@
             <el-input-number v-else-if="field.editor === 'number'" :model-value="fieldValue(field)" controls-position="right" @update:model-value="setNumber(field.key, $event)" />
             <el-switch v-else-if="field.editor === 'boolean'" :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)" />
             <el-select v-else-if="field.editor === 'select'" :model-value="fieldValue(field)" @update:model-value="setField(field.key, $event)">
-              <el-option v-for="option in field.options" :key="option" :label="fieldOption(field.key, option)" :value="option" />
+              <el-option v-for="option in field.options" :key="metadataOptionValue(option)"
+                         :label="fieldOption(field.key, option)" :value="metadataOptionValue(option)" />
             </el-select>
             <template v-else-if="field.editor === 'modelType'">
               <el-select :model-value="fieldValue(field)" :loading="modelTypeOptionsLoading"
@@ -146,10 +147,11 @@ import { useI18n } from 'vue-i18n'
 import http from '../api/http'
 import WorkflowConfigValueEditor from './WorkflowConfigValueEditor.vue'
 import { compatibleWorkflowModelId, compatibleWorkflowResourceId, compatibleWorkflowRouteCode, CONDITION_OPERATORS, CONFIG_VALUE_TYPES, cloneConfig, createConfigValue, effectiveNodeConfigDefaultValue, extraConfigKeys, filterWorkflowConnectionOptions, isSafeConfigKey, missingNodeConfigRequirements, nodeConfigFieldApplicable, nodeConfigFields, nodeConfigUsesEffectiveDefault, workflowConnectionOptionLabel, workflowMailRouteOptionLabel, workflowModelOptionLabel, workflowRouteOptionLabel } from '../utils/workflowNodeConfig'
+import { localizedMetadataOptionText, localizedMetadataText, metadataOptionValue } from '../utils/workflowTemplateCatalog'
 
 const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, nodeType: { type: String, required: true } })
 const emit = defineEmits(['update:modelValue'])
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const config = ref(cloneConfig(props.modelValue))
 const openFields = ref([])
 const openExtra = ref([])
@@ -324,7 +326,8 @@ function fieldValue(field) {
 function cloneValue(value) { return value === undefined ? null : JSON.parse(JSON.stringify(value)) }
 /** 返回当前语言下的标准字段名称。 */
 function fieldLabel(key) {
-  const dynamic = fields.value.find(field => field.key === key)?.label
+  const definition = fields.value.find(field => field.key === key)
+  const dynamic = localizedMetadataText(definition, 'label', locale.value, definition?.label)
   if (dynamic) return dynamic
   const tavilyPath = `tavilyConfig.fields.${key}`
   if (props.nodeType === 'TAVILY_TOOL' && te(tavilyPath)) return t(tavilyPath)
@@ -332,7 +335,9 @@ function fieldLabel(key) {
 }
 /** 返回当前语言下的标准字段说明。 */
 function fieldDescription(key) {
-  return fields.value.find(field => field.key === key)?.description || t('workflowConfig.standardParameterDescription', { key })
+  const definition = fields.value.find(field => field.key === key)
+  return localizedMetadataText(definition, 'description', locale.value, definition?.description)
+    || t('workflowConfig.standardParameterDescription', { key })
 }
 /** 返回必填汇总中使用的本地化字段或组合条件名称。 */
 function requirementLabel(key) { const path = `workflowConfig.requirementLabels.${key}`; return te(path) ? t(path) : fieldLabel(key) }
@@ -345,9 +350,14 @@ function fieldRequirementMissing(field) {
 }
 /** 返回选择项的本地化名称，缺少文案时显示原始值。 */
 function fieldOption(key, option) {
-  const tavilyPath = `tavilyConfig.options.${key}.${option}`
+  const value = metadataOptionValue(option)
+  const tavilyPath = `tavilyConfig.options.${key}.${value}`
   if (props.nodeType === 'TAVILY_TOOL' && te(tavilyPath)) return t(tavilyPath)
-  const path = `workflowConfig.options.${key}.${option}`; return te(path) ? t(path) : option
+  const path = `workflowConfig.options.${key}.${value}`
+  if (te(path)) return t(path)
+  const definitionOption = fields.value.find(field => field.key === key)?.options
+    ?.find(item => String(metadataOptionValue(item)) === String(value)) || option
+  return localizedMetadataOptionText(definitionOption, locale.value, value)
 }
 /** 展开或收起标准字段卡片。 */
 function toggleField(key) { openFields.value = openFields.value.includes(key) ? openFields.value.filter(item => item !== key) : [...openFields.value, key] }

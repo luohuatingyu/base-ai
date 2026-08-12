@@ -93,6 +93,26 @@ public class WorkflowPluginRegistryService {
         return new Registration(pluginId, false, registered);
     }
 
+    /** 同包指纹的 ABI 重探测只刷新展示元数据和 Schema，不改变准入、启用或安装身份。 */
+    @Transactional
+    public java.util.Map<String, String> refreshMetadata(String rawSource, String packageKey,
+                                                         WorkflowPluginWorkerClient.WorkerPackage inspected) {
+        String source = source(rawSource);
+        List<Long> ids = jdbcTemplate.query("""
+            SELECT id FROM workflow_marketplace_plugin
+            WHERE source=? AND package_key=? AND package_fingerprint=?
+            """, (rs, row) -> rs.getLong("id"), source, text(packageKey, 255), inspected.fingerprint());
+        if (ids.isEmpty()) return java.util.Map.of();
+        Long pluginId = ids.get(0);
+        for (WorkflowPluginWorkerClient.WorkerComponent component : inspected.components()) upsertComponent(pluginId, component);
+        java.util.Map<String, String> templateFingerprints = new java.util.LinkedHashMap<>();
+        for (RegisteredComponent component : components(pluginId)) {
+            templateFingerprints.put(packageKey + "/" + component.externalKey(),
+                sha256(inspected.fingerprint() + "\n" + component.schemaFingerprint()));
+        }
+        return java.util.Map.copyOf(templateFingerprints);
+    }
+
     /** 按数据库身份读取启用执行所需的固定包和组件信息。 */
     public RuntimeComponent requireRuntimeComponent(Long componentId) {
         if (componentId == null || componentId <= 0) throw new BusinessException("workflow.pluginComponentNotFound");
@@ -184,46 +204,49 @@ public class WorkflowPluginRegistryService {
     public List<WorkflowModels.PluginComponentOption> componentOptions() {
         return jdbcTemplate.query("""
             SELECT c.id,p.source,p.package_key,p.package_version,c.external_key,c.name,c.component_type,
-                   c.schema_json,c.credential_schema_json
+                   c.schema_json,c.credential_schema_json,c.localization_json
             FROM workflow_marketplace_component c JOIN workflow_marketplace_plugin p ON p.id=c.plugin_id
             WHERE p.enabled=true AND c.compatibility_status='SUPPORTED'
             ORDER BY p.source,p.package_key,c.name
             """, (rs, row) -> new WorkflowModels.PluginComponentOption(rs.getLong("id"), rs.getString("source"),
             rs.getString("package_key"), rs.getString("package_version"), rs.getString("external_key"),
             rs.getString("name"), rs.getString("component_type"), parse(rs.getString("schema_json")),
-            parse(rs.getString("credential_schema_json"))));
+            parse(rs.getString("credential_schema_json")), parseObject(rs.getString("localization_json"))));
     }
 
     /** 插入或更新一个组件声明。 */
     private void upsertComponent(Long pluginId, WorkflowPluginWorkerClient.WorkerComponent component) {
         String schema = json(component.schema());
         String credentials = json(component.credentialSchema());
-        String fingerprint = sha256(component.componentType() + "\n" + schema + "\n" + credentials);
+        String fingerprint = sha256(component.componentType() + "\n" + identityJson(component.schema())
+            + "\n" + identityJson(component.credentialSchema()));
         jdbcTemplate.update("""
-            INSERT INTO workflow_marketplace_component(plugin_id,external_key,component_type,name,description,schema_json,
-                credential_schema_json,compatibility_status,compatibility_reason,schema_fingerprint)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO workflow_marketplace_component(plugin_id,external_key,component_type,name,description,localization_json,
+                schema_json,credential_schema_json,compatibility_status,compatibility_reason,schema_fingerprint)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
             ON DUPLICATE KEY UPDATE component_type=VALUES(component_type),name=VALUES(name),description=VALUES(description),
-                schema_json=VALUES(schema_json),credential_schema_json=VALUES(credential_schema_json),
+                localization_json=VALUES(localization_json),schema_json=VALUES(schema_json),
+                credential_schema_json=VALUES(credential_schema_json),
                 compatibility_status=VALUES(compatibility_status),compatibility_reason=VALUES(compatibility_reason),
                 schema_fingerprint=VALUES(schema_fingerprint),updated_at=NOW()
             """, pluginId, text(component.externalId(), 255), type(component.componentType()),
             text(component.name().isBlank() ? component.externalId() : component.name(), 160),
-            text(component.description(), 1000), schema, credentials, status(component.compatibilityStatus()),
+            text(component.description(), 1000), json(localization(component.localization())), schema, credentials,
+            status(component.compatibilityStatus()),
             text(component.compatibilityReason(), 500), fingerprint);
     }
 
     /** 查询插件当前全部组件。 */
     private List<RegisteredComponent> components(Long pluginId) {
         return jdbcTemplate.query("""
-            SELECT id,external_key,component_type,name,description,schema_json,credential_schema_json,
+            SELECT id,external_key,component_type,name,description,localization_json,schema_json,credential_schema_json,
                    compatibility_status,compatibility_reason,schema_fingerprint
             FROM workflow_marketplace_component WHERE plugin_id=? ORDER BY id
             """, (rs, row) -> new RegisteredComponent(rs.getLong("id"), rs.getString("external_key"),
             rs.getString("component_type"), rs.getString("name"), rs.getString("description"),
             parse(rs.getString("schema_json")), parse(rs.getString("credential_schema_json")),
             rs.getString("compatibility_status"), rs.getString("compatibility_reason"),
-            rs.getString("schema_fingerprint")), pluginId);
+            rs.getString("schema_fingerprint"), parseObject(rs.getString("localization_json"))), pluginId);
     }
 
     /** 映射不可伪造的运行时组件。 */
@@ -346,6 +369,34 @@ public class WorkflowPluginRegistryService {
         catch (Exception exception) { throw new IllegalStateException("插件 Schema 无法解析", exception); }
     }
 
+    /** 解析可为空的可信展示元数据。 */
+    private JsonNode parseObject(String value) {
+        if (value == null || value.isBlank()) return objectMapper.createObjectNode();
+        JsonNode parsed = parse(value);
+        return parsed.isObject() ? parsed : objectMapper.createObjectNode();
+    }
+
+    /** 递归移除展示本地化字段，确保翻译变化不改变执行身份指纹。 */
+    private String identityJson(JsonNode value) {
+        JsonNode copy = value == null ? objectMapper.createArrayNode() : value.deepCopy();
+        stripLocalization(copy);
+        return copy.toString();
+    }
+
+    /** 从数组或对象中递归清理 localization 展示字段。 */
+    private void stripLocalization(JsonNode value) {
+        if (value == null) return;
+        if (value.isObject()) {
+            ((com.fasterxml.jackson.databind.node.ObjectNode) value).remove("localization");
+            value.elements().forEachRemaining(this::stripLocalization);
+        } else if (value.isArray()) value.elements().forEachRemaining(this::stripLocalization);
+    }
+
+    /** 限制组件本地化元数据为对象，避免持久化任意结构。 */
+    private JsonNode localization(JsonNode value) {
+        return value != null && value.isObject() ? value : objectMapper.createObjectNode();
+    }
+
     /** 序列化规范 JSON。 */
     private String json(JsonNode value) {
         return value == null || value.isMissingNode() ? "[]" : value.toString();
@@ -419,7 +470,15 @@ public class WorkflowPluginRegistryService {
     public record RegisteredComponent(Long id, String externalKey, String componentType, String name,
                                       String description, JsonNode schema, JsonNode credentialSchema,
                                       String compatibilityStatus, String compatibilityReason,
-                                      String schemaFingerprint) {}
+                                      String schemaFingerprint, JsonNode localization) {
+        /** 兼容现有不关心展示元数据的构造调用。 */
+        public RegisteredComponent(Long id, String externalKey, String componentType, String name,
+                                   String description, JsonNode schema, JsonNode credentialSchema,
+                                   String compatibilityStatus, String compatibilityReason, String schemaFingerprint) {
+            this(id, externalKey, componentType, name, description, schema, credentialSchema,
+                compatibilityStatus, compatibilityReason, schemaFingerprint, null);
+        }
+    }
     public record RuntimeComponent(Long id, String source, String packageKey, String packageVersion,
                                    String packageFingerprint, boolean pluginEnabled, String externalKey,
                                    String componentType, JsonNode schema, JsonNode credentialSchema,

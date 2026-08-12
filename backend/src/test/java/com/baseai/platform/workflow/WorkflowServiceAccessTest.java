@@ -7,6 +7,7 @@ import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.security.AuthenticationType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 class WorkflowServiceAccessTest {
+    private final ObjectMapper mapper = new ObjectMapper();
     private WorkflowService service;
 
     /** 创建两个所有者的画布和自定义模板，使用真实资源访问服务。 */
@@ -44,7 +46,7 @@ class WorkflowServiceAccessTest {
             """);
         jdbcTemplate.execute("""
             CREATE TABLE workflow_node_template(id BIGINT AUTO_INCREMENT PRIMARY KEY,code VARCHAR(80),name VARCHAR(120),node_type VARCHAR(24),
-            description VARCHAR(500),config_encrypted CLOB,system_template BOOLEAN,template_source VARCHAR(20),
+            description VARCHAR(500),localization_json CLOB DEFAULT '{}',config_encrypted CLOB,system_template BOOLEAN,template_source VARCHAR(20),
             functional_category VARCHAR(40),external_key VARCHAR(255),external_version VARCHAR(64),external_publisher VARCHAR(120),
             external_fingerprint CHAR(64),imported_at TIMESTAMP,enabled BOOLEAN DEFAULT TRUE,voided BOOLEAN DEFAULT FALSE,
             created_by BIGINT,created_at TIMESTAMP,updated_at TIMESTAMP,
@@ -58,9 +60,9 @@ class WorkflowServiceAccessTest {
             """);
         jdbcTemplate.update("""
             INSERT INTO workflow_node_template VALUES
-            (1,'START','Start','START','','',true,'SYSTEM','FLOW_CONTROL',NULL,NULL,NULL,NULL,NULL,true,false,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
-            (2,'OWN_NODE','Own','HTTP','','',false,'CUSTOM','INTEGRATION',NULL,NULL,NULL,NULL,NULL,true,false,7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
-            (3,'OTHER_NODE','Other','HTTP','','',false,'CUSTOM','INTEGRATION',NULL,NULL,NULL,NULL,NULL,true,false,8,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+            (1,'START','Start','START','','{}','',true,'SYSTEM','FLOW_CONTROL',NULL,NULL,NULL,NULL,NULL,true,false,NULL,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+            (2,'OWN_NODE','Own','HTTP','','{}','',false,'CUSTOM','INTEGRATION',NULL,NULL,NULL,NULL,NULL,true,false,7,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+            (3,'OTHER_NODE','Other','HTTP','','{}','',false,'CUSTOM','INTEGRATION',NULL,NULL,NULL,NULL,NULL,true,false,8,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
             """);
         PlatformProperties properties = new PlatformProperties();
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString(
@@ -193,6 +195,39 @@ class WorkflowServiceAccessTest {
         assertEquals("UPDATED", service.importMarketplaceTemplates(java.util.List.of(changed), true).get(0).status());
         assertEquals("2", service.template(id).externalVersion());
         assertTrue(service.template(id).enabled());
+    }
+
+    /** ABI 重探测只刷新历史模板字段展示元数据，并保留参数值和执行身份。 */
+    @Test
+    void refreshesImportedTemplateLocalizationWithoutChangingValues() {
+        authenticate(1L, Set.of("ADMIN"));
+        ObjectNode config = mapper.createObjectNode().put("pluginComponentId", 7)
+            .put("packageFingerprint", "a".repeat(64)).put("componentExternalId", "action")
+            .put("componentType", "ACTION");
+        config.putObject("parameters").put("query", "saved");
+        config.set("parameterSchema", mapper.createArrayNode());
+        config.set("credentialSchema", mapper.createArrayNode());
+        Long id = service.importMarketplaceTemplate(new WorkflowModels.MarketplaceTemplateDraft(
+            "DIFY", "pkg/action", "1", "vendor", "b".repeat(64), "DIFY_ACTION", "动作", "",
+            "PLUGIN_ACTION", "BASIC", config)).templateId();
+        ObjectNode localization = mapper.createObjectNode();
+        localization.putObject("name").put("zh-CN", "动作").put("en-US", "Action");
+        var component = new WorkflowPluginWorkerClient.WorkerComponent("action", "动作", "", "ACTION",
+            mapper.createArrayNode().add(mapper.createObjectNode().put("name", "query")
+                .set("localization", mapper.createObjectNode().set("label",
+                    mapper.createObjectNode().put("en-US", "Query")))),
+            mapper.createArrayNode(), "action.py", "SUPPORTED", "", localization);
+
+        service.refreshMarketplaceTemplateMetadata("DIFY", "pkg", new WorkflowPluginWorkerClient.WorkerPackage(
+            "DIFY", "pkg", "1", "a".repeat(64), "python", 6, java.util.List.of(component)),
+            Map.of("pkg/action", "b".repeat(64)));
+
+        WorkflowModels.NodeTemplateView refreshed = service.template(id);
+        assertEquals("saved", refreshed.config().path("parameters").path("query").asText());
+        assertEquals("a".repeat(64), refreshed.config().path("packageFingerprint").asText());
+        assertEquals("Query", refreshed.config().path("parameterSchema").get(0)
+            .path("localization").path("label").path("en-US").asText());
+        assertEquals("Action", refreshed.localization().path("name").path("en-US").asText());
     }
 
     /** 通用创建接口不能伪造 n8n 或 Dify 市场来源。 */

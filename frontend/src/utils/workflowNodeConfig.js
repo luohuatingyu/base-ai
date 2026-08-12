@@ -166,9 +166,10 @@ function pluginConfigFields(config = {}) {
     const rawType = String(item?.type || 'string').toLowerCase()
     const editor = ['number', 'integer'].includes(rawType) ? 'number' : rawType === 'boolean' ? 'boolean'
       : ['select', 'options'].includes(rawType) ? 'select' : ['paragraph', 'text-area'].includes(rawType) ? 'textarea' : 'text'
-    const options = (Array.isArray(item?.options) ? item.options : []).map(option =>
-      option && typeof option === 'object' ? option.value : option).filter(option => option !== undefined)
-    return { key: `parameters.${item?.name || ''}`, editor, defaultValue: item?.default,
+    const options = (Array.isArray(item?.options) ? item.options : []).filter(option =>
+      option && typeof option === 'object' ? option.value !== undefined : option !== undefined).map(option =>
+      option && typeof option === 'object' ? JSON.parse(JSON.stringify(option)) : option)
+    return { key: `parameters.${item?.name || ''}`, editor, defaultValue: item?.default, localization: item?.localization || {},
       options, requirement: item?.required ? 'required' : '', label: item?.label || item?.name || '',
       description: item?.description || '', displayOptions: item?.displayOptions || {} }
   }).filter(item => item.key !== 'parameters.') : []

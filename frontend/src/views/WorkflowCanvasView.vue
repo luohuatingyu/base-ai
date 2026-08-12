@@ -45,7 +45,7 @@
 
     <el-drawer v-model="runsVisible" :title="t('workflowCanvas.logs')" size="min(900px, 96vw)">
       <el-table :data="runs"><el-table-column prop="id" :label="t('workflowCanvas.runId')" min-width="290" /><el-table-column prop="versionNumber" :label="t('workflowCanvas.version')" width="90" /><el-table-column :label="t('common.status')" width="120"><template #default="scope">{{ localizeWorkflowStatus(scope.row.status, t) }}</template></el-table-column><el-table-column prop="createdAt" :label="t('common.time')" min-width="170" /><el-table-column width="90"><template #default="scope"><el-button link type="primary" @click="openRun(scope.row.id)">{{ t('common.detail') }}</el-button></template></el-table-column></el-table>
-      <div v-if="runDetail" class="workflow-run-detail"><h3>{{ runDetail.id }}</h3><pre><code>{{ JSON.stringify(runDetail.output || runDetail.errorMessage, null, 2) }}</code></pre><el-table :data="runDetail.nodes"><el-table-column prop="sequenceNo" label="#" width="60" /><el-table-column prop="nodeName" :label="t('common.name')" /><el-table-column prop="nodeType" :label="t('common.type')" width="110" /><el-table-column :label="t('common.status')" width="150"><template #default="scope">{{ localizeWorkflowStatus(scope.row.status, t) }}</template></el-table-column><el-table-column prop="iterationPath" :label="t('workflowCanvas.iteration')" /></el-table></div>
+      <div v-if="runDetail" class="workflow-run-detail"><h3>{{ runDetail.id }}</h3><pre><code>{{ JSON.stringify(runDetail.output || runDetail.errorMessage, null, 2) }}</code></pre><el-table :data="runDetail.nodes"><el-table-column prop="sequenceNo" label="#" width="60" /><el-table-column :label="t('common.name')"><template #default="scope">{{ runNodeName(scope.row) }}</template></el-table-column><el-table-column prop="nodeType" :label="t('common.type')" width="110" /><el-table-column :label="t('common.status')" width="150"><template #default="scope">{{ localizeWorkflowStatus(scope.row.status, t) }}</template></el-table-column><el-table-column prop="iterationPath" :label="t('workflowCanvas.iteration')" /></el-table></div>
     </el-drawer>
   </div>
 </template>
@@ -57,9 +57,10 @@ import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import WorkflowGraphEditor from '../components/WorkflowGraphEditor.vue'
 import { cloneWorkflowData, createWorkflowGraph, localizeWorkflowStatus, serializeWorkflowGraph, validateWorkflowGraph } from '../utils/workflowGraph'
+import { localizedWorkflowNodeLabel } from '../utils/workflowTemplateCatalog'
 import { useAuthStore } from '../stores/auth'
 
-const { t } = useI18n()
+const { t, te, locale } = useI18n()
 const auth = useAuthStore()
 const rows = ref([]), templates = ref([]), selected = ref(null), graph = ref(createWorkflowGraph())
 const keyword = ref(''), inputSchemaText = ref('{}'), createVisible = ref(false), runVisible = ref(false), runsVisible = ref(false)
@@ -68,6 +69,12 @@ const createForm = reactive({ code: '', name: '', description: '' })
 let pollTimer
 const filteredRows = computed(() => rows.value.filter(item => !keyword.value || `${item.name} ${item.code}`.toLowerCase().includes(keyword.value.toLowerCase())))
 const runAlertType = computed(() => activeRun.value?.status === 'SUCCESS' ? 'success' : activeRun.value?.status === 'FAILED' ? 'error' : 'info')
+
+/** 本地化可识别的运行时默认节点名，并始终保留用户自定义名称。 */
+function runNodeName(node) {
+  return localizedWorkflowNodeLabel({ nodeType: node.nodeType, label: node.nodeName,
+    defaultLabel: node.defaultNodeName, localization: node.localization }, locale.value, t, te)
+}
 
 /** 并行加载工作流和模板目录。 */
 async function load() { const [workflowResponse, templateResponse] = await Promise.all([http.get('/workflow/canvases'), http.get('/workflow/nodes')]); rows.value = workflowResponse.data || []; templates.value = templateResponse.data || []; if (selected.value) select(rows.value.find(item => item.id === selected.value.id) || null) }

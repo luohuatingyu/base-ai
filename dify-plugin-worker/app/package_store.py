@@ -33,7 +33,7 @@ TYPE_KEYS = {
 
 REQUIREMENT_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9_,.-]+\])?(.*)$")
 FORBIDDEN_REQUIREMENTS = {"dify-plugin", "dify_plugin"}
-HOST_ABI_VERSION = 5
+HOST_ABI_VERSION = 6
 
 
 class PackageError(ValueError):
@@ -251,8 +251,10 @@ class PackageStore:
             return [self._component_from_data(root, reference, provider, "MODEL", credential_schema,
                                               dependency_error)]
         provider_id = str(provider.get("provider") or Path(reference).stem)
-        label = self._localized(provider.get("label"), provider_id)
-        description = self._localized(provider.get("description"), "")
+        label_localization = self._localization(provider.get("label"), provider_id, 160)
+        description_localization = self._localization(provider.get("description"), "", 1000)
+        label = label_localization["zh-CN"]
+        description = description_localization["zh-CN"]
         supported = provider.get("supported_model_types", [])
         supported_types = [self._model_type(str(value)) for value in supported] if isinstance(supported, list) else []
         components = []
@@ -265,6 +267,11 @@ class PackageStore:
                 "externalId": f"{provider_id}.{model_type}",
                 "name": f"{label} {self._model_type_label(model_type)}",
                 "description": description,
+                "localization": {
+                    "name": {locale: f"{value} {self._model_type_label(model_type)}"
+                             for locale, value in label_localization.items()},
+                    "description": description_localization,
+                },
                 "componentType": "MODEL",
                 "modelType": model_type,
                 "schema": self._model_schema(model_type),
@@ -279,26 +286,40 @@ class PackageStore:
     def _model_schema(self, model_type: str) -> list[dict[str, Any]]:
         """生成统一模型字段，并补充各协议调用所需的可配置参数。"""
         fields = [
-            {"name": "model", "label": "模型", "description": "", "type": "string",
+            {"name": "model", "label": "模型", "description": "",
+             "localization": {"label": {"zh-CN": "模型", "en-US": "Model"},
+                              "description": {"zh-CN": "", "en-US": ""}}, "type": "string",
              "required": True, "default": None, "options": [], "secret": False},
-            {"name": "model_parameters", "label": "模型参数", "description": "", "type": "object",
+            {"name": "model_parameters", "label": "模型参数", "description": "",
+             "localization": {"label": {"zh-CN": "模型参数", "en-US": "Model Parameters"},
+                              "description": {"zh-CN": "", "en-US": ""}}, "type": "object",
              "required": False, "default": {}, "options": [], "secret": False},
         ]
         if model_type == "llm":
             fields.extend([
-                {"name": "tools", "label": "工具", "description": "", "type": "array", "required": False,
+                {"name": "tools", "label": "工具", "description": "",
+                 "localization": {"label": {"zh-CN": "工具", "en-US": "Tools"},
+                                  "description": {"zh-CN": "", "en-US": ""}},
+                 "type": "array", "required": False,
                  "default": [], "options": [], "secret": False},
-                {"name": "stop", "label": "停止词", "description": "", "type": "array", "required": False,
+                {"name": "stop", "label": "停止词", "description": "",
+                 "localization": {"label": {"zh-CN": "停止词", "en-US": "Stop Sequences"},
+                                  "description": {"zh-CN": "", "en-US": ""}},
+                 "type": "array", "required": False,
                  "default": [], "options": [], "secret": False},
             ])
         elif model_type == "text-embedding":
-            fields.append({"name": "input_type", "label": "输入用途", "description": "", "type": "select",
+            fields.append({"name": "input_type", "label": "输入用途", "description": "",
+                           "localization": {"label": {"zh-CN": "输入用途", "en-US": "Input Purpose"},
+                                            "description": {"zh-CN": "", "en-US": ""}}, "type": "select",
                            "required": False, "default": "document", "options": [
                                {"value": "document", "label": {"zh_Hans": "文档", "en_US": "Document"}},
                                {"value": "query", "label": {"zh_Hans": "查询", "en_US": "Query"}}],
                            "secret": False})
         elif model_type == "tts":
-            fields.append({"name": "voice", "label": "音色", "description": "", "type": "string",
+            fields.append({"name": "voice", "label": "音色", "description": "",
+                           "localization": {"label": {"zh-CN": "音色", "en-US": "Voice"},
+                                            "description": {"zh-CN": "", "en-US": ""}}, "type": "string",
                            "required": True, "default": None, "options": [], "secret": False})
         return fields
 
@@ -337,15 +358,17 @@ class PackageStore:
         identity = data.get("identity") if isinstance(data.get("identity"), dict) else {}
         source = self._source(data)
         name = str(identity.get("name") or data.get("name") or Path(reference).stem)
-        label = self._localized(identity.get("label"), name)
+        name_localization = self._localization(identity.get("label"), name, 160)
         description = data.get("description") if isinstance(data.get("description"), dict) else {}
         human = description.get("human") if isinstance(description, dict) else description
+        description_localization = self._localization(human, "", 1000)
         source_exists = bool(source) and (root / source).is_file()
         probe_error = self._probe(root, source, component_type) if source_exists and not dependency_error else dependency_error
         return {
             "externalId": name,
-            "name": label,
-            "description": self._localized(human, ""),
+            "name": name_localization["zh-CN"],
+            "description": description_localization["zh-CN"],
+            "localization": {"name": name_localization, "description": description_localization},
             "componentType": component_type,
             "schema": self._fields(data.get("parameters", [])),
             "credentialSchema": credential_schema,
@@ -467,17 +490,37 @@ class PackageStore:
         for key, raw in entries:
             item = raw if isinstance(raw, dict) else {}
             name = str(item.get("name") or item.get("variable") or key)
+            label_localization = self._localization(item.get("label"), name, 160)
+            description_localization = self._localization(item.get("human_description"), "", 1000)
             fields.append({
                 "name": name,
-                "label": self._localized(item.get("label"), name),
-                "description": self._localized(item.get("human_description"), ""),
+                "label": label_localization["zh-CN"],
+                "description": description_localization["zh-CN"],
+                "localization": {"label": label_localization, "description": description_localization},
                 "type": str(item.get("type") or "string"),
                 "required": bool(item.get("required", False)),
                 "default": item.get("default"),
-                "options": item.get("options", []),
+                "options": self._options(item.get("options")),
                 "secret": str(item.get("type", "")).lower() in {"secret-input", "password"},
             })
         return fields
+
+    def _options(self, value: Any) -> list[Any]:
+        """保留枚举稳定值，并把 Dify 多语言标签转换为统一展示元数据。"""
+        if not isinstance(value, list):
+            return []
+        result = []
+        for raw in value:
+            if not isinstance(raw, dict):
+                result.append(raw)
+                continue
+            item = dict(raw)
+            fallback = str(item.get("value") or item.get("name") or "")
+            label_localization = self._localization(item.get("label"), fallback, 160)
+            item["label"] = label_localization["zh-CN"]
+            item["localization"] = {"label": label_localization}
+            result.append(item)
+        return result
 
     def _source(self, data: dict[str, Any]) -> str:
         """读取声明中的 Python 源路径。"""
@@ -487,8 +530,18 @@ class PackageStore:
 
     def _localized(self, value: Any, fallback: str) -> str:
         """优先返回中文再回退英文和默认值。"""
+        return self._localization(value, fallback, 1000)["zh-CN"]
+
+    def _localization(self, value: Any, fallback: str, maximum: int) -> dict[str, str]:
+        """规范双语声明；任一语言缺失时回退另一语言和稳定技术名称。"""
         if isinstance(value, str):
-            return value
-        if isinstance(value, dict):
-            return str(value.get("zh_Hans") or value.get("en_US") or fallback)
-        return fallback
+            zh = en = value.strip()
+        elif isinstance(value, dict):
+            zh = str(value.get("zh_Hans") or value.get("zh-CN") or "").strip()
+            en = str(value.get("en_US") or value.get("en-US") or "").strip()
+        else:
+            zh = en = ""
+        fallback_value = str(fallback or "").strip()
+        zh = (zh or en or fallback_value)[:maximum]
+        en = (en or zh or fallback_value)[:maximum]
+        return {"zh-CN": zh, "en-US": en}

@@ -64,13 +64,13 @@ class WorkflowPluginWorkerClientTest {
     void validatesWorkerHostAbiVersion() throws Exception {
         String fingerprint = "a".repeat(64);
         int[] requestCount = {0};
-        int[] versions = {5, 5, 4};
+        int[] versions = {5, 6, 5};
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/packages/inspect", exchange -> {
             byte[] body = ("""
                 {"fingerprint":"%s","runtimeLanguage":"node","hostAbiVersion":%d,"licenseName":"MIT",
                  "licenseUrl":"https://spdx.org/licenses/MIT.html","externalServices":[{"name":"API","domain":"api.example.com"}],"components":[
-                  {"externalId":"action","name":"Action","componentType":"ACTION","schema":[],
+                  {"externalId":"action","name":"Action","componentType":"ACTION","localization":{"name":{"en-US":"Action"}},"schema":[],
                    "credentialSchema":[],"sourcePath":"node.js","compatibilityStatus":"SUPPORTED",
                    "compatibilityReason":""}]}
                 """).formatted(fingerprint, versions[requestCount[0]++]).getBytes(StandardCharsets.UTF_8);
@@ -90,7 +90,9 @@ class WorkflowPluginWorkerClientTest {
         assertEquals(5, n8n.hostAbiVersion());
         assertEquals("MIT", n8n.licenseName());
         assertEquals("api.example.com", n8n.externalServices().get(0).domain());
-        assertEquals(5, client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
+        WorkflowPluginWorkerClient.WorkerPackage dify = client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint);
+        assertEquals(6, dify.hostAbiVersion());
+        assertEquals("Action", dify.components().get(0).localization().path("name").path("en-US").asText());
         BusinessException outdated = assertThrows(BusinessException.class,
             () -> client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint));
         assertEquals("workflow.pluginWorkerResponseInvalid", outdated.getMessageKey());

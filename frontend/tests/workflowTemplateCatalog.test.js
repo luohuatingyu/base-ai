@@ -6,7 +6,9 @@ import zhCN from '../src/locales/zh-CN.js'
 import { WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 import {
   defaultTemplateCategory, filterWorkflowTemplates, groupWorkflowTemplates, localizedTemplateText,
-  marketplaceItemDescription, marketplaceNodeTypeLabel, normalizeTemplateMetadata, systemTemplateTranslationKey,
+  localizedMetadataOptionText, localizedMetadataText, localizedWorkflowNodeLabel, marketplaceItemDescription,
+  marketplaceNodeTypeLabel, metadataOptionValue,
+  normalizeTemplateMetadata, systemTemplateTranslationKey,
   workflowTemplateCategoryStyle,
   WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES
 } from '../src/utils/workflowTemplateCatalog.js'
@@ -79,6 +81,34 @@ test('系统节点按当前语言展示且自定义或缺失词条安全回退�
   assert.equal(systemTemplateTranslationKey(systemStart, 'code'), '')
 })
 
+test('画布默认节点和 Dify 多语言元数据按当前语言展示且保留自定义名称', () => {
+  const zh = localeAccessors(zhCN)
+  const en = localeAccessors(enUS)
+  const localization = {
+    name: { 'zh-CN': '添加日程参会人', 'en-US': 'Add Event Attendees' },
+    description: { zh_Hans: '添加参会人', en_US: 'Add attendees to an event' }
+  }
+
+  assert.equal(localizedWorkflowNodeLabel({ nodeType: 'START', label: 'START' }, 'zh-CN', zh.translate, zh.hasTranslation), '开始')
+  assert.equal(localizedWorkflowNodeLabel({ nodeType: 'START', label: '开始' }, 'en-US', en.translate, en.hasTranslation), 'Start')
+  assert.equal(localizedWorkflowNodeLabel({ nodeType: 'START', label: '自定义入口' }, 'en-US', en.translate, en.hasTranslation), '自定义入口')
+  assert.equal(localizedWorkflowNodeLabel({ nodeType: 'PLUGIN_ACTION', label: '添加日程参会人', localization,
+    defaultLabel: '添加日程参会人' }, 'en-US', en.translate, en.hasTranslation), 'Add Event Attendees')
+  assert.equal(localizedMetadataText({ localization }, 'name', 'en-US', 'fallback'), 'Add Event Attendees')
+  assert.equal(localizedMetadataText({ localization }, 'description', 'zh-CN', 'fallback'), '添加参会人')
+  assert.equal(localizedMetadataText({ localization: { name: { 'zh-CN': '仅中文' } } }, 'name', 'en-US', 'fallback'), '仅中文')
+  assert.equal(localizedMetadataText({}, 'name', 'fr-FR', 'fallback'), 'fallback')
+})
+
+test('动态选项按当前语言展示但始终提交稳定值', () => {
+  const option = { value: 'document', label: { zh_Hans: '文档', en_US: 'Document' } }
+  assert.equal(metadataOptionValue(option), 'document')
+  assert.equal(localizedMetadataOptionText(option, 'zh-CN'), '文档')
+  assert.equal(localizedMetadataOptionText(option, 'en-US'), 'Document')
+  assert.equal(metadataOptionValue('raw'), 'raw')
+  assert.equal(localizedMetadataOptionText('raw', 'en-US'), 'raw')
+})
+
 test('市场说明优先使用官方内容并为 n8n 缺失说明提供可信本地回退', () => {
   const zh = localeAccessors(zhCN)
   const official = { description: 'Official description', compatible: true, targetNodeType: 'REDIS_COMMAND' }
@@ -124,7 +154,7 @@ test('画布使用右键分类菜单并在点击坐标添加节点', () => {
   assert.match(graphEditorSource, /addTemplateFromMenu/)
   assert.match(graphEditorSource, /workflow-template-source/)
   assert.match(graphEditorSource, /templateText\(template, 'name'\)/)
-  assert.match(graphEditorSource, /localizedTemplateText\(template, field, t, te\)/)
+  assert.match(graphEditorSource, /localizedTemplateText\(\{ \.\.\.template, locale: locale\.value \}, field, t, te\)/)
   assert.match(graphEditorSource, /data:\s*\{\s*label:\s*templateText\(template, 'name'\)/)
   assert.doesNotMatch(graphEditorSource, /<strong>\{\{\s*template\.name\s*\}\}<\/strong>/)
   assert.doesNotMatch(graphEditorSource, /workflow-palette|startDrag|application\/workflow-template/)
@@ -254,6 +284,9 @@ test('节点管理卡片仅展示当前语言的功能文案并隐藏技术编�
 test('画布菜单复用功能类型图标配色并把分类保存到新节点', () => {
   assert.match(graphEditorSource, /:style="workflowTemplateCategoryStyle\(template\.functionalCategory, template\.nodeType\)"/)
   assert.match(graphEditorSource, /functionalCategory:\s*template\.functionalCategory/)
+  assert.match(graphEditorSource, /localization:\s*template\.localization/)
+  assert.match(graphEditorSource, /template\.importedTemplate[\s\S]*parameterSchema:\s*cloneWorkflowData\(template\.config\?\.parameterSchema/)
+  assert.match(graphEditorSource, /credentialSchema:\s*cloneWorkflowData\(template\.config\?\.credentialSchema/)
 })
 
 test('节点来源位于顶部且功能类型在节点列表左侧展示', () => {

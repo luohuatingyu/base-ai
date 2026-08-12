@@ -55,6 +55,24 @@ const WORKFLOW_NODE_EXAMPLE_OVERRIDES = Object.freeze({
   PLUGIN_AGENT_STRATEGY: pluginExample('AGENT_STRATEGY'), PLUGIN_EXTENSION: pluginExample('EXTENSION')
 })
 
+const EN_WORKFLOW_NODE_EXAMPLE_OVERRIDES = Object.freeze({
+  LLM: { prompt: 'Summarize: {{input.text}}' }, HTTP: { name: 'Get order' },
+  TEMPLATE: { template: 'Order {{input.orderId}} was processed' },
+  QUESTION_CLASSIFIER: { categories: [{ name: 'Pre-sales' }, { name: 'After-sales' }] },
+  EMAIL_SEND: { subject: 'Order {{input.orderId}} status', body: 'Current status: {{input.status}}' },
+  IM_NOTIFY: { body: { text: 'Task {{input.taskId}} was completed' } }
+})
+
+const EN_WORKFLOW_NODE_EXAMPLE_TEXT = Object.freeze({
+  '请总结：{{input.text}}': 'Summarize: {{input.text}}',
+  '查询订单': 'Get order',
+  '订单 {{input.orderId}} 已处理': 'Order {{input.orderId}} was processed',
+  '售前': 'Pre-sales', '售后': 'After-sales',
+  '订单 {{input.orderId}} 状态': 'Order {{input.orderId}} status',
+  '当前状态：{{input.status}}': 'Current status: {{input.status}}',
+  '任务 {{input.taskId}} 已完成': 'Task {{input.taskId}} was completed'
+})
+
 /** 为节点文档提供可直接理解的数据输入与输出示例，示例不包含真实凭据或敏感信息。 */
 const WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({
   START: pair({ orderId: 'ORD-1001', question: '订单什么时候发货？' }, { orderId: 'ORD-1001', question: '订单什么时候发货？' }),
@@ -106,6 +124,23 @@ const WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({
   PLUGIN_EXTENSION: pair({ callback: 'example' }, { handled: true })
 })
 
+const EN_WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({
+  START: pair({ orderId: 'ORD-1001', question: 'When will the order ship?' }, { orderId: 'ORD-1001', question: 'When will the order ship?' }),
+  END: pair({ answer: 'The order is expected to ship today.' }, { answer: 'The order is expected to ship today.' }),
+  LLM: pair({ text: 'Summarize this week sales.' }, { content: 'Sales increased steadily this week.', model: 'example-model', totalTokens: 128 }),
+  AGENT: pair({ task: 'Look up the order and draft a reply', orderId: 'ORD-1001' }, { content: 'The order has shipped.', toolResults: [{ name: 'query_order', success: true }] }),
+  RAG: pair({ query: 'What is the refund policy?' }, { answer: 'Refunds are available within 7 days after delivery. [1]', citations: [{ index: 1, source: 'refund-policy.md' }], matches: [] }),
+  EMBEDDING: pair({ texts: ['Refund policy', 'Delivery time'] }, { embeddings: [[0.12, -0.08], [0.04, 0.21]], model: 'embedding-model', count: 2, dimension: 2 }),
+  KNOWLEDGE_RETRIEVAL: pair({ query: 'Refund policy' }, { knowledgeBaseId: 1, count: 1, matches: [{ source: 'refund-policy.md', score: 0.91 }] }),
+  KNOWLEDGE_UPSERT: pair({ document: 'Submit refund requests within 7 days after delivery.' }, { documentId: 42, fileName: 'document.txt', status: 'INDEXED', chunkCount: 1 }),
+  TEMPLATE: pair({ orderId: 'ORD-1001' }, { text: 'Order ORD-1001 was processed' }),
+  CSV: pair({ csvText: 'id,name\n1,Example' }, [{ id: '1', name: 'Example' }]),
+  QUESTION_CLASSIFIER: pair({ question: 'The device does not turn on.' }, { category: 'After-sales' }),
+  PARAMETER_EXTRACTOR: pair({ text: 'Find order ORD-1001' }, { orderId: 'ORD-1001' }),
+  STRUCTURED_OUTPUT: pair({ text: '{"answer":"Completed"}' }, { answer: 'Completed' }),
+  DOCUMENT_EXTRACTOR: pair({ document: 'Example document content' }, { text: 'Example document content', metadata: { fileName: 'example.txt' } })
+})
+
 /** 构造不包含真实市场身份的插件文档示例。 */
 function pluginExample(componentType) {
   return { pluginComponentId: 1, packageFingerprint: '0'.repeat(64), componentExternalId: 'example',
@@ -122,26 +157,41 @@ export const WORKFLOW_NODE_DOCUMENTATION = Object.freeze(Object.fromEntries(DOCU
 })])))
 
 /** 合并字段默认值、人工示例和模板默认配置，生成当前模板的可参考配置。 */
-export function workflowNodeExample(nodeType, templateConfig = {}) {
+export function workflowNodeExample(nodeType, templateConfig = {}, locale = 'zh-CN') {
   const type = String(nodeType || '').toUpperCase()
   const fields = nodeConfigFields(type)
   const example = {}
   for (const item of fields) example[item.key] = clone(item.defaultValue)
-  Object.assign(example, clone(WORKFLOW_NODE_EXAMPLE_OVERRIDES[type] || {}), cloneObject(templateConfig))
+  Object.assign(example, clone(WORKFLOW_NODE_EXAMPLE_OVERRIDES[type] || {}),
+    String(locale).toLowerCase().startsWith('en') ? clone(EN_WORKFLOW_NODE_EXAMPLE_OVERRIDES[type] || {}) : {},
+    cloneObject(templateConfig))
+  if (String(locale).toLowerCase().startsWith('en')) localizeExampleText(example)
   for (const item of fields) {
     if (!nodeConfigFieldApplicable(type, item.key, example)) delete example[item.key]
   }
   return example
 }
 
+/** 递归替换示例中的已知中文展示文本，不改变字段名、协议编码或模板表达式。 */
+function localizeExampleText(value) {
+  if (!value || typeof value !== 'object') return value
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === 'string' && EN_WORKFLOW_NODE_EXAMPLE_TEXT[item]) value[key] = EN_WORKFLOW_NODE_EXAMPLE_TEXT[item]
+    else localizeExampleText(item)
+  }
+  return value
+}
+
 /** 将任意系统、市场或自建模板转换成统一只读文档。 */
-export function workflowNodeDocument(template, translate, hasTranslation) {
+export function workflowNodeDocument(template, translate, hasTranslation, locale = 'zh-CN') {
   const nodeType = String(template?.nodeType || '').toUpperCase()
   const base = WORKFLOW_NODE_DOCUMENTATION[nodeType]
   if (!base) return null
-  const exampleConfig = workflowNodeExample(nodeType, template?.config)
+  const exampleConfig = workflowNodeExample(nodeType, template?.config, locale)
   const fields = nodeConfigFields(nodeType, exampleConfig).filter(item => nodeConfigFieldApplicable(nodeType, item.key, exampleConfig))
-  const examples = WORKFLOW_NODE_IO_EXAMPLES[nodeType] || pair({}, {})
+  const examples = String(locale).toLowerCase().startsWith('en')
+    ? EN_WORKFLOW_NODE_IO_EXAMPLES[nodeType] || WORKFLOW_NODE_IO_EXAMPLES[nodeType] || pair({}, {})
+    : WORKFLOW_NODE_IO_EXAMPLES[nodeType] || pair({}, {})
   return {
     ...base,
     name: template?.name || nodeType,

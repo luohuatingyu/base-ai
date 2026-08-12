@@ -35,6 +35,26 @@ test('系统、导入和自建模板复用原生文档并保留模板元数据',
   assert.equal(workflowNodeDocument({nodeType:'UNKNOWN'},translate,has),null)
 })
 
+test('英文节点文档使用英文示例且动态插件字段按当前语言展示',()=>{
+  const {translate,has}=translator(enUS)
+  const doc=workflowNodeDocument({nodeType:'PLUGIN_ACTION',source:'DIFY',config:{parameterSchema:[{
+    name:'mode',label:'模式',description:'执行模式',type:'options',required:true,
+    localization:{label:{'zh-CN':'模式','en-US':'Mode'},description:{'zh-CN':'执行模式','en-US':'Execution mode'}},
+    options:[{value:'basic',label:'基础',localization:{label:{'zh-CN':'基础','en-US':'Basic'}}}]
+  }]}},translate,has,'en-US')
+  const mode=doc.fields.find(field=>field.key==='parameters.mode')
+  assert.equal(mode.localization.label['en-US'],'Mode')
+  assert.equal(mode.options[0].localization.label['en-US'],'Basic')
+  for(const type of WORKFLOW_NODE_TYPES){
+    const localized=workflowNodeDocument({nodeType:type},translate,has,'en-US')
+    assert.doesNotMatch(`${localized.example}${localized.inputExample}${localized.outputExample}`,/[\u3400-\u9fff]/,type)
+  }
+  assert.match(viewSource,/const \{ t,te,locale \}=useI18n\(\)/)
+  assert.match(viewSource,/localizedTemplateText\(\{\.\.\.item,locale:locale\.value\}/)
+  assert.match(viewSource,/localizedMetadataText\(field,'label',locale\.value/)
+  assert.match(viewSource,/localizedMetadataOptionText\(option,locale\.value/)
+})
+
 test('全部节点提供可解析的输入输出示例和当前分支必填字段清单',()=>{
   for(const [name,locale] of locales){
     const {translate,has}=translator(locale)

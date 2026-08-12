@@ -62,7 +62,8 @@ class WorkflowPluginProbeServiceTest {
         properties.getWorkflow().setMarketplaceProbeQueueCapacity(4);
         properties.getWorkflow().setMarketplaceProbeMaxAttempts(2);
         executor = new WorkflowPluginProbeExecutorConfig().workflowPluginProbeExecutor(properties);
-        service = new WorkflowPluginProbeService(jdbc, mapper, clients, workers, executor, properties);
+        service = new WorkflowPluginProbeService(jdbc, mapper, clients, workers,
+            mock(WorkflowPluginRegistryService.class), mock(WorkflowService.class), executor, properties);
     }
 
     /** 关闭正式线程池，避免测试结束后遗留后台线程。 */

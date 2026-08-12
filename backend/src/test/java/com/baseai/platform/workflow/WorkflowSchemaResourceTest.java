@@ -204,6 +204,31 @@ class WorkflowSchemaResourceTest {
         assertTrue(!schema.contains("DROP COLUMN"));
     }
 
+    /** MySQL V19 仅增加插件和模板展示元数据，不修改执行 Schema 或审批状态。 */
+    @Test
+    void addsWorkflowPluginLocalizationMetadata() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V19__add_workflow_plugin_localization.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(schema.contains("workflow_marketplace_component"));
+        assertTrue(schema.contains("workflow_node_template"));
+        assertTrue(schema.contains("localization_json"));
+        assertTrue(!schema.contains("workflow_plugin_admission"));
+        assertTrue(!schema.contains("DROP TABLE"));
+        assertTrue(!schema.contains("DROP COLUMN"));
+    }
+
+    /** MySQL V20 为新运行记录增加可选展示身份，同时保持历史节点名原样可读。 */
+    @Test
+    void addsWorkflowNodeRunLocalizationMetadata() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V20__localize_workflow_node_runs.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(schema.contains("workflow_node_run"));
+        assertTrue(schema.contains("default_node_name"));
+        assertTrue(schema.contains("localization_json"));
+        assertTrue(!schema.contains("DROP TABLE"));
+        assertTrue(!schema.contains("DROP COLUMN"));
+    }
+
     /** MySQL V17 只整理仍误放在网络分类的市场插件，并保留管理员已调整的其他分类。 */
     @Test
     void recategorizesExistingMarketplacePluginTemplates() throws Exception {

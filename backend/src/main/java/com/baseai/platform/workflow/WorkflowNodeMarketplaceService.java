@@ -205,7 +205,7 @@ public class WorkflowNodeMarketplaceService {
         return new WorkflowModels.MarketplaceTemplateDraft(source, externalKey, entry.version(), entry.publisher(),
             fingerprint, source + "_" + sha256(externalKey).substring(0, 16).toUpperCase(Locale.ROOT),
             component.name(), component.description(), nodeType,
-            category, config);
+            category, config, component.localization());
     }
 
     /** 从插件字段 Schema 提取不含空值的声明默认值。 */
@@ -248,11 +248,12 @@ public class WorkflowNodeMarketplaceService {
             .findFirst().orElseThrow(() -> new BusinessException("workflow.marketplaceNodeUnsupported"));
         NativeDraft nativeDraft = difyTool(plugin, toolName,
             component.name().isBlank() ? toolName : component.name(), component.description());
-        String fingerprint = sha256(inspected.fingerprint() + "\n" + toolName + "\n" + component.schema());
+        String fingerprint = sha256(inspected.fingerprint() + "\n" + toolName + "\n"
+            + identitySchemaJson(component.schema()));
         return new WorkflowModels.MarketplaceTemplateDraft("DIFY", externalId, plugin.version(), plugin.publisher(),
             fingerprint, "DIFY_" + sha256(externalId).substring(0, 16).toUpperCase(Locale.ROOT),
             nativeDraft.name(), nativeDraft.description(), nativeDraft.nodeType(), nativeDraft.functionalCategory(),
-            nativeDraft.config().deepCopy());
+            nativeDraft.config().deepCopy(), component.localization());
     }
 
     /** 把 n8n 数据连接类节点映射为现有原生连接执行器。 */
@@ -308,7 +309,8 @@ public class WorkflowNodeMarketplaceService {
             entry.version(), entry.publisher(), entry.category(), compatible,
             compatible ? "" : incompatibility(snapshot), targetNodeType,
             category, snapshot.compatibilityStatus(), List.of(), snapshot.probeStatus(),
-            compatible && pluginImported(source, entry, snapshot.inspected(), activeTemplates));
+            compatible && pluginImported(source, entry, snapshot.inspected(), activeTemplates),
+            supported == null ? objectMapper.createObjectNode() : supported.localization());
     }
 
     /** 构造兼容市场节点卡片。 */
@@ -335,7 +337,8 @@ public class WorkflowNodeMarketplaceService {
         return new WorkflowModels.MarketplaceNodeView(plugin.externalId(), plugin.name(), plugin.description(),
             plugin.version(), plugin.publisher(), plugin.category(), compatible,
             compatible ? "" : incompatibility(snapshot), "TAVILY_TOOL", "NETWORK_API",
-            compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus(), actions, snapshot.probeStatus(), imported);
+            compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus(), actions, snapshot.probeStatus(), imported,
+            marketplaceLocalization(plugin));
     }
 
     /** 把单个原生适配动作与真实 ABI 组件探测结果合并。 */
@@ -348,11 +351,13 @@ public class WorkflowNodeMarketplaceService {
                 && "SUPPORTED".equals(item.compatibilityStatus())).findFirst().orElse(null);
         boolean compatible = "COMPLETE".equals(snapshot.probeStatus()) && component != null;
         String fingerprint = compatible
-            ? sha256(snapshot.inspected().fingerprint() + "\n" + toolName + "\n" + component.schema()) : "";
+            ? sha256(snapshot.inspected().fingerprint() + "\n" + toolName + "\n"
+                + identitySchemaJson(component.schema())) : "";
         return new WorkflowModels.MarketplaceActionView(draft.externalId(), draft.name(), draft.description(), compatible,
             compatible ? "" : incompatibility(snapshot), draft.nodeType(), draft.functionalCategory(),
             compatible ? "NATIVE_SUBSET" : snapshot.compatibilityStatus(),
-            compatible && fingerprintMatches(activeTemplates, draft.externalId(), fingerprint));
+            compatible && fingerprintMatches(activeTemplates, draft.externalId(), fingerprint),
+            component == null ? objectMapper.createObjectNode() : component.localization());
     }
 
     /** 校验通用插件当前全部受支持组件均有未作废且指纹一致的模板。 */
@@ -365,8 +370,8 @@ public class WorkflowNodeMarketplaceService {
         List<WorkflowPluginWorkerClient.WorkerComponent> supported = inspected.components().stream()
             .filter(component -> "SUPPORTED".equals(component.compatibilityStatus())).toList();
         return !supported.isEmpty() && supported.stream().allMatch(component -> {
-            String schemaFingerprint = sha256(component.componentType() + "\n" + schemaJson(component.schema())
-                + "\n" + schemaJson(component.credentialSchema()));
+            String schemaFingerprint = sha256(component.componentType() + "\n" + identitySchemaJson(component.schema())
+                + "\n" + identitySchemaJson(component.credentialSchema()));
             String templateFingerprint = sha256(inspected.fingerprint() + "\n" + schemaFingerprint);
             return fingerprintMatches(activeTemplates, packageKey + "/" + component.externalId(), templateFingerprint);
         });
@@ -389,6 +394,40 @@ public class WorkflowNodeMarketplaceService {
     /** 复用注册表的空 Schema 规范化规则生成稳定组件指纹。 */
     private String schemaJson(JsonNode schema) {
         return schema == null || schema.isMissingNode() ? "[]" : schema.toString();
+    }
+
+    /** 递归移除展示元数据，保持模板指纹只绑定执行 Schema。 */
+    private String identitySchemaJson(JsonNode value) {
+        JsonNode copy = value == null ? objectMapper.createArrayNode() : value.deepCopy();
+        stripLocalization(copy);
+        return copy.toString();
+    }
+
+    /** 从执行 Schema 副本递归移除 localization。 */
+    private void stripLocalization(JsonNode value) {
+        if (value == null) return;
+        if (value.isObject()) {
+            ((ObjectNode) value).remove("localization");
+            value.elements().forEachRemaining(this::stripLocalization);
+        } else if (value.isArray()) value.elements().forEachRemaining(this::stripLocalization);
+    }
+
+    /** 从 Dify 市场原始双语声明生成受控展示元数据。 */
+    private JsonNode marketplaceLocalization(WorkflowMarketplaceClients.MarketplaceEntry entry) {
+        ObjectNode result = objectMapper.createObjectNode();
+        addLocalizedField(result, "name", entry.raw().path("label"));
+        addLocalizedField(result, "description", entry.raw().path("brief"));
+        return result;
+    }
+
+    /** 复制 Dify 受控语言字段，缺失值由前端安全回退。 */
+    private void addLocalizedField(ObjectNode result, String field, JsonNode source) {
+        if (!source.isObject()) return;
+        ObjectNode values = result.putObject(field);
+        String zh = source.path("zh_Hans").asText("").trim();
+        String en = source.path("en_US").asText("").trim();
+        if (!zh.isBlank()) values.put("zh-CN", zh.substring(0, Math.min(zh.length(), 1000)));
+        if (!en.isBlank()) values.put("en-US", en.substring(0, Math.min(en.length(), 1000)));
     }
 
     /** 把内部探测错误收敛为不会泄漏 Worker 细节的稳定前端原因码。 */

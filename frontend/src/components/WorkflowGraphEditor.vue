@@ -90,13 +90,13 @@ import { groupWorkflowTemplates, localizedTemplateText, workflowTemplateCategory
 defineOptions({ name: 'WorkflowGraphEditor' })
 const props = defineProps({ modelValue: { type: Object, required: true }, templates: { type: Array, default: () => [] }, height: { type: Number, default: 620 }, fill: { type: Boolean, default: false }, historyKey: { type: [String, Number], default: null } })
 const emit = defineEmits(['update:modelValue'])
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const editorId = workflowElementId('editor')
 const nodeTypes = Object.fromEntries(WORKFLOW_NODE_TYPES.map(type => [type, WorkflowNode]))
 const CONNECTION_RADIUS = 32
 const EDGE_INTERACTION_WIDTH = 32
 const edgeOptions = { interactionWidth: EDGE_INTERACTION_WIDTH }
-const initial = serializeWorkflowGraph(props.modelValue)
+const initial = withTemplateDisplayMetadata(props.modelValue)
 const nodes = ref(initial.nodes)
 const edges = ref(withWorkflowEdgeInteractionWidth(initial.edges, EDGE_INTERACTION_WIDTH))
 const selectedId = ref('')
@@ -123,14 +123,36 @@ const canUndo = computed(() => historyIndex.value > 0)
 const canRedo = computed(() => historyIndex.value < history.value.length - 1)
 
 /** 返回当前语言下的系统模板文案，自定义模板保留管理员录入内容。 */
-function templateText(template, field) { return localizedTemplateText(template, field, t, te) }
+function templateText(template, field) { return localizedTemplateText({ ...template, locale: locale.value }, field, t, te) }
 
-watch([() => props.historyKey, () => props.modelValue], ([historyKey, value], [previousHistoryKey]) => {
+/** 为历史画布补齐模板展示元数据，不覆盖实例自定义名称。 */
+function withTemplateDisplayMetadata(graph) {
+  const next = serializeWorkflowGraph(graph)
+  const templatesById = new Map(props.templates.map(template => [Number(template.id), template]))
+  next.nodes.forEach(node => {
+    const template = templatesById.get(Number(node.templateId))
+    if (!template) return
+    const templateLocalization = template.localization && Object.keys(template.localization).length
+      ? template.localization : node.data?.localization || {}
+    node.data = { ...(node.data || {}), defaultLabel: node.data?.defaultLabel || template.name,
+      localization: templateLocalization, systemTemplate: template.systemTemplate }
+    if (template.importedTemplate && node.data.config && typeof node.data.config === 'object') {
+      node.data.config = { ...node.data.config,
+        parameterSchema: cloneWorkflowData(template.config?.parameterSchema || node.data.config.parameterSchema || []),
+        credentialSchema: cloneWorkflowData(template.config?.credentialSchema || node.data.config.credentialSchema || []) }
+    }
+  })
+  return next
+}
+
+watch([() => props.historyKey, () => props.modelValue, () => props.templates],
+  ([historyKey, value, templateRows], [previousHistoryKey, _previousValue, previousTemplateRows]) => {
   const historyKeyChanged = historyKey !== previousHistoryKey
-  if (!historyKeyChanged) {
+  const templatesChanged = templateRows !== previousTemplateRows
+  if (!historyKeyChanged && !templatesChanged) {
     if (toRaw(value) === lastEmittedModel) return
   }
-  const next = serializeWorkflowGraph(value)
+  const next = withTemplateDisplayMetadata(value)
   if (!historyKeyChanged && JSON.stringify(next) === JSON.stringify(serializeWorkflowGraph({ nodes: nodes.value, edges: edges.value }))) return
   nodes.value = next.nodes; edges.value = withWorkflowEdgeInteractionWidth(next.edges, EDGE_INTERACTION_WIDTH)
   history.value = [next]; historyIndex.value = 0; selectedId.value = ''
@@ -197,7 +219,9 @@ function deleteEdge({ event, edge }) {
 /** 用模板快照创建独立画布实例。 */
 function addNode(template, position) {
   nodes.value.push({ id: workflowElementId('node'), type: template.nodeType, templateId: template.id, position,
-    data: { label: templateText(template, 'name'), nodeType: template.nodeType, functionalCategory: template.functionalCategory,
+    data: { label: templateText(template, 'name'), defaultLabel: template.name, localization: template.localization || {},
+      systemTemplate: template.systemTemplate,
+      nodeType: template.nodeType, functionalCategory: template.functionalCategory,
       config: cloneWorkflowData(template.config || {}) } })
   remember()
 }

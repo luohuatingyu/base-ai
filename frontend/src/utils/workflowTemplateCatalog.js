@@ -33,6 +33,69 @@ const DEFAULT_CATEGORIES = {
 }
 
 const LOCALIZED_TEMPLATE_FIELDS = new Set(['name', 'description'])
+const SUPPORTED_LOCALES = ['zh-CN', 'en-US']
+const LEGACY_NODE_LABELS = Object.freeze({
+  START: Object.freeze(['START', 'Start', '开始']),
+  END: Object.freeze(['END', 'End', '结束'])
+})
+
+/** 规范后端与第三方声明使用的受控语言标识。 */
+function normalizedLocale(locale) {
+  const value = String(locale || '').replace('_', '-').toLowerCase()
+  return value.startsWith('zh') ? 'zh-CN' : value.startsWith('en') ? 'en-US' : ''
+}
+
+/** 读取一个字段的双语元数据；缺少当前语言时回退另一受支持语言和原文。 */
+export function localizedMetadataText(source, field, locale, fallback = '') {
+  const values = source?.localization?.[field]
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return String(fallback || '')
+  const requested = normalizedLocale(locale)
+  const aliases = requested === 'zh-CN' ? ['zh-CN', 'zh_Hans', 'zh-Hans']
+    : requested === 'en-US' ? ['en-US', 'en_US'] : []
+  const fallbackAliases = requested === 'zh-CN' ? ['en-US', 'en_US'] : ['zh-CN', 'zh_Hans', 'zh-Hans']
+  for (const key of [...aliases, ...fallbackAliases]) {
+    const value = String(values[key] || '').trim()
+    if (value) return value
+  }
+  return String(fallback || '')
+}
+
+/** 返回动态枚举项持久化使用的稳定值。 */
+export function metadataOptionValue(option) {
+  return option && typeof option === 'object' && !Array.isArray(option) ? option.value : option
+}
+
+/** 返回动态枚举项的当前语言名称，兼容 Dify 与 n8n 的声明格式。 */
+export function localizedMetadataOptionText(option, locale, fallback = '') {
+  if (!option || typeof option !== 'object' || Array.isArray(option)) return String(option ?? fallback ?? '')
+  const rawLabel = option.label
+  const labelFallback = typeof rawLabel === 'string' ? rawLabel
+    : String(option.name || option.displayName || metadataOptionValue(option) || fallback || '')
+  const localized = localizedMetadataText(option, 'label', locale, '')
+  if (localized) return localized
+  if (rawLabel && typeof rawLabel === 'object' && !Array.isArray(rawLabel)) {
+    return localizedMetadataText({ localization: { label: rawLabel } }, 'label', locale, labelFallback)
+  }
+  return labelFallback
+}
+
+/** 返回画布节点的当前语言名称，并只替换可识别的模板默认名。 */
+export function localizedWorkflowNodeLabel(data, locale, translate, hasTranslation) {
+  const nodeType = String(data?.nodeType || '').toUpperCase()
+  const label = String(data?.label || nodeType).trim()
+  const defaultLabel = String(data?.defaultLabel || '').trim()
+  const localization = data?.localization
+  const candidates = new Set([nodeType, defaultLabel, ...(LEGACY_NODE_LABELS[nodeType] || [])].filter(Boolean))
+  for (const supported of SUPPORTED_LOCALES) {
+    const localized = localizedMetadataText({ localization }, 'name', supported, '')
+    if (localized) candidates.add(localized)
+  }
+  if (!candidates.has(label)) return label
+  const localized = localizedMetadataText({ localization }, 'name', locale, '')
+  if (localized) return localized
+  const key = `workflowCatalog.templates.${nodeType}.name`
+  return nodeType && hasTranslation(key) ? translate(key) : label
+}
 
 /** 返回节点类型的稳定默认功能分类。 */
 export function defaultTemplateCategory(nodeType) {
@@ -68,7 +131,11 @@ export function systemTemplateTranslationKey(template, field) {
 export function localizedTemplateText(template, field, translate, hasTranslation) {
   const key = systemTemplateTranslationKey(template, field)
   if (key && hasTranslation(key)) return translate(key)
-  return String(template?.[field] || '')
+  const original = String(template?.[field] || '')
+  const localized = localizedMetadataText(template, field, template?.locale, '')
+  if (!localized) return original
+  const declared = new Set(SUPPORTED_LOCALES.map(locale => localizedMetadataText(template, field, locale, '')))
+  return declared.has(original) ? localized : original
 }
 
 /** 返回市场条目的可信说明，n8n 官方缺失说明时仅回退到已验证的原生能力文案。 */

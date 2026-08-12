@@ -831,10 +831,12 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private long startNodeRun(String runId, JsonNode node, String type, int sequence, String iterationPath, JsonNode input) {
         reserveLogBytes(runId, input, null);
         Long id = insertKey("""
-            INSERT INTO workflow_node_run(workflow_run_id,node_id,node_name,node_type,sequence_no,iteration_path,status,input_encrypted,output_encrypted)
-            VALUES (?,?,?,?,?,?,'RUNNING',?,'')
-            """, runId, node.path("id").asText(), node.path("data").path("label").asText(type), type,
-            sequence, iterationPath, encrypt(input));
+            INSERT INTO workflow_node_run(workflow_run_id,node_id,node_name,default_node_name,localization_json,node_type,
+                sequence_no,iteration_path,status,input_encrypted,output_encrypted)
+            VALUES (?,?,?,?,?,?,?,?,'RUNNING',?,'')
+            """, runId, node.path("id").asText(), node.path("data").path("label").asText(type),
+            node.path("data").path("defaultLabel").asText(""), displayLocalization(node.path("data").path("localization")),
+            type, sequence, iterationPath, encrypt(input));
         return id == null ? 0 : id;
     }
 
@@ -923,7 +925,30 @@ public class WorkflowExecutionService implements ApplicationRunner {
             new WorkflowModels.NodeRunView(rs.getLong("id"), rs.getString("node_id"), rs.getString("node_name"),
                 rs.getString("node_type"), rs.getInt("sequence_no"), rs.getString("iteration_path"), rs.getString("status"),
                 decrypt(rs.getString("input_encrypted")), decrypt(rs.getString("output_encrypted")), errorMessages.localize(rs.getString("error_message")),
-                timestamp(rs, "started_at"), timestamp(rs, "finished_at")), runId);
+                timestamp(rs, "started_at"), timestamp(rs, "finished_at"), rs.getString("default_node_name"),
+                displayLocalization(rs.getString("localization_json"))), runId);
+    }
+
+    /** 只持久化节点名称的受控双语展示元数据。 */
+    private String displayLocalization(JsonNode value) {
+        ObjectNode result = objectMapper.createObjectNode();
+        if (value == null || !value.isObject()) return result.toString();
+        ObjectNode names = result.putObject("name");
+        for (String locale : List.of("zh-CN", "en-US")) {
+            String text = value.path("name").path(locale).asText("").trim();
+            if (!text.isBlank()) names.put(locale, text.substring(0, Math.min(text.length(), 120)));
+        }
+        if (names.isEmpty()) result.remove("name");
+        return result.toString();
+    }
+
+    /** 解析可信节点运行展示元数据，历史空值回退为空对象。 */
+    private JsonNode displayLocalization(String value) {
+        if (value == null || value.isBlank()) return objectMapper.createObjectNode();
+        try {
+            JsonNode parsed = objectMapper.readTree(value);
+            return parsed.isObject() ? parsed : objectMapper.createObjectNode();
+        } catch (Exception exception) { return objectMapper.createObjectNode(); }
     }
 
     /** 映射并解密工作流运行记录。 */

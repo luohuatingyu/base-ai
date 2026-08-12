@@ -61,7 +61,8 @@
                            @update:model-value="setConfigField(field.key, $event)" />
                 <el-select v-else-if="field.editor === 'select'" :model-value="configFieldValue(field.key)" class="full"
                            @update:model-value="setConfigField(field.key, $event)">
-                  <el-option v-for="option in field.options" :key="option || '__empty'" :label="option || t('workflowConnections.notSet')" :value="option" />
+                  <el-option v-for="option in field.options" :key="metadataOptionValue(option) || '__empty'"
+                             :label="pluginOptionLabel(option)" :value="metadataOptionValue(option)" />
                 </el-select>
                 <template v-else-if="field.editor === 'keyValue'">
                   <div class="connection-key-values">
@@ -113,11 +114,12 @@ import http, { showHttpError } from '../api/http'
 import WorkflowConfigValueEditor from '../components/WorkflowConfigValueEditor.vue'
 import { useAuthStore } from '../stores/auth'
 import { CONFIG_VALUE_TYPES, createConfigValue, isSafeConfigKey } from '../utils/workflowNodeConfig'
+import { localizedMetadataOptionText, localizedMetadataText, metadataOptionValue } from '../utils/workflowTemplateCatalog'
 import { cloneConnectionConfig, CONNECTION_CATEGORIES, connectionCategoriesForType, connectionCategoryStyle,
   connectionConfigFields, connectionTypesForCategory, connectionTypeStyle, createConnectionConfig,
   extraConnectionConfigKeys } from '../utils/workflowConnectionConfig'
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const auth = useAuthStore()
 const rows = ref([]), visible = ref(false)
 const pluginComponents = ref([])
@@ -234,13 +236,18 @@ function selectPluginComponent(id) {
 /** 把插件凭据 Schema 转换为受控连接字段。 */
 function pluginCredentialFields(component) {
   return (component?.credentialSchema || []).filter(item => String(item.type || '').toLowerCase() !== 'hidden')
-    .map(item => ({ key: item.name, label: item.label || item.name, required: Boolean(item.required),
-    description: item.description || '', editor: item.secret ? 'password' : item.type === 'boolean' ? 'boolean'
+    .map(item => ({ key: item.name, label: localizedMetadataText(item, 'label', locale.value, item.label || item.name), required: Boolean(item.required),
+    description: localizedMetadataText(item, 'description', locale.value, item.description), editor: item.secret ? 'password' : item.type === 'boolean' ? 'boolean'
       : ['select', 'options'].includes(String(item.type || '').toLowerCase()) ? 'select' : 'text',
-    options: (item.options || []).map(option => option && typeof option === 'object' ? option.value : option) }))
+    options: Array.isArray(item.options) ? item.options : [] }))
+}
+/** 返回插件凭据枚举项的当前语言名称，同时保持提交值不变。 */
+function pluginOptionLabel(option) {
+  const value = metadataOptionValue(option)
+  return value === '' ? t('workflowConnections.notSet') : localizedMetadataOptionText(option, locale.value, value)
 }
 /** 生成包含来源、包和版本的插件组件标签。 */
-function pluginComponentLabel(component) { return `${component.name} · ${component.source}/${component.packageKey}@${component.packageVersion}` }
+function pluginComponentLabel(component) { return `${localizedMetadataText(component, 'name', locale.value, component.name)} · ${component.source}/${component.packageKey}@${component.packageVersion}` }
 /** 返回对象型配置的键值列表。 */
 function mapEntries(key) { return Object.entries(form.config[key] || {}) }
 /** 更新对象型配置中的值。 */

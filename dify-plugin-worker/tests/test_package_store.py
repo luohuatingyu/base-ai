@@ -81,6 +81,56 @@ class PackageStoreTest(unittest.TestCase):
         self.assertEqual("https://licenses.example.com/apache", result["licenseUrl"])
         self.assertEqual([{"name": "api.example.com", "domain": "api.example.com"}], result["externalServices"])
 
+    def test_preserves_component_and_field_localizations(self) -> None:
+        """组件、参数和凭据必须保留双语声明，并为缺失语言提供稳定回退。"""
+        raw = archive({
+            "manifest.yaml": "plugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": """
+identity: {name: calendar}
+credentials_for_provider:
+  api_key:
+    label: {zh_Hans: 密钥, en_US: API Key}
+    human_description: {en_US: Provider credential}
+    type: secret-input
+    required: true
+tools: [action.yaml]
+""",
+            "action.yaml": """
+identity:
+  name: add_attendees
+  label: {zh_Hans: 添加日程参会人, en_US: Add Event Attendees}
+description:
+  human: {zh_Hans: 添加参会人, en_US: Add attendees to an event}
+parameters:
+  - name: event_id
+    label: {zh_Hans: 日程 ID, en_US: Event ID}
+    human_description: {zh_Hans: 目标日程}
+    type: string
+    required: true
+  - name: mode
+    label: {zh_Hans: 模式, en_US: Mode}
+    type: select
+    options:
+      - value: basic
+        label: {zh_Hans: 基础, en_US: Basic}
+extra:
+  python:
+    source: action.py
+""",
+            "action.py": "from dify_plugin import Tool\nclass Action(Tool):\n    def _invoke(self, tool_parameters): return {}\n",
+        })
+
+        result = self.store.install({"packageId": "fixture/calendar", "version": "1",
+                                     "archiveBase64": base64.b64encode(raw).decode()})
+
+        self.assertEqual(6, result["hostAbiVersion"])
+        component = result["components"][0]
+        self.assertEqual("Add Event Attendees", component["localization"]["name"]["en-US"])
+        self.assertEqual("添加日程参会人", component["localization"]["name"]["zh-CN"])
+        self.assertEqual("目标日程", component["schema"][0]["localization"]["description"]["en-US"])
+        self.assertEqual("Basic", component["schema"][1]["options"][0]["localization"]["label"]["en-US"])
+        self.assertEqual("API Key", component["credentialSchema"][0]["localization"]["label"]["en-US"])
+
     def test_discovers_and_invokes_declared_model_source(self) -> None:
         """模型 Provider 必须使用 model_sources，而不是把凭据 Provider 误当成模型实现。"""
         raw = archive({
