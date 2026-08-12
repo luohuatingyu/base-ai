@@ -5,6 +5,7 @@ import {
   CUSTOM_PLUGIN_LICENSE,
   PLUGIN_LICENSE_OPTIONS,
   applyPluginLicenseSelection,
+  pluginAdmissionLicenseValid,
   pluginLicenseSelection
 } from '../src/utils/pluginAdmissionLicense.js'
 
@@ -53,4 +54,11 @@ test('历史未知许可证自动进入自定义模式且原值保持不变', ()
 
 test('空许可证保持未选择状态', () => {
   assert.equal(pluginLicenseSelection({ licenseName: '', licenseUrl: '' }), '')
+})
+
+test('未选择许可证或自定义名称为空时拒绝提交', () => {
+  assert.equal(pluginAdmissionLicenseValid({ licenseName: '', licenseUrl: '' }), false)
+  assert.equal(pluginAdmissionLicenseValid({ licenseName: '   ', licenseUrl: 'https://example.com' }), false)
+  assert.equal(pluginAdmissionLicenseValid({ licenseName: 'MIT', licenseUrl: 'https://spdx.org/licenses/MIT.html' }), true)
+  assert.equal(pluginAdmissionLicenseValid({ licenseName: 'Company-Proprietary', licenseUrl: '' }), true)
 })
