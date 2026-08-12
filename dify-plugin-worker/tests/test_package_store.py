@@ -68,6 +68,19 @@ class PackageStoreTest(unittest.TestCase):
             self.assertEqual(0, invoked.returncode, invoked.stdout)
             self.assertTrue(json.loads(invoked.stdout)["success"])
 
+    def test_extracts_declared_admission_metadata_without_scanning_code(self) -> None:
+        """仅从清单和 YAML 固定地址提取准入候选，不解析 Python 动态网络目标。"""
+        raw = archive({
+            "manifest.yaml": "license: {type: Apache-2.0, url: https://licenses.example.com/apache}\nplugins:\n  tools: [provider.yaml]\n",
+            "provider.yaml": "identity: {name: fixture}\nendpoint: https://api.example.com/v1\nextra:\n  python:\n    source: tool.py\n",
+            "tool.py": "from dify_plugin import Tool\nDYNAMIC='https://code.example.net'\nclass T(Tool):\n    def _invoke(self, tool_parameters): return {}\n",
+        })
+        result = self.store.install({"packageId": "fixture", "version": "1",
+                                     "archiveBase64": base64.b64encode(raw).decode()})
+        self.assertEqual("Apache-2.0", result["licenseName"])
+        self.assertEqual("https://licenses.example.com/apache", result["licenseUrl"])
+        self.assertEqual([{"name": "api.example.com", "domain": "api.example.com"}], result["externalServices"])
+
     def test_discovers_and_invokes_declared_model_source(self) -> None:
         """模型 Provider 必须使用 model_sources，而不是把凭据 Provider 误当成模型实现。"""
         raw = archive({

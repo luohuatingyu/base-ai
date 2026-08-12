@@ -198,7 +198,7 @@ class WorkflowNodeMarketplaceServiceTest {
         assertEquals("BASIC", drafts.getValue().get(0).functionalCategory());
         assertEquals(7L, drafts.getValue().get(0).config().path("pluginComponentId").asLong());
         assertFalse(drafts.getValue().get(0).config().toString().contains("secret"));
-        verify(pluginRegistry).setEnabled(3L, true);
+        verify(pluginRegistry, never()).setEnabled(3L, true);
         verify(clients, never()).downloadN8nPackage(any());
     }
 

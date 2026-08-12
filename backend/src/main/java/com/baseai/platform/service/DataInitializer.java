@@ -342,6 +342,7 @@ public class DataInitializer implements ApplicationRunner {
         menu(node.getId(), "删除节点模板", "BUTTON", null, null, null, "workflow:node:delete", 613, false);
         menu(node.getId(), "导入市场节点", "BUTTON", null, null, null, "workflow:node:import", 614, false);
         menu(node.getId(), "管理插件适配服务", "BUTTON", null, null, null, "workflow:adapter:manage", 615, false);
+        menu(node.getId(), "审批市场插件", "BUTTON", null, null, null, "workflow:plugin:admission", 616, false);
         menu(workflow.getId(), "节点文档", "MENU", "/workflow/node-docs", "WorkflowNodeDocsView", "Document",
             "workflow:node:docs", 64, true);
         Menu connection = menu(workflow.getId(), "连接配置", "MENU", "/workflow/connections", "WorkflowConnectionsView", "Link",

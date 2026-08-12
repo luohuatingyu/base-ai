@@ -142,6 +142,29 @@ public class WorkflowController {
         return marketplaceService.importNodes(source, command);
     }
 
+    /** 查询已安装市场插件的准入清单。 */
+    @GetMapping("/plugin-admissions")
+    @RequiredPermission("workflow:plugin:admission")
+    public List<WorkflowModels.PluginAdmissionView> pluginAdmissions() {
+        return marketplaceService.pluginAdmissions();
+    }
+
+    /** 保存许可证、外部服务和数据类型，并重置为待审批。 */
+    @PutMapping("/plugin-admissions/{pluginId}")
+    @RequiredPermission("workflow:plugin:admission")
+    public WorkflowModels.PluginAdmissionView updatePluginAdmission(
+        @PathVariable Long pluginId, @RequestBody WorkflowModels.PluginAdmissionCommand command) {
+        return marketplaceService.updatePluginAdmission(pluginId, command);
+    }
+
+    /** 批准或拒绝一份已经补全的插件准入资料。 */
+    @PutMapping("/plugin-admissions/{pluginId}/review")
+    @RequiredPermission("workflow:plugin:admission")
+    public WorkflowModels.PluginAdmissionView reviewPluginAdmission(
+        @PathVariable Long pluginId, @RequestBody WorkflowModels.PluginAdmissionReviewCommand command) {
+        return marketplaceService.reviewPluginAdmission(pluginId, command);
+    }
+
     /** 查询已安装且可用于节点和凭据配置的插件组件。 */
     @GetMapping("/plugin-component-options")
     @RequiredPermission("workflow:node:list")

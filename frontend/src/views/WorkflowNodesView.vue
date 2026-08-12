@@ -3,6 +3,7 @@
     <div class="section-head">
       <div><h2>{{ t('workflowNodes.title') }}</h2><p>{{ t('workflowNodes.description') }}</p></div>
       <router-link to="/workflow/node-docs"><el-button>{{ t('workflowNodeDocs.title') }}</el-button></router-link>
+      <el-button v-if="auth.hasPermission('workflow:plugin:admission')" @click="openAdmissions">{{ t('pluginAdmission.title') }}</el-button>
       <el-button v-if="selectedSource === 'SYSTEM' && auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
       <el-button v-else-if="selectedSource !== 'SYSTEM' && auth.hasPermission('workflow:node:import')" type="primary"
         :disabled="selectedAdapter?.status !== 'RUNNING'" @click="openMarketplace">{{ t('workflowNodes.importFrom', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</el-button>
@@ -131,6 +132,54 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="admissionVisible" :title="t('pluginAdmission.title')" width="min(1120px, 96vw)" top="4vh">
+      <el-alert :title="t('pluginAdmission.hint')" type="warning" show-icon :closable="false" />
+      <el-table v-loading="admissionLoading" :data="admissions" class="admission-table">
+        <el-table-column prop="packageKey" :label="t('pluginAdmission.plugin')" min-width="220">
+          <template #default="{ row }"><strong>{{ row.packageKey }}</strong><small>{{ row.source }} · v{{ row.packageVersion }}</small></template>
+        </el-table-column>
+        <el-table-column prop="licenseName" :label="t('pluginAdmission.license')" min-width="150" />
+        <el-table-column :label="t('common.status')" width="130">
+          <template #default="{ row }"><el-tag :type="admissionStatusType(row.admissionStatus)">{{ t(`pluginAdmission.status.${row.admissionStatus}`) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="120">
+          <template #default="{ row }"><el-button link type="primary" @click="editAdmission(row)">{{ t('common.edit') }}</el-button></template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="admissionEditVisible" :title="t('pluginAdmission.edit')" width="min(760px, 94vw)" top="5vh">
+      <el-form label-width="150px">
+        <el-form-item :label="t('pluginAdmission.plugin')"><strong>{{ admissionForm.packageKey }} · v{{ admissionForm.packageVersion }}</strong></el-form-item>
+        <el-form-item :label="t('pluginAdmission.license')" required><el-input v-model="admissionForm.licenseName" maxlength="160" /></el-form-item>
+        <el-form-item :label="t('pluginAdmission.licenseUrl')"><el-input v-model="admissionForm.licenseUrl" maxlength="500" placeholder="https://" /></el-form-item>
+        <el-form-item :label="t('pluginAdmission.externalServices')" required>
+          <div class="admission-services">
+            <el-checkbox v-model="admissionForm.noExternalService" @change="clearAdmissionServices">{{ t('pluginAdmission.noExternalService') }}</el-checkbox>
+            <div v-for="(service, index) in admissionForm.externalServices" :key="index" class="admission-service-row">
+              <el-input v-model="service.name" :placeholder="t('pluginAdmission.serviceName')" maxlength="160" />
+              <el-input v-model="service.domain" :placeholder="t('pluginAdmission.serviceDomain')" />
+              <el-button type="danger" link @click="admissionForm.externalServices.splice(index, 1)">{{ t('common.delete') }}</el-button>
+            </div>
+            <el-button v-if="!admissionForm.noExternalService" @click="admissionForm.externalServices.push({ name: '', domain: '' })">{{ t('pluginAdmission.addService') }}</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('pluginAdmission.dataTypes')" required>
+          <el-checkbox-group v-model="admissionForm.dataTypes" @change="normalizeAdmissionDataTypes">
+            <el-checkbox v-for="type in admissionDataTypes" :key="type" :value="type">{{ t(`pluginAdmission.dataType.${type}`) }}</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item :label="t('pluginAdmission.dataNotes')"><el-input v-model="admissionForm.dataNotes" type="textarea" :rows="3" maxlength="1000" show-word-limit /></el-form-item>
+        <el-form-item :label="t('pluginAdmission.reviewNote')"><el-input v-model="admissionForm.reviewNote" type="textarea" :rows="2" maxlength="1000" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="admissionEditVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button :loading="admissionSaving" @click="saveAdmission">{{ t('common.save') }}</el-button>
+        <el-button type="danger" :loading="admissionSaving" @click="reviewAdmission(false)">{{ t('pluginAdmission.reject') }}</el-button>
+        <el-button type="success" :loading="admissionSaving" @click="reviewAdmission(true)">{{ t('pluginAdmission.approve') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -167,6 +216,13 @@ const marketplaceTotal = ref(0)
 const marketplaceProbePending = ref(false)
 const adapters = ref([])
 const adapterUpdating = ref('')
+const admissionVisible = ref(false)
+const admissionEditVisible = ref(false)
+const admissionLoading = ref(false)
+const admissionSaving = ref(false)
+const admissions = ref([])
+const admissionDataTypes = ['PUBLIC_DATA', 'INTERNAL_DATA', 'CUSTOMER_DATA', 'PERSONAL_INFORMATION', 'SENSITIVE_PERSONAL_INFORMATION', 'CREDENTIALS', 'NO_DATA']
+const admissionForm = reactive(emptyAdmission())
 let marketplacePollTimer = null
 let adapterPollTimer = null
 /** 返回同时匹配必选来源和功能分类的节点，并保留停用模板供管理员维护。 */
@@ -315,6 +371,56 @@ async function importMarketplaceNodes() {
   } catch (error) { showHttpError(error, 'workflowNodes.importFailed') }
   finally { marketplaceImporting.value = false }
 }
+/** 打开准入清单并读取当前插件状态。 */
+async function openAdmissions() { admissionVisible.value = true; await loadAdmissions() }
+/** 加载已安装插件的非敏感合规元数据。 */
+async function loadAdmissions() {
+  admissionLoading.value = true
+  try { admissions.value = (await http.get('/workflow/plugin-admissions')).data || [] }
+  catch (error) { showHttpError(error) }
+  finally { admissionLoading.value = false }
+}
+/** 创建准入编辑副本，避免取消时污染表格行。 */
+function editAdmission(row) {
+  Object.assign(admissionForm, emptyAdmission(), JSON.parse(JSON.stringify(row || {})))
+  admissionForm.externalServices ||= []; admissionForm.dataTypes ||= []; admissionEditVisible.value = true
+}
+/** 选择无外部服务时清空候选项。 */
+function clearAdmissionServices(value) { if (value) admissionForm.externalServices = [] }
+/** 无数据分类和其他数据分类互斥。 */
+function normalizeAdmissionDataTypes(values) {
+  if (values.includes('NO_DATA') && values.length > 1) admissionForm.dataTypes = values.at(-1) === 'NO_DATA' ? ['NO_DATA'] : values.filter(item => item !== 'NO_DATA')
+}
+/** 保存准入资料并强制回到待审批。 */
+async function saveAdmission() {
+  admissionSaving.value = true
+  try {
+    const { data } = await http.put(`/workflow/plugin-admissions/${admissionForm.pluginId}`, admissionCommand())
+    replaceAdmission(data); ElMessage.success(t('common.successSaved'))
+  } catch (error) { showHttpError(error) }
+  finally { admissionSaving.value = false }
+}
+/** 保存最新资料后批准或拒绝，并同步插件启用状态。 */
+async function reviewAdmission(approved) {
+  admissionSaving.value = true
+  try {
+    if (approved) await http.put(`/workflow/plugin-admissions/${admissionForm.pluginId}`, admissionCommand())
+    const { data } = await http.put(`/workflow/plugin-admissions/${admissionForm.pluginId}/review`, { approved, reviewNote: admissionForm.reviewNote })
+    replaceAdmission(data); admissionEditVisible.value = false; ElMessage.success(t('common.successSaved'))
+  } catch (error) { showHttpError(error) }
+  finally { admissionSaving.value = false }
+}
+/** 生成不包含服务端审批字段的保存命令。 */
+function admissionCommand() { return { licenseName: admissionForm.licenseName, licenseUrl: admissionForm.licenseUrl,
+  externalServices: admissionForm.externalServices, noExternalService: admissionForm.noExternalService,
+  dataTypes: admissionForm.dataTypes, dataNotes: admissionForm.dataNotes } }
+/** 同步清单和当前编辑记录。 */
+function replaceAdmission(value) {
+  admissions.value = admissions.value.map(item => item.pluginId === value.pluginId ? value : item)
+  Object.assign(admissionForm, emptyAdmission(), JSON.parse(JSON.stringify(value)))
+}
+/** 映射审批状态颜色。 */
+function admissionStatusType(status) { return status === 'APPROVED' ? 'success' : status === 'REJECTED' ? 'danger' : 'warning' }
 /** 节点类型变化时切换到该原生能力的推荐功能分类。 */
 function syncDefaultCategory(nodeType) { form.functionalCategory = defaultTemplateCategory(nodeType) }
 /** 校验必填字段并保存模板。 */
@@ -340,6 +446,9 @@ async function remove(row) {
 /** 创建隔离的空表单。 */
 function emptyForm() { return { id: null, code: '', name: '', nodeType: 'LLM', description: '', config: {}, enabled: true,
   systemTemplate: false, importedTemplate: false, source: 'SYSTEM', functionalCategory: defaultTemplateCategory('LLM') } }
+/** 创建隔离的插件准入表单。 */
+function emptyAdmission() { return { pluginId: null, packageKey: '', packageVersion: '', licenseName: '', licenseUrl: '',
+  externalServices: [], noExternalService: false, dataTypes: [], dataNotes: '', reviewNote: '', admissionStatus: 'PENDING' } }
 onMounted(() => { load(); loadAdapters() })
 onBeforeUnmount(stopMarketplacePolling)
 onBeforeUnmount(stopAdapterPolling)
@@ -418,6 +527,11 @@ onBeforeUnmount(stopAdapterPolling)
 .marketplace-card-footer { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: auto; }
 .marketplace-card-footer > small { min-width: 0; overflow-wrap: anywhere; color: var(--el-color-warning-dark-2); }
 .marketplace-pagination { justify-content: center; margin-top: 18px; }
+.admission-table { margin-top: 16px; }
+.admission-table strong, .admission-table small { display: block; }
+.admission-table small { margin-top: 3px; color: var(--app-muted); }
+.admission-services { display: grid; width: 100%; gap: 10px; }
+.admission-service-row { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(200px, 1fr) auto; gap: 8px; }
 @media (max-width: 880px) {
   .marketplace-grid--n8n { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

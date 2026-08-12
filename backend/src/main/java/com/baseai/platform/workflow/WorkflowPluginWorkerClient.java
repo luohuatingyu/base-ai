@@ -71,8 +71,20 @@ public class WorkflowPluginWorkerClient {
                 text(item, "sourcePath"), status, text(item, "compatibilityReason")));
         }
         if (components.isEmpty()) throw new BusinessException("workflow.pluginWorkerResponseInvalid");
+        List<WorkerExternalService> services = new ArrayList<>();
+        if (!root.path("externalServices").isMissingNode() && !root.path("externalServices").isArray()) {
+            throw new BusinessException("workflow.pluginWorkerResponseInvalid");
+        }
+        for (JsonNode service : root.path("externalServices")) {
+            String domain = text(service, "domain").toLowerCase(Locale.ROOT);
+            if (!domain.matches("(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")) {
+                throw new BusinessException("workflow.pluginWorkerResponseInvalid");
+            }
+            services.add(new WorkerExternalService(text(service, "name"), domain));
+        }
         return new WorkerPackage(source.toUpperCase(Locale.ROOT), packageId, version, fingerprint,
-            text(root, "runtimeLanguage"), hostAbiVersion, List.copyOf(components));
+            text(root, "runtimeLanguage"), hostAbiVersion, text(root, "licenseName"),
+            text(root, "licenseUrl"), List.copyOf(services), List.copyOf(components));
     }
 
     /** 调用指定来源 Worker 中已固定版本的组件。 */
@@ -178,13 +190,20 @@ public class WorkflowPluginWorkerClient {
     }
 
     public record WorkerPackage(String source, String packageId, String version, String fingerprint,
-                                String runtimeLanguage, int hostAbiVersion, List<WorkerComponent> components) {
+                                String runtimeLanguage, int hostAbiVersion, String licenseName, String licenseUrl,
+                                List<WorkerExternalService> externalServices, List<WorkerComponent> components) {
+        /** 兼容未关心准入元数据的现有调用方。 */
+        public WorkerPackage(String source, String packageId, String version, String fingerprint,
+                             String runtimeLanguage, int hostAbiVersion, List<WorkerComponent> components) {
+            this(source, packageId, version, fingerprint, runtimeLanguage, hostAbiVersion, "", "", List.of(), components);
+        }
         /** 兼容旧持久化结果；缺失版本会在再次浏览市场时触发重探测。 */
         public WorkerPackage(String source, String packageId, String version, String fingerprint,
                              String runtimeLanguage, List<WorkerComponent> components) {
-            this(source, packageId, version, fingerprint, runtimeLanguage, 0, components);
+            this(source, packageId, version, fingerprint, runtimeLanguage, 0, "", "", List.of(), components);
         }
     }
+    public record WorkerExternalService(String name, String domain) {}
     public record WorkerComponent(String externalId, String name, String description, String componentType,
                                   JsonNode schema, JsonNode credentialSchema, String sourcePath,
                                   String compatibilityStatus, String compatibilityReason) {}

@@ -68,7 +68,8 @@ class WorkflowPluginWorkerClientTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/packages/inspect", exchange -> {
             byte[] body = ("""
-                {"fingerprint":"%s","runtimeLanguage":"node","hostAbiVersion":%d,"components":[
+                {"fingerprint":"%s","runtimeLanguage":"node","hostAbiVersion":%d,"licenseName":"MIT",
+                 "licenseUrl":"https://spdx.org/licenses/MIT.html","externalServices":[{"name":"API","domain":"api.example.com"}],"components":[
                   {"externalId":"action","name":"Action","componentType":"ACTION","schema":[],
                    "credentialSchema":[],"sourcePath":"node.js","compatibilityStatus":"SUPPORTED",
                    "compatibilityReason":""}]}
@@ -85,7 +86,10 @@ class WorkflowPluginWorkerClientTest {
         properties.getWorkflow().setPluginWorkerInternalToken("x".repeat(24));
         WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties, lifecycle());
 
-        assertEquals(4, client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
+        WorkflowPluginWorkerClient.WorkerPackage n8n = client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint);
+        assertEquals(4, n8n.hostAbiVersion());
+        assertEquals("MIT", n8n.licenseName());
+        assertEquals("api.example.com", n8n.externalServices().get(0).domain());
         assertEquals(5, client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint).hostAbiVersion());
         BusinessException outdated = assertThrows(BusinessException.class,
             () -> client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint));

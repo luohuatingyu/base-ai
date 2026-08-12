@@ -82,4 +82,14 @@ class WorkflowModelOptionsControllerTest {
         assertArrayEquals(new String[]{"/adapters/{source}"}, update.getAnnotation(PutMapping.class).value());
         assertEquals("workflow:adapter:manage", update.getAnnotation(RequiredPermission.class).value());
     }
+
+    /** 插件准入查询、维护与审批必须统一使用独立高权限。 */
+    @Test
+    void pluginAdmissionEndpointsUseDedicatedPermission() throws Exception {
+        for (Method method : new Method[]{WorkflowController.class.getMethod("pluginAdmissions"),
+            WorkflowController.class.getMethod("updatePluginAdmission", Long.class, WorkflowModels.PluginAdmissionCommand.class),
+            WorkflowController.class.getMethod("reviewPluginAdmission", Long.class, WorkflowModels.PluginAdmissionReviewCommand.class)}) {
+            assertEquals("workflow:plugin:admission", method.getAnnotation(RequiredPermission.class).value());
+        }
+    }
 }

@@ -133,6 +133,21 @@ public class WorkflowNodeMarketplaceService {
         return pluginRegistry.componentOptions();
     }
 
+    /** 返回管理员维护的插件准入清单。 */
+    public List<WorkflowModels.PluginAdmissionView> pluginAdmissions() { return pluginRegistry.admissions(); }
+
+    /** 保存并返回一份待审批准入资料。 */
+    public WorkflowModels.PluginAdmissionView updatePluginAdmission(
+        Long pluginId, WorkflowModels.PluginAdmissionCommand command) {
+        return pluginRegistry.updateAdmission(pluginId, command);
+    }
+
+    /** 批准或拒绝准入资料并同步插件运行状态。 */
+    public WorkflowModels.PluginAdmissionView reviewPluginAdmission(
+        Long pluginId, WorkflowModels.PluginAdmissionReviewCommand command) {
+        return pluginRegistry.reviewAdmission(pluginId, command);
+    }
+
     /** 只消费后台已完成的探测结果，把可执行组件转换为固定版本模板。 */
     private void preparePlugin(String source, String requestExternalId,
                                WorkflowMarketplaceClients.MarketplaceEntry catalogEntry, boolean replaceExisting,
@@ -168,7 +183,6 @@ public class WorkflowNodeMarketplaceService {
             prepared.add(new PreparedImport(requestExternalId, draft, null));
         }
         if (!supported) throw new BusinessException("workflow.marketplaceNodeUnsupported");
-        pluginRegistry.setEnabled(registration.pluginId(), true);
     }
 
     /** 把已持久化插件组件转换为通用工作流模板。 */

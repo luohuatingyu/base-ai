@@ -34,6 +34,17 @@ public final class WorkflowModels {
     public record PluginComponentOption(Long id, String source, String packageKey, String packageVersion,
                                         String externalKey, String name, String componentType,
                                         JsonNode parameterSchema, JsonNode credentialSchema) {}
+    public record PluginExternalService(String name, String domain) {}
+    public record PluginAdmissionView(Long pluginId, String source, String packageKey, String packageVersion,
+                                      String publisher, String licenseName, String licenseUrl,
+                                      List<PluginExternalService> externalServices, boolean noExternalService,
+                                      List<String> dataTypes, String dataNotes, String admissionStatus,
+                                      String reviewNote, Long reviewedBy, LocalDateTime reviewedAt,
+                                      boolean pluginEnabled) {}
+    public record PluginAdmissionCommand(String licenseName, String licenseUrl,
+                                         List<PluginExternalService> externalServices, Boolean noExternalService,
+                                         List<String> dataTypes, String dataNotes) {}
+    public record PluginAdmissionReviewCommand(Boolean approved, String reviewNote) {}
     public record PluginOAuthAuthorizeCommand(String redirectUri) {}
     public record PluginOAuthAuthorization(String authorizationUrl, String state, LocalDateTime expiresAt) {}
     public record PluginOAuthCallbackCommand(String state, String code) {}

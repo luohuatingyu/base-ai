@@ -16,6 +16,7 @@ import time
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -32,7 +33,7 @@ TYPE_KEYS = {
 
 REQUIREMENT_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9_,.-]+\])?(.*)$")
 FORBIDDEN_REQUIREMENTS = {"dify-plugin", "dify_plugin"}
-HOST_ABI_VERSION = 4
+HOST_ABI_VERSION = 5
 
 
 class PackageError(ValueError):
@@ -173,6 +174,7 @@ class PackageStore:
                 components.extend(self._components(root, str(reference), component_type, dependency_error))
         if not components:
             raise PackageError("PLUGIN_COMPONENTS_MISSING")
+        license_name, license_url = self._license(manifest.get("license"))
         return {
             "source": "DIFY",
             "packageId": str(request.get("packageId") or manifest.get("name") or ""),
@@ -180,8 +182,42 @@ class PackageStore:
             "fingerprint": fingerprint,
             "runtimeLanguage": "python",
             "hostAbiVersion": HOST_ABI_VERSION,
+            "licenseName": license_name,
+            "licenseUrl": license_url,
+            "externalServices": self._external_services(root),
             "components": components,
         }
+
+    def _license(self, raw: Any) -> tuple[str, str]:
+        """只接收清单明确声明的许可证名称和 HTTPS 地址。"""
+        value = raw[0] if isinstance(raw, list) and raw else raw
+        if isinstance(value, str):
+            return value.strip()[:160], ""
+        if not isinstance(value, dict):
+            return "", ""
+        name = str(value.get("type") or value.get("name") or "").strip()[:160]
+        candidate = str(value.get("url") or "").strip()
+        parsed = urlparse(candidate)
+        url = candidate[:500] if parsed.scheme == "https" and parsed.hostname and not parsed.username else ""
+        return name, url
+
+    def _external_services(self, root: Path) -> list[dict[str, str]]:
+        """从 YAML 声明的固定 HTTPS 字面量提取待人工确认的服务域名。"""
+        domains: set[str] = set()
+        for path in sorted(root.rglob("*")):
+            if path.suffix.lower() not in {".yaml", ".yml"} or not path.is_file():
+                continue
+            if path.name.lower() == "manifest.yaml":
+                continue
+            try:
+                content = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                continue
+            for candidate in re.findall(r"https://[^\s\"'<>)}\]]+", content, flags=re.IGNORECASE):
+                parsed = urlparse(candidate)
+                if parsed.hostname:
+                    domains.add(parsed.hostname.lower())
+        return [{"name": domain, "domain": domain} for domain in sorted(domains)[:64]]
 
     def _components(self, root: Path, reference: str, component_type: str,
                     dependency_error: str) -> list[dict[str, Any]]:

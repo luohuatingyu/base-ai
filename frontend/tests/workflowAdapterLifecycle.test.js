@@ -44,3 +44,21 @@ test('adapter-manager 固定来源白名单并拒绝把请求值拼入 Compose �
   assert.match(manager, /http\.MaxBytesReader/)
   assert.match(manager, /"--no-deps", service/)
 })
+
+test('插件准入清单使用独立权限并强制保存后审批', async () => {
+  const source = await readFile(new URL('frontend/src/views/WorkflowNodesView.vue', root), 'utf8')
+  const zh = await readFile(new URL('frontend/src/locales/zh-CN.js', root), 'utf8')
+  const en = await readFile(new URL('frontend/src/locales/en-US.js', root), 'utf8')
+
+  assert.match(source, /auth\.hasPermission\('workflow:plugin:admission'\)/)
+  assert.match(source, /http\.get\('\/workflow\/plugin-admissions'\)/)
+  assert.match(source, /http\.put\(`\/workflow\/plugin-admissions\/\$\{admissionForm\.pluginId\}`/)
+  assert.match(source, /\/review`/)
+  assert.match(source, /'NO_DATA'/)
+  assert.match(source, /normalizeAdmissionDataTypes/)
+  for (const locale of [zh, en]) {
+    assert.match(locale, /pluginAdmission:/)
+    assert.match(locale, /SENSITIVE_PERSONAL_INFORMATION/)
+    assert.match(locale, /CREDENTIALS/)
+  }
+})

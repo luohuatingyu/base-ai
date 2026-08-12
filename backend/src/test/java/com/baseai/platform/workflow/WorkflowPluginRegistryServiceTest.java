@@ -43,6 +43,12 @@ class WorkflowPluginRegistryServiceTest {
             compatibility_status VARCHAR(24),compatibility_reason VARCHAR(500),schema_fingerprint CHAR(64),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE(plugin_id,external_key))
             """);
+        jdbcTemplate.execute("""
+            CREATE TABLE workflow_plugin_admission(plugin_id BIGINT PRIMARY KEY,license_name VARCHAR(160) DEFAULT '',license_url VARCHAR(500) DEFAULT '',
+            external_services_json CLOB,data_types_json CLOB,no_external_service BOOLEAN DEFAULT false,data_notes VARCHAR(1000) DEFAULT '',
+            admission_status VARCHAR(24) DEFAULT 'PENDING',review_note VARCHAR(1000) DEFAULT '',reviewed_by BIGINT,reviewed_at TIMESTAMP,
+            enabled_before_admission BOOLEAN DEFAULT false,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+            """);
         service = new WorkflowPluginRegistryService(jdbcTemplate, mapper);
         AuthContext.set(new AuthUser(7L, "user", Set.of("USER"), Set.of(), AuthenticationType.TOKEN, null, null));
     }
@@ -59,9 +65,42 @@ class WorkflowPluginRegistryServiceTest {
         assertFalse(registration.updateAvailable());
         assertEquals(1, registration.components().size());
         assertTrue(service.componentOptions().isEmpty());
-        service.setEnabled(registration.pluginId(), true);
+        service.updateAdmission(registration.pluginId(), new WorkflowModels.PluginAdmissionCommand("MIT", "",
+            List.of(), true, List.of("NO_DATA"), ""));
+        service.reviewAdmission(registration.pluginId(), new WorkflowModels.PluginAdmissionReviewCommand(true, "approved"));
         assertEquals("query", service.componentOptions().get(0).parameterSchema().get(0).path("name").asText());
         assertEquals("a".repeat(64), service.requireRuntimeComponent(registration.components().get(0).id()).packageFingerprint());
+    }
+
+    /** 插件必须先补全资料并获批；资料变更或包更新会立即重置和停用。 */
+    @Test
+    void enforcesAdmissionAndResetsApprovalAfterMetadataChange() {
+        var registration = service.register("N8N", entry("pkg", "1"), inspected("1", "a".repeat(64), "SUPPORTED"), false);
+        Long componentId = registration.components().get(0).id();
+        assertEquals("workflow.pluginAdmissionRequired", assertThrows(BusinessException.class,
+            () -> service.requireRuntimeComponent(componentId)).getMessageKey());
+        assertEquals("workflow.pluginAdmissionRequired", assertThrows(BusinessException.class,
+            () -> service.setEnabled(registration.pluginId(), true)).getMessageKey());
+        assertThrows(BusinessException.class, () -> service.updateAdmission(registration.pluginId(),
+            new WorkflowModels.PluginAdmissionCommand("", "http://bad", List.of(), false, List.of("NO_DATA", "PUBLIC_DATA"), "")));
+
+        service.updateAdmission(registration.pluginId(), new WorkflowModels.PluginAdmissionCommand("MIT", "https://spdx.org/licenses/MIT.html",
+            List.of(new WorkflowModels.PluginExternalService(null, "api.example.com")), false,
+            List.of("INTERNAL_DATA", "CREDENTIALS"), "reviewed"));
+        service.reviewAdmission(registration.pluginId(), new WorkflowModels.PluginAdmissionReviewCommand(true, "approved"));
+        assertEquals("api.example.com", service.admissions().get(0).externalServices().get(0).name());
+        assertEquals("APPROVED", service.requireRuntimeComponent(componentId).admissionStatus());
+
+        service.register("N8N", entry("pkg", "1"), inspected("1", "a".repeat(64), "SUPPORTED"), false);
+        assertEquals("APPROVED", service.requireRuntimeComponent(componentId).admissionStatus());
+
+        service.reviewAdmission(registration.pluginId(), new WorkflowModels.PluginAdmissionReviewCommand(false, "rejected"));
+        assertEquals("REJECTED", service.admissions().get(0).admissionStatus());
+        assertFalse(service.admissions().get(0).pluginEnabled());
+
+        service.register("N8N", entry("pkg", "2"), inspected("2", "b".repeat(64), "SUPPORTED"), true);
+        assertEquals("PENDING", service.admissions().get(0).admissionStatus());
+        assertFalse(service.admissions().get(0).pluginEnabled());
     }
 
     /** 新包摘要必须要求显式替换，部分兼容组件不可进入运行时。 */
@@ -86,7 +125,10 @@ class WorkflowPluginRegistryServiceTest {
     private WorkflowPluginWorkerClient.WorkerPackage inspected(String version, String fingerprint, String status) {
         var component = new WorkflowPluginWorkerClient.WorkerComponent("action", "Action", "Description", "ACTION",
             mapper.createArrayNode().add(mapper.createObjectNode().put("name", "query").put("required", true)),
-            mapper.createArrayNode(), "action.js", status, status.equals("SUPPORTED") ? "" : "ABI_MISSING");
-        return new WorkflowPluginWorkerClient.WorkerPackage("N8N", "pkg", version, fingerprint, "node", List.of(component));
+            mapper.createArrayNode().add(mapper.createObjectNode().put("name", "apiKey").put("type", "secret-input")),
+            "action.js", status, status.equals("SUPPORTED") ? "" : "ABI_MISSING");
+        return new WorkflowPluginWorkerClient.WorkerPackage("N8N", "pkg", version, fingerprint, "node", 4,
+            "MIT", "https://spdx.org/licenses/MIT.html", List.of(new WorkflowPluginWorkerClient.WorkerExternalService(
+            "Example", "api.example.com")), List.of(component));
     }
 }

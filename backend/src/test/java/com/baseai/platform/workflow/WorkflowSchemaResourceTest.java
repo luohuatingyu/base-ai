@@ -191,6 +191,19 @@ class WorkflowSchemaResourceTest {
         assertTrue(!schema.contains("DROP COLUMN"));
     }
 
+    /** MySQL V18 必须新增强制准入记录并把存量插件转为待审批停用。 */
+    @Test
+    void addsPluginAdmissionControl() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V18__add_plugin_admission_control.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+        for (String invariant : new String[]{"workflow_plugin_admission", "license_name", "external_services_json",
+            "data_types_json", "admission_status", "enabled_before_admission", "SET p.enabled=b'0'"}) {
+            assertTrue(schema.contains(invariant), invariant);
+        }
+        assertTrue(!schema.contains("DROP TABLE"));
+        assertTrue(!schema.contains("DROP COLUMN"));
+    }
+
     /** MySQL V17 只整理仍误放在网络分类的市场插件，并保留管理员已调整的其他分类。 */
     @Test
     void recategorizesExistingMarketplacePluginTemplates() throws Exception {

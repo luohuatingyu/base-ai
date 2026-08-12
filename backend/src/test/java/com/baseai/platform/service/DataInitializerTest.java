@@ -271,6 +271,8 @@ class DataInitializerTest {
             menusByPermission.get("workflow:node:update").getParentId());
         assertEquals(menusByPermission.get("workflow:node:list").getId(),
             menusByPermission.get("workflow:adapter:manage").getParentId());
+        assertEquals(menusByPermission.get("workflow:node:list").getId(),
+            menusByPermission.get("workflow:plugin:admission").getParentId());
         assertEquals(menusByPermission.get("workflow:connection:list").getId(),
             menusByPermission.get("workflow:connection:update").getParentId());
         assertEquals(menusByPermission.get("workflow:canvas:list").getId(),
