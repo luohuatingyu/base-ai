@@ -1,5 +1,54 @@
 # 最近分支覆盖测试报告
 
+## 📋 插件准入清单与强制审批测试结果（2026-08-12）
+
+### Git 基准点
+
+Commit: 1125abc8e816230284fa39923a667b54dafd500b
+- 提交说明: Add plugin admission controls；Align n8n worker ABI version
+- 测试日期: 2026-08-12
+- 分支: master
+- Backend 业务代码差异: 新增插件许可证、外部服务、数据类型准入记录、独立权限与审批接口；未批准插件禁止启用和执行，包指纹变化自动重置审批。
+
+### 变更范围
+
+- V18 为全部现有市场插件建立 `PENDING` 准入记录并停用插件；记录插件身份、许可证、外部服务、固定数据类型、备注和审批审计信息。
+- n8n 从 `package.json` 与节点声明、Dify 从 manifest 和 YAML 声明预填许可证及固定 HTTPS 服务域名；自动识别结果必须人工核对。
+- 保存资料会重置审批并停用插件；只有资料完整、兼容状态为 `SUPPORTED` 且管理员批准后才能启用和执行。
+- 新增 `workflow:plugin:admission` 权限和节点管理页准入清单，不改变 n8n/Dify 适配服务按需启停规则。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入或操作 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- | --- |
+| 完整记录准入字段 | Backend Migration、Registry、Worker 测试 | 安装插件并读取许可证、来源、版本、外部服务和数据类型 | V18 建表成功，Worker 候选被规范化写入；通过 | 正常、数据迁移 |
+| 未批准插件不能使用 | Backend Registry 测试 | PENDING 插件启用或执行组件 | 返回 `workflow.pluginAdmissionRequired`，组件选项不可见；通过 | 权限、安全、异常 |
+| 完整资料可审批 | Backend Registry 与 Controller 测试 | 提交 MIT、合法域名、固定数据类型后批准 | 状态变为 APPROVED，插件同步启用且可执行；通过 | 正常、接口、副作用 |
+| 非法资料被拒绝 | Backend Registry 参数边界 | HTTP 许可证地址、非法域名、空许可证、NO_DATA 与其他分类并选 | 返回准入资料非法；空服务名按域名补全；通过 | 边界、恶意输入 |
+| 资料或包变化重新审批 | Backend Registry 测试 | 修改准入资料、拒绝、同指纹重装、不同指纹升级 | 修改/升级重置 PENDING 并停用；同指纹保留批准；通过 | 状态、兼容、回归 |
+| 管理入口受独立权限控制 | Controller、Initializer、Frontend 测试 | 查询、编辑和审批准入记录 | 三个接口和页面入口均要求独立权限；通过 | 权限、安全 |
+| 运行环境无回归 | 完整测试与 Compose 重建 | 两个 Worker、Backend、Frontend、统一重建 | Backend 576/576、Frontend 115/115、Dify 20/20、n8n 9/9；基础服务 healthy；通过 | 回归、部署 |
+
+### 测试执行结果
+
+- Backend 完整回归：576/576 通过，失败 0，错误 0，跳过 0；Compose 构建阶段再次通过 576/576。
+- Backend 最终 ABI/准入定向回归：Registry 与 Worker Client 5/5 通过；并行 n8n ABI 5 合入后 Worker Client 2/2 再次通过。
+- Frontend 完整回归：115/115 通过；Dify Worker（Python 3.12）：20/20 通过；n8n Worker 最终完整回归：9/9 通过。
+- `docker compose up --build -d` 成功；Backend、Frontend、Python Worker、Adapter Manager、Caddy 全部 healthy，Flyway V18 已在真实 MySQL 应用。
+
+### 测试过程问题与处理
+
+- V18 的 MySQL `UPDATE ... JOIN` 和 `BIT` 语法不直接被 H2 接受；生产迁移保持不变，迁移测试仅在执行夹具内转换为 H2 等价语法，并通过真实 MySQL 启动验证 Flyway 校验和。
+- 工作区同时合入 n8n 声明式表达式兼容功能；其初始完整测试 8/9，完成后重跑为 9/9。准入提交通过交互暂存隔离，未把未完成的兼容代码夹带进准入提交。
+- 主机没有 Maven，使用项目固定的 Maven 3.9.9 / Java 17 容器执行；未创建或遗留调试文件。
+
+### 已知限制与回滚
+
+- 自动识别只读取显式清单和静态 YAML/节点声明，不扫描或执行插件代码，因此动态拼接的服务地址必须人工补充。
+- 本清单覆盖通用市场插件包；系统原生节点和不经过插件注册表的内建适配路径不纳入本次准入表。
+- V18 会停用全部历史插件，回滚 Java/前端提交不会自动恢复启用状态；如需回滚数据，必须依据迁移前备份和 `enabled_before_admission` 经人工确认恢复，禁止修改 Flyway 历史。
+- 修改准入字段、审批状态机、Worker ABI/元数据、插件启用校验或 V18 后续迁移时，必须重跑两个 Worker、Backend/Frontend 完整回归和 Compose 重建。
+
 ## 📋 n8n 与 Dify 适配服务按需启停测试结果（2026-08-11）
 
 ### Git 基准点
