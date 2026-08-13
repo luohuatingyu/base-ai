@@ -16,10 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
 
 class WorkflowServicePublishTest {
     private JdbcTemplate jdbcTemplate;
     private WorkflowService service;
+    private WorkflowGraphValidator graphValidator;
 
     /** 为每个发布场景创建隔离版本表和真实节点配置校验器。 */
     @BeforeEach
@@ -48,8 +50,9 @@ class WorkflowServicePublishTest {
         PlatformProperties properties = new PlatformProperties();
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString(
             "0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
+        graphValidator = mock(WorkflowGraphValidator.class);
         service = new WorkflowService(jdbcTemplate, objectMapper, new ConfigCryptoService(properties),
-            mock(WorkflowGraphValidator.class), new WorkflowNodeConfigValidator(objectMapper), mock(WorkflowConnectionService.class),
+            graphValidator, new WorkflowNodeConfigValidator(objectMapper), mock(WorkflowConnectionService.class),
             mock(WorkflowAccessService.class));
     }
 
@@ -101,6 +104,29 @@ class WorkflowServicePublishTest {
             () -> service.validateConnectionSnapshot(version));
 
         assertEquals("workflow.connectionChanged", exception.getMessageKey());
+    }
+
+    /** 发布校验期间若当前草稿被并发替换，旧请求不得发布未经校验的新版本。 */
+    @Test
+    void rejectsConcurrentDraftReplacementDuringPublish() {
+        insertWorkflow("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"end","type":"END"}],
+             "edges":[{"id":"a","source":"start","target":"end"}]}
+            """, "{}");
+        jdbcTemplate.update("""
+            INSERT INTO workflow_version VALUES (11,1,2,
+            '{"nodes":[{"id":"start","type":"START"},{"id":"end","type":"END"}],"edges":[{"id":"b","source":"start","target":"end"}]}',
+            '{}','{}',true,CURRENT_TIMESTAMP)
+            """);
+        doAnswer(invocation -> {
+            jdbcTemplate.update("UPDATE workflow_definition SET current_version_id=11,revision=2 WHERE id=1");
+            return null;
+        }).when(graphValidator).validate(org.mockito.ArgumentMatchers.any());
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.publish(1L));
+
+        assertEquals("workflow.revisionConflict", exception.getMessageKey());
+        assertNull(jdbcTemplate.queryForObject("SELECT published_version_id FROM workflow_definition WHERE id=1", Long.class));
     }
 
     /** 插入一个当前版本工作流及对应不可变模板快照。 */

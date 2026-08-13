@@ -72,6 +72,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private final WorkflowErrorMessageService errorMessages;
     private final PlatformProperties.Workflow limits;
     private final String instanceId;
+    private final int retentionDays;
     private final Map<String, Future<?>> futures = new ConcurrentHashMap<>();
     private final ThreadLocal<String> budgetRunId = new ThreadLocal<>();
 
@@ -102,6 +103,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
         this.errorMessages = errorMessages;
         this.limits = properties.getWorkflow();
         this.instanceId = properties.getPythonWorker().getJavaInstanceId() + ":" + UUID.randomUUID();
+        this.retentionDays = Math.max(1, limits.getRunRetentionDays());
     }
 
     /** 启动时只回收租约已经过期的遗留运行，不影响其他实例的活跃任务。 */
@@ -235,6 +237,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
         List<String> order = topologicalOrder(nodes, edges);
         Set<String> selectedEdges = checkpoint == null ? new HashSet<>() : new HashSet<>(checkpoint.selectedEdges());
         JsonNode finalOutput = checkpoint == null ? objectMapper.createObjectNode() : checkpoint.finalOutput().deepCopy();
+        boolean endReached = false;
         int startIndex = checkpoint == null ? 0 : checkpoint.nextIndex();
         if (checkpoint != null) {
             context.removeAll(); context.setAll(checkpoint.context()); sequence.set(Math.max(sequence.get(), checkpoint.sequence()));
@@ -274,7 +277,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 enforcePayload(result.output());
                 ((ObjectNode) context.path("nodes")).set(nodeId, result.output());
                 finishNodeRun(nodeRunId, result.error() == null ? "SUCCESS" : "FAILED_CONTINUED", result.output(), result.error());
-                if ("END".equals(type)) finalOutput = result.output();
+                if ("END".equals(type)) { finalOutput = result.output(); endReached = true; }
                 for (JsonNode edge : edges.stream().filter(item -> nodeId.equals(item.path("source").asText())).toList()) {
                     String handle = edge.path("sourceHandle").asText("").toLowerCase(Locale.ROOT);
                     if (result.branch() == null || handle.isBlank() || handle.equals(result.branch().toLowerCase(Locale.ROOT))) {
@@ -287,6 +290,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 throw exception;
             }
         }
+        if (!endReached && checkpoint == null) throw new BusinessException("workflow.endNotReached");
         return finalOutput;
     }
 
@@ -294,7 +298,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
     private NodeResult executeNodeWithPolicy(String runId, JsonNode node, String type, ObjectNode config, ObjectNode context,
                                              int depth, Set<String> stack, AtomicInteger sequence, String iterationPath,
                                              Long workflowOwnerId) {
-        int attempts = Math.max(1, Math.min(config.path("maxAttempts").asInt(1), 5));
+        int attempts = retryable(type) ? Math.max(1, Math.min(config.path("maxAttempts").asInt(1), 5)) : 1;
         long delay = Math.max(0, Math.min(config.path("retryDelayMillis").asLong(0), 30_000));
         RuntimeException last = null;
         for (int attempt = 1; attempt <= attempts; attempt++) {
@@ -365,6 +369,14 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 yield new NodeResult(result.output(), result.branch(), null);
             }
         };
+    }
+
+    /** 只有纯计算或平台受控的无副作用节点可以采用通用重试。 */
+    private boolean retryable(String type) {
+        return Set.of("LLM", "CONDITION", "ITERATION", "LOOP", "SET_VARIABLE", "TEMPLATE", "JSON_PARSE",
+            "JSON_VALIDATE", "TRANSFORM", "FILTER", "SORT", "AGGREGATE", "CSV", "QUESTION_CLASSIFIER",
+            "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT", "DOCUMENT_EXTRACTOR", "RAG", "KNOWLEDGE_RETRIEVAL",
+            "EMBEDDING").contains(type);
     }
 
     /** 调用现有模型路由执行 LLM 节点。 */
@@ -624,17 +636,18 @@ public class WorkflowExecutionService implements ApplicationRunner {
                            String triggerType, JsonNode inputs, Long ownerId, Long apiKeyId) {
         jdbcTemplate.update("""
             INSERT INTO workflow_run(id,workflow_id,workflow_version_id,parent_run_id,trace_id,trigger_type,status,input_encrypted,
-                output_encrypted,owner_user_id,api_key_id,execution_instance_id,lease_expires_at)
-            VALUES (?,?,?,?,?,?,'QUEUED',?,'',?,?,?,?)
+                output_encrypted,owner_user_id,api_key_id,execution_instance_id,lease_expires_at,deadline_at,progress_at)
+            VALUES (?,?,?,?,?,?,'QUEUED',?,'',?,?,?,?,?,NOW())
             """, runId, version.workflowId(), version.id(), parentRunId, traceId, triggerType, encrypt(inputs), ownerId,
-            apiKeyId, instanceId, leaseTimestamp());
+            apiKeyId, instanceId, leaseTimestamp(), deadlineTimestamp());
     }
 
     /** 标记运行开始。 */
     private boolean markRunRunning(String runId) {
         return jdbcTemplate.update("""
             UPDATE workflow_run SET status='RUNNING',started_at=COALESCE(started_at,NOW()),execution_instance_id=?,
-                lease_expires_at=?,updated_at=NOW() WHERE id=? AND status='QUEUED' AND cancel_requested=false
+                lease_expires_at=?,progress_at=NOW(),updated_at=NOW()
+            WHERE id=? AND status='QUEUED' AND cancel_requested=false AND deadline_at>NOW()
             """, instanceId, leaseTimestamp(), runId) == 1;
     }
 
@@ -726,17 +739,18 @@ public class WorkflowExecutionService implements ApplicationRunner {
     public void heartbeatLeases() {
         jdbcTemplate.update("""
             UPDATE workflow_run SET lease_expires_at=?,updated_at=NOW()
-            WHERE execution_instance_id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false
+            WHERE execution_instance_id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false AND deadline_at>NOW()
             """, leaseTimestamp(), instanceId);
     }
 
     /** 周期性回收过期恢复租约，并只将没有等待检查点的遗留运行置为失败。 */
     @Scheduled(fixedDelay = 15_000L)
     public void recoverExpiredLeases() {
+        expireOverdueRuns();
         jdbcTemplate.update("""
             UPDATE workflow_run SET status='WAITING',execution_instance_id=NULL,lease_expires_at=NULL,updated_at=NOW()
             WHERE status='RUNNING' AND lease_expires_at<NOW() AND EXISTS (
-                SELECT 1 FROM workflow_wait_state w WHERE w.workflow_run_id=workflow_run.id AND w.status='RESUMING')
+                SELECT 1 FROM workflow_wait_state w WHERE w.workflow_run_id=workflow_run.id AND w.status IN ('WAITING','RESUMING'))
             """);
         jdbcTemplate.update("""
             UPDATE workflow_wait_state SET status='WAITING',updated_at=NOW()
@@ -758,6 +772,37 @@ public class WorkflowExecutionService implements ApplicationRunner {
                 WHERE id=? AND status IN ('QUEUED','RUNNING') AND cancel_requested=false AND lease_expires_at<NOW()
                 """, message, runId);
             if (failed == 1 && traceId != null) taskTraceService.markFailed(traceId, readableError(message));
+        }
+    }
+
+    /** 清理已结束且超过保留期的运行和节点日志，避免加密明文持续占用数据库。 */
+    @Scheduled(cron = "0 40 3 * * *")
+    public void cleanupRuns() {
+        java.sql.Timestamp cutoff = java.sql.Timestamp.from(Instant.now().minusSeconds(retentionDays * 86_400L));
+        jdbcTemplate.update("DELETE n FROM workflow_node_run n JOIN workflow_run r ON r.id=n.workflow_run_id WHERE r.finished_at<?", cutoff);
+        jdbcTemplate.update("DELETE FROM workflow_wait_state WHERE workflow_run_id IN (SELECT id FROM workflow_run WHERE finished_at<?)", cutoff);
+        jdbcTemplate.update("DELETE FROM workflow_run WHERE finished_at<? AND status IN ('SUCCESS','FAILED','CANCELLED')", cutoff);
+    }
+
+    /** 总执行期限优先于实例租约，避免阻塞线程持续续租而永不终止。 */
+    private void expireOverdueRuns() {
+        List<Map<String, Object>> overdue = jdbcTemplate.queryForList("""
+            SELECT id,trace_id FROM workflow_run
+            WHERE status IN ('QUEUED','RUNNING','WAITING') AND cancel_requested=false AND deadline_at<=NOW()
+            """);
+        for (Map<String, Object> row : overdue) {
+            String runId = String.valueOf(row.get("id"));
+            String traceId = row.get("trace_id") == null ? null : String.valueOf(row.get("trace_id"));
+            String message = errorMessages.encode("workflow.executionDeadlineExceeded");
+            int failed = jdbcTemplate.update("""
+                UPDATE workflow_run SET status='FAILED',error_message=?,finished_at=NOW(),execution_instance_id=NULL,
+                    lease_expires_at=NULL,updated_at=NOW()
+                WHERE id=? AND status IN ('QUEUED','RUNNING','WAITING') AND cancel_requested=false AND deadline_at<=NOW()
+                """, message, runId);
+            if (failed == 1) {
+                jdbcTemplate.update("DELETE FROM workflow_wait_state WHERE workflow_run_id=?", runId);
+                if (traceId != null) taskTraceService.markFailed(traceId, readableError(message));
+            }
         }
     }
 
@@ -890,21 +935,7 @@ public class WorkflowExecutionService implements ApplicationRunner {
     /** 根据 JSON Schema 的 required 和基础 type 校验开放输入。 */
     private void validateInputs(JsonNode schema, ObjectNode inputs) {
         if (schema == null || !schema.isObject()) return;
-        schema.path("required").forEach(item -> {
-            if (item.isTextual() && (!inputs.has(item.asText()) || inputs.path(item.asText()).isNull())) {
-                throw new BusinessException("workflow.inputRequired", item.asText());
-            }
-        });
-        schema.path("properties").fields().forEachRemaining(entry -> {
-            if (!inputs.has(entry.getKey())) return;
-            String type = entry.getValue().path("type").asText();
-            JsonNode value = inputs.path(entry.getKey());
-            boolean valid = switch (type) {
-                case "string" -> value.isTextual(); case "number" -> value.isNumber(); case "integer" -> value.isIntegralNumber();
-                case "boolean" -> value.isBoolean(); case "array" -> value.isArray(); case "object" -> value.isObject(); default -> true;
-            };
-            if (!valid) throw new BusinessException("workflow.inputTypeInvalid", entry.getKey(), type);
-        });
+        WorkflowInputSchemaValidator.validate(schema, inputs);
     }
 
     /** 限制输入、输出和节点结果序列化后的体积。 */
@@ -985,6 +1016,10 @@ public class WorkflowExecutionService implements ApplicationRunner {
     /** 计算本实例下一次租约截止时间。 */
     private java.sql.Timestamp leaseTimestamp() {
         return java.sql.Timestamp.from(Instant.now().plusSeconds(Math.max(15, limits.getLeaseSeconds())));
+    }
+    /** 从入队开始限制总时间，统一覆盖排队、执行及 WAIT 恢复周期。 */
+    private java.sql.Timestamp deadlineTimestamp() {
+        return java.sql.Timestamp.from(Instant.now().plusSeconds(Math.max(60, limits.getMaxRunDurationSeconds())));
     }
     /** 原子预留节点日志字节预算，避免累计上下文造成数据库空间放大。 */
     private void reserveLogBytes(String runId, JsonNode value, String error) {

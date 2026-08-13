@@ -13,6 +13,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,6 +81,7 @@ public class WorkflowTriggerService {
     }
 
     /** 接收并验证公开 Webhook 请求。 */
+    @Transactional
     public WorkflowModels.RunAccepted webhook(String workflowCode, String nodeId, String signature,
                                                String eventId, byte[] rawBody) {
         WorkflowModels.TriggerDefinition trigger = requireTrigger(workflowCode, nodeId, "WEBHOOK_TRIGGER");
@@ -88,7 +91,8 @@ public class WorkflowTriggerService {
         if (secret.getBytes(StandardCharsets.UTF_8).length < 32) throw new BusinessException(503, "workflow.webhookUnavailable");
         if (!validSignature(secret, rawBody, signature)) throw new BusinessException(401, "workflow.webhookSignatureInvalid");
         String body = new String(rawBody == null ? new byte[0] : rawBody, StandardCharsets.UTF_8);
-        String stableEventId = eventId == null || eventId.isBlank() ? sha256(rawBody) : validateEventId(eventId);
+        // 调用方未提供事件 ID 时按至少一次语义处理，每次请求生成独立标识，避免相同正文被错误去重。
+        String stableEventId = eventId == null || eventId.isBlank() ? UUID.randomUUID().toString() : validateEventId(eventId);
         Map<String, Object> inputs = bodyInputs(body);
         return startUnique(trigger, stableEventId, inputs, "WEBHOOK");
     }
@@ -100,6 +104,7 @@ public class WorkflowTriggerService {
     }
 
     /** 接收消息消费者转换后的事件并执行数据库幂等检查。 */
+    @Transactional
     public WorkflowModels.RunAccepted message(WorkflowModels.TriggerDefinition trigger, String eventId,
                                                Map<String, Object> inputs) {
         String stableEventId = eventId != null && eventId.matches("[A-Za-z0-9._:-]{1,160}") ? eventId
@@ -125,9 +130,10 @@ public class WorkflowTriggerService {
         } catch (DuplicateKeyException exception) { throw new BusinessException(409, "workflow.triggerDuplicate"); }
         try {
             WorkflowModels.RunAccepted accepted = executionService.startTriggered(trigger.workflowCode(), inputs, triggerType);
-            jdbcTemplate.update("""
-                UPDATE workflow_trigger_delivery SET run_id=? WHERE workflow_id=? AND trigger_node_id=? AND event_id=?
+            int linked = jdbcTemplate.update("""
+                UPDATE workflow_trigger_delivery SET run_id=?, delivery_status='ENQUEUED', last_error='' WHERE workflow_id=? AND trigger_node_id=? AND event_id=?
                 """, accepted.runId(), trigger.workflowId(), trigger.nodeId(), eventId);
+            if (linked != 1) throw new BusinessException("workflow.triggerDeliveryLinkFailed");
             return accepted;
         } catch (RuntimeException exception) {
             jdbcTemplate.update("DELETE FROM workflow_trigger_delivery WHERE workflow_id=? AND trigger_node_id=? AND event_id=? AND run_id IS NULL",
@@ -197,6 +203,15 @@ public class WorkflowTriggerService {
     public void cleanupDeliveries() {
         jdbcTemplate.update("DELETE FROM workflow_trigger_delivery WHERE received_at<?",
             java.sql.Timestamp.from(Instant.now().minus(retentionDays, ChronoUnit.DAYS)));
+    }
+
+    /** 回收创建运行后尚未关联 run_id 的投递记录，允许崩溃后的事件安全重试。 */
+    @Scheduled(fixedDelay = 30_000L)
+    public void recoverOrphanDeliveries() {
+        jdbcTemplate.update("""
+            DELETE FROM workflow_trigger_delivery
+            WHERE run_id IS NULL AND received_at<?
+            """, java.sql.Timestamp.from(Instant.now().minus(2, ChronoUnit.MINUTES)));
     }
 
     /** 停止内部调度线程。 */

@@ -59,6 +59,7 @@ class WorkflowExecutionServiceStateTest {
             trace_id VARCHAR(64),trigger_type VARCHAR(20),status VARCHAR(20),input_encrypted CLOB,output_encrypted CLOB,
             error_message VARCHAR(2000),owner_user_id BIGINT,api_key_id BIGINT,cancel_requested BOOLEAN DEFAULT false,
             execution_instance_id VARCHAR(120),lease_expires_at TIMESTAMP,log_bytes BIGINT DEFAULT 0,started_at TIMESTAMP,
+            deadline_at TIMESTAMP DEFAULT DATEADD('DAY', 1, CURRENT_TIMESTAMP),progress_at TIMESTAMP,
             finished_at TIMESTAMP,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
         jdbcTemplate.execute("""
@@ -233,6 +234,41 @@ class WorkflowExecutionServiceStateTest {
 
         assertEquals("WAITING", jdbcTemplate.queryForObject("SELECT status FROM workflow_run WHERE id='waiting'", String.class));
         assertEquals("WAITING", jdbcTemplate.queryForObject("SELECT status FROM workflow_wait_state WHERE workflow_run_id='waiting'", String.class));
+    }
+
+    /** 崩溃发生在检查点写入与运行状态切换之间时，恢复器必须修复非法组合。 */
+    @Test
+    void recoveryRepairsRunningRunWithWaitingCheckpoint() {
+        jdbcTemplate.update("""
+            INSERT INTO workflow_run(id,workflow_id,workflow_version_id,trace_id,trigger_type,status,input_encrypted,
+            output_encrypted,owner_user_id,cancel_requested,execution_instance_id,lease_expires_at)
+            VALUES ('orphan-wait',1,2,'trace-orphan','WAIT','RUNNING','','',7,false,'dead',?)
+            """, java.sql.Timestamp.from(Instant.now().minusSeconds(30)));
+        jdbcTemplate.update("""
+            INSERT INTO workflow_wait_state VALUES ('orphan-wait','wait-node',?,'encrypted','WAITING',CURRENT_TIMESTAMP)
+            """, java.sql.Timestamp.from(Instant.now().minusSeconds(1)));
+
+        service.recoverExpiredLeases();
+
+        assertEquals("WAITING", jdbcTemplate.queryForObject(
+            "SELECT status FROM workflow_run WHERE id='orphan-wait'", String.class));
+        assertEquals("WAITING", jdbcTemplate.queryForObject(
+            "SELECT status FROM workflow_wait_state WHERE workflow_run_id='orphan-wait'", String.class));
+    }
+
+    /** 已超过总执行期限的运行即使租约尚有效也必须失败，避免阻塞线程无限续租。 */
+    @Test
+    void recoveryFailsRunPastOverallDeadline() {
+        jdbcTemplate.update("""
+            INSERT INTO workflow_run(id,workflow_id,workflow_version_id,trace_id,trigger_type,status,input_encrypted,
+            output_encrypted,owner_user_id,cancel_requested,execution_instance_id,lease_expires_at,deadline_at)
+            VALUES ('overdue',1,2,'trace-overdue','MANUAL','RUNNING','','',7,false,'active',?,?)
+            """, java.sql.Timestamp.from(Instant.now().plusSeconds(30)), java.sql.Timestamp.from(Instant.now().minusSeconds(1)));
+
+        service.recoverExpiredLeases();
+
+        assertEquals("FAILED", jdbcTemplate.queryForObject(
+            "SELECT status FROM workflow_run WHERE id='overdue'", String.class));
     }
 
     /** 创建与生产配置一致的工作流错误消息解析器。 */

@@ -101,6 +101,15 @@ class WorkflowGraphValidatorTest {
             """)));
     }
 
+    /** 条件节点必须声明且只声明 true/false 两条出口，不能由空 handle 意外执行所有下游。 */
+    @Test
+    void rejectsConditionWithoutExplicitBranches() throws Exception {
+        assertThrows(BusinessException.class, () -> validator.validate(objectMapper.readTree("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"condition","type":"CONDITION"},{"id":"end","type":"END"}],
+             "edges":[{"id":"a","source":"start","target":"condition"},{"id":"b","source":"condition","target":"end"}]}
+            """)));
+    }
+
     /** 节点上限必须累计主图和全部子图，不能由每层分别计数绕过。 */
     @Test
     void rejectsNestedGraphsWhenCumulativeNodeLimitIsExceeded() throws Exception {

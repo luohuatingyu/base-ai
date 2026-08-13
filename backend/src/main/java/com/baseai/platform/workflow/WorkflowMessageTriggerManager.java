@@ -21,6 +21,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /** 为已发布 Kafka 和 RabbitMQ 触发节点维护受控消费者生命周期。 */
 @Service
@@ -119,15 +123,19 @@ public class WorkflowMessageTriggerManager {
             consumer.subscribe(java.util.List.of(topic));
             while (running.get() && !Thread.currentThread().isInterrupted()) {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
+                Map<org.apache.kafka.common.TopicPartition, Boolean> blocked = new HashMap<>();
                 for (ConsumerRecord<String, String> record : records) {
+                    org.apache.kafka.common.TopicPartition partition =
+                        new org.apache.kafka.common.TopicPartition(record.topic(), record.partition());
+                    if (Boolean.TRUE.equals(blocked.get(partition))) continue;
                     String eventId = record.topic() + ":" + record.partition() + ":" + record.offset();
                     Map<String, Object> inputs = new java.util.LinkedHashMap<>();
                     inputs.put("topic", record.topic()); inputs.put("partition", record.partition()); inputs.put("offset", record.offset());
                     inputs.put("key", record.key()); inputs.put("value", jsonOrText(record.value()));
                     if (deliver(trigger, eventId, inputs)) {
-                        consumer.commitSync(Map.of(new org.apache.kafka.common.TopicPartition(record.topic(), record.partition()),
+                        consumer.commitSync(Map.of(partition,
                             new org.apache.kafka.clients.consumer.OffsetAndMetadata(record.offset() + 1)));
-                    }
+                    } else blocked.put(partition, true);
                 }
             }
         }
@@ -148,8 +156,9 @@ public class WorkflowMessageTriggerManager {
             channel.basicConsume(queue, false, (tag, delivery) -> {
                 String body = new String(delivery.getBody(), StandardCharsets.UTF_8);
                 String messageId = delivery.getProperties().getMessageId();
+                // RabbitMQ 未提供 message_id 时不伪造正文摘要，否则相同正文的独立消息会被错误去重。
                 String eventId = messageId == null || messageId.isBlank()
-                    ? queue + ":" + digest(body) : queue + ":" + messageId;
+                    ? queue + ":generated:" + UUID.randomUUID() : queue + ":" + messageId;
                 Map<String, Object> inputs = Map.of("queue", queue, "routingKey", delivery.getEnvelope().getRoutingKey(),
                     "value", jsonOrText(body), "redelivered", delivery.getEnvelope().isRedeliver());
                 if (deliver(trigger, eventId, inputs)) channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
@@ -166,6 +175,16 @@ public class WorkflowMessageTriggerManager {
             if ("workflow.triggerDuplicate".equals(exception.getMessageKey())) return true;
             log.warn("Workflow message delivery failed: {}", key(trigger)); return false;
         }
+    }
+
+    /** 按分区只消费连续成功的记录，失败记录及其后续记录留给下一轮重试。 */
+    static long deliverContiguous(List<Long> offsets, Predicate<Long> delivery, Function<Long, Long> nextOffset) {
+        long committed = offsets.isEmpty() ? 0L : offsets.get(0);
+        for (Long offset : offsets) {
+            if (!delivery.test(offset)) return committed;
+            committed = nextOffset.apply(offset);
+        }
+        return committed;
     }
 
     /** 优先将消息正文解析为 JSON，否则保留原文本。 */

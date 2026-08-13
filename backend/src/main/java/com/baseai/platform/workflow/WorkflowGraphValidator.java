@@ -130,6 +130,7 @@ public class WorkflowGraphValidator {
         }
         if (hasCycle(outgoing, incoming)) throw new BusinessException("workflow.graphCycle");
         ensureReachable(byId, outgoing);
+        ensureConditionBranches(byId, edges);
     }
 
     /** 使用 Kahn 算法检测普通图循环。 */
@@ -164,6 +165,22 @@ public class WorkflowGraphValidator {
             if (reached.add(current)) queue.addAll(outgoing.get(current));
         }
         if (reached.size() != byId.size()) throw new BusinessException("workflow.graphUnreachable");
+    }
+
+    /** 条件节点必须显式连接 true 和 false 两个分支，避免空 handle 放行全部下游。 */
+    private void ensureConditionBranches(Map<String, JsonNode> byId, List<JsonNode> edges) {
+        for (Map.Entry<String, JsonNode> entry : byId.entrySet()) {
+            if (!"CONDITION".equals(nodeType(entry.getValue()))) continue;
+            Set<String> handles = new HashSet<>();
+            for (JsonNode edge : edges) {
+                if (!entry.getKey().equals(text(edge, "source"))) continue;
+                String handle = text(edge, "sourceHandle").toLowerCase(java.util.Locale.ROOT);
+                if (!Set.of("true", "false").contains(handle) || !handles.add(handle)) {
+                    throw new BusinessException("workflow.graphInvalid");
+                }
+            }
+            if (!handles.equals(Set.of("true", "false"))) throw new BusinessException("workflow.graphInvalid");
+        }
     }
 
     /** 将数组节点复制为稳定列表，避免校验过程中依赖可变迭代器。 */

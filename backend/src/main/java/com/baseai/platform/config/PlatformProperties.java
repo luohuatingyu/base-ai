@@ -255,11 +255,13 @@ public class PlatformProperties {
         private int maxPayloadBytes = 1024 * 1024;
         private int maxWaitSeconds = 3600;
         private int maxExecutionSteps = 1000;
+        private int maxRunDurationSeconds = 86_400;
         private long maxRunLogBytes = 10L * 1024 * 1024;
         private int leaseSeconds = 60;
         private int webhookMaxBodyBytes = 1024 * 1024;
         private int webhookRateLimitPerMinute = 60;
         private int triggerDeliveryRetentionDays = 30;
+        private int runRetentionDays = 30;
         private String marketplaceN8nUrl = "https://n8n.io";
         private String marketplaceN8nApiUrl = "https://api.n8n.io";
         private String marketplaceNpmRegistryUrl = "https://registry.npmjs.org";
@@ -315,6 +317,10 @@ public class PlatformProperties {
         public int getMaxExecutionSteps() { return maxExecutionSteps; }
         /** 设置单次运行累计节点执行上限。 */
         public void setMaxExecutionSteps(int value) { maxExecutionSteps = value; }
+        /** 读取单次运行从入队到终态允许的最长秒数。 */
+        public int getMaxRunDurationSeconds() { return maxRunDurationSeconds; }
+        /** 设置单次运行从入队到终态允许的最长秒数。 */
+        public void setMaxRunDurationSeconds(int value) { maxRunDurationSeconds = value; }
         /** 读取单次运行节点日志明文累计字节上限。 */
         public long getMaxRunLogBytes() { return maxRunLogBytes; }
         /** 设置单次运行节点日志明文累计字节上限。 */
@@ -335,6 +341,10 @@ public class PlatformProperties {
         public int getTriggerDeliveryRetentionDays() { return triggerDeliveryRetentionDays; }
         /** 设置触发幂等记录保留天数。 */
         public void setTriggerDeliveryRetentionDays(int value) { triggerDeliveryRetentionDays = value; }
+        /** 读取工作流运行及节点日志保留天数。 */
+        public int getRunRetentionDays() { return runRetentionDays; }
+        /** 设置工作流运行及节点日志保留天数。 */
+        public void setRunRetentionDays(int value) { runRetentionDays = value; }
         /** 读取 n8n 官方市场根地址。 */
         public String getMarketplaceN8nUrl() { return marketplaceN8nUrl; }
         /** 设置 n8n 官方市场根地址。 */

@@ -310,10 +310,11 @@ public class WorkflowService {
         WorkflowModels.StoredVersion currentVersion = storedVersion(existing.currentVersionId());
         graphValidator.validate(currentVersion.graph());
         validateExecutableConfiguration(currentVersion);
-        jdbcTemplate.update("""
-            UPDATE workflow_definition SET published_version_id=current_version_id,status='PUBLISHED',enabled=true,
-                revision=revision+1,updated_at=NOW() WHERE id=? AND voided=false
-            """, id);
+        int changed = jdbcTemplate.update("""
+            UPDATE workflow_definition SET published_version_id=?,status='PUBLISHED',enabled=true,
+                revision=revision+1,updated_at=NOW() WHERE id=? AND current_version_id=? AND revision=? AND voided=false
+            """, currentVersion.id(), id, existing.currentVersionId(), existing.revision());
+        if (changed == 0) throw new BusinessException(409, "workflow.revisionConflict");
         return workflow(id);
     }
 
