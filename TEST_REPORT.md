@@ -1,5 +1,63 @@
 # 最近分支覆盖测试报告
 
+## 工作流可靠性与恢复修复测试结果（2026-08-13）
+
+### Git 基准点
+
+Commit: 099eeae629d13ed8a2c909c40a81473ff31c0dd6
+- 提交说明: Harden workflow execution reliability
+- 测试日期: 2026-08-13
+- 分支: master
+- 重测触发: 工作流触发幂等、执行恢复、图语义、发布并发、输入 Schema、运行期限和保留策略业务代码发生变更。
+
+### 变更范围
+
+- Webhook、消息和 Cron 投递增加事务边界、运行关联校验、孤儿投递回收和投递状态记录；缺失事件 ID 按至少一次语义生成独立标识。
+- Kafka 分区失败停止后续记录处理；发布使用已验证版本的乐观并发条件。
+- CONDITION 节点强制 true/false 分支，顶层图必须到达 END；等待恢复覆盖 WAITING/RESUMING。
+- 外部副作用节点不再套用通用自动重试；运行增加总期限、过期失败和节点/运行保留清理。
+- 开放输入使用受限递归 JSON Schema 校验，拒绝 $ref 和超深结构；新增 V21 MySQL 迁移及运行时配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例 | 结果与场景 |
+| --- | --- | --- |
+| 触发投递不重复、不永久悬挂 | WorkflowTriggerServiceTest、WorkflowMessageTriggerManagerTest、Compose/Flyway V21 | 通过；正常、异常、重试、兼容 |
+| 执行租约和总期限可恢复 | WorkflowExecutionServiceStateTest | 10/10；边界、状态冲突、回归 |
+| 图分支和 END 语义受控 | WorkflowGraphValidatorTest、执行状态测试 | 10/10；正常、边界、非法图 |
+| 发布并发不覆盖新草稿 | WorkflowServicePublishTest | 4/4；并发冲突、回归 |
+| 输入 Schema 递归约束有效 | WorkflowInputSchemaValidatorTest | 2/2；嵌套、范围、额外字段、恶意引用 |
+| 跨模块无回归 | Backend、Frontend、Python、Dify、n8n 完整套件 | 全部通过 |
+
+### 测试执行结果
+
+- Backend 完整：594/594，通过率 100%，失败 0，错误 0，跳过 0。
+- Backend 工作流定向：27/27，通过。
+- Frontend：129/129，通过。
+- Python Worker（Python 3.12，开发依赖容器）：48/48，通过。
+- Dify Worker：21/21，通过。
+- n8n Worker：9/9，通过；首次受限沙箱运行因无法监听 127.0.0.1 失败，放宽运行权限后重试通过。
+- docker compose config --quiet：通过。
+- docker compose up --build -d：首次因外部 domestic-trade-caddy 占用 80/443 失败；按规则停止该容器后重试成功。
+- 运行态：adapter-manager、python-worker、backend、frontend、caddy 全部 healthy；Flyway MySQL schema 版本 21。
+- 本轮合计自动化用例：801/801 通过。
+
+### 已知问题与限制
+
+- 插件 Worker 仍存在直接出网能力，尚未完成独立 outbound gateway、域名准入和 DNS 重绑定防护。
+- ConfigCryptoService 尚未完成带版本密钥轮换与迁移。
+- Cron 内部线程调用未经过 Spring 事务代理；孤儿投递回收提供最终恢复，但不是严格跨进程原子 outbox。
+- 运行清理按终态和保留期删除数据，生产环境应先确认合规保留期限。
+
+### 下次测试建议与重测触发条件
+
+- 修改工作流执行、触发、迁移、输入校验、配置或插件网络边界时，重新执行 Backend 全量、五服务 Compose 重建及 Python/Node Worker 套件。
+- 完成插件网关或密钥轮换后，新增网络攻击、DNS rebinding、密钥版本迁移和回滚测试。
+
+### 回滚方式
+
+- 回滚功能提交 099eeae 后重新执行 docker compose up --build -d；V21 为新增列和索引，回滚代码前需保留迁移结构，避免已应用 Flyway 历史不一致。
+
 ## 📋 工作流节点元数据语言适配测试结果（2026-08-12）
 
 ### Git 基准点
