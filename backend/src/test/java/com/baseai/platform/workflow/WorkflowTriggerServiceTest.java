@@ -10,6 +10,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +90,17 @@ class WorkflowTriggerServiceTest {
         BusinessException exception = assertThrows(BusinessException.class,
             () -> service.webhook("ORDERS", "hook", "invalid", "evt-3", "{}"));
         assertEquals(503, exception.getStatus());
+    }
+
+    /** 停机期间的多个 Cron 时间点只能补跑最后一个，避免恢复后突发执行历史积压。 */
+    @Test
+    void compensatesOnlyMostRecentMissedSchedule() {
+        Instant firstDue = Instant.parse("2026-08-14T04:00:00Z");
+        Instant now = Instant.parse("2026-08-14T04:05:30Z");
+
+        Instant latest = service.latestDueFire(firstDue, "0 * * * * *", ZoneId.of("UTC"), now);
+
+        assertEquals(Instant.parse("2026-08-14T04:05:00Z"), latest);
     }
 
     /** 生成测试 HMAC 签名。 */

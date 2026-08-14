@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,7 +50,8 @@ class WorkflowPluginWorkerClientTest {
         String workerUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         properties.getWorkflow().setDifyPluginWorkerUrl(workerUrl);
         properties.getWorkflow().setN8nPluginWorkerUrl(workerUrl);
-        properties.getWorkflow().setPluginWorkerInternalToken("x".repeat(24));
+        properties.getWorkflow().setDifyPluginWorkerInternalToken("d".repeat(24));
+        properties.getWorkflow().setN8nPluginWorkerInternalToken("n".repeat(24));
         properties.getWorkflow().setMarketplaceTimeoutSeconds(30);
         properties.getWorkflow().setPluginWorkerTimeoutSeconds(1);
         WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties, lifecycle());
@@ -65,8 +68,10 @@ class WorkflowPluginWorkerClientTest {
         String fingerprint = "a".repeat(64);
         int[] requestCount = {0};
         int[] versions = {5, 6, 5};
+        List<String> tokens = new CopyOnWriteArrayList<>();
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/packages/inspect", exchange -> {
+            tokens.add(exchange.getRequestHeaders().getFirst("X-Internal-Token"));
             byte[] body = ("""
                 {"fingerprint":"%s","runtimeLanguage":"node","hostAbiVersion":%d,"licenseName":"MIT",
                  "licenseUrl":"https://spdx.org/licenses/MIT.html","externalServices":[{"name":"API","domain":"api.example.com"}],"components":[
@@ -83,15 +88,18 @@ class WorkflowPluginWorkerClientTest {
         String workerUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         properties.getWorkflow().setDifyPluginWorkerUrl(workerUrl);
         properties.getWorkflow().setN8nPluginWorkerUrl(workerUrl);
-        properties.getWorkflow().setPluginWorkerInternalToken("x".repeat(24));
+        properties.getWorkflow().setDifyPluginWorkerInternalToken("d".repeat(24));
+        properties.getWorkflow().setN8nPluginWorkerInternalToken("n".repeat(24));
         WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties, lifecycle());
 
         WorkflowPluginWorkerClient.WorkerPackage n8n = client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint);
         assertEquals(5, n8n.hostAbiVersion());
+        assertEquals("n".repeat(24), tokens.get(0));
         assertEquals("MIT", n8n.licenseName());
         assertEquals("api.example.com", n8n.externalServices().get(0).domain());
         WorkflowPluginWorkerClient.WorkerPackage dify = client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint);
         assertEquals(6, dify.hostAbiVersion());
+        assertEquals("d".repeat(24), tokens.get(1));
         assertEquals("Action", dify.components().get(0).localization().path("name").path("en-US").asText());
         BusinessException outdated = assertThrows(BusinessException.class,
             () -> client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint));

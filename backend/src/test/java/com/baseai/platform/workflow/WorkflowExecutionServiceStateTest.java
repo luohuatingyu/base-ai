@@ -116,9 +116,9 @@ class WorkflowExecutionServiceStateTest {
             "SELECT status FROM workflow_run WHERE id='run-failed'", String.class));
     }
 
-    /** 队列拒绝必须把已持久化运行置为失败并返回 503，而不是永久停留 QUEUED。 */
+    /** 队列暂时拒绝必须释放领取权并保留 QUEUED，供后台派发器恢复后重试。 */
     @Test
-    void queueRejectionFailsPersistedRun() {
+    void queueRejectionReleasesPersistedRunForRetry() {
         WorkflowModels.StoredVersion version = new WorkflowModels.StoredVersion(2L, 1L, "ORDERS", 1,
             objectMapper.createObjectNode(), objectMapper.createObjectNode(), objectMapper.createObjectNode(), 7L);
         when(workflowService.executable("ORDERS", true)).thenReturn(version);
@@ -126,14 +126,12 @@ class WorkflowExecutionServiceStateTest {
         when(runtimeRegistry.create("trace-2")).thenReturn(new TraceRuntime("trace-2"));
         when(executor.submit(any(Runnable.class))).thenThrow(new TaskRejectedException("full"));
 
-        BusinessException exception = assertThrows(BusinessException.class,
-            () -> service.startPublished("ORDERS", Map.of()));
+        when(workflowService.storedVersion(2L)).thenReturn(version);
+        WorkflowModels.RunAccepted accepted = service.startPublished("ORDERS", Map.of());
 
-        assertEquals(503, exception.getStatus());
-        assertEquals("FAILED", jdbcTemplate.queryForObject("SELECT status FROM workflow_run", String.class));
-        String persisted = jdbcTemplate.queryForObject("SELECT error_message FROM workflow_run", String.class);
-        assertEquals(true, persisted.startsWith("@i18n:") && persisted.contains("workflow.queueFull"));
-        verify(taskTraceService).markFailed("trace-2", "工作流执行队列已满，请稍后重试");
+        assertEquals("QUEUED", accepted.status());
+        assertEquals("QUEUED", jdbcTemplate.queryForObject("SELECT status FROM workflow_run", String.class));
+        assertEquals(null, jdbcTemplate.queryForObject("SELECT execution_instance_id FROM workflow_run", String.class));
     }
 
     /** 结构化业务错误应按查询语言解析，历史纯文本继续原样返回。 */

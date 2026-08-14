@@ -11,6 +11,7 @@ const store = new PackageStore()
 const token = process.env.PLUGIN_WORKER_INTERNAL_TOKEN || ''
 const maximum = Number(process.env.PLUGIN_WORKER_MAX_REQUEST_BYTES || 15 * 1024 * 1024)
 const timeout = Math.min(Number(process.env.PLUGIN_INVOCATION_TIMEOUT_SECONDS || 60), 300) * 1000
+const inspectTimeout = Math.min(Number(process.env.PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS || 180) + 60, 660) * 1000
 
 /** 写入有限 JSON 响应。 */
 function respond(response, status, value) {
@@ -62,6 +63,35 @@ async function invoke(request) {
   })
 }
 
+/** 在不继承内部令牌的短生命周期进程中解压、安装依赖并探测插件。 */
+async function inspect(request) {
+  return childRequest('inspect-child.mjs', request, inspectTimeout)
+}
+
+/** 执行只通过标准输入输出交换有限 JSON 的隔离子进程。 */
+function childRequest(script, request, maximumTime) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(process.execPath, [resolve(root, script)], {
+      env: { PATH: process.env.PATH || '', NODE_ENV: 'production', LANG: 'C.UTF-8', HOME: '/data/tmp',
+        npm_config_cache: '/data/tmp/npm-cache' }, stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stdout = ''; let stderr = ''
+    const timer = setTimeout(() => { child.kill('SIGKILL'); rejectPromise(new PackageError('PLUGIN_INSPECTION_TIMEOUT')) }, maximumTime)
+    child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > maximum) child.kill('SIGKILL') })
+    child.stderr.on('data', chunk => { stderr += chunk; if (stderr.length > 4096) child.kill('SIGKILL') })
+    child.on('error', rejectPromise)
+    child.on('close', code => {
+      clearTimeout(timer)
+      try {
+        const result = JSON.parse(stdout)
+        if (code !== 0 || result.error) rejectPromise(new PackageError(result.error || 'PLUGIN_INSPECTION_FAILED'))
+        else resolvePromise(result)
+      } catch { rejectPromise(new PackageError('PLUGIN_OUTPUT_INVALID')) }
+    })
+    child.stdin.end(JSON.stringify(request))
+  })
+}
+
 if (token.length < 24) throw new Error('PLUGIN_WORKER_INTERNAL_TOKEN 至少需要 24 个字符')
 
 createServer(async (request, response) => {
@@ -71,7 +101,7 @@ createServer(async (request, response) => {
     }
     if (request.headers['x-internal-token'] !== token) { respond(response, 401, { error: 'UNAUTHORIZED' }); return }
     const value = await body(request)
-    if (request.method === 'POST' && request.url === '/packages/inspect') respond(response, 200, await store.install(value))
+    if (request.method === 'POST' && request.url === '/packages/inspect') respond(response, 200, await inspect(value))
     else if (request.method === 'POST' && request.url === '/packages/remove') respond(response, 200, await store.remove(value.fingerprint))
     else if (request.method === 'POST' && request.url === '/invocations') respond(response, 200, await invoke(value))
     else respond(response, 404, { error: 'NOT_FOUND' })

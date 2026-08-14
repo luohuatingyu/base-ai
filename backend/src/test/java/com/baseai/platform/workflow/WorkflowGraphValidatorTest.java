@@ -56,6 +56,24 @@ class WorkflowGraphValidatorTest {
             """)));
     }
 
+    /** 所有可达路径必须以 END 结束，不能在普通节点静默成功。 */
+    @Test
+    void rejectsTerminalNodeThatIsNotEnd() throws Exception {
+        assertThrows(BusinessException.class, () -> validator.validate(objectMapper.readTree("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"llm","type":"LLM"},{"id":"end","type":"END"}],
+             "edges":[{"id":"a","source":"start","target":"llm"}]}
+            """)));
+    }
+
+    /** END 之后不得继续连接下游副作用节点。 */
+    @Test
+    void rejectsEndNodeWithOutgoingEdge() throws Exception {
+        assertThrows(BusinessException.class, () -> validator.validate(objectMapper.readTree("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"end","type":"END"},{"id":"llm","type":"LLM"}],
+             "edges":[{"id":"a","source":"start","target":"end"},{"id":"b","source":"end","target":"llm"}]}
+            """)));
+    }
+
     /** Vue Flow 的 data.config 子画布也必须递归校验，不能绕过普通循环检测。 */
     @Test
     void rejectsCycleInsideVueFlowNodeConfig() throws Exception {

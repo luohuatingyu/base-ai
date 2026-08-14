@@ -131,6 +131,7 @@ public class WorkflowGraphValidator {
         if (hasCycle(outgoing, incoming)) throw new BusinessException("workflow.graphCycle");
         ensureReachable(byId, outgoing);
         ensureConditionBranches(byId, edges);
+        ensureTerminalEnds(byId, outgoing);
     }
 
     /** 使用 Kahn 算法检测普通图循环。 */
@@ -180,6 +181,15 @@ public class WorkflowGraphValidator {
                 }
             }
             if (!handles.equals(Set.of("true", "false"))) throw new BusinessException("workflow.graphInvalid");
+        }
+    }
+
+    /** 所有执行路径只能在 END 结束，且 END 不允许继续连接下游节点。 */
+    private void ensureTerminalEnds(Map<String, JsonNode> byId, Map<String, Set<String>> outgoing) {
+        for (Map.Entry<String, JsonNode> entry : byId.entrySet()) {
+            boolean end = "END".equals(nodeType(entry.getValue()));
+            boolean terminal = outgoing.get(entry.getKey()).isEmpty();
+            if (end != terminal) throw new BusinessException("workflow.graphInvalid");
         }
     }
 

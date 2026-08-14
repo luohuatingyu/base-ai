@@ -273,7 +273,8 @@ public class PlatformProperties {
         private int marketplaceMaxPackageFiles = 512;
         private String difyPluginWorkerUrl = "http://dify-plugin-worker:8101";
         private String n8nPluginWorkerUrl = "http://n8n-plugin-worker:8102";
-        private String pluginWorkerInternalToken = "";
+        private String difyPluginWorkerInternalToken = "";
+        private String n8nPluginWorkerInternalToken = "";
         private String adapterManagerUrl = "http://adapter-manager:8090";
         private String adapterManagerInternalToken = "";
         private int pluginWorkerTimeoutSeconds = 240;
@@ -389,10 +390,14 @@ public class PlatformProperties {
         public String getN8nPluginWorkerUrl() { return n8nPluginWorkerUrl; }
         /** 设置 Base AI 自研 n8n ABI Worker 地址。 */
         public void setN8nPluginWorkerUrl(String value) { n8nPluginWorkerUrl = value; }
-        /** 读取插件 Worker 内部鉴权令牌。 */
-        public String getPluginWorkerInternalToken() { return pluginWorkerInternalToken; }
-        /** 设置插件 Worker 内部鉴权令牌。 */
-        public void setPluginWorkerInternalToken(String value) { pluginWorkerInternalToken = value; }
+        /** 读取 Dify Worker 独立内部鉴权令牌。 */
+        public String getDifyPluginWorkerInternalToken() { return difyPluginWorkerInternalToken; }
+        /** 设置 Dify Worker 独立内部鉴权令牌。 */
+        public void setDifyPluginWorkerInternalToken(String value) { difyPluginWorkerInternalToken = value; }
+        /** 读取 n8n Worker 独立内部鉴权令牌。 */
+        public String getN8nPluginWorkerInternalToken() { return n8nPluginWorkerInternalToken; }
+        /** 设置 n8n Worker 独立内部鉴权令牌。 */
+        public void setN8nPluginWorkerInternalToken(String value) { n8nPluginWorkerInternalToken = value; }
         /** 读取按需启停插件 Worker 的隔离控制服务地址。 */
         public String getAdapterManagerUrl() { return adapterManagerUrl; }
         /** 设置按需启停插件 Worker 的隔离控制服务地址。 */
