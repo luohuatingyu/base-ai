@@ -187,13 +187,11 @@ public class WorkflowTriggerService {
     /** 从最早未触发时间推进到当前，保留唯一一条最近的停机补偿事件。 */
     Instant latestDueFire(Instant firstDue, String expression, ZoneId zone, Instant now) {
         Instant latest = firstDue;
-        for (int count = 0; count < 100_000; count++) {
+        while (true) {
             Instant candidate = nextFire(expression, zone, latest);
             if (candidate.isAfter(now)) return latest;
             latest = candidate;
         }
-        log.warn("Workflow schedule compensation was capped after 100000 occurrences: {}", expression);
-        return latest;
     }
 
     /** 计算严格晚于给定时刻的下一次 Cron 时间。 */
