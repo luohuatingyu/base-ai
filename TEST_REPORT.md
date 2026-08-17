@@ -61,7 +61,7 @@ Commit: 099eeae629d13ed8a2c909c40a81473ff31c0dd6
 
 ### 变更范围
 
-- Webhook、消息和 Cron 投递增加事务边界、运行关联校验、孤儿投递回收和投递状态记录；缺失事件 ID 按至少一次语义生成独立标识。
+- Webhook 和消息投递增加事务边界、运行关联校验、孤儿投递回收和投递状态记录；缺失事件 ID 按至少一次语义生成独立标识。旧版 Cron 内部调度线程不经过 Spring 事务代理，主要依赖幂等记录和孤儿投递回收提供最终恢复。
 - Kafka 分区失败停止后续记录处理；发布使用已验证版本的乐观并发条件。
 - CONDITION 节点强制 true/false 分支，顶层图必须到达 END；等待恢复覆盖 WAITING/RESUMING。
 - 外部副作用节点不再套用通用自动重试；运行增加总期限、过期失败和节点/运行保留清理。
@@ -71,7 +71,8 @@ Commit: 099eeae629d13ed8a2c909c40a81473ff31c0dd6
 
 | 验收标准 | 测试用例 | 结果与场景 |
 | --- | --- | --- |
-| 触发投递不重复、不永久悬挂 | WorkflowTriggerServiceTest、WorkflowMessageTriggerManagerTest、Compose/Flyway V21 | 通过；正常、异常、重试、兼容 |
+| Webhook/message 基本投递与 Kafka 分区失败受控 | WorkflowTriggerServiceTest、WorkflowMessageTriggerManagerTest | 通过；签名异常、事件 ID 校验、正常投递、分区失败 |
+| 重复投递、孤儿回收和 Cron 事务恢复 | 本轮未覆盖 | 不纳入本轮“全部通过”结论；需补充可执行测试 |
 | 执行租约和总期限可恢复 | WorkflowExecutionServiceStateTest | 10/10；边界、状态冲突、回归 |
 | 图分支和 END 语义受控 | WorkflowGraphValidatorTest、执行状态测试 | 10/10；正常、边界、非法图 |
 | 发布并发不覆盖新草稿 | WorkflowServicePublishTest | 4/4；并发冲突、回归 |
