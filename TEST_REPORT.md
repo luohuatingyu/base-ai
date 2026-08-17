@@ -1,5 +1,54 @@
 # 最近分支覆盖测试报告
 
+## 工作流可靠性、Cron 恢复与插件隔离测试结果（2026-08-17）
+
+### Git 基准点
+
+Commit: a09a46a
+- 提交说明: Compensate latest missed cron event
+- 前一功能提交: 0a234aa（Harden workflow execution recovery）
+- 测试日期: 2026-08-17
+- 分支: master
+- 重测触发: 工作流执行、触发调度、图终态、插件 Worker 隔离及核心配置发生业务变更。
+
+### 变更范围
+
+- 运行记录先以 QUEUED 持久化，事务提交后派发；后台扫描、租约和原子领取保证进程崩溃、队列拒绝及多实例恢复。
+- 总执行期限在排队、运行、WAIT 恢复和成功写回处统一校验；过期任务主动取消本地运行时，节点边界阻止迟到副作用继续执行。
+- Cron 计划持久化到 MySQL，多实例通过条件更新抢占；停机期间每个触发器只补跑最近一次错过时间点，并跳到当前时间之后。
+- 图校验要求所有可达路径以 END 结束且 END 无下游；WAIT 检查点保存终态信息。
+- Dify 与 n8n 使用独立内部令牌；n8n 包探测/安装移入不继承内部令牌的短生命周期子进程，插件仍可使用自身 HTTP 客户端完成非平台 ABI 调用。
+- 新增 V22 调度状态表、派发索引及对应部署配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例 | 结果与场景 |
+| --- | --- | --- |
+| 事务提交后可靠派发并可恢复 | WorkflowExecutionServiceStateTest、Compose 后端构建 | 通过；队列拒绝、租约过期、状态竞争、回归 |
+| 总期限阻止迟到成功和 WAIT 恢复 | WorkflowExecutionServiceStateTest | 通过；边界、超时、取消、副作用安全 |
+| 停机 Cron 每触发器只补最近一次 | WorkflowTriggerServiceTest | 5/5；正常、停机积压、幂等 |
+| 图执行只能以 END 成功 | WorkflowGraphValidatorTest | 12/12；悬空终点、END 下游、条件分支 |
+| 插件双令牌和非 ABI 兼容 | WorkflowPluginWorkerClientTest、n8n Worker tests | 通过；同地址令牌隔离、真实探测、兼容回归 |
+
+### 测试执行结果
+
+- Backend 完整：597/597，通过率 100%，失败 0，错误 0，跳过 0；由 `docker compose --profile plugin-adapters up --build -d` 构建阶段执行。
+- n8n Worker（Node 24 容器）：9/9，通过；宿主 Node 26 的原生断言及受限监听失败未计入支持版本结果。
+- Compose 配置：`docker compose --profile plugin-adapters config --quiet` 通过。
+- 运行态：Backend、Frontend、Python Worker、Dify Worker、n8n Worker、Adapter Manager、Caddy 全部 healthy。
+- Flyway：MySQL V22 成功应用，新增 `workflow_schedule_state` 和派发索引。
+- `git diff --check`：通过。
+
+### 已知问题与限制
+
+- 为保持未经平台 HTTP ABI 的第三方插件兼容，插件运行时仍允许其自身 HTTP 客户端出网；本次重点隔离平台内部令牌、安装/探测父进程和数据库/运行时状态，未引入会破坏现有插件的强制 HTTP 代理。
+- 超高频 Cron 在极长停机期间会逐次计算最近表达式时间，结果精确但恢复扫描耗时随错过次数增长；可后续增加按表达式类型的数学优化。
+
+### 下次测试建议
+
+- 修改工作流状态机、触发调度、V22 迁移、插件 Worker 环境变量或子进程边界时，重新执行 Backend 全量、Node Worker 全量和 Compose 重建。
+- 如未来增加出网网关，补充代理兼容、DNS rebinding、私网地址阻断和插件 HTTP 客户端回归测试。
+
 ## 工作流可靠性与恢复修复测试结果（2026-08-13）
 
 ### Git 基准点
