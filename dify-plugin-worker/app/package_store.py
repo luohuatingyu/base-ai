@@ -434,6 +434,8 @@ class PackageStore:
             name = matched.group(1).lower().replace("_", "-")
             if name in {item.replace("_", "-") for item in FORBIDDEN_REQUIREMENTS}:
                 continue
+            if not re.fullmatch(r"==\d+(?:\.\d+)+(?:[A-Za-z0-9.-]*)", matched.group(2).strip()):
+                raise PackageError("DEPENDENCY_VERSION_NOT_PINNED")
             result.append(line)
             if len(result) > 128:
                 raise PackageError("DEPENDENCY_COUNT_INVALID")

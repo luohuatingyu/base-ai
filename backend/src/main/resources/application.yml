@@ -30,6 +30,8 @@ spring:
       password: ${REDIS_PASSWORD}
       database: ${REDIS_DATABASE:0}
       timeout: ${REDIS_TIMEOUT:5s}
+      ssl:
+        enabled: ${REDIS_SSL:true}
       repositories:
         enabled: false
 app:
@@ -44,6 +46,8 @@ app:
   i18n:
     default-locale: ${APP_DEFAULT_LOCALE:en-US}
   config-encryption-key: ${APP_CONFIG_ENCRYPTION_KEY}
+  config-encryption-keys: ${APP_CONFIG_ENCRYPTION_KEYS:}
+  config-encryption-active-key-id: ${APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID:legacy}
   mysql-database:
     url: ${MYSQL_URL}
     username: ${MYSQL_USERNAME}
@@ -64,7 +68,7 @@ app:
   session-cookie:
     secure: ${APP_SESSION_COOKIE_SECURE:false}
   api-key:
-    hash-secret: ${APP_API_KEY_HASH_SECRET:${APP_CONFIG_ENCRYPTION_KEY}}
+    hash-secret: ${APP_API_KEY_HASH_SECRET}
   proxy:
     trusted-cidrs: ${APP_TRUSTED_PROXY_CIDRS:}
   login-security:

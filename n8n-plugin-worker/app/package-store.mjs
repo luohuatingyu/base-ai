@@ -5,10 +5,7 @@ import { existsSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, normalize, relative, resolve, sep } from 'node:path'
-import { spawnSync } from 'node:child_process'
-import { createRequire } from 'node:module'
-
-const require = createRequire(import.meta.url)
+import { spawn, spawnSync } from 'node:child_process'
 const SHIM = resolve(dirname(new URL(import.meta.url).pathname), 'abi-shim.cjs')
 const HOST_ABI_VERSION = 5
 
@@ -121,17 +118,15 @@ export class PackageStore {
       dependencyError = error.message
     }
     await this.#installShim(packageRoot)
+    const probed = await this.#probe(packageRoot, credentials, nodes)
     const credentialSchemas = new Map()
-    for (const relative of credentials) {
-      const loaded = await this.#load(packageRoot, relative)
-      if (loaded.error) continue
-      const instance = this.#instance(loaded.module)
-      if (instance?.name) credentialSchemas.set(instance.name, {
-        schema: this.#fields(instance.properties || [], true), authenticate: instance.authenticate || {},
+    for (const entry of probed.filter(item => item.kind === 'credential' && !item.error)) {
+      if (entry.name) credentialSchemas.set(entry.name, {
+        schema: this.#fields(entry.properties || [], true), authenticate: entry.authenticate || {},
       })
     }
-    const components = []
-    for (const relative of nodes) components.push(await this.#component(packageRoot, relative, credentialSchemas, dependencyError))
+    const components = nodes.map(relative => this.#componentFromProbe(
+      probed.find(item => item.kind === 'node' && item.relative === relative), credentialSchemas, dependencyError))
     if (!nodes.length) {
       for (const [name, credential] of credentialSchemas) components.push({
         externalId: name, name, description: '', componentType: 'EXTENSION', schema: [], credentialSchema: credential.schema,
@@ -218,7 +213,7 @@ module.exports = function set(target, path, value) {
     await writeFile(join(dependencyRoot, 'package.json'), JSON.stringify({ private: true }))
     const result = spawnSync('npm', [
       'install', '--prefix', dependencyRoot, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund',
-      '--package-lock=false', '--no-save', ...dependencies.map(item => `${item.name}@${item.version}`),
+      '--package-lock=true', '--save-exact', ...dependencies.map(item => `${item.name}@${item.version}`),
     ], {
       encoding: 'utf8', timeout: Math.max(10000, Math.min(this.installTimeout, 600000)),
       env: { PATH: process.env.PATH || '', HOME: '/data/tmp', npm_config_cache: '/data/tmp/npm-cache', LANG: 'C.UTF-8' },
@@ -234,7 +229,7 @@ module.exports = function set(target, path, value) {
     }
   }
 
-  /** 仅接受 npm 注册表包名和版本范围，禁止引擎、SDK、路径、URL 与别名来源。 */
+  /** 仅接受 npm 注册表包名和精确版本，禁止引擎、SDK、路径、URL 与范围来源。 */
   #safeDependencies(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return []
     const entries = []
@@ -245,66 +240,55 @@ module.exports = function set(target, path, value) {
         throw new PackageError('DEPENDENCY_DECLARATION_INVALID')
       }
       const version = String(rawVersion || '').trim()
-      if (!version || !/^[A-Za-z0-9*^~<>=| .+-]+$/.test(version)) throw new PackageError('DEPENDENCY_SOURCE_FORBIDDEN')
+      if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new PackageError('DEPENDENCY_VERSION_NOT_PINNED')
       entries.push({ name, version })
       if (entries.length > 128) throw new PackageError('DEPENDENCY_COUNT_INVALID')
     }
     return entries
   }
 
-  /** 加载受限包内模块并收敛缺失依赖错误。 */
-  async #load(packageRoot, relative) {
-    const source = resolve(packageRoot, String(relative || ''))
-    if (!source.startsWith(packageRoot + sep) || !existsSync(source)) return { error: 'NODE_SOURCE_MISSING' }
-    try {
-      delete require.cache[source]
-      return { module: require(source), source }
-    } catch (error) {
-      return { error: String(error?.code === 'MODULE_NOT_FOUND' ? 'DEPENDENCY_OR_ABI_MISSING' : error?.message || error).slice(0, 300), source }
-    }
+  /** 在无内部令牌的短生命周期子进程中探测插件模块。 */
+  #probe(packageRoot, credentials, nodes) {
+    return new Promise((resolvePromise, rejectPromise) => {
+      const child = spawn(process.execPath, [resolve(dirname(new URL(import.meta.url).pathname), 'probe-child.mjs')], {
+        env: { PATH: process.env.PATH || '', NODE_ENV: 'production', LANG: 'C.UTF-8' },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+      let stdout = ''; let stderr = ''
+      const timer = setTimeout(() => { child.kill('SIGKILL'); rejectPromise(new PackageError('PLUGIN_PROBE_TIMEOUT')) }, this.installTimeout)
+      child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > 4 * 1024 * 1024) child.kill('SIGKILL') })
+      child.stderr.on('data', chunk => { stderr += chunk; if (stderr.length > 4096) child.kill('SIGKILL') })
+      child.on('error', rejectPromise)
+      child.on('close', code => {
+        clearTimeout(timer)
+        try {
+          const result = JSON.parse(stdout)
+          if (code !== 0 || !result.success) rejectPromise(new PackageError(result.error || 'PLUGIN_PROBE_FAILED'))
+          else resolvePromise(Array.isArray(result.entries) ? result.entries : [])
+        } catch { rejectPromise(new PackageError('PLUGIN_PROBE_OUTPUT_INVALID')) }
+      })
+      child.stdin.end(JSON.stringify({ root: packageRoot, credentials, nodes }))
+    })
   }
 
-  /** 选择模块导出的第一个节点或凭据实例。 */
-  #instance(module) {
-    for (const value of Object.values(module || {})) {
-      if (typeof value === 'function') {
-        try { return this.#versioned(new value()) } catch { continue }
-      }
-      if (value && typeof value === 'object') return this.#versioned(value)
+  /** 根据隔离探测结果规范化节点描述和兼容状态。 */
+  #componentFromProbe(probe, credentialSchemas, dependencyError = '') {
+    const relative = String(probe?.relative || '')
+    if (!probe || probe.error) return {
+      externalId: relative, name: relative, description: '', componentType: 'ACTION', schema: [],
+      credentialSchema: [], sourcePath: relative, exportName: '', compatibilityStatus: 'UNSUPPORTED',
+      compatibilityReason: dependencyError || probe?.error || 'NODE_SOURCE_MISSING',
     }
-    return null
-  }
-
-  /** 展开 VersionedNodeType，并选择清单声明的默认版本实现。 */
-  #versioned(instance) {
-    if (!instance || typeof instance !== 'object') return instance
-    if (typeof instance.getNodeType === 'function') return instance.getNodeType() || instance
-    const versions = instance.nodeVersions || (instance.name === 'VersionedNodeType' ? instance.args?.[0] : undefined)
-    const base = instance.baseDescription || (instance.name === 'VersionedNodeType' ? instance.args?.[1] : undefined) || {}
-    if (!versions || typeof versions !== 'object') return instance
-    return versions[String(base.defaultVersion)] || versions[base.defaultVersion]
-      || Object.entries(versions).sort(([left], [right]) => Number(right) - Number(left))[0]?.[1] || instance
-  }
-
-  /** 规范化节点描述和兼容状态。 */
-  async #component(packageRoot, relative, credentialSchemas, dependencyError = '') {
-    const loaded = await this.#load(packageRoot, relative)
-    if (loaded.error) return {
-      externalId: String(relative), name: String(relative), description: '', componentType: 'ACTION', schema: [],
-      credentialSchema: [], sourcePath: String(relative), exportName: '', compatibilityStatus: 'UNSUPPORTED',
-      compatibilityReason: dependencyError || loaded.error,
-    }
-    const instance = this.#instance(loaded.module)
-    const description = instance?.description || {}
+    const description = probe.description || {}
     const externalId = String(description.name || relative)
     const credentialEntries = (description.credentials || []).map(item => credentialSchemas.get(item.name)).filter(Boolean)
     const credentialSchema = credentialEntries.flatMap(item => item.schema)
-    const componentType = this.#type(instance, description)
-    const executable = this.#executable(instance, componentType, description)
+    const componentType = this.#typeFromProbe(probe.methods || [], description)
+    const executable = this.#executableFromProbe(probe.methods || [], componentType, description)
     return {
       externalId, name: String(description.displayName || externalId), description: String(description.description || ''),
       componentType, schema: this.#fields(description.properties || []), credentialSchema,
-      sourcePath: String(relative), exportName: this.#exportName(loaded.module, instance),
+      sourcePath: relative, exportName: String(probe.exportName || ''),
       credentialAuthentications: credentialEntries.map(item => item.authenticate),
       serviceCandidates: [description, ...credentialEntries.map(item => item.authenticate)],
       compatibilityStatus: executable ? 'SUPPORTED' : 'PARTIAL',
@@ -312,12 +296,12 @@ module.exports = function set(target, path, value) {
     }
   }
 
-  /** 根据声明和实现方法归类插件组件。 */
-  #type(instance, description) {
+  /** 根据隔离探测得到的方法集合判断节点类型。 */
+  #typeFromProbe(methods, description) {
+    const has = name => methods.includes(name)
     const explicit = String(description.baseAiComponentType || '').toUpperCase()
     if (['ACTION', 'TRIGGER', 'MODEL', 'DATASOURCE', 'AGENT_STRATEGY', 'EXTENSION'].includes(explicit)) return explicit
-    if (typeof instance?.trigger === 'function' || typeof instance?.webhook === 'function' || typeof instance?.poll === 'function'
-        || description.polling || Array.isArray(description.webhooks)) return 'TRIGGER'
+    if (has('trigger') || has('webhook') || has('poll') || description.polling || Array.isArray(description.webhooks)) return 'TRIGGER'
     const outputs = JSON.stringify(description.outputs || []).toLowerCase()
     if (outputs.includes('language') || outputs.includes('embedding') || outputs.includes('model')) return 'MODEL'
     if (outputs.includes('agent')) return 'AGENT_STRATEGY'
@@ -325,12 +309,13 @@ module.exports = function set(target, path, value) {
     return 'ACTION'
   }
 
-  /** 判断当前宿主是否具备组件需要的入口方法。 */
-  #executable(instance, componentType, description) {
-    if (componentType === 'ACTION') return typeof instance?.execute === 'function' || this.#declarative(description)
-    if (componentType === 'TRIGGER') return ['trigger', 'webhook', 'poll'].some(name => typeof instance?.[name] === 'function')
-    if (['MODEL', 'DATASOURCE', 'AGENT_STRATEGY'].includes(componentType)) return typeof instance?.supplyData === 'function' || typeof instance?.execute === 'function'
-    return typeof instance?.execute === 'function'
+  /** 根据隔离探测得到的方法集合判断节点是否可执行。 */
+  #executableFromProbe(methods, componentType, description) {
+    const has = name => methods.includes(name)
+    if (componentType === 'ACTION') return has('execute') || this.#declarative(description)
+    if (componentType === 'TRIGGER') return ['trigger', 'webhook', 'poll'].some(has)
+    if (['MODEL', 'DATASOURCE', 'AGENT_STRATEGY'].includes(componentType)) return has('supplyData') || has('execute')
+    return has('execute')
   }
 
   /** 判断节点声明是否至少包含一条可安全解释的 HTTP 路由。 */
@@ -360,15 +345,18 @@ module.exports = function set(target, path, value) {
     if (routing.request && !this.#declarativeValue(routing.request)) return false
     if (routing.send) {
       const { preSend, ...send } = routing.send
-      if (preSend !== undefined && (!Array.isArray(preSend) || preSend.some(hook => typeof hook !== 'function'))) return false
+      if (preSend !== undefined && (!Array.isArray(preSend) || preSend.some(hook => !this.#isSafeHook(hook)))) return false
       if (!this.#declarativeValue(send)) return false
     }
     const postReceive = routing.output?.postReceive
     if (postReceive !== undefined
-      && (!Array.isArray(postReceive) || postReceive.some(hook => typeof hook !== 'function'
+      && (!Array.isArray(postReceive) || postReceive.some(hook => !this.#isSafeHook(hook)
         && (!['rootProperty', 'setKeyValue'].includes(hook?.type) || !this.#declarativeValue(hook))))) return false
     return true
   }
+
+  /** 识别隔离探测阶段编码的函数钩子，不在宿主进程执行。 */
+  #isSafeHook(value) { return typeof value === 'function' || value?.__baseAiFunctionHook === true }
 
   /** 静态确认路由值不要求执行任意 JavaScript 表达式。 */
   #declarativeValue(value) {
@@ -398,12 +386,6 @@ module.exports = function set(target, path, value) {
       .replace(/\{\}/g, '')
       .replace(/[0-9.\s+?:|&!=<>()[\],\/-]/g, '')
     return remaining === ''
-  }
-
-  /** 查找实例对应的导出名称。 */
-  #exportName(module, instance) {
-    return Object.entries(module || {}).find(([, value]) => typeof value === 'function' && instance instanceof value)?.[0]
-      || Object.entries(module || {}).find(([, value]) => typeof value === 'function')?.[0] || ''
   }
 
   /** 把 n8n 属性定义转换为受控动态字段。 */

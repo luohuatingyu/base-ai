@@ -83,6 +83,8 @@ class Handler(BaseHTTPRequestHandler):
         environment = {
             "PATH": os.getenv("PATH", ""), "PYTHONPATH": "/app", "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONUNBUFFERED": "1", "LANG": "C.UTF-8",
+            "HTTP_PROXY": os.getenv("HTTP_PROXY", ""), "HTTPS_PROXY": os.getenv("HTTPS_PROXY", ""),
+            "NO_PROXY": os.getenv("NO_PROXY", ""),
         }
         try:
             result = subprocess.run(

@@ -153,7 +153,8 @@ func (c *controller) runOperation(source string, service string, enabled bool) {
 	arguments := c.composeArguments()
 	if enabled {
 		timeout = 10 * time.Minute
-		arguments = append(arguments, "--profile", "plugin-adapters", "up", "-d", "--build", "--no-deps", service)
+			// 适配器镜像必须由发布流程预构建，管理面不再通过 Docker Socket 执行构建。
+			arguments = append(arguments, "--profile", "plugin-adapters", "up", "-d", "--no-build", "--no-deps", service)
 	} else {
 		arguments = append(arguments, "stop", "-t", "10", service)
 	}

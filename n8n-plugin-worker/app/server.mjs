@@ -44,7 +44,11 @@ async function invoke(request) {
     exportName: component.exportName, credentialAuthentications: component.credentialAuthentications || [] })
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [resolve(root, 'invoke-child.mjs')], {
-      env: { PATH: process.env.PATH || '', NODE_ENV: 'production', LANG: 'C.UTF-8' }, stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        PATH: process.env.PATH || '', NODE_ENV: 'production', LANG: 'C.UTF-8',
+        HTTP_PROXY: process.env.HTTP_PROXY || '', HTTPS_PROXY: process.env.HTTPS_PROXY || '',
+        NO_PROXY: process.env.NO_PROXY || '',
+      }, stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stdout = ''; let stderr = ''
     const timer = setTimeout(() => { child.kill('SIGKILL'); rejectPromise(new PackageError('PLUGIN_INVOCATION_TIMEOUT')) }, timeout)

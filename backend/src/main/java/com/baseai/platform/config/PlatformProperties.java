@@ -15,6 +15,10 @@ public class PlatformProperties {
     /** 接口国际化配置。 */
     private I18n i18n = new I18n();
     private String configEncryptionKey;
+    /** 可选的带版本配置密钥集合，格式为 key-id=Base64Key,key-id=Base64Key。 */
+    private String configEncryptionKeys;
+    /** 新写入密文使用的配置密钥编号。 */
+    private String configEncryptionActiveKeyId = "legacy";
     /** MySQL 主数据源配置。 */
     private DatabaseProperties mysqlDatabase = new DatabaseProperties();
     /** PostgreSQL 业务数据源配置。 */
@@ -46,6 +50,10 @@ public class PlatformProperties {
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }
     public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
+    public String getConfigEncryptionKeys() { return configEncryptionKeys; }
+    public void setConfigEncryptionKeys(String configEncryptionKeys) { this.configEncryptionKeys = configEncryptionKeys; }
+    public String getConfigEncryptionActiveKeyId() { return configEncryptionActiveKeyId; }
+    public void setConfigEncryptionActiveKeyId(String value) { this.configEncryptionActiveKeyId = value; }
     public Platform getPlatform() { return platform; }
     public void setPlatform(Platform platform) { this.platform = platform; }
     /** 返回接口国际化配置。 */

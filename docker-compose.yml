@@ -36,6 +36,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_TIMEOUT: ${REDIS_TIMEOUT:-5s}
+      REDIS_SSL: ${REDIS_SSL:-true}
       APP_TOKEN_SECRET: ${APP_TOKEN_SECRET:?Set APP_TOKEN_SECRET}
       APP_SESSION_COOKIE_SECURE: ${APP_SESSION_COOKIE_SECURE:-true}
       APP_PLATFORM_CODE: ${APP_PLATFORM_CODE:-ai-platform}
@@ -48,7 +49,9 @@ services:
       APP_SEED_ADMIN_PASSWORD: ${APP_SEED_ADMIN_PASSWORD:?Set APP_SEED_ADMIN_PASSWORD}
       APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED: ${APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED:-false}
       APP_CONFIG_ENCRYPTION_KEY: ${APP_CONFIG_ENCRYPTION_KEY:?Set APP_CONFIG_ENCRYPTION_KEY}
-      APP_API_KEY_HASH_SECRET: ${APP_API_KEY_HASH_SECRET:-${APP_CONFIG_ENCRYPTION_KEY}}
+      APP_CONFIG_ENCRYPTION_KEYS: ${APP_CONFIG_ENCRYPTION_KEYS:-}
+      APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID: ${APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID:-legacy}
+      APP_API_KEY_HASH_SECRET: ${APP_API_KEY_HASH_SECRET:?Set APP_API_KEY_HASH_SECRET}
       APP_TRUSTED_PROXY_CIDRS: ${APP_TRUSTED_PROXY_CIDRS:-${CADDY_INTERNAL_IP:-172.30.0.10}/32}
       APP_LOGIN_ACCOUNT_IP_FAILURES: ${APP_LOGIN_ACCOUNT_IP_FAILURES:-5}
       APP_LOGIN_IP_FAILURES: ${APP_LOGIN_IP_FAILURES:-20}
@@ -129,6 +132,7 @@ services:
     stop_grace_period: 20s
     networks:
       - app-network
+      - outbound-network
 
   python-worker:
     build:
@@ -151,7 +155,7 @@ services:
       PYTHON_WORKER_INSTANCE_ID: ${PYTHON_WORKER_INSTANCE_ID:-python-worker-1}
       APP_PLATFORM_NAME_EN: ${APP_PLATFORM_NAME_EN:-AI Platform}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
-      LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-true}
+      LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-false}
       WORKER_MAX_REQUEST_BYTES: ${WORKER_MAX_REQUEST_BYTES:-20971520}
       LLM_RESPONSE_MAX_BYTES: ${LLM_RESPONSE_MAX_BYTES:-10485760}
       TRACE_LOG_PERSIST_LEVEL: ${TRACE_LOG_PERSIST_LEVEL:-INFO}
@@ -188,7 +192,11 @@ services:
       COMPOSE_ENV_FILE: /workspace/.env
       DOCKER_CONFIG: /tmp/docker-config
     volumes:
-      - .:/workspace:ro
+      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
+      - ./.env:/workspace/.env:ro
+      - ./backend/config/trace-tracking-exclusions.yml:/workspace/backend/config/trace-tracking-exclusions.yml:ro
+      - ./Caddyfile:/workspace/Caddyfile:ro
+      - ./caddy:/workspace/caddy:ro
       - /var/run/docker.sock:/var/run/docker.sock
     tmpfs:
       - /tmp:size=16m,mode=1700
@@ -199,6 +207,32 @@ services:
       retries: 10
     networks:
       - app-network
+
+  outbound-gateway:
+    build:
+      context: ./outbound-gateway
+      args:
+        GO_IMAGE: ${GO_IMAGE:-golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2}
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    environment:
+      OUTBOUND_GATEWAY_TOKEN: ${OUTBOUND_GATEWAY_TOKEN:?Set OUTBOUND_GATEWAY_TOKEN}
+      OUTBOUND_ALLOWED_DOMAINS: ${OUTBOUND_ALLOWED_DOMAINS:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app-network
+      - outbound-network
 
   dify-plugin-worker:
     profiles: ["plugin-adapters"]
@@ -234,6 +268,9 @@ services:
       PLUGIN_PIP_CACHE_DIR: ${PLUGIN_PIP_CACHE_DIR:-/data/packages/.pip-cache}
       PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
       PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+      HTTP_PROXY: http://outbound-gateway:8080
+      HTTPS_PROXY: http://outbound-gateway:8080
+      NO_PROXY: localhost,127.0.0.1,backend,python-worker,outbound-gateway
     volumes:
       - dify-plugin-packages:/data/packages
     tmpfs:
@@ -245,7 +282,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - app-network
+      - outbound-network
 
   n8n-plugin-worker:
     profiles: ["plugin-adapters"]
@@ -275,6 +312,9 @@ services:
       PLUGIN_MAX_PACKAGE_FILES: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_FILES:-512}
       PLUGIN_INVOCATION_TIMEOUT_SECONDS: ${PLUGIN_INVOCATION_TIMEOUT_SECONDS:-60}
       PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS: ${PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS:-180}
+      HTTP_PROXY: http://outbound-gateway:8080
+      HTTPS_PROXY: http://outbound-gateway:8080
+      NO_PROXY: localhost,127.0.0.1,backend,python-worker,outbound-gateway
     volumes:
       - n8n-plugin-packages:/data/packages
     tmpfs:
@@ -286,7 +326,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - app-network
+      - outbound-network
 
   frontend:
     build:
@@ -384,6 +424,9 @@ networks:
     ipam:
       config:
         - subnet: ${APP_NETWORK_SUBNET:-172.30.0.0/24}
+  outbound-network:
+    driver: bridge
+    internal: true
 
 volumes:
   caddy-data:
