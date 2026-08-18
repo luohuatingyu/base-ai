@@ -25,11 +25,13 @@ test('Compose 默认不启动插件 Worker 且隔离 manager 只挂载所需控�
     assert.match(block, /profiles: \["plugin-adapters"\]/)
     assert.match(block, /restart: "no"/)
   }
-  const managerStart = compose.indexOf('  adapter-manager:')
-  const managerEnd = compose.indexOf('\n  dify-plugin-worker:', managerStart)
+  const managerStart = compose.indexOf('\n  adapter-manager:\n') + 1
+  const managerEnd = compose.indexOf('\n  outbound-gateway:', managerStart)
   const manager = compose.slice(managerStart, managerEnd)
   assert.match(manager, /\/var\/run\/docker\.sock:\/var\/run\/docker\.sock/)
-  assert.match(manager, /\.\:\/workspace:ro/)
+  assert.match(manager, /\.\/docker-compose\.yml:\/workspace\/docker-compose\.yml:ro/)
+  assert.match(manager, /\.\/\.env:\/workspace\/\.env:ro/)
+  assert.doesNotMatch(manager, /^\s*-\s+\.:\/workspace:ro$/m)
   assert.match(manager, /cap_drop:\s*\n\s*- ALL/)
   assert.match(manager, /no-new-privileges:true/)
   assert.doesNotMatch(manager, /ports:/)
@@ -42,7 +44,7 @@ test('adapter-manager 固定来源白名单并拒绝把请求值拼入 Compose �
   assert.match(manager, /"DIFY":\s+"dify-plugin-worker"/)
   assert.match(manager, /ConstantTimeCompare/)
   assert.match(manager, /http\.MaxBytesReader/)
-  assert.match(manager, /"--no-deps", service/)
+  assert.match(manager, /"--no-build", "--no-deps", service/)
 })
 
 test('插件准入清单使用独立权限并强制保存后审批', async () => {
