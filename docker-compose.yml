@@ -26,6 +26,7 @@ services:
       MYSQL_URL: ${MYSQL_URL:?Set MYSQL_URL}
       MYSQL_USERNAME: ${MYSQL_USERNAME:?Set MYSQL_USERNAME}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_POOL_SIZE: ${MYSQL_POOL_SIZE:-20}
       POSTGRES_URL: ${POSTGRES_URL:?Set POSTGRES_URL}
       POSTGRES_USERNAME: ${POSTGRES_USERNAME:?Set POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
@@ -62,8 +63,8 @@ services:
       APP_MAX_REQUEST_HEADER_SIZE: ${APP_MAX_REQUEST_HEADER_SIZE:-16KB}
       PYTHON_WORKER_URL: ${PYTHON_WORKER_URL:-http://python-worker:8000}
       PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
-      DIFY_PLUGIN_WORKER_URL: ${DIFY_PLUGIN_WORKER_URL:-http://dify-plugin-worker:8101}
-      N8N_PLUGIN_WORKER_URL: ${N8N_PLUGIN_WORKER_URL:-http://n8n-plugin-worker:8102}
+      DIFY_PLUGIN_WORKER_URL: ${DIFY_PLUGIN_WORKER_URL:-http://outbound-gateway:8080/internal/workers/dify}
+      N8N_PLUGIN_WORKER_URL: ${N8N_PLUGIN_WORKER_URL:-http://outbound-gateway:8080/internal/workers/n8n}
       DIFY_PLUGIN_WORKER_INTERNAL_TOKEN: ${DIFY_PLUGIN_WORKER_INTERNAL_TOKEN:?Set DIFY_PLUGIN_WORKER_INTERNAL_TOKEN}
       N8N_PLUGIN_WORKER_INTERNAL_TOKEN: ${N8N_PLUGIN_WORKER_INTERNAL_TOKEN:?Set N8N_PLUGIN_WORKER_INTERNAL_TOKEN}
       ADAPTER_MANAGER_URL: ${ADAPTER_MANAGER_URL:-http://adapter-manager:8090}
@@ -123,6 +124,8 @@ services:
         condition: service_healthy
       adapter-manager:
         condition: service_healthy
+      outbound-gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/open/health/ready"]
       interval: 15s
@@ -132,7 +135,6 @@ services:
     stop_grace_period: 20s
     networks:
       - app-network
-      - outbound-network
 
   python-worker:
     build:
@@ -255,6 +257,9 @@ services:
     mem_limit: ${DIFY_PLUGIN_WORKER_MEMORY_LIMIT:-${PLUGIN_WORKER_MEMORY_LIMIT:-1g}}
     cpus: ${DIFY_PLUGIN_WORKER_CPU_LIMIT:-${PLUGIN_WORKER_CPU_LIMIT:-2.0}}
     logging: *default-logging
+    depends_on:
+      outbound-gateway:
+        condition: service_healthy
     environment:
       PORT: 8101
       PLUGIN_WORKER_INTERNAL_TOKEN: ${DIFY_PLUGIN_WORKER_INTERNAL_TOKEN:?Set DIFY_PLUGIN_WORKER_INTERNAL_TOKEN}
@@ -268,8 +273,8 @@ services:
       PLUGIN_PIP_CACHE_DIR: ${PLUGIN_PIP_CACHE_DIR:-/data/packages/.pip-cache}
       PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
       PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
-      HTTP_PROXY: http://outbound-gateway:8080
-      HTTPS_PROXY: http://outbound-gateway:8080
+      HTTP_PROXY: http://${OUTBOUND_GATEWAY_TOKEN:?Set OUTBOUND_GATEWAY_TOKEN}@outbound-gateway:8080
+      HTTPS_PROXY: http://${OUTBOUND_GATEWAY_TOKEN:?Set OUTBOUND_GATEWAY_TOKEN}@outbound-gateway:8080
       NO_PROXY: localhost,127.0.0.1,backend,python-worker,outbound-gateway
     volumes:
       - dify-plugin-packages:/data/packages
@@ -303,6 +308,9 @@ services:
     mem_limit: ${PLUGIN_WORKER_MEMORY_LIMIT:-512m}
     cpus: ${PLUGIN_WORKER_CPU_LIMIT:-1.0}
     logging: *default-logging
+    depends_on:
+      outbound-gateway:
+        condition: service_healthy
     environment:
       PORT: 8102
       PLUGIN_WORKER_INTERNAL_TOKEN: ${N8N_PLUGIN_WORKER_INTERNAL_TOKEN:?Set N8N_PLUGIN_WORKER_INTERNAL_TOKEN}
@@ -312,8 +320,8 @@ services:
       PLUGIN_MAX_PACKAGE_FILES: ${WORKFLOW_MARKETPLACE_MAX_PACKAGE_FILES:-512}
       PLUGIN_INVOCATION_TIMEOUT_SECONDS: ${PLUGIN_INVOCATION_TIMEOUT_SECONDS:-60}
       PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS: ${PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS:-180}
-      HTTP_PROXY: http://outbound-gateway:8080
-      HTTPS_PROXY: http://outbound-gateway:8080
+      HTTP_PROXY: http://${OUTBOUND_GATEWAY_TOKEN:?Set OUTBOUND_GATEWAY_TOKEN}@outbound-gateway:8080
+      HTTPS_PROXY: http://${OUTBOUND_GATEWAY_TOKEN:?Set OUTBOUND_GATEWAY_TOKEN}@outbound-gateway:8080
       NO_PROXY: localhost,127.0.0.1,backend,python-worker,outbound-gateway
     volumes:
       - n8n-plugin-packages:/data/packages

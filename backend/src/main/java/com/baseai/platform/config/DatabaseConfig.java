@@ -39,8 +39,8 @@ public class DatabaseConfig {
     @Bean("auditDataSource")
     public DataSource auditDataSource(PlatformProperties properties) {
         HikariDataSource dataSource = createDataSource("mysql-audit", properties.getMysqlDatabase());
-        dataSource.setMaximumPoolSize(30);
-        dataSource.setMinimumIdle(15);
+        dataSource.setMaximumPoolSize(Math.max(2, Math.min(10, properties.getMysqlDatabase().getMaximumPoolSize() / 2)));
+        dataSource.setMinimumIdle(1);
         return dataSource;
     }
 
@@ -74,7 +74,7 @@ public class DatabaseConfig {
         dataSource.setDriverClassName(properties.getDriverClassName());
         dataSource.setMaximumPoolSize(properties.getMaximumPoolSize());
         dataSource.setConnectionTimeout(properties.getConnectionTimeoutMs());
-        dataSource.setMinimumIdle((properties.getMaximumPoolSize() + 1) / 2);
+        dataSource.setMinimumIdle(Math.min(2, properties.getMaximumPoolSize()));
         return dataSource;
     }
 

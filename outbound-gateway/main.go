@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -18,7 +19,6 @@ import (
 type gateway struct {
 	token   string
 	domains []string
-	client  *http.Client
 }
 
 func main() {
@@ -26,10 +26,7 @@ func main() {
 	if len(token) < 24 {
 		log.Fatal("OUTBOUND_GATEWAY_TOKEN must contain at least 24 characters")
 	}
-	g := &gateway{token: token, domains: parseDomains(os.Getenv("OUTBOUND_ALLOWED_DOMAINS")), client: &http.Client{
-		Timeout:       120 * time.Second,
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-	}}
+	g := &gateway{token: token, domains: parseDomains(os.Getenv("OUTBOUND_ALLOWED_DOMAINS"))}
 	server := &http.Server{Addr: ":8080", Handler: g, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 130 * time.Second, WriteTimeout: 130 * time.Second, IdleTimeout: 30 * time.Second}
 	log.Printf("outbound gateway started allowed_domains=%d", len(g.domains))
@@ -41,6 +38,10 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, `{"status":"UP"}`)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/internal/workers/") {
+		g.worker(w, r)
+		return
+	}
 	if !g.authorized(r) {
 		writeJSON(w, http.StatusUnauthorized, `{"error":"UNAUTHORIZED"}`)
 		return
@@ -50,6 +51,38 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.forward(w, r)
+}
+
+// worker 把 Backend 的受鉴权请求转发到隔离网络中的固定插件 Worker。
+func (g *gateway) worker(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, `{"error":"METHOD_NOT_ALLOWED"}`)
+		return
+	}
+	prefix := ""
+	target := ""
+	if strings.HasPrefix(r.URL.Path, "/internal/workers/dify/") {
+		prefix, target = "/internal/workers/dify", "http://dify-plugin-worker:8101"
+	}
+	if strings.HasPrefix(r.URL.Path, "/internal/workers/n8n/") {
+		prefix, target = "/internal/workers/n8n", "http://n8n-plugin-worker:8102"
+	}
+	if target == "" {
+		writeJSON(w, http.StatusNotFound, `{"error":"WORKER_NOT_FOUND"}`)
+		return
+	}
+	upstream, _ := url.Parse(target)
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	proxy.Director = func(request *http.Request) {
+		request.URL.Scheme = upstream.Scheme
+		request.URL.Host = upstream.Host
+		request.URL.Path = strings.TrimPrefix(request.URL.Path, prefix)
+		request.Host = upstream.Host
+	}
+	proxy.ErrorHandler = func(writer http.ResponseWriter, _ *http.Request, _ error) {
+		writeJSON(writer, http.StatusBadGateway, `{"error":"WORKER_UPSTREAM_FAILED"}`)
+	}
+	proxy.ServeHTTP(w, r)
 }
 
 func (g *gateway) forward(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +196,25 @@ func (g *gateway) transport() http.RoundTripper {
 
 func (g *gateway) authorized(r *http.Request) bool {
 	provided := r.Header.Get("X-Internal-Token")
+	if len(provided) == len(g.token) && subtle.ConstantTimeCompare([]byte(provided), []byte(g.token)) == 1 {
+		return true
+	}
+	proxy := strings.TrimSpace(r.Header.Get("Proxy-Authorization"))
+	if !strings.HasPrefix(proxy, "Basic ") {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(strings.TrimPrefix(proxy, "Basic ")))
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	provided = parts[0]
+	if parts[1] != "" {
+		provided = parts[1]
+	}
 	return len(provided) == len(g.token) && subtle.ConstantTimeCompare([]byte(provided), []byte(g.token)) == 1
 }
 

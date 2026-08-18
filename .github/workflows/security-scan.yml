@@ -52,6 +52,18 @@ jobs:
           - image: python-worker
             context: python-worker
             dockerfile: python-worker/Dockerfile
+          - image: dify-plugin-worker
+            context: dify-plugin-worker
+            dockerfile: dify-plugin-worker/Dockerfile
+          - image: n8n-plugin-worker
+            context: n8n-plugin-worker
+            dockerfile: n8n-plugin-worker/Dockerfile
+          - image: adapter-manager
+            context: adapter-manager
+            dockerfile: adapter-manager/Dockerfile
+          - image: outbound-gateway
+            context: outbound-gateway
+            dockerfile: outbound-gateway/Dockerfile
           - image: caddy
             context: caddy
             dockerfile: caddy/Dockerfile

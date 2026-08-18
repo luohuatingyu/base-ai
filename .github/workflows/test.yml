@@ -1,0 +1,100 @@
+name: Functional Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: functional-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - run: mvn -B -ntp test
+        working-directory: backend
+
+  frontend:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci && npm test
+        working-directory: frontend
+
+  workers:
+    name: Worker tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --require-hashes -r requirements-dev.txt
+        working-directory: python-worker
+      - run: python -m unittest discover -s tests -v
+        working-directory: python-worker
+      - run: python -m pip install -r requirements.txt
+        working-directory: dify-plugin-worker
+      - run: python -m unittest discover -s tests -v
+        working-directory: dify-plugin-worker
+      - run: npm test
+        working-directory: n8n-plugin-worker
+
+  go:
+    name: Go services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+      - run: go test ./...
+        working-directory: adapter-manager
+      - run: go test ./...
+        working-directory: outbound-gateway
+
+  compose:
+    name: Compose validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Validate Compose interpolation and service topology
+        env:
+          COMPOSE_PROJECT_NAME: ci
+          MYSQL_URL: jdbc:mysql://mysql.example/base
+          MYSQL_USERNAME: ci
+          MYSQL_PASSWORD: ci-password
+          POSTGRES_URL: jdbc:postgresql://postgres.example/base?sslmode=verify-full
+          POSTGRES_USERNAME: ci
+          POSTGRES_PASSWORD: ci-password
+          REDIS_HOST: redis.example
+          REDIS_PASSWORD: ci-password
+          APP_TOKEN_SECRET: ci-token-secret-123456789012345678901234
+          APP_SEED_ADMIN_PASSWORD: ci-admin-password
+          APP_CONFIG_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+          APP_API_KEY_HASH_SECRET: ci-api-key-secret-123456789012345678901234
+          PYTHON_WORKER_INTERNAL_TOKEN: ci-python-token-123456789012345678
+          DIFY_PLUGIN_WORKER_INTERNAL_TOKEN: ci-dify-token-123456789012345678
+          N8N_PLUGIN_WORKER_INTERNAL_TOKEN: ci-n8n-token-123456789012345678
+          ADAPTER_MANAGER_INTERNAL_TOKEN: ci-adapter-token-123456789012345678
+          OUTBOUND_GATEWAY_TOKEN: ci-outbound-token-123456789012345678
+        run: docker compose config --quiet

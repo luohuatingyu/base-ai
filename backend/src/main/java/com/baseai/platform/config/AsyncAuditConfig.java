@@ -12,15 +12,15 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 public class AsyncAuditConfig {
 
-    /** 创建不反压业务请求的有界审计日志线程池。 */
+    /** 创建有界审计日志线程池；满载时由调用线程执行，避免安全审计静默丢失。 */
     @Bean("auditTaskExecutor")
     public ThreadPoolTaskExecutor auditTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(2);
         executor.setMaxPoolSize(4);
-        executor.setQueueCapacity(100);
+        executor.setQueueCapacity(1000);
         executor.setThreadNamePrefix("audit-log-");
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(false);
         executor.initialize();
         return executor;

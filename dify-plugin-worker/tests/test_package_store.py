@@ -363,6 +363,8 @@ class CredentialTool(Tool):
             "dify_plugin~=0.6.0\nrequests==2.32.5\n"))
         with self.assertRaisesRegex(PackageError, "DEPENDENCY_SOURCE_FORBIDDEN"):
             self.store._safe_requirements("sample @ https://example.com/sample.whl\n")
+        with self.assertRaisesRegex(PackageError, "DEPENDENCY_VERSION_NOT_PINNED"):
+            self.store._safe_requirements("requests>=2.32\n")
 
     def test_installs_dependencies_with_persistent_download_cache(self) -> None:
         """依赖安装应复用持久下载缓存，同时把临时文件限制在插件持久化目录。"""

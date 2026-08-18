@@ -104,7 +104,7 @@ Redis 存储可重建状态，包括在线会话、已撤销 Token 标识、API 
 Vue -> Java /api/ai/chat -> Python /llm/chat -> 兼容 OpenAI 的 API
 ```
 
-如果运行环境不允许将提示词和模型响应写入应用日志，请设置 `LLM_LOG_CONTENT=false`。关闭内容日志后，Worker 只记录元数据和响应摘要。
+提示词和模型响应默认不写入应用日志。只有完成数据分类和日志访问评审后才应显式设置 `LLM_LOG_CONTENT=true`；关闭内容日志时 Worker 只记录元数据和响应摘要。
 
 ## API Key 访问
 
@@ -126,7 +126,7 @@ curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
 - 绑定用户和 Key 都必须保持启用，同时还会校验有效期、吊销状态、IP 白名单和调用频率限制。
 - 请求不得同时携带 `Authorization` 和 `X-API-Key`；混合凭据会返回 HTTP 401。
 - API Key 管理接口接受浏览器登录态或 Bearer Token，但不接受 API Key 自身认证。
-- `APP_API_KEY_HASH_SECRET` 建议使用独立密钥；未设置时会复用 `APP_CONFIG_ENCRYPTION_KEY`。
+- `APP_API_KEY_HASH_SECRET` 是必填的独立密钥，不允许复用 `APP_CONFIG_ENCRYPTION_KEY`。
 
 当前支持 API Key 的接口包括 AI 对话调用、正式的接口触发执行，以及已发布工作流的执行与状态查询。
 
@@ -208,9 +208,9 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 
 - **MySQL：** `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
 - **PostgreSQL：** `POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`、`POSTGRES_POOL_SIZE`。
-- **Redis：** `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`、`REDIS_TIMEOUT`。
+- **Redis：** `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`、`REDIS_TIMEOUT`、`REDIS_SSL`。
 - **品牌与语言：** `APP_PLATFORM_CODE`、`APP_PLATFORM_NAME_EN`、`APP_PLATFORM_NAME_ZH`、`APP_PLATFORM_SHORT_NAME`、`APP_DEFAULT_LOCALE`。
-- **认证与加密：** `APP_TOKEN_SECRET`、`APP_TOKEN_EXPIRE_MINUTES`、`APP_SESSION_COOKIE_SECURE`、`APP_SEED_ADMIN_USERNAME`、`APP_SEED_ADMIN_PASSWORD`、`APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`、`APP_CONFIG_ENCRYPTION_KEY`、`APP_API_KEY_HASH_SECRET`。
+- **认证与加密：** `APP_TOKEN_SECRET`、`APP_TOKEN_EXPIRE_MINUTES`、`APP_SESSION_COOKIE_SECURE`、`APP_SEED_ADMIN_USERNAME`、`APP_SEED_ADMIN_PASSWORD`、`APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`、`APP_CONFIG_ENCRYPTION_KEY`、`APP_CONFIG_ENCRYPTION_KEYS`、`APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`、`APP_API_KEY_HASH_SECRET`。
 - **Worker 与模型调用：** `PYTHON_WORKER_INTERNAL_TOKEN`、`JAVA_INSTANCE_ID`、`PYTHON_WORKER_INSTANCE_ID`、`LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
@@ -398,8 +398,10 @@ TEST_REPORT.md                  测试基准和执行历史
 - MySQL 系统数据库和 PostgreSQL 业务数据库应使用独立的最小权限账号。
 - 首次启动前轮换所有示例凭据。
 - 不要将供应商凭据写入源代码、Shell 历史、日志或 Git 历史。
-- 为 `APP_API_KEY_HASH_SECRET` 配置独立密钥，不要依赖加密密钥回退机制。
-- 检查 `LLM_LOG_CONTENT`；配置模板默认开启内容日志，可能不适合处理敏感数据的环境。
+- 为 `APP_API_KEY_HASH_SECRET` 配置独立密钥；应用不再提供加密密钥回退机制。
+- `LLM_LOG_CONTENT` 默认关闭；仅在数据和日志安全评审通过后临时开启。
+- 插件 Worker 只连接内部 `outbound-network`，通过 `OUTBOUND_GATEWAY_TOKEN` 认证的网关访问 `OUTBOUND_ALLOWED_DOMAINS`；空白名单会拒绝全部外部访问。
+- 轮换配置加密密钥时，把新密钥加入 `APP_CONFIG_ENCRYPTION_KEYS` 并切换 `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`；保留旧密钥直到历史 `enc:` 密文完成渐进重写。
 - 执行 Schema 或应用升级前，备份 MySQL 任务与日志数据以及 PostgreSQL 自动化日志。
 - 无法访问公共镜像仓库或软件包代理时，可覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE`、`PYTHON_IMAGE`、`GOPROXY`、`ALPINE_MIRROR` 或 Python 软件包镜像源配置。Caddy 构建默认使用 `https://goproxy.cn,direct` 获取 Go 模块，并使用 `https://mirrors.tuna.tsinghua.edu.cn/alpine` 获取 Alpine 软件包。
 

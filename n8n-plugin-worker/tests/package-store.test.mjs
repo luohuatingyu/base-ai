@@ -89,6 +89,39 @@ test('拒绝摘要不匹配和路径穿越', async () => {
   } finally { await rm(item.root, { recursive: true, force: true }); await rm(storeRoot, { recursive: true, force: true }) }
 })
 
+test('探测子进程不继承内部令牌且拒绝浮动依赖', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'base-ai-n8n-isolation-'))
+  const packageRoot = join(root, 'package'); const storeRoot = await mkdtemp(join(tmpdir(), 'base-ai-n8n-store-'))
+  const previous = process.env.PLUGIN_WORKER_INTERNAL_TOKEN
+  try {
+    process.env.PLUGIN_WORKER_INTERNAL_TOKEN = 'secret-internal-token-that-must-not-leak'
+    await mkdir(join(packageRoot, 'nodes'), { recursive: true })
+    await writeFile(join(packageRoot, 'nodes/Isolated.node.cjs'),
+      "class Isolated { constructor(){ this.description={name:'isolated',displayName:process.env.PLUGIN_WORKER_INTERNAL_TOKEN||'isolated',properties:[]} } async execute(){return [[]]} } module.exports={Isolated}")
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: 'n8n-nodes-isolated', version: '1.0.0', n8n: { nodes: ['nodes/Isolated.node.cjs'] },
+    }))
+    assert.equal(spawnSync('tar', ['-czf', join(root, 'safe.tgz'), '-C', root, 'package']).status, 0)
+    let bytes = await (await import('node:fs/promises')).readFile(join(root, 'safe.tgz'))
+    const metadata = await new PackageStore(storeRoot).install({ archiveBase64: bytes.toString('base64') })
+    assert.equal(metadata.components[0].name, 'isolated')
+
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: 'n8n-nodes-isolated', version: '1.0.0', dependencies: { 'left-pad': '^1.3.0' },
+      n8n: { nodes: ['nodes/Isolated.node.cjs'] },
+    }))
+    assert.equal(spawnSync('tar', ['-czf', join(root, 'floating.tgz'), '-C', root, 'package']).status, 0)
+    bytes = await (await import('node:fs/promises')).readFile(join(root, 'floating.tgz'))
+    const floating = await new PackageStore(storeRoot).install({ archiveBase64: bytes.toString('base64') })
+    assert.equal(floating.components[0].compatibilityStatus, 'PARTIAL')
+    assert.equal(floating.components[0].compatibilityReason, 'DEPENDENCY_VERSION_NOT_PINNED')
+  } finally {
+    if (previous === undefined) delete process.env.PLUGIN_WORKER_INTERNAL_TOKEN
+    else process.env.PLUGIN_WORKER_INTERNAL_TOKEN = previous
+    await rm(root, { recursive: true, force: true }); await rm(storeRoot, { recursive: true, force: true })
+  }
+})
+
 test('声明式节点不得在尚未执行其路由时误报完全兼容', async () => {
   const root = await mkdtemp(join(tmpdir(), 'base-ai-n8n-declarative-'))
   const packageRoot = join(root, 'package'); const storeRoot = await mkdtemp(join(tmpdir(), 'base-ai-n8n-store-'))

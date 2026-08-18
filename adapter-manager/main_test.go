@@ -70,7 +70,8 @@ func TestControlUsesAllowlistedComposeService(t *testing.T) {
 	runner.mu.Lock()
 	command := strings.Join(runner.calls[0], " ")
 	runner.mu.Unlock()
-	if !strings.HasSuffix(command, "--no-deps n8n-plugin-worker") || strings.Contains(command, "dify-plugin-worker") {
+	if !strings.HasSuffix(command, "--no-build --no-deps n8n-plugin-worker") ||
+		strings.Contains(command, "dify-plugin-worker") || strings.Contains(command, " --build ") {
 		t.Fatalf("unexpected command: %s", command)
 	}
 	if rejected, rejectedStatus := manager.setEnabled("N8N;rm -rf /", true); rejectedStatus != http.StatusBadRequest || rejected.Status != "INVALID" {

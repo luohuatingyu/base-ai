@@ -42,4 +42,22 @@ class ConfigCryptoServiceTest {
         assertEquals("", service.decrypt(null));
         assertEquals("", service.decrypt(""));
     }
+
+    /** 版本化密文使用活动密钥，并能兼容轮换前的旧密钥。 */
+    @Test
+    void supportsVersionedKeyRotationAndLegacyCiphertext() {
+        PlatformProperties rotated = new PlatformProperties();
+        rotated.setConfigEncryptionKey(Base64.getEncoder().encodeToString(new byte[32]));
+        rotated.setConfigEncryptionKeys("v2=" + Base64.getEncoder().encodeToString(new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+            17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}));
+        rotated.setConfigEncryptionActiveKeyId("v2");
+        ConfigCryptoService rotatedService = new ConfigCryptoService(rotated);
+
+        String current = rotatedService.encrypt("rotated-secret");
+        assertTrue(current.startsWith("enc:v1:v2:"));
+        assertTrue(rotatedService.usesActiveKey(current));
+        String legacy = service.encrypt("secret-value").replaceFirst("^enc:v1:legacy:", "enc:");
+        assertEquals("secret-value", rotatedService.decrypt(legacy));
+        assertEquals("rotated-secret", rotatedService.decrypt(current));
+    }
 }

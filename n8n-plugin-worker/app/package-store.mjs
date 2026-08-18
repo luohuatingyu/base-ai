@@ -284,7 +284,7 @@ module.exports = function set(target, path, value) {
     const credentialEntries = (description.credentials || []).map(item => credentialSchemas.get(item.name)).filter(Boolean)
     const credentialSchema = credentialEntries.flatMap(item => item.schema)
     const componentType = this.#typeFromProbe(probe.methods || [], description)
-    const executable = this.#executableFromProbe(probe.methods || [], componentType, description)
+    const executable = !dependencyError && this.#executableFromProbe(probe.methods || [], componentType, description)
     return {
       externalId, name: String(description.displayName || externalId), description: String(description.description || ''),
       componentType, schema: this.#fields(description.properties || []), credentialSchema,
@@ -292,7 +292,8 @@ module.exports = function set(target, path, value) {
       credentialAuthentications: credentialEntries.map(item => item.authenticate),
       serviceCandidates: [description, ...credentialEntries.map(item => item.authenticate)],
       compatibilityStatus: executable ? 'SUPPORTED' : 'PARTIAL',
-      compatibilityReason: executable ? '' : description.requestDefaults ? 'DECLARATIVE_ROUTING_NOT_IMPLEMENTED' : 'NODE_EXECUTION_METHOD_MISSING',
+      compatibilityReason: executable ? '' : dependencyError || (description.requestDefaults
+        ? 'DECLARATIVE_ROUTING_NOT_IMPLEMENTED' : 'NODE_EXECUTION_METHOD_MISSING'),
     }
   }
 

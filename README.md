@@ -104,7 +104,7 @@ The chat request path is:
 Vue -> Java /api/ai/chat -> Python /llm/chat -> OpenAI-compatible API
 ```
 
-Set `LLM_LOG_CONTENT=false` in environments where prompts and model responses must not be written to application logs. When content logging is disabled, the worker records metadata and a response digest instead.
+Prompt and model-response logging is disabled by default. Enable `LLM_LOG_CONTENT=true` only after data-classification and log-access review; when disabled, the worker records metadata and a response digest instead.
 
 ## API Key Access
 
@@ -126,7 +126,7 @@ Important rules:
 - The bound user and key must both remain enabled. Expiry, revocation, IP allowlists, and rate limits are also enforced.
 - A request must not contain both `Authorization` and `X-API-Key`; mixed credentials return HTTP 401.
 - API key management endpoints accept authenticated browser sessions or Bearer tokens, but never API keys.
-- `APP_API_KEY_HASH_SECRET` should be a dedicated secret. If omitted, the application reuses `APP_CONFIG_ENCRYPTION_KEY`.
+- `APP_API_KEY_HASH_SECRET` is a required dedicated secret and cannot reuse `APP_CONFIG_ENCRYPTION_KEY`.
 
 The currently exposed API-key endpoints are AI chat invocation, production API-trigger execution, and published workflow execution/status queries.
 
@@ -208,9 +208,9 @@ The API key hash secret is optional only because it falls back to the encryption
 
 - **MySQL:** `MYSQL_URL`, `MYSQL_USERNAME`, `MYSQL_PASSWORD`.
 - **PostgreSQL:** `POSTGRES_URL`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_POOL_SIZE`.
-- **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`.
+- **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`, `REDIS_SSL`.
 - **Branding and locale:** `APP_PLATFORM_CODE`, `APP_PLATFORM_NAME_EN`, `APP_PLATFORM_NAME_ZH`, `APP_PLATFORM_SHORT_NAME`, `APP_DEFAULT_LOCALE`.
-- **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SESSION_COOKIE_SECURE`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_API_KEY_HASH_SECRET`.
+- **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SESSION_COOKIE_SECURE`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_CONFIG_ENCRYPTION_KEYS`, `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`, `APP_API_KEY_HASH_SECRET`.
 - **Worker and model calls:** `PYTHON_WORKER_INTERNAL_TOKEN`, `JAVA_INSTANCE_ID`, `PYTHON_WORKER_INSTANCE_ID`, `LLM_TIMEOUT_SECONDS`, `LLM_LOG_CONTENT`.
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
@@ -400,8 +400,10 @@ TEST_REPORT.md                  Test baseline and execution history
 - Use separate least-privilege accounts for the MySQL system database and PostgreSQL business database.
 - Rotate all example credentials before the first startup.
 - Keep provider credentials out of source code, shell history, logs, and Git history.
-- Use a dedicated `APP_API_KEY_HASH_SECRET` instead of relying on the encryption-key fallback.
-- Review `LLM_LOG_CONTENT`; the provided template enables content logging, which may be inappropriate for sensitive workloads.
+- Configure a dedicated `APP_API_KEY_HASH_SECRET`; the encryption-key fallback is no longer supported.
+- `LLM_LOG_CONTENT` is disabled by default and should only be enabled temporarily after a data and log security review.
+- Plugin Workers only join the internal `outbound-network` and reach `OUTBOUND_ALLOWED_DOMAINS` through the authenticated outbound gateway; an empty allowlist denies all external access.
+- For encryption-key rotation, add the new key to `APP_CONFIG_ENCRYPTION_KEYS` and switch `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`; keep prior keys until legacy `enc:` values have been rewritten progressively.
 - Back up MySQL task/log data and PostgreSQL automation logs before schema or application upgrades.
 - Override `MAVEN_IMAGE`, `JRE_IMAGE`, `NODE_IMAGE`, `PYTHON_IMAGE`, `GOPROXY`, `ALPINE_MIRROR`, or Python package-mirror settings when public registries and package proxies are unavailable. Caddy builds use `https://goproxy.cn,direct` for Go modules and `https://mirrors.tuna.tsinghua.edu.cn/alpine` for Alpine packages by default.
 
