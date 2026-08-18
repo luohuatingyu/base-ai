@@ -1,5 +1,86 @@
 # 最近分支覆盖测试报告
 
+## 项目安全风险修复测试结果（2026-08-18）
+
+### Git 基准点
+
+Commit: c459d41b004167affa5c0c0cc4f60b117427a793
+- 提交说明: Update adapter isolation regression test
+- 核心功能提交: c930c47（Harden plugin isolation and configuration security）、bec30e3（Complete security hardening and test gates）、efde786（Propagate required adapter runtime secrets）
+- 测试日期: 2026-08-18
+- 分支: master
+- 重测触发: 加密密钥配置、异步审计、数据库连接池、插件执行/依赖安装、出站网关、容器网络或内部令牌发生变更。
+
+### 变更范围
+
+- n8n 第三方包元数据加载移入短生命周期子进程，子进程不继承平台内部令牌；Dify 与 n8n 只接受直接依赖的精确版本，安装继续使用锁文件或哈希约束。
+- 新增独立出站网关，以静态域名白名单、端口限制、私网地址拒绝、连接时重新解析和禁止重定向降低 SSRF、横向访问与 DNS rebinding 风险；Backend 通过网关反向代理访问按需 Worker。
+- Backend 不再连接插件出站网络；插件 Worker 默认关闭并仅连接内部出站网络。Adapter Manager 移除整仓库挂载，固定可控服务且禁止运行时构建镜像；Docker Socket 挂载仍保留以支持现有启停能力。
+- 配置密文升级为 `enc:v1:<key-id>:<payload>`，支持活动密钥写入、多历史密钥读取，并兼容旧 `enc:` 数据渐进迁移；API Key 哈希密钥必须独立显式配置。
+- LLM 内容日志默认关闭，Redis/数据库示例改为 TLS 安全默认值；异步审计队列采用调用线程回退，降低队列满时静默丢审计事件的风险；调整数据库池最小空闲连接。
+- 新增跨模块测试 CI 与镜像安全扫描矩阵，运行时依赖和基础镜像使用精确版本或摘要。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 第三方插件不在服务主进程执行且不获得内部令牌 | n8n Worker 10 项、Dify Worker 21 项 | 子进程探测、环境清理、非法包、精确版本及兼容回归全部通过 | 正常、异常、安全、兼容 |
+| 插件出站只能经过受控网关 | Outbound Gateway 2 项、Frontend Compose 隔离回归、Compose 配置 | 非准入/私网目标拒绝，代理凭据校验、网络隔离及内部路由通过 | 正常、边界、恶意输入、回归 |
+| Adapter Manager 控制边界收敛 | Adapter Manager 4 项、Frontend Compose 隔离回归 | 固定服务白名单、鉴权、请求限长、错误限长、禁止隐式构建和整仓库挂载通过 | 异常、权限、安全、回归 |
+| 密文可轮换并兼容历史数据 | ConfigCryptoServiceTest 4 项及 Backend 全量 | 活动密钥写入、历史密钥解密、旧格式读取、未知密钥拒绝通过 | 正常、边界、异常、兼容 |
+| 安全配置默认值和审计回退有效 | Backend 598 项、Compose 配置 | 独立哈希密钥、日志默认关闭、TLS 示例、审计拒绝策略及池配置无回归 | 安全、配置、回归 |
+| 构建、部署与跨模块功能无回归 | 七套自动化、插件镜像构建、统一 Compose 重建 | 812/812 通过；六个基础服务 healthy，插件 Worker 默认停止 | 构建、部署、兼容、回归 |
+
+### 测试执行结果
+
+- 正式自动化用例：812/812，通过率 100%；失败 0，错误 0，跳过 0。
+- Backend 完整回归：598/598；Compose 构建阶段再次执行 598/598 并 `BUILD SUCCESS`。
+- Frontend：129/129；Python Worker（Python 3.12）：48/48；Dify Worker（Python 3.12）：21/21；n8n Worker：10/10。
+- Adapter Manager：4/4；Outbound Gateway：2/2。
+- `docker compose config --quiet` 通过；Dify/n8n 按需镜像构建成功；`docker compose up --build -d` 构建成功，Backend、Frontend、Python Worker、Adapter Manager、Outbound Gateway、Caddy 全部 healthy。
+- 首次直接运行 Python 测试因宿主缺少 pytest/FastAPI 依赖而收集失败，随后使用 Python 3.12 临时虚拟环境和哈希锁定的开发依赖重跑通过；临时环境已清理。
+- 首次使用错误 Go 镜像摘要重跑时遇到镜像代理 429，改用 Dockerfile 锁定且本机已有的正确镜像后，两个 Go 测试套件均通过。
+
+### 关键模块测试
+
+| 模块 | 结果 | 覆盖说明 |
+| --- | --- | --- |
+| Backend Service / Security / Workflow | 598/598 | 密钥轮换、审计回退、连接池配置、插件客户端和完整回归 |
+| Frontend / Compose 约束 | 129/129 | Manager 挂载边界、按需 Worker、禁止运行时构建及页面回归 |
+| Python / Dify / n8n Worker | 79/79 | Python 3.12 任务、包准入、子进程隔离、环境清理和插件兼容 |
+| Adapter Manager / Outbound Gateway | 6/6 | 鉴权、固定服务、请求约束、白名单、私网阻断和代理凭据 |
+| Domain / Repository | 未修改 | 由 Backend 完整套件验证接口和持久化兼容性 |
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp package` | 598/598，通过；BUILD SUCCESS |
+| Frontend 完整 | `cd frontend && npm test` | 129/129，通过 |
+| Python Worker | Python 3.12 临时环境安装 `requirements-dev.txt` 后执行 pytest | 48/48，通过；临时环境已清理 |
+| Dify Worker | Python 3.12 执行 unittest discover | 21/21，通过 |
+| n8n Worker | `cd n8n-plugin-worker && npm test` | 10/10，通过 |
+| Go 服务 | Go 1.26.5 容器分别执行 `go test ./...` | Adapter 4/4、Gateway 2/2，通过 |
+| Compose 校验与重建 | `docker compose config --quiet`、profile 镜像构建、`docker compose up --build -d` | 全部成功；六个基础服务 healthy，按需 Worker 停止 |
+
+### 已知问题与限制
+
+- Adapter Manager 为兼容当前容器启停功能仍挂载 Docker Socket；已通过固定服务、禁止构建、只读必要文件挂载、无宿主端口及能力收敛降低风险，但该 Socket 仍具有宿主级控制风险，彻底移除需要改造为外部编排控制面。
+- 出站域名白名单来自启动配置，修改后需要重启网关；第三方运行时必须使用支持标准 HTTP/HTTPS 代理变量的客户端。网络隔离会阻止绕过代理的直接出网。
+- 旧 `enc:` 密文不会后台批量重写；读取保持兼容，新建或再次保存时使用活动密钥版本。完成迁移前必须保留旧密钥。
+- 本地 Redis 未配置 TLS，本次运行态验证仅用命令级 `REDIS_SSL=false` 覆盖；仓库示例和默认值仍要求 TLS。生产数据库与 Redis 的证书链需在部署环境单独验收。
+- 镜像安全扫描矩阵已纳入 CI，本地未重复执行外部漏洞库扫描；扫描结果以 CI 运行为准。
+
+### 下次测试建议与重测触发条件
+
+- 修改网关域名解析、代理鉴权、Worker 网络或插件包安装逻辑时，必须重跑网关、两个 Worker、Frontend Compose 回归及统一重建，并增加对应绕过样例。
+- 修改密钥格式、活动密钥选择或历史密钥清理时，必须保留旧格式/历史版本夹具并重跑 Backend 全量；生产轮换前应先做密文 key-id 盘点。
+- 后续移除 Docker Socket 时，应为新的编排控制面增加最小权限、重放保护、超时、审计和故障恢复测试。
+
+### 回滚方式
+
+- 依次回滚 c459d41、efde786、bec30e3、c930c47 后重新执行统一重建。回滚前需确认没有仅由新活动密钥写入且旧版本无法读取的密文，并恢复旧插件网络与令牌配置；不涉及数据库结构迁移。
+
 ## 工作流可靠性、Cron 恢复与插件隔离测试结果（2026-08-17）
 
 ### Git 基准点
