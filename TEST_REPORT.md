@@ -1,5 +1,71 @@
 # 最近分支覆盖测试报告
 
+## 模型调用内容日志与凭据脱敏测试结果（2026-08-19）
+
+### Git 基准点
+
+Commit: e2133a9
+- 提交说明: Restore sanitized LLM content logs
+- 测试日期: 2026-08-19
+- 分支: master
+- 重测触发: 修改 `python-worker/app/logging_config.py`、模型调用内容日志、日志回传、凭据脱敏规则或 `LLM_LOG_CONTENT` 配置时。
+
+### 变更范围
+
+- 模型系统提示词、用户提示词、助手历史和模型响应默认恢复为日志输出，同时继续记录模型、Token 数和耗时。
+- 普通键值、HTTP Authorization/Bearer、单/双引号 JSON 中的 `api_key`、`x-api-key`、`token`、`secret`、`password` 和 `authorization` 在输出前统一替换为 `***`。
+- 控制台日志、回传 Java 的链路日志消息及异常堆栈使用同一脱敏入口，避免异常路径绕过脱敏。
+- Compose、环境变量模板及本机运行配置默认启用 `LLM_LOG_CONTENT=true`；显式设为 `false` 时继续只记录元数据和响应摘要。
+- 未修改模型供应商请求协议、API Key 轮换、路由、数据库结构、后端业务代码或前端业务代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 模型调用正文日志默认可用 | Worker 单元：`test_success_log_prints_model_content_and_redacts_embedded_credentials`；Compose 配置和容器运行态检查 | 系统提示词、用户提示词、响应与调用元数据均打印；Compose 与运行容器均为 `LLM_LOG_CONTENT=true`；通过 | 正常、配置、运行态 |
+| API Key 等凭据不写入日志 | Worker 参数化单元：`test_log_sanitizer_redacts_credential_formats` | JSON、单引号对象、Bearer Header 和普通键值中的凭据均替换为 `***`；通过 | 正常、边界、安全、恶意输入 |
+| 链路日志和异常堆栈同样脱敏 | Worker 单元：`test_shipped_logs_redact_credentials_from_message_and_exception` | 回传消息和 throwable 不包含原始凭据且保留事件主体；通过 | 异常、安全、回归 |
+| 可按环境要求关闭内容正文 | Worker 单元：`test_disabled_content_log_keeps_metadata_and_response_digest` | 显式关闭后不记录提示词/响应正文，仍记录调用摘要与哈希；通过 | 兼容、回归 |
+| Worker 历史功能不回归 | Python Worker 完整测试、Compose 统一重建和健康检查 | 60/60 通过；七个基础服务全部 healthy；通过 | 完整回归、部署 |
+
+### 测试执行结果
+
+- Python Worker（Python 3.12）：60/60，通过率 100%；失败 0，错误 0，跳过 0。
+- 针对性日志测试最终结果：51/51，通过率 100%。
+- 缺陷复现阶段：首次为 47 通过、4 失败，稳定复现 JSON 凭据、回传消息/异常以及模型提示词泄露；首轮实现后为 50 通过、1 失败，发现 Authorization Bearer 的规则顺序问题；修正后 51/51 通过。
+- `docker compose config` 确认 Python Worker 环境为 `LLM_LOG_CONTENT=true`；运行容器读取结果同为 `true`。
+- `docker compose up --build -d` 最终成功，Backend、Frontend、Python Worker、Adapter Manager、Adapter Supervisor、Outbound Gateway 和 Caddy 共七个服务全部 healthy。
+- 未新增依赖；现有运行镜像和开发依赖未配置 coverage 插件，因此未生成覆盖率百分比。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 宿主机测试入口 | `cd python-worker && PYTHONPATH=. python3.12 -m pytest ...` | Python 3.12.13 可用，但宿主机未安装 pytest，未进入用例收集；后续改用只读挂载的 Python 3.12 容器 |
+| 缺陷复现与针对性回归 | Python 3.12 容器按哈希安装 `requirements-dev.txt` 后执行 `pytest -q -p no:cacheprovider tests/test_trace_context.py tests/test_llm.py` | 依次得到 47 通过/4 失败、50 通过/1 失败和最终 51/51 通过 |
+| Worker 完整回归 | Python 3.12 容器按哈希安装 `requirements-dev.txt` 后执行 `pytest -q -p no:cacheprovider` | 60/60 通过 |
+| Compose 配置 | `docker compose config --format json` 后仅断言 Python Worker 的 `LLM_LOG_CONTENT` | 值为 `true`；通过，未输出其他环境变量内容 |
+| 统一重建 | `docker compose up --build -d` | 首次因外部 `apple-auto-caddy` 占用 80/443 失败；停止该冲突容器后重试成功，未删除容器或数据卷 |
+| 运行态复核 | `docker compose ps`、容器内 `load_settings()` 和 Python Worker 健康检查 | 七个服务全部 healthy；`llm_log_content=true`；通过 |
+| 静态检查 | `git diff --check`、`git diff --cached --check` | 通过 |
+
+### 未执行测试
+
+- 未单独执行 Backend Maven 完整测试、Frontend 单元测试及插件 Worker 测试：本次确认范围仅修改 Python Worker 日志、配置和说明文档，没有修改这些模块的业务代码；Compose 重建完成了各镜像构建和运行态集成检查。
+- 未调用真实外部模型供应商，避免产生费用、发送测试数据或依赖外部网络状态；模型日志行为由 HTTPX 隔离测试、日志捕获和运行配置共同验证。
+
+### 已知问题与限制
+
+- 脱敏规则覆盖已知凭据字段和 Bearer 格式；未带字段名、没有可识别前缀的任意裸密钥无法仅靠通用日志文本可靠识别。
+- 开启内容日志后，提示词和响应中的业务信息仍会被记录；凭据脱敏不能替代日志访问控制、保留期限和数据分类管理。
+- 统一重建读取了共享工作区中同期存在的 Adapter Manager 和 Frontend 未提交改动，但本功能提交未包含这些无关变更。
+
+### 下次测试建议与回滚方式
+
+- 新增供应商鉴权格式时，为对应字段名、Header 或错误体格式补充参数化脱敏用例。
+- 如需阻止所有提示词和响应持久化，将 `LLM_LOG_CONTENT=false` 写入环境并重新执行 `docker compose up --build -d`；无需数据库回滚。
+- 代码级回滚可撤销功能提交 `e2133a9` 后统一重建；本次没有数据迁移、依赖变更或需清理的数据文件。
+
 ## NVIDIA LLM 请求策略兼容性测试结果（2026-08-19）
 
 ### Git 基准点
