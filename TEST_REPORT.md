@@ -1,5 +1,59 @@
 # 最近分支覆盖测试报告
 
+## NVIDIA LLM 请求策略兼容性测试结果（2026-08-19）
+
+### Git 基准点
+
+Commit: bbc13eb
+- 提交说明: Add NVIDIA LLM request strategy
+- 测试日期: 2026-08-19
+- 分支: master
+- 重测触发: 修改 `python-worker/app/llm.py`、`python-worker/app/llm_provider.py`、供应商请求策略或模型思考参数映射时。
+
+### 变更范围
+
+- 将模型请求构造抽离为可扩展策略：未知供应商继续使用原有 OpenAI-compatible 策略，NVIDIA `integrate.api.nvidia.com` 使用 Nemotron 专用策略。
+- NVIDIA 非思考请求不再发送顶层 `enable_thinking`；思考请求将 SDK 的 `extra_body` 语义展开为顶层 `chat_template_kwargs.enable_thinking` 和整数 `reasoning_budget`。
+- 供应商非 2xx 响应现在包含状态码和脱敏后的错误体，避免只返回 `HTTPStatusError`，且不记录 JSON 错误体中的认证字段。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 既有 OpenAI-compatible 供应商请求不变 | Worker 单元：`test_generic_strategy_preserves_existing_thinking_payload` | 保留顶层 `enable_thinking` 与原有 `reasoning_effort`；通过 | 兼容、回归 |
+| NVIDIA 普通调用可用 | Worker 单元：`test_nvidia_strategy_omits_unsupported_top_level_thinking_flag` | 不发送 NVIDIA 不接受的通用思考字段；通过 | 正常、兼容 |
+| NVIDIA 思考请求格式正确 | Worker 单元：`test_nvidia_strategy_expands_thinking_parameters_to_provider_payload`、`test_nvidia_strategy_rejects_non_numeric_thinking_budget` | 正确构造 `chat_template_kwargs` 和正整数预算；非法映射受控拒绝；通过 | 正常、边界、异常 |
+| 供应商失败可诊断且不泄露密钥 | Worker 单元：`test_invoke_reports_provider_status_and_sanitized_error_body` | 返回 HTTP 状态码，JSON `api_key` 被脱敏；通过 | 异常、安全 |
+| 平台调用契约无回归 | Python Worker 完整、Backend 完整测试与 Compose 重建 | 53/53、598/598 通过；全部基础服务 healthy | 回归、部署 |
+
+### 测试执行结果
+
+- Python Worker（Python 3.12）：53/53，通过率 100%；失败 0，错误 0，跳过 0。
+- Backend 完整回归：598/598；失败 0，错误 0，跳过 0；`BUILD SUCCESS`。
+- `docker compose up --build -d` 最终成功；Backend、Frontend、Python Worker、Adapter Manager、Outbound Gateway、Caddy 全部 healthy。
+- 首次统一启动因外部容器 `domestic-trade-caddy` 占用宿主机 80/443 端口失败；已按项目规则停止该容器后重建成功。
+- 运行镜像和开发依赖均未提供 `coverage` 或 pytest 覆盖率插件，未能生成覆盖率百分比；未为本次任务新增依赖。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Worker 完整 | Python 3.12 临时容器安装 `requirements-dev.txt`，以 `PYTHONPATH=/workspace` 执行 `pytest -q` | 53/53 通过；临时容器自动清理 |
+| Backend 完整 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 598/598 通过，BUILD SUCCESS |
+| 统一重建 | `docker compose up --build -d` | 首次端口冲突后停止占用容器并重试成功；六个基础服务 healthy |
+| 覆盖率检查 | `python -m coverage --version` | 工具未配置，未生成覆盖率数据 |
+
+### 已知问题与限制
+
+- 当前 NVIDIA 策略只匹配 `integrate.api.nvidia.com`；其他具有非标准 OpenAI 请求语义的供应商需新增独立策略并配套契约测试。
+- NVIDIA 流式 SSE 和 `reasoning_content` 尚未作为平台响应字段透传；本次维持平台现有非流式响应协议。
+
+### 下次测试建议与重测触发条件
+
+- 新增供应商策略时，至少覆盖普通对话、思考模式、Agent 工具调用、非 2xx 错误和通用策略回归。
+- 若开放 NVIDIA 流式输出或思考内容展示，需新增 SSE 分块、终止事件、usage 和前端渲染的端到端测试。
+- 如需量化覆盖率，应在单独确认后将覆盖率工具加入 Python 开发依赖和 CI。
+
 ## 项目安全风险修复测试结果（2026-08-18）
 
 ### Git 基准点
