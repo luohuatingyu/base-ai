@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 
 import httpx
 import pytest
@@ -12,14 +13,14 @@ from app.llm_provider import NvidiaNemotronRequestStrategy, OpenAiCompatibleRequ
 from app.models import ChatMessage, EmbeddingRequest, EmbeddingResponse, LlmCandidate
 
 
-def settings() -> Settings:
+def settings(llm_log_content: bool = False) -> Settings:
     """构造不依赖外部服务的 Worker 配置。"""
     return Settings(
         backend_url="http://backend:8080",
         internal_token="x" * 24,
         instance_id="worker-test",
         llm_timeout_seconds=10,
-        llm_log_content=False,
+        llm_log_content=llm_log_content,
         persist_level="INFO",
         llm_response_max_bytes=1024,
     )
@@ -68,6 +69,47 @@ def test_invoke_returns_openai_compatible_json_response():
     assert result.outputTokens == 2
     assert result.totalTokens == 3
     assert json.loads(request_holder["request"].content)["stream"] is False
+
+
+def test_success_log_prints_model_content_and_redacts_embedded_credentials(caplog):
+    """开启内容日志后应打印模型请求响应，但不得泄露其中的凭据。"""
+    client = LlmClient(settings(llm_log_content=True))
+    messages = [
+        ChatMessage(role="system", content="你是测试助手"),
+        ChatMessage(role="user", content='请处理 {"api_key": "prompt-secret"}'),
+    ]
+    try:
+        with caplog.at_level(logging.INFO, logger="app.llm"):
+            client._log_success("test-model", messages, "模型响应正常", 1, 2, 3, 0)
+    finally:
+        asyncio.run(client.close())
+
+    output = "\n".join(caplog.messages)
+    assert "event=llm_call_succeeded" in output
+    assert "你是测试助手" in output
+    assert "请处理" in output
+    assert "模型响应正常" in output
+    assert "prompt-secret" not in output
+    assert "***" in output
+
+
+def test_disabled_content_log_keeps_metadata_and_response_digest(caplog):
+    """显式关闭内容日志时应继续记录调用元数据和响应摘要。"""
+    client = LlmClient(settings(llm_log_content=False))
+    try:
+        with caplog.at_level(logging.INFO, logger="app.llm"):
+            client._log_success(
+                "test-model", [ChatMessage(role="user", content="private prompt")],
+                "private response", 1, 2, 3, 0,
+            )
+    finally:
+        asyncio.run(client.close())
+
+    output = "\n".join(caplog.messages)
+    assert "event=llm_call_succeeded" in output
+    assert "event=llm_content_redacted" in output
+    assert "private prompt" not in output
+    assert "private response" not in output
 
 
 def test_embedding_uses_openai_compatible_endpoint_and_restores_input_order():

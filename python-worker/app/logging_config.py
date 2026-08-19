@@ -18,16 +18,36 @@ MAX_LOG_VALUE_LENGTH = 4000
 SHIP_MAX_ATTEMPTS = 5
 SHIP_RETRY_BASE_SECONDS = 0.25
 SENSITIVE_PATTERNS = (
-    re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+"),
-    re.compile(r"(?i)((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,;]+"),
+    (re.compile(r"(?i)(\bbearer\s+)[^\s,;\"']+"), r"\1***"),
+    (
+        re.compile(
+            r'''(?ix)
+            (\b(?:authorization|x[_-]?api[_-]?key|api[_-]?key|token|secret|password)\b
+            ["']?\s*[:=]\s*["'])
+            (?:\\.|[^"'\\\r\n])*
+            (["'])
+            '''
+        ),
+        r"\1***\2",
+    ),
+    (
+        re.compile(
+            r'''(?ix)
+            (\b(?:authorization|x[_-]?api[_-]?key|api[_-]?key|token|secret|password)\b
+            \s*[:=]\s*)
+            (?!["'])[^\s,;}\]]+
+            '''
+        ),
+        r"\1***",
+    ),
 )
 
 
 def sanitize_log_text(value: object, max_length: int = MAX_LOG_VALUE_LENGTH) -> str:
     """脱敏并截断可能包含凭据或超长内容的日志文本。"""
     text = str(value)
-    for pattern in SENSITIVE_PATTERNS:
-        text = pattern.sub(r"\1***", text)
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        text = pattern.sub(replacement, text)
     if len(text) <= max_length:
         return text
     return f"{text[:max_length]}...[truncated:{len(text) - max_length}]"
@@ -88,9 +108,11 @@ class JavaLogShipHandler(logging.Handler):
             "pythonTraceId": context.python_trace_id,
             "level": record.levelname,
             "loggerName": record.name,
-            "message": record.getMessage(),
+            "message": sanitize_log_text(record.getMessage()),
             "threadName": record.threadName,
-            "throwable": "".join(traceback.format_exception(*record.exc_info)) if record.exc_info else None,
+            "throwable": sanitize_log_text(
+                "".join(traceback.format_exception(*record.exc_info)), 16000
+            ) if record.exc_info else None,
             "loggedAt": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
         }
         try:

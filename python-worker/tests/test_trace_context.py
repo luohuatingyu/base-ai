@@ -2,13 +2,16 @@ import asyncio
 import json
 import logging
 import queue
+import sys
+
+import pytest
 
 from fastapi import Request
 from starlette.responses import Response
 
 from app.config import Settings, load_settings
 from app.context import RequestContext, reset_context, set_context
-from app.logging_config import ContextFilter, JavaLogShipHandler, JsonLogFormatter
+from app.logging_config import ContextFilter, JavaLogShipHandler, JsonLogFormatter, sanitize_log_text
 from app.middleware import InternalAuthMiddleware, RequestSizeLimitMiddleware
 
 
@@ -165,6 +168,54 @@ def test_structured_and_shipped_logs_only_use_trace_fields():
     assert shipped["traceId"] == "trace-1"
     assert shipped["pythonTraceId"] == "python-trace-1"
     handler.close()
+
+
+@pytest.mark.parametrize(
+    ("raw", "secret"),
+    [
+        ('{"api_key": "provider-secret"}', "provider-secret"),
+        ("{'token': 'session-secret'}", "session-secret"),
+        ("Authorization: Bearer bearer-secret", "bearer-secret"),
+        ("password=plain-secret", "plain-secret"),
+    ],
+)
+def test_log_sanitizer_redacts_credential_formats(raw, secret):
+    """常见文本、Header 和 JSON 凭据格式都必须脱敏且保留日志主体。"""
+    sanitized = sanitize_log_text(f"event=model_call payload={raw}")
+
+    assert "event=model_call" in sanitized
+    assert secret not in sanitized
+    assert "***" in sanitized
+
+
+def test_shipped_logs_redact_credentials_from_message_and_exception():
+    """回传 Java 的消息和异常堆栈不得绕过统一凭据脱敏。"""
+    token = set_context(RequestContext("request-1", "trace-1", "python-trace-1"))
+    handler = InspectableTraceHandler()
+    try:
+        try:
+            raise RuntimeError('{"api_key": "exception-secret"}')
+        except RuntimeError:
+            record = logging.LogRecord(
+                "worker.test",
+                logging.ERROR,
+                __file__,
+                1,
+                'event=model_call authorization="Bearer message-secret"',
+                (),
+                sys.exc_info(),
+            )
+        handler.emit(record)
+        shipped = handler.items.get_nowait()
+    finally:
+        reset_context(token)
+        handler.close()
+
+    assert "event=model_call" in shipped["message"]
+    assert "message-secret" not in shipped["message"]
+    assert "exception-secret" not in shipped["throwable"]
+    assert "***" in shipped["message"]
+    assert "***" in shipped["throwable"]
 
 
 def test_trace_log_environment_variable_controls_persist_level(monkeypatch):

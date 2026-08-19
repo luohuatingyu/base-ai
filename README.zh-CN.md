@@ -104,7 +104,7 @@ Redis 存储可重建状态，包括在线会话、已撤销 Token 标识、API 
 Vue -> Java /api/ai/chat -> Python /llm/chat -> 兼容 OpenAI 的 API
 ```
 
-提示词和模型响应默认不写入应用日志。只有完成数据分类和日志访问评审后才应显式设置 `LLM_LOG_CONTENT=true`；关闭内容日志时 Worker 只记录元数据和响应摘要。
+提示词和模型响应默认写入应用日志；普通文本、请求头、JSON 和异常堆栈中的凭据会在控制台输出及链路日志回传前统一脱敏。如果运行环境不允许保留提示词或响应正文，可设置 `LLM_LOG_CONTENT=false`，Worker 仍会记录调用元数据和响应摘要。
 
 ## API Key 访问
 
@@ -399,7 +399,7 @@ TEST_REPORT.md                  测试基准和执行历史
 - 首次启动前轮换所有示例凭据。
 - 不要将供应商凭据写入源代码、Shell 历史、日志或 Git 历史。
 - 为 `APP_API_KEY_HASH_SECRET` 配置独立密钥；应用不再提供加密密钥回退机制。
-- `LLM_LOG_CONTENT` 默认关闭；仅在数据和日志安全评审通过后临时开启。
+- `LLM_LOG_CONTENT` 默认开启并执行凭据脱敏；如不允许保留提示词或响应正文，应将其关闭。模型调用日志仍可能包含业务敏感数据，需限制日志访问权限。
 - 插件 Worker 只连接内部 `outbound-network`，通过 `OUTBOUND_GATEWAY_TOKEN` 认证的网关访问 `OUTBOUND_ALLOWED_DOMAINS`；空白名单会拒绝全部外部访问。
 - 轮换配置加密密钥时，把新密钥加入 `APP_CONFIG_ENCRYPTION_KEYS` 并切换 `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`；保留旧密钥直到历史 `enc:` 密文完成渐进重写。
 - 执行 Schema 或应用升级前，备份 MySQL 任务与日志数据以及 PostgreSQL 自动化日志。
