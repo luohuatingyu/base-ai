@@ -27,6 +27,42 @@ updates:
       python-dependencies:
         patterns: ["*"]
 
+  - package-ecosystem: pip
+    directory: /dify-plugin-worker
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dify-plugin-worker-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /n8n-plugin-worker
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      n8n-plugin-worker-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /adapter-manager
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      adapter-manager-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /outbound-gateway
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      outbound-gateway-dependencies:
+        patterns: ["*"]
+
   - package-ecosystem: docker
     directory: /backend
     schedule:
@@ -39,6 +75,26 @@ updates:
 
   - package-ecosystem: docker
     directory: /python-worker
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /dify-plugin-worker
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /n8n-plugin-worker
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /adapter-manager
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /outbound-gateway
     schedule:
       interval: weekly
 

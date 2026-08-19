@@ -50,7 +50,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install --require-hashes -r requirements-dev.txt
         working-directory: python-worker
-      - run: python -m unittest discover -s tests -v
+      - run: python -m pytest tests -v
         working-directory: python-worker
       - run: python -m pip install -r requirements.txt
         working-directory: dify-plugin-worker
@@ -80,6 +80,7 @@ jobs:
       - name: Validate Compose interpolation and service topology
         env:
           COMPOSE_PROJECT_NAME: ci
+          APP_PLATFORM_SHORT_NAME: AI
           MYSQL_URL: jdbc:mysql://mysql.example/base
           MYSQL_USERNAME: ci
           MYSQL_PASSWORD: ci-password
