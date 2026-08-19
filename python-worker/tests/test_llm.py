@@ -8,6 +8,7 @@ import pytest
 
 from app.config import Settings
 from app.llm import LlmClient
+from app.llm_provider import NvidiaNemotronRequestStrategy, OpenAiCompatibleRequestStrategy, strategy_for
 from app.models import ChatMessage, EmbeddingRequest, EmbeddingResponse, LlmCandidate
 
 
@@ -255,6 +256,67 @@ def test_invoke_sends_mapped_thinking_value():
     assert json.loads(request_holder["request"].content)["reasoning_effort"] == "xhigh"
 
 
+def test_generic_strategy_preserves_existing_thinking_payload():
+    """通用供应商策略必须继续发送原有顶层思考参数。"""
+    configured = candidate().model_copy(update={"thinkingParameter": "reasoning_effort", "thinkingValue": "xhigh"})
+
+    payload = OpenAiCompatibleRequestStrategy().build_chat_payload(
+        configured, [ChatMessage(role="user", content="test")], 0, True
+    )
+
+    assert payload["enable_thinking"] is True
+    assert payload["reasoning_effort"] == "xhigh"
+    assert "chat_template_kwargs" not in payload
+
+
+def test_nvidia_strategy_omits_unsupported_top_level_thinking_flag():
+    """NVIDIA 非思考请求不得携带通用供应商的 enable_thinking 字段。"""
+    configured = candidate().model_copy(update={
+        "baseUrl": "https://integrate.api.nvidia.com/v1",
+        "thinkingParameter": "reasoning_budget",
+        "thinkingValue": "16384",
+    })
+
+    payload = strategy_for(configured).build_chat_payload(
+        configured, [ChatMessage(role="user", content="test")], 0, False
+    )
+
+    assert isinstance(strategy_for(configured), NvidiaNemotronRequestStrategy)
+    assert "enable_thinking" not in payload
+    assert "chat_template_kwargs" not in payload
+    assert "reasoning_budget" not in payload
+
+
+def test_nvidia_strategy_expands_thinking_parameters_to_provider_payload():
+    """NVIDIA 思考请求必须发送 SDK extra_body 展开的顶层字段。"""
+    configured = candidate().model_copy(update={
+        "baseUrl": "https://integrate.api.nvidia.com/v1",
+        "thinkingParameter": "reasoning_budget",
+        "thinkingValue": "16384",
+    })
+
+    payload = strategy_for(configured).build_chat_payload(
+        configured, [ChatMessage(role="user", content="test")], 0, True
+    )
+
+    assert payload["chat_template_kwargs"] == {"enable_thinking": True}
+    assert payload["reasoning_budget"] == 16384
+    assert "enable_thinking" not in payload
+
+
+def test_nvidia_strategy_rejects_non_numeric_thinking_budget():
+    """NVIDIA 思考等级映射不是正整数时必须给出明确错误。"""
+    configured = candidate().model_copy(update={
+        "baseUrl": "https://integrate.api.nvidia.com/v1",
+        "thinkingValue": "xhigh",
+    })
+
+    with pytest.raises(RuntimeError, match="正整数 reasoning_budget"):
+        strategy_for(configured).build_chat_payload(
+            configured, [ChatMessage(role="user", content="test")], 0, True
+        )
+
+
 def test_invoke_forwards_multimodal_content_without_rewriting():
     """视觉请求应按 OpenAI-compatible 结构转发文本和图片片段。"""
     response = httpx.Response(200, json={"choices": [{"message": {"content": "图片中有一只猫"}}]})
@@ -321,6 +383,21 @@ def test_invoke_reports_empty_or_non_json_provider_response(body, content_type):
 
     with pytest.raises(RuntimeError, match="返回非 JSON 或空响应"):
         asyncio.run(invoke_with(response))
+
+
+def test_invoke_reports_provider_status_and_sanitized_error_body():
+    """供应商非成功响应必须保留状态码并脱敏可能回显的凭据。"""
+    response = httpx.Response(
+        400,
+        json={"error": "unsupported field", "api_key": "provider-secret"},
+        request=httpx.Request("POST", "https://provider.example/chat/completions"),
+    )
+
+    with pytest.raises(RuntimeError, match="HTTP 400") as exception:
+        asyncio.run(invoke_with(response))
+
+    assert "provider-secret" not in str(exception.value)
+    assert '"api_key": "***"' in str(exception.value)
 
 
 def test_invoke_reports_missing_openai_choice_content():

@@ -8,6 +8,7 @@ from collections import defaultdict
 import httpx
 
 from app.config import Settings
+from app.llm_provider import strategy_for
 from app.logging_config import sanitize_log_text
 from app.models import (AgentMessage, AgentStepResponse, AgentToolCall, ChatMessage,
                         ChatResponse, EmbeddingResponse, LlmCandidate, ToolDefinition)
@@ -101,22 +102,14 @@ class LlmClient:
         """在供应商或 API Key 对应的信号量内执行单次请求。"""
         semaphore = await self._semaphore(candidate, api_key)
         async with semaphore:
-            payload = {
-                "model": candidate.model,
-                "temperature": temperature,
-                "messages": [message.model_dump(exclude_none=True) for message in messages],
-                "enable_thinking": enable_thinking,
-                "stream": False,
-            }
-            if enable_thinking and candidate.thinkingParameter and candidate.thinkingValue:
-                payload[candidate.thinkingParameter] = candidate.thinkingValue
+            payload = strategy_for(candidate).build_chat_payload(candidate, messages, temperature, enable_thinking)
             started_at = time.perf_counter()
             async with self.client.stream(
                 "POST", f"{candidate.baseUrl.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"}, json=payload,
                 timeout=candidate.timeoutSeconds,
             ) as response:
-                response.raise_for_status()
+                await self._raise_for_status(response, candidate)
                 response_body = bytearray()
                 async for chunk in response.aiter_bytes():
                     response_body.extend(chunk)
@@ -139,23 +132,14 @@ class LlmClient:
         """发送 OpenAI-compatible tools 请求并严格解析首个消息。"""
         semaphore = await self._semaphore(candidate, api_key)
         async with semaphore:
-            payload = {
-                "model": candidate.model,
-                "temperature": temperature,
-                "messages": [message.model_dump(exclude_none=True) for message in messages],
-                "tools": [{"type": "function", "function": tool.model_dump()} for tool in tools],
-                "tool_choice": "auto",
-                "enable_thinking": enable_thinking,
-                "stream": False,
-            }
-            if enable_thinking and candidate.thinkingParameter and candidate.thinkingValue:
-                payload[candidate.thinkingParameter] = candidate.thinkingValue
+            payload = strategy_for(candidate).build_agent_payload(candidate, messages, tools, temperature,
+                                                                    enable_thinking)
             async with self.client.stream(
                 "POST", f"{candidate.baseUrl.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"}, json=payload,
                 timeout=candidate.timeoutSeconds,
             ) as response:
-                response.raise_for_status()
+                await self._raise_for_status(response, candidate)
                 response_body = bytearray()
                 async for chunk in response.aiter_bytes():
                     response_body.extend(chunk)
@@ -201,7 +185,7 @@ class LlmClient:
                 headers={"Authorization": f"Bearer {api_key}"}, json=payload,
                 timeout=candidate.timeoutSeconds,
             ) as response:
-                response.raise_for_status()
+                await self._raise_for_status(response, candidate)
                 response_body = bytearray()
                 async for chunk in response.aiter_bytes():
                     response_body.extend(chunk)
@@ -294,6 +278,42 @@ class LlmClient:
         if not isinstance(data, dict):
             raise RuntimeError(f"供应商 {candidate.providerCode} 返回的 JSON 根节点不是对象")
         return data
+
+    async def _raise_for_status(self, response: httpx.Response, candidate: LlmCandidate) -> None:
+        """将供应商 HTTP 错误转换为带状态码和脱敏响应体的可诊断异常。"""
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exception:
+            try:
+                detail = self._sanitize_provider_error_body(
+                    (await response.aread()).decode(response.encoding or "utf-8")
+                )
+            except (UnicodeDecodeError, RuntimeError):
+                detail = "<无法读取响应体>"
+            raise RuntimeError(
+                f"供应商 {candidate.providerCode} 返回 HTTP {response.status_code}: {detail}"
+            ) from exception
+
+    def _sanitize_provider_error_body(self, body: str) -> str:
+        """保留供应商错误细节，同时递归脱敏 JSON 中的认证字段。"""
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            return sanitize_log_text(body, 1000)
+        return sanitize_log_text(json.dumps(self._redact_provider_error_value(parsed), ensure_ascii=False), 1000)
+
+    def _redact_provider_error_value(self, value):
+        """递归替换供应商 JSON 错误中可能包含的敏感值。"""
+        sensitive_names = {"api_key", "apikey", "authorization", "password", "secret", "token"}
+        if isinstance(value, dict):
+            return {
+                key: "***" if str(key).lower().replace("-", "_") in sensitive_names
+                else self._redact_provider_error_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._redact_provider_error_value(item) for item in value]
+        return value
 
     def _extract_content(self, data: dict, candidate: LlmCandidate) -> str:
         """提取 OpenAI 兼容响应中的首个消息内容并校验必要字段。"""
