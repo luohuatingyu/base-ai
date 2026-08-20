@@ -1,5 +1,84 @@
 # 最近分支覆盖测试报告
 
+## 日志安全默认值与链路入口优化测试结果（2026-08-20）
+
+### Git 基准点
+
+Commit: 9f8e39f1cc8f3aca6ebd1f3d52702603d67f4579
+- 日志优化提交: `05a9120`（Harden trace logging defaults）
+- 基准说明: 测试时共享工作区同时包含 `9f8e39f` 的 Adapter Supervisor 代码；后续 `d604662` 仅更新测试文档，不影响运行结果。
+- 测试日期: 2026-08-20
+- 分支: master
+- 未执行 `git push`
+
+### 变更范围
+
+- Java HTTP 请求日志改为仅记录事件、方法、路径、状态码和耗时，不再读取或输出 Header、Query、请求正文及响应正文；`requestId`、MDC 和 Trace 关联保持不变。
+- Python Worker 的 `LLM_LOG_CONTENT` 默认值改为 `false`，关闭时保留模型、Token、耗时和响应摘要；扩展 Authorization、API Key、Token、Cookie、Session、Secret、Password、Credential 等常见凭据格式的脱敏字段。
+- AI Chat 的链路入口按认证方式动态标记：网页登录为 `WEB_UI`，API Key 调用为 `API_KEY`；固定入口类型不受影响。
+- AI Chat 中的 Trace ID 在具备 `system:task:view` 权限时可直达任务日志，任务页会校验 Trace ID、加载对应记录并按需打开日志抽屉；无权限用户仅看到普通文本。
+- 同步更新 Compose、环境变量模板、中英文说明及本机忽略的 `.env` 默认配置；未新增依赖、数据库迁移或外部接口。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| Java HTTP 层不泄露请求或响应内容 | Backend：`RequestContextFilterTest`；运行态伪凭据探针 | 长正文、Header、Query、Cookie、响应内容和探针标记均不进入日志，业务流与响应保持不变；通过 | 正常、边界、安全、回归 |
+| 模型正文日志默认关闭且保留必要元数据 | Python：默认配置及关闭内容日志测试；Compose 与运行容器配置检查 | 默认值与运行值均为 `false`，仍保留模型、Token、耗时和响应摘要；通过 | 默认值、配置、兼容 |
+| 常见凭据格式统一脱敏 | Python：参数化敏感字段测试 | Authorization、Proxy Authorization、API Key、Token、Cookie、Session、Secret、Password、Credential 等值均替换为 `***`；通过 | 边界、异常、安全、恶意输入 |
+| Trace 入口与认证方式一致 | Backend：`TraceTypeCodeTest` | 登录用户为 `WEB_UI`，API Key 用户为 `API_KEY`，固定 `MANUAL` 入口不变；通过 | 正常、分支、兼容 |
+| Trace ID 可安全直达对应日志 | Frontend：Chat 响应与 Tasks 日志入口契约测试 | 有权限时跳转并自动加载，Trace ID 编码且仅接受限定字符和长度；无权限不生成链接；通过 | 权限、安全、边界、回归 |
+| 所有相关历史功能无回归 | Backend、Python Worker、Frontend 完整测试；统一重建及健康检查 | 964/964 通过；七个基础服务 healthy；通过 | 完整回归、构建、部署 |
+
+### 测试执行结果
+
+- 正式完整自动化：964/964，通过率 100%；失败 0，错误 0，跳过 0。
+- Backend：599/599；Python Worker（Python 3.12）：67/67；Frontend：298/298。
+- 定向测试：Backend 9/9、Python Worker 58/58、Frontend 24/24，均包含在上述完整测试总数中。
+- `docker compose up --build -d` 完整重建成功；Adapter Manager、Adapter Supervisor、Backend、Frontend、Python Worker、Outbound Gateway、Caddy 共七个服务全部 healthy，Backend readiness 为 `UP`。
+- 运行容器确认 `llm_log_content=false`；向 Backend 发送带唯一伪凭据标记的未授权请求后检查近期日志，标记未出现。
+- 未生成行覆盖率百分比；项目现有测试入口未配置统一覆盖率聚合，本次以验收标准映射、定向测试和三个模块完整回归为准。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向 | Maven 3.9.9 / Java 17 锁定容器执行 `mvn -B -ntp -Dtest=RequestContextFilterTest,TraceIdInterceptorTest,TraceTypeCodeTest test` | 9/9 通过 |
+| Backend 完整 | Maven 3.9.9 / Java 17 锁定容器执行 `mvn test -B -ntp` | 599/599 通过；失败、错误、跳过均为 0 |
+| Python 定向 | Python 3.12 锁定容器设置 `PYTHONPATH=.` 后执行 `pytest` 日志与 Trace 测试 | 58/58 通过 |
+| Python 完整 | Python 3.12 锁定容器按哈希安装开发依赖后执行完整 `pytest` | 67/67 通过 |
+| Frontend 定向 | `cd frontend && node --test test/chat-response.test.mjs tests/tasksViewLogDisplay.test.js` | 24/24 通过 |
+| Frontend 完整 | `cd frontend && node --test test/*.test.mjs tests/*.test.js` | 298/298 通过 |
+| 统一重建 | `docker compose up --build -d` | 首次因 `domestic-trade-caddy` 占用 80/443 失败；停止精确冲突容器后重试成功 |
+| 运行态检查 | `docker compose ps`、Backend readiness、Worker `load_settings()`、唯一伪凭据日志探针 | 七个服务 healthy；Backend=`UP`；正文日志关闭；探针未泄漏 |
+| 静态检查 | `git diff --check`、`git diff --cached --check` | 通过 |
+
+### 测试过程问题与处理
+
+- 宿主机没有 Maven，Backend 测试改用项目锁定的 Maven/Java 容器；没有安装宿主依赖。
+- 首次 Frontend 命令从仓库根目录执行导致路径错误，切换到 `frontend/` 后定向与完整测试均通过。
+- Python 首次容器测试缺少 `PYTHONPATH=.`，补齐运行环境后通过；一次临时断言误把字段名中的 `secret` 当作敏感值泄漏，修正为验证实际伪凭据值后通过。
+- Backend 定向测试首次因测试替身声明为 `ServletResponse` 而无法调用 `setHeader`，改为符合实际响应类型的断言后通过；业务实现未因此弱化。
+- 统一重建首次被外部 `domestic-trade-caddy` 占用 80/443 阻断，按规则仅停止该精确容器后重试；未删除容器、数据卷或业务数据。
+- 测试及暂存期间存在 Adapter Supervisor 的并发修改与提交；最终日志提交 `05a9120` 已核验只包含本任务 18 个文件，Adapter 代码单独位于 `9f8e39f`。
+
+### 未执行测试
+
+- 未调用真实外部模型供应商，避免产生费用、发送业务或测试数据及依赖外部网络；模型日志行为通过隔离测试、运行配置和运行态探针验证。
+- 未执行生产环境、多节点部署或外部日志平台的端到端验证；验证范围为仓库 Docker Compose 环境。
+
+### 已知问题与限制
+
+- 主动设置 `LLM_LOG_CONTENT=true` 后，凭据虽会按已知格式脱敏，但提示词和响应仍可能包含不可识别的业务敏感信息；启用前必须完成数据分类、保留期限和日志访问权限评审。
+- 不含字段名或可识别前缀的任意裸密钥无法依靠通用文本规则可靠识别，禁止把日志脱敏当作密钥管理替代方案。
+- `domestic-trade-caddy` 当前保持停止，可使用 `docker start domestic-trade-caddy` 恢复；恢复前需先处理与本项目 Caddy 的 80/443 端口冲突。
+
+### 下次测试建议、重测触发和回滚
+
+- 修改 `RequestContextFilter`、Trace 注解/切面、认证类型映射、模型日志配置/脱敏规则、Chat Trace 链接或 Tasks 路由加载逻辑时，必须重跑对应定向测试、Backend/Python/Frontend 完整回归及统一重建。
+- 后续建议接入统一日志字段白名单与集中式敏感数据扫描，并在具备隔离测试账号和供应商沙箱时补充真实模型调用的日志端到端验证。
+- 回滚时撤销 `05a9120` 并执行 `docker compose up --build -d`；本机忽略的 `.env` 不受 Git 回滚影响，如需恢复旧行为必须显式设置 `LLM_LOG_CONTENT=true`。
+
 ## Adapter Docker Supervisor 隔离与未推送代码回归测试结果（2026-08-20）
 
 ### Git 基准点
