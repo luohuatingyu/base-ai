@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.14</version>
+        <version>4.1.0</version>
         <relativePath/>
     </parent>
     <groupId>com.baseai</groupId>
@@ -19,7 +19,7 @@
         <tomcat.version>10.1.55</tomcat.version>
         <jackson-bom.version>2.21.4</jackson-bom.version>
         <netty.version>4.1.136.Final</netty.version>
-        <aws.sdk.version>2.51.2</aws.sdk.version>
+        <aws.sdk.version>2.53.1</aws.sdk.version>
         <apache.tika.version>3.3.2</apache.tika.version>
         <commons.csv.version>1.14.1</commons.csv.version>
     </properties>
@@ -49,7 +49,7 @@
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-mysql</artifactId></dependency>
         <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
         <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><scope>runtime</scope></dependency>
-        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>42.7.12</version><scope>runtime</scope></dependency>
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>42.7.13</version><scope>runtime</scope></dependency>
         <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><scope>test</scope></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     </dependencies>
