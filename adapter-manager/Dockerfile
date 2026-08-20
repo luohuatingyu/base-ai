@@ -7,7 +7,12 @@ COPY go.mod main.go main_test.go ./
 RUN go test ./... \
     && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/adapter-manager .
 
-FROM ${DOCKER_CLI_IMAGE}
+FROM scratch AS manager
 COPY --from=build /out/adapter-manager /usr/local/bin/adapter-manager
+USER 10001:0
 EXPOSE 8090
+ENTRYPOINT ["/usr/local/bin/adapter-manager"]
+
+FROM ${DOCKER_CLI_IMAGE} AS supervisor
+COPY --from=build /out/adapter-manager /usr/local/bin/adapter-manager
 ENTRYPOINT ["/usr/local/bin/adapter-manager"]

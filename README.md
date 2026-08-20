@@ -219,7 +219,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **HTTPS ingress and images:** `APP_HTTPS_SITES_FILE`, `TLS_CERTS_DIR`, `APP_HTTPS_IPS`, `TLS_CERT_CHECK_INTERVAL_SECONDS`, `IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`, `IP_CERT_MAX_LEARNED_HOSTS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
-Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME`, normalizes it to lowercase, and names the four runtime containers `<short-name>-backend`, `<short-name>-python-worker`, `<short-name>-frontend`, and `<short-name>-caddy`. For example, `APP_PLATFORM_SHORT_NAME=AI` produces `ai-backend`, `ai-python-worker`, `ai-frontend`, and `ai-caddy`.
+Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME` and normalizes it to lowercase. Runtime container names use the same prefix, including Backend, Workers, Frontend, Caddy, the Adapter Manager, and its isolated Supervisor.
 
 ### HTTPS ingress modes
 
@@ -389,6 +389,7 @@ backend/config/                 Default backend runtime configuration
 database/postgresql/            Reference PostgreSQL schema scripts
 frontend/                       Vue administration console and API proxy
 python-worker/                  FastAPI LLM worker
+adapter-manager/                Adapter lifecycle manager and isolated Supervisor
 .env.example                    Environment variable template
 docker-compose.yml              Application container definitions
 TEST_REPORT.md                  Test baseline and execution history
@@ -403,6 +404,7 @@ TEST_REPORT.md                  Test baseline and execution history
 - Configure a dedicated `APP_API_KEY_HASH_SECRET`; the encryption-key fallback is no longer supported.
 - `LLM_LOG_CONTENT` is disabled by default. Enable it only after data and log-access review, and restrict task-log access because redacted model content can still contain sensitive business data.
 - Plugin Workers only join the internal `outbound-network` and reach `OUTBOUND_ALLOWED_DOMAINS` through the authenticated outbound gateway; an empty allowlist denies all external access.
+- The network-facing Adapter Manager has no Docker socket, Compose file, or environment-file access. Its networkless Supervisor accepts only typed N8N/Dify commands over a private Unix socket and is the sole component that mounts the Docker socket; that remaining host-level privilege must still be protected operationally.
 - For encryption-key rotation, add the new key to `APP_CONFIG_ENCRYPTION_KEYS` and switch `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`; keep prior keys until legacy `enc:` values have been rewritten progressively.
 - Back up MySQL task/log data and PostgreSQL automation logs before schema or application upgrades.
 - Override `MAVEN_IMAGE`, `JRE_IMAGE`, `NODE_IMAGE`, `PYTHON_IMAGE`, `GOPROXY`, `ALPINE_MIRROR`, or Python package-mirror settings when public registries and package proxies are unavailable. Caddy builds use `https://goproxy.cn,direct` for Go modules and `https://mirrors.tuna.tsinghua.edu.cn/alpine` for Alpine packages by default.

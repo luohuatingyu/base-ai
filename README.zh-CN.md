@@ -219,7 +219,7 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **HTTPS 入口、端口和镜像：** `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR`、`APP_HTTPS_IPS`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
-Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写，四个运行时容器依次命名为 `<简称>-backend`、`<简称>-python-worker`、`<简称>-frontend` 和 `<简称>-caddy`。例如 `APP_PLATFORM_SHORT_NAME=AI` 时，容器名为 `ai-backend`、`ai-python-worker`、`ai-frontend` 和 `ai-caddy`。
+Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写。Backend、各 Worker、Frontend、Caddy、Adapter Manager 及其隔离 Supervisor 均使用相同的容器名前缀。
 
 ### HTTPS 入口模式
 
@@ -387,6 +387,7 @@ backend/config/                 默认后端运行时配置
 database/postgresql/            PostgreSQL Schema 参考脚本
 frontend/                       Vue 管理控制台和 API 代理
 python-worker/                  FastAPI LLM Worker
+adapter-manager/                适配器生命周期 Manager 与隔离 Supervisor
 .env.example                    环境变量模板
 docker-compose.yml              应用容器定义
 TEST_REPORT.md                  测试基准和执行历史
@@ -401,6 +402,7 @@ TEST_REPORT.md                  测试基准和执行历史
 - 为 `APP_API_KEY_HASH_SECRET` 配置独立密钥；应用不再提供加密密钥回退机制。
 - `LLM_LOG_CONTENT` 默认关闭；仅在完成数据和日志访问评审后启用，并限制任务日志访问权限，因为脱敏后的模型正文仍可能包含业务敏感数据。
 - 插件 Worker 只连接内部 `outbound-network`，通过 `OUTBOUND_GATEWAY_TOKEN` 认证的网关访问 `OUTBOUND_ALLOWED_DOMAINS`；空白名单会拒绝全部外部访问。
+- 网络可达的 Adapter Manager 不挂载 Docker Socket、Compose 文件或环境文件；无网络 Supervisor 仅通过私有 Unix Socket 接受类型化的 N8N/Dify 命令，并作为唯一挂载 Docker Socket 的组件。该组件仍具有宿主级权限，生产环境必须继续保护其运行边界。
 - 轮换配置加密密钥时，把新密钥加入 `APP_CONFIG_ENCRYPTION_KEYS` 并切换 `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`；保留旧密钥直到历史 `enc:` 密文完成渐进重写。
 - 执行 Schema 或应用升级前，备份 MySQL 任务与日志数据以及 PostgreSQL 自动化日志。
 - 无法访问公共镜像仓库或软件包代理时，可覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE`、`PYTHON_IMAGE`、`GOPROXY`、`ALPINE_MIRROR` 或 Python 软件包镜像源配置。Caddy 构建默认使用 `https://goproxy.cn,direct` 获取 Go 模块，并使用 `https://mirrors.tuna.tsinghua.edu.cn/alpine` 获取 Alpine 软件包。

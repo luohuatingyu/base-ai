@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -36,10 +38,10 @@ func (f *fakeRunner) Run(_ context.Context, arguments ...string) (string, error)
 	return output, err
 }
 
-// newController 使用强测试令牌创建隔离的控制器。
-func newController(runner commandRunner) *controller {
-	return &controller{runner: runner, projectDir: "/workspace", composeFile: "/workspace/docker-compose.yml",
-		envFile: "/workspace/.env", token: strings.Repeat("t", 32), operations: map[string]adapterState{}}
+// newSupervisor 使用替身命令执行器创建隔离 Supervisor。
+func newSupervisor(runner commandRunner) *supervisorController {
+	return &supervisorController{runner: runner, projectDir: "/workspace", composeFile: "/workspace/docker-compose.yml",
+		envFile: "/workspace/.env", operations: map[string]adapterState{}}
 }
 
 // TestState 将健康、启动中、停止和畸形 Compose 输出映射为稳定接口状态。
@@ -50,9 +52,9 @@ func TestState(t *testing.T) {
 		`[{"State":"exited","Health":""}]`,
 		`not-json`,
 	}}
-	manager := newController(runner)
+	supervisor := newSupervisor(runner)
 	for _, expected := range []string{"RUNNING", "STARTING", "STOPPED", "FAILED"} {
-		if actual := manager.state("N8N").Status; actual != expected {
+		if actual := supervisor.state(context.Background(), "N8N").Status; actual != expected {
 			t.Fatalf("expected %s, got %s", expected, actual)
 		}
 	}
@@ -61,8 +63,8 @@ func TestState(t *testing.T) {
 // TestControlUsesAllowlistedComposeService 验证独立来源无法注入命令参数。
 func TestControlUsesAllowlistedComposeService(t *testing.T) {
 	runner := &fakeRunner{}
-	manager := newController(runner)
-	state, status := manager.setEnabled("N8N", true)
+	supervisor := newSupervisor(runner)
+	state, status := supervisor.setEnabled("N8N", true)
 	if status != http.StatusAccepted || state.Status != "ENABLING" {
 		t.Fatalf("unexpected response: %d %#v", status, state)
 	}
@@ -74,7 +76,7 @@ func TestControlUsesAllowlistedComposeService(t *testing.T) {
 		strings.Contains(command, "dify-plugin-worker") || strings.Contains(command, " --build ") {
 		t.Fatalf("unexpected command: %s", command)
 	}
-	if rejected, rejectedStatus := manager.setEnabled("N8N;rm -rf /", true); rejectedStatus != http.StatusBadRequest || rejected.Status != "INVALID" {
+	if rejected, rejectedStatus := supervisor.setEnabled("N8N;rm -rf /", true); rejectedStatus != http.StatusBadRequest || rejected.Status != "INVALID" {
 		t.Fatalf("malicious source was not rejected: %d %#v", rejectedStatus, rejected)
 	}
 }
@@ -82,14 +84,14 @@ func TestControlUsesAllowlistedComposeService(t *testing.T) {
 // TestFailedOperationPreservesBoundedError 验证命令细节不会返回给调用方。
 func TestFailedOperationPreservesBoundedError(t *testing.T) {
 	runner := &fakeRunner{outputs: []string{"secret command output"}, errors: []error{errors.New("failed")}}
-	manager := newController(runner)
-	manager.setEnabled("DIFY", false)
+	supervisor := newSupervisor(runner)
+	supervisor.setEnabled("DIFY", false)
 	waitForCalls(t, runner, 1)
 	var state adapterState
 	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
-		manager.mu.Lock()
-		state = manager.operations["DIFY"]
-		manager.mu.Unlock()
+		supervisor.mu.Lock()
+		state = supervisor.operations["DIFY"]
+		supervisor.mu.Unlock()
 		if state.Status == "FAILED" {
 			break
 		}
@@ -100,9 +102,43 @@ func TestFailedOperationPreservesBoundedError(t *testing.T) {
 	}
 }
 
-// TestHTTPAuthenticationAndValidation 覆盖健康检查、令牌校验和严格 JSON 解析。
-func TestHTTPAuthenticationAndValidation(t *testing.T) {
-	manager := newController(&fakeRunner{outputs: []string{""}})
+type fakeSupervisor struct {
+	healthErr error
+	state     adapterState
+	status    int
+	err       error
+	mu        sync.Mutex
+	calls     []string
+}
+
+// Health 返回预设的隔离控制层健康状态。
+func (f *fakeSupervisor) Health(context.Context) error { return f.healthErr }
+
+// State 记录固定来源状态查询。
+func (f *fakeSupervisor) State(_ context.Context, source string) (adapterState, int, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, "GET "+source)
+	f.mu.Unlock()
+	return f.state, f.status, f.err
+}
+
+// SetEnabled 记录经过解析的类型化布尔命令。
+func (f *fakeSupervisor) SetEnabled(_ context.Context, source string, enabled bool) (adapterState, int, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, "PUT "+source+" "+map[bool]string{true: "true", false: "false"}[enabled])
+	f.mu.Unlock()
+	return f.state, f.status, f.err
+}
+
+// newManager 使用强测试令牌创建不持有命令执行器的网络 Manager。
+func newManager(supervisor supervisorAPI) *managerController {
+	return &managerController{supervisor: supervisor, token: strings.Repeat("t", 32)}
+}
+
+// TestManagerAuthenticationAndTypedForwarding 覆盖鉴权、严格解析和类型化转发。
+func TestManagerAuthenticationAndTypedForwarding(t *testing.T) {
+	upstream := &fakeSupervisor{state: adapterState{Source: "N8N", Status: "ENABLING"}, status: http.StatusAccepted}
+	manager := newManager(upstream)
 	health := httptest.NewRecorder()
 	manager.serveHTTP(health, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if health.Code != http.StatusOK {
@@ -113,17 +149,80 @@ func TestHTTPAuthenticationAndValidation(t *testing.T) {
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized request returned %d", unauthorized.Code)
 	}
-	invalid := httptest.NewRequest(http.MethodPut, "/api/adapters/N8N", strings.NewReader(`{"enabled":true,"service":"evil"}`))
-	invalid.Header.Set("X-Internal-Token", manager.token)
-	invalidResponse := httptest.NewRecorder()
-	manager.serveHTTP(invalidResponse, invalid)
-	if invalidResponse.Code != http.StatusBadRequest {
-		t.Fatalf("invalid body returned %d", invalidResponse.Code)
+	request := httptest.NewRequest(http.MethodPut, "/api/adapters/n8n", strings.NewReader(`{"enabled":true}`))
+	request.Header.Set("X-Internal-Token", manager.token)
+	response := httptest.NewRecorder()
+	manager.serveHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("typed request returned %d", response.Code)
 	}
-	var body map[string]string
-	_ = json.Unmarshal(invalidResponse.Body.Bytes(), &body)
-	if body["error"] != "REQUEST_INVALID" {
-		t.Fatalf("unexpected body: %#v", body)
+	upstream.mu.Lock()
+	calls := append([]string(nil), upstream.calls...)
+	upstream.mu.Unlock()
+	if len(calls) != 1 || calls[0] != "PUT N8N true" {
+		t.Fatalf("unexpected supervisor calls: %#v", calls)
+	}
+}
+
+// TestManagerRejectsMalformedCommandsBeforeSupervisor 覆盖未知字段、尾随 JSON 和恶意来源。
+func TestManagerRejectsMalformedCommandsBeforeSupervisor(t *testing.T) {
+	upstream := &fakeSupervisor{state: adapterState{Source: "N8N", Status: "ENABLING"}, status: http.StatusAccepted}
+	manager := newManager(upstream)
+	for _, pathAndBody := range [][2]string{
+		{"/api/adapters/N8N", `{"enabled":true,"service":"evil"}`},
+		{"/api/adapters/N8N", `{"enabled":true}{"enabled":false}`},
+		{"/api/adapters/N8N%3Brm-rf", `{"enabled":true}`},
+	} {
+		request := httptest.NewRequest(http.MethodPut, pathAndBody[0], strings.NewReader(pathAndBody[1]))
+		request.Header.Set("X-Internal-Token", manager.token)
+		response := httptest.NewRecorder()
+		manager.serveHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("%s returned %d", pathAndBody[0], response.Code)
+		}
+	}
+	upstream.mu.Lock()
+	defer upstream.mu.Unlock()
+	if len(upstream.calls) != 0 {
+		t.Fatalf("invalid input reached supervisor: %#v", upstream.calls)
+	}
+}
+
+// TestManagerBoundsSupervisorFailures 验证隔离层错误不会把底层细节返回网络调用方。
+func TestManagerBoundsSupervisorFailures(t *testing.T) {
+	upstream := &fakeSupervisor{err: errors.New("/workspace/.env: secret"), status: http.StatusInternalServerError}
+	manager := newManager(upstream)
+	request := httptest.NewRequest(http.MethodGet, "/api/adapters/DIFY", nil)
+	request.Header.Set("X-Internal-Token", manager.token)
+	response := httptest.NewRecorder()
+	manager.serveHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), "workspace") {
+		t.Fatalf("unexpected bounded response: %d %s", response.Code, response.Body.String())
+	}
+	var state adapterState
+	_ = json.Unmarshal(response.Body.Bytes(), &state)
+	if state.Error != "ADAPTER_SUPERVISOR_UNAVAILABLE" {
+		t.Fatalf("unexpected failure state: %#v", state)
+	}
+}
+
+// TestUnixSupervisorClientUsesPrivateSocket 验证 Manager 客户端只通过指定 Unix Socket 通信。
+func TestUnixSupervisorClientUsesPrivateSocket(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "supervisor.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := newSupervisor(&fakeRunner{outputs: []string{`[{"State":"running","Health":"healthy"}]`}})
+	httpServer := &http.Server{Handler: http.HandlerFunc(upstream.serveHTTP)}
+	go func() { _ = httpServer.Serve(listener) }()
+	defer httpServer.Close()
+	client := newUnixSupervisorClient(socketPath)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	state, status, err := client.State(ctx, "N8N")
+	if err != nil || status != http.StatusOK || state.Status != "RUNNING" {
+		t.Fatalf("unexpected socket response: %d %#v %v", status, state, err)
 	}
 }
 

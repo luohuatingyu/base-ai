@@ -15,7 +15,7 @@ test('节点管理页为 n8n 与 Dify 展示独立容器开关并只在运行后
   assert.match(source, /stopAdapterPolling\(\)/)
 })
 
-test('Compose 默认不启动插件 Worker 且隔离 manager 只挂载所需控制边界', async () => {
+test('Compose 默认不启动插件 Worker 且网络 manager 无 Docker 权限', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
 
   for (const service of ['n8n-plugin-worker', 'dify-plugin-worker']) {
@@ -28,22 +28,35 @@ test('Compose 默认不启动插件 Worker 且隔离 manager 只挂载所需控�
   const managerStart = compose.indexOf('\n  adapter-manager:\n') + 1
   const managerEnd = compose.indexOf('\n  outbound-gateway:', managerStart)
   const manager = compose.slice(managerStart, managerEnd)
-  assert.match(manager, /\/var\/run\/docker\.sock:\/var\/run\/docker\.sock/)
-  assert.match(manager, /\.\/docker-compose\.yml:\/workspace\/docker-compose\.yml:ro/)
-  assert.match(manager, /\.\/\.env:\/workspace\/\.env:ro/)
-  assert.doesNotMatch(manager, /^\s*-\s+\.:\/workspace:ro$/m)
+  assert.doesNotMatch(manager, /\/var\/run\/docker\.sock/)
+  assert.doesNotMatch(manager, /\/workspace\/\.env/)
+  assert.doesNotMatch(manager, /\/workspace\/docker-compose\.yml/)
+  assert.match(manager, /adapter-control:\/run\/adapter-control:ro/)
   assert.match(manager, /cap_drop:\s*\n\s*- ALL/)
   assert.match(manager, /no-new-privileges:true/)
   assert.doesNotMatch(manager, /ports:/)
+
+  const supervisorStart = compose.indexOf('\n  adapter-supervisor:\n') + 1
+  const supervisorEnd = compose.indexOf('\n  adapter-manager:', supervisorStart)
+  const supervisor = compose.slice(supervisorStart, supervisorEnd)
+  assert.match(supervisor, /\/var\/run\/docker\.sock:\/var\/run\/docker\.sock/)
+  assert.match(supervisor, /\.\/docker-compose\.yml:\/workspace\/docker-compose\.yml:ro/)
+  assert.match(supervisor, /\.\/\.env:\/workspace\/\.env:ro/)
+  assert.match(supervisor, /adapter-control:\/run\/adapter-control/)
+  assert.match(supervisor, /network_mode: none/)
+  assert.doesNotMatch(supervisor, /^\s*networks:/m)
 })
 
-test('adapter-manager 固定来源白名单并拒绝把请求值拼入 Compose 命令', async () => {
+test('adapter-manager 通过 Unix Socket 向 Supervisor 转发固定类型命令', async () => {
   const manager = await readFile(new URL('adapter-manager/main.go', root), 'utf8')
 
   assert.match(manager, /"N8N":\s+"n8n-plugin-worker"/)
   assert.match(manager, /"DIFY":\s+"dify-plugin-worker"/)
   assert.match(manager, /ConstantTimeCompare/)
   assert.match(manager, /http\.MaxBytesReader/)
+  assert.match(manager, /DialContext\(ctx, "unix", socketPath\)/)
+  assert.match(manager, /type supervisorController struct/)
+  assert.match(manager, /type managerController struct/)
   assert.match(manager, /"--no-build", "--no-deps", service/)
 })
 

@@ -1,19 +1,25 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
+
+const maximumResponseBytes = 4096
 
 var adapterServices = map[string]string{
 	"N8N":  "n8n-plugin-worker",
@@ -26,7 +32,7 @@ type commandRunner interface {
 
 type dockerCommandRunner struct{}
 
-// Run 仅执行控制器生成的固定参数，并返回限制长度的诊断信息。
+// Run 仅执行 Supervisor 生成的固定参数，并返回限制长度的诊断信息。
 func (dockerCommandRunner) Run(ctx context.Context, arguments ...string) (string, error) {
 	command := exec.CommandContext(ctx, "docker", arguments...)
 	output, err := command.CombinedOutput()
@@ -48,23 +54,22 @@ type composeContainer struct {
 	Health string `json:"Health"`
 }
 
-type controller struct {
+type supervisorController struct {
 	runner      commandRunner
 	projectDir  string
 	composeFile string
 	envFile     string
-	token       string
 	mu          sync.Mutex
 	operations  map[string]adapterState
 }
 
 // composeArguments 构建两个适配器共用且不可由请求修改的 Compose 命令前缀。
-func (c *controller) composeArguments() []string {
+func (c *supervisorController) composeArguments() []string {
 	return []string{"compose", "--project-directory", c.projectDir, "-f", c.composeFile, "--env-file", c.envFile}
 }
 
 // state 返回进行中的操作，或通过 Docker Compose 解析容器实际状态。
-func (c *controller) state(source string) adapterState {
+func (c *supervisorController) state(parent context.Context, source string) adapterState {
 	service, ok := adapterServices[source]
 	if !ok {
 		return adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"}
@@ -75,7 +80,7 @@ func (c *controller) state(source string) adapterState {
 	if active {
 		return operation
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	arguments := append(c.composeArguments(), "ps", "--all", "--format", "json", service)
 	output, err := c.runner.Run(ctx, arguments...)
@@ -123,7 +128,7 @@ func decodeContainers(output string) ([]composeContainer, error) {
 }
 
 // setEnabled 为单个硬编码服务串行提交异步启动或停止操作。
-func (c *controller) setEnabled(source string, enabled bool) (adapterState, int) {
+func (c *supervisorController) setEnabled(source string, enabled bool) (adapterState, int) {
 	service, ok := adapterServices[source]
 	if !ok {
 		return adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"}, http.StatusBadRequest
@@ -148,12 +153,12 @@ func (c *controller) setEnabled(source string, enabled bool) (adapterState, int)
 }
 
 // runOperation 使用固定参数调用 Compose，且仅保留有限的非敏感失败码。
-func (c *controller) runOperation(source string, service string, enabled bool) {
+func (c *supervisorController) runOperation(source string, service string, enabled bool) {
 	timeout := 45 * time.Second
 	arguments := c.composeArguments()
 	if enabled {
 		timeout = 10 * time.Minute
-		// 适配器镜像必须由发布流程预构建，管理面不再通过 Docker Socket 执行构建。
+		// 适配器镜像必须由发布流程预构建，Supervisor 不通过 Docker Socket 执行构建。
 		arguments = append(arguments, "--profile", "plugin-adapters", "up", "-d", "--no-build", "--no-deps", service)
 	} else {
 		arguments = append(arguments, "stop", "-t", "10", service)
@@ -178,15 +183,140 @@ func (c *controller) runOperation(source string, service string, enabled bool) {
 	delete(c.operations, source)
 }
 
+// serveHTTP 仅在私有 Unix Socket 上提供健康、状态和固定目标开关接口。
+func (c *supervisorController) serveHTTP(response http.ResponseWriter, request *http.Request) {
+	if request.Method == http.MethodGet && request.URL.Path == "/health" {
+		writeJSON(response, http.StatusOK, map[string]string{"status": "UP"})
+		return
+	}
+	source, ok := sourceFromPath(request.URL.Path)
+	if !ok {
+		writeJSON(response, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
+		return
+	}
+	if _, allowed := adapterServices[source]; !allowed {
+		writeJSON(response, http.StatusBadRequest, adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"})
+		return
+	}
+	if request.Method == http.MethodGet {
+		writeJSON(response, http.StatusOK, c.state(request.Context(), source))
+		return
+	}
+	if request.Method != http.MethodPut {
+		writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
+		return
+	}
+	enabled, valid := enabledCommand(response, request)
+	if !valid {
+		return
+	}
+	state, status := c.setEnabled(source, enabled)
+	writeJSON(response, status, state)
+}
+
+type supervisorAPI interface {
+	Health(context.Context) error
+	State(context.Context, string) (adapterState, int, error)
+	SetEnabled(context.Context, string, bool) (adapterState, int, error)
+}
+
+type unixSupervisorClient struct {
+	httpClient *http.Client
+}
+
+// newUnixSupervisorClient 创建只能连接指定 Unix Socket 的 HTTP 客户端。
+func newUnixSupervisorClient(socketPath string) *unixSupervisorClient {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		},
+		DisableKeepAlives: true,
+	}
+	return &unixSupervisorClient{httpClient: &http.Client{Transport: transport}}
+}
+
+// Health 验证隔离 Supervisor 的 Unix Socket 服务可用。
+func (c *unixSupervisorClient) Health(ctx context.Context) error {
+	_, status, err := c.request(ctx, http.MethodGet, "", nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("unexpected supervisor health status: %d", status)
+	}
+	return nil
+}
+
+// State 查询固定来源的实际容器状态。
+func (c *unixSupervisorClient) State(ctx context.Context, source string) (adapterState, int, error) {
+	return c.request(ctx, http.MethodGet, source, nil)
+}
+
+// SetEnabled 提交固定来源的启停命令。
+func (c *unixSupervisorClient) SetEnabled(ctx context.Context, source string, enabled bool) (adapterState, int, error) {
+	return c.request(ctx, http.MethodPut, source, &enabled)
+}
+
+// request 发送类型化请求并限制、校验 Supervisor 响应。
+func (c *unixSupervisorClient) request(ctx context.Context, method string, source string, enabled *bool) (adapterState, int, error) {
+	path := "/health"
+	var body io.Reader
+	if source != "" {
+		path = "/api/adapters/" + source
+	}
+	if enabled != nil {
+		payload, err := json.Marshal(map[string]bool{"enabled": *enabled})
+		if err != nil {
+			return adapterState{}, 0, err
+		}
+		body = bytes.NewReader(payload)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, "http://supervisor"+path, body)
+	if err != nil {
+		return adapterState{}, 0, err
+	}
+	if enabled != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return adapterState{}, 0, err
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBytes+1))
+	if err != nil || len(payload) > maximumResponseBytes {
+		return adapterState{}, response.StatusCode, errors.New("supervisor response invalid")
+	}
+	if source == "" {
+		return adapterState{}, response.StatusCode, nil
+	}
+	var state adapterState
+	if json.Unmarshal(payload, &state) != nil || state.Source != source || !validAdapterStatus(state.Status) {
+		return adapterState{}, response.StatusCode, errors.New("supervisor response invalid")
+	}
+	return state, response.StatusCode, nil
+}
+
+type managerController struct {
+	supervisor supervisorAPI
+	token      string
+}
+
 // authorized 使用常量时间比较校验内部控制令牌。
-func (c *controller) authorized(request *http.Request) bool {
+func (c *managerController) authorized(request *http.Request) bool {
 	provided := request.Header.Get("X-Internal-Token")
 	return len(provided) == len(c.token) && subtle.ConstantTimeCompare([]byte(provided), []byte(c.token)) == 1
 }
 
-// serveHTTP 提供健康、状态和目标开关接口，且不接受任意服务名。
-func (c *controller) serveHTTP(response http.ResponseWriter, request *http.Request) {
+// serveHTTP 提供网络接口，并仅将验证后的类型化命令转发到私有 Supervisor。
+func (c *managerController) serveHTTP(response http.ResponseWriter, request *http.Request) {
 	if request.Method == http.MethodGet && request.URL.Path == "/health" {
+		ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+		defer cancel()
+		if c.supervisor.Health(ctx) != nil {
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"status": "DOWN"})
+			return
+		}
 		writeJSON(response, http.StatusOK, map[string]string{"status": "UP"})
 		return
 	}
@@ -194,37 +324,78 @@ func (c *controller) serveHTTP(response http.ResponseWriter, request *http.Reque
 		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "UNAUTHORIZED"})
 		return
 	}
-	prefix := "/api/adapters/"
-	if !strings.HasPrefix(request.URL.Path, prefix) || strings.Contains(strings.TrimPrefix(request.URL.Path, prefix), "/") {
+	source, ok := sourceFromPath(request.URL.Path)
+	if !ok {
 		writeJSON(response, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
 		return
 	}
-	source := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(request.URL.Path, prefix)))
+	if _, allowed := adapterServices[source]; !allowed {
+		writeJSON(response, http.StatusBadRequest, adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"})
+		return
+	}
 	if request.Method == http.MethodGet {
-		state := c.state(source)
-		status := http.StatusOK
-		if state.Status == "INVALID" {
-			status = http.StatusBadRequest
-		}
-		writeJSON(response, status, state)
+		state, status, err := c.supervisor.State(request.Context(), source)
+		c.writeSupervisorResult(response, source, state, status, err)
 		return
 	}
 	if request.Method != http.MethodPut {
 		writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
 		return
 	}
+	enabled, valid := enabledCommand(response, request)
+	if !valid {
+		return
+	}
+	state, status, err := c.supervisor.SetEnabled(request.Context(), source, enabled)
+	c.writeSupervisorResult(response, source, state, status, err)
+}
+
+// writeSupervisorResult 将隔离层错误映射为不包含部署细节的稳定响应。
+func (c *managerController) writeSupervisorResult(response http.ResponseWriter, source string, state adapterState, status int, err error) {
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable,
+			adapterState{Source: source, Status: "FAILED", Error: "ADAPTER_SUPERVISOR_UNAVAILABLE"})
+		return
+	}
+	writeJSON(response, status, state)
+}
+
+// sourceFromPath 只接受单段适配器来源路径并统一为大写。
+func sourceFromPath(path string) (string, bool) {
+	const prefix = "/api/adapters/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	remainder := strings.TrimPrefix(path, prefix)
+	if remainder == "" || strings.Contains(remainder, "/") {
+		return "", false
+	}
+	return strings.ToUpper(strings.TrimSpace(remainder)), true
+}
+
+// enabledCommand 严格读取单个布尔字段并拒绝未知字段和尾随内容。
+func enabledCommand(response http.ResponseWriter, request *http.Request) (bool, bool) {
 	request.Body = http.MaxBytesReader(response, request.Body, 1024)
 	var command struct {
 		Enabled *bool `json:"enabled"`
 	}
 	decoder := json.NewDecoder(request.Body)
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&command) != nil || command.Enabled == nil {
+	if decoder.Decode(&command) != nil || command.Enabled == nil || decoder.Decode(&struct{}{}) != io.EOF {
 		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "REQUEST_INVALID"})
-		return
+		return false, false
 	}
-	state, status := c.setEnabled(source, *command.Enabled)
-	writeJSON(response, status, state)
+	return *command.Enabled, true
+}
+
+// validAdapterStatus 限制 Supervisor 能返回到网络边界的状态集合。
+func validAdapterStatus(status string) bool {
+	switch status {
+	case "INVALID", "ENABLING", "RUNNING", "STARTING", "DISABLING", "STOPPED", "FAILED":
+		return true
+	default:
+		return false
+	}
 }
 
 // writeJSON 写入带防御性响应头的小型 JSON 响应。
@@ -244,23 +415,114 @@ func required(name string) string {
 	return value
 }
 
-func main() {
+// secureUnixListener 清理同路径的旧 Socket，并创建仅服务组可访问的新监听器。
+func secureUnixListener(socketPath string) (net.Listener, error) {
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0750); err != nil {
+		return nil, err
+	}
+	if info, err := os.Lstat(socketPath); err == nil {
+		if info.Mode()&os.ModeSocket == 0 {
+			return nil, errors.New("supervisor socket path is not a socket")
+		}
+		if err := os.Remove(socketPath); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(socketPath, 0660); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
+	return listener, nil
+}
+
+// server 创建共享超时策略的受限 HTTP 服务。
+func server(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       12 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
+}
+
+// runManager 启动不持有 Docker 权限的网络控制接口。
+func runManager() {
 	token := required("ADAPTER_MANAGER_INTERNAL_TOKEN")
 	if len(token) < 24 {
 		log.Fatal("ADAPTER_MANAGER_INTERNAL_TOKEN must contain at least 24 characters")
 	}
-	manager := &controller{
+	manager := &managerController{supervisor: newUnixSupervisorClient(required("ADAPTER_SUPERVISOR_SOCKET")), token: token}
+	httpServer := server(http.HandlerFunc(manager.serveHTTP))
+	httpServer.Addr = ":8090"
+	log.Fatal(httpServer.ListenAndServe())
+}
+
+// runSupervisor 启动无网络、仅通过 Unix Socket 提供固定 Docker 操作的隔离服务。
+func runSupervisor() {
+	socketPath := required("ADAPTER_SUPERVISOR_SOCKET")
+	listener, err := secureUnixListener(socketPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		_ = listener.Close()
+		_ = os.Remove(socketPath)
+	}()
+	supervisor := &supervisorController{
 		runner: dockerCommandRunner{}, projectDir: required("COMPOSE_PROJECT_DIR"),
 		composeFile: required("COMPOSE_FILE"), envFile: required("COMPOSE_ENV_FILE"),
-		token: token, operations: map[string]adapterState{},
+		operations: map[string]adapterState{},
 	}
-	server := &http.Server{
-		Addr:              ":8090",
-		Handler:           http.HandlerFunc(manager.serveHTTP),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       30 * time.Second,
+	log.Fatal(server(http.HandlerFunc(supervisor.serveHTTP)).Serve(listener))
+}
+
+// runManagerHealthcheck 验证 Manager 网络入口及其下游 Supervisor 均可用。
+func runManagerHealthcheck() error {
+	client := &http.Client{Timeout: 3 * time.Second}
+	response, err := client.Get("http://127.0.0.1:8090/health")
+	if err != nil {
+		return err
 	}
-	log.Fatal(server.ListenAndServe())
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("manager health returned %d", response.StatusCode)
+	}
+	return nil
+}
+
+// runSupervisorHealthcheck 验证私有 Unix Socket 控制服务可用。
+func runSupervisorHealthcheck() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return newUnixSupervisorClient(required("ADAPTER_SUPERVISOR_SOCKET")).Health(ctx)
+}
+
+func main() {
+	if len(os.Args) > 1 {
+		var err error
+		switch os.Args[1] {
+		case "manager-healthcheck":
+			err = runManagerHealthcheck()
+		case "supervisor-healthcheck":
+			err = runSupervisorHealthcheck()
+		default:
+			log.Fatalf("unsupported command: %s", os.Args[1])
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if os.Getenv("ADAPTER_MANAGER_MODE") == "supervisor" {
+		runSupervisor()
+		return
+	}
+	runManager()
 }
