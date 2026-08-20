@@ -1,5 +1,83 @@
 # 最近分支覆盖测试报告
 
+## Adapter Docker Supervisor 隔离与未推送代码回归测试结果（2026-08-20）
+
+### Git 基准点
+
+Commit: 9f8e39f1cc8f3aca6ebd1f3d52702603d67f4579
+- 提交说明: Isolate adapter Docker supervisor
+- 前置日志安全提交: `05a9120`（Harden trace logging defaults）
+- 测试日期: 2026-08-19 至 2026-08-20
+- 分支: master
+- 未推送范围: `origin/master..47ed4d5` 共 5 个本地提交，未执行 `git push`
+
+### 变更范围
+
+- 将原先同时承载内部 HTTP API 和 Docker Socket 权限的 Adapter Manager 拆为双层控制面：网络可达的 Manager 仅负责令牌鉴权、严格 JSON 校验和类型化转发；无网络 Supervisor 负责固定的 N8N/DIFY Compose 操作。
+- Manager 使用最小 `scratch` 镜像、非 root 用户和只读私有控制卷，不再挂载 Docker Socket、Compose 文件、`.env` 或其他部署文件。
+- Supervisor 通过私有 Unix Socket 提供服务，配置为 `network_mode: none`，继续限制为两个硬编码 Worker、禁止运行时构建、限制命令超时和响应错误内容。
+- Docker Socket 仅迁移至无网络 Supervisor；为保持现有按需启停能力，Supervisor 仍只读挂载 Compose/环境文件并持有宿主 Docker 控制权限。
+- 没有修改本地 `.env`、密钥、生产连接信息、数据库结构、Backend API 协议或前端开关交互。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 网络 Manager 不持有 Docker 或部署文件权限 | Frontend Compose 隔离回归；运行容器 `docker inspect` | Manager 仅只读挂载 `/run/adapter-control`，无 Docker Socket、`.env` 和 Compose 文件；通过 | 权限、安全、部署 |
+| Supervisor 无网络且只接受固定类型命令 | Adapter Go：来源白名单、畸形 JSON、尾随 JSON、恶意来源、Unix Socket 客户端测试 | 仅 N8N/DIFY 可到达固定 Compose 命令；Supervisor 网络为 `none`；7/7 通过 | 边界、异常、恶意输入、安全 |
+| 控制层失败不泄露部署细节 | Adapter Go：`TestManagerBoundsSupervisorFailures`、`TestFailedOperationPreservesBoundedError` | `.env` 路径、命令输出和底层错误不返回调用方；通过 | 异常、安全 |
+| 现有 Backend 生命周期协议保持兼容 | `WorkflowAdapterManagerClientTest`、`WorkflowAdapterLifecycleServiceTest` | 鉴权请求、状态映射、并发关闭保护和期望状态持久化不变；定向 7/7 通过 | 正常、状态冲突、兼容 |
+| 两个按需 Worker 可真实启停 | Backend 容器调用 Manager，轮询实际容器健康并停止 | N8N、DIFY 均从 STOPPED 到 RUNNING，再到 STOPPED；通过 | 集成、运行态、回归 |
+| 所有未推送代码无功能回归 | Backend、Frontend、Python、Dify、n8n、两个 Go 服务完整测试及统一重建 | 827/827 通过；七个基础服务 healthy；通过 | 完整回归、构建、部署 |
+
+### 测试执行结果
+
+- 正式完整自动化：827/827，通过率 100%；失败 0，错误 0，跳过 0。
+- Backend：598/598；Frontend：129/129；Python Worker（Python 3.12）：60/60；Dify Worker（Python 3.12）：21/21；n8n Worker：10/10。
+- Adapter Manager/Supervisor：7/7；Outbound Gateway：2/2；Backend Adapter 定向测试另计 7/7，因包含在 Backend 完整测试中未重复计入总数。
+- Workflow/Dependabot YAML 解析、Actionlint、CI 环境 Compose 插值与 `docker compose config --quiet` 均通过。
+- 插件 Worker 镜像预构建通过；`docker compose up --build -d` 最终成功，Backend、Frontend、Python Worker、Adapter Manager、Adapter Supervisor、Outbound Gateway、Caddy 全部 healthy。
+- N8N 与 DIFY 均通过 Manager → Unix Socket → Supervisor → Docker Compose 链路达到 `RUNNING`，验证后均正常停止。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Adapter 完整 | 锁定 Go 1.26.5 镜像执行 `gofmt` 和 `go test ./...` | 7/7 通过；宿主未安装 Go，使用项目锁定容器工具链 |
+| Backend Adapter 定向 | Maven 3.9.9 / Java 17 容器执行 `-Dtest=WorkflowAdapterManagerClientTest,WorkflowAdapterLifecycleServiceTest test` | 7/7 通过 |
+| Backend 完整 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 598/598，通过；失败、错误、跳过均为 0 |
+| Frontend 完整 | `cd frontend && npm test` | 129/129 通过；其中生命周期/Compose 隔离 4/4 |
+| Python Worker 完整 | Python 3.12 锁定镜像按哈希安装开发依赖后执行 `pytest tests -q` | 60/60 通过 |
+| Dify Worker 完整 | Python 3.12 锁定镜像安装运行依赖后执行 `unittest discover -s tests -v` | 21/21 通过 |
+| n8n Worker 完整 | `cd n8n-plugin-worker && npm test` | 10/10 通过 |
+| Outbound Gateway 完整 | 锁定 Go 1.26.5 镜像执行 `go test ./...` | 2/2 通过 |
+| CI 与 Compose 静态校验 | Ruby YAML 解析、Actionlint、CI 环境 `docker compose --env-file /dev/null config --quiet` | 全部通过 |
+| 插件镜像构建 | `docker compose --profile plugin-adapters build dify-plugin-worker n8n-plugin-worker` | 两个镜像构建成功 |
+| 统一重建 | `docker compose up --build -d` | 首次因 `apple-auto-caddy` 占用 80/443 失败；按规则停止冲突容器后重试成功 |
+| 真实启停 | Backend 容器携带内部令牌对 N8N/DIFY 分别执行启用、状态查询和停用 | 两者均达到 RUNNING 并最终 STOPPED |
+| 运行隔离 | `docker inspect` Manager/Supervisor 挂载、用户和网络 | Manager=`10001:0`、仅只读控制卷；Supervisor 网络=`none`，Docker Socket 仅位于 Supervisor |
+
+### 测试过程问题与处理
+
+- 宿主机没有 `gofmt`/Go 工具链，改用 Dockerfile 已锁定的 Go 1.26.5 镜像；没有安装宿主依赖，也没有遗留调试文件。
+- Docker Desktop 初始未运行，启动后继续容器化测试；一次 Buildx 写入在受限环境被拒绝，经授权后使用正常 Compose 构建路径完成。
+- 首次统一重建因外部 `apple-auto-caddy` 占用 80/443 失败；确认精确容器后停止该容器并重试，未删除容器、数据卷或业务数据。
+- 真实 N8N 启动后数据库期望状态仍为关闭，Backend 的 15 秒协调任务会按设计自动停止它；回归改为在协调窗口内确认 healthy/RUNNING，然后显式停止。DIFY 使用同样流程通过。
+- 测试期间存在并发的日志安全改动及提交；完整测试均基于包含这些未推送改动的共享工作区执行，最终功能提交只补齐 Adapter 实现、测试和说明。
+
+### 已知问题与限制
+
+- Docker Socket 的宿主级权限没有被彻底消除，而是隔离到无网络、固定命令的 Supervisor。若 Supervisor 进程或 Docker CLI 本身被攻破，仍可能获得宿主 Docker 权限；彻底消除需迁移到外部编排平台或具备最小权限授权模型的控制面。
+- Supervisor 为 Compose 变量展开仍需只读访问 `.env` 和少量部署文件；这些文件不再暴露给网络 Manager。本次没有读取输出、修改、轮换或提交本地 `.env`。
+- 没有执行生产集群编排、远程 Docker 主机或多节点故障切换测试；当前验证范围为仓库 Compose 部署模型。
+- 本次没有新增依赖、数据库迁移或需清理的调试文件。
+
+### 下次测试建议、重测触发和回滚
+
+- 修改 Manager/Supervisor 协议、Unix Socket 权限、服务白名单、Compose Worker 定义或生命周期协调逻辑时，必须重跑 Adapter/Backend/Frontend、完整跨模块回归、统一重建和两个 Worker 真实启停。
+- 后续建议将 Supervisor 迁移至外部编排控制面，并增加最小权限身份、请求重放保护、操作审计、故障恢复和多实例领导者测试。
+- 回滚时撤销 `9f8e39f` 后执行 `docker compose up --build -d`；该提交不包含数据库迁移或日志安全改动，无需回滚 `05a9120`。
+
 ## 模型调用内容日志与凭据脱敏测试结果（2026-08-19）
 
 ### Git 基准点
