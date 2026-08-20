@@ -60,7 +60,12 @@
           <span>{{ t('chat.inputTokens') }}: {{ item.inputTokens ?? '-' }}</span>
           <span>{{ t('chat.outputTokens') }}: {{ item.outputTokens ?? '-' }}</span>
           <span>{{ t('chat.totalTokens') }}: {{ item.totalTokens ?? '-' }}</span>
-          <span v-if="item.traceId">{{ t('chat.traceId') }}: {{ item.traceId }}</span>
+          <el-link
+            v-if="item.traceId && auth.hasPermission('system:task:view')"
+            type="primary"
+            @click="openTraceLogs(item.traceId)"
+          >{{ t('chat.traceId') }}: {{ item.traceId }}</el-link>
+          <span v-else-if="item.traceId">{{ t('chat.traceId') }}: {{ item.traceId }}</span>
         </div>
       </div>
       <el-empty v-if="!messages.length" :description="t('chat.empty')" />
@@ -105,11 +110,15 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import http, { showHttpError } from '../api/http'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { createAssistantMessage, hasChatResponseMetadata } from '../utils/chatResponse'
 import { localizeModelType } from '../utils/localization'
 import { isPromptFile, readPromptFile, withSystemPrompt } from '../utils/prompt'
+import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
+const router = useRouter()
+const auth = useAuthStore()
 const prompt = ref('')
 const systemPrompt = ref('')
 const promptFileName = ref('')
@@ -231,6 +240,11 @@ async function onPromptFileSelected(event) {
 function clearPrompt() {
   systemPrompt.value = ''
   promptFileName.value = ''
+}
+
+/** 跳转任务调度页并按当前 Trace ID 自动打开链路日志。 */
+function openTraceLogs(traceId) {
+  router.push({ path: '/tasks', query: { traceId, openLogs: 'true' } })
 }
 
 /** 将页面消息转换为后端兼容的纯文本或多模态消息。 */

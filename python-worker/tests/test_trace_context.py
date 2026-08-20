@@ -177,6 +177,12 @@ def test_structured_and_shipped_logs_only_use_trace_fields():
         ("{'token': 'session-secret'}", "session-secret"),
         ("Authorization: Bearer bearer-secret", "bearer-secret"),
         ("password=plain-secret", "plain-secret"),
+        ('{"access_token": "access-secret"}', "access-secret"),
+        ('{"refresh-token": "refresh-secret"}', "refresh-secret"),
+        ('{"client_secret": "client-secret-value"}', "client-secret-value"),
+        ("Cookie: session=cookie-secret", "cookie-secret"),
+        ("Set-Cookie: BAI_SESSION=session-secret-value", "session-secret-value"),
+        ("X-CSRF-Token: csrf-secret", "csrf-secret"),
     ],
 )
 def test_log_sanitizer_redacts_credential_formats(raw, secret):
@@ -223,3 +229,10 @@ def test_trace_log_environment_variable_controls_persist_level(monkeypatch):
     monkeypatch.setenv("TRACE_LOG_PERSIST_LEVEL", "warn")
 
     assert load_settings().persist_level == "WARN"
+
+
+def test_llm_content_logging_is_disabled_by_default(monkeypatch):
+    """未显式配置时不得持久化提示词和模型响应正文。"""
+    monkeypatch.delenv("LLM_LOG_CONTENT", raising=False)
+
+    assert load_settings().llm_log_content is False

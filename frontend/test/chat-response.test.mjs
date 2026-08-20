@@ -49,12 +49,15 @@ test('缺失或非法元数据不会影响 AI 回复内容', () => {
   assert.equal(hasChatResponseMetadata(message), false)
 })
 
-test('Trace ID 仅在助手消息元数据中展示', () => {
-  assert.match(chatView, /<span v-if="item\.traceId">\{\{ t\('chat\.traceId'\) \}\}: \{\{ item\.traceId \}\}<\/span>/)
+test('Trace ID 在有任务权限时可直达链路日志', () => {
+  assert.match(chatView, /v-if="item\.traceId && auth\.hasPermission\('system:task:view'\)"/)
+  assert.match(chatView, /@click="openTraceLogs\(item\.traceId\)"/)
+  assert.match(chatView, /router\.push\(\{ path: '\/tasks', query: \{ traceId, openLogs: 'true' \} \}\)/)
+  assert.match(chatView, /<span v-else-if="item\.traceId">\{\{ t\('chat\.traceId'\) \}\}: \{\{ item\.traceId \}\}<\/span>/)
   assert.match(chatView, /const response = await http\.post\('\/ai\/chat', payload\)/)
   assert.match(chatView, /createAssistantMessage\(response\.data, response\.traceId\)/)
   assert.doesNotMatch(chatView, /lastTrace/)
-  assert.equal(chatView.match(/t\('chat\.traceId'\)/g)?.length, 1)
+  assert.equal(chatView.match(/t\('chat\.traceId'\)/g)?.length, 2)
 })
 
 test('助手回答使用内容自适应背景并缩小字体', () => {

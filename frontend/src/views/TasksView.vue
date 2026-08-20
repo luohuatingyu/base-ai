@@ -273,12 +273,14 @@ import { onMounted, reactive, ref, computed, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { localizeTaskType } from '../utils/localization'
 import { parseTaskLogFields } from '../utils/taskLogDisplay'
 
 const { t } = useI18n()
+const route = useRoute()
 const auth = useAuthStore()
 const rows = ref([])
 const logs = ref([])
@@ -483,7 +485,7 @@ async function loadLogs(silentError = false) {
   }
   if (logFilter.keyword) params.keyword = logFilter.keyword
 
-  const response = await http.get(`/system/tasks/${currentTraceId}/logs`, { params, silentError })
+  const response = await http.get(`/system/tasks/${encodeURIComponent(currentTraceId)}/logs`, { params, silentError })
   // 逆序排列（最新的在前）
   logs.value = (response.data || []).reverse()
 }
@@ -698,7 +700,16 @@ const stopLogRefreshOnClose = () => {
 // 使用 watch 监听 logVisible 变化
 watch(logVisible, stopLogRefreshOnClose)
 
-onMounted(load)
+/** 应用路由中的 Trace ID 筛选，并按需直接打开对应日志抽屉。 */
+async function initializeFromRoute() {
+  const traceId = typeof route.query.traceId === 'string' ? route.query.traceId.trim() : ''
+  const validTraceId = /^[A-Za-z0-9._:-]{1,64}$/.test(traceId) ? traceId : ''
+  if (validTraceId) query.traceId = validTraceId
+  await load()
+  if (validTraceId && route.query.openLogs === 'true') await showLogs(validTraceId)
+}
+
+onMounted(initializeFromRoute)
 onUnmounted(stopLogRefresh)
 </script>
 

@@ -2,7 +2,6 @@ package com.baseai.platform.web;
 
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.trace.TraceTrackingPolicy;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -23,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestContextFilterTest {
     private final PlatformProperties properties = new PlatformProperties();
-    private final RequestContextFilter filter = new RequestContextFilter(new ObjectMapper(), new TraceTrackingPolicy(properties));
+    private final RequestContextFilter filter = new RequestContextFilter(new TraceTrackingPolicy(properties));
     private final Logger logger = (Logger) LoggerFactory.getLogger(RequestContextFilter.class);
     private ListAppender<ILoggingEvent> appender;
 
@@ -43,11 +42,15 @@ class RequestContextFilterTest {
         MDC.clear();
     }
 
-    /** 长文本请求和响应不得被截断，且下游仍可读取完整请求体。 */
+    /** 长文本请求和响应不进入日志，且下游仍可读写完整正文。 */
     @Test
-    void logsCompleteTextBodiesWithoutTruncation() throws Exception {
-        String body = "{\"payload\":\"" + "x".repeat(20_000) + "\"}";
+    void omitsCompleteTextBodiesWithoutChangingRequestOrResponse() throws Exception {
+        String secret = "must-not-enter-http-logs";
+        String body = "{\"payload\":\"" + secret + "-" + "x".repeat(20_000) + "\"}";
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/test/body");
+        request.setQueryString("access_token=query-secret");
+        request.addHeader("Authorization", "Bearer header-secret");
+        request.addHeader("Cookie", "session=cookie-secret");
         request.setContentType(MediaType.APPLICATION_JSON_VALUE);
         request.setContent(body.getBytes(StandardCharsets.UTF_8));
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -55,16 +58,23 @@ class RequestContextFilterTest {
         filter.doFilter(request, response, (wrappedRequest, wrappedResponse) -> {
             assertEquals(body, new String(wrappedRequest.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
             wrappedResponse.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            ((jakarta.servlet.http.HttpServletResponse) wrappedResponse)
+                .setHeader("Set-Cookie", "session=response-cookie-secret");
             wrappedResponse.getWriter().write(body);
         });
 
         String logs = appender.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", (left, right) -> left + right);
-        assertTrue(logs.contains("event=http_request_body"));
-        assertTrue(logs.contains("event=http_response_body"));
-        assertTrue(logs.contains(body));
+        assertTrue(logs.contains("event=http_request method=POST path=/api/test/body"));
+        assertTrue(logs.contains("event=http_response method=POST path=/api/test/body status=200"));
+        assertFalse(logs.contains(secret));
+        assertFalse(logs.contains("query-secret"));
+        assertFalse(logs.contains("header-secret"));
+        assertFalse(logs.contains("cookie-secret"));
+        assertFalse(logs.contains("response-cookie-secret"));
+        assertEquals(body, response.getContentAsString());
     }
 
-    /** 图片请求和图片响应只记录头部，不记录二进制正文。 */
+    /** 图片请求和响应同样只记录元信息，不记录二进制正文。 */
     @Test
     void skipsImageBodies() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/test/image");
@@ -78,10 +88,10 @@ class RequestContextFilterTest {
         });
 
         String logs = appender.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", (left, right) -> left + right);
-        assertTrue(logs.contains("event=http_request_headers"));
-        assertTrue(logs.contains("event=http_response_headers"));
-        assertFalse(logs.contains("event=http_request_body"));
-        assertFalse(logs.contains("event=http_response_body"));
+        assertTrue(logs.contains("event=http_request method=POST path=/api/test/image"));
+        assertTrue(logs.contains("event=http_response method=POST path=/api/test/image status=200"));
+        assertFalse(logs.contains("request_headers"));
+        assertFalse(logs.contains("response_headers"));
     }
 
     /** 请求、业务和响应日志按执行顺序输出。 */
@@ -101,11 +111,9 @@ class RequestContextFilterTest {
 
         var ordered = appender.list.stream().map(ILoggingEvent::getFormattedMessage)
             .filter(message -> message.contains("event=http_")).toList();
-        assertEquals(4, ordered.size());
-        assertTrue(ordered.get(0).contains("event=http_request_headers"));
-        assertTrue(ordered.get(1).contains("event=http_request_body"));
-        assertTrue(ordered.get(2).contains("event=http_response_headers"));
-        assertTrue(ordered.get(3).contains("event=http_response_body"));
+        assertEquals(2, ordered.size());
+        assertTrue(ordered.get(0).contains("event=http_request"));
+        assertTrue(ordered.get(1).contains("event=http_response"));
     }
 
     /** 邮件管理接口必须整体排除 HTTP 明细日志，避免密码和收件人泄漏。 */

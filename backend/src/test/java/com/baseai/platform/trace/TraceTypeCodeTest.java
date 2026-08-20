@@ -5,6 +5,8 @@ import com.baseai.platform.automation.ApiTriggerSecurityConfigurationController;
 import com.baseai.platform.automation.ApiTriggerTrackedExecutionService;
 import com.baseai.platform.controller.AiChatController;
 import com.baseai.platform.controller.MailManagementController;
+import com.baseai.platform.security.AuthenticationType;
+import com.baseai.platform.security.AuthUser;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -13,6 +15,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TraceTypeCodeTest {
     /** 显式任务类型必须使用语言无关代码，不能持久化前端翻译键。 */
@@ -48,5 +51,28 @@ class TraceTypeCodeTest {
             "MAIL_ROUTE_TEST"
         ), codes);
         assertFalse(codes.stream().anyMatch(code -> code.startsWith("tasks.")));
+    }
+
+    /** AI 对话按页面与 API Key 认证区分入口，其他固定入口不受影响。 */
+    @Test
+    void aiChatTriggerEntryUsesAuthenticationType() {
+        TraceType chat = Arrays.stream(AiChatController.class.getDeclaredMethods())
+            .map(method -> method.getAnnotation(TraceType.class))
+            .filter(annotation -> annotation != null && "AI_CHAT".equals(annotation.value()))
+            .findFirst().orElseThrow();
+        AuthUser webUser = new AuthUser(1L, "web", Set.of("USER"), Set.of(),
+            AuthenticationType.TOKEN, null, null);
+        AuthUser apiUser = new AuthUser(1L, "api", Set.of("USER"), Set.of(),
+            AuthenticationType.API_KEY, 7L, "integration");
+
+        assertTrue(chat.authenticationTriggerEntry());
+        assertEquals("WEB_UI", TraceTrackingAspect.resolveTriggerEntry(chat, webUser));
+        assertEquals("API_KEY", TraceTrackingAspect.resolveTriggerEntry(chat, apiUser));
+
+        TraceType fixed = Arrays.stream(ApiTriggerController.class.getDeclaredMethods())
+            .map(method -> method.getAnnotation(TraceType.class))
+            .filter(annotation -> annotation != null && "API_TRIGGER_EXECUTE".equals(annotation.value()))
+            .findFirst().orElseThrow();
+        assertEquals("MANUAL", TraceTrackingAspect.resolveTriggerEntry(fixed, apiUser));
     }
 }

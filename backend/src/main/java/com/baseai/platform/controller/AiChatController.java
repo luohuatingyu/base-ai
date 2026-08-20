@@ -130,7 +130,7 @@ public class AiChatController {
         },
         requestExample = "{\n  \"model_type\": \"text_model\",\n  \"featureCode\": \"chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Hello\" }\n  ],\n  \"temperature\": 0.7,\n  \"enableThinking\": false\n}",
         responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"traceId\": \"trace-id\",\n  \"data\": {\n    \"content\": \"Hello!\",\n    \"model\": \"example-model\",\n    \"inputTokens\": 8,\n    \"outputTokens\": 4,\n    \"totalTokens\": 12\n  }\n}")
-    @TraceType(value = "AI_CHAT", triggerEntry = "MANUAL", captureRequest = false)
+    @TraceType(value = "AI_CHAT", triggerEntry = "WEB_UI", authenticationTriggerEntry = true, captureRequest = false)
     public ChatResponse chat(@RequestBody ChatRequest request) {
         log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());
         AiChatClient.ChatResult result = client.chat(request.featureCode(), request.modelType(), request.messages(),

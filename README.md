@@ -104,7 +104,7 @@ The chat request path is:
 Vue -> Java /api/ai/chat -> Python /llm/chat -> OpenAI-compatible API
 ```
 
-Prompt and model-response logging is enabled by default. Credentials in plain text, headers, JSON, and exception traces are redacted before console output or trace-log shipping. Set `LLM_LOG_CONTENT=false` when prompt or response content must not be retained; the worker will continue to record metadata and a response digest.
+Prompt and model-response logging is disabled by default. The Java HTTP layer records request metadata only and never logs headers or bodies. Set `LLM_LOG_CONTENT=true` only after data-classification and log-access review; the Worker then records bounded model content with common credential formats redacted. When disabled, it records model, token, duration, and response-digest metadata only.
 
 ## API Key Access
 
@@ -401,7 +401,7 @@ TEST_REPORT.md                  Test baseline and execution history
 - Rotate all example credentials before the first startup.
 - Keep provider credentials out of source code, shell history, logs, and Git history.
 - Configure a dedicated `APP_API_KEY_HASH_SECRET`; the encryption-key fallback is no longer supported.
-- `LLM_LOG_CONTENT` is enabled by default with credential redaction. Disable it when prompt or response content must not be retained, and restrict access to model-call logs because business data can still be sensitive.
+- `LLM_LOG_CONTENT` is disabled by default. Enable it only after data and log-access review, and restrict task-log access because redacted model content can still contain sensitive business data.
 - Plugin Workers only join the internal `outbound-network` and reach `OUTBOUND_ALLOWED_DOMAINS` through the authenticated outbound gateway; an empty allowlist denies all external access.
 - For encryption-key rotation, add the new key to `APP_CONFIG_ENCRYPTION_KEYS` and switch `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`; keep prior keys until legacy `enc:` values have been rewritten progressively.
 - Back up MySQL task/log data and PostgreSQL automation logs before schema or application upgrades.

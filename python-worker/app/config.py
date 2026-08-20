@@ -34,7 +34,7 @@ def load_settings() -> Settings:
         internal_token=os.getenv("PYTHON_WORKER_INTERNAL_TOKEN", "").strip(),
         instance_id=os.getenv("PYTHON_WORKER_INSTANCE_ID", "python-worker-1").strip(),
         llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
-        llm_log_content=_boolean(os.getenv("LLM_LOG_CONTENT", "true")),
+        llm_log_content=_boolean(os.getenv("LLM_LOG_CONTENT", "false")),
         persist_level=os.getenv("TRACE_LOG_PERSIST_LEVEL", "INFO").upper(),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         allowed_hosts=tuple(

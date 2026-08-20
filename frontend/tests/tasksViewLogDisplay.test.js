@@ -31,6 +31,14 @@ test('任务筛选首行第一个控件为 Trace ID', () => {
   assert.match(firstFilterRow, /^\s*<el-input\s+v-model="query\.traceId"/)
 })
 
+test('任务页读取安全的 Trace 路由参数并自动打开日志', () => {
+  assert.match(tasksViewSource, /const validTraceId = \/\^\[A-Za-z0-9\._:-\]\{1,64\}\$\//)
+  assert.match(tasksViewSource, /if \(validTraceId\) query\.traceId = validTraceId/)
+  assert.match(tasksViewSource, /if \(validTraceId && route\.query\.openLogs === 'true'\) await showLogs\(validTraceId\)/)
+  assert.match(tasksViewSource, /encodeURIComponent\(currentTraceId\)/)
+  assert.match(tasksViewSource, /onMounted\(initializeFromRoute\)/)
+})
+
 test('任务详情桌面端按双列边框表格展示，长字段跨整行', () => {
   assert.match(tasksViewSource, /<el-descriptions :column="2" border size="default" class="task-detail-table">/)
   assert.match(tasksViewSource, /:span="field\.wide \? 2 : 1"/)

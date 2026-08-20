@@ -4,7 +4,6 @@ import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.trace.TraceIgnored;
 import com.baseai.platform.trace.TraceTrackingAspect;
 import com.baseai.platform.trace.TraceTrackingPolicy;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -22,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TraceIdInterceptorTest {
     private final PlatformProperties properties = new PlatformProperties();
     private final TraceTrackingPolicy trackingPolicy = new TraceTrackingPolicy(properties);
-    private final RequestContextFilter requestContextFilter = new RequestContextFilter(new ObjectMapper(), trackingPolicy);
+    private final RequestContextFilter requestContextFilter = new RequestContextFilter(trackingPolicy);
     private final TraceIdInterceptor interceptor = new TraceIdInterceptor(trackingPolicy, requestContextFilter);
 
     /** 每个测试结束后清理 MDC，避免线程上下文污染。 */

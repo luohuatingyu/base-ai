@@ -10,6 +10,7 @@ import java.lang.annotation.Target;
 public @interface TraceType {
     String value();
     String triggerEntry() default "API";
+    boolean authenticationTriggerEntry() default false;
     String ownerIdParameter() default "";
     boolean captureRequest() default true;
 }

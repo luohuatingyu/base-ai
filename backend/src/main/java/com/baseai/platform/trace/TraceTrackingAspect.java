@@ -2,6 +2,7 @@ package com.baseai.platform.trace;
 
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
 import com.baseai.platform.service.TaskTraceService;
 import com.baseai.platform.web.TraceIdInterceptor;
 import jakarta.servlet.http.HttpServletRequest;
@@ -60,7 +61,7 @@ public class TraceTrackingAspect {
         Long ownerId = resolveOwner(metadata, signature.getParameterNames(), joinPoint.getArgs());
         if (ownerId == null) return joinPoint.proceed();
         String taskType = metadata == null ? method.getDeclaringClass().getSimpleName() + "." + method.getName() : metadata.value();
-        String triggerEntry = metadata == null ? "API" : metadata.triggerEntry();
+        String triggerEntry = resolveTriggerEntry(metadata, AuthContext.current());
         TraceSnapshot snapshot = request != null && (metadata == null || metadata.captureRequest())
             ? sanitizer.sanitize(request, signature.getParameterNames(), joinPoint.getArgs()) : new TraceSnapshot("{}", "{}");
         String requestTraceId = request == null ? null : (String) request.getAttribute(TraceIdInterceptor.TRACE_ID_ATTRIBUTE);
@@ -110,5 +111,13 @@ public class TraceTrackingAspect {
                 && values[index] instanceof Number number) return number.longValue();
         }
         return null;
+    }
+
+    /** 按认证类型区分页面和 API Key 入口，其余任务保持注解声明的固定入口。 */
+    static String resolveTriggerEntry(TraceType metadata, AuthUser authUser) {
+        if (metadata == null) return "API";
+        if (metadata.authenticationTriggerEntry() && authUser != null
+            && authUser.authenticationType() == AuthenticationType.API_KEY) return "API_KEY";
+        return metadata.triggerEntry();
     }
 }

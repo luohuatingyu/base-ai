@@ -22,7 +22,9 @@ SENSITIVE_PATTERNS = (
     (
         re.compile(
             r'''(?ix)
-            (\b(?:authorization|x[_-]?api[_-]?key|api[_-]?key|token|secret|password)\b
+            (\b(?:authorization|proxy[_-]?authorization|x[_-]?api[_-]?key|api[_-]?key|
+            access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|csrf[_-]?token|
+            xsrf[_-]?token|set[_-]?cookie|cookie|session|token|secret|password|passwd|credential)\b
             ["']?\s*[:=]\s*["'])
             (?:\\.|[^"'\\\r\n])*
             (["'])
@@ -33,7 +35,9 @@ SENSITIVE_PATTERNS = (
     (
         re.compile(
             r'''(?ix)
-            (\b(?:authorization|x[_-]?api[_-]?key|api[_-]?key|token|secret|password)\b
+            (\b(?:authorization|proxy[_-]?authorization|x[_-]?api[_-]?key|api[_-]?key|
+            access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|csrf[_-]?token|
+            xsrf[_-]?token|set[_-]?cookie|cookie|session|token|secret|password|passwd|credential)\b
             \s*[:=]\s*)
             (?!["'])[^\s,;}\]]+
             '''
