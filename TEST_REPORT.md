@@ -1,5 +1,100 @@
 # 最近分支覆盖测试报告
 
+## 数据库迁移合并为单一基线测试结果（2026-08-24）
+
+### Git 基准点
+
+Commit: 0ef3d6c
+- 业务代码提交: `0ef3d6c`（Consolidate MySQL migrations into a single baseline）
+- 测试日期: 2026-08-24
+- 分支: master
+- 未执行 `git push`
+
+### 变更范围
+
+- MySQL 迁移 V1~V23 合并为单一 `V1__create_platform_schema.sql`，直接建出 48 张表的最终结构，并按原顺序写入 40 个内置节点模板；`workflow_definition` 与 `workflow_version` 的循环外键仍以建表后 `ALTER TABLE` 补充。
+- 删除 V2~V23 共 22 个增量迁移文件。历史演进动作（V3 模型类型规范化、V5 旧限流列兼容、V7~V9 来源分类回填、V17 市场插件重分类、V18 存量插件停用、V19/V20 展示元数据回填、V21 期限回填）在最终结构中不再存在，随文件一并移除。
+- 停止对 PostgreSQL 执行 Flyway 迁移：`DatabaseConfig.postgresqlDataSource` 不再调用 `migrate`，删除 `db/migration/postgresql/`。PostgreSQL 数据源与 `HealthService` 就绪探测保持不变。
+- 删除三个未被任何代码引用的游离脚本：`api-trigger-schema.sql`、`system-schema.sql`、`database/postgresql/api-trigger.sql`，并同步修正 README 中英文的数据库章节与仓库结构。
+- 测试适配：`ApiTriggerServicePersistenceTest` 改为从基线脚本截取接口触发章节；`TraceSchemaResourceTest`、`WorkflowSchemaResourceTest` 改为针对基线断言最终结构。
+
+### 生产库处置
+
+- 远程 MySQL `111.228.33.161/base-ai` 按确认结论清库重建：`DROP DATABASE` 后以 `utf8mb4 / utf8mb4_unicode_ci` 重建，由新基线全新建表。
+- 清库前完整备份（含数据，4.2 MB）保存在 `/tmp/base-ai-full-backup.sql`，未纳入版本库。
+- PostgreSQL `base-ai.master` 未做任何改动。经核查该 Schema 与 `auto` 项目共用，其 `flyway_schema_history` 含 auto 追加的 V2~V6，且 auto 的 `ApiTriggerService` 带 `@Qualifier("postgresqlJdbcTemplate")` 仍在读写 `automation_api_trigger_config` / `_log`，故两张表保留不删。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 合并脚本与原迁移链产生相同表结构 | 运行态：临时 MySQL 8.4 容器 A/B 对照，`mysqldump --no-data` 逐字节 diff | 48 张表结构完全一致，diff 无输出；通过 | 兼容、等价性 |
+| 合并脚本与原迁移链产生相同种子数据 | 运行态：`workflow_node_template` 全列 + 插入顺序 diff | 40 行、全部 17 列、ID 分配顺序完全一致；通过 | 兼容、等价性 |
+| 基线在真实空库上可完整执行 | 运行态：清库后容器启动，Flyway 迁移 | `flyway_schema_history` 仅 1 条 `version=1 success=1`，49 张表（48 业务表 + 历史表）；通过 | 正常、部署 |
+| 基线结构与 JPA 实体映射一致 | 运行态：`spring.jpa.hibernate.ddl-auto=validate` 启动校验 | 后端启动成功并转为 healthy，无 validate 异常；通过 | 兼容、回归 |
+| 数据初始化在全新库上正常播种 | 运行态：`sys_menu` / `sys_user` / `workflow_node_template` 计数 | 97 个菜单、1 个管理员、40 个模板；通过 | 正常 |
+| 线上重建结构等于原迁移链结果 | 运行态：线上 `mysqldump` 与临时库原链结果 diff | 917 行逐字节一致；通过 | 兼容、端到端 |
+| 基线包含全部工作流表与原生节点 | Backend：`containsVersionedWorkflowSchemaAndBuiltInNodes`、`containsNativeWorkflowExtensionSchemaAndNodes` | 5 张核心表齐备，40 个原生节点类型全部出现；通过 | 正常 |
+| 循环外键在建表后补充 | Backend：`addsCircularVersionForeignKeysAfterTableCreation` | `ALTER TABLE` 位置晚于 `workflow_version` 建表，两个外键均声明；通过 | 边界、正确性 |
+| 内置模板逐行提供非空展示元数据 | Backend：`seedsEveryBuiltInTemplateWithLocalizationJson` | `'{}'` 出现 40 次，等于原生节点数；通过 | 边界、异常预防 |
+| 内置模板分类不超出目录常量 | Backend：`seedCategoriesStayWithinCatalog` | 40 行分类全部命中 `WorkflowTemplateCatalog.CATEGORIES`；通过 | 兼容、回归 |
+| 市场专有节点类型不得预置 | Backend：`declaresTemplateSourceAndFunctionalCategory` | 7 个 `MARKETPLACE_ONLY` 类型均未出现在基线中；通过 | 权限安全、边界 |
+| 基线保留插件准入与探测缓存约束 | Backend：`addsPluginAdmissionControl`、`addsMarketplacePluginProbeCache`、`addsMarketplacePluginRuntimeSchema` | 准入表、探测队列、唯一键与租约列齐备，插件默认 `PENDING`；通过 | 权限安全、回归 |
+| 基线保留投递恢复与调度分发状态 | Backend：`containsDeliveryRecoveryAndDispatchState` | `delivery_status`、`deadline_at NOT NULL`、`idx_workflow_run_dispatch`、调度状态表齐备；通过 | 回归 |
+| 接口触发持久化逻辑不受合并影响 | Backend：`ApiTriggerServicePersistenceTest` 27 个用例（含 2 组参数化） | 从基线截取章节建表后全部通过；通过 | 完整回归 |
+| 追踪与密钥密文列在基线中保持最终形态 | Backend：`TraceSchemaResourceTest` 2 个用例 | `task_trace`、`trace_log`、`secret_encrypted TEXT NOT NULL` 齐备；通过 | 兼容 |
+| PostgreSQL 停用迁移后不影响就绪探测 | Backend：`HealthServiceTest` 4 个用例；运行态：`/api/open/health/ready` | 单元测试通过，容器内探测返回 `{"status":"UP"}`；通过 | 回归、部署 |
+| 历史后端功能无回归 | Backend：完整测试套件 | 620/620 通过；通过 | 完整回归 |
+| 前端无回归 | Frontend：默认套件与扩展套件 | 130/130、168/168 通过；通过 | 完整回归 |
+
+### 测试执行结果
+
+- 总测试用例：918 个（Backend 620 + Frontend 298）。
+- 通过：918 个（100%）；失败 0；错误 0；跳过 0。
+- 关键模块：Schema 资源层 `WorkflowSchemaResourceTest` 16/16、`TraceSchemaResourceTest` 2/2；Service 层 `ApiTriggerServicePersistenceTest` 27/27；配置层 `HealthServiceTest` 4/4。
+- 用例数由 626 降为 620，减少的 6 个见下方"删除的失效用例"。
+- 未执行：Python Worker 测试套件。本次未改动 `python-worker/`，与变更无关。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 合并等价性 A/B 对照 | 临时容器 `mysql:8.4`：`db_legacy` 顺序执行原 V1~V23，`db_merged` 执行合并 V1，两库 `mysqldump --no-data` 与模板全列导出 diff | 结构与种子数据均无差异 |
+| 后端完整套件 | `docker run --rm -v <backend>:/workspace -v ~/.m2:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp clean test` | 620/620 通过，BUILD SUCCESS |
+| 服务重建与启动 | `docker compose up --build -d` | 6 个容器全部 healthy |
+| 线上库校验 | `mysqldump --no-data` 与 `flyway_schema_history`、业务表计数查询 | 单条迁移记录，49 张表，40 个模板，结构与原链一致 |
+| 就绪探测 | 容器内 `curl /api/open/health/ready`、宿主 `curl /health` | 均返回 `{"status":"UP"}` |
+| 前端默认套件 | `npm test`（`tests/*.test.js`） | 130/130 通过 |
+| 前端扩展套件 | `node --test test/*.test.mjs` | 168/168 通过 |
+
+### 删除的失效用例
+
+以下用例的被测对象是增量迁移脚本对存量数据的改写行为，合并后被测对象不复存在，经确认后删除。最终结构、种子数据和业务持久化逻辑的覆盖不受影响。
+
+| 删除项 | 原验证内容 |
+| --- | --- |
+| `WorkflowPluginAdmissionMigrationTest`（整类 1 个用例） | V18 将存量插件转为待审批停用并记录原启用值 |
+| `WorkflowPluginLocalizationMigrationTest`（整类 2 个用例） | V19/V20 为存量组件、模板和运行节点回填 `{}` |
+| `WorkflowMarketplaceCategoryMigrationTest`（整类 1 个用例） | V17 重分类误放在网络分类的市场插件 |
+| `TraceSchemaResourceTest.normalizesLegacyModelTypesWithoutChangingCanonicalValues` | V3 将历史 `model_type` 规范化 |
+| `WorkflowSchemaResourceTest.relaxesLegacyApiKeyRateLimitColumn` | V5 兼容仍保留 `rate_limit_per_minute` 的历史库 |
+| `WorkflowSchemaResourceTest.normalizesNativeWorkflowTemplateSources` | V8 将模板来源默认值改为 `CUSTOM`（已被 V9 覆盖） |
+| `WorkflowSchemaResourceTest.restoresConfigurableWorkflowTemplateSources` | V9 恢复三种可配置来源，断言已并入 `declaresTemplateSourceAndFunctionalCategory` |
+| `WorkflowSchemaResourceTest.recategorizesExistingMarketplacePluginTemplates` | V17 重分类规则的文本断言 |
+
+同批新增 4 个用例：`addsCircularVersionForeignKeysAfterTableCreation`、`seedsEveryBuiltInTemplateWithLocalizationJson`、`containsDeliveryRecoveryAndDispatchState`、`seedCategoriesStayWithinCatalog`。
+
+### 已知问题与限制
+
+- 合并后的基线面向全新数据库。任何已执行过 V1~V23 的库直接升级会触发 Flyway `checksum mismatch` 与 `Detected applied migration not resolved locally`，必须清库重建或人工清理 `flyway_schema_history`。本次远程库已按确认结论清库重建。
+- PostgreSQL `master` Schema 中 `automation_api_trigger_config` 与 `automation_api_trigger_log` 仍为 `auto` 项目在用，属于跨项目共用资源，本项目不再管理也不得删除。
+- 清库前备份仅存放在本机 `/tmp/base-ai-full-backup.sql`，重启后可能被系统清理，如需长期留存请自行转移。
+
+### 下次测试建议
+
+- 若后续新增 PostgreSQL 业务表，需先确认目标 Schema 是否独占，再决定是否恢复 PG 侧 Flyway 迁移链；恢复时应使用独立 Schema 避免与 `auto` 项目冲突。
+- 基线脚本已成为唯一 Schema 事实来源，后续任何表结构变更都应新增 `V2` 起的增量迁移，不得直接改写 V1。可考虑增加一个校验 `db/migration/mysql` 目录文件数量与命名的测试，防止误改基线。
+
 ## 接口触发器迁移至 MySQL 测试结果（2026-08-24）
 
 ### Git 基准点
