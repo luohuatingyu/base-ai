@@ -4,7 +4,7 @@
 
 Base AI is an extensible administration and AI integration platform. It combines a Vue management console, a Spring Boot system service, and a Python LLM worker behind a Docker Compose deployment.
 
-The platform provides identity and access management, OpenAI-compatible model routing, API key access, executable visual workflows, task tracing, audit logs, and scheduled HTTP automation. MySQL stores platform data and workflows, PostgreSQL stores automation data, and Redis stores disposable session state.
+The platform provides identity and access management, OpenAI-compatible model routing, API key access, executable visual workflows, task tracing, audit logs, and scheduled HTTP automation. MySQL stores platform data, workflows, and automation data, PostgreSQL is reserved for subordinate business modules, and Redis stores disposable session state.
 
 ## Features
 
@@ -38,8 +38,8 @@ Vue frontend (port 80)
   v
 Spring Boot backend (port 8080)
   |                  |
-  |                  +--> MySQL: identity, configuration, models, workflows, tasks, and logs
-  |                  +--> PostgreSQL: automation configurations and execution logs
+  |                  +--> MySQL: identity, configuration, models, workflows, tasks, logs, and automation
+  |                  +--> PostgreSQL: reserved for subordinate business modules
   |                  +--> Redis: sessions, revoked tokens, locks, and rate-limit state
   |
   | authenticated internal requests
@@ -68,7 +68,7 @@ Flyway manages the complete MySQL schema, including JPA platform entities, task 
 
 ### PostgreSQL business database
 
-PostgreSQL is reserved for subordinate business modules. The current platform stores API-trigger configurations and execution logs there, and a separate Flyway migration chain updates that schema automatically. The configured account therefore requires DDL privileges during startup.
+PostgreSQL is reserved for subordinate business modules. API-trigger configurations and execution logs were moved to MySQL, so the platform no longer reads or writes any PostgreSQL table; the connection, its Flyway migration chain, and the readiness probe remain in place. The configured account still requires DDL privileges during startup because that migration chain runs on every boot, and the tables it created earlier are left untouched.
 
 Future business modules can access PostgreSQL through the `postgresqlJdbcTemplate` Spring bean and should maintain their schemas independently.
 
@@ -406,7 +406,7 @@ TEST_REPORT.md                  Test baseline and execution history
 - Plugin Workers only join the internal `outbound-network` and reach `OUTBOUND_ALLOWED_DOMAINS` through the authenticated outbound gateway; an empty allowlist denies all external access.
 - The network-facing Adapter Manager has no Docker socket, Compose file, or environment-file access. Its networkless Supervisor accepts only typed N8N/Dify commands over a private Unix socket and is the sole component that mounts the Docker socket; that remaining host-level privilege must still be protected operationally.
 - For encryption-key rotation, add the new key to `APP_CONFIG_ENCRYPTION_KEYS` and switch `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`; keep prior keys until legacy `enc:` values have been rewritten progressively.
-- Back up MySQL task/log data and PostgreSQL automation logs before schema or application upgrades.
+- Back up MySQL task, log, and automation data before schema or application upgrades.
 - Override `MAVEN_IMAGE`, `JRE_IMAGE`, `NODE_IMAGE`, `PYTHON_IMAGE`, `GOPROXY`, `ALPINE_MIRROR`, or Python package-mirror settings when public registries and package proxies are unavailable. Caddy builds use `https://goproxy.cn,direct` for Go modules and `https://mirrors.tuna.tsinghua.edu.cn/alpine` for Alpine packages by default.
 
 ## License

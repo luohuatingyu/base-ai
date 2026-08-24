@@ -4,7 +4,7 @@
 
 Base AI 是一个可扩展的管理与 AI 集成平台，由 Vue 管理控制台、Spring Boot 系统服务和 Python LLM Worker 组成，并通过 Docker Compose 部署。
 
-平台提供身份与访问管理、兼容 OpenAI 的模型路由、API Key 访问、可执行可视化工作流、任务追踪、审计日志和定时 HTTP 自动化功能。MySQL 存储平台数据及工作流，PostgreSQL 存储自动化业务数据，Redis 存储可丢弃的会话状态。
+平台提供身份与访问管理、兼容 OpenAI 的模型路由、API Key 访问、可执行可视化工作流、任务追踪、审计日志和定时 HTTP 自动化功能。MySQL 存储平台数据、工作流及自动化业务数据，PostgreSQL 保留给后续从属业务模块，Redis 存储可丢弃的会话状态。
 
 ## 功能特性
 
@@ -38,8 +38,8 @@ Vue 前端（端口 80）
   v
 Spring Boot 后端（端口 8080）
   |                  |
-  |                  +--> MySQL：身份、配置、模型、工作流、任务和日志
-  |                  +--> PostgreSQL：自动化配置和执行日志
+  |                  +--> MySQL：身份、配置、模型、工作流、任务、日志和自动化
+  |                  +--> PostgreSQL：保留给后续从属业务模块
   |                  +--> Redis：会话、已撤销 Token、锁和限流状态
   |
   | 经过内部认证的请求
@@ -68,7 +68,7 @@ JPA 负责管理平台实体，`backend/src/main/resources/system-schema.sql` �
 
 ### PostgreSQL 业务数据库
 
-PostgreSQL 专门用于承载从属业务模块。当前平台将接口触发配置和执行日志存储在 PostgreSQL 中。后端会在启动时幂等执行 `backend/src/main/resources/api-trigger-schema.sql`，因此配置的账号需要具备 DDL 权限。
+PostgreSQL 专门用于承载从属业务模块。接口触发配置和执行日志已迁移到 MySQL，平台不再读写任何 PostgreSQL 表，但连接、Flyway 迁移链和就绪检查全部保留。由于该迁移链仍在每次启动时执行，配置的账号依然需要具备 DDL 权限；此前创建的接口触发表保持原样，不会被自动清理。
 
 未来的业务模块可以通过 Spring Bean `postgresqlJdbcTemplate` 访问 PostgreSQL，并应独立维护各自的 Schema。
 
@@ -404,7 +404,7 @@ TEST_REPORT.md                  测试基准和执行历史
 - 插件 Worker 只连接内部 `outbound-network`，通过 `OUTBOUND_GATEWAY_TOKEN` 认证的网关访问 `OUTBOUND_ALLOWED_DOMAINS`；空白名单会拒绝全部外部访问。
 - 网络可达的 Adapter Manager 不挂载 Docker Socket、Compose 文件或环境文件；无网络 Supervisor 仅通过私有 Unix Socket 接受类型化的 N8N/Dify 命令，并作为唯一挂载 Docker Socket 的组件。该组件仍具有宿主级权限，生产环境必须继续保护其运行边界。
 - 轮换配置加密密钥时，把新密钥加入 `APP_CONFIG_ENCRYPTION_KEYS` 并切换 `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`；保留旧密钥直到历史 `enc:` 密文完成渐进重写。
-- 执行 Schema 或应用升级前，备份 MySQL 任务与日志数据以及 PostgreSQL 自动化日志。
+- 执行 Schema 或应用升级前，备份 MySQL 任务、日志与自动化数据。
 - 无法访问公共镜像仓库或软件包代理时，可覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE`、`PYTHON_IMAGE`、`GOPROXY`、`ALPINE_MIRROR` 或 Python 软件包镜像源配置。Caddy 构建默认使用 `https://goproxy.cn,direct` 获取 Go 模块，并使用 `https://mirrors.tuna.tsinghua.edu.cn/alpine` 获取 Alpine 软件包。
 
 ## 许可证
