@@ -10,7 +10,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.jdbc.core.ArgumentPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -24,6 +27,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.sql.PreparedStatement;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -49,7 +53,7 @@ public class ApiTriggerService {
     private final int metadataMaxLength;
     private final ApiTriggerTlsTrust tlsTrust;
 
-    public ApiTriggerService(@Qualifier("postgresqlJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+    public ApiTriggerService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                              ConfigCryptoService cryptoService, ApiTriggerUrlPolicy urlPolicy, PlatformProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -78,13 +82,13 @@ public class ApiTriggerService {
     /** 创建接口触发配置并加密敏感字段。 */
     public ApiTriggerModels.View create(ApiTriggerModels.Command command, Long ownerUserId) {
         validate(command);
-        Long id = jdbcTemplate.queryForObject("""
+        Long id = insertAndReturnId("""
             INSERT INTO automation_api_trigger_config(name, description, http_method, url, headers_encrypted,
                 query_params, request_body_encrypted, content_type, cron_expression, timeout_seconds, enabled,
                 auth_enabled, auth_url, auth_method, auth_body_encrypted, auth_content_type, auth_token_path,
                 auth_token_header, auth_token_prefix, owner_user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
-            """, Long.class, text(command.name()), text(command.description()), method(command.httpMethod()), text(command.url()),
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, text(command.name()), text(command.description()), method(command.httpMethod()), text(command.url()),
             cryptoService.encrypt(text(command.headers())), text(command.queryParams()), cryptoService.encrypt(text(command.requestBody())),
             contentType(command.contentType()), cron(command.cronExpression()), timeout(command.timeoutSeconds()), enabled(command.enabled()),
             Boolean.TRUE.equals(command.authEnabled()), text(command.authUrl()), methodOrDefault(command.authMethod(), "POST"),
@@ -101,7 +105,7 @@ public class ApiTriggerService {
             UPDATE automation_api_trigger_config SET name=?, description=?, http_method=?, url=?, headers_encrypted=?,
                 query_params=?, request_body_encrypted=?, content_type=?, cron_expression=?, timeout_seconds=?, enabled=?,
                 auth_enabled=?, auth_url=?, auth_method=?, auth_body_encrypted=?, auth_content_type=?, auth_token_path=?,
-                auth_token_header=?, auth_token_prefix=?, updated_at=NOW() WHERE id=? AND voided=false
+                auth_token_header=?, auth_token_prefix=?, updated_at=CURRENT_TIMESTAMP(6) WHERE id=? AND voided=false
             """, text(command.name()), text(command.description()), method(command.httpMethod()), text(command.url()),
             cryptoService.encrypt(text(command.headers())), text(command.queryParams()), cryptoService.encrypt(text(command.requestBody())),
             contentType(command.contentType()), cron(command.cronExpression()), timeout(command.timeoutSeconds()), enabled(command.enabled()),
@@ -120,13 +124,13 @@ public class ApiTriggerService {
 
     /** 停用配置并保留历史记录。 */
     public void disable(Long id) {
-        if (jdbcTemplate.update("UPDATE automation_api_trigger_config SET enabled=false, updated_at=NOW() WHERE id=? AND voided=false", id) == 0)
+        if (jdbcTemplate.update("UPDATE automation_api_trigger_config SET enabled=false, updated_at=CURRENT_TIMESTAMP(6) WHERE id=? AND voided=false", id) == 0)
             throw BusinessException.notFound("apiTrigger.notFound");
     }
 
     /** 作废配置并从正常列表隐藏。 */
     public void voidConfig(Long id) {
-        if (jdbcTemplate.update("UPDATE automation_api_trigger_config SET enabled=false, voided=true, updated_at=NOW() WHERE id=?", id) == 0)
+        if (jdbcTemplate.update("UPDATE automation_api_trigger_config SET enabled=false, voided=true, updated_at=CURRENT_TIMESTAMP(6) WHERE id=?", id) == 0)
             throw BusinessException.notFound("apiTrigger.notFound");
     }
 
@@ -138,7 +142,7 @@ public class ApiTriggerService {
             """, (rs, row) -> mapView(rs));
     }
 
-    /** 正式执行配置并记录 PostgreSQL 执行历史。 */
+    /** 正式执行配置并记录 MySQL 执行历史。 */
     public ApiTriggerModels.ExecutionResult execute(Long id, String triggerType) {
         ApiTriggerModels.View config = get(id);
         if (config.voided() || !config.enabled()) throw new BusinessException("apiTrigger.disabled");
@@ -154,7 +158,7 @@ public class ApiTriggerService {
         }
     }
 
-    /** 使用未保存配置执行一次安全测试，不写 PostgreSQL 执行记录。 */
+    /** 使用未保存配置执行一次安全测试，不写 MySQL 执行记录。 */
     public ApiTriggerModels.ExecutionResult test(ApiTriggerModels.Command command) {
         validate(command);
         return call(toTemporaryView(command));
@@ -234,8 +238,23 @@ public class ApiTriggerService {
                 duration_ms, response_summary, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, configId, traceId, triggerType, status, httpStatus, durationMs, result, error);
         jdbcTemplate.update("""
-            UPDATE automation_api_trigger_config SET last_trigger_at=NOW(), last_status=?, last_result=?, updated_at=NOW() WHERE id=?
+            UPDATE automation_api_trigger_config SET last_trigger_at=CURRENT_TIMESTAMP(6), last_status=?, last_result=?,
+                updated_at=CURRENT_TIMESTAMP(6) WHERE id=?
             """, status, status.equals("SUCCESS") ? result : error, configId);
+    }
+
+    /** 在 MySQL 上执行插入并回填自增主键，替代 PostgreSQL 的 RETURNING 语法。 */
+    private Long insertAndReturnId(String sql, Object... args) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            // 显式声明只回读主键列，避免驱动把带默认值的列一并作为生成键返回
+            PreparedStatement statement = connection.prepareStatement(sql, new String[]{"id"});
+            new ArgumentPreparedStatementSetter(args).setValues(statement);
+            return statement;
+        }, keyHolder);
+        Number key = keyHolder.getKey();
+        if (key == null) throw new BusinessException("apiTrigger.createFailed");
+        return key.longValue();
     }
 
     /** 校验方法、URL、JSON 和 Cron 表达式。 */

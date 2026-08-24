@@ -30,7 +30,7 @@ public class ApiTriggerScheduler {
         scheduler.initialize();
     }
 
-    /** 应用就绪后从 PostgreSQL 加载全部启用 Cron 配置。 */
+    /** 应用就绪后从 MySQL 加载全部启用 Cron 配置。 */
     @EventListener(ApplicationReadyEvent.class)
     public void initialize() {
         try { service.findEnabled().forEach(this::schedule); }
