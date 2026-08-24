@@ -64,11 +64,11 @@ MySQL 是平台的主数据库，存储以下数据：
 - 工作流节点模板、定义、不可变发布版本、工作流运行记录及逐节点执行日志。
 - 系统任务、Java/Python 链路记录、操作日志和登录日志。
 
-JPA 负责管理平台实体，`backend/src/main/resources/system-schema.sql` 负责初始化任务和日志表。启动应用前需要先创建目标数据库，并为配置的数据库账号授予 Schema 管理权限。
+Flyway 负责管理完整的 MySQL Schema，包含 JPA 平台实体、任务链路和日志表。Schema 由单一基线迁移 `backend/src/main/resources/db/migration/mysql/V1__create_platform_schema.sql` 定义，直接建出各表的最终结构并写入内置工作流节点模板。已存在的非空数据库会先基线到版本 0 再执行迁移；Hibernate 以 `validate` 模式运行，不会修改表结构。启动应用前需要先创建目标数据库，并为配置的数据库账号授予 Schema 管理权限。
 
 ### PostgreSQL 业务数据库
 
-PostgreSQL 专门用于承载从属业务模块。接口触发配置和执行日志已迁移到 MySQL，平台不再读写任何 PostgreSQL 表，但连接、Flyway 迁移链和就绪检查全部保留。由于该迁移链仍在每次启动时执行，配置的账号依然需要具备 DDL 权限；此前创建的接口触发表保持原样，不会被自动清理。
+PostgreSQL 专门用于承载从属业务模块。接口触发配置和执行日志已迁移到 MySQL，平台不再读写任何 PostgreSQL 表，仅保留连接和就绪检查。平台不再对 PostgreSQL 执行 Flyway 迁移，因为目标 Schema 可能与其他应用共用，不应校验或改写其迁移链。需要 PostgreSQL 表的业务模块自行维护各自的 Schema。
 
 未来的业务模块可以通过 Spring Bean `postgresqlJdbcTemplate` 访问 PostgreSQL，并应独立维护各自的 Schema。
 
@@ -384,7 +384,6 @@ docker compose up --build -d
 ```text
 backend/                        Spring Boot API 和平台服务
 backend/config/                 默认后端运行时配置
-database/postgresql/            PostgreSQL Schema 参考脚本
 frontend/                       Vue 管理控制台和 API 代理
 python-worker/                  FastAPI LLM Worker
 adapter-manager/                适配器生命周期 Manager 与隔离 Supervisor

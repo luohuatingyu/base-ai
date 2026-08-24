@@ -64,11 +64,11 @@ MySQL is the primary platform database. It contains:
 - Workflow node templates, definitions, immutable published versions, workflow runs, and per-node execution logs.
 - System tasks, Java/Python trace records, operation logs, and login logs.
 
-Flyway manages the complete MySQL schema, including JPA platform entities, task traces, and logs. Existing non-empty databases are baselined at version 0 and then receive all idempotent migrations; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application and grant the configured account schema-management privileges.
+Flyway manages the complete MySQL schema, including JPA platform entities, task traces, and logs. The schema is defined by a single baseline migration, `backend/src/main/resources/db/migration/mysql/V1__create_platform_schema.sql`, which creates every table in its final shape and seeds the built-in workflow node templates. Existing non-empty databases are baselined at version 0 before migrations run; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application and grant the configured account schema-management privileges.
 
 ### PostgreSQL business database
 
-PostgreSQL is reserved for subordinate business modules. API-trigger configurations and execution logs were moved to MySQL, so the platform no longer reads or writes any PostgreSQL table; the connection, its Flyway migration chain, and the readiness probe remain in place. The configured account still requires DDL privileges during startup because that migration chain runs on every boot, and the tables it created earlier are left untouched.
+PostgreSQL is reserved for subordinate business modules. API-trigger configurations and execution logs were moved to MySQL, so the platform no longer reads or writes any PostgreSQL table; only the connection and the readiness probe remain. The platform runs no Flyway migration against PostgreSQL, because the target schema may be shared with other applications and must not have its migration chain validated or rewritten. Business modules that need PostgreSQL tables maintain their own schemas independently.
 
 Future business modules can access PostgreSQL through the `postgresqlJdbcTemplate` Spring bean and should maintain their schemas independently.
 
@@ -386,7 +386,6 @@ docker compose up --build -d
 ```text
 backend/                        Spring Boot API and platform services
 backend/config/                 Default backend runtime configuration
-database/postgresql/            Reference PostgreSQL schema scripts
 frontend/                       Vue administration console and API proxy
 python-worker/                  FastAPI LLM worker
 adapter-manager/                Adapter lifecycle manager and isolated Supervisor

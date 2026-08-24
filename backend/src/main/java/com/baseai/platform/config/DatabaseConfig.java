@@ -50,12 +50,15 @@ public class DatabaseConfig {
         return new JdbcTemplate(dataSource);
     }
 
-    /** 创建从属业务 PostgreSQL 数据源，业务模块不得访问系统库。 */
+    /**
+     * 创建从属业务 PostgreSQL 数据源，业务模块不得访问系统库。
+     *
+     * <p>平台自身的表全部位于 MySQL，PostgreSQL 目标 Schema 可能与其他应用共用，
+     * 因此此处不执行 Flyway 迁移，避免校验或改写不属于本平台的迁移链。</p>
+     */
     @Bean("postgresqlDataSource")
     public DataSource postgresqlDataSource(PlatformProperties properties) {
-        HikariDataSource dataSource = createDataSource("postgresql", properties.getPostgresqlDatabase());
-        migrate(dataSource, "classpath:db/migration/postgresql");
-        return dataSource;
+        return createDataSource("postgresql", properties.getPostgresqlDatabase());
     }
 
     /** 按数据库类型暴露 PostgreSQL JDBC 入口。 */
