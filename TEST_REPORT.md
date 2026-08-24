@@ -1,5 +1,87 @@
 # 最近分支覆盖测试报告
 
+## 接口触发器迁移至 MySQL 测试结果（2026-08-24）
+
+### Git 基准点
+
+Commit: 9c010db5287bdf432bb2cdf0794f29b0c02f2270
+- 业务代码提交: `6b79411`（Move API trigger storage to MySQL）
+- 文档提交: `9c010db`（Update docs for API trigger MySQL storage）
+- 测试日期: 2026-08-24
+- 分支: master
+- 未执行 `git push`
+
+### 变更范围
+
+- 接口触发器的 `automation_api_trigger_config` 与 `automation_api_trigger_log` 由 PostgreSQL 迁移到 MySQL 主库，新增 MySQL 迁移 `V23__move_api_trigger_to_mysql.sql`，采用项目既有的 `BIT(1)`、`DATETIME(6)`、InnoDB / utf8mb4 约定及内联索引与外键。
+- `ApiTriggerService` 的数据源限定名由 `postgresqlJdbcTemplate` 改为 `mysqlJdbcTemplate`；`INSERT ... RETURNING id` 改为 `GeneratedKeyHolder` 显式回读 `id` 列；四处 `NOW()` 改为 `CURRENT_TIMESTAMP(6)` 以保留微秒精度。
+- 新增消息键 `apiTrigger.createFailed`（中英文）。
+- PostgreSQL 连接能力全部保留：数据源 Bean、`POSTGRES_*` 配置、Flyway 迁移链、`HealthService` 就绪探测和 `postgresqlJdbcTemplate` 均未改动；PostgreSQL 侧原有两张表按确认结论保留不动，存量数据不迁移。
+- 知识库 pgvector 与工作流 Connector 的 PostgreSQL 连接类型不在本次范围内，未做任何改动。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 自增主键回填替代 RETURNING 语法 | Backend：`createReturnsGeneratedIdAndPersistsAllFields`、`createReturnsDistinctIncreasingIds` | 返回正整数主键且连续创建严格递增，全字段可回读；通过 | 正常 |
+| 加密字段经 MEDIUMTEXT 列往返无损 | Backend：`encryptedColumnsRoundTripThroughMediumText` | 库内密文不含明文，解密后与原文一致；通过 | 正常、安全 |
+| 更新语句在 MySQL 上兼容并推进 updated_at | Backend：`updateModifiesFieldsAndAdvancesUpdatedAt` | 字段全部改写，`updated_at` 晚于创建时间；通过 | 正常 |
+| BIT(1) 与 Java 布尔值双向一致 | Backend：`booleanColumnsRoundTripAndVoidedConfigurationIsHidden`、`disableOnlyClearsEnabledFlag`、`listFiltersByEnabledFlag` | 启用、停用、作废三态读写一致，停用不影响作废标记；通过 | 正常、兼容 |
+| 作废配置从列表隐藏且不可越权出现 | Backend：`booleanColumnsRoundTripAndVoidedConfigurationIsHidden` | `list` 返回空，直接按 ID 仍可读取历史；通过 | 权限安全 |
+| 关键字查询大小写不敏感并支持中文 | Backend：`listMatchesKeywordCaseInsensitively`（参数化 5 组） | `daily`/`DAILY`/`Sync`/`同步` 命中，`absent` 不命中；通过 | 兼容、边界 |
+| 调度扫描只返回启用且配置 Cron 的任务 | Backend：`findEnabledReturnsOnlyScheduledConfigurations` | 无 Cron、空 Cron、已停用、已作废四类均被排除；通过 | 边界、回归 |
+| 执行成功写日志并回填最近状态 | Backend：`executeWritesSuccessLogAndBackfillsLastStatus` | 日志状态 SUCCESS、HTTP 200、摘要正确，配置 `last_status`/`last_trigger_at` 同步；通过 | 正常 |
+| 执行失败写失败日志且不写 HTTP 状态 | Backend：`executeWritesFailureLogWhenRemoteReturnsError` | 状态 FAILED，`http_status` 与摘要为空，错误信息非空；通过 | 异常 |
+| 执行摘要按配置上限截断 | Backend：`executionSummaryIsTruncatedToConfiguredLimit` | 上限 8 时写入 `01234567`；通过 | 边界 |
+| DATETIME(6) 保证同毫秒内日志稳定倒序 | Backend：`logsKeepStableDescendingOrderWithinSameMillisecond` | 相隔微秒的三条日志按 c→b→a 稳定倒序；通过 | 边界 |
+| 日志查询不跨配置泄漏 | Backend：`logsDoNotLeakAcrossConfigurations` | 仅返回本配置日志，`config_id` 一致；通过 | 权限安全 |
+| Trace ID 精确过滤不模糊命中 | Backend：`logsFilterByExactTraceId` | `trace-1` 不命中 `trace-12`，两端空白被裁剪，未知 Trace 返回空；通过 | 安全、边界 |
+| 不存在的配置统一返回未找到 | Backend：`missingConfigurationIsRejected`（参数化 6 组） | get/disable/void/logs/update/execute 均抛 `apiTrigger.notFound` 且状态 404；通过 | 异常 |
+| 已停用配置不可执行 | Backend：`disabledConfigurationCannotBeExecuted` | 抛 `apiTrigger.disabled`；通过 | 异常、权限 |
+| 空值边界可写入非空 MEDIUMTEXT 列 | Backend：`blankOptionalFieldsArePersistedAsEmptyText` | 空描述、空请求头、空正文落库为空串，默认值按 DDL 生效，Cron 为 NULL；通过 | 边界 |
+| 迁移脚本在真实 MySQL 上可执行 | 运行态：Flyway 迁移记录与 `information_schema` 校验 | V23 成功应用，两表创建，列类型为 `bigint auto_increment`、`bit(1) DEFAULT b'1'`、`datetime(6) DEFAULT CURRENT_TIMESTAMP(6)`、`mediumtext`、`text`；通过 | 兼容、部署 |
+| 前端接口触发器页面与接口契约无回归 | Frontend：`api-trigger`、`api-trigger-security`、`navigation` 及全量前端测试 | 全部通过，无接口契约变更；通过 | 回归 |
+| 历史后端功能无回归 | Backend：完整测试套件 | 626/626 通过；通过 | 完整回归 |
+
+### 测试执行结果
+
+- 总测试用例：924 个（Backend 626 + Frontend 298）。
+- 通过：924 个（100%）；失败 0；错误 0；跳过 0。
+- 本次新增：`ApiTriggerServicePersistenceTest` 27 个用例，全部通过，已包含在 Backend 626 中。
+- 关键模块：Service 层（`ApiTriggerService` 全部 SQL 路径）27/27；Frontend 接口触发器相关 31/31。
+- 未执行：Python Worker 测试套件。本次未改动 `python-worker/`，与变更无关。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 定向新增测试 | `docker run --rm -v <backend>:/workspace -v ~/.m2:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=ApiTriggerServicePersistenceTest test` | 27/27 通过 |
+| 后端完整套件 | `docker run --rm -v <backend>:/workspace -v ~/.m2:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test` | 626/626 通过，BUILD SUCCESS |
+| 前端默认套件 | `npm test`（`tests/*.test.js`） | 130/130 通过 |
+| 前端扩展套件 | `node --test test/*.test.mjs` | 168/168 通过 |
+| 前端接口触发器定向回归 | `node --test test/api-trigger.test.mjs test/api-trigger-security.test.mjs test/navigation.test.mjs` | 31/31 通过 |
+| 环境重建 | `docker compose up --build -d` | 构建成功；Adapter Manager、Adapter Supervisor、Python Worker、Outbound Gateway 四个服务 healthy；Backend 启动失败，Frontend 与 Caddy 因依赖未启动 |
+| 真实 MySQL 迁移校验 | 通过 `mysql:8.4` 客户端查询 `flyway_schema_history` 与 `information_schema.columns` | V23 于 2026-08-24 11:33:54 成功应用，两表及列类型符合预期 |
+
+说明：本机未安装 Maven，按项目 `backend/Dockerfile` 中同款 `maven:3.9.9-eclipse-temurin-17` 镜像执行测试，Java 版本与 CI 一致（Temurin 17）。
+
+### 已知问题
+
+- **Backend 容器启动失败，原因与本次变更无关。** `docker compose up --build -d` 中 `ai-backend` 不健康，根因是所连 PostgreSQL 实例的 `master.flyway_schema_history` 存在仓库中不存在的历史迁移记录，Flyway 校验失败：`Detected applied migration not resolved locally: use timestamptz for wecom automation`。
+- 该实例的 PostgreSQL 迁移历史包含 `add wecom friend automation`(V2)、`add wecom agent diagnostics`(V3)、`use timestamptz for wecom automation`(V3.1 及一条 version 为空的可重复迁移)、`add wecom official messaging`(V4)、`add wecom agent bootstrap`(V5)、`drop wecom agent command registration fk`(V6)，最近一条安装于 2026-08-24 02:50:11，均早于本次改动；当前 `master` 分支下 `db/migration/postgresql/` 仅有 V1。
+- 本次改动未触碰任何 PostgreSQL 迁移文件（`git status` 对该目录无输出），因此该故障在本次改动前即存在，属于环境与分支的历史漂移。
+- 受此阻塞，未能完成后端应用级端到端冒烟（接口触发器页面实际读写 MySQL）。数据库层已通过真实 MySQL 迁移校验与 27 个持久化用例覆盖，应用装配层未在运行态验证。
+- 建议的解决方式（需人工确认后执行，均会改动数据库或代码）：补齐缺失的 PostgreSQL 迁移文件、对 PostgreSQL 执行 `flyway repair`，或明确该数据库不应被 `master` 分支使用并切换连接目标。
+
+### 测试环境限制
+
+- H2 不支持 MySQL 的位串字面量，持久化测试在加载真实迁移脚本时仅将 `b'1'`/`b'0'` 替换为 `TRUE`/`FALSE`，其余 DDL（`BIT(1)`、`MEDIUMTEXT`、`DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6)`、内联 `INDEX ... DESC`、外键、`ENGINE`/`CHARSET` 子句）均按原文执行；位串默认值已通过真实 MySQL 的 `information_schema` 校验补齐。
+
+### 下次测试建议
+
+- Backend 容器可正常启动后，补做接口触发器的应用级端到端冒烟：新建配置、手动执行、查看执行日志、按 Trace ID 过滤。
+- 若后续决定清理 PostgreSQL 中遗留的接口触发器两张表，需要单独验证 `postgresqlDataSource` 与就绪检查在空 Schema 下仍正常。
+
 ## 日志安全默认值与链路入口优化测试结果（2026-08-20）
 
 ### Git 基准点
