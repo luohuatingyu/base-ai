@@ -27,7 +27,7 @@ COPY --from=build /out/base-ai-ip-cert /usr/local/bin/base-ai-ip-cert
 COPY --chmod=0555 caddy-entrypoint.sh /usr/local/bin/base-ai-caddy-entrypoint
 COPY --chmod=0444 Caddyfile.bootstrap /etc/caddy/Caddyfile.bootstrap
 RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR}#g" /etc/apk/repositories \
-    && apk upgrade --no-cache c-ares curl libcurl \
+    && apk upgrade --no-cache \
     && setcap cap_net_bind_service=+ep /usr/bin/caddy \
     && addgroup -S -g 10001 appuser \
     && adduser -S -D -H -u 10001 -G appuser appuser \

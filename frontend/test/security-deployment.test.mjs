@@ -286,11 +286,29 @@ test('Caddy 构建使用可配置的 Go 模块代理和 Alpine 镜像', async ()
   assert.match(caddyDockerfile, /^ENV GOPROXY=\$\{GOPROXY\}$/m)
   assert.match(caddyDockerfile, /^ARG ALPINE_MIRROR=https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine$/m)
   assert.match(caddyDockerfile, /dl-cdn\.alpinelinux\.org\/alpine#\$\{ALPINE_MIRROR\}/)
-  assert.match(caddyDockerfile, /apk upgrade --no-cache c-ares curl libcurl/)
+  assert.match(caddyDockerfile, /apk upgrade --no-cache\s*\\/)
   assert.match(compose, /^\s+GOPROXY: \$\{GOPROXY:-https:\/\/goproxy\.cn,direct\}$/m)
   assert.match(compose, /^\s+ALPINE_MIRROR: \$\{ALPINE_MIRROR:-https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine\}$/m)
   assert.match(environmentExample, /^GOPROXY=https:\/\/goproxy\.cn,direct$/m)
   assert.match(environmentExample, /^ALPINE_MIRROR=https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine$/m)
+})
+
+test('运行时镜像安装系统安全更新并移除不需要的 Node 包管理器', async () => {
+  const workerDockerfile = await readFile(new URL('python-worker/Dockerfile', root), 'utf8')
+  const difyWorkerDockerfile = await readFile(new URL('dify-plugin-worker/Dockerfile', root), 'utf8')
+  const frontendDockerfile = await readFile(new URL('frontend/Dockerfile', root), 'utf8')
+  const n8nWorkerDockerfile = await readFile(new URL('n8n-plugin-worker/Dockerfile', root), 'utf8')
+
+  for (const dockerfile of [workerDockerfile, difyWorkerDockerfile]) {
+    assert.match(dockerfile, /apt-get update\s*\\/)
+    assert.match(dockerfile, /apt-get upgrade -y\s*\\/)
+    assert.match(dockerfile, /rm -rf \/var\/lib\/apt\/lists\/\*/)
+  }
+  for (const dockerfile of [frontendDockerfile, n8nWorkerDockerfile]) {
+    assert.match(dockerfile, /apk upgrade --no-cache\s*\\/)
+    assert.match(dockerfile, /rm -rf \/usr\/local\/lib\/node_modules\/npm/)
+    assert.match(dockerfile, /rm -f \/usr\/local\/bin\/npm/)
+  }
 })
 
 test('全部运行时镜像使用非 root 用户和最小 Linux 权限', async () => {
