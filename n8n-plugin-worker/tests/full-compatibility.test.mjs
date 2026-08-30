@@ -28,10 +28,10 @@ async function packageFixture(files, manifest) {
 }
 
 /** 在真实调用子进程中执行已安装的组件。 */
-async function invokeChild(request) {
+async function invokeChild(request, environment = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('../app/invoke-child.mjs', import.meta.url))], {
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...environment },
     })
     let stdout = ''; let stderr = ''
     child.stdout.on('data', chunk => { stdout += chunk })
@@ -129,7 +129,9 @@ module.exports = { Declarative }
       parameters: { baseUrl: `http://127.0.0.1:${server.address().port}`, operation: 'point', collection: 'demo', id: '42',
         tags: ['one', 'two'], words: 'alpha,beta', date: '2026-08-11T15:30:00.000Z',
         timestamp: '2026-08-11T00:00:00.000Z', filterJson: '{"limit":10}' },
-      credentials: {}, input: {}, context: {} })
+      credentials: {}, input: {}, context: {} }, {
+      HTTP_PROXY: `http://test-token@127.0.0.1:${server.address().port}`,
+    })
     assert.equal(invoked.status, 0, invoked.stdout + invoked.stderr)
     const output = JSON.parse(invoked.stdout).output[0][0].json
     assert.equal(output.path, '/collections/demo/points/42')

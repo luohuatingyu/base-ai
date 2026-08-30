@@ -1,13 +1,10 @@
 package com.baseai.platform.controller;
 
 import com.baseai.platform.common.BusinessException;
-import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.logging.TraceLogQueue;
 import com.baseai.platform.logging.TraceLogRecord;
 import org.springframework.web.bind.annotation.*;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -20,7 +17,7 @@ import java.util.Set;
  * 该控制器用于接收来自Python Worker的链路日志数据，是一个内部API接口。
  * 主要功能包括：
  * <ul>
- *   <li>验证内部令牌以确保只有授权的Python Worker可以提交日志</li>
+ *   <li>验证正文绑定的内部 HMAC 签名，确保只有授权的 Python Worker 可以提交日志</li>
  *   <li>接收批量的Python链路日志数据</li>
  *   <li>将日志数据添加到链路日志队列中进行异步处理</li>
  * </ul>
@@ -38,39 +35,22 @@ public class InternalTraceLogController {
     private static final Set<String> LEVELS = Set.of("DEBUG", "INFO", "WARN", "ERROR");
 
     /**
-     * 平台配置属性，用于获取内部令牌等配置信息
-     */
-    private final PlatformProperties properties;
-
-    /**
-     * 构造函数
-     *
-     * @param properties 平台配置属性对象
-     */
-    public InternalTraceLogController(PlatformProperties properties) { this.properties = properties; }
-
-    /**
      * 接收并处理来自Python Worker的批量链路日志
      * <p>
      * 该接口用于接收Python Worker提交的链路日志数据，会进行以下处理：
      * <ol>
-     *   <li>验证请求头中的内部令牌是否有效</li>
+     *   <li>由统一过滤器验证内部签名并拒绝重放</li>
      *   <li>遍历批量日志数据，验证每条日志的级别</li>
      *   <li>将有效的日志记录添加到链路日志队列中</li>
      *   <li>返回成功接收的日志数量</li>
      * </ol>
      *
-     * @param token 内部令牌，通过请求头X-Internal-Token传递，用于验证请求来源
      * @param batch 批量日志数据对象，包含多条日志记录
      * @return Map对象，包含"accepted"键，表示成功接收的日志数量
-     * @throws BusinessException 当令牌无效或日志级别不合法时抛出
+     * @throws BusinessException 当日志级别不合法时抛出
      */
     @PostMapping
-    public Map<String, Integer> ingest(@RequestHeader(value = "X-Internal-Token", required = false) String token,
-                                       @RequestBody LogBatch batch) {
-        // 验证内部令牌
-        verifyToken(token);
-
+    public Map<String, Integer> ingest(@RequestBody LogBatch batch) {
         // 记录成功接收的日志数量
         int accepted = 0;
 
@@ -91,26 +71,6 @@ public class InternalTraceLogController {
 
         // 返回成功接收的日志数量
         return Map.of("accepted", accepted);
-    }
-
-    /**
-     * 验证内部令牌的有效性
-     * <p>
-     * 使用常量时间比较算法验证内部共享令牌，防止时序攻击。
-     * 该方法会从平台配置中获取预期的令牌值，然后使用MessageDigest.isEqual进行安全比较。
-     *
-     * @param token 待验证的令牌字符串
-     * @throws BusinessException 当令牌为null或与预期值不匹配时抛出未授权异常
-     */
-    private void verifyToken(String token) {
-        // 从配置中获取预期的内部令牌
-        String expected = properties.getPythonWorker().getInternalToken();
-
-        // 使用常量时间比较，防止时序攻击
-        // 如果令牌为null或不匹配，则抛出未授权异常
-        if (token == null || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
-            throw BusinessException.unauthorized("internal.invalidToken");
-        }
     }
 
     /**

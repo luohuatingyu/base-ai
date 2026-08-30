@@ -9,11 +9,13 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from app.internal_auth import InternalRequestVerifier
 from app.package_store import PackageError, PackageStore
 
 
 STORE = PackageStore()
 TOKEN = os.getenv("PLUGIN_WORKER_INTERNAL_TOKEN", "")
+AUTH = InternalRequestVerifier(TOKEN)
 MAX_REQUEST_BYTES = int(os.getenv("PLUGIN_WORKER_MAX_REQUEST_BYTES", str(8 * 1024 * 1024)))
 TIMEOUT_SECONDS = int(os.getenv("PLUGIN_INVOCATION_TIMEOUT_SECONDS", "60"))
 
@@ -32,11 +34,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """鉴权后分派包探测或短生命周期调用。"""
-        if not TOKEN or self.headers.get("X-Internal-Token") != TOKEN:
-            self._write(401, {"error": "UNAUTHORIZED"})
-            return
         try:
-            request = self._request()
+            body = self._request_body()
+            if not AUTH.verify(self.command, self.path, body, self.headers):
+                self._write(401, {"error": "UNAUTHORIZED"})
+                return
+            request = json.loads(body)
+            if not isinstance(request, dict):
+                raise ValueError("REQUEST_JSON_INVALID")
             if self.path == "/packages/inspect":
                 self._write(200, STORE.install(request))
             elif self.path == "/packages/remove":
@@ -58,15 +63,12 @@ class Handler(BaseHTTPRequestHandler):
         """仅记录请求摘要，避免输出插件参数和凭据。"""
         sys.stderr.write("plugin_worker request=%s status=%s\n" % (self.path, args[1] if len(args) > 1 else ""))
 
-    def _request(self) -> dict[str, Any]:
-        """读取并限制 JSON 请求体。"""
+    def _request_body(self) -> bytes:
+        """在 JSON 解析前读取并限制签名绑定的原始请求体。"""
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > MAX_REQUEST_BYTES:
             raise ValueError("REQUEST_SIZE_INVALID")
-        value = json.loads(self.rfile.read(length))
-        if not isinstance(value, dict):
-            raise ValueError("REQUEST_JSON_INVALID")
-        return value
+        return self.rfile.read(length)
 
     def _invoke(self, request: dict[str, Any]) -> dict[str, Any]:
         """在不继承内部密钥的子进程中执行一次插件调用。"""
@@ -112,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    """校验内部令牌并启动线程化 HTTP 服务。"""
+    """校验内部 HMAC 密钥并启动线程化 HTTP 服务。"""
     if len(TOKEN) < 24:
         raise RuntimeError("PLUGIN_WORKER_INTERNAL_TOKEN 至少需要 24 个字符")
     port = int(os.getenv("PORT", "8101"))

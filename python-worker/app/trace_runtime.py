@@ -7,6 +7,7 @@ import logging
 import httpx
 
 from app.config import Settings
+from app.internal_auth import json_body, request_target, signed_headers
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +49,17 @@ class JavaTraceReporter:
     async def report(self, python_trace_id: str, status: str, error_message: str | None = None) -> None:
         """回传单次任务状态，后端不可用时仅记录警告。"""
         try:
+            url = f"{self.settings.backend_url}/api/internal/traces/python/events"
+            body = json_body({
+                "pythonTraceId": python_trace_id,
+                "status": status,
+                "workerInstanceId": self.settings.instance_id,
+                "errorMessage": error_message,
+            })
+            headers = {"Content-Type": "application/json"}
+            headers.update(signed_headers(self.settings.internal_token, "POST", request_target(url), body))
             await self.client.post(
-                f"{self.settings.backend_url}/api/internal/traces/python/events",
-                headers={"X-Internal-Token": self.settings.internal_token},
-                json={
-                    "pythonTraceId": python_trace_id,
-                    "status": status,
-                    "workerInstanceId": self.settings.instance_id,
-                    "errorMessage": error_message,
-                },
+                url, headers=headers, content=body,
             )
         except Exception as exception:
             logger.warning("event=python_trace_report_failed python_trace_id=%s error=%s", python_trace_id, exception, exc_info=True)

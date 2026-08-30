@@ -1,5 +1,6 @@
 package com.baseai.platform.config;
 
+import com.baseai.platform.security.InternalRequestSigner;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,13 +14,17 @@ import java.time.Duration;
 @Configuration
 public class PythonWorkerRestClientConfig {
 
-    /** 创建统一 Worker 客户端，强制 HTTP/1.1 并传播内部令牌和日志上下文。 */
+    /** 创建统一 Worker 客户端，强制 HTTP/1.1 并传播内部 HMAC 签名和日志上下文。 */
     @Bean("pythonWorkerRestClient")
     public RestClient pythonWorkerRestClient(PlatformProperties properties) {
         HttpClient httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
         return RestClient.builder().baseUrl(properties.getPythonWorker().getUrl())
             .requestFactory(new JdkClientHttpRequestFactory(httpClient))
-            .defaultHeader("X-Internal-Token", properties.getPythonWorker().getInternalToken())
+            .requestInterceptor((request, body, execution) -> {
+                InternalRequestSigner.apply(request.getHeaders(), InternalRequestSigner.headers(
+                    properties.getPythonWorker().getInternalToken(), request.getMethod().name(), request.getURI(), body));
+                return execution.execute(request, body);
+            })
             .defaultRequest(request -> {
                 putIfPresent(request, "X-Request-Id", MDC.get("requestId"));
                 putIfPresent(request, "X-Parent-Trace-Id", MDC.get("traceId"));
@@ -34,7 +39,11 @@ public class PythonWorkerRestClientConfig {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(Duration.ofSeconds(3));
         return RestClient.builder().baseUrl(properties.getPythonWorker().getUrl()).requestFactory(factory)
-            .defaultHeader("X-Internal-Token", properties.getPythonWorker().getInternalToken()).build();
+            .requestInterceptor((request, body, execution) -> {
+                InternalRequestSigner.apply(request.getHeaders(), InternalRequestSigner.headers(
+                    properties.getPythonWorker().getInternalToken(), request.getMethod().name(), request.getURI(), body));
+                return execution.execute(request, body);
+            }).build();
     }
 
     /** 非空上下文才写入跨服务请求头。 */

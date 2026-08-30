@@ -1,6 +1,7 @@
 package com.baseai.platform.workflow;
 
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.security.InternalRequestSigner;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -8,6 +9,8 @@ import org.junit.jupiter.api.Test;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,15 +25,22 @@ class WorkflowAdapterManagerClientTest {
         if (server != null) server.stop(0);
     }
 
-    /** 客户端必须携带内部令牌、固定来源路径和严格布尔命令。 */
+    /** 客户端必须携带 HMAC、固定来源路径和严格布尔命令。 */
     @Test
     void sendsAuthenticatedFixedSourceControlRequest() throws Exception {
-        AtomicReference<String> token = new AtomicReference<>();
+        AtomicBoolean signed = new AtomicBoolean();
         AtomicReference<String> body = new AtomicReference<>();
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/adapters/N8N", exchange -> {
-            token.set(exchange.getRequestHeaders().getFirst("X-Internal-Token"));
-            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] requestBody = exchange.getRequestBody().readAllBytes();
+            body.set(new String(requestBody, StandardCharsets.UTF_8));
+            signed.set(InternalRequestSigner.verify("m".repeat(24), exchange.getRequestMethod(),
+                exchange.getRequestURI().toString(), requestBody,
+                exchange.getRequestHeaders().getFirst(InternalRequestSigner.TIMESTAMP),
+                exchange.getRequestHeaders().getFirst(InternalRequestSigner.NONCE),
+                exchange.getRequestHeaders().getFirst(InternalRequestSigner.TARGET),
+                exchange.getRequestHeaders().getFirst(InternalRequestSigner.CONTENT_SHA256),
+                exchange.getRequestHeaders().getFirst(InternalRequestSigner.SIGNATURE), Instant.now(), 60));
             byte[] response = "{\"source\":\"N8N\",\"status\":\"ENABLING\"}"
                 .getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(202, response.length);
@@ -43,7 +53,7 @@ class WorkflowAdapterManagerClientTest {
         var state = new WorkflowAdapterManagerClient(new ObjectMapper(), properties).setEnabled("n8n", true);
 
         assertEquals("ENABLING", state.status());
-        assertEquals("m".repeat(24), token.get());
+        assertEquals(true, signed.get());
         assertEquals("{\"enabled\":true}", body.get());
     }
 

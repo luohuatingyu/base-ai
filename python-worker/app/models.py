@@ -4,7 +4,9 @@ from math import isfinite
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+
+from app.network_policy import reject_unsafe_literal
 
 
 class ChatMessage(BaseModel):
@@ -82,6 +84,7 @@ class LlmCandidate(BaseModel):
             raise ValueError("模型供应商地址必须是安全的 HTTP(S) URL")
         if parsed.port == 0:
             raise ValueError("模型供应商地址端口无效")
+        reject_unsafe_literal(parsed.hostname)
         return value.strip().rstrip("/")
 
 
@@ -221,11 +224,14 @@ class SmtpConfig(BaseModel):
 
     @field_validator("host", "username", "fromAddress")
     @classmethod
-    def reject_header_injection(cls, value: str) -> str:
+    def reject_header_injection(cls, value: str, info: ValidationInfo) -> str:
         """拒绝 SMTP 配置字段中的换行注入。"""
         if "\r" in value or "\n" in value:
             raise ValueError("invalid smtp field")
-        return value.strip()
+        normalized = value.strip()
+        if info.field_name == "host":
+            reject_unsafe_literal(normalized)
+        return normalized
 
 
 class EmailSendRequest(BaseModel):

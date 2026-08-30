@@ -2,6 +2,7 @@
 
 import { createRequire } from 'node:module'
 import { resolve, sep } from 'node:path'
+import { proxyFetch } from './proxy-fetch.mjs'
 
 const require = createRequire(import.meta.url)
 
@@ -340,7 +341,7 @@ function executionContext(request) {
         body = JSON.stringify(body)
         if (!Object.keys(headers).some(key => key.toLowerCase() === 'content-type')) headers['content-type'] = 'application/json'
       }
-      const response = await fetch(url, {
+      const response = await proxyFetch(url, {
         method: options.method || 'GET', headers, body,
         signal: AbortSignal.timeout(Math.min(Number(options.timeout || 30000), 120000)),
       })

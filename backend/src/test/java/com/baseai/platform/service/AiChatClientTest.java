@@ -2,6 +2,7 @@ package com.baseai.platform.service;
 
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.config.PythonWorkerRestClientConfig;
+import com.baseai.platform.security.InternalRequestSigner;
 import com.baseai.platform.trace.TraceContext;
 import com.baseai.platform.trace.TraceContextHolder;
 import com.baseai.platform.trace.TraceRuntime;
@@ -15,11 +16,13 @@ import org.springframework.web.client.RestClient;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -181,7 +184,7 @@ class AiChatClientTest {
     private AiChatClient client(LlmManagementService management) {
         PlatformProperties properties = new PlatformProperties();
         properties.getPythonWorker().setUrl("http://127.0.0.1:" + worker.getAddress().getPort());
-        internalToken = "test-internal-token";
+        internalToken = "test-internal-token-1234567890";
         properties.getPythonWorker().setInternalToken(internalToken);
         RestClient restClient = new PythonWorkerRestClientConfig().pythonWorkerRestClient(properties);
         return new AiChatClient(restClient, mock(TaskTraceService.class), management);
@@ -191,7 +194,7 @@ class AiChatClientTest {
     private void respondToChat(HttpExchange exchange) throws IOException {
         assertEquals("HTTP/1.1", exchange.getProtocol());
         requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        assertEquals(internalToken, exchange.getRequestHeaders().getFirst("X-Internal-Token"));
+        assertSigned(exchange, requestBody.getBytes(StandardCharsets.UTF_8));
         parentTraceId = exchange.getRequestHeaders().getFirst("X-Parent-Trace-Id");
         pythonTraceId = exchange.getRequestHeaders().getFirst("X-Python-Trace-Id");
         byte[] response = "{\"content\":\"ok\",\"model\":\"worker-model\",\"inputTokens\":1,\"outputTokens\":1,\"totalTokens\":2}"
@@ -206,7 +209,7 @@ class AiChatClientTest {
     private void respondToEmbeddings(HttpExchange exchange) throws IOException {
         assertEquals("HTTP/1.1", exchange.getProtocol());
         requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        assertEquals(internalToken, exchange.getRequestHeaders().getFirst("X-Internal-Token"));
+        assertSigned(exchange, requestBody.getBytes(StandardCharsets.UTF_8));
         byte[] response = "{\"embeddings\":[[1.0,0.0],[0.0,1.0]],\"model\":\"worker-embedding\"}"
             .getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -217,4 +220,16 @@ class AiChatClientTest {
 
     private String parentTraceId;
     private String pythonTraceId;
+
+    /** 验证 Worker 请求使用正文绑定的短时 HMAC，且不再发送 bearer token。 */
+    private void assertSigned(HttpExchange exchange, byte[] body) {
+        assertNull(exchange.getRequestHeaders().getFirst("X-Internal-Token"));
+        assertTrue(InternalRequestSigner.verify(internalToken, exchange.getRequestMethod(),
+            exchange.getRequestURI().toString(), body,
+            exchange.getRequestHeaders().getFirst(InternalRequestSigner.TIMESTAMP),
+            exchange.getRequestHeaders().getFirst(InternalRequestSigner.NONCE),
+            exchange.getRequestHeaders().getFirst(InternalRequestSigner.TARGET),
+            exchange.getRequestHeaders().getFirst(InternalRequestSigner.CONTENT_SHA256),
+            exchange.getRequestHeaders().getFirst(InternalRequestSigner.SIGNATURE), Instant.now(), 60));
+    }
 }

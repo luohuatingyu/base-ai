@@ -11,6 +11,7 @@ from starlette.responses import Response
 
 from app.config import Settings, load_settings
 from app.context import RequestContext, reset_context, set_context
+from app.internal_auth import signed_headers
 from app.logging_config import ContextFilter, JavaLogShipHandler, JsonLogFormatter, sanitize_log_text
 from app.middleware import InternalAuthMiddleware, RequestSizeLimitMiddleware
 
@@ -119,6 +120,49 @@ def test_similar_health_path_still_requires_internal_token():
     response = asyncio.run(middleware.dispatch(request, lambda _: Response(status_code=200)))
 
     assert response.status_code == 401
+
+
+def signed_request(path: str, body: bytes, headers: dict[str, str]) -> Request:
+    """创建携带一次性 ASGI 正文和内部签名的请求。"""
+    messages = [{"type": "http.request", "body": body, "more_body": False}]
+
+    async def receive():
+        """只返回一次完整正文。"""
+        return messages.pop(0) if messages else {"type": "http.disconnect"}
+
+    raw_headers = [(b"host", b"python-worker:8000")]
+    raw_headers.extend((name.lower().encode("ascii"), value.encode("ascii")) for name, value in headers.items())
+    return Request({
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "http",
+        "path": path, "raw_path": path.encode("ascii"), "query_string": b"",
+        "headers": raw_headers, "client": ("127.0.0.1", 1234), "server": ("python-worker", 8000),
+    }, receive)
+
+
+def test_internal_signature_binds_body_and_rejects_replay():
+    """有效正文只执行一次，相同签名重放或篡改正文均返回 401。"""
+    middleware = InternalAuthMiddleware(object(), settings(), registry=object(), reporter=object())
+    body = b'{"value":1}'
+    headers = signed_headers(settings().internal_token, "POST", "/email/send", body)
+    called = 0
+
+    async def call_next(_: Request) -> Response:
+        """记录真正进入业务端点的次数。"""
+        nonlocal called
+        called += 1
+        return Response(status_code=200)
+
+    accepted = asyncio.run(middleware.dispatch(signed_request("/email/send", body, headers), call_next))
+    replay = asyncio.run(middleware.dispatch(signed_request("/email/send", body, headers), call_next))
+    tampered_headers = signed_headers(settings().internal_token, "POST", "/email/send", body,
+                                      nonce="abcdef0123456789abcdef0123456789")
+    tampered = asyncio.run(middleware.dispatch(
+        signed_request("/email/send", b'{"value":2}', tampered_headers), call_next))
+
+    assert accepted.status_code == 200
+    assert replay.status_code == 401
+    assert tampered.status_code == 401
+    assert called == 1
 
 
 def test_request_size_middleware_rejects_chunked_body_over_limit():

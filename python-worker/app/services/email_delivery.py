@@ -6,6 +6,7 @@ import smtplib
 import ssl
 
 from app.models import EmailSendRequest
+from app.network_policy import NetworkPolicyError, public_addresses
 
 
 class MailDeliveryError(Exception):
@@ -23,6 +24,8 @@ async def send_email(request: EmailSendRequest) -> dict[str, bool]:
     try:
         await asyncio.to_thread(_send_sync, request)
         return {"sent": True}
+    except NetworkPolicyError as exception:
+        raise MailDeliveryError("mail.smtpHostUnsafe", 400) from exception
     except (OSError, TimeoutError, smtplib.SMTPException) as exception:
         raise MailDeliveryError("mail.sendFailed", 502) from exception
 
@@ -39,13 +42,20 @@ def _send_sync(request: EmailSendRequest) -> None:
     message.set_content(request.body)
     recipients = [*request.toAddresses, *request.ccAddresses]
     context = ssl.create_default_context()
+    address = public_addresses(smtp.host, smtp.port)[0]
 
     if smtp.tlsMode == "SSL":
-        with smtplib.SMTP_SSL(smtp.host, smtp.port, timeout=30, context=context) as client:
+        client = smtplib.SMTP_SSL(timeout=30, context=context)
+        client._host = smtp.host
+        client.connect(address, smtp.port)
+        with client:
             _authenticate_and_send(client, smtp.username, smtp.password, smtp.fromAddress, recipients, message)
         return
 
-    with smtplib.SMTP(smtp.host, smtp.port, timeout=30) as client:
+    client = smtplib.SMTP(timeout=30)
+    client.connect(address, smtp.port)
+    client._host = smtp.host
+    with client:
         client.ehlo()
         if smtp.tlsMode == "STARTTLS":
             client.starttls(context=context)

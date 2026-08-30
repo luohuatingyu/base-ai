@@ -11,10 +11,10 @@ import test from 'node:test'
 import { PackageError, PackageStore } from '../app/package-store.mjs'
 
 /** 异步执行调用子进程，使测试 HTTP 服务仍可处理请求。 */
-async function invokeChild(request) {
+async function invokeChild(request, environment = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('../app/invoke-child.mjs', import.meta.url))], {
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...environment },
     })
     let stdout = ''; let stderr = ''
     child.stdout.on('data', chunk => { stdout += chunk })
@@ -150,13 +150,15 @@ test('声明式节点安全执行 preSend 与 postReceive 路由', async () => {
     let body = ''
     request.on('data', chunk => { body += chunk })
     request.on('end', () => {
-      if (request.url === '/binary') {
+      const requestUrl = new URL(request.url, 'http://127.0.0.1')
+      if (requestUrl.pathname === '/binary') {
         response.setHeader('content-type', 'application/octet-stream')
         response.end(Buffer.from([0, 255, 1]))
         return
       }
       response.setHeader('content-type', 'application/json')
-      response.end(JSON.stringify({ method: request.method, url: request.url, header: request.headers['x-hook'],
+      response.end(JSON.stringify({ method: request.method, url: `${requestUrl.pathname}${requestUrl.search}`,
+        header: request.headers['x-hook'],
         body: JSON.parse(body || '{}') }))
     })
   })
@@ -213,7 +215,7 @@ module.exports = { Declarative }
       parameters: { baseUrl: `http://127.0.0.1:${server.address().port}`, operation: 'create', query: 'hello',
         value: 'x', optional: '{"x":1}', simplify: true },
       credentials: {}, input: {}, context: {},
-    })
+    }, { HTTP_PROXY: `http://test-token@127.0.0.1:${server.address().port}` })
     assert.equal(invoked.status, 0, invoked.stdout + invoked.stderr)
     const output = JSON.parse(invoked.stdout).output[0][0].json
     assert.equal(output.method, 'POST')
@@ -226,7 +228,7 @@ module.exports = { Declarative }
       componentId: 'declarative', operation: 'invoke',
       parameters: { baseUrl: `http://127.0.0.1:${server.address().port}`, operation: 'binary' }, credentials: {},
       input: { json: {}, binary: { file: { data: Buffer.from('input').toString('base64') } } }, context: {},
-    })
+    }, { HTTP_PROXY: `http://test-token@127.0.0.1:${server.address().port}` })
     assert.equal(binary.status, 0, binary.stdout + binary.stderr)
     const binaryOutput = JSON.parse(binary.stdout).output[0][0].binary.data
     assert.equal(binaryOutput.data, Buffer.from([0, 255, 1]).toString('base64'))

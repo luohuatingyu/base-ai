@@ -48,7 +48,7 @@ def load_settings() -> Settings:
 
 
 def validate_settings(settings: Settings) -> None:
-    """启动时校验内部令牌，模型配置在调用时给出明确错误。"""
+    """启动时校验内部 HMAC 密钥，模型配置在调用时给出明确错误。"""
     if len(settings.internal_token) < 24 or "replace-with" in settings.internal_token:
         raise RuntimeError("PYTHON_WORKER_INTERNAL_TOKEN 必须设置为安全随机字符串")
     if not settings.allowed_hosts:

@@ -2,6 +2,7 @@ package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.security.InternalRequestSigner;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
@@ -45,10 +46,13 @@ public class WorkflowAdapterManagerClient {
         if (token.length() < 24) throw new BusinessException("workflow.adapterManagerUnavailable");
         try {
             URI uri = manager.resolve("api/adapters/" + normalizedSource);
+            byte[] requestBytes = body == null ? new byte[0] : body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
             HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(15))
-                .header("X-Internal-Token", token).header("Accept", "application/json");
+                .header("Accept", "application/json");
+            InternalRequestSigner.headers(token, body == null ? "GET" : "PUT", uri, requestBytes)
+                .forEach(builder::header);
             if (body == null) builder.GET();
-            else builder.header("Content-Type", "application/json").PUT(HttpRequest.BodyPublishers.ofString(body));
+            else builder.header("Content-Type", "application/json").PUT(HttpRequest.BodyPublishers.ofByteArray(requestBytes));
             HttpResponse<InputStream> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
             try (InputStream input = response.body()) {
                 byte[] bytes = input.readNBytes(4097);

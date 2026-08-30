@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -132,7 +137,22 @@ func (f *fakeSupervisor) SetEnabled(_ context.Context, source string, enabled bo
 
 // newManager 使用强测试令牌创建不持有命令执行器的网络 Manager。
 func newManager(supervisor supervisorAPI) *managerController {
-	return &managerController{supervisor: supervisor, token: strings.Repeat("t", 32)}
+	return &managerController{supervisor: supervisor, token: strings.Repeat("t", 32), now: time.Now}
+}
+
+// signManagerRequest 使用与 Backend 相同的规范串签名测试请求。
+func signManagerRequest(request *http.Request, token string, body string, nonce string) {
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	digestBytes := sha256.Sum256([]byte(body))
+	digest := hex.EncodeToString(digestBytes[:])
+	canonical := request.Method + "\n" + request.URL.RequestURI() + "\n" + timestamp + "\n" + nonce + "\n" + digest
+	mac := hmac.New(sha256.New, []byte(token))
+	_, _ = mac.Write([]byte(canonical))
+	request.Header.Set("X-Internal-Timestamp", timestamp)
+	request.Header.Set("X-Internal-Nonce", nonce)
+	request.Header.Set("X-Internal-Target", request.URL.RequestURI())
+	request.Header.Set("X-Internal-Content-SHA256", digest)
+	request.Header.Set("X-Internal-Signature", hex.EncodeToString(mac.Sum(nil)))
 }
 
 // TestManagerAuthenticationAndTypedForwarding 覆盖鉴权、严格解析和类型化转发。
@@ -149,8 +169,9 @@ func TestManagerAuthenticationAndTypedForwarding(t *testing.T) {
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized request returned %d", unauthorized.Code)
 	}
-	request := httptest.NewRequest(http.MethodPut, "/api/adapters/n8n", strings.NewReader(`{"enabled":true}`))
-	request.Header.Set("X-Internal-Token", manager.token)
+	body := `{"enabled":true}`
+	request := httptest.NewRequest(http.MethodPut, "/api/adapters/n8n", strings.NewReader(body))
+	signManagerRequest(request, manager.token, body, "0123456789abcdef0123456789abcdef")
 	response := httptest.NewRecorder()
 	manager.serveHTTP(response, request)
 	if response.Code != http.StatusAccepted {
@@ -168,13 +189,13 @@ func TestManagerAuthenticationAndTypedForwarding(t *testing.T) {
 func TestManagerRejectsMalformedCommandsBeforeSupervisor(t *testing.T) {
 	upstream := &fakeSupervisor{state: adapterState{Source: "N8N", Status: "ENABLING"}, status: http.StatusAccepted}
 	manager := newManager(upstream)
-	for _, pathAndBody := range [][2]string{
+	for index, pathAndBody := range [][2]string{
 		{"/api/adapters/N8N", `{"enabled":true,"service":"evil"}`},
 		{"/api/adapters/N8N", `{"enabled":true}{"enabled":false}`},
 		{"/api/adapters/N8N%3Brm-rf", `{"enabled":true}`},
 	} {
 		request := httptest.NewRequest(http.MethodPut, pathAndBody[0], strings.NewReader(pathAndBody[1]))
-		request.Header.Set("X-Internal-Token", manager.token)
+		signManagerRequest(request, manager.token, pathAndBody[1], fmt.Sprintf("%032x", index+1))
 		response := httptest.NewRecorder()
 		manager.serveHTTP(response, request)
 		if response.Code != http.StatusBadRequest {
@@ -193,7 +214,7 @@ func TestManagerBoundsSupervisorFailures(t *testing.T) {
 	upstream := &fakeSupervisor{err: errors.New("/workspace/.env: secret"), status: http.StatusInternalServerError}
 	manager := newManager(upstream)
 	request := httptest.NewRequest(http.MethodGet, "/api/adapters/DIFY", nil)
-	request.Header.Set("X-Internal-Token", manager.token)
+	signManagerRequest(request, manager.token, "", "abcdef0123456789abcdef0123456789")
 	response := httptest.NewRecorder()
 	manager.serveHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), "workspace") {

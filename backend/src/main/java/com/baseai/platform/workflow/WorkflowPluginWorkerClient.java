@@ -2,6 +2,7 @@ package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.security.InternalRequestSigner;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -51,7 +52,7 @@ public class WorkflowPluginWorkerClient {
         ObjectNode body = objectMapper.createObjectNode().put("packageId", packageId).put("version", version)
             .put("fingerprint", fingerprint).put("archiveBase64", Base64.getEncoder().encodeToString(archive));
         JsonNode root = adapterLifecycleService.withEnabled(source,
-            () -> post(source, worker(source).resolve("/packages/inspect"), body));
+            () -> post(source, worker(source).resolve("packages/inspect"), "/packages/inspect", body));
         if (!root.path("components").isArray() || !fingerprint.equalsIgnoreCase(root.path("fingerprint").asText())) {
             throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         }
@@ -108,7 +109,7 @@ public class WorkflowPluginWorkerClient {
         body.set("context", context == null ? objectMapper.createObjectNode() : context);
         if (lifecycle != null) lifecycle.fields().forEachRemaining(entry -> body.set(entry.getKey(), entry.getValue()));
         JsonNode response = adapterLifecycleService.withEnabled(source,
-            () -> post(source, worker(source).resolve("/invocations"), body));
+            () -> post(source, worker(source).resolve("invocations"), "/invocations", body));
         if (!response.path("success").asBoolean(false) || !response.has("output")) {
             throw new BusinessException("workflow.pluginExecutionFailed");
         }
@@ -122,7 +123,7 @@ public class WorkflowPluginWorkerClient {
         }
         ObjectNode body = objectMapper.createObjectNode().put("fingerprint", fingerprint);
         JsonNode response = adapterLifecycleService.withEnabled(source,
-            () -> post(source, worker(source).resolve("/packages/remove"), body));
+            () -> post(source, worker(source).resolve("packages/remove"), "/packages/remove", body));
         if (!response.path("removed").asBoolean(false)) {
             throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         }
@@ -132,12 +133,14 @@ public class WorkflowPluginWorkerClient {
         "ACTION", "TOOL", "TRIGGER", "MODEL", "DATASOURCE", "AGENT_STRATEGY", "EXTENSION");
 
     /** 发送受鉴权 JSON，并限制响应体积和错误细节。 */
-    private JsonNode post(String source, URI uri, JsonNode body) {
+    private JsonNode post(String source, URI uri, String signedTarget, JsonNode body) {
         String token = token(source);
         if (token.length() < 24) throw new BusinessException("workflow.pluginWorkerUnavailable");
         try {
-            HttpRequest request = HttpRequest.newBuilder(uri).timeout(timeout).header("Content-Type", "application/json")
-                .header("X-Internal-Token", token).POST(HttpRequest.BodyPublishers.ofString(body.toString())).build();
+            byte[] requestBody = body.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(timeout).header("Content-Type", "application/json");
+            InternalRequestSigner.headers(token, "POST", signedTarget, requestBody).forEach(builder::header);
+            HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofByteArray(requestBody)).build();
             HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
             try (InputStream input = response.body()) {
                 byte[] bytes = input.readNBytes(maxResponseBytes + 1);
@@ -165,14 +168,14 @@ public class WorkflowPluginWorkerClient {
             : throwInvalidSource();
     }
 
-    /** 按插件来源返回互不复用的内部令牌，允许两个 Worker 使用同一网关地址。 */
+    /** 按插件来源返回互不复用的内部 HMAC 密钥，允许两个 Worker 使用同一网关地址。 */
     private String token(String source) {
         if ("DIFY".equalsIgnoreCase(source)) return difyToken;
         if ("N8N".equalsIgnoreCase(source)) return n8nToken;
         throw new BusinessException("workflow.marketplaceSourceInvalid");
     }
 
-    /** 规范可选内部令牌。 */
+    /** 规范可选内部 HMAC 密钥。 */
     private String normalizedToken(String value) { return value == null ? "" : value.trim(); }
 
     /** 生成表达式可用的非法来源异常。 */

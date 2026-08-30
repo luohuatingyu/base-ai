@@ -12,6 +12,7 @@ from app.llm_provider import strategy_for
 from app.logging_config import sanitize_log_text
 from app.models import (AgentMessage, AgentStepResponse, AgentToolCall, ChatMessage,
                         ChatResponse, EmbeddingResponse, LlmCandidate, ToolDefinition)
+from app.network_policy import PublicNetworkTransport
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,11 @@ class LlmClient:
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.client = httpx.AsyncClient(limits=httpx.Limits(max_connections=200, max_keepalive_connections=50))
+        self.client = httpx.AsyncClient(
+            transport=PublicNetworkTransport(),
+            limits=httpx.Limits(max_connections=200, max_keepalive_connections=50),
+            follow_redirects=False,
+        )
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._key_offsets: defaultdict[str, int] = defaultdict(int)
         self._lock = asyncio.Lock()

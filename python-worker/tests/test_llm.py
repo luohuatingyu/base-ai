@@ -458,7 +458,10 @@ def test_invoke_rejects_oversized_provider_response():
         asyncio.run(invoke_with(response))
 
 
-@pytest.mark.parametrize("base_url", ["file:///etc/passwd", "https://user:secret@example.com", "https://example.com/path#part"])
+@pytest.mark.parametrize("base_url", [
+    "file:///etc/passwd", "https://user:secret@example.com", "https://example.com/path#part",
+    "http://127.0.0.1/v1", "http://169.254.169.254/latest", "https://localhost/v1",
+])
 def test_candidate_rejects_unsafe_provider_url(base_url):
     """模型供应商地址不得使用非 HTTP 协议、内嵌凭证或 URL 片段。"""
     payload = candidate().model_dump()

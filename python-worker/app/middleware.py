@@ -1,7 +1,6 @@
 """FastAPI 中间件，处理请求标识、内部认证和异常追踪。"""
 
 import asyncio
-import hmac
 import logging
 import re
 import time
@@ -13,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
 from app.context import RequestContext, reset_context, set_context
+from app.internal_auth import InternalRequestVerifier
 from app.trace_runtime import JavaTraceReporter, TraceRuntimeRegistry, stop_heartbeat
 
 logger = logging.getLogger(__name__)
@@ -69,16 +69,17 @@ class RequestSizeLimitMiddleware:
 
 
 class InternalAuthMiddleware(BaseHTTPMiddleware):
-    """统一校验 Java 内部令牌并建立跨服务日志上下文。"""
+    """统一校验 Java 内部 HMAC 签名并建立跨服务日志上下文。"""
 
     def __init__(self, app, settings: Settings, registry: TraceRuntimeRegistry | None = None, reporter: JavaTraceReporter | None = None):
         super().__init__(app)
         self.settings = settings
         self.registry = registry or TraceRuntimeRegistry()
         self.reporter = reporter or JavaTraceReporter(settings)
+        self.verifier = InternalRequestVerifier(settings.internal_token)
 
     async def dispatch(self, request: Request, call_next):
-        """放行健康检查，其余接口仅允许持有共享令牌的内部调用。"""
+        """放行健康检查，其余接口仅接受不可重放的内部签名调用。"""
         started_at = time.perf_counter()
         request_path = str(request.scope.get("path") or "")
         request_id = self._identifier(request.headers.get("X-Request-Id"), uuid.uuid4().hex)
@@ -94,11 +95,17 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
                 logger.warning("event=worker_host_rejected method=%s path=%s", request.method, request_path)
                 return JSONResponse(status_code=400, content={"detail": "请求 Host 无效"})
             if request_path != "/health":
-                token = request.headers.get("X-Internal-Token", "")
-                if not hmac.compare_digest(token, self.settings.internal_token):
+                query = request.scope.get("query_string", b"")
+                target = request_path + ("?" + query.decode("ascii") if query else "")
+                if not self.verifier.has_headers(request.headers):
                     status_code = 401
                     logger.warning("event=worker_auth_rejected method=%s path=%s", request.method, request_path)
-                    return JSONResponse(status_code=401, content={"detail": "内部令牌无效"})
+                    return JSONResponse(status_code=401, content={"detail": "内部签名缺失"})
+                body = await request.body()
+                if not self.verifier.verify(request.method, target, body, request.headers):
+                    status_code = 401
+                    logger.warning("event=worker_auth_rejected method=%s path=%s", request.method, request_path)
+                    return JSONResponse(status_code=401, content={"detail": "内部签名无效"})
             if tracked:
                 await self.registry.register(python_trace_id, asyncio.current_task())
                 await self.reporter.report(python_trace_id, "RUNNING")

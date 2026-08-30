@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 
 import httpx
 
+from app.internal_auth import json_body, request_target, signed_headers
+
 from app.config import Settings
 from app.context import current_context
 
@@ -164,10 +166,12 @@ class JavaLogShipHandler(logging.Handler):
         last_error = "unknown"
         for attempt in range(1, SHIP_MAX_ATTEMPTS + 1):
             try:
+                url = f"{self.settings.backend_url}/api/internal/trace-logs"
+                body = json_body({"logs": batch})
+                headers = {"Content-Type": "application/json"}
+                headers.update(signed_headers(self.settings.internal_token, "POST", request_target(url), body))
                 client.post(
-                    f"{self.settings.backend_url}/api/internal/trace-logs",
-                    headers={"X-Internal-Token": self.settings.internal_token},
-                    json={"logs": batch},
+                    url, headers=headers, content=body,
                 ).raise_for_status()
                 return
             except Exception as exception:

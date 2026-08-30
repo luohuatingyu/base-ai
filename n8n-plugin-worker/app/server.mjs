@@ -4,11 +4,13 @@ import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { InternalRequestVerifier } from './internal-auth.mjs'
 import { PackageError, PackageStore } from './package-store.mjs'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const store = new PackageStore()
 const token = process.env.PLUGIN_WORKER_INTERNAL_TOKEN || ''
+const auth = new InternalRequestVerifier(token)
 const maximum = Number(process.env.PLUGIN_WORKER_MAX_REQUEST_BYTES || 15 * 1024 * 1024)
 const timeout = Math.min(Number(process.env.PLUGIN_INVOCATION_TIMEOUT_SECONDS || 60), 300) * 1000
 const inspectTimeout = Math.min(Number(process.env.PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS || 180) + 60, 660) * 1000
@@ -20,7 +22,7 @@ function respond(response, status, value) {
   response.end(body)
 }
 
-/** 读取并限制 JSON 请求体。 */
+/** 读取并限制签名绑定的原始请求体。 */
 async function body(request) {
   const declared = Number(request.headers['content-length'] || 0)
   if (declared <= 0 || declared > maximum) throw new PackageError('REQUEST_SIZE_INVALID')
@@ -30,12 +32,10 @@ async function body(request) {
     if (size > maximum) throw new PackageError('REQUEST_SIZE_INVALID')
     chunks.push(chunk)
   }
-  const value = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new PackageError('REQUEST_JSON_INVALID')
-  return value
+  return Buffer.concat(chunks)
 }
 
-/** 在不继承内部令牌的子进程中调用插件。 */
+/** 在不继承内部 HMAC 密钥的子进程中调用插件。 */
 async function invoke(request) {
   const installed = await store.metadata(String(request.fingerprint || ''))
   const component = installed.metadata.components.find(item => item.externalId === request.componentId)
@@ -48,6 +48,7 @@ async function invoke(request) {
         PATH: process.env.PATH || '', NODE_ENV: 'production', LANG: 'C.UTF-8',
         HTTP_PROXY: process.env.HTTP_PROXY || '', HTTPS_PROXY: process.env.HTTPS_PROXY || '',
         NO_PROXY: process.env.NO_PROXY || '',
+        PLUGIN_HTTP_RESPONSE_MAX_BYTES: process.env.PLUGIN_HTTP_RESPONSE_MAX_BYTES || '',
       }, stdio: ['pipe', 'pipe', 'pipe'],
     })
     let stdout = ''; let stderr = ''
@@ -67,7 +68,7 @@ async function invoke(request) {
   })
 }
 
-/** 在不继承内部令牌的短生命周期进程中解压、安装依赖并探测插件。 */
+/** 在不继承内部 HMAC 密钥的短生命周期进程中解压、安装依赖并探测插件。 */
 async function inspect(request) {
   return childRequest('inspect-child.mjs', request, inspectTimeout)
 }
@@ -103,8 +104,12 @@ createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/health') {
       respond(response, 200, { status: 'UP', runtime: 'base-ai-node-abi', node: '24' }); return
     }
-    if (request.headers['x-internal-token'] !== token) { respond(response, 401, { error: 'UNAUTHORIZED' }); return }
-    const value = await body(request)
+    const raw = await body(request)
+    if (!auth.verify(request.method, request.url, raw, request.headers)) {
+      respond(response, 401, { error: 'UNAUTHORIZED' }); return
+    }
+    const value = JSON.parse(raw.toString('utf8'))
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new PackageError('REQUEST_JSON_INVALID')
     if (request.method === 'POST' && request.url === '/packages/inspect') respond(response, 200, await inspect(value))
     else if (request.method === 'POST' && request.url === '/packages/remove') respond(response, 200, await store.remove(value.fingerprint))
     else if (request.method === 'POST' && request.url === '/invocations') respond(response, 200, await invoke(value))

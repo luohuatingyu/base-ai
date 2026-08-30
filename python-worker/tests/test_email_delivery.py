@@ -13,9 +13,17 @@ from app.services import email_delivery
 class FakeSmtp:
     """记录 SMTP 生命周期和发送参数的上下文管理器。"""
 
-    def __init__(self, host, port, **kwargs):
+    def __init__(self, host="", port=0, **kwargs):
         """记录连接参数。"""
-        self.calls = [("connect", host, port, kwargs)]
+        self.calls = []
+        self._host = host
+        if host:
+            self.connect(host, port)
+
+    def connect(self, host, port):
+        """记录固定 IP 连接目标。"""
+        self.calls.append(("connect", host, port))
+        return 220, b"ready"
 
     def __enter__(self):
         """返回当前模拟连接。"""
@@ -54,6 +62,12 @@ def request(tls_mode: str = "STARTTLS") -> EmailSendRequest:
     })
 
 
+@pytest.fixture(autouse=True)
+def public_dns(monkeypatch):
+    """所有正常发送用例固定到无敏感含义的公网测试地址。"""
+    monkeypatch.setattr(email_delivery, "public_addresses", lambda *_args, **_kwargs: ["8.8.8.8"])
+
+
 def test_sends_with_starttls_and_all_recipients(monkeypatch):
     """STARTTLS 模式必须升级连接、认证并发送给主送和抄送人。"""
     instances = []
@@ -71,6 +85,8 @@ def test_sends_with_starttls_and_all_recipients(monkeypatch):
     assert result == {"sent": True}
     calls = instances[0].calls
     assert [call[0] for call in calls] == ["connect", "ehlo", "starttls", "ehlo", "login", "send", "close"]
+    assert calls[0][1:] == ("8.8.8.8", 587)
+    assert instances[0]._host == "smtp.example.com"
     assert calls[-2][2]["to_addrs"] == ["one@example.com", "two@example.com"]
 
 
@@ -119,6 +135,29 @@ def test_hides_smtp_failure_details(monkeypatch):
     assert raised.value.detail == "mail.sendFailed"
     assert raised.value.status_code == 502
     assert "secret provider detail" not in raised.value.detail
+
+
+def test_rejects_private_smtp_resolution_before_connect(monkeypatch):
+    """SMTP 主机解析到私网时不得创建任何网络连接。"""
+    connected = False
+
+    def unsafe(*_args, **_kwargs):
+        """模拟 DNS 返回被策略拒绝的地址。"""
+        raise email_delivery.NetworkPolicyError("OUTBOUND_ADDRESS_FORBIDDEN")
+
+    def factory(*_args, **_kwargs):
+        """记录不应发生的 SMTP 创建。"""
+        nonlocal connected
+        connected = True
+        return FakeSmtp()
+
+    monkeypatch.setattr(email_delivery, "public_addresses", unsafe)
+    monkeypatch.setattr(email_delivery.smtplib, "SMTP", factory)
+
+    with pytest.raises(email_delivery.MailDeliveryError) as raised:
+        asyncio.run(email_delivery.send_email(request("NONE")))
+    assert raised.value.detail == "mail.smtpHostUnsafe"
+    assert connected is False
 
 
 @pytest.mark.parametrize("field,value", [

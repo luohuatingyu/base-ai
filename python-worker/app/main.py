@@ -29,7 +29,7 @@ app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.max_request_by
 
 @app.get("/health")
 def health():
-    """提供无需内部令牌的容器存活检查。"""
+    """提供无需内部签名的容器存活检查。"""
     return {"status": "UP", "instanceId": settings.instance_id}
 
 

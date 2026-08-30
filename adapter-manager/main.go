@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,12 +16,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const maximumResponseBytes = 4096
+
+var internalHexPattern = regexp.MustCompile(`^[a-f0-9]+$`)
 
 var adapterServices = map[string]string{
 	"N8N":  "n8n-plugin-worker",
@@ -300,12 +306,61 @@ func (c *unixSupervisorClient) request(ctx context.Context, method string, sourc
 type managerController struct {
 	supervisor supervisorAPI
 	token      string
+	authMu     sync.Mutex
+	usedNonces map[string]int64
+	now        func() time.Time
 }
 
-// authorized 使用常量时间比较校验内部控制令牌。
+// authorized 校验正文绑定的短时 HMAC，并拒绝时间窗内重复 nonce。
 func (c *managerController) authorized(request *http.Request) bool {
-	provided := request.Header.Get("X-Internal-Token")
-	return len(provided) == len(c.token) && subtle.ConstantTimeCompare([]byte(provided), []byte(c.token)) == 1
+	body, err := io.ReadAll(io.LimitReader(request.Body, 1025))
+	if err != nil || len(body) > 1024 {
+		return false
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	timestamp := request.Header.Get("X-Internal-Timestamp")
+	nonce := request.Header.Get("X-Internal-Nonce")
+	target := request.Header.Get("X-Internal-Target")
+	digest := request.Header.Get("X-Internal-Content-SHA256")
+	signature := request.Header.Get("X-Internal-Signature")
+	signedAt, parseErr := strconv.ParseInt(timestamp, 10, 64)
+	if parseErr != nil || len(timestamp) > 12 || len(nonce) != 32 || len(digest) != 64 || len(signature) != 64 ||
+		!internalHexPattern.MatchString(nonce) || !internalHexPattern.MatchString(digest) ||
+		!internalHexPattern.MatchString(signature) || target != request.URL.RequestURI() {
+		return false
+	}
+	now := time.Now()
+	if c.now != nil {
+		now = c.now()
+	}
+	if delta := now.Unix() - signedAt; delta > 60 || delta < -60 {
+		return false
+	}
+	actualDigest := sha256.Sum256(body)
+	if !hmac.Equal([]byte(digest), []byte(hex.EncodeToString(actualDigest[:]))) {
+		return false
+	}
+	canonical := request.Method + "\n" + target + "\n" + timestamp + "\n" + nonce + "\n" + digest
+	mac := hmac.New(sha256.New, []byte(c.token))
+	_, _ = mac.Write([]byte(canonical))
+	if !hmac.Equal([]byte(signature), []byte(hex.EncodeToString(mac.Sum(nil)))) {
+		return false
+	}
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+	if c.usedNonces == nil {
+		c.usedNonces = map[string]int64{}
+	}
+	for value, usedAt := range c.usedNonces {
+		if usedAt < now.Unix()-60 {
+			delete(c.usedNonces, value)
+		}
+	}
+	if _, exists := c.usedNonces[nonce]; exists {
+		return false
+	}
+	c.usedNonces[nonce] = now.Unix()
+	return true
 }
 
 // serveHTTP 提供网络接口，并仅将验证后的类型化命令转发到私有 Supervisor。
