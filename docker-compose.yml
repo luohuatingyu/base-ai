@@ -179,6 +179,46 @@ services:
     networks:
       - app-network
 
+  adapter-docker-broker:
+    build:
+      context: ./adapter-manager
+      target: broker
+      args:
+        GO_IMAGE: ${GO_IMAGE:-golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2}
+        DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b}
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    environment:
+      ADAPTER_MANAGER_MODE: broker
+      ADAPTER_BROKER_SOCKET: /run/adapter-broker/broker.sock
+      COMPOSE_PROJECT_DIR: /workspace
+      COMPOSE_FILE: /workspace/docker-compose.yml
+      COMPOSE_ENV_FILE: /workspace/.env
+      DOCKER_CONFIG: /tmp/docker-config
+    volumes:
+      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
+      - ./.env:/workspace/.env:ro
+      - ./backend/config/trace-tracking-exclusions.yml:/workspace/backend/config/trace-tracking-exclusions.yml:ro
+      - ./Caddyfile:/workspace/Caddyfile:ro
+      - ./caddy:/workspace/caddy:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - adapter-broker-control:/run/adapter-broker
+    tmpfs:
+      - /tmp:size=16m,mode=1700
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/adapter-manager", "broker-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    network_mode: none
+
   adapter-supervisor:
     build:
       context: ./adapter-manager
@@ -198,24 +238,13 @@ services:
     environment:
       ADAPTER_MANAGER_MODE: supervisor
       ADAPTER_SUPERVISOR_SOCKET: /run/adapter-control/supervisor.sock
-      DIFY_PLUGIN_WORKER_INTERNAL_TOKEN: ${DIFY_PLUGIN_WORKER_INTERNAL_TOKEN:?Set DIFY_PLUGIN_WORKER_INTERNAL_TOKEN}
-      N8N_PLUGIN_WORKER_INTERNAL_TOKEN: ${N8N_PLUGIN_WORKER_INTERNAL_TOKEN:?Set N8N_PLUGIN_WORKER_INTERNAL_TOKEN}
-      OUTBOUND_GATEWAY_TOKEN: ${OUTBOUND_GATEWAY_TOKEN:?Set OUTBOUND_GATEWAY_TOKEN}
-      APP_API_KEY_HASH_SECRET: ${APP_API_KEY_HASH_SECRET:?Set APP_API_KEY_HASH_SECRET}
-      COMPOSE_PROJECT_DIR: /workspace
-      COMPOSE_FILE: /workspace/docker-compose.yml
-      COMPOSE_ENV_FILE: /workspace/.env
-      DOCKER_CONFIG: /tmp/docker-config
+      ADAPTER_BROKER_SOCKET: /run/adapter-broker/broker.sock
     volumes:
-      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
-      - ./.env:/workspace/.env:ro
-      - ./backend/config/trace-tracking-exclusions.yml:/workspace/backend/config/trace-tracking-exclusions.yml:ro
-      - ./Caddyfile:/workspace/Caddyfile:ro
-      - ./caddy:/workspace/caddy:ro
-      - /var/run/docker.sock:/var/run/docker.sock
       - adapter-control:/run/adapter-control
-    tmpfs:
-      - /tmp:size=16m,mode=1700
+      - adapter-broker-control:/run/adapter-broker:ro
+    depends_on:
+      adapter-docker-broker:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "/usr/local/bin/adapter-manager", "supervisor-healthcheck"]
       interval: 10s
@@ -484,6 +513,7 @@ networks:
 
 volumes:
   adapter-control:
+  adapter-broker-control:
   bootstrap-secrets:
   caddy-data:
   caddy-config:

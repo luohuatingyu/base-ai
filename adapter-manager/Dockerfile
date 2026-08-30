@@ -13,6 +13,10 @@ USER 10001:0
 EXPOSE 8090
 ENTRYPOINT ["/usr/local/bin/adapter-manager"]
 
-FROM ${DOCKER_CLI_IMAGE} AS supervisor
+FROM scratch AS supervisor
+COPY --from=build /out/adapter-manager /usr/local/bin/adapter-manager
+ENTRYPOINT ["/usr/local/bin/adapter-manager"]
+
+FROM ${DOCKER_CLI_IMAGE} AS broker
 COPY --from=build /out/adapter-manager /usr/local/bin/adapter-manager
 ENTRYPOINT ["/usr/local/bin/adapter-manager"]

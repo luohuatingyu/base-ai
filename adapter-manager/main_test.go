@@ -43,37 +43,36 @@ func (f *fakeRunner) Run(_ context.Context, arguments ...string) (string, error)
 	return output, err
 }
 
-// newSupervisor 使用替身命令执行器创建隔离 Supervisor。
-func newSupervisor(runner commandRunner) *supervisorController {
-	return &supervisorController{runner: runner, projectDir: "/workspace", composeFile: "/workspace/docker-compose.yml",
-		envFile: "/workspace/.env", operations: map[string]adapterState{}}
+// newBroker 使用替身命令执行器创建唯一持有 Docker 权限的 Broker。
+func newBroker(runner commandRunner) *dockerBrokerController {
+	return &dockerBrokerController{runner: runner, projectDir: "/workspace",
+		composeFile: "/workspace/docker-compose.yml", envFile: "/workspace/.env"}
 }
 
-// TestState 将健康、启动中、停止和畸形 Compose 输出映射为稳定接口状态。
-func TestState(t *testing.T) {
+// TestBrokerState 将健康、启动中、停止和畸形 Compose 输出映射为稳定接口状态。
+func TestBrokerState(t *testing.T) {
 	runner := &fakeRunner{outputs: []string{
 		`[{"State":"running","Health":"healthy"}]`,
 		`{"State":"running","Health":"starting"}`,
 		`[{"State":"exited","Health":""}]`,
 		`not-json`,
 	}}
-	supervisor := newSupervisor(runner)
+	broker := newBroker(runner)
 	for _, expected := range []string{"RUNNING", "STARTING", "STOPPED", "FAILED"} {
-		if actual := supervisor.state(context.Background(), "N8N").Status; actual != expected {
+		if actual := broker.state(context.Background(), "N8N").Status; actual != expected {
 			t.Fatalf("expected %s, got %s", expected, actual)
 		}
 	}
 }
 
-// TestControlUsesAllowlistedComposeService 验证独立来源无法注入命令参数。
-func TestControlUsesAllowlistedComposeService(t *testing.T) {
+// TestBrokerUsesAllowlistedComposeService 验证独立来源无法注入命令参数。
+func TestBrokerUsesAllowlistedComposeService(t *testing.T) {
 	runner := &fakeRunner{}
-	supervisor := newSupervisor(runner)
-	state, status := supervisor.setEnabled("N8N", true)
-	if status != http.StatusAccepted || state.Status != "ENABLING" {
+	broker := newBroker(runner)
+	state, status := broker.setEnabled(context.Background(), "N8N", true)
+	if status != http.StatusOK || state.Status != "RUNNING" {
 		t.Fatalf("unexpected response: %d %#v", status, state)
 	}
-	waitForCalls(t, runner, 1)
 	runner.mu.Lock()
 	command := strings.Join(runner.calls[0], " ")
 	runner.mu.Unlock()
@@ -81,28 +80,17 @@ func TestControlUsesAllowlistedComposeService(t *testing.T) {
 		strings.Contains(command, "dify-plugin-worker") || strings.Contains(command, " --build ") {
 		t.Fatalf("unexpected command: %s", command)
 	}
-	if rejected, rejectedStatus := supervisor.setEnabled("N8N;rm -rf /", true); rejectedStatus != http.StatusBadRequest || rejected.Status != "INVALID" {
+	if rejected, rejectedStatus := broker.setEnabled(context.Background(), "N8N;rm -rf /", true); rejectedStatus != http.StatusBadRequest || rejected.Status != "INVALID" {
 		t.Fatalf("malicious source was not rejected: %d %#v", rejectedStatus, rejected)
 	}
 }
 
-// TestFailedOperationPreservesBoundedError 验证命令细节不会返回给调用方。
-func TestFailedOperationPreservesBoundedError(t *testing.T) {
+// TestBrokerFailurePreservesBoundedError 验证命令细节不会返回给调用方。
+func TestBrokerFailurePreservesBoundedError(t *testing.T) {
 	runner := &fakeRunner{outputs: []string{"secret command output"}, errors: []error{errors.New("failed")}}
-	supervisor := newSupervisor(runner)
-	supervisor.setEnabled("DIFY", false)
-	waitForCalls(t, runner, 1)
-	var state adapterState
-	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
-		supervisor.mu.Lock()
-		state = supervisor.operations["DIFY"]
-		supervisor.mu.Unlock()
-		if state.Status == "FAILED" {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if state.Error != "ADAPTER_STOP_FAILED" || strings.Contains(state.Error, "secret") {
+	broker := newBroker(runner)
+	state, status := broker.setEnabled(context.Background(), "DIFY", false)
+	if status != http.StatusServiceUnavailable || state.Error != "ADAPTER_STOP_FAILED" || strings.Contains(state.Error, "secret") {
 		t.Fatalf("unexpected failure: %#v", state)
 	}
 }
@@ -133,6 +121,32 @@ func (f *fakeSupervisor) SetEnabled(_ context.Context, source string, enabled bo
 	f.calls = append(f.calls, "PUT "+source+" "+map[bool]string{true: "true", false: "false"}[enabled])
 	f.mu.Unlock()
 	return f.state, f.status, f.err
+}
+
+// TestSupervisorDelegatesOnlyTypedOperations 验证无 Docker 权限的策略层只转发固定来源和布尔动作。
+func TestSupervisorDelegatesOnlyTypedOperations(t *testing.T) {
+	broker := &fakeSupervisor{state: adapterState{Source: "N8N", Status: "RUNNING"}, status: http.StatusOK}
+	supervisor := &supervisorController{broker: broker, operations: map[string]adapterState{}}
+	if state := supervisor.state(context.Background(), "N8N"); state.Status != "RUNNING" {
+		t.Fatalf("unexpected broker state: %#v", state)
+	}
+	state, status := supervisor.setEnabled("N8N", true)
+	if status != http.StatusAccepted || state.Status != "ENABLING" {
+		t.Fatalf("unexpected supervisor response: %d %#v", status, state)
+	}
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+		broker.mu.Lock()
+		calls := append([]string(nil), broker.calls...)
+		broker.mu.Unlock()
+		if len(calls) == 2 {
+			if calls[0] != "GET N8N" || calls[1] != "PUT N8N true" {
+				t.Fatalf("unexpected broker calls: %#v", calls)
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("typed operation did not reach broker")
 }
 
 // newManager 使用强测试令牌创建不持有命令执行器的网络 Manager。
@@ -234,7 +248,7 @@ func TestUnixSupervisorClientUsesPrivateSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	upstream := newSupervisor(&fakeRunner{outputs: []string{`[{"State":"running","Health":"healthy"}]`}})
+	upstream := newBroker(&fakeRunner{outputs: []string{`[{"State":"running","Health":"healthy"}]`}})
 	httpServer := &http.Server{Handler: http.HandlerFunc(upstream.serveHTTP)}
 	go func() { _ = httpServer.Serve(listener) }()
 	defer httpServer.Close()
@@ -245,19 +259,4 @@ func TestUnixSupervisorClientUsesPrivateSocket(t *testing.T) {
 	if err != nil || status != http.StatusOK || state.Status != "RUNNING" {
 		t.Fatalf("unexpected socket response: %d %#v %v", status, state, err)
 	}
-}
-
-// waitForCalls 短暂等待异步控制命令到达替身执行器。
-func waitForCalls(t *testing.T, runner *fakeRunner, count int) {
-	t.Helper()
-	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
-		runner.mu.Lock()
-		actual := len(runner.calls)
-		runner.mu.Unlock()
-		if actual >= count {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("runner did not receive %d calls", count)
 }

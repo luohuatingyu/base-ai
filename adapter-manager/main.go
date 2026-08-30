@@ -38,7 +38,7 @@ type commandRunner interface {
 
 type dockerCommandRunner struct{}
 
-// Run 仅执行 Supervisor 生成的固定参数，并返回限制长度的诊断信息。
+// Run 仅执行 Broker 生成的固定参数，并返回限制长度的诊断信息。
 func (dockerCommandRunner) Run(ctx context.Context, arguments ...string) (string, error) {
 	command := exec.CommandContext(ctx, "docker", arguments...)
 	output, err := command.CombinedOutput()
@@ -60,31 +60,23 @@ type composeContainer struct {
 	Health string `json:"Health"`
 }
 
-type supervisorController struct {
+type dockerBrokerController struct {
 	runner      commandRunner
 	projectDir  string
 	composeFile string
 	envFile     string
-	mu          sync.Mutex
-	operations  map[string]adapterState
 }
 
 // composeArguments 构建两个适配器共用且不可由请求修改的 Compose 命令前缀。
-func (c *supervisorController) composeArguments() []string {
+func (c *dockerBrokerController) composeArguments() []string {
 	return []string{"compose", "--project-directory", c.projectDir, "-f", c.composeFile, "--env-file", c.envFile}
 }
 
-// state 返回进行中的操作，或通过 Docker Compose 解析容器实际状态。
-func (c *supervisorController) state(parent context.Context, source string) adapterState {
+// state 通过 Docker Compose 解析固定插件容器的实际状态。
+func (c *dockerBrokerController) state(parent context.Context, source string) adapterState {
 	service, ok := adapterServices[source]
 	if !ok {
 		return adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"}
-	}
-	c.mu.Lock()
-	operation, active := c.operations[source]
-	c.mu.Unlock()
-	if active {
-		return operation
 	}
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
@@ -133,16 +125,112 @@ func decodeContainers(output string) ([]composeContainer, error) {
 	return result, nil
 }
 
-// setEnabled 为单个硬编码服务串行提交异步启动或停止操作。
-func (c *supervisorController) setEnabled(source string, enabled bool) (adapterState, int) {
+// setEnabled 仅对单个硬编码服务执行同步启动或停止命令。
+func (c *dockerBrokerController) setEnabled(parent context.Context, source string, enabled bool) (adapterState, int) {
 	service, ok := adapterServices[source]
 	if !ok {
 		return adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"}, http.StatusBadRequest
 	}
+	timeout := 45 * time.Second
+	arguments := c.composeArguments()
+	if enabled {
+		timeout = 10 * time.Minute
+		// 适配器镜像必须由发布流程预构建，Broker 不通过 Docker Socket 执行构建。
+		arguments = append(arguments, "--profile", "plugin-adapters", "up", "-d", "--no-build", "--no-deps", service)
+	} else {
+		arguments = append(arguments, "stop", "-t", "10", service)
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	_, err := c.runner.Run(ctx, arguments...)
+	if err != nil {
+		code := "ADAPTER_START_FAILED"
+		if !enabled {
+			code = "ADAPTER_STOP_FAILED"
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			code += "_TIMEOUT"
+		}
+		log.Printf("adapter operation failed source=%s code=%s", source, code)
+		return adapterState{Source: source, Status: "FAILED", Error: code}, http.StatusServiceUnavailable
+	}
+	status := "STOPPED"
+	if enabled {
+		status = "RUNNING"
+	}
+	return adapterState{Source: source, Status: status}, http.StatusOK
+}
+
+// serveHTTP 仅在私有 Unix Socket 上暴露固定目标的 Docker 操作。
+func (c *dockerBrokerController) serveHTTP(response http.ResponseWriter, request *http.Request) {
+	if request.Method == http.MethodGet && request.URL.Path == "/health" {
+		ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+		defer cancel()
+		if _, err := c.runner.Run(ctx, "version", "--format", "{{.Server.Version}}"); err != nil {
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"status": "DOWN"})
+			return
+		}
+		writeJSON(response, http.StatusOK, map[string]string{"status": "UP"})
+		return
+	}
+	source, ok := sourceFromPath(request.URL.Path)
+	if !ok {
+		writeJSON(response, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
+		return
+	}
+	if _, allowed := adapterServices[source]; !allowed {
+		writeJSON(response, http.StatusBadRequest, adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"})
+		return
+	}
+	if request.Method == http.MethodGet {
+		writeJSON(response, http.StatusOK, c.state(request.Context(), source))
+		return
+	}
+	if request.Method != http.MethodPut {
+		writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
+		return
+	}
+	enabled, valid := enabledCommand(response, request)
+	if !valid {
+		return
+	}
+	state, status := c.setEnabled(request.Context(), source, enabled)
+	writeJSON(response, status, state)
+}
+
+type supervisorController struct {
+	broker     supervisorAPI
+	mu         sync.Mutex
+	operations map[string]adapterState
+}
+
+// state 优先返回进行中的策略层操作，否则查询受限 Docker Broker。
+func (c *supervisorController) state(parent context.Context, source string) adapterState {
+	if _, ok := adapterServices[source]; !ok {
+		return adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"}
+	}
 	c.mu.Lock()
+	operation, active := c.operations[source]
+	c.mu.Unlock()
+	if active {
+		return operation
+	}
+	state, status, err := c.broker.State(parent, source)
+	if err != nil || status != http.StatusOK {
+		return adapterState{Source: source, Status: "FAILED", Error: "ADAPTER_BROKER_UNAVAILABLE"}
+	}
+	return state
+}
+
+// setEnabled 为单个硬编码服务串行提交异步启停操作。
+func (c *supervisorController) setEnabled(source string, enabled bool) (adapterState, int) {
+	if _, ok := adapterServices[source]; !ok {
+		return adapterState{Source: source, Status: "INVALID", Error: "ADAPTER_SOURCE_INVALID"}, http.StatusBadRequest
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if current, active := c.operations[source]; active {
 		if current.Status == "ENABLING" || current.Status == "DISABLING" {
-			c.mu.Unlock()
 			return current, http.StatusConflict
 		}
 		delete(c.operations, source)
@@ -153,28 +241,22 @@ func (c *supervisorController) setEnabled(source string, enabled bool) (adapterS
 	}
 	operation := adapterState{Source: source, Status: status}
 	c.operations[source] = operation
-	c.mu.Unlock()
-	go c.runOperation(source, service, enabled)
+	go c.runOperation(source, enabled)
 	return operation, http.StatusAccepted
 }
 
-// runOperation 使用固定参数调用 Compose，且仅保留有限的非敏感失败码。
-func (c *supervisorController) runOperation(source string, service string, enabled bool) {
+// runOperation 仅向 Broker 发送类型化命令，并把底层失败收敛为稳定错误码。
+func (c *supervisorController) runOperation(source string, enabled bool) {
 	timeout := 45 * time.Second
-	arguments := c.composeArguments()
 	if enabled {
 		timeout = 10 * time.Minute
-		// 适配器镜像必须由发布流程预构建，Supervisor 不通过 Docker Socket 执行构建。
-		arguments = append(arguments, "--profile", "plugin-adapters", "up", "-d", "--no-build", "--no-deps", service)
-	} else {
-		arguments = append(arguments, "stop", "-t", "10", service)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	_, err := c.runner.Run(ctx, arguments...)
+	state, status, err := c.broker.SetEnabled(ctx, source, enabled)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err != nil {
+	if err != nil || status != http.StatusOK || state.Status == "FAILED" {
 		code := "ADAPTER_START_FAILED"
 		if !enabled {
 			code = "ADAPTER_STOP_FAILED"
@@ -189,9 +271,15 @@ func (c *supervisorController) runOperation(source string, service string, enabl
 	delete(c.operations, source)
 }
 
-// serveHTTP 仅在私有 Unix Socket 上提供健康、状态和固定目标开关接口。
+// serveHTTP 在策略层串行化操作，并把 Docker 权限留在下游 Broker。
 func (c *supervisorController) serveHTTP(response http.ResponseWriter, request *http.Request) {
 	if request.Method == http.MethodGet && request.URL.Path == "/health" {
+		ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+		defer cancel()
+		if c.broker.Health(ctx) != nil {
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"status": "DOWN"})
+			return
+		}
 		writeJSON(response, http.StatusOK, map[string]string{"status": "UP"})
 		return
 	}
@@ -477,7 +565,7 @@ func secureUnixListener(socketPath string) (net.Listener, error) {
 	}
 	if info, err := os.Lstat(socketPath); err == nil {
 		if info.Mode()&os.ModeSocket == 0 {
-			return nil, errors.New("supervisor socket path is not a socket")
+			return nil, errors.New("control socket path is not a socket")
 		}
 		if err := os.Remove(socketPath); err != nil {
 			return nil, err
@@ -507,6 +595,14 @@ func server(handler http.Handler) *http.Server {
 	}
 }
 
+// brokerServer 允许预构建插件首次创建在固定超时内完成。
+func brokerServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
+		WriteTimeout: 11 * time.Minute, IdleTimeout: 30 * time.Second,
+	}
+}
+
 // runManager 启动不持有 Docker 权限的网络控制接口。
 func runManager() {
 	token := required("ADAPTER_MANAGER_INTERNAL_TOKEN")
@@ -519,7 +615,7 @@ func runManager() {
 	log.Fatal(httpServer.ListenAndServe())
 }
 
-// runSupervisor 启动无网络、仅通过 Unix Socket 提供固定 Docker 操作的隔离服务。
+// runSupervisor 启动无网络、无 Docker Socket 的异步策略控制层。
 func runSupervisor() {
 	socketPath := required("ADAPTER_SUPERVISOR_SOCKET")
 	listener, err := secureUnixListener(socketPath)
@@ -531,11 +627,28 @@ func runSupervisor() {
 		_ = os.Remove(socketPath)
 	}()
 	supervisor := &supervisorController{
-		runner: dockerCommandRunner{}, projectDir: required("COMPOSE_PROJECT_DIR"),
-		composeFile: required("COMPOSE_FILE"), envFile: required("COMPOSE_ENV_FILE"),
+		broker:     newUnixSupervisorClient(required("ADAPTER_BROKER_SOCKET")),
 		operations: map[string]adapterState{},
 	}
 	log.Fatal(server(http.HandlerFunc(supervisor.serveHTTP)).Serve(listener))
+}
+
+// runBroker 启动唯一持有 Docker Socket 的固定命令 Broker。
+func runBroker() {
+	socketPath := required("ADAPTER_BROKER_SOCKET")
+	listener, err := secureUnixListener(socketPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		_ = listener.Close()
+		_ = os.Remove(socketPath)
+	}()
+	broker := &dockerBrokerController{
+		runner: dockerCommandRunner{}, projectDir: required("COMPOSE_PROJECT_DIR"),
+		composeFile: required("COMPOSE_FILE"), envFile: required("COMPOSE_ENV_FILE"),
+	}
+	log.Fatal(brokerServer(http.HandlerFunc(broker.serveHTTP)).Serve(listener))
 }
 
 // runManagerHealthcheck 验证 Manager 网络入口及其下游 Supervisor 均可用。
@@ -559,6 +672,13 @@ func runSupervisorHealthcheck() error {
 	return newUnixSupervisorClient(required("ADAPTER_SUPERVISOR_SOCKET")).Health(ctx)
 }
 
+// runBrokerHealthcheck 验证 Docker Broker 及 Docker Engine 均可用。
+func runBrokerHealthcheck() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return newUnixSupervisorClient(required("ADAPTER_BROKER_SOCKET")).Health(ctx)
+}
+
 func main() {
 	if len(os.Args) > 1 {
 		var err error
@@ -567,6 +687,8 @@ func main() {
 			err = runManagerHealthcheck()
 		case "supervisor-healthcheck":
 			err = runSupervisorHealthcheck()
+		case "broker-healthcheck":
+			err = runBrokerHealthcheck()
 		default:
 			log.Fatalf("unsupported command: %s", os.Args[1])
 		}
@@ -575,9 +697,12 @@ func main() {
 		}
 		return
 	}
-	if os.Getenv("ADAPTER_MANAGER_MODE") == "supervisor" {
+	switch os.Getenv("ADAPTER_MANAGER_MODE") {
+	case "supervisor":
 		runSupervisor()
-		return
+	case "broker":
+		runBroker()
+	default:
+		runManager()
 	}
-	runManager()
 }
