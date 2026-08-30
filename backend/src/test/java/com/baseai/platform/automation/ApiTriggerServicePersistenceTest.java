@@ -41,8 +41,7 @@ import static org.mockito.Mockito.when;
  * DATETIME(6) 精度和全部查询语句，验证从 PostgreSQL 迁移到 MySQL 后行为不变。</p>
  */
 class ApiTriggerServicePersistenceTest {
-    private static final String MIGRATION = "db/migration/mysql/V1__create_platform_schema.sql";
-    private static final String SECTION_MARKER = "-- ==================== API 触发自动化 ====================";
+    private static final String MIGRATION = "db/migration/mysql/V23__move_api_trigger_to_mysql.sql";
     private static final long OWNER = 7L;
 
     private final List<HttpServer> servers = new ArrayList<>();
@@ -331,12 +330,7 @@ class ApiTriggerServicePersistenceTest {
         assertNull(loaded.cronExpression());
     }
 
-    /**
-     * 执行基线迁移中的接口触发段落。
-     *
-     * <p>基线脚本包含全部平台表，此处只截取接口触发自动化章节，避免在 H2 上创建无关表；
-     * H2 不支持 MySQL 的位串字面量，仅替换默认值写法。</p>
-     */
+    /** 执行 MySQL 迁移脚本，H2 不支持 MySQL 的位串字面量，仅替换默认值写法。 */
     private void applyMysqlMigration() {
         String script;
         try (var input = new ClassPathResource(MIGRATION).getInputStream()) {
@@ -344,12 +338,8 @@ class ApiTriggerServicePersistenceTest {
         } catch (Exception exception) {
             throw new IllegalStateException("无法读取 MySQL 迁移脚本", exception);
         }
-        int start = script.indexOf(SECTION_MARKER);
-        if (start < 0) throw new IllegalStateException("迁移脚本缺少接口触发章节");
-        int end = script.indexOf("-- ====================", start + SECTION_MARKER.length());
-        String section = end < 0 ? script.substring(start) : script.substring(start, end);
-        section = section.replace("b'1'", "TRUE").replace("b'0'", "FALSE");
-        for (String statement : section.split(";")) {
+        script = script.replace("b'1'", "TRUE").replace("b'0'", "FALSE");
+        for (String statement : script.split(";")) {
             if (!statement.isBlank()) jdbcTemplate.execute(statement);
         }
     }
