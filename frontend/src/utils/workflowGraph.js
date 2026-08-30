@@ -65,7 +65,8 @@ export function cloneWorkflowData(value) {
 export function serializeWorkflowGraph(graph) {
   const edges = (Array.isArray(graph?.edges) ? graph.edges : []).map(edge => {
     if (!edge || typeof edge !== 'object') return edge
-    const { interactionWidth: _interactionWidth, ...serializableEdge } = edge
+    const serializableEdge = { ...edge }
+    delete serializableEdge.interactionWidth
     return serializableEdge
   })
   return cloneWorkflowData({ nodes: graph?.nodes || [], edges })

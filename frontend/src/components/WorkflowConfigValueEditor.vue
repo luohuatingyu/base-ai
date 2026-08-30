@@ -15,7 +15,7 @@
     <template v-else-if="valueType === 'object'">
       <div v-if="depth >= maxDepth" class="config-depth-warning">{{ t('workflowConfig.depthLimit') }}</div>
       <div v-else class="config-nested-list">
-        <article v-for="([key, value], index) in objectEntries" :key="key" class="config-nested-card">
+        <article v-for="[key, value] in objectEntries" :key="key" class="config-nested-card">
           <div class="config-nested-head"><strong>{{ key }}</strong><el-button link type="danger" @click="removeObjectItem(key)">{{ t('common.delete') }}</el-button></div>
           <WorkflowConfigValueEditor :model-value="value" :depth="depth + 1" :max-depth="maxDepth" @update:model-value="setObjectItem(key, $event)" />
         </article>

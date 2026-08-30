@@ -46,6 +46,11 @@ jobs:
           - image: backend
             context: backend
             dockerfile: backend/Dockerfile
+            target: backend
+          - image: document-parser
+            context: backend
+            dockerfile: backend/Dockerfile
+            target: document-parser
           - image: frontend
             context: frontend
             dockerfile: frontend/Dockerfile
@@ -74,11 +79,17 @@ jobs:
           persist-credentials: false
 
       - name: Build image
-        run: >-
-          docker build
-          --file "${{ matrix.dockerfile }}"
-          --tag "local/base-ai-${{ matrix.image }}:scan"
-          "${{ matrix.context }}"
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          target_args=()
+          if [ -n "$BUILD_TARGET" ]; then
+            target_args+=(--target "$BUILD_TARGET")
+          fi
+          docker build "${target_args[@]}" \
+            --file "${{ matrix.dockerfile }}" \
+            --tag "local/base-ai-${{ matrix.image }}:scan" \
+            "${{ matrix.context }}"
 
       - name: Scan image operating system and dependencies
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

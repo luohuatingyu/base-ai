@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "test": "node --test tests/*.test.js"
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "vue-tsc --noEmit -p jsconfig.json",
+    "test:coverage": "node --experimental-test-coverage --test --test-coverage-include='src/utils/**/*.js' --test-coverage-lines=95 --test-coverage-branches=75 --test-coverage-functions=90 test/*.test.mjs tests/*.test.js",
+    "test:e2e": "npm run build && node --test e2e/*.test.mjs",
+    "test": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
@@ -21,7 +25,14 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^5.2.1",
+    "eslint": "^10.9.1",
+    "eslint-plugin-vue": "^10.10.0",
+    "globals": "^17.11.0",
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.11",
     "vite": "^6.0.5"
   }
 }

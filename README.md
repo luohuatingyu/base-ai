@@ -341,7 +341,7 @@ sudo update-ca-certificates
 
 Clients such as Firefox may use a separate trust store and require browser-level import. The Caddy CA and automatically-issued multi-SAN IP certificate are persisted in a named volume, so ordinary container rebuilds retain the root. Changing `APP_PLATFORM_SHORT_NAME`, running `docker compose down -v`, or deleting the Caddy data volume creates a new CA that every client must trust again.
 
-All four runtime containers use non-root users. Linux capabilities are removed from the backend, frontend, and Worker; Caddy retains only `NET_BIND_SERVICE` for port 80. Base images are digest-pinned, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
+Network-facing application containers use non-root users. Linux capabilities are removed except for Caddy's `NET_BIND_SERVICE` on port 80; the networkless Docker Broker remains an explicitly isolated host-privilege boundary. Base images are digest-pinned directly in Compose and Dockerfiles, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
 
 The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically. If `APP_SEED_ADMIN_PASSWORD` is empty or weak on first initialization, the backend generates a 32-character strong password in the protected `bootstrap-secrets` volume. Retrieve it once with `docker compose exec backend sh -c 'cat /app/bootstrap/admin-password'`, sign in with `APP_SEED_ADMIN_USERNAME`, and change it immediately.
 
@@ -403,10 +403,10 @@ TEST_REPORT.md                  Test baseline and execution history
 - Configure a dedicated `APP_API_KEY_HASH_SECRET`; the encryption-key fallback is no longer supported.
 - `LLM_LOG_CONTENT` is disabled by default. Enable it only after data and log-access review, and restrict task-log access because redacted model content can still contain sensitive business data.
 - Plugin Workers only join the internal `outbound-network` and reach `OUTBOUND_ALLOWED_DOMAINS` through the authenticated outbound gateway; an empty allowlist denies all external access.
-- The network-facing Adapter Manager has no Docker socket, Compose file, or environment-file access. Its networkless Supervisor accepts only typed N8N/Dify commands over a private Unix socket and is the sole component that mounts the Docker socket; that remaining host-level privilege must still be protected operationally.
+- The network-facing Adapter Manager has no Docker socket, Compose file, or environment-file access. Its networkless Supervisor accepts only typed N8N/Dify commands over a private Unix socket. A separate networkless Broker is the sole component that mounts the Docker socket and accepts only fixed lifecycle commands; that remaining host-level privilege must still be protected operationally.
 - For encryption-key rotation, add the new key to `APP_CONFIG_ENCRYPTION_KEYS` and switch `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`; keep prior keys until legacy `enc:` values have been rewritten progressively.
 - Back up MySQL task, log, and automation data before schema or application upgrades.
-- Override `MAVEN_IMAGE`, `JRE_IMAGE`, `NODE_IMAGE`, `PYTHON_IMAGE`, `GOPROXY`, `ALPINE_MIRROR`, or Python package-mirror settings when public registries and package proxies are unavailable. Caddy builds use `https://goproxy.cn,direct` for Go modules and `https://mirrors.tuna.tsinghua.edu.cn/alpine` for Alpine packages by default.
+- Override `GOPROXY`, `ALPINE_MIRROR`, or language package-mirror settings when public package proxies are unavailable. Compose base images remain digest-pinned; update their reviewed digests in source rather than overriding them from a deployment environment file.
 
 ## License
 

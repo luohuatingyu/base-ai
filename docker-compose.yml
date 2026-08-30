@@ -12,8 +12,8 @@ services:
       context: ./backend
       target: document-parser
       args:
-        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc}
-        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876}
+        MAVEN_IMAGE: maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc
+        JRE_IMAGE: eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser
@@ -49,8 +49,8 @@ services:
       context: ./backend
       target: backend
       args:
-        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc}
-        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876}
+        MAVEN_IMAGE: maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc
+        JRE_IMAGE: eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend
@@ -191,7 +191,7 @@ services:
     build:
       context: ./python-worker
       args:
-        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de}
+        PYTHON_IMAGE: python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker:latest
@@ -228,8 +228,8 @@ services:
       context: ./adapter-manager
       target: broker
       args:
-        GO_IMAGE: ${GO_IMAGE:-golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2}
-        DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b}
+        GO_IMAGE: golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
+        DOCKER_CLI_IMAGE: docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker
     restart: unless-stopped
@@ -268,8 +268,8 @@ services:
       context: ./adapter-manager
       target: supervisor
       args:
-        GO_IMAGE: ${GO_IMAGE:-golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2}
-        DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b}
+        GO_IMAGE: golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
+        DOCKER_CLI_IMAGE: docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-supervisor:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-supervisor
     restart: unless-stopped
@@ -301,8 +301,8 @@ services:
       context: ./adapter-manager
       target: manager
       args:
-        GO_IMAGE: ${GO_IMAGE:-golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2}
-        DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b}
+        GO_IMAGE: golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
+        DOCKER_CLI_IMAGE: docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-manager:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-manager
     restart: unless-stopped
@@ -332,7 +332,7 @@ services:
     build:
       context: ./outbound-gateway
       args:
-        GO_IMAGE: ${GO_IMAGE:-golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2}
+        GO_IMAGE: golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway
     restart: unless-stopped
@@ -359,7 +359,7 @@ services:
     build:
       context: ./dify-plugin-worker
       args:
-        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de}
+        PYTHON_IMAGE: python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker:latest
@@ -412,7 +412,7 @@ services:
     build:
       context: ./n8n-plugin-worker
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}
+        NODE_IMAGE: node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker
     restart: "no"
@@ -459,7 +459,7 @@ services:
     build:
       context: ./frontend
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}
+        NODE_IMAGE: node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend
     restart: unless-stopped
@@ -494,7 +494,7 @@ services:
       context: ./caddy
       dockerfile: Dockerfile
       args:
-        CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648}
+        CADDY_IMAGE: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         ALPINE_MIRROR: ${ALPINE_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/alpine}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy:latest

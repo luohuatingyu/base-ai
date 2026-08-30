@@ -42,12 +42,31 @@ function proxy(request, response) {
   request.pipe(upstream)
 }
 
+/** 解析静态路径并拒绝畸形编码和越出构建目录的路径。 */
+function resolveStaticPath(requestUrl) {
+  let pathname
+  try {
+    pathname = decodeURIComponent(new URL(requestUrl, 'http://localhost').pathname)
+  } catch {
+    return { status: 400 }
+  }
+  const relative = (pathname === '/' ? 'index.html' : pathname).replace(/^[/\\]+/, '')
+  const candidate = path.resolve(root, relative)
+  if (candidate !== root && !candidate.startsWith(`${root}${path.sep}`)) return { status: 400 }
+  try {
+    if (fs.statSync(candidate).isFile()) return { status: 200, file: candidate }
+  } catch { /* 不存在或竞争删除的静态文件统一回退到 SPA 首页。 */ }
+  return { status: 200, file: path.join(root, 'index.html') }
+}
+
 /** 返回静态文件，未知前端路由回退到 SPA 首页。 */
 function serve(request, response) {
-  const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname)
-  const candidate = path.normalize(path.join(root, pathname === '/' ? 'index.html' : pathname))
-  const safePath = candidate.startsWith(root) && fs.existsSync(candidate) && fs.statSync(candidate).isFile()
-    ? candidate : path.join(root, 'index.html')
+  const resolved = resolveStaticPath(request.url)
+  if (!resolved.file) {
+    response.writeHead(resolved.status, { 'content-type': 'text/plain; charset=utf-8' })
+    return response.end('Bad Request')
+  }
+  const safePath = resolved.file
   response.writeHead(200, { 'content-type': contentTypes[path.extname(safePath)] || 'application/octet-stream' })
   fs.createReadStream(safePath).pipe(response)
 }

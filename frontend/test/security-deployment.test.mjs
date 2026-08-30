@@ -328,14 +328,50 @@ test('全部运行时镜像使用非 root 用户和最小 Linux 权限', async (
   assert.match(serviceBlock(compose, 'caddy', null), /cap_add:\s*\n\s+- NET_BIND_SERVICE/)
 })
 
+test('文档解析器使用无网络只读容器且 Backend 仅只读共享 Unix Socket', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const parser = serviceBlock(compose, 'document-parser', 'backend')
+  const backend = serviceBlock(compose, 'backend', 'python-worker')
+
+  assert.match(parser, /target: document-parser/)
+  assert.match(parser, /network_mode: none/)
+  assert.match(parser, /read_only: true/)
+  assert.match(parser, /cap_drop:\s*\n\s+- ALL/)
+  assert.match(parser, /no-new-privileges:true/)
+  assert.match(parser, /mem_limit:/)
+  assert.match(parser, /pids_limit:/)
+  assert.doesNotMatch(parser, /MYSQL_|POSTGRES_|REDIS_|INTERNAL_TOKEN/)
+  assert.match(parser, /document-parser-control:\/run\/document-parser/)
+  assert.match(backend, /document-parser-control:\/run\/document-parser:ro/)
+  assert.match(backend, /document-parser:\s*\n\s+condition: service_healthy/)
+})
+
+test('部署环境模板覆盖 Compose 的全部可配置项', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const environmentExample = await readFile(new URL('.env.example', root), 'utf8')
+  const variables = new Set([...compose.matchAll(/\$\{([A-Z][A-Z0-9_]*)/g)].map(match => match[1]))
+  variables.delete('COMPOSE_PROJECT_NAME')
+  for (const variable of variables) {
+    assert.match(environmentExample, new RegExp(`^${variable}=`, 'm'), variable)
+  }
+})
+
 test('供应链扫描固定 Action 提交并覆盖源码与容器镜像', async () => {
   const workflow = await readFile(new URL('.github/workflows/security-scan.yml', root), 'utf8')
   const dependabot = await readFile(new URL('.github/dependabot.yml', root), 'utf8')
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const environmentExample = await readFile(new URL('.env.example', root), 'utf8')
 
   assert.doesNotMatch(workflow, /uses:\s+[^\s]+@v\d/)
   assert.match(workflow, /scanners: vuln,misconfig,secret/)
   assert.match(workflow, /scan-type: image/)
   assert.match(workflow, /severity: HIGH,CRITICAL/)
+  assert.match(workflow, /image: document-parser[\s\S]*target: document-parser/)
+  const imageArguments = [...compose.matchAll(/^\s+[A-Z_]+_IMAGE:\s+(\S+)$/gm)].map(match => match[1])
+  assert.ok(imageArguments.length >= 10)
+  imageArguments.forEach(image => assert.match(image, /@sha256:[a-f0-9]{64}$/))
+  assert.doesNotMatch(compose, /\$\{(?:MAVEN|JRE|NODE|PYTHON|GO|DOCKER_CLI|CADDY)_IMAGE/)
+  assert.doesNotMatch(environmentExample, /^(?:MAVEN|JRE|NODE|PYTHON|GO|DOCKER_CLI|CADDY)_IMAGE=/m)
   for (const ecosystem of ['maven', 'npm', 'pip', 'docker', 'github-actions']) {
     assert.match(dependabot, new RegExp(`package-ecosystem: ${ecosystem}`))
   }

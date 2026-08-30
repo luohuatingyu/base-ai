@@ -315,7 +315,7 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
     case 'WAIT': requireWait(); break
     case 'SET_VARIABLE': case 'TRANSFORM': requirePresent('output'); break
     case 'TEMPLATE': requireText('template'); break
-    case 'JSON_PARSE': case 'CSV': requirePresent('value'); break
+    case 'JSON_PARSE': requirePresent('value'); break
     case 'JSON_VALIDATE': case 'STRUCTURED_OUTPUT': requirePresent('value'); requireObject('schema'); break
     case 'FILTER': requirePresent('collection'); requireCondition('condition'); break
     case 'SORT': requirePresent('collection'); requireEnum('direction', ['ASC', 'DESC']); break
