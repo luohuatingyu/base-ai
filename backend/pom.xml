@@ -22,6 +22,8 @@
         <aws.sdk.version>2.51.2</aws.sdk.version>
         <apache.tika.version>3.3.2</apache.tika.version>
         <commons.csv.version>1.14.1</commons.csv.version>
+        <rabbit-amqp-client.version>5.33.1</rabbit-amqp-client.version>
+        <httpcore5.version>5.4.3</httpcore5.version>
     </properties>
     <dependencyManagement>
         <dependencies>

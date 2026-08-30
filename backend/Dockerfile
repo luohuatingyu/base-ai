@@ -1,5 +1,5 @@
 ARG MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc
-ARG JRE_IMAGE=eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876
+ARG JRE_IMAGE=eclipse-temurin:17-jre@sha256:13cc28a6cc72a38ce1f00c906be3580c1a3e604b8984d694f369a96742abc93b
 
 FROM ${MAVEN_IMAGE} AS build
 WORKDIR /workspace
@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package
 FROM ${JRE_IMAGE} AS runtime-base
 WORKDIR /app
 RUN useradd -r -u 10001 appuser \
+    && rm -f /usr/bin/pebble \
     && mkdir -p /app/caddy-public-ca /app/bootstrap /run/document-parser \
     && chown appuser:appuser /app/caddy-public-ca /app/bootstrap /run/document-parser
 COPY --from=build /workspace/target/base-ai-backend-0.0.1-SNAPSHOT.jar /app/app.jar

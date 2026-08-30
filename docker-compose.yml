@@ -13,7 +13,7 @@ services:
       target: document-parser
       args:
         MAVEN_IMAGE: maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc
-        JRE_IMAGE: eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876
+        JRE_IMAGE: eclipse-temurin:17-jre@sha256:13cc28a6cc72a38ce1f00c906be3580c1a3e604b8984d694f369a96742abc93b
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser
@@ -50,7 +50,7 @@ services:
       target: backend
       args:
         MAVEN_IMAGE: maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc
-        JRE_IMAGE: eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876
+        JRE_IMAGE: eclipse-temurin:17-jre@sha256:13cc28a6cc72a38ce1f00c906be3580c1a3e604b8984d694f369a96742abc93b
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend
@@ -228,7 +228,7 @@ services:
       context: ./adapter-manager
       target: broker
       args:
-        GO_IMAGE: golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
+        GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
         DOCKER_CLI_IMAGE: docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker
@@ -268,7 +268,7 @@ services:
       context: ./adapter-manager
       target: supervisor
       args:
-        GO_IMAGE: golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
+        GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
         DOCKER_CLI_IMAGE: docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-supervisor:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-supervisor
@@ -301,7 +301,7 @@ services:
       context: ./adapter-manager
       target: manager
       args:
-        GO_IMAGE: golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
+        GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
         DOCKER_CLI_IMAGE: docker:29.6.1-cli@sha256:862099ada15c669000bef53aa4cb9d821262829f45b0dda2159ccb276443043b
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-manager:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-manager
@@ -332,7 +332,7 @@ services:
     build:
       context: ./outbound-gateway
       args:
-        GO_IMAGE: golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
+        GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway:latest
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway
     restart: unless-stopped
