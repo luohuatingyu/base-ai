@@ -2,6 +2,7 @@ package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.document.DocumentParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -9,13 +10,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
-import org.apache.tika.metadata.Metadata;
-import org.apache.tika.parser.AutoDetectParser;
-import org.apache.tika.parser.ParseContext;
-import org.apache.tika.sax.BodyContentHandler;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayInputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.math.BigDecimal;
@@ -39,13 +35,15 @@ public class WorkflowDataNodeExecutor implements WorkflowNodeExecutor {
     );
     private final ObjectMapper objectMapper;
     private final WorkflowExpressionService expressions;
+    private final DocumentParser documentParser;
     private final int maxPayloadBytes;
 
     /** 注入 JSON 与受限表达式服务。 */
     public WorkflowDataNodeExecutor(ObjectMapper objectMapper, WorkflowExpressionService expressions,
-                                    PlatformProperties properties) {
+                                    PlatformProperties properties, DocumentParser documentParser) {
         this.objectMapper = objectMapper;
         this.expressions = expressions;
+        this.documentParser = documentParser;
         this.maxPayloadBytes = Math.max(1, properties.getWorkflow().getMaxPayloadBytes());
     }
 
@@ -270,14 +268,17 @@ public class WorkflowDataNodeExecutor implements WorkflowNodeExecutor {
                 : resolved.path("content").asText("").getBytes(StandardCharsets.UTF_8);
             if (bytes.length == 0) throw new BusinessException("workflow.documentEmpty");
             if (bytes.length > maxPayloadBytes) throw new BusinessException("workflow.payloadTooLarge", maxPayloadBytes);
-            Metadata metadata = new Metadata();
-            if (resolved.hasNonNull("fileName")) metadata.set("resourceName", resolved.path("fileName").asText());
-            BodyContentHandler handler = new BodyContentHandler(resolved.path("maxCharacters").asInt(1_000_000));
-            new AutoDetectParser().parse(new ByteArrayInputStream(bytes), handler, metadata, new ParseContext());
-            ObjectNode output = objectMapper.createObjectNode().put("text", handler.toString());
+            DocumentParser.Result result = documentParser.parse(bytes, resolved.path("fileName").asText("document"),
+                resolved.path("maxCharacters").asInt(1_000_000));
+            ObjectNode output = objectMapper.createObjectNode().put("text", result.text());
             ObjectNode values = output.putObject("metadata");
-            for (String name : metadata.names()) values.put(name, metadata.get(name));
+            result.metadata().forEach(values::put);
             return output;
+        } catch (DocumentParser.ParseException exception) {
+            if (exception.reason() == DocumentParser.Reason.EMPTY) {
+                throw new BusinessException("workflow.documentEmpty");
+            }
+            throw new BusinessException("workflow.documentInvalid");
         } catch (BusinessException exception) { throw exception; }
         catch (Exception exception) { throw new BusinessException("workflow.documentInvalid"); }
     }

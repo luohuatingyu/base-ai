@@ -2,6 +2,7 @@ package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.document.DocumentParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -11,6 +12,11 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class WorkflowDataNodeExecutorTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -22,7 +28,11 @@ class WorkflowDataNodeExecutorTest {
     void setUp() throws Exception {
         WorkflowExpressionService expressions = new WorkflowExpressionService(objectMapper);
         PlatformProperties properties = new PlatformProperties(); properties.getWorkflow().setMaxPayloadBytes(32);
-        executor = new WorkflowDataNodeExecutor(objectMapper, expressions, properties);
+        DocumentParser documentParser = mock(DocumentParser.class);
+        when(documentParser.parse(any(byte[].class), anyString(), anyInt())).thenAnswer(invocation ->
+            new DocumentParser.Result(new String(invocation.getArgument(0), java.nio.charset.StandardCharsets.UTF_8),
+                java.util.Map.of("Content-Type", "text/plain")));
+        executor = new WorkflowDataNodeExecutor(objectMapper, expressions, properties, documentParser);
         context = (ObjectNode) objectMapper.readTree("""
             {"input":{"status":"PAID","items":[{"score":3},{"score":1},{"score":2}]},"nodes":{},"loop":{}}
             """);

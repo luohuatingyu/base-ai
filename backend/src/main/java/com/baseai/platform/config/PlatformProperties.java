@@ -47,6 +47,8 @@ public class PlatformProperties {
     private ApiKey apiKey = new ApiKey();
     /** HTTP 入口资源限制。 */
     private ResourceLimits resourceLimits = new ResourceLimits();
+    /** 隔离文档解析服务配置。 */
+    private DocumentParser documentParser = new DocumentParser();
     /** 可信反向代理配置。 */
     private Proxy proxy = new Proxy();
     /** 登录与密码安全配置。 */
@@ -97,6 +99,10 @@ public class PlatformProperties {
     public void setApiKey(ApiKey apiKey) { this.apiKey = apiKey; }
     public ResourceLimits getResourceLimits() { return resourceLimits; }
     public void setResourceLimits(ResourceLimits resourceLimits) { this.resourceLimits = resourceLimits; }
+    /** 返回隔离文档解析服务配置。 */
+    public DocumentParser getDocumentParser() { return documentParser; }
+    /** 设置隔离文档解析服务配置。 */
+    public void setDocumentParser(DocumentParser documentParser) { this.documentParser = documentParser; }
     public Proxy getProxy() { return proxy; }
     public void setProxy(Proxy proxy) { this.proxy = proxy; }
     public LoginSecurity getLoginSecurity() { return loginSecurity; }
@@ -154,6 +160,25 @@ public class PlatformProperties {
         private int requestMaxBytes = 20 * 1024 * 1024;
         public int getRequestMaxBytes() { return requestMaxBytes; }
         public void setRequestMaxBytes(int value) { requestMaxBytes = value; }
+    }
+
+    /** Backend 调用无网络解析容器时使用的协议与资源上限。 */
+    public static class DocumentParser {
+        private String socketPath = "/run/document-parser/parser.sock";
+        private int maxDocumentBytes = 10 * 1024 * 1024;
+        private int maxCharacters = 2_000_000;
+        /** 返回 Unix Socket 路径。 */
+        public String getSocketPath() { return socketPath; }
+        /** 设置 Unix Socket 路径。 */
+        public void setSocketPath(String value) { socketPath = value; }
+        /** 返回单文档原始字节上限。 */
+        public int getMaxDocumentBytes() { return maxDocumentBytes; }
+        /** 设置单文档原始字节上限。 */
+        public void setMaxDocumentBytes(int value) { maxDocumentBytes = value; }
+        /** 返回单文档提取字符上限。 */
+        public int getMaxCharacters() { return maxCharacters; }
+        /** 设置单文档提取字符上限。 */
+        public void setMaxCharacters(int value) { maxCharacters = value; }
     }
 
     public static class Platform {

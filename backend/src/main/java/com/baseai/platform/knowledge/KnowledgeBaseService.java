@@ -2,15 +2,12 @@ package com.baseai.platform.knowledge;
 
 import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.document.DocumentParser;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.LlmManagementService;
 import com.baseai.platform.workflow.WorkflowConnectionService;
-import org.apache.tika.metadata.Metadata;
-import org.apache.tika.parser.AutoDetectParser;
-import org.apache.tika.parser.ParseContext;
-import org.apache.tika.sax.BodyContentHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,7 +16,6 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.PreparedStatement;
@@ -45,13 +41,16 @@ public class KnowledgeBaseService {
     private final VectorStoreService vectorStoreService;
     private final AiChatClient aiChatClient;
     private final LlmManagementService llmManagementService;
+    private final DocumentParser documentParser;
 
     /** 注入系统元数据、加密、模型和外部向量存储组件。 */
     public KnowledgeBaseService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, ConfigCryptoService cryptoService,
                                 WorkflowConnectionService connectionService, VectorStoreService vectorStoreService,
-                                AiChatClient aiChatClient, LlmManagementService llmManagementService) {
+                                AiChatClient aiChatClient, LlmManagementService llmManagementService,
+                                DocumentParser documentParser) {
         this.jdbcTemplate=jdbcTemplate;this.cryptoService=cryptoService;this.connectionService=connectionService;
         this.vectorStoreService=vectorStoreService;this.aiChatClient=aiChatClient;this.llmManagementService=llmManagementService;
+        this.documentParser=documentParser;
     }
 
     /** 查询当前用户可见知识库，管理员可查看全部但写操作仍遵循所有者边界。 */
@@ -199,8 +198,8 @@ public class KnowledgeBaseService {
     private Long insertChunk(Long baseId,Long documentId,int index,String content){KeyHolder keys=new GeneratedKeyHolder();jdbcTemplate.update(connection->{PreparedStatement statement=connection.prepareStatement("INSERT INTO knowledge_chunk(knowledge_base_id,document_id,chunk_index,content_encrypted,content_hash) VALUES (?,?,?,?,?)",Statement.RETURN_GENERATED_KEYS);statement.setLong(1,baseId);statement.setLong(2,documentId);statement.setInt(3,index);statement.setString(4,cryptoService.encrypt(content));statement.setString(5,sha256(content.getBytes(StandardCharsets.UTF_8)));return statement;},keys);return keys.getKey().longValue();}
     /** 按匹配 ID 一次读取并解密切片。 */
     private Map<Long,Chunk> loadChunks(List<Long> ids){if(ids.isEmpty())return Map.of();String placeholders=String.join(",",java.util.Collections.nCopies(ids.size(),"?"));Map<Long,Chunk> result=new LinkedHashMap<>();jdbcTemplate.query("SELECT c.id,c.document_id,c.content_encrypted,d.file_name FROM knowledge_chunk c JOIN knowledge_document d ON d.id=c.document_id WHERE c.id IN ("+placeholders+")",rs->{long id=rs.getLong(1);result.put(id,new Chunk(id,rs.getLong(2),rs.getString(4),cryptoService.decrypt(rs.getString(3))));},ids.toArray());return result;}
-    /** 使用 Tika 自动检测常用文档并拒绝空正文。 */
-    private String extract(byte[] bytes,String fileName){try{Metadata metadata=new Metadata();metadata.set("resourceName",safeFileName(fileName));BodyContentHandler handler=new BodyContentHandler(2_000_000);new AutoDetectParser().parse(new ByteArrayInputStream(bytes),handler,metadata,new ParseContext());String value=handler.toString().trim();if(value.isBlank())throw new BusinessException("knowledge.documentEmpty");return value;}catch(BusinessException exception){throw exception;}catch(Exception exception){throw new BusinessException("knowledge.documentInvalid");}}
+    /** 通过无网络低权限容器解析不可信文档并映射稳定业务错误。 */
+    private String extract(byte[] bytes,String fileName){try{return documentParser.parse(bytes,safeFileName(fileName),2_000_000).text();}catch(DocumentParser.ParseException exception){if(exception.reason()==DocumentParser.Reason.EMPTY)throw new BusinessException("knowledge.documentEmpty");if(exception.reason()==DocumentParser.Reason.TOO_LARGE)throw new BusinessException("knowledge.documentTooLarge");throw new BusinessException("knowledge.documentInvalid");}}
     /** 按字符窗口切片并保留受控重叠。 */
     static List<String> chunks(String content,int size,int overlap){String normalized=content.replace("\r\n","\n").trim();List<String> result=new ArrayList<>();int start=0;while(start<normalized.length()){int end=Math.min(normalized.length(),start+size);if(end<normalized.length()){int boundary=normalized.lastIndexOf('\n',end);if(boundary>start+size/2)end=boundary;}String item=normalized.substring(start,end).trim();if(!item.isBlank())result.add(item);if(end>=normalized.length())break;start=Math.max(start+1,end-overlap);}if(result.isEmpty())throw new BusinessException("knowledge.documentEmpty");return List.copyOf(result);}
     /** 映射知识库视图。 */

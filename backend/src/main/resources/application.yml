@@ -88,6 +88,10 @@ app:
     password-min-length: ${APP_PASSWORD_MIN_LENGTH:12}
   resource-limits:
     request-max-bytes: ${APP_MAX_REQUEST_BYTES:20971520}
+  document-parser:
+    socket-path: ${DOCUMENT_PARSER_SOCKET:/run/document-parser/parser.sock}
+    max-document-bytes: ${DOCUMENT_PARSER_MAX_BYTES:10485760}
+    max-characters: ${DOCUMENT_PARSER_MAX_CHARACTERS:2000000}
   seed:
     admin-username: ${APP_SEED_ADMIN_USERNAME:admin}
     admin-password: ${APP_SEED_ADMIN_PASSWORD}

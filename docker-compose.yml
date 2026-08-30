@@ -7,9 +7,47 @@ x-logging: &default-logging
     max-file: ${CONTAINER_LOG_MAX_FILES:-5}
 
 services:
+  document-parser:
+    build:
+      context: ./backend
+      target: document-parser
+      args:
+        MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc}
+        JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876}
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser
+    restart: unless-stopped
+    read_only: true
+    mem_limit: ${DOCUMENT_PARSER_MEMORY_LIMIT:-384m}
+    cpus: ${DOCUMENT_PARSER_CPU_LIMIT:-1.0}
+    pids_limit: ${DOCUMENT_PARSER_PIDS_LIMIT:-64}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    environment:
+      DOCUMENT_PARSER_SOCKET: /run/document-parser/parser.sock
+      DOCUMENT_PARSER_MAX_BYTES: ${DOCUMENT_PARSER_MAX_BYTES:-10485760}
+      DOCUMENT_PARSER_MAX_CHARACTERS: ${DOCUMENT_PARSER_MAX_CHARACTERS:-2000000}
+      DOCUMENT_PARSER_TIMEOUT_SECONDS: ${DOCUMENT_PARSER_TIMEOUT_SECONDS:-20}
+      DOCUMENT_PARSER_CONCURRENCY: ${DOCUMENT_PARSER_CONCURRENCY:-2}
+    volumes:
+      - document-parser-control:/run/document-parser
+    tmpfs:
+      - /tmp:size=64m,mode=1700,uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /run/document-parser/parser.sock"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    network_mode: none
+
   backend:
     build:
       context: ./backend
+      target: backend
       args:
         MAVEN_IMAGE: ${MAVEN_IMAGE:-maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc}
         JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:17-jre@sha256:e4f018a55645ad204892e44eb35437518d7e108ba2a2dce305024ab371d24876}
@@ -67,6 +105,9 @@ services:
       APP_PASSWORD_MIN_LENGTH: ${APP_PASSWORD_MIN_LENGTH:-12}
       APP_MAX_REQUEST_BYTES: ${APP_MAX_REQUEST_BYTES:-20971520}
       APP_MAX_REQUEST_HEADER_SIZE: ${APP_MAX_REQUEST_HEADER_SIZE:-16KB}
+      DOCUMENT_PARSER_SOCKET: /run/document-parser/parser.sock
+      DOCUMENT_PARSER_MAX_BYTES: ${DOCUMENT_PARSER_MAX_BYTES:-10485760}
+      DOCUMENT_PARSER_MAX_CHARACTERS: ${DOCUMENT_PARSER_MAX_CHARACTERS:-2000000}
       PYTHON_WORKER_URL: ${PYTHON_WORKER_URL:-http://python-worker:8000}
       PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
       DIFY_PLUGIN_WORKER_URL: ${DIFY_PLUGIN_WORKER_URL:-http://outbound-gateway:8080/internal/workers/dify}
@@ -126,7 +167,10 @@ services:
       - ${TRACE_TRACKING_EXCLUSIONS_FILE:-./backend/config/trace-tracking-exclusions.yml}:/app/config/trace-tracking-exclusions.yml:ro
       - caddy-public-ca:/app/caddy-public-ca:ro
       - bootstrap-secrets:/app/bootstrap
+      - document-parser-control:/run/document-parser:ro
     depends_on:
+      document-parser:
+        condition: service_healthy
       python-worker:
         condition: service_healthy
       adapter-manager:
@@ -515,6 +559,7 @@ volumes:
   adapter-control:
   adapter-broker-control:
   bootstrap-secrets:
+  document-parser-control:
   caddy-data:
   caddy-config:
   caddy-public-ca:
