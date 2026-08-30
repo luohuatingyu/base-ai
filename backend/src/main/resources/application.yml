@@ -27,6 +27,7 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
       password: ${REDIS_PASSWORD}
       database: ${REDIS_DATABASE:0}
       timeout: ${REDIS_TIMEOUT:5s}
@@ -55,6 +56,14 @@ app:
     driver-class-name: com.mysql.cj.jdbc.Driver
     maximum-pool-size: ${MYSQL_POOL_SIZE:20}
     connection-timeout-ms: ${DATABASE_CONNECTION_TIMEOUT_MS:5000}
+  mysql-migration-database:
+    url: ${MYSQL_MIGRATION_URL:${MYSQL_URL}}
+    username: ${MYSQL_MIGRATION_USERNAME:${MYSQL_USERNAME}}
+    password: ${MYSQL_MIGRATION_PASSWORD:${MYSQL_PASSWORD}}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    maximum-pool-size: 2
+    connection-timeout-ms: ${DATABASE_CONNECTION_TIMEOUT_MS:5000}
+  postgresql-enabled: ${POSTGRES_ENABLED:false}
   postgresql-database:
     url: ${POSTGRES_URL}
     username: ${POSTGRES_USERNAME}
@@ -82,6 +91,7 @@ app:
   seed:
     admin-username: ${APP_SEED_ADMIN_USERNAME:admin}
     admin-password: ${APP_SEED_ADMIN_PASSWORD}
+    admin-password-file: ${APP_SEED_ADMIN_PASSWORD_FILE:/app/bootstrap/admin-password}
     admin-password-sync-enabled: ${APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED:false}
   python-worker:
     url: ${PYTHON_WORKER_URL:http://python-worker:8000}

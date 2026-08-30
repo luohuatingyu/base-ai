@@ -7,12 +7,12 @@ import com.baseai.platform.repository.*;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.security.SessionService;
+import com.baseai.platform.security.PasswordPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
-import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -424,7 +424,8 @@ public class PlatformAdminService {
     private void validatePassword(String password) {
         int minimum = Math.max(1, properties.getLoginSecurity().getPasswordMinLength());
         if (password.length() < minimum) throw new BusinessException("auth.passwordTooShort", minimum);
-        if (password.getBytes(StandardCharsets.UTF_8).length > 72) throw new BusinessException("auth.passwordTooLong");
+        if (PasswordPolicy.utf8Length(password) > 72) throw new BusinessException("auth.passwordTooLong");
+        if (!PasswordPolicy.hasRequiredCharacterClasses(password)) throw new BusinessException("auth.passwordWeak");
     }
 
     /** 汇总启用角色和菜单中的实际权限编码。 */

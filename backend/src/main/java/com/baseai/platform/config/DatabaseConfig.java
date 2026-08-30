@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -25,8 +26,16 @@ public class DatabaseConfig {
     @Primary
     public DataSource mysqlDataSource(PlatformProperties properties) {
         HikariDataSource dataSource = createDataSource("mysql", properties.getMysqlDatabase());
-        migrate(dataSource, "classpath:db/migration/mysql");
-        return dataSource;
+        HikariDataSource migrationDataSource = createDataSource("mysql-migration", properties.getMysqlMigrationDatabase());
+        try {
+            migrate(migrationDataSource, "classpath:db/migration/mysql");
+            return dataSource;
+        } catch (RuntimeException exception) {
+            dataSource.close();
+            throw exception;
+        } finally {
+            migrationDataSource.close();
+        }
     }
 
     /** 按数据库类型暴露 MySQL JDBC 入口。 */
@@ -57,12 +66,14 @@ public class DatabaseConfig {
      * 因此此处不执行 Flyway 迁移，避免校验或改写不属于本平台的迁移链。</p>
      */
     @Bean("postgresqlDataSource")
+    @ConditionalOnProperty(prefix = "app", name = "postgresql-enabled", havingValue = "true")
     public DataSource postgresqlDataSource(PlatformProperties properties) {
         return createDataSource("postgresql", properties.getPostgresqlDatabase());
     }
 
     /** 按数据库类型暴露 PostgreSQL JDBC 入口。 */
     @Bean("postgresqlJdbcTemplate")
+    @ConditionalOnProperty(prefix = "app", name = "postgresql-enabled", havingValue = "true")
     public JdbcTemplate postgresqlJdbcTemplate(@Qualifier("postgresqlDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }

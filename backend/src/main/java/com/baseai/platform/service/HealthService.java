@@ -6,6 +6,7 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.lang.Nullable;
 import org.springframework.web.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +24,7 @@ public class HealthService {
     private final RestClient worker;
 
     public HealthService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate mysql,
-                         @Qualifier("postgresqlJdbcTemplate") JdbcTemplate postgresql,
+                         @Qualifier("postgresqlJdbcTemplate") @Nullable JdbcTemplate postgresql,
                          StringRedisTemplate redis,
                          @Qualifier("pythonWorkerHealthRestClient") RestClient worker) {
         this.mysql = mysql;
@@ -35,7 +36,7 @@ public class HealthService {
     /** 所有关键依赖均响应时才报告就绪，异常细节仅保留在服务端。 */
     public boolean isReady() {
         return check("mysql", () -> databaseReady(mysql))
-            && check("postgresql", () -> databaseReady(postgresql))
+            && (postgresql == null || check("postgresql", () -> databaseReady(postgresql)))
             && check("redis", this::redisReady)
             && check("python-worker", this::workerReady);
     }

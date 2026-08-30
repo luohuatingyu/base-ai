@@ -21,8 +21,12 @@ public class PlatformProperties {
     private String configEncryptionActiveKeyId = "legacy";
     /** MySQL 主数据源配置。 */
     private DatabaseProperties mysqlDatabase = new DatabaseProperties();
+    /** MySQL 迁移专用数据源配置，允许与运行账号分离。 */
+    private DatabaseProperties mysqlMigrationDatabase = new DatabaseProperties();
     /** PostgreSQL 业务数据源配置。 */
     private DatabaseProperties postgresqlDatabase = new DatabaseProperties();
+    /** 是否启用当前尚无平台模块依赖的 PostgreSQL 数据源。 */
+    private boolean postgresqlEnabled;
     /** 认证令牌配置。 */
     private Token token = new Token();
     /** 浏览器会话 Cookie 配置。 */
@@ -63,8 +67,12 @@ public class PlatformProperties {
 
     public DatabaseProperties getMysqlDatabase() { return mysqlDatabase; }
     public void setMysqlDatabase(DatabaseProperties mysqlDatabase) { this.mysqlDatabase = mysqlDatabase; }
+    public DatabaseProperties getMysqlMigrationDatabase() { return mysqlMigrationDatabase; }
+    public void setMysqlMigrationDatabase(DatabaseProperties value) { mysqlMigrationDatabase = value; }
     public DatabaseProperties getPostgresqlDatabase() { return postgresqlDatabase; }
     public void setPostgresqlDatabase(DatabaseProperties postgresqlDatabase) { this.postgresqlDatabase = postgresqlDatabase; }
+    public boolean isPostgresqlEnabled() { return postgresqlEnabled; }
+    public void setPostgresqlEnabled(boolean value) { postgresqlEnabled = value; }
     public Token getToken() { return token; }
     public void setToken(Token token) { this.token = token; }
     /** 返回浏览器会话 Cookie 配置。 */
@@ -174,12 +182,15 @@ public class PlatformProperties {
     public static class Seed {
         private String adminUsername = "admin";
         private String adminPassword;
+        private String adminPasswordFile = "/app/bootstrap/admin-password";
         /** 是否在应用启动时将已有管理员密码同步为种子密码。 */
         private boolean adminPasswordSyncEnabled = false;
         public String getAdminUsername() { return adminUsername; }
         public void setAdminUsername(String adminUsername) { this.adminUsername = adminUsername; }
         public String getAdminPassword() { return adminPassword; }
         public void setAdminPassword(String adminPassword) { this.adminPassword = adminPassword; }
+        public String getAdminPasswordFile() { return adminPasswordFile; }
+        public void setAdminPasswordFile(String value) { adminPasswordFile = value; }
         public boolean isAdminPasswordSyncEnabled() { return adminPasswordSyncEnabled; }
         public void setAdminPasswordSyncEnabled(boolean adminPasswordSyncEnabled) {
             this.adminPasswordSyncEnabled = adminPasswordSyncEnabled;

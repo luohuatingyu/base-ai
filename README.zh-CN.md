@@ -64,11 +64,11 @@ MySQL 是平台的主数据库，存储以下数据：
 - 工作流节点模板、定义、不可变发布版本、工作流运行记录及逐节点执行日志。
 - 系统任务、Java/Python 链路记录、操作日志和登录日志。
 
-Flyway 负责管理完整的 MySQL Schema，包含 JPA 平台实体、任务链路和日志表。Schema 由单一基线迁移 `backend/src/main/resources/db/migration/mysql/V1__create_platform_schema.sql` 定义，直接建出各表的最终结构并写入内置工作流节点模板。已存在的非空数据库会先基线到版本 0 再执行迁移；Hibernate 以 `validate` 模式运行，不会修改表结构。启动应用前需要先创建目标数据库，并为配置的数据库账号授予 Schema 管理权限。
+Flyway 通过不可变的 V1-V23 迁移链管理完整 MySQL Schema，覆盖 JPA 平台实体、任务链路、日志和内置工作流节点模板。已存在的非空数据库会先基线到版本 0 再执行迁移；Hibernate 以 `validate` 模式运行，不会修改表结构。`MYSQL_MIGRATION_*` 可使用具有 DDL 权限的迁移账号，`MYSQL_*` 使用最小权限运行账号；未配置迁移账号时为兼容旧部署而回退运行连接。
 
 ### PostgreSQL 业务数据库
 
-PostgreSQL 专门用于承载从属业务模块。接口触发配置和执行日志已迁移到 MySQL，平台不再读写任何 PostgreSQL 表，仅保留连接和就绪检查。平台不再对 PostgreSQL 执行 Flyway 迁移，因为目标 Schema 可能与其他应用共用，不应校验或改写其迁移链。需要 PostgreSQL 表的业务模块自行维护各自的 Schema。
+PostgreSQL 仅为从属业务模块预留并默认关闭。接口触发配置和执行日志存储在 MySQL；关闭时平台不会创建 PostgreSQL 连接，也不会把它加入就绪检查。只有确实需要 `postgresqlJdbcTemplate` 的模块才应设置 `POSTGRES_ENABLED=true`。平台不会对可能与其他应用共用的 PostgreSQL Schema 执行 Flyway。
 
 未来的业务模块可以通过 Spring Bean `postgresqlJdbcTemplate` 访问 PostgreSQL，并应独立维护各自的 Schema。
 
@@ -183,7 +183,7 @@ curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
    cp .env.example .env
    ```
 
-2. 配置外部 MySQL、PostgreSQL 和 Redis 连接。
+2. 配置外部 MySQL 和 Redis；PostgreSQL 可选，启用时设置 `POSTGRES_ENABLED=true`。
 
 3. 替换所有占位凭据。可使用以下命令生成配置加密密钥：
 
@@ -195,7 +195,7 @@ curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
 
    ```dotenv
    APP_TOKEN_SECRET=<至少32位随机字符>
-   APP_SEED_ADMIN_PASSWORD=<至少10位安全字符>
+   APP_SEED_ADMIN_PASSWORD=<可选的强初始密码>
    APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED=false
    APP_CONFIG_ENCRYPTION_KEY=<Base64编码的32字节密钥>
    APP_API_KEY_HASH_SECRET=<至少32位随机字符>
@@ -206,9 +206,9 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 
 ### 环境变量分组
 
-- **MySQL：** `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`。
-- **PostgreSQL：** `POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`、`POSTGRES_POOL_SIZE`。
-- **Redis：** `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`、`REDIS_DATABASE`、`REDIS_TIMEOUT`、`REDIS_SSL`。
+- **MySQL：** `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`，以及可选的 `MYSQL_MIGRATION_URL`、`MYSQL_MIGRATION_USERNAME`、`MYSQL_MIGRATION_PASSWORD`。
+- **PostgreSQL：** `POSTGRES_ENABLED`、`POSTGRES_URL`、`POSTGRES_USERNAME`、`POSTGRES_PASSWORD`、`POSTGRES_POOL_SIZE`。
+- **Redis：** `REDIS_HOST`、`REDIS_PORT`、`REDIS_USERNAME`、`REDIS_PASSWORD`、`REDIS_DATABASE`、`REDIS_TIMEOUT`、`REDIS_SSL`。
 - **品牌与语言：** `APP_PLATFORM_CODE`、`APP_PLATFORM_NAME_EN`、`APP_PLATFORM_NAME_ZH`、`APP_PLATFORM_SHORT_NAME`、`APP_DEFAULT_LOCALE`。
 - **认证与加密：** `APP_TOKEN_SECRET`、`APP_TOKEN_EXPIRE_MINUTES`、`APP_SESSION_COOKIE_SECURE`、`APP_SEED_ADMIN_USERNAME`、`APP_SEED_ADMIN_PASSWORD`、`APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`、`APP_CONFIG_ENCRYPTION_KEY`、`APP_CONFIG_ENCRYPTION_KEYS`、`APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`、`APP_API_KEY_HASH_SECRET`。
 - **Worker 与模型调用：** `PYTHON_WORKER_INTERNAL_TOKEN`、`JAVA_INSTANCE_ID`、`PYTHON_WORKER_INSTANCE_ID`、`LLM_TIMEOUT_SECONDS`、`LLM_LOG_CONTENT`。
@@ -341,9 +341,9 @@ sudo update-ca-certificates
 
 Firefox 等使用独立证书库的客户端可能仍需在浏览器设置中导入。Caddy CA 和自动签发的多 SAN IP 证书保存在命名卷中；普通容器重建不会更换根 CA。修改 `APP_PLATFORM_SHORT_NAME`、执行 `docker compose down -v` 或手动删除 Caddy data 卷会生成新的根 CA，届时所有访问设备必须重新信任。
 
-首次初始化后，使用 `APP_SEED_ADMIN_USERNAME` 配置的用户名和 `APP_SEED_ADMIN_PASSWORD` 配置的密码登录。初始管理员、角色、权限树、根部门和模型类型字典会自动创建。
+初始管理员、角色、权限树、根部门和模型类型字典会自动创建。首次初始化时，如果 `APP_SEED_ADMIN_PASSWORD` 留空或强度不足，后端会在受保护的 `bootstrap-secrets` 卷生成 32 位强密码。可执行 `docker compose exec backend sh -c 'cat /app/bootstrap/admin-password'` 读取一次，使用 `APP_SEED_ADMIN_USERNAME` 登录并立即修改。
 
-`APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` 未配置或设置为 `false` 时，种子密码仅用于首次创建管理员，不覆盖已有密码。显式设置为 `true` 后，应用会在每次启动时检查已有管理员密码，并在不一致时同步为 `APP_SEED_ADMIN_PASSWORD`；此时在管理页面手动修改的密码会在下次启动时被环境变量中的值覆盖。
+`APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` 未配置或设置为 `false` 时，已有管理员不再要求种子密码，也不会被覆盖。显式设置为 `true` 时，`APP_SEED_ADMIN_PASSWORD` 必须同时包含大小写字母、数字和符号；启动时会把不一致的管理员密码替换为该值。
 
 停止应用：
 

@@ -55,6 +55,22 @@ class HealthServiceTest {
         assertTrue(service.isReady());
     }
 
+    /** 未启用 PostgreSQL 时不得影响平台就绪状态。 */
+    @Test
+    void reportsReadyWithoutPostgresql() {
+        service = new HealthService(mysql, null, redis, worker);
+
+        assertTrue(service.isReady());
+    }
+
+    /** 显式启用 PostgreSQL 后，其故障必须使平台不就绪。 */
+    @Test
+    void reportsUnavailableWhenEnabledPostgresqlFails() {
+        when(postgresql.queryForObject("SELECT 1", Integer.class)).thenThrow(new IllegalStateException("down"));
+
+        assertFalse(service.isReady());
+    }
+
     /** 任一数据库失败时不得继续报告就绪。 */
     @Test
     void reportsUnavailableWhenDatabaseFails() {

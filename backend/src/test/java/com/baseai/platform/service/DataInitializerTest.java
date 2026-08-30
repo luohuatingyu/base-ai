@@ -31,10 +31,15 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import org.junit.jupiter.api.io.TempDir;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
@@ -44,7 +49,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DataInitializerTest {
-    private static final String SEED_PASSWORD = "configured-password";
+    private static final String SEED_PASSWORD = "Configured-Password-123!";
 
     private PlatformProperties properties;
     private MenuRepository menuRepository;
@@ -188,6 +193,45 @@ class DataInitializerTest {
             .bind("app", Bindable.of(PlatformProperties.class)).orElseThrow(IllegalStateException::new);
 
         assertTrue(bound.getSeed().isAdminPasswordSyncEnabled());
+    }
+
+    /** 首次创建且未提供强密码时应生成并持久化随机密码。 */
+    @Test
+    void generatesPersistentStrongPasswordForFirstAdmin(@TempDir Path temporary) throws Exception {
+        properties.getSeed().setAdminPassword("");
+        Path passwordFile = temporary.resolve("admin-password");
+        properties.getSeed().setAdminPasswordFile(passwordFile.toString());
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(any())).thenReturn("generated-hash");
+
+        initializer.run(null);
+
+        String generated = Files.readString(passwordFile).strip();
+        assertEquals(32, generated.length());
+        assertTrue(com.baseai.platform.security.PasswordPolicy.hasRequiredCharacterClasses(generated));
+        assertNotEquals(SEED_PASSWORD, generated);
+        verify(passwordEncoder).encode(generated);
+    }
+
+    /** 已有管理员且未开启同步时不应再要求种子密码。 */
+    @Test
+    void allowsMissingSeedPasswordForExistingAdmin() {
+        properties.getSeed().setAdminPassword(null);
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        initializer.run(null);
+
+        verify(passwordEncoder, never()).encode(any());
+    }
+
+    /** 开启同步时必须拒绝不满足四类字符要求的密码。 */
+    @Test
+    void rejectsWeakPasswordWhenSynchronizationIsEnabled() {
+        properties.getSeed().setAdminPassword("onlylowercasepassword");
+        properties.getSeed().setAdminPasswordSyncEnabled(true);
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        assertThrows(IllegalStateException.class, () -> initializer.run(null));
     }
 
     /** 所有内置按钮必须直接归属页面，避免产生无法配置的孤立按钮权限。 */

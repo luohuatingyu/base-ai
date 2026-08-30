@@ -15,7 +15,10 @@ import com.baseai.platform.repository.MenuRepository;
 import com.baseai.platform.repository.DepartmentRepository;
 import com.baseai.platform.repository.RoleRepository;
 import com.baseai.platform.repository.UserRepository;
+import com.baseai.platform.security.PasswordPolicy;
 import com.baseai.platform.workflow.WorkflowAdapterLifecycleService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -24,6 +27,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.security.SecureRandom;
+import java.io.IOException;
 
 /**
  * 数据初始化器组件
@@ -46,6 +56,10 @@ import java.util.List;
  */
 @Component
 public class DataInitializer implements ApplicationRunner {
+    private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final char[] PASSWORD_ALPHABET =
+        "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*_-+=".toCharArray();
     /** 平台配置属性，包含管理员账户、令牌密钥等配置信息 */
     private final PlatformProperties properties;
 
@@ -180,12 +194,98 @@ public class DataInitializer implements ApplicationRunner {
 
     /** 首次创建时设置密码，并按显式开关将已有管理员密码同步为种子密码。 */
     private void synchronizeAdminPassword(UserAccount admin, boolean creatingAdmin) {
-        String seedPassword = properties.getSeed().getAdminPassword();
+        String seedPassword = resolveAdminPassword(creatingAdmin);
+        if (seedPassword == null) return;
         if (creatingAdmin || (properties.getSeed().isAdminPasswordSyncEnabled()
             && !passwordEncoder.matches(seedPassword, admin.getPasswordHash()))) {
             admin.setPasswordHash(passwordEncoder.encode(seedPassword));
         }
     }
+
+    /** 仅在创建或显式同步管理员时解析强密码，首次缺失或弱配置自动生成。 */
+    private String resolveAdminPassword(boolean creatingAdmin) {
+        if (!creatingAdmin && !properties.getSeed().isAdminPasswordSyncEnabled()) return null;
+        String configured = trim(properties.getSeed().getAdminPassword());
+        if (strongPassword(configured)) return configured;
+        if (!creatingAdmin) {
+            throw new IllegalStateException("APP_SEED_ADMIN_PASSWORD 开启同步时必须包含大小写字母、数字和符号");
+        }
+        Path passwordFile = Path.of(properties.getSeed().getAdminPasswordFile()).toAbsolutePath().normalize();
+        try {
+            if (Files.exists(passwordFile, LinkOption.NOFOLLOW_LINKS)) {
+                if (!Files.isRegularFile(passwordFile, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IllegalStateException("管理员初始密码文件必须是普通文件");
+                }
+                String persisted = Files.readString(passwordFile).strip();
+                if (!strongPassword(persisted)) throw new IllegalStateException("管理员初始密码文件内容不符合强度要求");
+                restrictPasswordFile(passwordFile);
+                return persisted;
+            }
+            String generated = generatedPassword();
+            persistGeneratedPassword(passwordFile, generated);
+            log.warn("event=admin_bootstrap_password_generated file={}", passwordFile);
+            return generated;
+        } catch (IOException exception) {
+            throw new IllegalStateException("无法安全保存管理员初始密码", exception);
+        }
+    }
+
+    /** 使用安全随机源生成四类字符齐全的 32 位初始密码。 */
+    private String generatedPassword() {
+        char[] value = new char[32];
+        value[0] = "ABCDEFGHJKLMNPQRSTUVWXYZ".charAt(RANDOM.nextInt(23));
+        value[1] = "abcdefghijkmnopqrstuvwxyz".charAt(RANDOM.nextInt(24));
+        value[2] = "23456789".charAt(RANDOM.nextInt(8));
+        value[3] = "!@#$%^&*_-+=".charAt(RANDOM.nextInt(12));
+        for (int index = 4; index < value.length; index++) {
+            value[index] = PASSWORD_ALPHABET[RANDOM.nextInt(PASSWORD_ALPHABET.length)];
+        }
+        for (int index = value.length - 1; index > 0; index--) {
+            int target = RANDOM.nextInt(index + 1);
+            char temporary = value[index];
+            value[index] = value[target];
+            value[target] = temporary;
+        }
+        return new String(value);
+    }
+
+    /** 原子写入初始密码并把权限收紧为仅容器运行用户可读写。 */
+    private void persistGeneratedPassword(Path target, String password) throws IOException {
+        Path parent = target.getParent();
+        if (parent == null) throw new IOException("密码文件缺少父目录");
+        Files.createDirectories(parent);
+        Path temporary = Files.createTempFile(parent, ".admin-password-", ".tmp");
+        try {
+            Files.writeString(temporary, password + System.lineSeparator());
+            restrictPasswordFile(temporary);
+            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+            restrictPasswordFile(target);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    /** 在支持 POSIX 权限的平台把密码文件限制为 0600。 */
+    private void restrictPasswordFile(Path target) throws IOException {
+        try {
+            Files.setPosixFilePermissions(target, PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException ignored) {
+            if (!target.toFile().setReadable(false, false) || !target.toFile().setReadable(true, true)
+                || !target.toFile().setWritable(false, false) || !target.toFile().setWritable(true, true)) {
+                throw new IOException("无法限制密码文件权限");
+            }
+        }
+    }
+
+    /** 校验密码长度、BCrypt 字节上限及四类字符。 */
+    private boolean strongPassword(String password) {
+        int minimum = Math.max(12, properties.getLoginSecurity().getPasswordMinLength());
+        return password != null && password.length() >= minimum && PasswordPolicy.utf8Length(password) <= 72
+            && PasswordPolicy.hasRequiredCharacterClasses(password) && !password.contains("replace");
+    }
+
+    /** 将可选配置规范化为空值或去除首尾空白的内容。 */
+    private String trim(String value) { return value == null ? null : value.trim(); }
 
     /** 初始化首批模型类型，重复启动只补充缺失项且不覆盖管理员配置。 */
     private void seedModelTypes() {
@@ -445,7 +545,6 @@ public class DataInitializer implements ApplicationRunner {
     private void validateSecrets() {
         String tokenSecret = properties.getToken().getSecret();
         String internalToken = properties.getPythonWorker().getInternalToken();
-        String adminPassword = properties.getSeed().getAdminPassword();
         String encryptionKey = properties.getConfigEncryptionKey();
         String apiKeyHashSecret = properties.getApiKey().getHashSecret();
         if (tokenSecret == null || tokenSecret.length() < 32 || tokenSecret.contains("replace-with")) {
@@ -453,11 +552,6 @@ public class DataInitializer implements ApplicationRunner {
         }
         if (internalToken == null || internalToken.length() < 24 || internalToken.contains("replace-with")) {
             throw new IllegalStateException("PYTHON_WORKER_INTERNAL_TOKEN 必须设置为随机字符串");
-        }
-        int minimumPasswordLength = Math.max(1, properties.getLoginSecurity().getPasswordMinLength());
-        if (adminPassword == null || adminPassword.length() < minimumPasswordLength
-            || adminPassword.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72 || adminPassword.contains("replace")) {
-            throw new IllegalStateException("APP_SEED_ADMIN_PASSWORD 必须为 " + minimumPasswordLength + " 至 72 字节的安全密码");
         }
         try {
             if (encryptionKey == null || java.util.Base64.getDecoder().decode(encryptionKey).length != 32) {

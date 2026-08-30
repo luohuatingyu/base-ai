@@ -190,9 +190,12 @@ class PlatformAdminServiceTest {
             () -> service.createUser(userCommand("short-user", "12345678901", true, List.of())));
         BusinessException longPassword = assertThrows(BusinessException.class,
             () -> service.createUser(userCommand("long-user", "密".repeat(25), true, List.of())));
+        BusinessException weakPassword = assertThrows(BusinessException.class,
+            () -> service.createUser(userCommand("weak-user", "onlylowercasepassword", true, List.of())));
 
         assertEquals("auth.passwordTooShort", shortPassword.getMessageKey());
         assertEquals("auth.passwordTooLong", longPassword.getMessageKey());
+        assertEquals("auth.passwordWeak", weakPassword.getMessageKey());
     }
 
     /** 禁用最后一个可登录管理员时必须拒绝，避免平台失去管理入口。 */
@@ -218,9 +221,9 @@ class PlatformAdminServiceTest {
         UserAccount target = user(2L, "editor", true, editor);
         when(userRepository.findById(2L)).thenReturn(Optional.of(target));
         when(roleRepository.findAllById(any())).thenReturn(List.of(editor));
-        when(passwordEncoder.encode("new-strong-password")).thenReturn("new-hash");
+        when(passwordEncoder.encode("New-Strong-Password-123!")).thenReturn("new-hash");
 
-        service.updateUser(2L, userCommand("editor", "new-strong-password", true, List.of(21L)));
+        service.updateUser(2L, userCommand("editor", "New-Strong-Password-123!", true, List.of(21L)));
 
         assertEquals("new-hash", target.getPasswordHash());
         verify(sessionService).terminateUser(2L);

@@ -64,11 +64,11 @@ MySQL is the primary platform database. It contains:
 - Workflow node templates, definitions, immutable published versions, workflow runs, and per-node execution logs.
 - System tasks, Java/Python trace records, operation logs, and login logs.
 
-Flyway manages the complete MySQL schema, including JPA platform entities, task traces, and logs. The schema is defined by a single baseline migration, `backend/src/main/resources/db/migration/mysql/V1__create_platform_schema.sql`, which creates every table in its final shape and seeds the built-in workflow node templates. Existing non-empty databases are baselined at version 0 before migrations run; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application and grant the configured account schema-management privileges.
+Flyway manages the complete MySQL schema through the immutable V1-V23 migration chain, including JPA platform entities, task traces, logs, and built-in workflow node templates. Existing non-empty databases are baselined at version 0 before migrations run; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application. `MYSQL_MIGRATION_*` may use a DDL-capable migration account while `MYSQL_*` uses a least-privilege runtime account; omitted migration values fall back to the runtime connection for compatibility.
 
 ### PostgreSQL business database
 
-PostgreSQL is reserved for subordinate business modules. API-trigger configurations and execution logs were moved to MySQL, so the platform no longer reads or writes any PostgreSQL table; only the connection and the readiness probe remain. The platform runs no Flyway migration against PostgreSQL, because the target schema may be shared with other applications and must not have its migration chain validated or rewritten. Business modules that need PostgreSQL tables maintain their own schemas independently.
+PostgreSQL is reserved for subordinate business modules and is disabled by default. API-trigger configurations and execution logs are stored in MySQL, so a disabled PostgreSQL connection is neither created nor included in readiness. Set `POSTGRES_ENABLED=true` only for a module that needs the shared `postgresqlJdbcTemplate`. The platform runs no Flyway migration against PostgreSQL because the target schema may be shared with another application.
 
 Future business modules can access PostgreSQL through the `postgresqlJdbcTemplate` Spring bean and should maintain their schemas independently.
 
@@ -183,7 +183,7 @@ The repository tracks `.env.example` only. Never commit a populated `.env` file.
    cp .env.example .env
    ```
 
-2. Configure the external MySQL, PostgreSQL, and Redis connections.
+2. Configure the external MySQL and Redis connections. PostgreSQL is optional and requires `POSTGRES_ENABLED=true`.
 
 3. Replace every placeholder credential. Generate an encryption key with:
 
@@ -195,7 +195,7 @@ The repository tracks `.env.example` only. Never commit a populated `.env` file.
 
    ```dotenv
    APP_TOKEN_SECRET=<at-least-32-random-characters>
-   APP_SEED_ADMIN_PASSWORD=<at-least-12-secure-characters>
+   APP_SEED_ADMIN_PASSWORD=<optional-strong-bootstrap-password>
    APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED=false
    APP_CONFIG_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
    APP_API_KEY_HASH_SECRET=<at-least-32-random-characters>
@@ -206,9 +206,9 @@ The API key hash secret is optional only because it falls back to the encryption
 
 ### Environment variable groups
 
-- **MySQL:** `MYSQL_URL`, `MYSQL_USERNAME`, `MYSQL_PASSWORD`.
-- **PostgreSQL:** `POSTGRES_URL`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_POOL_SIZE`.
-- **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`, `REDIS_SSL`.
+- **MySQL:** `MYSQL_URL`, `MYSQL_USERNAME`, `MYSQL_PASSWORD`, plus optional `MYSQL_MIGRATION_URL`, `MYSQL_MIGRATION_USERNAME`, and `MYSQL_MIGRATION_PASSWORD`.
+- **PostgreSQL:** `POSTGRES_ENABLED`, `POSTGRES_URL`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_POOL_SIZE`.
+- **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`, `REDIS_SSL`.
 - **Branding and locale:** `APP_PLATFORM_CODE`, `APP_PLATFORM_NAME_EN`, `APP_PLATFORM_NAME_ZH`, `APP_PLATFORM_SHORT_NAME`, `APP_DEFAULT_LOCALE`.
 - **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SESSION_COOKIE_SECURE`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_CONFIG_ENCRYPTION_KEYS`, `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`, `APP_API_KEY_HASH_SECRET`.
 - **Worker and model calls:** `PYTHON_WORKER_INTERNAL_TOKEN`, `JAVA_INSTANCE_ID`, `PYTHON_WORKER_INSTANCE_ID`, `LLM_TIMEOUT_SECONDS`, `LLM_LOG_CONTENT`.
@@ -343,9 +343,9 @@ Clients such as Firefox may use a separate trust store and require browser-level
 
 All four runtime containers use non-root users. Linux capabilities are removed from the backend, frontend, and Worker; Caddy retains only `NET_BIND_SERVICE` for port 80. Base images are digest-pinned, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
 
-After the first initialization, use the username configured by `APP_SEED_ADMIN_USERNAME` and the password configured by `APP_SEED_ADMIN_PASSWORD`. The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically.
+The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically. If `APP_SEED_ADMIN_PASSWORD` is empty or weak on first initialization, the backend generates a 32-character strong password in the protected `bootstrap-secrets` volume. Retrieve it once with `docker compose exec backend sh -c 'cat /app/bootstrap/admin-password'`, sign in with `APP_SEED_ADMIN_USERNAME`, and change it immediately.
 
-When `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` is unset or `false`, the seed password is used only to create the initial administrator and never overwrites an existing password. When explicitly set to `true`, the application checks the existing administrator password at every startup and synchronizes it to `APP_SEED_ADMIN_PASSWORD` when they differ. In this mode, a password changed through the administration UI will be replaced by the environment value on the next startup.
+When `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED` is unset or `false`, an existing administrator does not require a seed password and is never overwritten. When explicitly set to `true`, `APP_SEED_ADMIN_PASSWORD` must contain uppercase and lowercase letters, a number, and a symbol; it replaces a different administrator password at startup.
 
 To stop the application:
 

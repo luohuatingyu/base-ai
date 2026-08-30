@@ -18,8 +18,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -r -u 10001 appuser \
-    && mkdir -p /app/caddy-public-ca \
-    && chown appuser:appuser /app/caddy-public-ca
+    && mkdir -p /app/caddy-public-ca /app/bootstrap \
+    && chown appuser:appuser /app/caddy-public-ca /app/bootstrap
 COPY --from=build /workspace/target/base-ai-backend-0.0.1-SNAPSHOT.jar /app/app.jar
 USER appuser
 EXPOSE 8080
