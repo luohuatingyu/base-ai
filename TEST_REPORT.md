@@ -1,5 +1,107 @@
 # 最近分支覆盖测试报告
 
+## 项目风险全量修复测试结果（2026-08-30）
+
+### Git 基准点
+
+Commit: cb57855dd345a18b75cc5e50d97f3a7dd506337a
+- 提交信息: `Apply runtime image security updates`
+- 变更提交: `0cf7e29`、`3d3c8f0`、`8e018bb`、`0077c60`、`773c32b`、`83b7455`、`12328a7`、`cb57855`
+- 上一测试报告基准点: `0ef3d6c`
+- 基准差异检查: `git diff 0ef3d6c HEAD -- backend/src/main/java/` 有输出，共 19 个业务代码文件、904 行新增、128 行删除，已触发完整重测
+- 测试日期: 2026-08-30
+- 分支: master
+- 未执行 `git push`
+
+### 变更范围
+
+- 恢复 MySQL V1~V23 版本化迁移链，避免已部署数据库因重写基线产生 Flyway 校验失败；强化数据库初始化、密码策略和敏感配置校验。
+- Backend、Python Worker、插件 Worker、Adapter Manager 之间的内部请求统一使用带时间窗和防重放能力的签名认证；内部接口不再依赖静态共享 Header。
+- 工作流和知识库外部请求统一经过出站网关，网关严格执行 Host/CIDR 策略与代理凭据校验，缺少代理配置时禁止回退直连。
+- Docker Socket 仅由隔离的 Adapter Docker Broker 持有；Manager 与 Supervisor 通过受控 Unix Socket 和固定类型命令转发，不接受任意 Docker 参数。
+- 不可信文档解析迁移到独立无网络、只读、非 root、资源受限的 Document Parser 容器，通过共享 Unix Socket 通信，并限制嵌入文档与解析超时。
+- 前端统一质量门包含 ESLint、Vue 类型检查、覆盖率阈值、生产构建和真实服务 E2E；修复畸形 URL 崩溃及路径穿越处理，补齐供应链审计和固定摘要镜像。
+- RabbitMQ Client 升级至 5.33.1，Apache HttpCore 5 升级至 5.4.3，Go 升级至 1.26.6；更新 Python/Node/JRE 固定摘要并安装系统安全更新，移除最终镜像中不需要的 Pebble、npm、corepack 和 yarn。
+- 安全工作流覆盖依赖、Dockerfile 配置、密钥和 9 个交付镜像，所有 Action 均固定到提交摘要。
+- 按用户确认明确不包含：MySQL 未验证服务端身份、PostgreSQL 未验证 TLS、Redis 未启用 TLS；本次未针对这三项改变连接策略。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 历史数据库可继续使用版本化迁移 | Backend 迁移资源测试、完整套件、容器启动 | V1~V23 保持可解析，Backend 完成 Flyway 校验并 healthy；通过 | 兼容、部署、回归 |
+| 数据库启动与管理员初始化使用安全默认值 | Backend 配置、密码策略、初始化和健康检查测试 | 缺失/弱配置拒绝启动，敏感值不泄漏，合法配置正常初始化；通过 | 正常、边界、异常、安全 |
+| 内部请求不可伪造、篡改、过期或重放 | Backend、Python、Dify、n8n 内部认证测试 | 合法签名仅接受一次，过期及正文篡改均拒绝；通过 | 权限、安全、恶意输入 |
+| 业务外连必须经过受控网关 | Backend 出站客户端、Go Gateway、n8n Proxy Fetch 测试 | 私网/未授权目标拒绝，代理认证正确，缺配置不直连；通过 | 权限、安全、异常、兼容 |
+| 插件容器不能直接控制 Docker | Go Adapter 8 个测试、前端部署契约、Compose 运行态检查 | 仅 Broker 挂载 Socket，命令类型和服务名均受白名单约束；通过 | 权限、安全、回归 |
+| 不可信文档解析与主服务隔离 | Backend 解析协议/Worker/Unix Client 测试、Compose 健康与隔离检查 | 解析器无网络、只读、非 root、限时限资源，Backend 仅访问 Socket；通过 | 安全、异常、边界、部署 |
+| 前端生产服务安全处理请求 | Frontend 301 个单元/契约测试、1 个真实服务 E2E | 畸形 URL、路径穿越、运行配置、SPA 和 API 代理行为正确；通过 | 正常、边界、安全、回归 |
+| 依赖和镜像不存在可修复高危漏洞 | `npm audit`、Trivy FS 与 9 镜像扫描 | npm 0 漏洞；HIGH/CRITICAL 已修复漏洞、误配置和密钥均为 0；通过 | 供应链、安全 |
+| 全环境可由统一命令重建并运行 | `docker compose up --build -d`、`docker compose ps` | 9 个核心服务全部 healthy；两个可选插件 Worker 按 profile 保持停止；通过 | 构建、部署、回归 |
+| 用户排除项不被本次变更扩大 | 配置 diff 与变更检查 | 三项排除风险未作为本次验收条件，也未引入额外绕过；通过 | 范围、兼容 |
+
+### 测试执行结果
+
+- 总测试用例：1071 个。
+- 通过：1071 个（100%）；失败 0；错误 0；跳过 0。
+- Backend：645/645；其中 Service 包 163/163、Controller 包 25/25，Domain 与 Repository 通过业务服务、持久化及 Schema 测试间接覆盖，项目没有独立同包测试套件。
+- Frontend：301/301；生产服务 E2E 1/1。工具函数覆盖率：行 97.94%、分支 79.95%、函数 95.95%，均高于 95%/75%/90% 阈值。
+- Python Worker（Python 3.12）：77/77。
+- Dify Plugin Worker：23/23；n8n Plugin Worker：14/14。
+- Adapter Manager/Broker/Supervisor：8/8；Outbound Gateway：2/2。
+- `npm audit`：0 漏洞。
+- Trivy 源码扫描：6 份语言依赖清单 0 个 HIGH/CRITICAL 已修复漏洞，8 份 Dockerfile 0 个对应高危误配置，密钥 0。
+- Trivy 镜像扫描：Backend、Document Parser、Frontend、Python Worker、Dify Worker、n8n Worker、Adapter Manager、Outbound Gateway、Caddy 共 9/9 镜像均为 0 个 HIGH/CRITICAL 已修复漏洞。
+- 完整重建后 Adapter Docker Broker、Adapter Supervisor、Adapter Manager、Outbound Gateway、Document Parser、Python Worker、Backend、Frontend、Caddy 共 9 个核心服务全部 healthy。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整套件 | Maven 3.9.9 / Temurin 17 固定摘要容器执行 `mvn -B -ntp test` | 645/645，BUILD SUCCESS |
+| Frontend 统一质量门 | `cd frontend && npm test` | ESLint、`vue-tsc`、301 个覆盖率测试、生产构建、1 个 E2E 全部通过 |
+| Frontend 供应链 | `cd frontend && npm audit` | found 0 vulnerabilities |
+| Python Worker | Python 3.12 固定摘要容器按哈希安装 `requirements-dev.txt` 后执行 `pytest -q` | 77/77 通过 |
+| Dify Worker | `python3.12 -m unittest discover -s tests -v` | 23/23 通过 |
+| n8n Worker | `node --test tests/*.test.mjs` | 14/14 通过 |
+| Go 服务 | Go 1.26.6 固定摘要容器分别执行 `go test ./...` | Adapter 8/8、Gateway 2/2 通过 |
+| Workflow 语法 | Actionlint 容器检查全部 Workflow | 通过 |
+| 统一重建 | `docker compose up --build -d` | 构建并启动成功，9 个核心服务 healthy |
+| 可选插件镜像 | `docker compose --profile plugin-adapters build dify-plugin-worker n8n-plugin-worker` | 两个镜像构建成功 |
+| 源码安全扫描 | Trivy FS：`vuln,misconfig,secret`，`HIGH,CRITICAL`，`ignore-unfixed` | 依赖、配置、密钥均为 0 |
+| 交付镜像扫描 | Trivy Image：9 镜像，OS + Library，`HIGH,CRITICAL`，`ignore-unfixed` | 9/9 均为 0 |
+| 运行态检查 | `docker compose ps` 及容器健康检查 | 9 个核心服务 healthy；插件 Worker 按 profile 停止 |
+| 静态检查 | `docker compose config --quiet`、`git diff --check`、`git status --short` | 通过；报告更新前工作区干净 |
+
+### 测试过程问题与处理
+
+- 宿主 Python 3.12 未安装 pytest、宿主未安装 Go；改用项目固定摘要的 Python 3.12 与 Go 1.26.6 容器执行，未安装宿主依赖。
+- 首次 Trivy 镜像扫描下载 Java 漏洞库时出现远端 `unexpected EOF`；保留 Java 扫描并使用持久缓存重试，随后成功定位并修复 RabbitMQ、HttpCore 与 Pebble 问题。
+- 漏洞库更新后继续发现 Python/Node/Caddy 基础系统包问题；更新固定摘要、安装安全更新、移除不需要的运行时工具后重新构建并全量复扫，最终清零。
+- Python 测试以只读方式挂载源码，pytest 报告无法写 `.pytest_cache` 的单条非功能性告警；77 个业务测试全部通过，仓库未生成缓存文件。
+- Frontend 构建存在既有的运行配置脚本、第三方 PURE 注释和大分块提示；不影响构建与 E2E，通过率和覆盖率均达标。
+- 一次 `npm audit` 从仓库根目录误执行，因缺少根锁文件在用户 npm 日志目录生成调试日志；已删除该日志并从 Frontend 正确重跑，结果为 0 漏洞。
+- 未遗留临时测试、调试或未跟踪文件。
+
+### 已知问题与限制
+
+- 按用户明确决定保留的风险：MySQL 未验证服务端身份、PostgreSQL 未验证 TLS、Redis 未启用 TLS。若部署跨越不可信网络，应单独安排证书、服务端身份校验和兼容性验证。
+- Trivy 与仓库安全工作流使用 `ignore-unfixed=true`；本报告的“0”表示当前漏洞库中存在修复版本的 HIGH/CRITICAL 发现为 0，不代表未来漏洞库不会新增发现，也不代表无修复版本的风险不存在。
+- Dify 与 n8n Plugin Worker 是可选 profile 服务，默认不启动；其源码测试、镜像构建和镜像扫描已完成，但未作为常驻容器运行。
+- Backend 未配置统一行覆盖率聚合，本次以 645 个完整测试、验收映射、运行态健康和镜像扫描作为覆盖证据。
+
+### 回滚方式
+
+- 代码与配置可按 `cb57855` → `12328a7` → `83b7455` → `773c32b` → `0077c60` → `8e018bb` → `3d3c8f0` → `0cf7e29` 的逆序使用 `git revert` 回滚；不得使用破坏工作区的强制重置。
+- 回滚内部签名、Broker、出站网关或解析器隔离会重新暴露对应安全风险，必须同步回滚 Compose 拓扑并重新执行完整测试与镜像扫描。
+- MySQL 迁移链恢复不包含数据删除；如回滚迁移文件，必须先核对目标库 `flyway_schema_history`，禁止直接覆盖已执行迁移或清库。
+
+### 下次测试建议
+
+- 每次依赖锁、基础镜像摘要或安全数据库更新后重复运行 Trivy FS 与 9 镜像矩阵，避免新披露漏洞滞留。
+- 若后续决定处理三项排除风险，应分别准备可信 CA、服务端名称、Redis TLS 端点和回滚连接串，并覆盖证书过期、名称不匹配、降级与旧环境兼容场景。
+- 建议在 CI 中保留 Frontend 覆盖率阈值、Actionlint、完整 Backend 套件和镜像矩阵为合并阻断条件。
+
 ## 数据库迁移合并为单一基线测试结果（2026-08-24）
 
 ### Git 基准点
