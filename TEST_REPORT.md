@@ -1,5 +1,112 @@
 # 最近分支覆盖测试报告
 
+## 插件逐包独立沙箱测试结果（2026-08-31）
+
+### Git 基准点
+
+Commit: e9377369e9c8fee18d4133306f0737468852ebc3
+- 提交信息: `Isolate plugin execution in dedicated sandboxes`
+- 上一测试报告基准点: `cb57855dd345a18b75cc5e50d97f3a7dd506337a`
+- 基准差异检查: `git diff cb57855dd345a18b75cc5e50d97f3a7dd506337a e9377369e9c8fee18d4133306f0737468852ebc3 -- backend/src/main/java/` 有输出，共 4 个业务代码文件、38 行新增、9 行删除，已触发完整重测
+- 测试日期: 2026-08-31
+- 分支: master
+- 未执行 `git push`
+
+### 变更范围
+
+- Dify 与 n8n 常驻 Worker 退化为受鉴权控制面，只把固定类型的 `inspect`、`invoke`、`remove` 请求转发到来源专用 Unix Socket；不再执行第三方代码，不再挂载插件包目录，也不持有长期代理凭据。
+- Adapter Docker Broker 为每个来源和包指纹创建独立持久卷；每次探测或调用创建新的非 root、只读、去能力、限 CPU/内存/PID 的一次性容器及独占内部网络。调用阶段只读挂载包卷，容器不接收 Docker Socket 或 Broker Socket。
+- Broker 为每次操作签发短时 HMAC 代理令牌，绑定来源、包指纹、操作、精确域名、有效期和随机数；出站网关将令牌域名与运维全局白名单取交集，拒绝 IP、通配符、子域扩张、过期和篡改令牌。
+- Backend 从已批准的 `external_services_json` 提取运行域名并随调用下发；Dify/n8n Worker ABI 分别升级到 7/6。V24 迁移只重排旧的已完成探测，保留插件、组件和人工准入数据，避免复用历史共享目录中的缓存。
+- Adapter Broker 最终镜像改为 scratch，只包含项目 Broker 和从固定版本、校验 SHA-256 的 Docker CLI 源码以 Go 1.26.6 构建的二进制，不再携带 buildx、compose 或 Alpine 运行层。
+- n8n 沙箱保留依赖安装所需 npm 12.0.2，并将其自带的 `brace-expansion`、`ip-address`、`tar` 精确更新到已修复版本；corepack 与 yarn 继续移除。
+- 按用户确认明确不包含：MySQL 未验证服务端身份、PostgreSQL 未验证 TLS、Redis 未启用 TLS；本次未改变这三项连接策略。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与用例 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 第三方插件不在共享常驻进程执行 | Dify/n8n Sandbox Client、Server 与 Compose 契约测试；可选 Worker 运行态健康检查 | Worker 只转发有限 JSON；第三方代码由一次性容器执行；通过 | 正常、安全、架构 |
+| 不同插件不共享包目录和依赖缓存 | Adapter `TestSandboxArgumentsProvidePerFingerprintIsolation`、双插件运行态验证 | 不同指纹映射不同卷，各自只能看到自己的指纹与缓存；通过 | 正常、并发、隔离 |
+| 插件不能获得 Docker 控制面或长期凭据 | Adapter 参数测试、Frontend Compose 契约、`docker inspect` 运行态检查 | 沙箱无 Docker/Broker Socket；控制 Worker 无包卷、代理令牌和签名密钥；通过 | 权限、安全、恶意输入 |
+| 插件出站权限按操作和精确域名收敛 | Gateway `TestGatewayScopesSandboxCredential`、令牌过期/域名测试、真实代理验证 | 获批精确域名可访问，其他全局允许域名及子域扩张被拒绝；通过 | 权限、安全、边界 |
+| 调用方不能注入镜像、命令、挂载或网络 | Adapter `TestSandboxBrokerRejectsCallerControlledDockerFields`、请求严格解析测试 | 未知 Docker 字段在执行前返回 400，Runner 无调用；通过 | 恶意输入、异常 |
+| 依赖安装能力在隔离后保持可用 | Dify 25 个、n8n 16 个完整 Worker 测试及两个可选镜像健康检查 | 固定依赖安装、探测、调用和缓存兼容均通过；通过 | 正常、兼容、回归 |
+| 历史共享缓存不会迁移到独立卷 | Backend `WorkflowSchemaResourceTest` 与真实 Flyway 启动 | V24 将 COMPLETE 重排为 QUEUED 并清空探测缓存字段；真实库从 23 升至 24；通过 | 数据迁移、安全、兼容 |
+| Adapter Manager 镜像不存在 CI 阻断漏洞 | Dockerfile 安全契约、Docker CLI 运行态版本、Trivy 镜像扫描 | Broker 仅含两个 0 漏洞 Go 二进制；原 OS/CLI/插件 HIGH 已清零；通过 | 供应链、安全 |
+| n8n 镜像不存在已修复高危依赖 | Dockerfile版本契约、运行态 npm 版本读取、Trivy 镜像扫描 | npm 12.0.2；依赖为 5.0.9/10.3.1/7.5.21；HIGH/CRITICAL 为 0；通过 | 供应链、安全 |
+| 全环境可统一重建并健康运行 | `docker compose up --build -d`、核心服务健康和可选 profile 启停 | 9 个核心服务 healthy；两个插件 Worker 可 healthy 且按默认 profile 停止；通过 | 构建、部署、回归 |
+
+### 测试执行结果
+
+- 总测试用例：1083 个。
+- 通过：1083 个（100%）；失败 0；错误 0；跳过 0。
+- Backend：647/647；其中 Workflow 包 262/262、Service 包 163/163、Controller 包 25/25，Domain 与 Repository 继续由完整服务、持久化和 Schema 测试间接覆盖。
+- Frontend：303/303；生产服务 E2E 1/1。工具函数覆盖率：行 97.94%、分支 79.95%、函数 95.95%，均高于 95%/75%/90% 阈值。
+- Python Worker（Python 3.12）：77/77。
+- Dify Plugin Worker：25/25；n8n Plugin Worker：16/16。
+- Adapter Manager/Broker/Supervisor：11/11；Outbound Gateway：3/3。
+- `npm audit`：0 漏洞；Actionlint、Compose 配置校验和 Go 格式检查全部通过。
+- Trivy 源码扫描：依赖、Dockerfile 高危误配置和密钥均为 0 个可修复 HIGH/CRITICAL 发现。
+- Trivy 镜像扫描：Backend、Document Parser、Frontend、Python Worker、Dify Worker、n8n Worker、Adapter Manager、Outbound Gateway、Caddy 共 9/9 均为 0 个可修复 HIGH/CRITICAL 发现。
+- 运行态：9 个核心服务全部 healthy；Dify/n8n Worker 短暂启动后均 healthy，确认无 Docker Socket、包卷和长期代理凭据，再以 SIGTERM 正常停止。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整套件 | Maven 3.9.9 / Temurin 17 固定摘要容器执行 `mvn -B -ntp test` | 647/647，BUILD SUCCESS |
+| Frontend 统一质量门 | `cd frontend && npm test` | ESLint、`vue-tsc`、303 个覆盖率测试、生产构建、1 个 E2E 全部通过 |
+| Frontend 供应链 | `cd frontend && npm audit` | found 0 vulnerabilities |
+| Python Worker | Python 3.12 固定摘要容器按哈希安装 `requirements-dev.txt` 后执行 `pytest tests -q` | 77/77 通过 |
+| Dify Worker | Python 3.12 固定摘要容器执行 `python -m unittest discover -s tests -v` | 25/25 通过 |
+| n8n Worker | `npm test` | 16/16 通过 |
+| Go 服务 | Go 1.26.6 固定摘要容器分别执行 `go test ./...` | Adapter 11/11、Gateway 3/3 通过 |
+| Go 格式 | Go 1.26.6 固定摘要容器执行 `gofmt -d` 并断言无输出 | 通过 |
+| Workflow 语法 | Actionlint 容器检查全部 Workflow | 通过 |
+| Compose 配置 | 设置非生产测试签名密钥后执行 `docker compose config --quiet` | 通过 |
+| 统一重建 | 设置临时签名密钥执行 `docker compose up --build -d` | 首次因 80 端口占用失败；精确停止占用容器后按原命令重试成功 |
+| 可选插件运行态 | `docker compose --profile plugin-adapters up -d --wait`，检查后 `stop` | Dify/n8n 均 healthy，隔离配置符合预期，随后正常停止 |
+| 数据迁移 | Backend 启动日志中的 Flyway 校验和迁移记录 | 成功校验 24 个迁移，V24 从 23 应用到 24 |
+| 沙箱集成 | 两个不同指纹插件执行探测/调用，并检查卷、环境和代理行为 | 各自只见独立缓存；无长期凭据/控制 Socket；精确域名允许，非令牌域名拒绝 |
+| 源码安全扫描 | Trivy FS：`vuln,misconfig,secret`，`HIGH,CRITICAL`，`ignore-unfixed` | 0 个阻断发现 |
+| 交付镜像扫描 | 按 CI 矩阵逐个构建 9 个镜像，Trivy 扫描 OS + Library | 9/9 均为 0 个阻断发现 |
+| Adapter CLI 运行态 | Broker 内执行 `docker version` | Client 29.7.2 / Go 1.26.6，Server 29.7.2 |
+| n8n npm 运行态 | 镜像内读取 npm 及三项修复依赖版本 | 12.0.2；5.0.9、10.3.1、7.5.21 |
+| 静态检查 | `git diff --check`、`git status --porcelain=v1` | 通过；功能提交后仅测试报告待提交 |
+
+### 测试过程问题与处理
+
+- CI 报告 `Container image (adapter-manager)` 失败。本地按工作流参数复现：上游 Docker CLI 镜像含 12 个 Alpine HIGH，Docker CLI 9 个 HIGH，并额外携带存在漏洞的 buildx/compose。改为校验源码后以 Go 1.26.6 编译最小 CLI、scratch 运行层，复扫两个二进制均为 0。
+- n8n 镜像首次复扫发现 npm 自带 `brace-expansion`、`ip-address`、`tar` 共 4 个 HIGH。仅升级 npm 仍未消除，随后用 npm 自身依赖解析精确覆盖到修复版本，保持插件依赖安装能力，复扫为 0。
+- 一次 n8n 版本诊断把 npm 版本文本与 JSON 同管道交给 `jq`，导致诊断命令解析失败；拆分版本读取与 JSON 读取后通过，产品测试和镜像均未失败。
+- `docker compose up --build -d` 首次启动 Caddy 时发现 `domestic-trade-caddy` 占用 80/443。按项目规范精确停止该容器后原命令重试成功；该外部容器未自动恢复，避免再次抢占当前项目端口。
+- Docker Desktop 在较早的并发集成验证中曾异常退出；重启后降低并发并完整重跑受影响测试、Compose 构建和九镜像扫描，最终结果全部通过。
+- Python 测试只读挂载源码，pytest 报告无法写 `.pytest_cache` 的单条非功能性告警；77 个测试全部通过，仓库未生成缓存文件。
+- 所有临时扫描镜像、试验性 Docker CLI 镜像和 Trivy 缓存卷均已删除；未遗留临时测试或调试文件。
+
+### 已知问题与限制
+
+- 按用户明确决定保留的风险：MySQL 未验证服务端身份、PostgreSQL 未验证 TLS、Redis 未启用 TLS。若部署跨越不可信网络，应单独安排证书、服务端名称校验和 Redis TLS 兼容验证。
+- 新增 `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY` 为强制独立密钥，至少 32 个字符，只能由 Broker 与出站网关持有。本机 `.env` 尚未持久化该值；当前运行容器使用未输出、未落盘的随机 256-bit 值，下次 Compose 操作前必须通过密钥管理或 `.env` 提供新值。
+- `domestic-trade-caddy` 因 80/443 端口冲突已停止且未自动恢复；恢复它之前必须先停止当前 `ai-caddy` 或调整双方端口。
+- Dify 与 n8n Plugin Worker 是可选 profile 服务，默认停止；单元测试、镜像构建/扫描以及短暂 healthy 运行验证已完成。
+- 每个唯一来源 + 包指纹使用一个持久卷；字节完全相同的同源包复用同一只读运行内容。不同指纹、不同来源及每次调用的容器与网络均隔离。
+- Trivy 使用 `ignore-unfixed=true`；本报告的“0”表示当前漏洞库中存在修复版本的 HIGH/CRITICAL 发现为 0，不代表未来数据库不会新增发现，也不代表无修复版本的风险不存在。
+
+### 回滚方式
+
+- 使用 `git revert e9377369e9c8fee18d4133306f0737468852ebc3` 回滚代码和配置，不得使用破坏工作区的强制重置；回滚会重新暴露共享插件进程、共享缓存和长期代理凭据风险。
+- V24 已由 Flyway 应用，不得删除或改写迁移历史。代码回滚后可保留已排队探测记录；若需恢复新的隔离实现，应通过后续前向迁移调整状态。
+- 回滚前先停止可选插件 Worker，并确认没有标签为 `base-ai.plugin-sandbox=true` 的短生命周期容器或网络正在执行；持久插件卷不会由代码回滚自动删除。
+
+### 下次测试建议
+
+- 每次 Docker CLI、Go、Node/npm、基础镜像摘要或 Trivy 漏洞库更新后，重复执行源码扫描和九镜像矩阵。
+- 增加 CI 中的真实 Docker Engine 沙箱集成作业，覆盖两个并发插件、超时强杀、Broker 重启、网关重连和持久卷恢复。
+- 如后续支持插件声明通配符域名，必须保持默认拒绝并新增公共后缀、IDN、DNS 重绑定和子域接管测试；当前实现只接受精确 ASCII DNS 名称。
+- 若后续决定处理三项排除风险，应分别准备可信 CA、服务端名称、Redis TLS 端点和旧环境回滚连接串。
+
 ## 项目风险全量修复测试结果（2026-08-30）
 
 ### Git 基准点
