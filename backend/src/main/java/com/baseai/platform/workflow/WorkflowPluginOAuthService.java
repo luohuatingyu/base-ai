@@ -60,7 +60,7 @@ public class WorkflowPluginOAuthService {
             .put("state", state).put("codeVerifier", verifier);
         JsonNode output = workers.invoke(component.source(), component.packageFingerprint(), component.externalKey(),
             "oauth_authorize", objectMapper.createObjectNode(), credentials(connection), objectMapper.nullNode(),
-            objectMapper.createObjectNode(), lifecycle);
+            objectMapper.createObjectNode(), lifecycle, component.allowedDomains());
         String authorizationUrl = authorizationUrl(output, state);
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(10);
         jdbcTemplate.update("""
@@ -95,7 +95,7 @@ public class WorkflowPluginOAuthService {
             .put("state", state).put("code", code).put("codeVerifier", cryptoService.decrypt(oauth.verifierEncrypted()));
         JsonNode output = workers.invoke(component.source(), component.packageFingerprint(), component.externalKey(),
             "oauth_exchange", objectMapper.createObjectNode(), credentials(connection), objectMapper.nullNode(),
-            objectMapper.createObjectNode(), lifecycle);
+            objectMapper.createObjectNode(), lifecycle, component.allowedDomains());
         JsonNode newCredentials = output.path("credentials").isObject() ? output.path("credentials") : output;
         if (!newCredentials.isObject()) throw new BusinessException("workflow.pluginOAuthResponseInvalid");
         connections.replacePluginCredentials(oauth.connectionId(), oauth.componentId(), newCredentials);

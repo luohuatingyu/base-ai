@@ -33,7 +33,7 @@ TYPE_KEYS = {
 
 REQUIREMENT_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9_,.-]+\])?(.*)$")
 FORBIDDEN_REQUIREMENTS = {"dify-plugin", "dify_plugin"}
-HOST_ABI_VERSION = 6
+HOST_ABI_VERSION = 7
 
 
 class PackageError(ValueError):
@@ -397,9 +397,10 @@ class PackageStore:
                 environment = {
                     "PATH": os.getenv("PATH", ""), "HOME": pip_temporary, "TMPDIR": pip_temporary,
                     "PIP_INDEX_URL": os.getenv("PIP_INDEX_URL", "https://pypi.org/simple"),
-                    "PIP_TRUSTED_HOST": os.getenv("PIP_TRUSTED_HOST", ""),
                     "PIP_CACHE_DIR": str(self.pip_cache), "PIP_DISABLE_PIP_VERSION_CHECK": "1",
                     "PYTHONDONTWRITEBYTECODE": "1", "LANG": "C.UTF-8",
+                    "HTTP_PROXY": os.getenv("HTTP_PROXY", ""), "HTTPS_PROXY": os.getenv("HTTPS_PROXY", ""),
+                    "NO_PROXY": os.getenv("NO_PROXY", ""),
                 }
                 result = subprocess.run(
                     [sys.executable, "-m", "pip", "install", "--no-input", "--no-compile",

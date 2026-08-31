@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -11,22 +14,50 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
 
 // gateway 只允许经过审批的 HTTPS/HTTP 域名，并拒绝解析到内网地址的目标。
 type gateway struct {
-	token   string
+	token      string
+	sandboxKey string
+	domains    []string
+	now        func() time.Time
+}
+
+// sandboxClaims 把一次沙箱出站权限绑定到来源、包指纹、操作、精确域名和短时有效期。
+type sandboxClaims struct {
+	Source      string   `json:"s"`
+	Fingerprint string   `json:"f"`
+	Operation   string   `json:"o"`
+	Domains     []string `json:"d"`
+	IssuedAt    int64    `json:"iat"`
+	ExpiresAt   int64    `json:"exp"`
+	Nonce       string   `json:"n"`
+}
+
+// outboundPolicy 标记请求使用全局可信凭据还是插件沙箱精确域名凭据。
+type outboundPolicy struct {
+	sandbox bool
 	domains []string
 }
+
+var sandboxFingerprint = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var sandboxNonce = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 func main() {
 	token := required("OUTBOUND_GATEWAY_TOKEN")
 	if len(token) < 24 {
 		log.Fatal("OUTBOUND_GATEWAY_TOKEN must contain at least 24 characters")
 	}
-	g := &gateway{token: token, domains: parseDomains(os.Getenv("OUTBOUND_ALLOWED_DOMAINS"))}
+	sandboxKey := required("PLUGIN_SANDBOX_EGRESS_SIGNING_KEY")
+	if len(sandboxKey) < 32 {
+		log.Fatal("PLUGIN_SANDBOX_EGRESS_SIGNING_KEY must contain at least 32 characters")
+	}
+	g := &gateway{token: token, sandboxKey: sandboxKey,
+		domains: parseDomains(os.Getenv("OUTBOUND_ALLOWED_DOMAINS")), now: time.Now}
 	server := &http.Server{Addr: ":8080", Handler: g, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 130 * time.Second, WriteTimeout: 130 * time.Second, IdleTimeout: 30 * time.Second}
 	log.Printf("outbound gateway started allowed_domains=%d", len(g.domains))
@@ -42,15 +73,16 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.worker(w, r)
 		return
 	}
-	if !g.authorized(r) {
+	policy, authorized := g.authorization(r)
+	if !authorized {
 		writeJSON(w, http.StatusUnauthorized, `{"error":"UNAUTHORIZED"}`)
 		return
 	}
 	if r.Method == http.MethodConnect {
-		g.connect(w, r)
+		g.connect(w, r, policy)
 		return
 	}
-	g.forward(w, r)
+	g.forward(w, r, policy)
 }
 
 // worker 把 Backend 的受鉴权请求转发到隔离网络中的固定插件 Worker。
@@ -85,14 +117,14 @@ func (g *gateway) worker(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-func (g *gateway) forward(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) forward(w http.ResponseWriter, r *http.Request, policy outboundPolicy) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024)
 	target := r.URL
 	if !target.IsAbs() || target.Hostname() == "" {
 		writeJSON(w, http.StatusBadRequest, `{"error":"ABSOLUTE_URL_REQUIRED"}`)
 		return
 	}
-	if !g.allowed(target.Hostname()) {
+	if !g.allowedFor(policy, target.Hostname()) {
 		writeJSON(w, http.StatusForbidden, `{"error":"OUTBOUND_HOST_FORBIDDEN"}`)
 		return
 	}
@@ -109,7 +141,7 @@ func (g *gateway) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: target.Scheme, Host: target.Host})
-	proxy.Transport = g.transport()
+	proxy.Transport = g.transport(policy)
 	proxy.Director = func(req *http.Request) {
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
@@ -124,12 +156,12 @@ func (g *gateway) forward(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-func (g *gateway) connect(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) connect(w http.ResponseWriter, r *http.Request, policy outboundPolicy) {
 	host, port, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		host, port = r.Host, "443"
 	}
-	if port != "443" || !g.allowed(host) || !g.safeAddresses(r.Context(), host) {
+	if port != "443" || !g.allowedFor(policy, host) || !g.safeAddresses(r.Context(), host) {
 		writeJSON(w, http.StatusForbidden, `{"error":"OUTBOUND_CONNECT_FORBIDDEN"}`)
 		return
 	}
@@ -168,13 +200,13 @@ func (g *gateway) connect(w http.ResponseWriter, r *http.Request) {
 	go tunnel(client, upstream)
 }
 
-func (g *gateway) transport() http.RoundTripper {
+func (g *gateway) transport(policy outboundPolicy) http.RoundTripper {
 	return &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
 			return nil, err
 		}
-		if !g.allowed(host) || isPrivate(net.ParseIP(host)) {
+		if !g.allowedFor(policy, host) || isPrivate(net.ParseIP(host)) {
 			return nil, fmt.Errorf("outbound address forbidden")
 		}
 		ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
@@ -195,33 +227,145 @@ func (g *gateway) transport() http.RoundTripper {
 }
 
 func (g *gateway) authorized(r *http.Request) bool {
+	_, authorized := g.authorization(r)
+	return authorized
+}
+
+// authorization 校验全局凭据或短时沙箱令牌，并返回后续 Host 判定所需的权限范围。
+func (g *gateway) authorization(r *http.Request) (outboundPolicy, bool) {
 	provided := r.Header.Get("X-Internal-Token")
 	if len(provided) == len(g.token) && subtle.ConstantTimeCompare([]byte(provided), []byte(g.token)) == 1 {
-		return true
+		return outboundPolicy{}, true
 	}
 	proxy := strings.TrimSpace(r.Header.Get("Proxy-Authorization"))
 	if !strings.HasPrefix(proxy, "Basic ") {
-		return false
+		return outboundPolicy{}, false
 	}
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(strings.TrimPrefix(proxy, "Basic ")))
 	if err != nil {
-		return false
+		return outboundPolicy{}, false
 	}
 	parts := strings.SplitN(string(decoded), ":", 2)
 	if len(parts) != 2 {
-		return false
+		return outboundPolicy{}, false
+	}
+	if parts[0] == "sandbox" && parts[1] != "" {
+		claims, valid := g.decodeSandboxToken(parts[1])
+		if !valid {
+			return outboundPolicy{}, false
+		}
+		return outboundPolicy{sandbox: true, domains: claims.Domains}, true
 	}
 	provided = parts[0]
 	if parts[1] != "" {
 		provided = parts[1]
 	}
-	return len(provided) == len(g.token) && subtle.ConstantTimeCompare([]byte(provided), []byte(g.token)) == 1
+	valid := len(provided) == len(g.token) && subtle.ConstantTimeCompare([]byte(provided), []byte(g.token)) == 1
+	return outboundPolicy{}, valid
+}
+
+// decodeSandboxToken 校验签名、结构、时间窗和全部最小权限声明。
+func (g *gateway) decodeSandboxToken(token string) (sandboxClaims, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 || len(g.sandboxKey) < 32 {
+		return sandboxClaims{}, false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil || len(payload) > 4096 {
+		return sandboxClaims{}, false
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return sandboxClaims{}, false
+	}
+	mac := hmac.New(sha256.New, []byte(g.sandboxKey))
+	_, _ = mac.Write([]byte(parts[0]))
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return sandboxClaims{}, false
+	}
+	var claims sandboxClaims
+	if json.Unmarshal(payload, &claims) != nil || !sandboxFingerprint.MatchString(claims.Fingerprint) ||
+		!sandboxNonce.MatchString(claims.Nonce) || !ListContains([]string{"DIFY", "N8N"}, claims.Source) ||
+		!ListContains([]string{"inspect", "invoke"}, claims.Operation) || len(claims.Domains) > 64 {
+		return sandboxClaims{}, false
+	}
+	now := time.Now()
+	if g.now != nil {
+		now = g.now()
+	}
+	if claims.IssuedAt > now.Unix()+30 || claims.ExpiresAt < now.Unix() || claims.ExpiresAt <= claims.IssuedAt ||
+		claims.ExpiresAt-claims.IssuedAt > 11*60 {
+		return sandboxClaims{}, false
+	}
+	seen := map[string]bool{}
+	for _, domain := range claims.Domains {
+		if normalizeExactDomain(domain) == "" || seen[domain] {
+			return sandboxClaims{}, false
+		}
+		seen[domain] = true
+	}
+	return claims, true
+}
+
+// encodeSandboxToken 生成与 Broker 兼容的规范短时令牌，生产网关仅负责验证。
+func encodeSandboxToken(key string, claims sandboxClaims) string {
+	payload, _ := json.Marshal(claims)
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	mac := hmac.New(sha256.New, []byte(key))
+	_, _ = mac.Write([]byte(encoded))
+	return encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// allowedFor 对沙箱执行精确 Host 匹配，并始终与运维全局白名单取交集。
+func (g *gateway) allowedFor(policy outboundPolicy, host string) bool {
+	host = normalizeExactDomain(host)
+	if host == "" || !g.allowed(host) {
+		return false
+	}
+	if !policy.sandbox {
+		return true
+	}
+	for _, domain := range policy.domains {
+		if host == normalizeExactDomain(domain) {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *gateway) allowed(host string) bool {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	host = normalizeExactDomain(host)
 	for _, domain := range g.domains {
 		if host == domain || strings.HasSuffix(host, "."+domain) {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeExactDomain 只接受 DNS 名称，禁止 IP、通配符和歧义尾点。
+func normalizeExactDomain(value string) string {
+	domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(value), "."))
+	if len(domain) < 1 || len(domain) > 253 || net.ParseIP(domain) != nil || strings.Contains(domain, "*") {
+		return ""
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if len(label) < 1 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return ""
+		}
+		for _, character := range label {
+			if character != '-' && (character < 'a' || character > 'z') && (character < '0' || character > '9') {
+				return ""
+			}
+		}
+	}
+	return domain
+}
+
+// ListContains 判断受控短列表是否包含目标值。
+func ListContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
 			return true
 		}
 	}

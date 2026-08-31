@@ -54,7 +54,8 @@ public class WorkflowPluginNodeExecutor implements WorkflowNodeExecutor {
         ObjectNode context = objectMapper.createObjectNode().put("runId", request.runId())
             .put("nodeId", request.nodeId()).put("workflowOwnerId", request.workflowOwnerId());
         JsonNode output = workers.invoke(component.source(), component.packageFingerprint(), component.externalKey(),
-            "invoke", parameters, credentials, request.context().path("input"), context);
+            "invoke", parameters, credentials, request.context().path("input"), context, null,
+            component.allowedDomains());
         return Result.output(output);
     }
 

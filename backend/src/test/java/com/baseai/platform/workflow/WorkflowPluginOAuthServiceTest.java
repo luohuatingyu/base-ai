@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -62,7 +63,7 @@ class WorkflowPluginOAuthServiceTest {
     @Test
     void createsEncryptedOneTimeAuthorizationState() {
         when(workers.invoke(anyString(), anyString(), anyString(), anyString(), any(JsonNode.class),
-            any(JsonNode.class), any(JsonNode.class), any(JsonNode.class), any(ObjectNode.class)))
+            any(JsonNode.class), any(JsonNode.class), any(JsonNode.class), any(ObjectNode.class), anyList()))
             .thenReturn(mapper.createObjectNode().put("authorizationUrl", "https://accounts.example.com/authorize?client_id=id"));
 
         var result = service.authorize(9L,
@@ -79,7 +80,7 @@ class WorkflowPluginOAuthServiceTest {
     @Test
     void exchangesCodeOnceAndReplacesCredentials() {
         when(workers.invoke(anyString(), anyString(), anyString(), anyString(), any(JsonNode.class),
-            any(JsonNode.class), any(JsonNode.class), any(JsonNode.class), any(ObjectNode.class)))
+            any(JsonNode.class), any(JsonNode.class), any(JsonNode.class), any(ObjectNode.class), anyList()))
             .thenReturn(mapper.createObjectNode().put("authorizationUrl", "https://accounts.example.com/authorize"))
             .thenReturn(mapper.createObjectNode().putObject("credentials").put("accessToken", "secret"));
         var authorization = service.authorize(9L,
@@ -106,7 +107,7 @@ class WorkflowPluginOAuthServiceTest {
     @Test
     void rejectsPluginAuthorizationUrlWithForgedState() {
         when(workers.invoke(anyString(), anyString(), anyString(), anyString(), any(JsonNode.class),
-            any(JsonNode.class), any(JsonNode.class), any(JsonNode.class), any(ObjectNode.class)))
+            any(JsonNode.class), any(JsonNode.class), any(JsonNode.class), any(ObjectNode.class), anyList()))
             .thenReturn(mapper.createObjectNode().put("authorizationUrl",
                 "https://accounts.example.com/authorize?state=forged"));
 

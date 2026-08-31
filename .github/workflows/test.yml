@@ -66,7 +66,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - run: go test ./...
         working-directory: adapter-manager
       - run: go test ./...
@@ -98,4 +98,5 @@ jobs:
           N8N_PLUGIN_WORKER_INTERNAL_TOKEN: ci-n8n-token-123456789012345678
           ADAPTER_MANAGER_INTERNAL_TOKEN: ci-adapter-token-123456789012345678
           OUTBOUND_GATEWAY_TOKEN: ci-outbound-token-123456789012345678
+          PLUGIN_SANDBOX_EGRESS_SIGNING_KEY: ci-plugin-sandbox-signing-key-1234567890
         run: docker compose config --quiet

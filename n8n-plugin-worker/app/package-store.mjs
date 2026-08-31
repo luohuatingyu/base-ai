@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 const SHIM = resolve(dirname(new URL(import.meta.url).pathname), 'abi-shim.cjs')
-const HOST_ABI_VERSION = 5
+const HOST_ABI_VERSION = 6
 
 export class PackageError extends Error {}
 
@@ -216,7 +216,10 @@ module.exports = function set(target, path, value) {
       '--package-lock=true', '--save-exact', ...dependencies.map(item => `${item.name}@${item.version}`),
     ], {
       encoding: 'utf8', timeout: Math.max(10000, Math.min(this.installTimeout, 600000)),
-      env: { PATH: process.env.PATH || '', HOME: '/data/tmp', npm_config_cache: '/data/tmp/npm-cache', LANG: 'C.UTF-8' },
+      env: { PATH: process.env.PATH || '', HOME: '/data/tmp', npm_config_cache: '/data/tmp/npm-cache', LANG: 'C.UTF-8',
+        npm_config_registry: process.env.npm_config_registry || 'https://registry.npmjs.org',
+        HTTP_PROXY: process.env.HTTP_PROXY || '', HTTPS_PROXY: process.env.HTTPS_PROXY || '',
+        NO_PROXY: process.env.NO_PROXY || '' },
       maxBuffer: 1024 * 1024,
     })
     if (result.error?.code === 'ETIMEDOUT') throw new PackageError('DEPENDENCY_INSTALL_TIMEOUT')

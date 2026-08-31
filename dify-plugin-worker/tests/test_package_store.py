@@ -123,7 +123,7 @@ extra:
         result = self.store.install({"packageId": "fixture/calendar", "version": "1",
                                      "archiveBase64": base64.b64encode(raw).decode()})
 
-        self.assertEqual(6, result["hostAbiVersion"])
+        self.assertEqual(7, result["hostAbiVersion"])
         component = result["components"][0]
         self.assertEqual("Add Event Attendees", component["localization"]["name"]["en-US"])
         self.assertEqual("添加日程参会人", component["localization"]["name"]["zh-CN"])

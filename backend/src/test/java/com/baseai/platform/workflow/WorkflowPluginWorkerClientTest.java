@@ -70,7 +70,7 @@ class WorkflowPluginWorkerClientTest {
     void validatesWorkerHostAbiVersion() throws Exception {
         String fingerprint = "a".repeat(64);
         int[] requestCount = {0};
-        int[] versions = {5, 6, 5};
+        int[] versions = {6, 7, 6};
         List<Boolean> signatures = new CopyOnWriteArrayList<>();
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/packages/inspect", exchange -> {
@@ -103,12 +103,12 @@ class WorkflowPluginWorkerClientTest {
         WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(new ObjectMapper(), properties, lifecycle());
 
         WorkflowPluginWorkerClient.WorkerPackage n8n = client.inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint);
-        assertEquals(5, n8n.hostAbiVersion());
+        assertEquals(6, n8n.hostAbiVersion());
         assertEquals(true, signatures.get(0));
         assertEquals("MIT", n8n.licenseName());
         assertEquals("api.example.com", n8n.externalServices().get(0).domain());
         WorkflowPluginWorkerClient.WorkerPackage dify = client.inspect("DIFY", "pkg", "1", new byte[]{1}, fingerprint);
-        assertEquals(6, dify.hostAbiVersion());
+        assertEquals(7, dify.hostAbiVersion());
         assertEquals(true, signatures.get(1));
         assertEquals("Action", dify.components().get(0).localization().path("name").path("en-US").asText());
         BusinessException outdated = assertThrows(BusinessException.class,
@@ -124,7 +124,7 @@ class WorkflowPluginWorkerClientTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/internal/workers/n8n/packages/inspect", exchange -> {
             signedTarget.set(exchange.getRequestHeaders().getFirst(InternalRequestSigner.TARGET));
-            byte[] body = ("{\"fingerprint\":\"%s\",\"runtimeLanguage\":\"node\",\"hostAbiVersion\":5,"
+            byte[] body = ("{\"fingerprint\":\"%s\",\"runtimeLanguage\":\"node\",\"hostAbiVersion\":6,"
                 + "\"components\":[{\"externalId\":\"action\",\"name\":\"Action\",\"componentType\":\"ACTION\","
                 + "\"schema\":[],\"credentialSchema\":[],\"sourcePath\":\"node.js\","
                 + "\"compatibilityStatus\":\"SUPPORTED\",\"compatibilityReason\":\"\"}]}"
@@ -145,6 +145,35 @@ class WorkflowPluginWorkerClientTest {
             .inspect("N8N", "pkg", "1", new byte[]{1}, fingerprint);
 
         assertEquals("/packages/inspect", signedTarget.get());
+    }
+
+    /** 插件调用必须把数据库批准域名作为独立数组发送，不能回退为全局代理权限。 */
+    @Test
+    void sendsOnlyApprovedPluginDomainsForInvocation() throws Exception {
+        AtomicReference<String> requestJson = new AtomicReference<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/invocations", exchange -> {
+            requestJson.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] body = "{\"success\":true,\"output\":{\"ok\":true}}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        PlatformProperties properties = new PlatformProperties();
+        String workerUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        properties.getWorkflow().setDifyPluginWorkerUrl(workerUrl);
+        properties.getWorkflow().setN8nPluginWorkerUrl(workerUrl);
+        properties.getWorkflow().setDifyPluginWorkerInternalToken("d".repeat(24));
+        properties.getWorkflow().setN8nPluginWorkerInternalToken("n".repeat(24));
+        ObjectMapper mapper = new ObjectMapper();
+        WorkflowPluginWorkerClient client = new WorkflowPluginWorkerClient(mapper, properties, lifecycle());
+
+        client.invoke("N8N", "a".repeat(64), "action", "invoke", mapper.createObjectNode(),
+            mapper.createObjectNode(), mapper.nullNode(), mapper.createObjectNode(), null,
+            List.of("api.example.com", "api.example.com"));
+
+        assertEquals("[\"api.example.com\"]", mapper.readTree(requestJson.get()).path("allowedDomains").toString());
     }
 
     /** 创建允许测试请求进入本地 HTTP Worker 的适配器生命周期替身。 */

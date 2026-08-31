@@ -119,7 +119,8 @@ public class WorkflowPluginRegistryService {
         List<RuntimeComponent> rows = jdbcTemplate.query("""
             SELECT c.id,p.source,p.package_key,p.package_version,p.package_fingerprint,p.enabled plugin_enabled,
                    c.external_key,c.component_type,c.schema_json,c.credential_schema_json,c.compatibility_status,
-                   COALESCE(a.admission_status,'PENDING') admission_status
+                   COALESCE(a.admission_status,'PENDING') admission_status,
+                   COALESCE(a.external_services_json,'[]') external_services_json
             FROM workflow_marketplace_component c JOIN workflow_marketplace_plugin p ON p.id=c.plugin_id
             LEFT JOIN workflow_plugin_admission a ON a.plugin_id=p.id
             WHERE c.id=?
@@ -255,7 +256,8 @@ public class WorkflowPluginRegistryService {
             rs.getString("package_version"), rs.getString("package_fingerprint"), rs.getBoolean("plugin_enabled"),
             rs.getString("external_key"), rs.getString("component_type"), parse(rs.getString("schema_json")),
             parse(rs.getString("credential_schema_json")), rs.getString("compatibility_status"),
-            rs.getString("admission_status"));
+            rs.getString("admission_status"), services(rs.getString("external_services_json")).stream()
+                .map(WorkflowModels.PluginExternalService::domain).map(this::domain).distinct().toList());
     }
 
     /** 新包首次注册或版本变化时写入可信预填值并清除旧审批。 */
@@ -482,14 +484,23 @@ public class WorkflowPluginRegistryService {
     public record RuntimeComponent(Long id, String source, String packageKey, String packageVersion,
                                    String packageFingerprint, boolean pluginEnabled, String externalKey,
                                    String componentType, JsonNode schema, JsonNode credentialSchema,
-                                   String compatibilityStatus, String admissionStatus) {
+                                   String compatibilityStatus, String admissionStatus, List<String> allowedDomains) {
         /** 兼容现有测试与不关心准入状态的构造调用。 */
         public RuntimeComponent(Long id, String source, String packageKey, String packageVersion,
                                 String packageFingerprint, boolean pluginEnabled, String externalKey,
                                 String componentType, JsonNode schema, JsonNode credentialSchema,
                                 String compatibilityStatus) {
             this(id, source, packageKey, packageVersion, packageFingerprint, pluginEnabled, externalKey,
-                componentType, schema, credentialSchema, compatibilityStatus, "APPROVED");
+                componentType, schema, credentialSchema, compatibilityStatus, "APPROVED", List.of());
+        }
+
+        /** 兼容显式构造准入状态但尚未关心出站域名的既有测试。 */
+        public RuntimeComponent(Long id, String source, String packageKey, String packageVersion,
+                                String packageFingerprint, boolean pluginEnabled, String externalKey,
+                                String componentType, JsonNode schema, JsonNode credentialSchema,
+                                String compatibilityStatus, String admissionStatus) {
+            this(id, source, packageKey, packageVersion, packageFingerprint, pluginEnabled, externalKey,
+                componentType, schema, credentialSchema, compatibilityStatus, admissionStatus, List.of());
         }
     }
 }

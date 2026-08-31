@@ -38,7 +38,7 @@ class WorkflowPluginNodeExecutorTest {
         var component = component(mapper.readTree("[{\"name\":\"query\",\"type\":\"string\",\"required\":true}]"),
             mapper.createArrayNode());
         when(registry.requireRuntimeComponent(7L)).thenReturn(component);
-        when(workers.invoke(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(workers.invoke(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
             .thenReturn(mapper.readTree("{\"ok\":true}"));
 
         var result = executor.execute(request("""
@@ -61,7 +61,7 @@ class WorkflowPluginNodeExecutorTest {
             new WorkflowConnectionService.StoredConnection(9L, "P", "Plugin", "PLUGIN",
                 mapper.readTree("{\"pluginComponentId\":7,\"credentials\":{\"apiKey\":\"secret\"}}"),
                 3L, true, null, null));
-        when(workers.invoke(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(workers.invoke(any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
             .thenAnswer(invocation -> {
                 assertEquals("secret", invocation.getArgument(5, com.fasterxml.jackson.databind.JsonNode.class)
                     .path("apiKey").asText());
@@ -93,7 +93,7 @@ class WorkflowPluginNodeExecutorTest {
 
         assertEquals(400, exception.getStatus());
         assertEquals("workflow.connectionConfigInvalid", exception.getMessageKey());
-        verify(workers, never()).invoke(any(), any(), any(), any(), any(), any(), any(), any());
+        verify(workers, never()).invoke(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     /** 伪造包摘要或缺少必填参数必须在 Worker 调用前失败。 */
@@ -106,7 +106,7 @@ class WorkflowPluginNodeExecutorTest {
             {"pluginComponentId":7,"packageFingerprint":"%s","componentExternalId":"action",
              "componentType":"ACTION","parameters":{}}
             """.formatted("b".repeat(64)))));
-        verify(workers, never()).invoke(any(), any(), any(), any(), any(), any(), any(), any());
+        verify(workers, never()).invoke(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     /** 已作为运行输入传入的插件事件应成为入口输出，不能在执行图中重复订阅。 */
@@ -122,7 +122,7 @@ class WorkflowPluginNodeExecutorTest {
             """.formatted("a".repeat(64))));
 
         assertEquals(1, result.output().path("x").asInt());
-        verify(workers, never()).invoke(any(), any(), any(), any(), any(), any(), any(), any());
+        verify(workers, never()).invoke(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     /** 构造固定版本运行组件。 */

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +15,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +27,7 @@ import (
 )
 
 const maximumResponseBytes = 4096
+const maximumSandboxResponseBytes = 16 * 1024 * 1024
 
 var internalHexPattern = regexp.MustCompile(`^[a-f0-9]+$`)
 
@@ -34,6 +38,7 @@ var adapterServices = map[string]string{
 
 type commandRunner interface {
 	Run(context.Context, ...string) (string, error)
+	RunInput(context.Context, []byte, int, ...string) (string, error)
 }
 
 type dockerCommandRunner struct{}
@@ -47,6 +52,45 @@ func (dockerCommandRunner) Run(ctx context.Context, arguments ...string) (string
 		text = text[len(text)-2000:]
 	}
 	return text, err
+}
+
+// boundedBuffer 接收子进程输出但只保留配置上限，避免恶意插件用标准输出耗尽 Broker 内存。
+type boundedBuffer struct {
+	buffer   bytes.Buffer
+	maximum  int
+	overflow bool
+}
+
+// Write 截断超限内容并向 os/exec 报告已消费全部字节，防止管道阻塞。
+func (b *boundedBuffer) Write(value []byte) (int, error) {
+	remaining := b.maximum - b.buffer.Len()
+	if remaining > 0 {
+		if remaining > len(value) {
+			remaining = len(value)
+		}
+		_, _ = b.buffer.Write(value[:remaining])
+	}
+	if len(value) > remaining {
+		b.overflow = true
+	}
+	return len(value), nil
+}
+
+// RunInput 通过标准输入传递插件载荷，分离并限制标准输出与诊断信息。
+func (dockerCommandRunner) RunInput(ctx context.Context, input []byte, maximum int, arguments ...string) (string, error) {
+	command := exec.CommandContext(ctx, "docker", arguments...)
+	command.Stdin = bytes.NewReader(input)
+	stdout := &boundedBuffer{maximum: maximum}
+	stderr := &boundedBuffer{maximum: 4096}
+	command.Stdout, command.Stderr = stdout, stderr
+	err := command.Run()
+	if stdout.overflow {
+		return stdout.buffer.String(), errors.New("sandbox response too large")
+	}
+	if err != nil && stderr.buffer.Len() > 0 {
+		log.Printf("sandbox command failed detail=%s", strings.TrimSpace(stderr.buffer.String()))
+	}
+	return stdout.buffer.String(), err
 }
 
 type adapterState struct {
@@ -196,6 +240,433 @@ func (c *dockerBrokerController) serveHTTP(response http.ResponseWriter, request
 	}
 	state, status := c.setEnabled(request.Context(), source, enabled)
 	writeJSON(response, status, state)
+}
+
+// sandboxCommand 是控制 Worker 能提交的完整白名单协议，未知字段会在到达 Docker 前被拒绝。
+type sandboxCommand struct {
+	Fingerprint    string          `json:"fingerprint"`
+	AllowedDomains []string        `json:"allowedDomains,omitempty"`
+	PackageID      string          `json:"packageId,omitempty"`
+	Version        string          `json:"version,omitempty"`
+	ArchiveBase64  string          `json:"archiveBase64,omitempty"`
+	ComponentID    string          `json:"componentId,omitempty"`
+	Operation      string          `json:"operation,omitempty"`
+	Parameters     json.RawMessage `json:"parameters,omitempty"`
+	Credentials    json.RawMessage `json:"credentials,omitempty"`
+	Input          json.RawMessage `json:"input,omitempty"`
+	Context        json.RawMessage `json:"context,omitempty"`
+	Event          json.RawMessage `json:"event,omitempty"`
+	RedirectURI    string          `json:"redirectUri,omitempty"`
+	State          string          `json:"state,omitempty"`
+	Code           string          `json:"code,omitempty"`
+	CodeVerifier   string          `json:"codeVerifier,omitempty"`
+}
+
+// sandboxTokenClaims 与出站网关共享最小声明格式，长期签名密钥只存在于 Broker 和网关。
+type sandboxTokenClaims struct {
+	Source      string   `json:"s"`
+	Fingerprint string   `json:"f"`
+	Operation   string   `json:"o"`
+	Domains     []string `json:"d"`
+	IssuedAt    int64    `json:"iat"`
+	ExpiresAt   int64    `json:"exp"`
+	Nonce       string   `json:"n"`
+}
+
+// sandboxBrokerController 只为固定来源创建一次性容器、独立卷和临时内部网络。
+type sandboxBrokerController struct {
+	runner            commandRunner
+	source            string
+	projectName       string
+	gatewayContainer  string
+	egressKey         string
+	packageDomains    []string
+	pipIndexURL       string
+	npmRegistryURL    string
+	memoryLimit       string
+	cpuLimit          string
+	pidsLimit         int
+	maxRequestBytes   int64
+	maximumArchive    int
+	maximumUnpacked   int
+	maximumFiles      int
+	invocationTimeout int
+	installTimeout    int
+	probeTimeout      int
+	responseMaximum   int
+	locksMu           sync.Mutex
+	locks             map[string]*sync.Mutex
+}
+
+var pluginFingerprintPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var dockerProjectPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+var resourceMemoryPattern = regexp.MustCompile(`^[1-9][0-9]*(?:[kKmMgG])?$`)
+var resourceCPUPattern = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?$`)
+
+// serveHTTP 在来源专用 Unix Socket 上暴露严格的插件操作协议。
+func (c *sandboxBrokerController) serveHTTP(response http.ResponseWriter, request *http.Request) {
+	if request.Method == http.MethodGet && request.URL.Path == "/health" {
+		ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+		defer cancel()
+		if _, err := c.runner.Run(ctx, "version", "--format", "{{.Server.Version}}"); err != nil {
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"status": "DOWN"})
+			return
+		}
+		writeJSON(response, http.StatusOK, map[string]string{"status": "UP"})
+		return
+	}
+	if request.Method != http.MethodPost {
+		writeJSON(response, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
+		return
+	}
+	operation := strings.TrimPrefix(request.URL.Path, "/sandbox/")
+	if request.URL.Path != "/sandbox/"+operation || !contains([]string{"inspect", "invoke", "remove"}, operation) {
+		writeJSON(response, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
+		return
+	}
+	command, valid := c.readCommand(response, request, operation)
+	if !valid {
+		return
+	}
+	if operation == "remove" {
+		c.withFingerprintLock(command.Fingerprint, func() {
+			ctx, cancel := context.WithTimeout(request.Context(), 30*time.Second)
+			defer cancel()
+			_, _ = c.runner.Run(ctx, "volume", "rm", "-f", c.volumeName(command.Fingerprint))
+		})
+		writeJSON(response, http.StatusOK, map[string]bool{"removed": true})
+		return
+	}
+	var output string
+	var err error
+	execute := func() { output, err = c.runSandbox(request.Context(), operation, command) }
+	if operation == "inspect" {
+		c.withFingerprintLock(command.Fingerprint, execute)
+	} else {
+		execute()
+	}
+	if err != nil {
+		status, code := http.StatusBadRequest, sandboxError(output, "PLUGIN_SANDBOX_FAILED")
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(request.Context().Err(), context.DeadlineExceeded) {
+			status, code = http.StatusGatewayTimeout, "PLUGIN_SANDBOX_TIMEOUT"
+		} else if output == "" {
+			status, code = http.StatusServiceUnavailable, "PLUGIN_SANDBOX_UNAVAILABLE"
+		}
+		writeJSON(response, status, map[string]string{"error": code})
+		return
+	}
+	var result json.RawMessage
+	if json.Unmarshal([]byte(output), &result) != nil || len(result) == 0 {
+		writeJSON(response, http.StatusBadGateway, map[string]string{"error": "PLUGIN_SANDBOX_OUTPUT_INVALID"})
+		return
+	}
+	writeRawJSON(response, http.StatusOK, result)
+}
+
+// readCommand 限制请求体、拒绝未知字段并校验与操作绑定的全部身份字段。
+func (c *sandboxBrokerController) readCommand(response http.ResponseWriter, request *http.Request,
+	operation string) (sandboxCommand, bool) {
+	maximum := c.maxRequestBytes
+	if maximum <= 0 {
+		maximum = 16 * 1024 * 1024
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, maximum)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	var command sandboxCommand
+	if decoder.Decode(&command) != nil || decoder.Decode(&struct{}{}) != io.EOF ||
+		!pluginFingerprintPattern.MatchString(command.Fingerprint) {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "SANDBOX_REQUEST_INVALID"})
+		return sandboxCommand{}, false
+	}
+	if operation == "inspect" && command.ArchiveBase64 == "" || operation == "invoke" &&
+		(command.ComponentID == "" || !contains([]string{"invoke", "validate_credentials", "subscribe", "unsubscribe",
+			"refresh", "dispatch_event", "oauth_authorize", "oauth_exchange", "schema"}, command.Operation)) {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "SANDBOX_REQUEST_INVALID"})
+		return sandboxCommand{}, false
+	}
+	if operation == "remove" && (command.ArchiveBase64 != "" || command.ComponentID != "" || len(command.AllowedDomains) != 0) {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "SANDBOX_REQUEST_INVALID"})
+		return sandboxCommand{}, false
+	}
+	if len(command.AllowedDomains) > 64 {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "SANDBOX_DOMAINS_INVALID"})
+		return sandboxCommand{}, false
+	}
+	seen := map[string]bool{}
+	for index, domain := range command.AllowedDomains {
+		normalized := exactDomain(domain)
+		if normalized == "" || seen[normalized] {
+			writeJSON(response, http.StatusBadRequest, map[string]string{"error": "SANDBOX_DOMAINS_INVALID"})
+			return sandboxCommand{}, false
+		}
+		seen[normalized], command.AllowedDomains[index] = true, normalized
+	}
+	return command, true
+}
+
+// runSandbox 创建源和调用独占的内部网络，运行固定镜像并无条件清理临时资源。
+func (c *sandboxBrokerController) runSandbox(parent context.Context, operation string,
+	command sandboxCommand) (string, error) {
+	volume := c.volumeName(command.Fingerprint)
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	_, err := c.runner.Run(ctx, "volume", "create", "--label", "base-ai.plugin-sandbox=true", "--label",
+		"base-ai.plugin-source="+c.source, "--label", "base-ai.plugin-fingerprint="+command.Fingerprint, volume)
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	if err = c.prepareVolume(parent, volume); err != nil {
+		return "", err
+	}
+	suffix, err := randomHex(8)
+	if err != nil {
+		return "", err
+	}
+	prefix := c.projectName + "-" + strings.ToLower(c.source) + "-sandbox-" + suffix
+	network, container := prefix+"-network", prefix
+	ctx, cancel = context.WithTimeout(parent, 30*time.Second)
+	_, err = c.runner.Run(ctx, "network", "create", "--internal", "--label", "base-ai.plugin-sandbox=true", network)
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	defer c.cleanupSandbox(container, network)
+	ctx, cancel = context.WithTimeout(parent, 30*time.Second)
+	_, err = c.runner.Run(ctx, "network", "connect", "--alias", "outbound-gateway", network, c.gatewayContainer)
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	domains := command.AllowedDomains
+	if operation == "inspect" {
+		domains = append([]string(nil), c.packageDomains...)
+	}
+	timeout := c.invocationTimeout
+	if operation == "inspect" {
+		timeout = c.installTimeout + c.probeTimeout + 60
+	}
+	if timeout <= 0 {
+		timeout = 300
+	}
+	if timeout > 630 {
+		timeout = 630
+	}
+	token, err := c.mintToken(operation, command.Fingerprint, domains, time.Duration(timeout+15)*time.Second)
+	if err != nil {
+		return "", err
+	}
+	payloadCommand := command
+	payloadCommand.AllowedDomains = nil
+	payload, err := json.Marshal(payloadCommand)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel = context.WithTimeout(parent, time.Duration(timeout)*time.Second)
+	defer cancel()
+	output, runErr := c.runner.RunInput(ctx, payload, c.responseLimit(),
+		c.runArguments(operation, command.Fingerprint, token, container, network)...)
+	if ctx.Err() != nil {
+		return output, ctx.Err()
+	}
+	return output, runErr
+}
+
+// prepareVolume 在接收插件载荷前用无网络固定命令初始化独占卷权限。
+func (c *sandboxBrokerController) prepareVolume(parent context.Context, volume string) error {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	defer cancel()
+	_, err := c.runner.Run(ctx, "run", "--rm", "--pull", "never", "--network", "none", "--read-only",
+		"--user", "0:0", "--cap-drop", "ALL", "--cap-add", "CHOWN", "--security-opt",
+		"no-new-privileges:true", "--pids-limit", "16", "--memory", "32m", "--cpus", "0.25",
+		"--mount", "type=volume,src="+volume+",dst=/data/packages", "--entrypoint", "/bin/chown",
+		c.imageName(), "10001:10001", "/data/packages")
+	return err
+}
+
+// runArguments 构造不接受调用方参数的 docker run 安全基线。
+func (c *sandboxBrokerController) runArguments(operation, fingerprint, token, container, network string) []string {
+	memory := c.memoryLimit
+	if !resourceMemoryPattern.MatchString(memory) {
+		memory = "512m"
+	}
+	cpu := c.cpuLimit
+	if !resourceCPUPattern.MatchString(cpu) {
+		cpu = "1.0"
+	}
+	pids := c.pidsLimit
+	if pids < 16 || pids > 512 {
+		pids = 64
+	}
+	mount := "type=volume,src=" + c.volumeName(fingerprint) + ",dst=/data/packages"
+	if operation != "inspect" {
+		mount += ",readonly"
+	}
+	proxy := "http://sandbox:" + token + "@outbound-gateway:8080"
+	arguments := []string{"run", "--rm", "--interactive", "--pull", "never", "--name", container, "--network", network,
+		"--read-only", "--init", "--user", "10001:10001", "--cap-drop", "ALL", "--security-opt",
+		"no-new-privileges:true", "--pids-limit", strconv.Itoa(pids), "--memory", memory, "--cpus", cpu,
+		"--ulimit", "nofile=256:256", "--stop-timeout", "5", "--tmpfs",
+		"/data/tmp:rw,nosuid,nodev,size=64m,uid=10001,gid=10001", "--tmpfs",
+		"/tmp:rw,nosuid,nodev,size=64m,uid=10001,gid=10001", "--mount",
+		mount,
+		"--label", "base-ai.plugin-sandbox=true", "--label", "base-ai.plugin-source=" + c.source,
+		"--label", "base-ai.plugin-fingerprint=" + fingerprint, "--env", "HTTP_PROXY=" + proxy,
+		"--env", "HTTPS_PROXY=" + proxy, "--env", "NO_PROXY=localhost,127.0.0.1", "--env",
+		"PLUGIN_PACKAGE_ROOT=/data/packages", "--env", "PLUGIN_MAX_PACKAGE_BYTES=" + strconv.Itoa(defaultInt(c.maximumArchive, 5*1024*1024)),
+		"--env", "PLUGIN_MAX_UNPACKED_BYTES=" + strconv.Itoa(defaultInt(c.maximumUnpacked, 100*1024*1024)),
+		"--env", "PLUGIN_MAX_PACKAGE_FILES=" + strconv.Itoa(defaultInt(c.maximumFiles, 2048)), "--env",
+		"PLUGIN_INVOCATION_TIMEOUT_SECONDS=" + strconv.Itoa(defaultInt(c.invocationTimeout, 60)), "--env",
+		"PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS=" + strconv.Itoa(defaultInt(c.installTimeout, 180)), "--env",
+		"PLUGIN_PROBE_TIMEOUT_SECONDS=" + strconv.Itoa(defaultInt(c.probeTimeout, 20)), "--env",
+		"PLUGIN_HTTP_RESPONSE_MAX_BYTES=" + strconv.Itoa(c.responseLimit())}
+	if c.source == "DIFY" && c.pipIndexURL != "" {
+		arguments = append(arguments, "--env", "PIP_INDEX_URL="+c.pipIndexURL)
+	}
+	if c.source == "N8N" && c.npmRegistryURL != "" {
+		arguments = append(arguments, "--env", "npm_config_registry="+c.npmRegistryURL)
+	}
+	arguments = append(arguments, c.imageName())
+	if c.source == "DIFY" {
+		return append(arguments, "python", "-m", "app.sandbox", operation)
+	}
+	return append(arguments, "node", "app/sandbox.mjs", operation)
+}
+
+// cleanupSandbox 强制删除超时容器，并断开网关后移除本次调用独占网络。
+func (c *sandboxBrokerController) cleanupSandbox(container, network string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _ = c.runner.Run(ctx, "rm", "-f", container)
+	_, _ = c.runner.Run(ctx, "network", "disconnect", "-f", network, c.gatewayContainer)
+	_, _ = c.runner.Run(ctx, "network", "rm", network)
+}
+
+// mintToken 为单次沙箱签发最多十一分钟、域名精确绑定的代理凭据。
+func (c *sandboxBrokerController) mintToken(operation, fingerprint string, domains []string,
+	ttl time.Duration) (string, error) {
+	if len(c.egressKey) < 32 {
+		return "", errors.New("sandbox signing key too short")
+	}
+	nonce, err := randomHex(16)
+	if err != nil {
+		return "", err
+	}
+	now := time.Now().Unix()
+	claims := sandboxTokenClaims{Source: c.source, Fingerprint: fingerprint, Operation: operation,
+		Domains: domains, IssuedAt: now, ExpiresAt: now + int64(ttl/time.Second), Nonce: nonce}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	mac := hmac.New(sha256.New, []byte(c.egressKey))
+	_, _ = mac.Write([]byte(encoded))
+	return encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+// volumeName 把来源和不可伪造包摘要映射到唯一持久卷。
+func (c *sandboxBrokerController) volumeName(fingerprint string) string {
+	return c.projectName + "-" + strings.ToLower(c.source) + "-plugin-" + fingerprint
+}
+
+// imageName 只允许当前 Compose 项目中固定来源的预构建 Worker 镜像。
+func (c *sandboxBrokerController) imageName() string {
+	return c.projectName + "-" + strings.ToLower(c.source) + "-plugin-worker:latest"
+}
+
+// withFingerprintLock 串行化同一插件的安装与删除，调用阶段仍允许只读并发。
+func (c *sandboxBrokerController) withFingerprintLock(fingerprint string, action func()) {
+	c.locksMu.Lock()
+	if c.locks == nil {
+		c.locks = map[string]*sync.Mutex{}
+	}
+	lock := c.locks[fingerprint]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		c.locks[fingerprint] = lock
+	}
+	c.locksMu.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
+	action()
+}
+
+// responseLimit 返回限制在 1 MiB 至 16 MiB 之间的沙箱输出上限。
+func (c *sandboxBrokerController) responseLimit() int {
+	value := c.responseMaximum
+	if value < 1024*1024 {
+		value = 1024 * 1024
+	}
+	if value > maximumSandboxResponseBytes {
+		value = maximumSandboxResponseBytes
+	}
+	return value
+}
+
+// randomHex 生成只含小写十六进制的不可预测资源后缀。
+func randomHex(bytesCount int) (string, error) {
+	value := make([]byte, bytesCount)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value), nil
+}
+
+// exactDomain 规范插件批准域名并拒绝 IP、通配符和非法 DNS 标签。
+func exactDomain(value string) string {
+	domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(value), "."))
+	if len(domain) < 1 || len(domain) > 253 || net.ParseIP(domain) != nil || strings.Contains(domain, "*") {
+		return ""
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if len(label) < 1 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return ""
+		}
+		for _, character := range label {
+			if character != '-' && (character < 'a' || character > 'z') && (character < '0' || character > '9') {
+				return ""
+			}
+		}
+	}
+	return domain
+}
+
+// sandboxError 只返回沙箱协议中的稳定错误码，不暴露命令和路径。
+func sandboxError(output, fallback string) string {
+	var value struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(output), &value) == nil && regexp.MustCompile(`^[A-Z0-9_]{1,80}$`).MatchString(value.Error) {
+		return value.Error
+	}
+	return fallback
+}
+
+// defaultInt 为缺失的正整数配置提供受控默认值。
+func defaultInt(value, fallback int) int {
+	if value > 0 {
+		return value
+	}
+	return fallback
+}
+
+// contains 判断固定短列表是否包含目标字符串。
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+// writeRawJSON 写入已验证为合法 JSON 的有限沙箱响应。
+func writeRawJSON(response http.ResponseWriter, status int, value json.RawMessage) {
+	response.Header().Set("Content-Type", "application/json; charset=utf-8")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(status)
+	_, _ = response.Write(value)
 }
 
 type supervisorController struct {
@@ -603,6 +1074,12 @@ func brokerServer(handler http.Handler) *http.Server {
 	}
 }
 
+// sandboxServer 为大包安装和有限调用结果提供硬超时，且只监听来源专用 Unix Socket。
+func sandboxServer(handler http.Handler) *http.Server {
+	return &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 2 * time.Minute,
+		WriteTimeout: 11 * time.Minute, IdleTimeout: 30 * time.Second}
+}
+
 // runManager 启动不持有 Docker 权限的网络控制接口。
 func runManager() {
 	token := required("ADAPTER_MANAGER_INTERNAL_TOKEN")
@@ -644,11 +1121,104 @@ func runBroker() {
 		_ = listener.Close()
 		_ = os.Remove(socketPath)
 	}()
+	runner := dockerCommandRunner{}
 	broker := &dockerBrokerController{
-		runner: dockerCommandRunner{}, projectDir: required("COMPOSE_PROJECT_DIR"),
+		runner: runner, projectDir: required("COMPOSE_PROJECT_DIR"),
 		composeFile: required("COMPOSE_FILE"), envFile: required("COMPOSE_ENV_FILE"),
 	}
+	projectName := required("COMPOSE_PROJECT_NAME")
+	if !dockerProjectPattern.MatchString(projectName) {
+		log.Fatal("COMPOSE_PROJECT_NAME is invalid")
+	}
+	egressKey := required("PLUGIN_SANDBOX_EGRESS_SIGNING_KEY")
+	if len(egressKey) < 32 {
+		log.Fatal("PLUGIN_SANDBOX_EGRESS_SIGNING_KEY must contain at least 32 characters")
+	}
+	packageDomains := parseExactDomains(os.Getenv("PLUGIN_PACKAGE_ALLOWED_DOMAINS"))
+	common := sandboxBrokerController{runner: runner, projectName: projectName,
+		gatewayContainer: projectName + "-outbound-gateway", egressKey: egressKey, packageDomains: packageDomains,
+		pipIndexURL:    safeRegistryURL(optional("PIP_INDEX_URL", "https://pypi.org/simple")),
+		npmRegistryURL: safeRegistryURL(optional("NPM_CONFIG_REGISTRY", "https://registry.npmjs.org")),
+		memoryLimit:    optional("PLUGIN_SANDBOX_MEMORY_LIMIT", "512m"), cpuLimit: optional("PLUGIN_SANDBOX_CPU_LIMIT", "1.0"),
+		pidsLimit:         positiveEnv("PLUGIN_SANDBOX_PIDS_LIMIT", 64),
+		maxRequestBytes:   int64(positiveEnv("PLUGIN_WORKER_MAX_REQUEST_BYTES", 16*1024*1024)),
+		maximumArchive:    positiveEnv("PLUGIN_MAX_PACKAGE_BYTES", 10*1024*1024),
+		maximumUnpacked:   positiveEnv("PLUGIN_MAX_UNPACKED_BYTES", 100*1024*1024),
+		maximumFiles:      positiveEnv("PLUGIN_MAX_PACKAGE_FILES", 2048),
+		invocationTimeout: positiveEnv("PLUGIN_INVOCATION_TIMEOUT_SECONDS", 60),
+		installTimeout:    positiveEnv("PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS", 180),
+		probeTimeout:      positiveEnv("PLUGIN_PROBE_TIMEOUT_SECONDS", 20),
+		responseMaximum:   positiveEnv("PLUGIN_HTTP_RESPONSE_MAX_BYTES", 10*1024*1024)}
+	dify := common
+	dify.source = "DIFY"
+	n8n := common
+	n8n.source = "N8N"
+	go serveSandboxSocket(required("DIFY_SANDBOX_BROKER_SOCKET"), &dify)
+	go serveSandboxSocket(required("N8N_SANDBOX_BROKER_SOCKET"), &n8n)
 	log.Fatal(brokerServer(http.HandlerFunc(broker.serveHTTP)).Serve(listener))
+}
+
+// serveSandboxSocket 启动来源绑定的 Broker 监听器，任一监听失败都会终止进程以阻止降级运行。
+func serveSandboxSocket(socketPath string, controller *sandboxBrokerController) {
+	listener, err := secureUnixListener(socketPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() { _ = listener.Close(); _ = os.Remove(socketPath) }()
+	if err := sandboxServer(http.HandlerFunc(controller.serveHTTP)).Serve(listener); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// parseExactDomains 读取包仓库精确域名列表，非法值直接阻止 Broker 启动。
+func parseExactDomains(value string) []string {
+	result := []string{}
+	seen := map[string]bool{}
+	for _, raw := range strings.FieldsFunc(value, func(character rune) bool {
+		return character == ',' || character == ' ' || character == '\n' || character == '\t'
+	}) {
+		domain := exactDomain(raw)
+		if domain == "" {
+			log.Fatal("PLUGIN_PACKAGE_ALLOWED_DOMAINS contains an invalid domain")
+		}
+		if !seen[domain] {
+			result = append(result, domain)
+			seen[domain] = true
+		}
+	}
+	return result
+}
+
+// safeRegistryURL 只允许无凭据、无查询和片段的 HTTPS 包仓库地址。
+func safeRegistryURL(value string) string {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" {
+		log.Fatal("plugin package registry URL must be credential-free HTTPS")
+	}
+	return parsed.String()
+}
+
+// optional 读取可选环境变量并返回安全默认值。
+func optional(name, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+// positiveEnv 读取有界正整数，非法配置阻止服务以不确定资源策略启动。
+func positiveEnv(name string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 || parsed > 1<<30 {
+		log.Fatal(name + " must be a bounded positive integer")
+	}
+	return parsed
 }
 
 // runManagerHealthcheck 验证 Manager 网络入口及其下游 Supervisor 均可用。

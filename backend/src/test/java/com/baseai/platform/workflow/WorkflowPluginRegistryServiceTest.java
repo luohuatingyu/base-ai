@@ -91,6 +91,7 @@ class WorkflowPluginRegistryServiceTest {
         service.reviewAdmission(registration.pluginId(), new WorkflowModels.PluginAdmissionReviewCommand(true, "approved"));
         assertEquals("api.example.com", service.admissions().get(0).externalServices().get(0).name());
         assertEquals("APPROVED", service.requireRuntimeComponent(componentId).admissionStatus());
+        assertEquals(List.of("api.example.com"), service.requireRuntimeComponent(componentId).allowedDomains());
 
         service.register("N8N", entry("pkg", "1"), inspected("1", "a".repeat(64), "SUPPORTED"), false);
         assertEquals("APPROVED", service.requireRuntimeComponent(componentId).admissionStatus());

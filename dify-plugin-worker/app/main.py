@@ -4,31 +4,31 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from app.internal_auth import InternalRequestVerifier
-from app.package_store import PackageError, PackageStore
+from app.sandbox_client import SandboxClient, SandboxError
 
 
-STORE = PackageStore()
 TOKEN = os.getenv("PLUGIN_WORKER_INTERNAL_TOKEN", "")
 AUTH = InternalRequestVerifier(TOKEN)
+SANDBOX = SandboxClient(os.getenv("PLUGIN_SANDBOX_BROKER_SOCKET", "/run/plugin-sandbox/broker.sock"))
 MAX_REQUEST_BYTES = int(os.getenv("PLUGIN_WORKER_MAX_REQUEST_BYTES", str(8 * 1024 * 1024)))
-TIMEOUT_SECONDS = int(os.getenv("PLUGIN_INVOCATION_TIMEOUT_SECONDS", "60"))
 
 
 class Handler(BaseHTTPRequestHandler):
     """处理健康检查、包探测和插件调用。"""
 
-    server_version = "BaseAiDifyPluginWorker/1.0"
+    server_version = "BaseAiDifyPluginWorker/2.0"
 
     def do_GET(self) -> None:
         """返回不包含插件状态的健康信息。"""
         if self.path == "/health":
-            self._write(200, {"status": "UP", "runtime": "base-ai-python-abi", "python": "3.12"})
+            healthy = SANDBOX.healthy()
+            self._write(200 if healthy else 503,
+                        {"status": "UP" if healthy else "DOWN", "runtime": "base-ai-python-abi", "python": "3.12"})
             return
         self._write(404, {"error": "NOT_FOUND"})
 
@@ -43,17 +43,15 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(request, dict):
                 raise ValueError("REQUEST_JSON_INVALID")
             if self.path == "/packages/inspect":
-                self._write(200, STORE.install(request))
+                self._write(200, SANDBOX.request("inspect", request))
             elif self.path == "/packages/remove":
-                self._write(200, STORE.remove(str(request.get("fingerprint", ""))))
+                self._write(200, SANDBOX.request("remove", request))
             elif self.path == "/invocations":
-                self._write(200, self._invoke(request))
+                self._write(200, SANDBOX.request("invoke", request))
             else:
                 self._write(404, {"error": "NOT_FOUND"})
-        except PackageError as exception:
-            self._write(400, {"error": str(exception)})
-        except TimeoutError as exception:
-            self._write(504, {"error": str(exception)})
+        except SandboxError as exception:
+            self._write(exception.status, {"error": exception.code})
         except ValueError as exception:
             self._write(400, {"error": str(exception)[:500]})
         except Exception:
@@ -69,39 +67,6 @@ class Handler(BaseHTTPRequestHandler):
         if length <= 0 or length > MAX_REQUEST_BYTES:
             raise ValueError("REQUEST_SIZE_INVALID")
         return self.rfile.read(length)
-
-    def _invoke(self, request: dict[str, Any]) -> dict[str, Any]:
-        """在不继承内部密钥的子进程中执行一次插件调用。"""
-        root, metadata = STORE.metadata(str(request.get("fingerprint", "")))
-        external_id = str(request.get("componentId", ""))
-        component = next((item for item in metadata["components"] if item["externalId"] == external_id), None)
-        if component is None or component["compatibilityStatus"] == "UNSUPPORTED":
-            raise ValueError("PLUGIN_COMPONENT_UNSUPPORTED")
-        child_request = dict(request)
-        child_request["root"] = str(root)
-        child_request["sourcePath"] = component["sourcePath"]
-        child_request["componentType"] = component.get("componentType", "")
-        child_request["modelType"] = component.get("modelType", "")
-        environment = {
-            "PATH": os.getenv("PATH", ""), "PYTHONPATH": "/app", "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONUNBUFFERED": "1", "LANG": "C.UTF-8",
-            "HTTP_PROXY": os.getenv("HTTP_PROXY", ""), "HTTPS_PROXY": os.getenv("HTTPS_PROXY", ""),
-            "NO_PROXY": os.getenv("NO_PROXY", ""),
-        }
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "app.invoke_child"], input=json.dumps(child_request), text=True,
-                capture_output=True, timeout=max(1, min(TIMEOUT_SECONDS, 300)), env=environment, check=False,
-            )
-        except subprocess.TimeoutExpired as exception:
-            raise TimeoutError("PLUGIN_INVOCATION_TIMEOUT") from exception
-        try:
-            response = json.loads(result.stdout)
-        except Exception as exception:
-            raise ValueError("PLUGIN_OUTPUT_INVALID") from exception
-        if result.returncode != 0 or not response.get("success"):
-            raise ValueError(str(response.get("error") or "PLUGIN_INVOCATION_FAILED"))
-        return response
 
     def _write(self, status: int, value: dict[str, Any]) -> None:
         """写入有限 JSON 响应。"""

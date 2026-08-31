@@ -200,6 +200,11 @@ The repository tracks `.env.example` only. Never commit a populated `.env` file.
    APP_CONFIG_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
    APP_API_KEY_HASH_SECRET=<at-least-32-random-characters>
    PYTHON_WORKER_INTERNAL_TOKEN=<at-least-24-random-characters>
+   DIFY_PLUGIN_WORKER_INTERNAL_TOKEN=<at-least-24-random-characters>
+   N8N_PLUGIN_WORKER_INTERNAL_TOKEN=<at-least-24-random-characters>
+   ADAPTER_MANAGER_INTERNAL_TOKEN=<at-least-24-random-characters>
+   OUTBOUND_GATEWAY_TOKEN=<at-least-24-random-characters>
+   PLUGIN_SANDBOX_EGRESS_SIGNING_KEY=<at-least-32-random-characters>
    ```
 
 The API key hash secret is optional only because it falls back to the encryption key; a separate value is recommended for production.
@@ -211,7 +216,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Redis:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_DATABASE`, `REDIS_TIMEOUT`, `REDIS_SSL`.
 - **Branding and locale:** `APP_PLATFORM_CODE`, `APP_PLATFORM_NAME_EN`, `APP_PLATFORM_NAME_ZH`, `APP_PLATFORM_SHORT_NAME`, `APP_DEFAULT_LOCALE`.
 - **Authentication and encryption:** `APP_TOKEN_SECRET`, `APP_TOKEN_EXPIRE_MINUTES`, `APP_SESSION_COOKIE_SECURE`, `APP_SEED_ADMIN_USERNAME`, `APP_SEED_ADMIN_PASSWORD`, `APP_SEED_ADMIN_PASSWORD_SYNC_ENABLED`, `APP_CONFIG_ENCRYPTION_KEY`, `APP_CONFIG_ENCRYPTION_KEYS`, `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`, `APP_API_KEY_HASH_SECRET`.
-- **Worker and model calls:** `PYTHON_WORKER_INTERNAL_TOKEN`, `JAVA_INSTANCE_ID`, `PYTHON_WORKER_INSTANCE_ID`, `LLM_TIMEOUT_SECONDS`, `LLM_LOG_CONTENT`.
+- **Worker and model calls:** `PYTHON_WORKER_INTERNAL_TOKEN`, `DIFY_PLUGIN_WORKER_INTERNAL_TOKEN`, `N8N_PLUGIN_WORKER_INTERNAL_TOKEN`, `ADAPTER_MANAGER_INTERNAL_TOKEN`, `OUTBOUND_GATEWAY_TOKEN`, `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY`, `PLUGIN_PACKAGE_ALLOWED_DOMAINS`, `PLUGIN_SANDBOX_PIDS_LIMIT`, `PLUGIN_SANDBOX_MEMORY_LIMIT`, `PLUGIN_SANDBOX_CPU_LIMIT`, `JAVA_INSTANCE_ID`, `PYTHON_WORKER_INSTANCE_ID`, `LLM_TIMEOUT_SECONDS`, `LLM_LOG_CONTENT`.
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
@@ -402,8 +407,9 @@ TEST_REPORT.md                  Test baseline and execution history
 - Keep provider credentials out of source code, shell history, logs, and Git history.
 - Configure a dedicated `APP_API_KEY_HASH_SECRET`; the encryption-key fallback is no longer supported.
 - `LLM_LOG_CONTENT` is disabled by default. Enable it only after data and log-access review, and restrict task-log access because redacted model content can still contain sensitive business data.
-- Plugin Workers only join the internal `outbound-network` and reach `OUTBOUND_ALLOWED_DOMAINS` through the authenticated outbound gateway; an empty allowlist denies all external access.
-- The network-facing Adapter Manager has no Docker socket, Compose file, or environment-file access. Its networkless Supervisor accepts only typed N8N/Dify commands over a private Unix socket. A separate networkless Broker is the sole component that mounts the Docker socket and accepts only fixed lifecycle commands; that remaining host-level privilege must still be protected operationally.
+- Dify and n8n control Workers do not execute plugin code, mount package directories, or hold outbound proxy credentials. Each package inspection or invocation runs in a fresh non-root container with a read-only root filesystem, dropped capabilities, resource limits, a fingerprint-specific volume, and an operation-specific internal network. Invocation mounts the package volume read-only.
+- Plugin sandboxes receive only a short-lived proxy credential bound to their source, package fingerprint, operation, and administrator-approved exact domains. Package installation uses `PLUGIN_PACKAGE_ALLOWED_DOMAINS`; normal invocation uses only the approved admission domains, always intersected with `OUTBOUND_ALLOWED_DOMAINS`. Rotate `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY` as a dedicated secret shared only by the Broker and outbound gateway.
+- The network-facing Adapter Manager has no Docker socket, Compose file, or environment-file access. Its networkless Supervisor accepts only typed N8N/Dify commands over a private Unix socket. A separate networkless Broker is the sole component that mounts the Docker socket and accepts only fixed lifecycle and sandbox commands; that remaining host-level privilege must still be protected operationally.
 - For encryption-key rotation, add the new key to `APP_CONFIG_ENCRYPTION_KEYS` and switch `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`; keep prior keys until legacy `enc:` values have been rewritten progressively.
 - Back up MySQL task, log, and automation data before schema or application upgrades.
 - Override `GOPROXY`, `ALPINE_MIRROR`, or language package-mirror settings when public package proxies are unavailable. Compose base images remain digest-pinned; update their reviewed digests in source rather than overriding them from a deployment environment file.

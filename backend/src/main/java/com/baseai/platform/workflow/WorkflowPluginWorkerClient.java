@@ -94,13 +94,21 @@ public class WorkflowPluginWorkerClient {
     /** 调用指定来源 Worker 中已固定版本的组件。 */
     public JsonNode invoke(String source, String fingerprint, String componentId, String operation,
                            JsonNode parameters, JsonNode credentials, JsonNode input, JsonNode context) {
-        return invoke(source, fingerprint, componentId, operation, parameters, credentials, input, context, null);
+        return invoke(source, fingerprint, componentId, operation, parameters, credentials, input, context, null, List.of());
     }
 
     /** 调用插件生命周期方法，并只附加后端生成的 OAuth 或事件字段。 */
     public JsonNode invoke(String source, String fingerprint, String componentId, String operation,
                            JsonNode parameters, JsonNode credentials, JsonNode input, JsonNode context,
                            ObjectNode lifecycle) {
+        return invoke(source, fingerprint, componentId, operation, parameters, credentials, input, context,
+            lifecycle, List.of());
+    }
+
+    /** 调用插件生命周期方法，并绑定管理员已批准的精确出站域名。 */
+    public JsonNode invoke(String source, String fingerprint, String componentId, String operation,
+                           JsonNode parameters, JsonNode credentials, JsonNode input, JsonNode context,
+                           ObjectNode lifecycle, List<String> allowedDomains) {
         ObjectNode body = objectMapper.createObjectNode().put("fingerprint", fingerprint)
             .put("componentId", componentId).put("operation", operation);
         body.set("parameters", parameters == null ? objectMapper.createObjectNode() : parameters);
@@ -108,6 +116,15 @@ public class WorkflowPluginWorkerClient {
         body.set("input", input == null ? objectMapper.nullNode() : input);
         body.set("context", context == null ? objectMapper.createObjectNode() : context);
         if (lifecycle != null) lifecycle.fields().forEachRemaining(entry -> body.set(entry.getKey(), entry.getValue()));
+        var domains = body.putArray("allowedDomains");
+        if (allowedDomains != null) allowedDomains.stream().map(value -> value == null ? "" : value.trim().toLowerCase(Locale.ROOT))
+            .distinct().forEach(value -> {
+                if (!value.matches("(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")) {
+                    throw new BusinessException("workflow.pluginWorkerResponseInvalid");
+                }
+                domains.add(value);
+            });
+        if (domains.size() > 64) throw new BusinessException("workflow.pluginWorkerResponseInvalid");
         JsonNode response = adapterLifecycleService.withEnabled(source,
             () -> post(source, worker(source).resolve("invocations"), "/invocations", body));
         if (!response.path("success").asBoolean(false) || !response.has("output")) {
@@ -203,7 +220,7 @@ public class WorkflowPluginWorkerClient {
 
     /** 返回 Backend 当前能够解释的最低 Worker ABI 版本。 */
     public static int expectedHostAbiVersion(String source) {
-        return "DIFY".equalsIgnoreCase(source) ? 6 : "N8N".equalsIgnoreCase(source) ? 5 : Integer.MAX_VALUE;
+        return "DIFY".equalsIgnoreCase(source) ? 7 : "N8N".equalsIgnoreCase(source) ? 6 : Integer.MAX_VALUE;
     }
 
     /** 只接受受控展示字段和语言的短文本映射。 */

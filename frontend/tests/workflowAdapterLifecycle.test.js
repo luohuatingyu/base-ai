@@ -24,6 +24,9 @@ test('Compose 默认不启动插件 Worker，且仅隔离 Broker 持有 Docker �
     const block = compose.slice(start, next < 0 ? compose.length : start + 3 + next)
     assert.match(block, /profiles: \["plugin-adapters"\]/)
     assert.match(block, /restart: "no"/)
+    assert.doesNotMatch(block, /\/data\/packages/)
+    assert.doesNotMatch(block, /OUTBOUND_GATEWAY_TOKEN|HTTP_PROXY|HTTPS_PROXY/)
+    assert.match(block, /sandbox-control:\/run\/(?:n8n|dify)-sandbox:ro/)
   }
   const managerStart = compose.indexOf('\n  adapter-manager:\n') + 1
   const managerEnd = compose.indexOf('\n  outbound-gateway:', managerStart)
@@ -54,8 +57,25 @@ test('Compose 默认不启动插件 Worker，且仅隔离 Broker 持有 Docker �
   assert.match(broker, /\.\/docker-compose\.yml:\/workspace\/docker-compose\.yml:ro/)
   assert.match(broker, /\.\/\.env:\/workspace\/\.env:ro/)
   assert.match(broker, /adapter-broker-control:\/run\/adapter-broker/)
+  assert.match(broker, /dify-sandbox-control:\/run\/dify-sandbox/)
+  assert.match(broker, /n8n-sandbox-control:\/run\/n8n-sandbox/)
+  assert.match(broker, /PLUGIN_SANDBOX_EGRESS_SIGNING_KEY/)
   assert.match(broker, /network_mode: none/)
   assert.match(broker, /read_only: true/)
+})
+
+test('Broker 为每个插件创建独占卷、一次性容器和最小出站令牌', async () => {
+  const manager = await readFile(new URL('adapter-manager/main.go', root), 'utf8')
+  const gateway = await readFile(new URL('outbound-gateway/main.go', root), 'utf8')
+
+  assert.match(manager, /volumeName\(fingerprint string\)/)
+  assert.match(manager, /--cap-drop", "ALL"/)
+  assert.match(manager, /--security-opt",\s*"no-new-privileges:true"/)
+  assert.match(manager, /--mount", "type=volume,src=/)
+  assert.match(manager, /--network", network/)
+  assert.match(manager, /payloadCommand\.AllowedDomains = nil/)
+  assert.match(gateway, /decodeSandboxToken/)
+  assert.match(gateway, /allowedFor\(policy outboundPolicy/)
 })
 
 test('adapter-manager 通过 Unix Socket 向 Supervisor 转发固定类型命令', async () => {

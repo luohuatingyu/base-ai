@@ -24,6 +24,25 @@ type fakeRunner struct {
 	outputs []string
 	errors  []error
 	calls   [][]string
+	inputs  [][]byte
+}
+
+// RunInput 记录沙箱标准输入与固定 Docker 参数，并返回下一个预设结果。
+func (f *fakeRunner) RunInput(_ context.Context, input []byte, _ int, arguments ...string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.inputs = append(f.inputs, append([]byte(nil), input...))
+	f.calls = append(f.calls, append([]string(nil), arguments...))
+	index := len(f.calls) - 1
+	var output string
+	var err error
+	if index < len(f.outputs) {
+		output = f.outputs[index]
+	}
+	if index < len(f.errors) {
+		err = f.errors[index]
+	}
+	return output, err
 }
 
 // Run 记录完整固定命令，并返回下一个预设结果。
@@ -258,5 +277,64 @@ func TestUnixSupervisorClientUsesPrivateSocket(t *testing.T) {
 	state, status, err := client.State(ctx, "N8N")
 	if err != nil || status != http.StatusOK || state.Status != "RUNNING" {
 		t.Fatalf("unexpected socket response: %d %#v %v", status, state, err)
+	}
+}
+
+// TestSandboxArgumentsProvidePerFingerprintIsolation 验证运行参数固定镜像、独立卷和强制容器边界。
+func TestSandboxArgumentsProvidePerFingerprintIsolation(t *testing.T) {
+	controller := &sandboxBrokerController{source: "DIFY", projectName: "base-ai", gatewayContainer: "base-ai-outbound-gateway",
+		egressKey: strings.Repeat("e", 32), memoryLimit: "512m", cpuLimit: "1.0", pidsLimit: 64}
+	fingerprint := strings.Repeat("a", 64)
+	arguments := controller.runArguments("invoke", fingerprint, "scope-token", "sandbox-container", "sandbox-network")
+	joined := strings.Join(arguments, " ")
+	for _, required := range []string{"--interactive", "--read-only", "--cap-drop ALL", "no-new-privileges:true", "--network sandbox-network",
+		"--pids-limit 64", "src=base-ai-dify-plugin-" + fingerprint + ",dst=/data/packages,readonly",
+		"base-ai-dify-plugin-worker:latest", "python -m app.sandbox invoke"} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("sandbox argument missing %q: %s", required, joined)
+		}
+	}
+	if strings.Contains(joined, "/var/run/docker.sock") || strings.Contains(joined, controller.egressKey) {
+		t.Fatalf("sandbox received privileged mount or long-term key: %s", joined)
+	}
+	if controller.volumeName(fingerprint) == controller.volumeName(strings.Repeat("b", 64)) {
+		t.Fatal("different plugins shared a volume name")
+	}
+}
+
+// TestSandboxVolumeInitializationHasNoPluginInput 验证独占卷仅由无网络固定命令初始化。
+func TestSandboxVolumeInitializationHasNoPluginInput(t *testing.T) {
+	runner := &fakeRunner{}
+	controller := &sandboxBrokerController{runner: runner, source: "N8N", projectName: "base-ai"}
+	volume := controller.volumeName(strings.Repeat("a", 64))
+	if err := controller.prepareVolume(context.Background(), volume); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(runner.calls[0], " ")
+	for _, required := range []string{"--network none", "--user 0:0", "--cap-drop ALL", "--cap-add CHOWN",
+		"--entrypoint /bin/chown", "src=" + volume + ",dst=/data/packages", "10001:10001 /data/packages"} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("volume initializer missing %q: %s", required, joined)
+		}
+	}
+	if len(runner.inputs) != 0 || strings.Contains(joined, "/var/run/docker.sock") {
+		t.Fatalf("volume initializer received plugin input or Docker socket: %s", joined)
+	}
+}
+
+// TestSandboxBrokerRejectsCallerControlledDockerFields 验证调用方不能注入镜像、命令或挂载参数。
+func TestSandboxBrokerRejectsCallerControlledDockerFields(t *testing.T) {
+	runner := &fakeRunner{}
+	controller := &sandboxBrokerController{runner: runner, source: "N8N", projectName: "base-ai",
+		gatewayContainer: "base-ai-outbound-gateway", egressKey: strings.Repeat("e", 32)}
+	request := httptest.NewRequest(http.MethodPost, "/sandbox/invoke", strings.NewReader(
+		`{"fingerprint":"`+strings.Repeat("a", 64)+`","allowedDomains":[],"image":"evil:latest"}`))
+	response := httptest.NewRecorder()
+	controller.serveHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("injected Docker field returned %d", response.Code)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("invalid request reached Docker: %#v", runner.calls)
 	}
 }

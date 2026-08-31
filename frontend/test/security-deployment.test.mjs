@@ -293,22 +293,29 @@ test('Caddy 构建使用可配置的 Go 模块代理和 Alpine 镜像', async ()
   assert.match(environmentExample, /^ALPINE_MIRROR=https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine$/m)
 })
 
-test('运行时镜像安装系统安全更新并移除不需要的 Node 包管理器', async () => {
+test('运行时镜像安装系统安全更新且插件沙箱仅保留依赖安装所需 npm', async () => {
   const workerDockerfile = await readFile(new URL('python-worker/Dockerfile', root), 'utf8')
   const difyWorkerDockerfile = await readFile(new URL('dify-plugin-worker/Dockerfile', root), 'utf8')
   const frontendDockerfile = await readFile(new URL('frontend/Dockerfile', root), 'utf8')
   const n8nWorkerDockerfile = await readFile(new URL('n8n-plugin-worker/Dockerfile', root), 'utf8')
+  const n8nPackageStore = await readFile(new URL('n8n-plugin-worker/app/package-store.mjs', root), 'utf8')
 
   for (const dockerfile of [workerDockerfile, difyWorkerDockerfile]) {
     assert.match(dockerfile, /apt-get update\s*\\/)
     assert.match(dockerfile, /apt-get upgrade -y\s*\\/)
     assert.match(dockerfile, /rm -rf \/var\/lib\/apt\/lists\/\*/)
   }
-  for (const dockerfile of [frontendDockerfile, n8nWorkerDockerfile]) {
-    assert.match(dockerfile, /apk upgrade --no-cache\s*\\/)
-    assert.match(dockerfile, /rm -rf \/usr\/local\/lib\/node_modules\/npm/)
-    assert.match(dockerfile, /rm -f \/usr\/local\/bin\/npm/)
-  }
+  for (const dockerfile of [frontendDockerfile, n8nWorkerDockerfile]) assert.match(dockerfile, /apk upgrade --no-cache\s*\\/)
+  assert.match(frontendDockerfile, /rm -rf \/usr\/local\/lib\/node_modules\/npm/)
+  assert.match(frontendDockerfile, /rm -f \/usr\/local\/bin\/npm/)
+  assert.match(n8nWorkerDockerfile, /npm install --global --ignore-scripts npm@12\.0\.2/)
+  assert.match(n8nWorkerDockerfile, /dependencies\.tar = ["']7\.5\.21["']/)
+  assert.match(n8nWorkerDockerfile, /["']brace-expansion["']:\s*["']5\.0\.9["']/)
+  assert.match(n8nWorkerDockerfile, /["']ip-address["']:\s*["']10\.3\.1["']/)
+  assert.doesNotMatch(n8nWorkerDockerfile, /rm -rf[^\n]*node_modules\/npm/)
+  assert.match(n8nWorkerDockerfile, /node_modules\/corepack/)
+  assert.match(n8nPackageStore, /'--ignore-scripts'/)
+  assert.match(n8nPackageStore, /DEPENDENCY_VERSION_NOT_PINNED/)
 })
 
 test('全部运行时镜像使用非 root 用户和最小 Linux 权限', async () => {
@@ -344,6 +351,19 @@ test('全部运行时镜像使用非 root 用户和最小 Linux 权限', async (
     assert.match(block, /no-new-privileges:true/)
   }
   assert.match(serviceBlock(compose, 'caddy', null), /cap_add:\s*\n\s+- NET_BIND_SERVICE/)
+})
+
+test('适配器 broker 从校验源码构建最小 Docker CLI', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const dockerfile = await readFile(new URL('adapter-manager/Dockerfile', root), 'utf8')
+
+  assert.match(dockerfile, /^ARG DOCKER_CLI_VERSION=29\.7\.2$/m)
+  assert.match(dockerfile, /^ARG DOCKER_CLI_SOURCE_SHA256=[a-f0-9]{64}$/m)
+  assert.match(dockerfile, /docker\/cli\/archive\/refs\/tags\/v\$\{DOCKER_CLI_VERSION\}\.tar\.gz/)
+  assert.match(dockerfile, /sha256sum -c/)
+  assert.match(dockerfile, /^FROM scratch AS broker$/m)
+  assert.doesNotMatch(dockerfile, /DOCKER_CLI_IMAGE/)
+  assert.doesNotMatch(compose, /DOCKER_CLI_IMAGE/)
 })
 
 test('文档解析器使用无网络只读容器且 Backend 仅只读共享 Unix Socket', async () => {

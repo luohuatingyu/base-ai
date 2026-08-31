@@ -247,4 +247,21 @@ class WorkflowSchemaResourceTest {
             assertTrue(schema.contains("'" + category + "'"), category);
         }
     }
+
+    /** MySQL V24 必须丢弃旧共享 Worker 缓存并保留插件准入和启用身份。 */
+    @Test
+    void reprobesPluginsWithoutTrustingLegacySharedCache() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V24__reprobe_plugins_for_isolated_sandbox.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        for (String invariant : new String[]{"probe_status = 'QUEUED'", "package_fingerprint = NULL",
+            "result_json = NULL", "attempt_count = 0", "lease_owner = NULL"}) {
+            assertTrue(schema.contains(invariant), invariant);
+        }
+        assertTrue(schema.contains("WHERE probe_status = 'COMPLETE'"));
+        assertTrue(!schema.contains("workflow_marketplace_plugin SET"));
+        assertTrue(!schema.contains("workflow_plugin_admission"));
+        assertTrue(!schema.contains("DROP "));
+        assertTrue(!schema.contains("DELETE "));
+    }
 }
