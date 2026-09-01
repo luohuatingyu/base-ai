@@ -34,6 +34,8 @@ import java.util.UUID;
 @Service
 public class KnowledgeBaseService {
     private static final Set<String> VECTOR_CONNECTION_TYPES = Set.of("POSTGRESQL", "QDRANT", "MILVUS", "ELASTICSEARCH");
+    private static final Set<String> STORAGE_TYPES = Set.of("PGVECTOR", "QDRANT", "MILVUS", "ELASTICSEARCH");
+    private static final Set<String> DOCUMENT_STATUSES = Set.of("INDEXING", "READY", "FAILED");
     private static final int MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
     private final JdbcTemplate jdbcTemplate;
     private final ConfigCryptoService cryptoService;
@@ -57,6 +59,28 @@ public class KnowledgeBaseService {
     public List<View> list() {
         AuthUser user=AuthContext.require();String sql="SELECT * FROM knowledge_base WHERE voided=false "+(user.roles().contains("ADMIN")?"":"AND owner_user_id=? ")+"ORDER BY id DESC";
         return user.roles().contains("ADMIN")?jdbcTemplate.query(sql,(rs,row)->map(rs)):jdbcTemplate.query(sql,(rs,row)->map(rs),user.id());
+    }
+
+    /** 按权限范围分页查询知识库，并附带不受筛选影响的管理汇总。 */
+    public ManagementPage management(String keyword,Boolean enabled,String storageType,int page,int size) {
+        AuthUser user=AuthContext.require();String normalizedKeyword=filterKeyword(keyword,120);String normalizedStorage=filterValue(storageType,STORAGE_TYPES);
+        int safePage=Math.min(1_000_000,Math.max(1,page)),safeSize=Math.min(50,Math.max(1,size));List<Object> arguments=new ArrayList<>();
+        StringBuilder where=new StringBuilder(" WHERE kb.voided=false");if(!user.roles().contains("ADMIN")){where.append(" AND kb.owner_user_id=?");arguments.add(user.id());}
+        if(!normalizedKeyword.isBlank()){where.append(" AND (LOWER(kb.code) LIKE ? ESCAPE '!' OR LOWER(kb.name) LIKE ? ESCAPE '!' OR LOWER(kb.description) LIKE ? ESCAPE '!')");String pattern=like(normalizedKeyword);arguments.add(pattern);arguments.add(pattern);arguments.add(pattern);}
+        if(enabled!=null){where.append(" AND kb.enabled=?");arguments.add(enabled);}
+        if(!normalizedStorage.isBlank()){where.append(" AND kb.storage_type=?");arguments.add(normalizedStorage);}
+        Long total=jdbcTemplate.queryForObject("SELECT COUNT(*) FROM knowledge_base kb"+where,Long.class,arguments.toArray());
+        List<Object> pageArguments=new ArrayList<>(arguments);pageArguments.add(safeSize);pageArguments.add((safePage-1)*safeSize);
+        List<ManagementView> items=jdbcTemplate.query("""
+            SELECT kb.*,
+              (SELECT COUNT(*) FROM knowledge_document kd WHERE kd.knowledge_base_id=kb.id) document_count,
+              (SELECT COUNT(*) FROM knowledge_document kd WHERE kd.knowledge_base_id=kb.id AND kd.status='READY') ready_document_count,
+              (SELECT COUNT(*) FROM knowledge_document kd WHERE kd.knowledge_base_id=kb.id AND kd.status='FAILED') failed_document_count,
+              (SELECT COALESCE(SUM(kd.chunk_count),0) FROM knowledge_document kd WHERE kd.knowledge_base_id=kb.id) chunk_count
+            FROM knowledge_base kb
+            """+where+" ORDER BY kb.updated_at DESC,kb.id DESC LIMIT ? OFFSET ?",(rs,row)->new ManagementView(
+                map(rs),rs.getLong("document_count"),rs.getLong("ready_document_count"),rs.getLong("failed_document_count"),rs.getLong("chunk_count")),pageArguments.toArray());
+        return new ManagementPage(items,total==null?0:total,safePage,safeSize,summary(user));
     }
 
     /** 返回当前所有者可供 RAG 节点选择的已启用知识库。 */
@@ -102,6 +126,13 @@ public class KnowledgeBaseService {
         return requireOwned(id);
     }
 
+    /** 在不重传完整配置的情况下切换知识库启用状态。 */
+    @Transactional
+    public View setEnabled(Long id,EnabledCommand command) {
+        if(command==null||command.enabled()==null)throw new BusinessException("knowledge.invalid");requireOwned(id);
+        jdbcTemplate.update("UPDATE knowledge_base SET enabled=?,updated_at=NOW() WHERE id=? AND voided=false",command.enabled(),id);return requireOwned(id);
+    }
+
     /** 删除知识库；托管模式删除隔离资源，预建模式只清理平台写入的文档向量。 */
     @Transactional
     public void delete(Long id) {
@@ -115,8 +146,18 @@ public class KnowledgeBaseService {
 
     /** 查询知识库文档状态。 */
     public List<DocumentView> documents(Long knowledgeBaseId) {
-        requireVisible(knowledgeBaseId);return jdbcTemplate.query("SELECT * FROM knowledge_document WHERE knowledge_base_id=? ORDER BY id DESC",(rs,row)->new DocumentView(
-            rs.getLong("id"),rs.getString("file_name"),rs.getString("content_type"),rs.getString("status"),rs.getInt("chunk_count"),rs.getString("error_message"),timestamp(rs.getTimestamp("created_at")),timestamp(rs.getTimestamp("updated_at"))),knowledgeBaseId);
+        requireVisible(knowledgeBaseId);return jdbcTemplate.query("SELECT * FROM knowledge_document WHERE knowledge_base_id=? ORDER BY id DESC",(rs,row)->mapDocument(rs),knowledgeBaseId);
+    }
+
+    /** 按文件名和索引状态分页查询可见知识库文档。 */
+    public DocumentPage documentPage(Long knowledgeBaseId,String keyword,String status,int page,int size) {
+        requireVisible(knowledgeBaseId);String normalizedKeyword=filterKeyword(keyword,255);String normalizedStatus=filterValue(status,DOCUMENT_STATUSES);
+        int safePage=Math.min(1_000_000,Math.max(1,page)),safeSize=Math.min(100,Math.max(1,size));List<Object> arguments=new ArrayList<>();arguments.add(knowledgeBaseId);
+        StringBuilder where=new StringBuilder(" WHERE knowledge_base_id=?");if(!normalizedKeyword.isBlank()){where.append(" AND LOWER(file_name) LIKE ? ESCAPE '!'");arguments.add(like(normalizedKeyword));}
+        if(!normalizedStatus.isBlank()){where.append(" AND status=?");arguments.add(normalizedStatus);}
+        Long total=jdbcTemplate.queryForObject("SELECT COUNT(*) FROM knowledge_document"+where,Long.class,arguments.toArray());List<Object> pageArguments=new ArrayList<>(arguments);pageArguments.add(safeSize);pageArguments.add((safePage-1)*safeSize);
+        List<DocumentView> items=jdbcTemplate.query("SELECT * FROM knowledge_document"+where+" ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?",(rs,row)->mapDocument(rs),pageArguments.toArray());
+        return new DocumentPage(items,total==null?0:total,safePage,safeSize);
     }
 
     /** 提取、切片、向量化并写入文档；状态始终反映完整批次最终结果。 */
@@ -152,7 +193,22 @@ public class KnowledgeBaseService {
     /** 删除单个文档的外部向量和内部加密切片。 */
     @Transactional
     public void deleteDocument(Long knowledgeBaseId,Long documentId) {
-        View base=requireOwned(knowledgeBaseId);Integer found=jdbcTemplate.queryForObject("SELECT COUNT(*) FROM knowledge_document WHERE id=? AND knowledge_base_id=?",Integer.class,documentId,knowledgeBaseId);
+        deleteDocument(requireOwned(knowledgeBaseId),documentId);
+    }
+
+    /** 批量删除拥有者知识库中的文档，业务失败按文档返回且不影响其他条目。 */
+    @Transactional
+    public BatchDeleteResult deleteDocuments(Long knowledgeBaseId,BatchDeleteCommand command) {
+        View base=requireOwned(knowledgeBaseId);if(command==null||command.documentIds()==null)throw new BusinessException("knowledge.documentBatchInvalid");
+        List<Long> ids=command.documentIds().stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if(ids.isEmpty()||ids.size()>100||ids.stream().anyMatch(id->id<=0))throw new BusinessException("knowledge.documentBatchInvalid");
+        List<Long> deleted=new ArrayList<>();List<BatchDeleteFailure> failures=new ArrayList<>();for(Long documentId:ids){try{deleteDocument(base,documentId);deleted.add(documentId);}catch(BusinessException exception){failures.add(new BatchDeleteFailure(documentId,exception.getMessageKey()));}}
+        return new BatchDeleteResult(List.copyOf(deleted),List.copyOf(failures));
+    }
+
+    /** 删除已校验拥有者的单个文档及关联向量。 */
+    private void deleteDocument(View base,Long documentId) {
+        Integer found=jdbcTemplate.queryForObject("SELECT COUNT(*) FROM knowledge_document WHERE id=? AND knowledge_base_id=?",Integer.class,documentId,base.id());
         if(found==null||found==0)throw BusinessException.notFound("knowledge.documentNotFound");
         vectorStoreService.deleteDocument(connection(base),base.resourceName(),documentId);
         jdbcTemplate.update("DELETE FROM knowledge_chunk WHERE document_id=?",documentId);jdbcTemplate.update("DELETE FROM knowledge_document WHERE id=?",documentId);
@@ -190,6 +246,15 @@ public class KnowledgeBaseService {
     private View requireForOwner(Long id,Long ownerId){List<View> rows=jdbcTemplate.query("SELECT * FROM knowledge_base WHERE id=? AND owner_user_id=? AND voided=false",(rs,row)->map(rs),id,ownerId);if(rows.isEmpty())throw BusinessException.notFound("knowledge.notFound");return rows.get(0);}
     /** 管理列表允许管理员读取，但不改变写边界。 */
     private View requireVisible(Long id){AuthUser user=AuthContext.require();if(user.roles().contains("ADMIN")){List<View> rows=jdbcTemplate.query("SELECT * FROM knowledge_base WHERE id=? AND voided=false",(rs,row)->map(rs),id);if(!rows.isEmpty())return rows.get(0);}return requireOwned(id);}
+    /** 汇总当前用户权限范围内的知识库与文档健康状态。 */
+    private ManagementSummary summary(AuthUser user){String owner=user.roles().contains("ADMIN")?"":" AND kb.owner_user_id=?";Object[] arguments=user.roles().contains("ADMIN")?new Object[0]:new Object[]{user.id()};return jdbcTemplate.queryForObject("""
+        SELECT COUNT(DISTINCT kb.id) total_bases,
+          COUNT(DISTINCT CASE WHEN kb.enabled=true THEN kb.id END) enabled_bases,
+          COUNT(kd.id) document_count,
+          COALESCE(SUM(CASE WHEN kd.status='FAILED' THEN 1 ELSE 0 END),0) failed_document_count
+        FROM knowledge_base kb LEFT JOIN knowledge_document kd ON kd.knowledge_base_id=kb.id
+        WHERE kb.voided=false
+        """+owner,(rs,row)->new ManagementSummary(rs.getLong("total_bases"),rs.getLong("enabled_bases"),rs.getLong("document_count"),rs.getLong("failed_document_count")),arguments);}
     /** 插入索引中状态的文档并返回主键。 */
     private Long insertDocument(Long baseId,String fileName,String contentType,String hash){KeyHolder keys=new GeneratedKeyHolder();jdbcTemplate.update(connection->{PreparedStatement statement=connection.prepareStatement("INSERT INTO knowledge_document(knowledge_base_id,file_name,content_type,content_hash,status) VALUES (?,?,?,?, 'INDEXING')",Statement.RETURN_GENERATED_KEYS);statement.setLong(1,baseId);statement.setString(2,fileName);statement.setString(3,contentType);statement.setString(4,hash);return statement;},keys);return keys.getKey().longValue();}
     /** 同一文件仅允许替换失败记录，并在重传前清理可能存在的外部向量。 */
@@ -204,18 +269,34 @@ public class KnowledgeBaseService {
     static List<String> chunks(String content,int size,int overlap){String normalized=content.replace("\r\n","\n").trim();List<String> result=new ArrayList<>();int start=0;while(start<normalized.length()){int end=Math.min(normalized.length(),start+size);if(end<normalized.length()){int boundary=normalized.lastIndexOf('\n',end);if(boundary>start+size/2)end=boundary;}String item=normalized.substring(start,end).trim();if(!item.isBlank())result.add(item);if(end>=normalized.length())break;start=Math.max(start+1,end-overlap);}if(result.isEmpty())throw new BusinessException("knowledge.documentEmpty");return List.copyOf(result);}
     /** 映射知识库视图。 */
     private View map(java.sql.ResultSet rs)throws java.sql.SQLException{int dimension=rs.getInt("embedding_dimension");return new View(rs.getLong("id"),rs.getString("code"),rs.getString("name"),rs.getString("description"),rs.getLong("connection_id"),rs.getString("storage_type"),rs.getString("resource_mode"),rs.getString("resource_name"),rs.getLong("embedding_model_id"),rs.wasNull()?null:dimension,rs.getString("distance_metric"),rs.getInt("chunk_size"),rs.getInt("chunk_overlap"),rs.getLong("owner_user_id"),rs.getBoolean("enabled"),timestamp(rs.getTimestamp("created_at")),timestamp(rs.getTimestamp("updated_at")));}
-    private DocumentView document(Long id){return jdbcTemplate.queryForObject("SELECT * FROM knowledge_document WHERE id=?",(rs,row)->new DocumentView(rs.getLong("id"),rs.getString("file_name"),rs.getString("content_type"),rs.getString("status"),rs.getInt("chunk_count"),rs.getString("error_message"),timestamp(rs.getTimestamp("created_at")),timestamp(rs.getTimestamp("updated_at"))),id);}
+    /** 映射知识库文档视图。 */
+    private DocumentView mapDocument(java.sql.ResultSet rs)throws java.sql.SQLException{return new DocumentView(rs.getLong("id"),rs.getString("file_name"),rs.getString("content_type"),rs.getString("status"),rs.getInt("chunk_count"),rs.getString("error_message"),timestamp(rs.getTimestamp("created_at")),timestamp(rs.getTimestamp("updated_at")));}
+    private DocumentView document(Long id){return jdbcTemplate.queryForObject("SELECT * FROM knowledge_document WHERE id=?",(rs,row)->mapDocument(rs),id);}
     private String code(String value){String normalized=text(value).toUpperCase(Locale.ROOT);if(!normalized.matches("[A-Z][A-Z0-9_-]{1,79}"))throw new BusinessException("workflow.codeInvalid");return normalized;}
     private String resource(String value){String normalized=text(value).toLowerCase(Locale.ROOT);if(!normalized.matches("[a-z][a-z0-9_]{2,119}"))throw new BusinessException("knowledge.resourceNameInvalid");return normalized;}
     private String safeFileName(String value){String normalized=text(value).replace("\\","/");normalized=normalized.substring(normalized.lastIndexOf('/')+1);return truncate(normalized.isBlank()?"document":normalized,255);}
+    /** 校验并标准化管理筛选关键字。 */
+    private String filterKeyword(String value,int maximum){String normalized=text(value).toLowerCase(Locale.ROOT);if(normalized.length()>maximum)throw new BusinessException("knowledge.filterInvalid");return normalized;}
+    /** 校验枚举型筛选值，空值代表不过滤。 */
+    private String filterValue(String value,Set<String> allowed){String normalized=text(value).toUpperCase(Locale.ROOT);if(!normalized.isBlank()&&!allowed.contains(normalized))throw new BusinessException("knowledge.filterInvalid");return normalized;}
+    /** 转义 LIKE 通配符，确保关键字按字面量匹配。 */
+    private String like(String value){return "%"+value.replace("!","!!").replace("%","!%").replace("_","!_")+"%";}
     private String text(String value){return value==null?"":value.trim();}private String truncate(String value,int maximum){String normalized=text(value);return normalized.length()<=maximum?normalized:normalized.substring(0,maximum);}
     private String sha256(byte[] bytes){try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));}catch(Exception exception){throw new IllegalStateException(exception);}}
     private LocalDateTime timestamp(java.sql.Timestamp value){return value==null?null:value.toLocalDateTime();}
 
     public record Command(String code,String name,String description,Long connectionId,String resourceMode,String resourceName,Long embeddingModelId,String distanceMetric,Integer chunkSize,Integer chunkOverlap,Boolean enabled){}
+    public record EnabledCommand(Boolean enabled){}
     public record View(Long id,String code,String name,String description,Long connectionId,String storageType,String resourceMode,String resourceName,Long embeddingModelId,Integer embeddingDimension,String distanceMetric,int chunkSize,int chunkOverlap,Long ownerUserId,boolean enabled,LocalDateTime createdAt,LocalDateTime updatedAt){}
+    public record ManagementView(View knowledgeBase,long documentCount,long readyDocumentCount,long failedDocumentCount,long chunkCount){}
+    public record ManagementSummary(long totalBases,long enabledBases,long documentCount,long failedDocumentCount){}
+    public record ManagementPage(List<ManagementView> items,long total,int page,int size,ManagementSummary summary){}
     public record Option(Long id,String code,String name,String storageType){}
     public record DocumentView(Long id,String fileName,String contentType,String status,int chunkCount,String errorMessage,LocalDateTime createdAt,LocalDateTime updatedAt){}
+    public record DocumentPage(List<DocumentView> items,long total,int page,int size){}
+    public record BatchDeleteCommand(List<Long> documentIds){}
+    public record BatchDeleteFailure(Long documentId,String messageKey){}
+    public record BatchDeleteResult(List<Long> deletedIds,List<BatchDeleteFailure> failures){}
     public record RetrievedChunk(Long chunkId,Long documentId,String fileName,String content,double score){}
     public record Retrieval(Long knowledgeBaseId,String knowledgeBaseName,List<RetrievedChunk> matches){}
     private record Validated(String storageType,String resourceMode,String distance,int chunkSize,int chunkOverlap){}
