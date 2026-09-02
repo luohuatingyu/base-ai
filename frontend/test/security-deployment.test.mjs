@@ -293,18 +293,20 @@ test('Caddy 构建使用可配置的 Go 模块代理和 Alpine 镜像', async ()
   assert.match(environmentExample, /^ALPINE_MIRROR=https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine$/m)
 })
 
-test('运行时镜像安装系统安全更新且插件沙箱仅保留依赖安装所需 npm', async () => {
+test('运行时镜像采用受控系统更新，Dify Worker 不保留不确定的 apt 升级', async () => {
   const workerDockerfile = await readFile(new URL('python-worker/Dockerfile', root), 'utf8')
   const difyWorkerDockerfile = await readFile(new URL('dify-plugin-worker/Dockerfile', root), 'utf8')
+  const difyRequirements = await readFile(new URL('dify-plugin-worker/requirements.txt', root), 'utf8')
   const frontendDockerfile = await readFile(new URL('frontend/Dockerfile', root), 'utf8')
   const n8nWorkerDockerfile = await readFile(new URL('n8n-plugin-worker/Dockerfile', root), 'utf8')
   const n8nPackageStore = await readFile(new URL('n8n-plugin-worker/app/package-store.mjs', root), 'utf8')
 
-  for (const dockerfile of [workerDockerfile, difyWorkerDockerfile]) {
-    assert.match(dockerfile, /apt-get update\s*\\/)
-    assert.match(dockerfile, /apt-get upgrade -y\s*\\/)
-    assert.match(dockerfile, /rm -rf \/var\/lib\/apt\/lists\/\*/)
-  }
+  assert.match(workerDockerfile, /apt-get update\s*\\/)
+  assert.match(workerDockerfile, /apt-get upgrade -y\s*\\/)
+  assert.match(workerDockerfile, /rm -rf \/var\/lib\/apt\/lists\/\*/)
+  assert.match(difyWorkerDockerfile, /pip install --no-cache-dir -r requirements\.txt/)
+  assert.doesNotMatch(difyWorkerDockerfile, /apt-get (?:update|upgrade)/)
+  assert.match(difyRequirements, /^Werkzeug==3\.1\.6$/m)
   for (const dockerfile of [frontendDockerfile, n8nWorkerDockerfile]) assert.match(dockerfile, /apk upgrade --no-cache\s*\\/)
   assert.match(frontendDockerfile, /rm -rf \/usr\/local\/lib\/node_modules\/npm/)
   assert.match(frontendDockerfile, /rm -f \/usr\/local\/bin\/npm/)

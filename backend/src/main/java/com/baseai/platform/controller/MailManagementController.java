@@ -1,6 +1,7 @@
 package com.baseai.platform.controller;
 
 import com.baseai.platform.security.RequiredPermission;
+import com.baseai.platform.security.SecretRevealAuthorizationService;
 import com.baseai.platform.service.MailDeliveryService;
 import com.baseai.platform.service.MailManagementService;
 import com.baseai.platform.trace.TraceType;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 import java.util.Locale;
@@ -22,11 +25,14 @@ import java.util.Locale;
 public class MailManagementController {
     private final MailManagementService service;
     private final MailDeliveryService deliveryService;
+    private final SecretRevealAuthorizationService secretRevealAuthorizationService;
 
     /** 注入邮件配置管理和邮件发送服务。 */
-    public MailManagementController(MailManagementService service, MailDeliveryService deliveryService) {
+    public MailManagementController(MailManagementService service, MailDeliveryService deliveryService,
+                                    SecretRevealAuthorizationService secretRevealAuthorizationService) {
         this.service = service;
         this.deliveryService = deliveryService;
+        this.secretRevealAuthorizationService = secretRevealAuthorizationService;
     }
 
     /** 查询邮箱账户。 */
@@ -34,11 +40,14 @@ public class MailManagementController {
     @RequiredPermission("mail:account:list")
     public List<MailManagementService.AccountView> accounts() { return service.accounts(); }
 
-    /** 查询指定邮箱账户的明文密码，服务层额外限制为系统管理员。 */
-    @GetMapping("/accounts/{id}/password")
+    /** 经管理员二次密码验证后回查指定邮箱账户的明文密码。 */
+    @PostMapping("/accounts/{id}/password")
     @RequiredPermission("mail:account:update")
-    public MailManagementService.AccountPasswordView accountPassword(@PathVariable Long id) {
-        return service.accountPassword(id);
+    @TraceType(value = "MAIL_ACCOUNT_PASSWORD_REVEAL", captureRequest = false)
+    public ResponseEntity<MailManagementService.AccountPasswordView> accountPassword(@PathVariable Long id,
+        @RequestBody SecretRevealAuthorizationService.ReauthenticationCommand command) {
+        secretRevealAuthorizationService.requireAdminPassword(command);
+        return noStore(service.accountPassword(id));
     }
 
     /** 查询邮件路由编辑所需的启用邮箱选项。 */
@@ -102,4 +111,9 @@ public class MailManagementController {
     @DeleteMapping("/routes/{id}")
     @RequiredPermission("mail:route:delete")
     public void deleteRoute(@PathVariable Long id) { service.deleteRoute(id); }
+
+    /** 为包含 SMTP 密码的响应禁止浏览器和中间代理缓存。 */
+    private static <T> ResponseEntity<T> noStore(T body) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore().cachePrivate()).header("Pragma", "no-cache").body(body);
+    }
 }

@@ -13,6 +13,7 @@ import com.baseai.platform.repository.UserRepository;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.security.AuthenticationType;
+import com.baseai.platform.security.DataScopeResolver;
 import com.baseai.platform.security.SessionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,7 @@ class PlatformAdminServiceTest {
     private RoleRepository roleRepository;
     private MenuRepository menuRepository;
     private UserRepository userRepository;
+    private DepartmentRepository departmentRepository;
     private BCryptPasswordEncoder passwordEncoder;
     private SessionService sessionService;
     private PlatformAdminService service;
@@ -50,13 +52,14 @@ class PlatformAdminServiceTest {
         userRepository = mock(UserRepository.class);
         roleRepository = mock(RoleRepository.class);
         menuRepository = mock(MenuRepository.class);
-        DepartmentRepository departmentRepository = mock(DepartmentRepository.class);
+        departmentRepository = mock(DepartmentRepository.class);
         PositionRepository positionRepository = mock(PositionRepository.class);
         passwordEncoder = mock(BCryptPasswordEncoder.class);
         sessionService = mock(SessionService.class);
         PlatformProperties properties = new PlatformProperties();
         service = new PlatformAdminService(userRepository, roleRepository, menuRepository,
-            departmentRepository, positionRepository, passwordEncoder, sessionService, properties);
+            departmentRepository, positionRepository, passwordEncoder, sessionService, properties,
+            new DataScopeResolver(userRepository, departmentRepository));
         AuthContext.set(actor(99L, Set.of("ADMIN"), Set.of()));
 
         catalog = menu(1L, null, "CATALOG", "system:catalog");
@@ -244,6 +247,76 @@ class PlatformAdminServiceTest {
         verify(roleRepository, never()).save(any());
     }
 
+    /** 本部门数据范围必须只返回本人和同部门账号，不能泄漏其他部门列表项。 */
+    @Test
+    void filtersUsersByDepartmentDataScope() {
+        com.baseai.platform.domain.Department engineering = department(11L, null);
+        com.baseai.platform.domain.Department finance = department(12L, null);
+        Role scopedRole = role(31L, "EDITOR");
+        scopedRole.setDataScope("DEPARTMENT");
+        UserAccount current = user(7L, "operator", true, scopedRole);
+        current.setDepartment(engineering);
+        UserAccount teammate = user(8L, "teammate", true, role(32L, "USER"));
+        teammate.setDepartment(engineering);
+        UserAccount outsider = user(9L, "outsider", true, role(33L, "USER"));
+        outsider.setDepartment(finance);
+        when(userRepository.findById(7L)).thenReturn(Optional.of(current));
+        when(userRepository.findAll()).thenReturn(List.of(current, teammate, outsider));
+        AuthContext.set(actor(7L, Set.of("EDITOR"), Set.of("system:user:list")));
+
+        PlatformAdminService.PageResult<PlatformAdminService.UserView> result = service.users(null, null, 1, 20);
+
+        assertEquals(List.of(7L, 8L), result.items().stream().map(PlatformAdminService.UserView::id).toList());
+    }
+
+    /** 数据范围必须同时保护按 ID 更新，不能只依赖列表过滤。 */
+    @Test
+    void rejectsUpdatingUserOutsideDataScope() {
+        com.baseai.platform.domain.Department engineering = department(11L, null);
+        com.baseai.platform.domain.Department finance = department(12L, null);
+        Role scopedRole = role(31L, "EDITOR");
+        scopedRole.setDataScope("DEPARTMENT");
+        UserAccount current = user(7L, "operator", true, scopedRole);
+        current.setDepartment(engineering);
+        UserAccount target = user(8L, "outsider", true, role(32L, "USER"));
+        target.setDepartment(finance);
+        when(userRepository.findAllForAdminGuard()).thenReturn(List.of(current, target));
+        when(userRepository.findById(7L)).thenReturn(Optional.of(current));
+        when(userRepository.findById(8L)).thenReturn(Optional.of(target));
+        AuthContext.set(actor(7L, Set.of("EDITOR"), Set.of("system:user:update")));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+            () -> service.updateUser(8L, userCommand("outsider", null, true, List.of(32L))));
+
+        assertEquals(403, exception.getStatus());
+        assertEquals("user.dataScopeForbidden", exception.getMessageKey());
+        verify(userRepository, never()).save(any());
+    }
+
+    /** 非管理员不能给本人或同部门账号分配 ALL 数据范围角色来扩大可见数据。 */
+    @Test
+    void rejectsDelegatingBroaderDataScopeRole() {
+        com.baseai.platform.domain.Department engineering = department(11L, null);
+        Role scopedRole = role(31L, "EDITOR");
+        scopedRole.setDataScope("DEPARTMENT");
+        Role allDataRole = role(32L, "AUDITOR");
+        allDataRole.setDataScope("ALL");
+        UserAccount current = user(7L, "operator", true, scopedRole);
+        current.setDepartment(engineering);
+        when(userRepository.findAllForAdminGuard()).thenReturn(List.of(current));
+        when(userRepository.findById(7L)).thenReturn(Optional.of(current));
+        when(roleRepository.findAllById(any())).thenReturn(List.of(allDataRole));
+        when(departmentRepository.findById(11L)).thenReturn(Optional.of(engineering));
+        AuthContext.set(actor(7L, Set.of("EDITOR"), Set.of("system:user:update")));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.updateUser(7L,
+            new PlatformAdminService.UserCommand("operator", "operator", null, true, 11L, List.of(32L), List.of())));
+
+        assertEquals(403, exception.getStatus());
+        assertEquals("user.dataScopeDelegationForbidden", exception.getMessageKey());
+        verify(userRepository, never()).save(any());
+    }
+
     /** 创建角色命令，集中维护测试必需字段。 */
     private static PlatformAdminService.RoleCommand command(List<Long> menuIds) {
         return new PlatformAdminService.RoleCommand("EDITOR", "编辑人员", null, "ALL", true, menuIds, List.of());
@@ -265,6 +338,16 @@ class PlatformAdminServiceTest {
         user.setPasswordHash("hash");
         user.setRoles(new java.util.LinkedHashSet<>(List.of(roles)));
         return user;
+    }
+
+    /** 创建最小部门实体。 */
+    private static com.baseai.platform.domain.Department department(Long id, Long parentId) {
+        com.baseai.platform.domain.Department department = new com.baseai.platform.domain.Department();
+        department.setId(id);
+        department.setParentId(parentId);
+        department.setCode("DEPT_" + id);
+        department.setName("Department " + id);
+        return department;
     }
 
     /** 创建当前操作人权限快照。 */

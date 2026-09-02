@@ -55,6 +55,19 @@ public final class InternalRequestSigner {
     public static boolean verify(String secret, String method, String actualTarget, byte[] body,
                                  String timestamp, String nonce, String signedTarget,
                                  String digest, String signature, Instant now, long maximumSkewSeconds) {
+        return verifyHeaders(secret, method, actualTarget, timestamp, nonce, signedTarget, digest, signature, now,
+            maximumSkewSeconds) && matchesContentDigest(body, digest);
+    }
+
+    /**
+     * 在读取正文前校验 HMAC 保护的头部字段。
+     *
+     * <p>该步骤允许内部认证过滤器先拒绝伪造请求，再为通过签名验证的可信调用方读取并缓存正文，
+     * 从而避免匿名请求诱发大数组分配。</p>
+     */
+    public static boolean verifyHeaders(String secret, String method, String actualTarget,
+                                        String timestamp, String nonce, String signedTarget,
+                                        String digest, String signature, Instant now, long maximumSkewSeconds) {
         try {
             if (secret == null || secret.length() < 24 || timestamp == null || !timestamp.matches("[0-9]{1,12}")
                 || nonce == null || !nonce.matches("[a-f0-9]{32}")
@@ -64,15 +77,20 @@ public final class InternalRequestSigner {
             if (!signedTarget.equals(actualTarget)) return false;
             long seconds = Long.parseLong(timestamp);
             if (Math.abs(now.getEpochSecond() - seconds) > maximumSkewSeconds) return false;
-            String actualDigest = sha256(body == null ? new byte[0] : body);
-            if (!MessageDigest.isEqual(digest.getBytes(StandardCharsets.US_ASCII),
-                actualDigest.getBytes(StandardCharsets.US_ASCII))) return false;
             String expected = hmac(secret, canonical(method, signedTarget, seconds, nonce, digest));
             return MessageDigest.isEqual(expected.getBytes(StandardCharsets.US_ASCII),
                 signature.getBytes(StandardCharsets.US_ASCII));
         } catch (RuntimeException exception) {
             return false;
         }
+    }
+
+    /** 使用常量时间比较确认已读取正文与签名声明的 SHA-256 完全一致。 */
+    public static boolean matchesContentDigest(byte[] body, String digest) {
+        if (digest == null || !digest.matches("[a-f0-9]{64}")) return false;
+        String actualDigest = sha256(body == null ? new byte[0] : body);
+        return MessageDigest.isEqual(digest.getBytes(StandardCharsets.US_ASCII),
+            actualDigest.getBytes(StandardCharsets.US_ASCII));
     }
 
     /** 从 URI 保留原始编码路径和查询参数，生成 HTTP request-target。 */

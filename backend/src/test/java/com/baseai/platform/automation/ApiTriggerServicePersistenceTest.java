@@ -2,6 +2,9 @@ package com.baseai.platform.automation;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.h2.jdbcx.JdbcDataSource;
@@ -15,6 +18,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.net.InetSocketAddress;
+import java.net.InetAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
@@ -22,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,13 +69,46 @@ class ApiTriggerServicePersistenceTest {
         cryptoService = new ConfigCryptoService(properties);
         urlPolicy = mock(ApiTriggerUrlPolicy.class);
         when(urlPolicy.validate(anyString())).thenAnswer(invocation -> URI.create(invocation.getArgument(0)));
+        when(urlPolicy.resolveVerifiedHost(anyString())).thenAnswer(invocation ->
+            InetAddress.getAllByName(invocation.getArgument(0)));
         service = new ApiTriggerService(jdbcTemplate, new ObjectMapper(), cryptoService, urlPolicy, properties);
     }
 
     @AfterEach
     void tearDown() {
+        AuthContext.clear();
         servers.forEach(server -> server.stop(0));
         jdbcTemplate.execute("DROP ALL OBJECTS");
+    }
+
+    /** API Key 即使属于管理员，也只能访问其自身所有者创建的触发配置。 */
+    @Test
+    void apiKeyCannotAccessAnotherOwnersConfigurationEvenForAdminOwner() {
+        ApiTriggerModels.View mine = service.create(command("Mine", null, true), OWNER);
+        ApiTriggerModels.View other = service.create(command("Other", null, true), 99L);
+        AuthContext.set(new AuthUser(OWNER, "admin-key", Set.of("ADMIN"), Set.of(),
+            AuthenticationType.API_KEY, 101L, "admin-key"));
+
+        assertEquals(List.of(mine.id()), service.listForCurrentUser(null, null).stream()
+            .map(ApiTriggerModels.View::id).toList());
+        BusinessException exception = assertThrows(BusinessException.class,
+            () -> service.getForCurrentUser(other.id()));
+
+        assertEquals("apiTrigger.notFound", exception.getMessageKey());
+        assertEquals(404, exception.getStatus());
+    }
+
+    /** 登录会话中的管理员仍可运维全部触发配置，避免破坏既有管理员职责。 */
+    @Test
+    void tokenAdministratorCanManageConfigurationsAcrossOwners() {
+        ApiTriggerModels.View mine = service.create(command("Mine", null, true), OWNER);
+        ApiTriggerModels.View other = service.create(command("Other", null, true), 99L);
+        AuthContext.set(new AuthUser(OWNER, "admin", Set.of("ADMIN"), Set.of(),
+            AuthenticationType.TOKEN, null, null));
+
+        assertEquals(List.of(other.id(), mine.id()), service.listForCurrentUser(null, null).stream()
+            .map(ApiTriggerModels.View::id).toList());
+        assertEquals(other.id(), service.getForCurrentUser(other.id()).id());
     }
 
     /** 创建配置应回填 MySQL 自增主键并完整持久化全部字段。 */

@@ -4,6 +4,8 @@ import com.baseai.platform.automation.ApiTriggerController;
 import com.baseai.platform.automation.ApiTriggerSecurityConfigurationController;
 import com.baseai.platform.automation.ApiTriggerTrackedExecutionService;
 import com.baseai.platform.controller.AiChatController;
+import com.baseai.platform.controller.ApiKeyManagementController;
+import com.baseai.platform.controller.LlmManagementController;
 import com.baseai.platform.controller.MailManagementController;
 import com.baseai.platform.security.AuthenticationType;
 import com.baseai.platform.security.AuthUser;
@@ -23,6 +25,8 @@ class TraceTypeCodeTest {
     void annotatedTaskTypesUseStableCodes() {
         Set<String> codes = Arrays.stream(new Class<?>[]{
                 AiChatController.class,
+                ApiKeyManagementController.class,
+                LlmManagementController.class,
                 MailManagementController.class,
                 ApiTriggerController.class,
                 ApiTriggerSecurityConfigurationController.class,
@@ -44,8 +48,13 @@ class TraceTypeCodeTest {
             "API_TRIGGER_CRON",
             "API_TRIGGER_TEST",
             "API_TRIGGER_SECURITY_UPDATE",
+            "API_KEY_CREATE",
+            "API_KEY_ROTATE",
+            "API_KEY_SECRET_REVEAL",
+            "LLM_PROVIDER_API_KEYS_REVEAL",
             "MAIL_ACCOUNT_CREATE",
             "MAIL_ACCOUNT_UPDATE",
+            "MAIL_ACCOUNT_PASSWORD_REVEAL",
             "MAIL_ROUTE_CREATE",
             "MAIL_ROUTE_UPDATE",
             "MAIL_ROUTE_TEST"

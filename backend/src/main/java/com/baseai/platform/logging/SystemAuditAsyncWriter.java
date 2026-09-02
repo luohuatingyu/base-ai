@@ -38,11 +38,12 @@ public class SystemAuditAsyncWriter {
     public void writeOperation(OperationLog audit) {
         try {
             jdbcTemplate.update("""
-                INSERT INTO sys_operation_log(user_id, username, method, path, controller, action, request_data,
-                    ip_address, duration_ms, success, error_message, operated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, audit.getUserId(), audit.getUsername(), audit.getMethod(), audit.getPath(), audit.getController(),
-                audit.getAction(), audit.getRequestData(), audit.getIpAddress(), audit.getDurationMs(), audit.getSuccess(),
+                INSERT INTO sys_operation_log(user_id, username, credential_type, credential_id, credential_name,
+                    method, path, controller, action, request_data, ip_address, duration_ms, success, error_message, operated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, audit.getUserId(), audit.getUsername(), audit.getCredentialType(), audit.getCredentialId(),
+                audit.getCredentialName(), audit.getMethod(), audit.getPath(), audit.getController(), audit.getAction(),
+                audit.getRequestData(), audit.getIpAddress(), audit.getDurationMs(), audit.getSuccess(),
                 audit.getErrorMessage(), Timestamp.from(audit.getOperatedAt()));
         } catch (RuntimeException exception) {
             log.error("event=operation_audit_persist_failed method={} path={}", audit.getMethod(), audit.getPath(), exception);

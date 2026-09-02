@@ -3,7 +3,10 @@ package com.baseai.platform.controller;
 import com.baseai.platform.automation.ApiTriggerController;
 import com.baseai.platform.security.ApiKeyEndpoint;
 import com.baseai.platform.security.RequiredPermission;
+import com.baseai.platform.security.SecretRevealAuthorizationService;
+import com.baseai.platform.trace.TraceType;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.bind.annotation.PostMapping;
 
 import java.lang.reflect.Method;
 
@@ -20,13 +23,16 @@ class ApiKeyManagementControllerTest {
         assertNull(create.getAnnotation(ApiKeyEndpoint.class));
     }
 
-    /** 明文 API Key 查询必须复用列表权限，并继续禁止 API Key 凭证访问管理接口。 */
+    /** 明文 API Key 回查必须使用密码二次验证的 POST，且禁止记录请求快照。 */
     @Test
     void revealEndpointRemainsBearerOnly() throws Exception {
-        Method reveal = ApiKeyManagementController.class.getMethod("reveal", Long.class);
+        Method reveal = ApiKeyManagementController.class.getMethod("reveal", Long.class,
+            SecretRevealAuthorizationService.ReauthenticationCommand.class);
 
         assertEquals("system:api-key:list", reveal.getAnnotation(RequiredPermission.class).value());
         assertNull(reveal.getAnnotation(ApiKeyEndpoint.class));
+        assertNotNull(reveal.getAnnotation(PostMapping.class));
+        assertEquals(false, reveal.getAnnotation(TraceType.class).captureRequest());
     }
 
     /** 工作流白名单选项属于管理接口，不允许 API Key 自身枚举可执行资源。 */

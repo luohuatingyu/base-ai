@@ -37,6 +37,8 @@ public class PlatformProperties {
     private PythonWorker pythonWorker = new PythonWorker();
     /** 追踪日志落库配置。 */
     private TraceLog traceLog = new TraceLog();
+    /** 系统审计日志的保留策略。 */
+    private Audit audit = new Audit();
     /** 追踪切面配置。 */
     private TraceTracking traceTracking = new TraceTracking();
     /** API 触发器配置。 */
@@ -87,6 +89,10 @@ public class PlatformProperties {
     public void setPythonWorker(PythonWorker pythonWorker) { this.pythonWorker = pythonWorker; }
     public TraceLog getTraceLog() { return traceLog; }
     public void setTraceLog(TraceLog traceLog) { this.traceLog = traceLog; }
+    /** 返回系统审计日志保留策略。 */
+    public Audit getAudit() { return audit; }
+    /** 设置系统审计日志保留策略。 */
+    public void setAudit(Audit value) { audit = value; }
     public TraceTracking getTraceTracking() { return traceTracking; }
     public void setTraceTracking(TraceTracking traceTracking) { this.traceTracking = traceTracking; }
     public ApiTrigger getApiTrigger() { return apiTrigger; }
@@ -158,8 +164,16 @@ public class PlatformProperties {
 
     public static class ResourceLimits {
         private int requestMaxBytes = 20 * 1024 * 1024;
+        /** 登录等匿名认证入口的较低正文上限。 */
+        private int authenticationRequestMaxBytes = 64 * 1024;
+        /** 返回常规 HTTP 请求正文上限。 */
         public int getRequestMaxBytes() { return requestMaxBytes; }
+        /** 设置常规 HTTP 请求正文上限。 */
         public void setRequestMaxBytes(int value) { requestMaxBytes = value; }
+        /** 返回登录等匿名认证入口的正文上限。 */
+        public int getAuthenticationRequestMaxBytes() { return authenticationRequestMaxBytes; }
+        /** 设置登录等匿名认证入口的正文上限。 */
+        public void setAuthenticationRequestMaxBytes(int value) { authenticationRequestMaxBytes = value; }
     }
 
     /** Backend 调用无网络解析容器时使用的协议与资源上限。 */
@@ -250,6 +264,15 @@ public class PlatformProperties {
         public void setPersistLevel(String persistLevel) { this.persistLevel = persistLevel; }
         public int getRetentionDays() { return retentionDays; }
         public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+    }
+
+    /** 控制系统操作审计日志的最小保留期限。 */
+    public static class Audit {
+        private int operationLogRetentionDays = 90;
+        /** 返回操作审计日志保留天数。 */
+        public int getOperationLogRetentionDays() { return operationLogRetentionDays; }
+        /** 设置操作审计日志保留天数。 */
+        public void setOperationLogRetentionDays(int value) { operationLogRetentionDays = value; }
     }
 
     public static class TraceTracking {

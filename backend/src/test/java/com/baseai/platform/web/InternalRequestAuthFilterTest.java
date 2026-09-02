@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -65,6 +66,29 @@ class InternalRequestAuthFilterTest {
 
         assertEquals(200, first.getStatus());
         assertEquals(401, replay.getStatus());
+    }
+
+    /** 伪造内部请求必须在读取正文前被拒绝，避免匿名请求触发正文缓存。 */
+    @Test
+    void rejectsInvalidSignatureBeforeReadingBody() throws Exception {
+        AtomicBoolean read = new AtomicBoolean();
+        MockHttpServletRequest source = new MockHttpServletRequest("POST", "/api/internal/events");
+        source.setContent("large-untrusted-body".getBytes(StandardCharsets.UTF_8));
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/internal/events") {
+            @Override public jakarta.servlet.ServletInputStream getInputStream() {
+                read.set(true);
+                return source.getInputStream();
+            }
+            @Override public long getContentLengthLong() { return source.getContentLengthLong(); }
+            @Override public int getContentLength() { return source.getContentLength(); }
+        };
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new InternalRequestAuthFilter(SECRET, Clock.fixed(NOW, ZoneOffset.UTC)).doFilter(request, response,
+            (_request, _response) -> { throw new AssertionError("伪造请求不得进入控制器"); });
+
+        assertEquals(401, response.getStatus());
+        assertEquals(false, read.get());
     }
 
     /** 创建固定时间、目标和正文的内部请求。 */

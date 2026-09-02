@@ -2,6 +2,7 @@ package com.baseai.platform.logging;
 
 import com.baseai.platform.domain.OperationLog;
 import com.baseai.platform.trace.TraceRequestSnapshotSanitizer;
+import com.baseai.platform.trace.TraceType;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.security.ClientIpResolver;
@@ -10,6 +11,7 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -70,7 +72,10 @@ public class OperationAuditAspect {
             log.setPath(request.getRequestURI());
             log.setController(signature.getDeclaringType().getSimpleName());
             log.setAction(signature.getName());
-            log.setRequestData(sanitizer.sanitize(request, signature.getParameterNames(), point.getArgs()).paramsJson());
+            TraceType traceType = AnnotatedElementUtils.findMergedAnnotation(signature.getMethod(), TraceType.class);
+            // 显式禁止请求快照的接口只保留操作元数据，避免审计链路绕过业务脱敏意图。
+            log.setRequestData(traceType != null && !traceType.captureRequest() ? null
+                : sanitizer.sanitize(request, signature.getParameterNames(), point.getArgs()).paramsJson());
             log.setIpAddress(clientIpResolver.resolve(request));
             log.setDurationMs((System.nanoTime() - started) / 1_000_000);
             log.setSuccess(failure == null);

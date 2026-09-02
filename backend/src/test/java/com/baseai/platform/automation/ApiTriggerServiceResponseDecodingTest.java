@@ -15,6 +15,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.nio.charset.StandardCharsets;
 import java.io.ByteArrayInputStream;
 import java.net.InetSocketAddress;
+import java.net.InetAddress;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
@@ -157,8 +158,7 @@ class ApiTriggerServiceResponseDecodingTest {
         server.start();
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/redirect";
-            ApiTriggerUrlPolicy policy = mock(ApiTriggerUrlPolicy.class);
-            when(policy.validate(anyString())).thenAnswer(invocation -> URI.create(invocation.getArgument(0)));
+            ApiTriggerUrlPolicy policy = acceptingPolicy();
             ApiTriggerService redirectService = new ApiTriggerService(mock(JdbcTemplate.class), new ObjectMapper(),
                 mock(ConfigCryptoService.class), policy, new PlatformProperties());
 
@@ -167,6 +167,7 @@ class ApiTriggerServiceResponseDecodingTest {
             assertEquals(200, result.httpStatus());
             assertEquals("followed", result.responseBody());
             verify(policy, atLeast(2)).validate(anyString());
+            verify(policy, atLeastOnce()).resolveVerifiedHost(anyString());
         } finally {
             server.stop(0);
         }
@@ -388,6 +389,8 @@ class ApiTriggerServiceResponseDecodingTest {
     private static ApiTriggerUrlPolicy acceptingPolicy() {
         ApiTriggerUrlPolicy policy = mock(ApiTriggerUrlPolicy.class);
         when(policy.validate(anyString())).thenAnswer(invocation -> URI.create(invocation.getArgument(0)));
+        when(policy.resolveVerifiedHost(anyString())).thenAnswer(invocation ->
+            InetAddress.getAllByName(invocation.getArgument(0)));
         return policy;
     }
 

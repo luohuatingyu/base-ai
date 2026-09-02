@@ -2,14 +2,25 @@ package com.baseai.platform.automation;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
 import com.baseai.platform.trace.TraceContextHolder;
 import com.baseai.platform.trace.TraceContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.hc.client5.http.DnsResolver;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.ssl.DefaultHostnameVerifier;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
+import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.jdbc.core.ArgumentPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -19,12 +30,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.sql.PreparedStatement;
@@ -36,6 +47,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -66,10 +78,30 @@ public class ApiTriggerService {
         this.tlsTrust = new ApiTriggerTlsTrust(properties.getApiTrigger().getCaddyCaFile());
     }
 
-    /** 按关键字和状态查询未作废接口配置。 */
-    public List<ApiTriggerModels.View> list(String keyword, Boolean enabled) {
+    /**
+     * 按当前认证主体的资源边界查询未作废配置。
+     *
+     * <p>令牌管理员可管理全部配置；API Key 即使属于管理员，也始终只能访问其所有者的配置，
+     * 防止一个已授权的 Key 横向调用其他自动化任务。</p>
+     */
+    public List<ApiTriggerModels.View> listForCurrentUser(String keyword, Boolean enabled) {
+        AuthUser user = AuthContext.require();
+        return list(keyword, enabled, canManageAll(user) ? null : user.id());
+    }
+
+    /** 同包调度与维护逻辑查询全部未作废配置，不可由 HTTP 入口直接调用。 */
+    List<ApiTriggerModels.View> list(String keyword, Boolean enabled) {
+        return list(keyword, enabled, null);
+    }
+
+    /** 复用查询条件并可选附加所有者过滤，避免两条查询路径产生行为漂移。 */
+    private List<ApiTriggerModels.View> list(String keyword, Boolean enabled, Long ownerUserId) {
         StringBuilder sql = new StringBuilder("SELECT * FROM automation_api_trigger_config WHERE voided=false");
         List<Object> args = new ArrayList<>();
+        if (ownerUserId != null) {
+            sql.append(" AND owner_user_id=?");
+            args.add(ownerUserId);
+        }
         if (keyword != null && !keyword.isBlank()) {
             sql.append(" AND (LOWER(name) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?))");
             args.add("%" + keyword.trim() + "%"); args.add("%" + keyword.trim() + "%");
@@ -79,8 +111,53 @@ public class ApiTriggerService {
         return jdbcTemplate.query(sql.toString(), (rs, row) -> mapView(rs), args.toArray());
     }
 
-    /** 创建接口触发配置并加密敏感字段。 */
-    public ApiTriggerModels.View create(ApiTriggerModels.Command command, Long ownerUserId) {
+    /** 创建当前登录用户拥有的接口触发配置。 */
+    public ApiTriggerModels.View createForCurrentUser(ApiTriggerModels.Command command) {
+        return create(command, AuthContext.require().id());
+    }
+
+    /** 更新当前主体有权访问的接口触发配置。 */
+    public ApiTriggerModels.View updateForCurrentUser(Long id, ApiTriggerModels.Command command) {
+        requireAccessible(id);
+        return update(id, command);
+    }
+
+    /** 查询当前主体有权访问的接口触发配置。 */
+    public ApiTriggerModels.View getForCurrentUser(Long id) {
+        return requireAccessible(id);
+    }
+
+    /** 停用当前主体有权访问的接口触发配置。 */
+    public void disableForCurrentUser(Long id) {
+        requireAccessible(id);
+        disable(id);
+    }
+
+    /** 作废当前主体有权访问的接口触发配置。 */
+    public void voidForCurrentUser(Long id) {
+        requireAccessible(id);
+        voidConfig(id);
+    }
+
+    /** 执行当前主体有权访问的接口触发配置。 */
+    public ApiTriggerModels.ExecutionResult executeForCurrentUser(Long id, String triggerType) {
+        requireAccessible(id);
+        return execute(id, triggerType);
+    }
+
+    /** 查询当前主体有权访问的接口触发配置日志。 */
+    public List<ApiTriggerModels.LogView> logsForCurrentUser(Long configId, String traceId) {
+        requireAccessible(configId);
+        return logs(configId, traceId);
+    }
+
+    /**
+     * 创建接口触发配置并加密敏感字段。
+     *
+     * <p>仅供同包的调度和迁移内部逻辑使用，HTTP 入口必须调用
+     * {@link #createForCurrentUser(ApiTriggerModels.Command)}。</p>
+     */
+    ApiTriggerModels.View create(ApiTriggerModels.Command command, Long ownerUserId) {
         validate(command);
         Long id = insertAndReturnId("""
             INSERT INTO automation_api_trigger_config(name, description, http_method, url, headers_encrypted,
@@ -97,8 +174,8 @@ public class ApiTriggerService {
         return get(id);
     }
 
-    /** 更新接口触发配置并重新加密敏感字段。 */
-    public ApiTriggerModels.View update(Long id, ApiTriggerModels.Command command) {
+    /** 同包系统调用的更新实现；HTTP 入口必须先完成资源所有权校验。 */
+    ApiTriggerModels.View update(Long id, ApiTriggerModels.Command command) {
         get(id);
         validate(command);
         jdbcTemplate.update("""
@@ -115,35 +192,36 @@ public class ApiTriggerService {
         return get(id);
     }
 
-    public ApiTriggerModels.View get(Long id) {
+    /** 同包系统调用的读取实现，不包含调用者资源校验。 */
+    ApiTriggerModels.View get(Long id) {
         List<ApiTriggerModels.View> rows = jdbcTemplate.query("SELECT * FROM automation_api_trigger_config WHERE id=?",
             (rs, row) -> mapView(rs), id);
         if (rows.isEmpty()) throw BusinessException.notFound("apiTrigger.notFound");
         return rows.get(0);
     }
 
-    /** 停用配置并保留历史记录。 */
-    public void disable(Long id) {
+    /** 同包系统调用的停用实现，调用前必须完成资源所有权校验。 */
+    void disable(Long id) {
         if (jdbcTemplate.update("UPDATE automation_api_trigger_config SET enabled=false, updated_at=CURRENT_TIMESTAMP(6) WHERE id=? AND voided=false", id) == 0)
             throw BusinessException.notFound("apiTrigger.notFound");
     }
 
-    /** 作废配置并从正常列表隐藏。 */
-    public void voidConfig(Long id) {
+    /** 同包系统调用的作废实现，调用前必须完成资源所有权校验。 */
+    void voidConfig(Long id) {
         if (jdbcTemplate.update("UPDATE automation_api_trigger_config SET enabled=false, voided=true, updated_at=CURRENT_TIMESTAMP(6) WHERE id=?", id) == 0)
             throw BusinessException.notFound("apiTrigger.notFound");
     }
 
-    /** 查询全部启用且配置 Cron 的任务。 */
-    public List<ApiTriggerModels.View> findEnabled() {
+    /** 查询全部启用且配置 Cron 的任务，仅供调度器初始化使用。 */
+    List<ApiTriggerModels.View> findEnabled() {
         return jdbcTemplate.query("""
             SELECT * FROM automation_api_trigger_config
             WHERE enabled=true AND voided=false AND cron_expression IS NOT NULL AND cron_expression<>'' ORDER BY id
             """, (rs, row) -> mapView(rs));
     }
 
-    /** 正式执行配置并记录 MySQL 执行历史。 */
-    public ApiTriggerModels.ExecutionResult execute(Long id, String triggerType) {
+    /** 同包系统调用的执行实现，调用前必须完成资源所有权校验。 */
+    ApiTriggerModels.ExecutionResult execute(Long id, String triggerType) {
         ApiTriggerModels.View config = get(id);
         if (config.voided() || !config.enabled()) throw new BusinessException("apiTrigger.disabled");
         long startedAt = System.nanoTime();
@@ -164,8 +242,8 @@ public class ApiTriggerService {
         return call(toTemporaryView(command));
     }
 
-    /** 查询单个配置的最近执行日志，并支持按 Trace ID 精确过滤。 */
-    public List<ApiTriggerModels.LogView> logs(Long configId, String traceId) {
+    /** 同包系统调用的日志查询实现，调用前必须完成资源所有权校验。 */
+    List<ApiTriggerModels.LogView> logs(Long configId, String traceId) {
         get(configId);
         StringBuilder sql = new StringBuilder("SELECT * FROM automation_api_trigger_log WHERE config_id=?");
         List<Object> args = new ArrayList<>();
@@ -182,26 +260,43 @@ public class ApiTriggerService {
             rs.getTimestamp("triggered_at").toLocalDateTime()), args.toArray());
     }
 
+    /** 校验当前认证主体是否可访问指定配置，并以未找到响应隐藏其他所有者的资源。 */
+    private ApiTriggerModels.View requireAccessible(Long id) {
+        ApiTriggerModels.View config = get(id);
+        AuthUser user = AuthContext.require();
+        if (!canManageAll(user) && !Objects.equals(config.ownerUserId(), user.id())) {
+            throw BusinessException.notFound("apiTrigger.notFound");
+        }
+        return config;
+    }
+
+    /** 仅会话令牌中的管理员角色可跨所有者管理；API Key 永远不可取得该豁免。 */
+    private boolean canManageAll(AuthUser user) {
+        return user.authenticationType() != AuthenticationType.API_KEY && user.roles().contains("ADMIN");
+    }
+
     /** 发起认证请求和目标 HTTP 请求。 */
     private ApiTriggerModels.ExecutionResult call(ApiTriggerModels.View config) {
         TraceContextHolder.checkpoint();
         URI targetUri = buildUri(urlPolicy.validate(config.url()), config.queryParams());
-        RestClient client = buildClient(config.timeoutSeconds());
-        Map<String, List<String>> headers = new LinkedHashMap<>();
-        parseMap(config.headers()).forEach((name, value) -> headers.put(name, new ArrayList<>(List.of(value))));
-        if (config.authEnabled()) {
-            String token = fetchToken(config, client);
-            headers.computeIfAbsent(config.authTokenHeader(), ignored -> new ArrayList<>())
-                .add(config.authTokenPrefix() + token);
+        try (OutboundClient outbound = buildClient(config.timeoutSeconds())) {
+            RestClient client = outbound.client();
+            Map<String, List<String>> headers = new LinkedHashMap<>();
+            parseMap(config.headers()).forEach((name, value) -> headers.put(name, new ArrayList<>(List.of(value))));
+            if (config.authEnabled()) {
+                String token = fetchToken(config, client);
+                headers.computeIfAbsent(config.authTokenHeader(), ignored -> new ArrayList<>())
+                    .add(config.authTokenPrefix() + token);
+            }
+            long startedAt = System.nanoTime();
+            OutboundRequest request = new OutboundRequest(config.httpMethod(), targetUri, headers,
+                hasBody(config.httpMethod(), config.requestBody()) ? config.requestBody() : null, config.contentType());
+            LimitedResponse response = exchange(client, request);
+            TraceContextHolder.checkpoint();
+            return new ApiTriggerModels.ExecutionResult(response.status(),
+                Duration.ofNanos(System.nanoTime() - startedAt).toMillis(),
+                decodeResponseBody(response.body(), response.contentType()));
         }
-        long startedAt = System.nanoTime();
-        OutboundRequest request = new OutboundRequest(config.httpMethod(), targetUri, headers,
-            hasBody(config.httpMethod(), config.requestBody()) ? config.requestBody() : null, config.contentType());
-        LimitedResponse response = exchange(client, request);
-        TraceContextHolder.checkpoint();
-        return new ApiTriggerModels.ExecutionResult(response.status(),
-            Duration.ofNanos(System.nanoTime() - startedAt).toMillis(),
-            decodeResponseBody(response.body(), response.contentType()));
     }
 
     /** 调用认证地址并按点路径提取 Token。 */
@@ -274,16 +369,57 @@ public class ApiTriggerService {
         cron(command.cronExpression());
     }
 
-    private RestClient buildClient(int timeoutSeconds) {
-        SimpleClientHttpRequestFactory factory = new NoRedirectRequestFactory(tlsTrust.socketFactory());
-        factory.setConnectTimeout(Duration.ofSeconds(timeoutSeconds));
-        factory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
-        return RestClient.builder().requestFactory(factory)
+    /**
+     * 创建把安全 DNS 解析结果直接交给连接层的短生命周期 HTTP 客户端。
+     *
+     * <p>不使用 JDK 默认 DNS 连接器，确保通过 URL 策略审核的地址就是实际 Socket 连接使用的地址。</p>
+     */
+    private OutboundClient buildClient(int timeoutSeconds) {
+        DnsResolver resolver = new DnsResolver() {
+            @Override
+            public InetAddress[] resolve(String host) throws UnknownHostException {
+                try {
+                    return urlPolicy.resolveVerifiedHost(host);
+                } catch (BusinessException exception) {
+                    UnknownHostException rejected = new UnknownHostException("outbound host rejected by policy");
+                    rejected.initCause(exception);
+                    throw rejected;
+                }
+            }
+
+            @Override
+            public String resolveCanonicalHostname(String host) throws UnknownHostException {
+                resolve(host);
+                return host;
+            }
+        };
+        PoolingHttpClientConnectionManagerBuilder manager = PoolingHttpClientConnectionManagerBuilder.create()
+            .setDnsResolver(resolver).setMaxConnTotal(1).setMaxConnPerRoute(1);
+        SSLSocketFactory socketFactory = tlsTrust.socketFactory();
+        if (socketFactory != null) {
+            manager.setSSLSocketFactory(new SSLConnectionSocketFactory(socketFactory, new DefaultHostnameVerifier()));
+        }
+        RequestConfig requestConfig = RequestConfig.custom()
+            .setConnectionRequestTimeout(Timeout.ofSeconds(timeoutSeconds))
+            .setConnectTimeout(Timeout.ofSeconds(timeoutSeconds))
+            .setResponseTimeout(Timeout.ofSeconds(timeoutSeconds))
+            .setRedirectsEnabled(false)
+            .build();
+        CloseableHttpClient httpClient = HttpClients.custom()
+            .setConnectionManager(manager.build())
+            .setDefaultRequestConfig(requestConfig)
+            .disableAutomaticRetries()
+            .disableRedirectHandling()
+            .build();
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
+        RestClient client = RestClient.builder().requestFactory(factory)
             .requestInterceptor((request, body, execution) -> {
-                // 连接前再次解析和校验 DNS，缩小首次校验与实际连接之间的重绑定窗口
+                // 每个重定向跳转仍先做 URL 语义校验；实际连接由上方 DnsResolver 使用已验证地址。
                 urlPolicy.validate(request.getURI().toString());
                 return execution.execute(request, body);
             }).build();
+        TraceContextHolder.current().map(TraceContext::runtime).ifPresent(runtime -> runtime.registerCloseable(httpClient));
+        return new OutboundClient(client, httpClient);
     }
 
     /** 手动跟随受控重定向，并在每一跳重新执行 URL 安全策略。 */
@@ -442,22 +578,14 @@ public class ApiTriggerService {
 
     private record LimitedResponse(int status, byte[] body, MediaType contentType) {}
 
-    /** 显式关闭 JDK 对 GET 请求的自动跳转行为。 */
-    private static final class NoRedirectRequestFactory extends SimpleClientHttpRequestFactory {
-        private final SSLSocketFactory sslSocketFactory;
-
-        private NoRedirectRequestFactory(SSLSocketFactory sslSocketFactory) {
-            this.sslSocketFactory = sslSocketFactory;
-        }
-
+    /** 每次触发执行后关闭客户端和 Socket，避免短任务积累连接资源。 */
+    private record OutboundClient(RestClient client, CloseableHttpClient httpClient) implements AutoCloseable {
         @Override
-        protected void prepareConnection(HttpURLConnection connection, String httpMethod) throws IOException {
-            super.prepareConnection(connection, httpMethod);
-            TraceContextHolder.current().map(TraceContext::runtime)
-                .ifPresent(runtime -> runtime.registerCloseable(connection::disconnect));
-            connection.setInstanceFollowRedirects(false);
-            if (sslSocketFactory != null && connection instanceof HttpsURLConnection httpsConnection) {
-                httpsConnection.setSSLSocketFactory(sslSocketFactory);
+        public void close() {
+            try {
+                httpClient.close();
+            } catch (IOException ignored) {
+                // 客户端已完成或因任务取消关闭时，无需覆盖原始业务结果。
             }
         }
     }

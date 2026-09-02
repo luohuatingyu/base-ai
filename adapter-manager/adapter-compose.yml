@@ -1,0 +1,97 @@
+name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${CONTAINER_LOG_MAX_SIZE:-20m}
+    max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+
+# 此文件仅描述由 Docker Broker 启停的两个插件 Worker。
+# 它不引用根 docker-compose.yml 或 .env，防止持有 Docker Socket 的 Broker 读取平台其他密钥。
+services:
+  dify-plugin-worker:
+    profiles: ["plugin-adapters"]
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker
+    restart: "no"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "0"
+    pids_limit: ${PLUGIN_WORKER_PIDS_LIMIT:-128}
+    mem_limit: ${DIFY_PLUGIN_WORKER_MEMORY_LIMIT:-${PLUGIN_WORKER_MEMORY_LIMIT:-1g}}
+    cpus: ${DIFY_PLUGIN_WORKER_CPU_LIMIT:-${PLUGIN_WORKER_CPU_LIMIT:-2.0}}
+    logging: *default-logging
+    environment:
+      PORT: 8101
+      PLUGIN_WORKER_INTERNAL_TOKEN: ${DIFY_PLUGIN_WORKER_INTERNAL_TOKEN:?Set DIFY_PLUGIN_WORKER_INTERNAL_TOKEN}
+      PLUGIN_SANDBOX_BROKER_SOCKET: /run/dify-sandbox/broker.sock
+      PLUGIN_WORKER_TIMEOUT_SECONDS: ${WORKFLOW_PLUGIN_WORKER_TIMEOUT_SECONDS:-240}
+      PLUGIN_WORKER_MAX_RESPONSE_BYTES: ${PLUGIN_HTTP_RESPONSE_MAX_BYTES:-10485760}
+      PLUGIN_WORKER_MAX_REQUEST_BYTES: ${PLUGIN_WORKER_MAX_REQUEST_BYTES:-15728640}
+    volumes:
+      - dify-sandbox-control:/run/dify-sandbox:ro
+    tmpfs:
+      - /data/tmp:size=64m,mode=1700,uid=10001,gid=10001
+      - /tmp:size=64m,mode=1700,uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8101/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - outbound-network
+
+  n8n-plugin-worker:
+    profiles: ["plugin-adapters"]
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker:latest
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker
+    restart: "no"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    group_add:
+      - "0"
+    pids_limit: ${PLUGIN_WORKER_PIDS_LIMIT:-128}
+    mem_limit: ${PLUGIN_WORKER_MEMORY_LIMIT:-512m}
+    cpus: ${PLUGIN_WORKER_CPU_LIMIT:-1.0}
+    logging: *default-logging
+    environment:
+      PORT: 8102
+      PLUGIN_WORKER_INTERNAL_TOKEN: ${N8N_PLUGIN_WORKER_INTERNAL_TOKEN:?Set N8N_PLUGIN_WORKER_INTERNAL_TOKEN}
+      PLUGIN_SANDBOX_BROKER_SOCKET: /run/n8n-sandbox/broker.sock
+      PLUGIN_WORKER_TIMEOUT_SECONDS: ${WORKFLOW_PLUGIN_WORKER_TIMEOUT_SECONDS:-240}
+      PLUGIN_WORKER_MAX_RESPONSE_BYTES: ${PLUGIN_HTTP_RESPONSE_MAX_BYTES:-10485760}
+      PLUGIN_WORKER_MAX_REQUEST_BYTES: ${PLUGIN_WORKER_MAX_REQUEST_BYTES:-15728640}
+    volumes:
+      - n8n-sandbox-control:/run/n8n-sandbox:ro
+    tmpfs:
+      - /data/tmp:size=64m,mode=1700,uid=10001,gid=10001
+      - /tmp:size=64m,mode=1700,uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8102/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - outbound-network
+
+networks:
+  outbound-network:
+    name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}_outbound-network
+    external: true
+
+volumes:
+  dify-sandbox-control:
+    name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}_dify-sandbox-control
+    external: true
+  n8n-sandbox-control:
+    name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}_n8n-sandbox-control
+    external: true

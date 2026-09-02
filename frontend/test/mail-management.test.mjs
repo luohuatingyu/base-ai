@@ -25,9 +25,9 @@ test('邮件账户和路由使用独立页面及列表权限', () => {
   assert.match(routeSource, /mail:route:delete/)
 })
 
-test('邮箱密码仅由管理员单账户读取并在弹窗关闭后清除', () => {
-  assert.match(accountSource, /\/mail\/accounts\/\$\{id\}\/password/)
-  assert.match(accountSource, /row && auth\.isAdmin \? await loadPassword\(row\.id\) : ''/)
+test('邮箱编辑不自动回读密码，并在弹窗关闭后清除输入内容', () => {
+  assert.doesNotMatch(accountSource, /\/mail\/accounts\/\$\{id\}\/password/)
+  assert.match(accountSource, /function open\(row\)[\s\S]*password: ''/)
   assert.match(accountSource, /autocomplete="new-password"/)
   assert.match(accountSource, /@closed="clearPassword"/)
   assert.match(accountSource, /function clearPassword\(\) \{ form\.password = '' \}/)

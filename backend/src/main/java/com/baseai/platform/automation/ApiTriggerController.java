@@ -1,7 +1,6 @@
 package com.baseai.platform.automation;
 
 import com.baseai.platform.trace.TraceType;
-import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.security.ApiKeyEndpoint;
 import com.baseai.platform.security.ApiKeyField;
@@ -25,14 +24,14 @@ public class ApiTriggerController {
     @RequiredPermission("automation:api-trigger:list")
     public List<ApiTriggerModels.View> list(@RequestParam(required = false) String keyword,
                                             @RequestParam(required = false) Boolean enabled) {
-        return service.list(keyword, enabled);
+        return service.listForCurrentUser(keyword, enabled);
     }
 
     @PostMapping
     @RequiredPermission("automation:api-trigger:create")
     @TraceType(value = "API_TRIGGER_CREATE", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.View create(@RequestBody ApiTriggerModels.Command command) {
-        ApiTriggerModels.View created = service.create(command, AuthContext.require().id());
+        ApiTriggerModels.View created = service.createForCurrentUser(command);
         scheduler.reschedule(created.id());
         return created;
     }
@@ -41,7 +40,7 @@ public class ApiTriggerController {
     @RequiredPermission("automation:api-trigger:update")
     @TraceType(value = "API_TRIGGER_UPDATE", triggerEntry = "MANUAL", captureRequest = false)
     public ApiTriggerModels.View update(@PathVariable Long id, @RequestBody ApiTriggerModels.Command command) {
-        ApiTriggerModels.View updated = service.update(id, command);
+        ApiTriggerModels.View updated = service.updateForCurrentUser(id, command);
         scheduler.reschedule(id);
         return updated;
     }
@@ -49,12 +48,12 @@ public class ApiTriggerController {
     @DeleteMapping("/{id}")
     @RequiredPermission("automation:api-trigger:delete")
     @TraceType(value = "API_TRIGGER_DISABLE", triggerEntry = "MANUAL")
-    public void disable(@PathVariable Long id) { service.disable(id); scheduler.cancel(id); }
+    public void disable(@PathVariable Long id) { service.disableForCurrentUser(id); scheduler.cancel(id); }
 
     @PostMapping("/{id}/void")
     @RequiredPermission("automation:api-trigger:delete")
     @TraceType(value = "API_TRIGGER_VOID", triggerEntry = "MANUAL")
-    public void voidConfig(@PathVariable Long id) { service.voidConfig(id); scheduler.cancel(id); }
+    public void voidConfig(@PathVariable Long id) { service.voidForCurrentUser(id); scheduler.cancel(id); }
 
     @PostMapping("/{id}/trigger")
     @RequiredPermission("automation:api-trigger:trigger")
@@ -81,7 +80,9 @@ public class ApiTriggerController {
         },
         responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"data\": {\n    \"httpStatus\": 200,\n    \"durationMs\": 126,\n    \"responseBody\": \"{\\\"status\\\":\\\"ok\\\"}\"\n  }\n}")
     @TraceType(value = "API_TRIGGER_EXECUTE", triggerEntry = "MANUAL", captureRequest = false)
-    public ApiTriggerModels.ExecutionResult trigger(@PathVariable Long id) { return service.execute(id, "MANUAL"); }
+    public ApiTriggerModels.ExecutionResult trigger(@PathVariable Long id) {
+        return service.executeForCurrentUser(id, "MANUAL");
+    }
 
     @PostMapping("/test")
     @RequiredPermission("automation:api-trigger:trigger")
@@ -93,6 +94,6 @@ public class ApiTriggerController {
     @RequiredPermission("automation:api-trigger:logs")
     public List<ApiTriggerModels.LogView> logs(@PathVariable Long id,
                                                 @RequestParam(required = false) String traceId) {
-        return service.logs(id, traceId);
+        return service.logsForCurrentUser(id, traceId);
     }
 }

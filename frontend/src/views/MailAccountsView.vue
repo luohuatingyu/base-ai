@@ -54,11 +54,9 @@ const form = reactive(defaultForm())
 
 /** 查询全部 SMTP 邮箱账户，响应不包含密码。 */
 async function load() { rows.value = (await http.get('/mail/accounts')).data || [] }
-/** 读取指定邮箱账户的管理员可见明文密码。 */
-async function loadPassword(id) { return (await http.get(`/mail/accounts/${id}/password`)).data.password }
-/** 打开新增或编辑窗口，仅系统管理员编辑已有账户时回显密码。 */
-async function open(row) {
-  Object.assign(form, defaultForm(), row || {}, { password: row && auth.isAdmin ? await loadPassword(row.id) : '' })
+/** 打开新增或编辑窗口；编辑时永不自动回读已保存的 SMTP 密码。 */
+function open(row) {
+  Object.assign(form, defaultForm(), row || {}, { password: '' })
   visible.value = true
 }
 /** 关闭编辑窗口后清除浏览器内存中的邮箱密码。 */

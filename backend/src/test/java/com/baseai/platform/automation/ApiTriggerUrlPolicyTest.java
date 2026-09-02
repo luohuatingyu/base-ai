@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
@@ -112,6 +113,17 @@ class ApiTriggerUrlPolicyTest {
 
         assertThrows(BusinessException.class, () -> policy.validate("http://100.64.0.1/internal"));
         assertThrows(BusinessException.class, () -> policy.validate("http://2130706433/internal"));
+    }
+
+    /** 实际连接使用的 DNS 解析入口也必须拒绝回环地址，不能只保护保存时校验。 */
+    @Test
+    void verifiedResolverRejectsLoopbackAddress() {
+        configure(List.of(rule("ANY", null)), false, false);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+            () -> policy.resolveVerifiedHost("127.0.0.1"));
+
+        assertEquals("apiTrigger.loopbackForbidden", exception.getMessageKey());
     }
 
     /** 配置当前测试使用的规则和两个网络开关。 */

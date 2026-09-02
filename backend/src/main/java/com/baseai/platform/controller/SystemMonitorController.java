@@ -43,12 +43,13 @@ public class SystemMonitorController {
 
     /** 按时间倒序分页查询操作日志。 */
     @GetMapping("/operation-logs") @RequiredPermission("system:audit:operation:list")
-    public PlatformAdminService.PageResult<OperationLog> operationLogs(
+    public PlatformAdminService.PageResult<OperationLogView> operationLogs(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "5") int size) {
         int safeSize = Math.min(100, Math.max(1, size));
         var paged = operationLogRepository.findAll(PageRequest.of(page - 1, safeSize, Sort.by(Sort.Direction.DESC, "operatedAt")));
-        return new PlatformAdminService.PageResult<>(paged.getContent(), paged.getTotalElements(), page, safeSize);
+        return new PlatformAdminService.PageResult<>(paged.getContent().stream().map(SystemMonitorController::toOperationLogView).toList(),
+            paged.getTotalElements(), page, safeSize);
     }
     /** 按时间倒序分页查询登录日志。 */
     @GetMapping("/login-logs") @RequiredPermission("system:audit:login:list")
@@ -59,4 +60,17 @@ public class SystemMonitorController {
         var paged = loginLogRepository.findAll(PageRequest.of(page - 1, safeSize, Sort.by(Sort.Direction.DESC, "loginAt")));
         return new PlatformAdminService.PageResult<>(paged.getContent(), paged.getTotalElements(), page, safeSize);
     }
+
+    /** 向管理界面返回操作元数据，不暴露内部请求快照字段。 */
+    private static OperationLogView toOperationLogView(OperationLog log) {
+        return new OperationLogView(log.getId(), log.getUserId(), log.getUsername(), log.getCredentialType(),
+            log.getCredentialId(), log.getCredentialName(), log.getMethod(), log.getPath(), log.getController(),
+            log.getAction(), log.getIpAddress(), log.getDurationMs(), log.getSuccess(), log.getErrorMessage(), log.getOperatedAt());
+    }
+
+    /** 操作日志的受限管理视图，刻意不包含 requestData。 */
+    public record OperationLogView(Long id, Long userId, String username, String credentialType, Long credentialId,
+                                   String credentialName, String method, String path, String controller, String action,
+                                   String ipAddress, Long durationMs, Boolean success, String errorMessage,
+                                   java.time.Instant operatedAt) { }
 }

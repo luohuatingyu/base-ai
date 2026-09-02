@@ -3,6 +3,7 @@ package com.baseai.platform.controller;
 import com.baseai.platform.repository.LoginLogRepository;
 import com.baseai.platform.repository.OperationLogRepository;
 import com.baseai.platform.security.SessionService;
+import com.baseai.platform.domain.OperationLog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -10,6 +11,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -72,6 +74,23 @@ class SystemMonitorControllerTest {
             .andExpect(jsonPath("$.size").value(expectedSize));
 
         assertPageable(operationLog, 1, expectedSize);
+    }
+
+    /** 操作日志管理接口不得向浏览器返回内部 requestData 快照。 */
+    @org.junit.jupiter.api.Test
+    void hidesOperationRequestSnapshotFromManagementResponse() throws Exception {
+        OperationLog operation = new OperationLog();
+        operation.setMethod("POST");
+        operation.setPath("/api/system/users");
+        operation.setSuccess(true);
+        operation.setRequestData("{\"password\":\"secret\"}");
+        operation.setOperatedAt(java.time.Instant.parse("2026-09-02T12:00:00Z"));
+        when(operationLogRepository.findAll(any(Pageable.class))).thenReturn(new PageImpl<>(java.util.List.of(operation)));
+
+        mockMvc.perform(get("/api/system/operation-logs"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].path").value("/api/system/users"))
+            .andExpect(jsonPath("$.items[0].requestData").doesNotExist());
     }
 
     /** 提供需要验证默认分页行为的日志接口。 */

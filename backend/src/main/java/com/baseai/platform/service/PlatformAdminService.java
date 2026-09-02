@@ -6,6 +6,9 @@ import com.baseai.platform.domain.*;
 import com.baseai.platform.repository.*;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.DataScope;
+import com.baseai.platform.security.DataScopeContext;
+import com.baseai.platform.security.DataScopeResolver;
 import com.baseai.platform.security.SessionService;
 import com.baseai.platform.security.PasswordPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -65,6 +68,9 @@ public class PlatformAdminService {
     /** 密码安全策略配置。 */
     private final PlatformProperties properties;
 
+    /** 用户管理对象级数据范围解析器。 */
+    private final DataScopeResolver dataScopeResolver;
+
     /**
      * 构造函数，注入所需的依赖
      *
@@ -80,7 +86,7 @@ public class PlatformAdminService {
     public PlatformAdminService(UserRepository userRepository, RoleRepository roleRepository, MenuRepository menuRepository,
                                 DepartmentRepository departmentRepository, PositionRepository positionRepository,
                                 BCryptPasswordEncoder passwordEncoder, SessionService sessionService,
-                                PlatformProperties properties) {
+                                PlatformProperties properties, DataScopeResolver dataScopeResolver) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.menuRepository = menuRepository;
@@ -89,6 +95,7 @@ public class PlatformAdminService {
         this.passwordEncoder = passwordEncoder;
         this.sessionService = sessionService;
         this.properties = properties;
+        this.dataScopeResolver = dataScopeResolver;
     }
 
     /**
@@ -104,9 +111,14 @@ public class PlatformAdminService {
      * @return 分页后的用户视图列表
      */
     @Transactional(readOnly = true)
+    @DataScope
     public PageResult<UserView> users(String keyword, Boolean enabled, int page, int size) {
+        DataScopeContext.Scope contextualScope = DataScopeContext.current();
+        DataScopeContext.Scope scope = contextualScope == null ? dataScopeResolver.resolveCurrent() : contextualScope;
         // 获取所有用户并应用过滤条件
         return page(userRepository.findAll().stream()
+            // 数据范围过滤必须先于映射，防止页面列表泄漏其他部门或其他账号。
+            .filter(user -> dataScopeResolver.canAccessUser(scope, user))
             // 关键字过滤：匹配用户名或显示名称
             .filter(user -> blank(keyword) || contains(user.getUsername(), keyword) || contains(user.getDisplayName(), keyword))
             // 状态过滤：根据启用状态筛选
@@ -134,6 +146,9 @@ public class PlatformAdminService {
         user.setUsername(username);
         // 应用用户属性和关系（创建模式）
         applyUser(user, command, true);
+        // 非全量数据范围只能在自身可管理的部门下创建账号。
+        dataScopeResolver.requireDepartmentAssignment(dataScopeResolver.resolveCurrent(),
+            user.getDepartment() == null ? null : user.getDepartment().getId());
         return toUserView(userRepository.save(user));
     }
 
@@ -154,6 +169,8 @@ public class PlatformAdminService {
         // 串行化账号权限变更，使最后管理员校验在并发请求下仍然成立
         userRepository.findAllForAdminGuard();
         UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("user.notFound"));
+        DataScopeContext.Scope scope = dataScopeResolver.resolveCurrent();
+        dataScopeResolver.requireUserAccess(scope, user);
         validateTargetControl(user);
         // 如果用户名发生变化，校验新用户名的唯一性
         if (!user.getUsername().equals(command.username()) && userRepository.existsByUsername(require(command.username(), "user.usernameRequired"))) {
@@ -164,7 +181,12 @@ public class PlatformAdminService {
         Set<Long> previousRoleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
         boolean previouslyEnabled = Boolean.TRUE.equals(user.getEnabled());
         boolean passwordChanged = !blank(command.password());
+        Long previousDepartmentId = user.getDepartment() == null ? null : user.getDepartment().getId();
         applyUser(user, command, false);
+        Long currentDepartmentId = user.getDepartment() == null ? null : user.getDepartment().getId();
+        if (!Objects.equals(previousDepartmentId, currentDepartmentId)) {
+            dataScopeResolver.requireDepartmentAssignment(scope, currentDepartmentId);
+        }
         UserAccount saved = userRepository.save(user);
         Set<Long> currentRoleIds = saved.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
         if (passwordChanged || previouslyEnabled != Boolean.TRUE.equals(saved.getEnabled())
@@ -188,6 +210,7 @@ public class PlatformAdminService {
         // 防止删除当前登录用户
         if (Objects.equals(AuthContext.require().id(), id)) throw new BusinessException("user.deleteCurrentForbidden");
         UserAccount user = userRepository.findById(id).orElseThrow(() -> BusinessException.notFound("user.notFound"));
+        dataScopeResolver.requireUserAccess(dataScopeResolver.resolveCurrent(), user);
         validateTargetControl(user);
         validateLastAdmin(user, Set.of(), false);
         // 清除用户的角色和岗位关联关系
@@ -369,6 +392,9 @@ public class PlatformAdminService {
         boolean enabled = command.enabled() == null || command.enabled();
         LinkedHashSet<Role> selectedRoles = loadRoles(command.roleIds());
         validateRoleDelegation(selectedRoles);
+        Department selectedDepartment = command.departmentId() == null ? null : departmentRepository.findById(command.departmentId())
+            .orElseThrow(() -> BusinessException.notFound("department.notFound"));
+        validateRoleDataScopeDelegation(selectedRoles, selectedDepartment);
         if (!creating) validateLastAdmin(user, selectedRoles, enabled);
         user.setDisplayName(require(command.displayName(), "user.displayNameRequired"));
         user.setEnabled(enabled);
@@ -379,8 +405,7 @@ public class PlatformAdminService {
         }
         user.setRoles(selectedRoles);
         user.setPositions(load(command.positionIds(), positionRepository::findAllById));
-        user.setDepartment(command.departmentId() == null ? null : departmentRepository.findById(command.departmentId())
-            .orElseThrow(() -> BusinessException.notFound("department.notFound")));
+        user.setDepartment(selectedDepartment);
     }
 
     /** 精确解析角色 ID，防止无效 ID 被静默忽略后产生非预期授权结果。 */
@@ -400,6 +425,15 @@ public class PlatformAdminService {
         if (hasAdminRole(selectedRoles)) throw BusinessException.forbidden("user.adminDelegationForbidden");
         boolean exceedsActor = effectivePermissions(selectedRoles).stream().anyMatch(permission -> !actor.hasPermission(permission));
         if (exceedsActor) throw BusinessException.forbidden("user.permissionDelegationForbidden");
+    }
+
+    /** 非管理员不得通过分配更宽的数据范围角色绕过自身部门边界。 */
+    private void validateRoleDataScopeDelegation(Set<Role> selectedRoles, Department targetDepartment) {
+        if (isAdmin(AuthContext.require())) return;
+        DataScopeContext.Scope actorScope = dataScopeResolver.resolveCurrent();
+        boolean exceedsActorScope = selectedRoles.stream().filter(role -> Boolean.TRUE.equals(role.getEnabled()))
+            .anyMatch(role -> !dataScopeResolver.isRoleScopeWithin(actorScope, role, targetDepartment));
+        if (exceedsActorScope) throw BusinessException.forbidden("user.dataScopeDelegationForbidden");
     }
 
     /** 阻止非管理员操作管理员或权限高于自身的账号。 */

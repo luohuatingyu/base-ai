@@ -65,7 +65,7 @@ func (f *fakeRunner) Run(_ context.Context, arguments ...string) (string, error)
 // newBroker 使用替身命令执行器创建唯一持有 Docker 权限的 Broker。
 func newBroker(runner commandRunner) *dockerBrokerController {
 	return &dockerBrokerController{runner: runner, projectDir: "/workspace",
-		composeFile: "/workspace/docker-compose.yml", envFile: "/workspace/.env"}
+		composeFile: "/workspace/adapter-compose.yml"}
 }
 
 // TestBrokerState 将健康、启动中、停止和畸形 Compose 输出映射为稳定接口状态。

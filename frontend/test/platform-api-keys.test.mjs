@@ -54,11 +54,13 @@ test('API Key 页面支持永久有效和指定过期时间', () => {
   assert.match(viewSource, /neverExpiresConfirm/)
 })
 
-test('平台 API Key 的创建、轮换和查看明文入口仅向管理员展示', () => {
+test('平台 API Key 的创建、轮换和回查入口仅向管理员展示并要求二次验证', () => {
   assert.match(viewSource, /v-if="auth\.isAdmin && auth\.hasPermission\('system:api-key:create'\)"/)
   assert.match(viewSource, /v-if="auth\.isAdmin"[^>]*@click="viewSecret\(scope\.row\)"/)
   assert.match(viewSource, /v-if="auth\.isAdmin && auth\.hasPermission\('system:api-key:rotate'\)"/)
   assert.match(viewSource, /\/system\/api-keys\/\$\{row\.id\}\/secret/)
+  assert.match(viewSource, /http\.post\(`/)
+  assert.match(viewSource, /requestRevealPassword\(\)/)
   assert.match(viewSource, /showSecret\(data\.apiKey\)/)
   assert.match(viewSource, /@closed="clearSecret"/)
   assert.match(viewSource, /generatedApiKey\.value = ''/)
@@ -67,11 +69,14 @@ test('平台 API Key 的创建、轮换和查看明文入口仅向管理员展�
   assert.match(viewSource, /http\.delete\(`/)
 })
 
-test('模型供应商查看和编辑回显明文 Key 仅向管理员开放', () => {
-  assert.match(providerViewSource, /v-if="auth\.isAdmin"[^>]*@click="viewKeys\(s\.row\)"/)
-  assert.match(providerViewSource, /if\(row\)[\s\S]*auth\.isAdmin\?toApiKeyRows\(await loadKeys\(row\.id\)\):\[''\]/)
+test('模型供应商仅在二次验证后向管理员显示明文 Key，编辑不自动回显', () => {
+  assert.match(providerViewSource, /v-if="auth\.isAdmin"[^>]*@click="viewKeys\(scope\.row\)"/)
+  assert.match(providerViewSource, /http\.post\(`/)
+  assert.match(providerViewSource, /requestRevealPassword\(\)/)
+  assert.match(providerViewSource, /function open\(row\)[\s\S]*keyRows\.value = \[''\]/)
+  assert.doesNotMatch(providerViewSource, /await loadKeys\(row\.id\)/)
   assert.match(providerViewSource, /@closed="clearKeys"/)
-  assert.match(providerViewSource, /keysContent\.value=\[\]/)
+  assert.match(providerViewSource, /keysContent\.value\s*=\s*\[\]/)
 })
 
 test('API Key 页面提供默认收起的双语调用指南', () => {

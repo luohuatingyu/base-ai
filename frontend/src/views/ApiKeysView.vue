@@ -351,14 +351,27 @@ async function toggle(row) {
   await load()
 }
 
-/** 查询并展示管理员可解密读取的完整 API Key。 */
+/** 通过当前管理员密码二次验证后查询并展示完整 API Key。 */
 async function viewSecret(row) {
   try {
-    const { data } = await http.get(`/system/api-keys/${row.id}/secret`)
+    const password = await requestRevealPassword()
+    const { data } = await http.post(`/system/api-keys/${row.id}/secret`, { password })
     showSecret(data.apiKey)
   } catch (error) {
-    showHttpError(error)
+    if (error !== 'cancel' && error !== 'close') showHttpError(error)
   }
+}
+
+/** 弹出当前管理员密码输入框，避免仅凭被劫持会话导出长期凭据。 */
+async function requestRevealPassword() {
+  const { value } = await ElMessageBox.prompt(t('secretReveal.passwordPrompt'), t('secretReveal.title'), {
+    inputType: 'password',
+    inputAttributes: { autocomplete: 'current-password' },
+    inputValidator: value => value?.trim() ? true : t('secretReveal.passwordRequired'),
+    confirmButtonText: t('common.confirm'),
+    cancelButtonText: t('common.cancel')
+  })
+  return value
 }
 
 /** 二次确认后轮换 Secret 并展示新 Key。 */

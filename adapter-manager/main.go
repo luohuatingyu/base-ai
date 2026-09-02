@@ -108,12 +108,12 @@ type dockerBrokerController struct {
 	runner      commandRunner
 	projectDir  string
 	composeFile string
-	envFile     string
 }
 
 // composeArguments 构建两个适配器共用且不可由请求修改的 Compose 命令前缀。
+// 配置仅来自 Broker 显式注入的最小环境变量，绝不读取包含数据库和登录密钥的项目 .env。
 func (c *dockerBrokerController) composeArguments() []string {
-	return []string{"compose", "--project-directory", c.projectDir, "-f", c.composeFile, "--env-file", c.envFile}
+	return []string{"compose", "--project-directory", c.projectDir, "-f", c.composeFile}
 }
 
 // state 通过 Docker Compose 解析固定插件容器的实际状态。
@@ -1124,7 +1124,7 @@ func runBroker() {
 	runner := dockerCommandRunner{}
 	broker := &dockerBrokerController{
 		runner: runner, projectDir: required("COMPOSE_PROJECT_DIR"),
-		composeFile: required("COMPOSE_FILE"), envFile: required("COMPOSE_ENV_FILE"),
+		composeFile: required("COMPOSE_FILE"),
 	}
 	projectName := required("COMPOSE_PROJECT_NAME")
 	if !dockerProjectPattern.MatchString(projectName) {

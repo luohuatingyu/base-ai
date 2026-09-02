@@ -3,8 +3,11 @@ package com.baseai.platform.web;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.security.InternalRequestSigner;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -14,6 +17,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -41,25 +48,30 @@ public class InternalRequestAuthFilter extends OncePerRequestFilter {
         this.clock = clock;
     }
 
-    /** 在控制器读取正文前验证签名，并只在签名有效后占用 nonce。 */
+    /** 在读取正文前验证签名头，并仅为可信内部调用缓存正文和占用 nonce。 */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {
-        byte[] body = request.getInputStream().readAllBytes();
         String target = request.getRequestURI();
         if (request.getQueryString() != null) target += "?" + request.getQueryString();
         String nonce = request.getHeader(InternalRequestSigner.NONCE);
         Instant now = clock.instant();
-        boolean valid = InternalRequestSigner.verify(secret, request.getMethod(), target, body,
+        boolean validHeaders = InternalRequestSigner.verifyHeaders(secret, request.getMethod(), target,
             request.getHeader(InternalRequestSigner.TIMESTAMP), nonce,
             request.getHeader(InternalRequestSigner.TARGET),
             request.getHeader(InternalRequestSigner.CONTENT_SHA256),
             request.getHeader(InternalRequestSigner.SIGNATURE), now, MAXIMUM_SKEW_SECONDS);
-        if (!valid || replayed(nonce, now.getEpochSecond())) {
+        if (!validHeaders) {
             reject(response);
             return;
         }
-        chain.doFilter(request, response);
+        byte[] body = request.getInputStream().readAllBytes();
+        if (!InternalRequestSigner.matchesContentDigest(body, request.getHeader(InternalRequestSigner.CONTENT_SHA256))
+            || replayed(nonce, now.getEpochSecond())) {
+            reject(response);
+            return;
+        }
+        chain.doFilter(new CachedRequest(request, body), response);
     }
 
     /** 仅保护明确的内部 API 命名空间。 */
@@ -81,5 +93,45 @@ public class InternalRequestAuthFilter extends OncePerRequestFilter {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.getWriter().write("{\"success\":false,\"code\":401,\"message\":\"Unauthorized\",\"data\":null}");
+    }
+
+    /** 为已验证的内部请求提供可重复读取正文，供控制器继续反序列化。 */
+    private static final class CachedRequest extends HttpServletRequestWrapper {
+        private final byte[] body;
+
+        private CachedRequest(HttpServletRequest request, byte[] body) {
+            super(request);
+            this.body = body;
+        }
+
+        @Override public int getContentLength() { return body.length; }
+        @Override public long getContentLengthLong() { return body.length; }
+
+        /** 为每次下游读取创建独立的字节流。 */
+        @Override
+        public ServletInputStream getInputStream() {
+            ByteArrayInputStream input = new ByteArrayInputStream(body);
+            return new ServletInputStream() {
+                @Override public boolean isFinished() { return input.available() == 0; }
+                @Override public boolean isReady() { return true; }
+                @Override public void setReadListener(ReadListener readListener) { }
+                @Override public int read() { return input.read(); }
+                @Override public int read(byte[] bytes, int offset, int length) { return input.read(bytes, offset, length); }
+            };
+        }
+
+        /** 按请求声明字符集提供缓存读取器。 */
+        @Override
+        public BufferedReader getReader() {
+            Charset charset = StandardCharsets.UTF_8;
+            if (getCharacterEncoding() != null) {
+                try {
+                    charset = Charset.forName(getCharacterEncoding());
+                } catch (IllegalArgumentException ignored) {
+                    // 无效编码声明由后续消息转换器处理。
+                }
+            }
+            return new BufferedReader(new InputStreamReader(getInputStream(), charset));
+        }
     }
 }

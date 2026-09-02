@@ -104,7 +104,10 @@ services:
       APP_LOGIN_BLOCK_MINUTES: ${APP_LOGIN_BLOCK_MINUTES:-15}
       APP_PASSWORD_MIN_LENGTH: ${APP_PASSWORD_MIN_LENGTH:-12}
       APP_MAX_REQUEST_BYTES: ${APP_MAX_REQUEST_BYTES:-20971520}
+      APP_AUTH_REQUEST_MAX_BYTES: ${APP_AUTH_REQUEST_MAX_BYTES:-65536}
       APP_MAX_REQUEST_HEADER_SIZE: ${APP_MAX_REQUEST_HEADER_SIZE:-16KB}
+      KNOWLEDGE_UPLOAD_MAX_BYTES: ${KNOWLEDGE_UPLOAD_MAX_BYTES:-10485760}
+      KNOWLEDGE_UPLOAD_REQUEST_MAX_BYTES: ${KNOWLEDGE_UPLOAD_REQUEST_MAX_BYTES:-11534336}
       DOCUMENT_PARSER_SOCKET: /run/document-parser/parser.sock
       DOCUMENT_PARSER_MAX_BYTES: ${DOCUMENT_PARSER_MAX_BYTES:-10485760}
       DOCUMENT_PARSER_MAX_CHARACTERS: ${DOCUMENT_PARSER_MAX_CHARACTERS:-2000000}
@@ -125,6 +128,7 @@ services:
       TRACE_LOG_BATCH_SIZE: ${TRACE_LOG_BATCH_SIZE:-100}
       TRACE_LOG_FLUSH_INTERVAL_MS: ${TRACE_LOG_FLUSH_INTERVAL_MS:-500}
       TRACE_LOG_RETENTION_DAYS: ${TRACE_LOG_RETENTION_DAYS:-7}
+      AUDIT_OPERATION_LOG_RETENTION_DAYS: ${AUDIT_OPERATION_LOG_RETENTION_DAYS:-90}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_CONSOLE_QUEUE_CAPACITY: ${LOG_CONSOLE_QUEUE_CAPACITY:-8192}
       TRACE_HEARTBEAT_TIMEOUT_SECONDS: ${TRACE_HEARTBEAT_TIMEOUT_SECONDS:-120}
@@ -258,18 +262,18 @@ services:
       PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS: ${PLUGIN_DEPENDENCY_INSTALL_TIMEOUT_SECONDS:-180}
       PLUGIN_PROBE_TIMEOUT_SECONDS: ${PLUGIN_PROBE_TIMEOUT_SECONDS:-20}
       PLUGIN_HTTP_RESPONSE_MAX_BYTES: ${PLUGIN_HTTP_RESPONSE_MAX_BYTES:-10485760}
+      PLUGIN_WORKER_PIDS_LIMIT: ${PLUGIN_WORKER_PIDS_LIMIT:-128}
+      PLUGIN_WORKER_MEMORY_LIMIT: ${PLUGIN_WORKER_MEMORY_LIMIT:-512m}
+      PLUGIN_WORKER_CPU_LIMIT: ${PLUGIN_WORKER_CPU_LIMIT:-1.0}
+      DIFY_PLUGIN_WORKER_MEMORY_LIMIT: ${DIFY_PLUGIN_WORKER_MEMORY_LIMIT:-${PLUGIN_WORKER_MEMORY_LIMIT:-1g}}
+      DIFY_PLUGIN_WORKER_CPU_LIMIT: ${DIFY_PLUGIN_WORKER_CPU_LIMIT:-${PLUGIN_WORKER_CPU_LIMIT:-2.0}}
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}
       COMPOSE_PROJECT_DIR: /workspace
-      COMPOSE_FILE: /workspace/docker-compose.yml
-      COMPOSE_ENV_FILE: /workspace/.env
+      COMPOSE_FILE: /workspace/adapter-compose.yml
       DOCKER_CONFIG: /tmp/docker-config
     volumes:
-      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
-      - ./.env:/workspace/.env:ro
-      - ./backend/config/trace-tracking-exclusions.yml:/workspace/backend/config/trace-tracking-exclusions.yml:ro
-      - ./Caddyfile:/workspace/Caddyfile:ro
-      - ./caddy:/workspace/caddy:ro
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./adapter-manager/adapter-compose.yml:/workspace/adapter-compose.yml:ro
+      - ${ADAPTER_DOCKER_SOCKET:?Set ADAPTER_DOCKER_SOCKET to a rootless Docker socket}:/var/run/docker.sock
       - adapter-broker-control:/run/adapter-broker
       - dify-sandbox-control:/run/dify-sandbox
       - n8n-sandbox-control:/run/n8n-sandbox

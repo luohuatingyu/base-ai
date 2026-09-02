@@ -8,6 +8,10 @@ server:
 spring:
   application:
     name: base-ai-backend
+  servlet:
+    multipart:
+      max-file-size: ${KNOWLEDGE_UPLOAD_MAX_BYTES:10MB}
+      max-request-size: ${KNOWLEDGE_UPLOAD_REQUEST_MAX_BYTES:11MB}
   config:
     import: optional:file:${TRACE_TRACKING_EXCLUSIONS_FILE:/app/config/trace-tracking-exclusions.yml}
   messages:
@@ -88,6 +92,7 @@ app:
     password-min-length: ${APP_PASSWORD_MIN_LENGTH:12}
   resource-limits:
     request-max-bytes: ${APP_MAX_REQUEST_BYTES:20971520}
+    authentication-request-max-bytes: ${APP_AUTH_REQUEST_MAX_BYTES:65536}
   document-parser:
     socket-path: ${DOCUMENT_PARSER_SOCKET:/run/document-parser/parser.sock}
     max-document-bytes: ${DOCUMENT_PARSER_MAX_BYTES:10485760}
@@ -110,6 +115,8 @@ app:
     flush-interval-ms: ${TRACE_LOG_FLUSH_INTERVAL_MS:500}
     persist-level: ${TRACE_LOG_PERSIST_LEVEL:INFO}
     retention-days: ${TRACE_LOG_RETENTION_DAYS:7}
+  audit:
+    operation-log-retention-days: ${AUDIT_OPERATION_LOG_RETENTION_DAYS:90}
   trace-tracking:
     heartbeat-timeout-seconds: ${TRACE_HEARTBEAT_TIMEOUT_SECONDS:120}
     excluded-methods: GET,OPTIONS

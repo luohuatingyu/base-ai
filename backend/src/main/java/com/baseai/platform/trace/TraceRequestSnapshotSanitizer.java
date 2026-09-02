@@ -13,7 +13,12 @@ import java.util.Set;
 
 @Component
 public class TraceRequestSnapshotSanitizer {
-    private static final Set<String> SENSITIVE = Set.of("password", "secret", "token", "authorization", "cookie", "api-key", "apikey");
+    /** 所有动态配置、认证和凭据字段均按保守策略整体掩码。 */
+    private static final Set<String> SENSITIVE = Set.of(
+        "password", "secret", "secretkey", "token", "authorization", "cookie", "apikey", "accesskey",
+        "privatekey", "credential", "credentials", "config", "configvalue", "headers", "requestbody",
+        "authbody", "connectionstring", "clientsecret"
+    );
     private final ObjectMapper objectMapper;
 
     public TraceRequestSnapshotSanitizer(ObjectMapper objectMapper) { this.objectMapper = objectMapper; }
@@ -60,7 +65,7 @@ public class TraceRequestSnapshotSanitizer {
     }
 
     private boolean isSensitive(String name) {
-        String normalized = String.valueOf(name).toLowerCase(Locale.ROOT);
+        String normalized = String.valueOf(name).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
         return SENSITIVE.stream().anyMatch(normalized::contains);
     }
     private String limit(String value) { return value == null ? "" : value.substring(0, Math.min(2000, value.length())); }
