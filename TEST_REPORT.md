@@ -1,5 +1,93 @@
 # 最近分支覆盖测试报告
 
+## 风险修复方案 A 测试结果（2026-09-02）
+
+### Git 基准点
+
+Commit: a9fe614
+- 提交信息: Harden credential and execution security
+- 上一测试报告业务基准点: af666ba38d1b7250554061f66c0f02d4a3a08346
+- 基准差异检查: 23 个后端业务代码文件发生变化，共 832 行新增、180 行删除，已触发完整后端重测。
+- 测试日期: 2026-09-02
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- API Key、模型供应商密钥和 SMTP 密码均改为管理员输入当前密码后二次验证才可回查；响应禁止缓存，前端不自动回填明文，并在弹窗关闭时清空内存中的敏感值。
+- API Trigger 以当前调用者为边界执行所有读取、修改、执行和日志查询；会话管理员可跨所有者管理，API Key 即使绑定管理员也不能越过所属资源边界。
+- 启用数据范围解析与校验，用户、部门和角色授权不能跨越当前操作者的数据范围。
+- 请求快照过滤凭据字段；敏感回查不再采集请求体；运维日志接口不再返回请求数据；新增每日保留期清理任务，MySQL V25 前向迁移按确认范围清空既有 operation_log.request_data。
+- 请求体限额改为惰性有界读取，内部签名请求先校验请求头再读取和缓存正文；上传限制与产品 10 MB 文案对齐，超限返回 413。
+- API Trigger 对目标主机进行 DNS 解析校验，并在 HTTP 客户端中复用经验证的解析结果；限制重定向、重试和私网目标。
+- Broker 使用最小化的独立 Adapter Compose 文件，不再挂载完整 Compose 配置或环境文件；部署配置要求提供 rootless Docker Socket。Dify Worker 升级 Werkzeug 至 3.1.6 并移除不确定的 apt upgrade。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 管理员可回查 API Key，且回查前需二次验证 | Backend SecretRevealAuthorizationService、API Key/LLM/邮件 Controller 契约测试；Frontend API Key、模型供应商、邮件页面契约测试 | 正确密码允许回查；错误密码返回拒绝；前端不自动读取或保留明文；通过 | 正常、异常、权限、安全 |
+| API Key 不得越权管理其他人的 API Trigger | ApiTriggerServicePersistenceTest 分别以会话管理员与绑定管理员的 API Key 访问他人资源 | 会话管理员可按管理权限操作；API Key 对非所有者资源得到 404；通过 | 权限、安全、回归 |
+| 数据范围实际限制用户、部门与角色操作 | DataScopeResolverTest 与 PlatformAdminServiceTest 输入本范围、跨范围及超范围角色授权 | 跨范围查询/修改和权限委派均拒绝；合法范围操作保持兼容；通过 | 正常、边界、权限、安全 |
+| 运维日志不存储或暴露敏感请求数据，历史数据可按保留期清理 | TraceRequestSnapshotSanitizerTest、OperationAuditAspectTest、OperationLogRetentionJobTest、SystemMonitorControllerTest 与 V25 迁移资源 | 凭据字段脱敏，禁用敏感接口请求采集，查询结果不含 requestData，过期日志被删除；通过 | 安全、回归、数据治理 |
+| 大请求和上传超限不在认证前占用过量内存 | RequestSizeLimitFilterTest、InternalRequestAuthFilterTest、InternalRequestSignerTest、GlobalExceptionHandlerTest | 声明/分块超限均为 413；非法签名不读取正文；10 MB 上传限制一致；通过 | 边界、异常、安全 |
+| API Trigger 外连抵抗私网和 DNS 重绑定 | ApiTriggerUrlPolicyTest、ApiTriggerServicePersistenceTest、ApiTriggerServiceResponseDecodingTest | 回环/私网解析被拒绝，已验证解析器参与 HTTP 调用，超时和重定向受控；通过 | 安全、异常、兼容 |
+| Broker 与插件运行配置收敛，Dify 依赖升级可构建 | Go Adapter 单元测试、Frontend 部署与生命周期契约测试、Dify 镜像内单元测试、Compose 配置校验 | Broker 无完整环境文件挂载，窄化 Compose 可解析，Werkzeug 3.1.6 镜像与 25 个测试通过；通过 | 供应链、部署、安全 |
+| 全环境可重建并启动 | Compose 统一重建、配置校验和运行态健康检查 | 当前启用的 8 个服务容器均 healthy；通过 | 构建、部署、回归 |
+
+### 测试执行结果
+
+- 可计数测试用例：1,008 个；通过 1,008 个（100%）；失败 0；错误 0；跳过 0。
+- Backend：675/675，通过完整 Maven 测试套件；涵盖 Controller、Service、安全、审计、自动化、工作流与持久化相关回归。
+- Frontend：308/308；ESLint、Vue 类型检查、覆盖率测试、生产构建和 1 个 E2E 全部通过。工具函数覆盖率：行 98.01%、分支 80.19%、函数 96.09%。
+- Dify Plugin Worker（Python 3.12）：25/25，通过镜像内 unittest。
+- Adapter Manager/Broker：Go 完整包测试通过；Go 的默认输出不提供可聚合的用例数，未计入上述 1,008 个可计数总数。
+- Docker Compose 配置校验、统一重建和当前运行态健康检查均通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整套件 | 固定摘要 Maven 3.9.9 / Temurin 17 容器执行 mvn test -B | 675/675，BUILD SUCCESS |
+| Frontend 统一质量门 | npm --prefix frontend test | ESLint、vue-tsc、308 个覆盖率测试、生产构建和 1 个 E2E 均通过 |
+| Dify Worker 镜像与测试 | docker compose --profile plugin-adapters build dify-plugin-worker；镜像内 python -m unittest discover -s tests | 镜像构建成功，25/25 通过，确认安装 Werkzeug 3.1.6 |
+| Adapter Manager/Broker | 固定 Go 1.26.6 容器执行 go test ./... | 通过 |
+| Compose 配置与启动 | 提供未输出、未落盘的临时签名密钥后执行 docker compose config --quiet 与 docker compose up --build -d | 配置通过，重建启动成功 |
+| 运行态检查 | docker compose ps | 当前启用的 8 个服务容器均 healthy |
+| 静态检查 | git diff --check | 通过 |
+
+### 测试过程问题与处理
+
+- 宿主机未安装 Maven，改用项目固定摘要的 Maven 容器运行完整测试；未修改宿主机依赖。
+- Compose 的签名密钥和 Docker Socket 变量按预期为必填项。验证时使用未输出、未落盘的随机签名密钥；本机 Docker Desktop 不提供 rootless Socket，因此仅在本次验证命令中显式传入现有 Socket，仓库配置本身未回退到该 Socket。
+- 前端生产构建出现既有运行时配置脚本、第三方 PURE 注释和大分块警告；均非阻断，构建和 E2E 通过。
+- 未创建或遗留临时测试、调试文件。
+
+### 未执行的测试
+
+- 未重新执行 Trivy 源码/镜像扫描、npm audit、Actionlint、Python Worker、n8n Plugin Worker、Outbound Gateway 的独立套件；本次未修改这些模块或其依赖。Dify Worker、Frontend、Backend 和 Adapter Manager 已按变更范围完成测试。
+- 未使用真实生产账号进行浏览器端密钥回查；该流程由后端授权、Controller 响应策略和前端交互契约测试覆盖。
+- 未在 rootless Docker Engine 主机上进行 Broker 的运行态 Socket 挂载验证；见下方限制。
+
+### 已知问题与限制
+
+- 生产部署必须把 ADAPTER_DOCKER_SOCKET 设置为 rootless Docker Socket，并确保对应服务账号可访问；本机 Docker Desktop 的临时验证 Socket 不能作为生产配置示例。
+- API Trigger 已固定经验证的解析结果。工作流连接器的运行时 DNS 与网络边界仍须由部署侧的出站网关和网络策略持续约束，不能仅依赖应用层校验。
+- V25 为前向数据清理迁移，已清空的历史 operation_log.request_data 不可由代码回滚恢复；保留了操作主体、时间、对象类型和结果等审计元数据。
+
+### 回滚方式
+
+- 使用 git revert a9fe614 回滚功能代码、测试和部署配置；不得使用破坏工作区的强制重置。
+- V25 不应被删除、修改或回滚为重新写入历史请求数据。代码回滚后仍保留已清理的敏感字段状态。
+- 回滚后需重新提供适当的 Socket 和签名密钥，并执行 docker compose up --build -d、Backend 完整测试和 Frontend 完整质量门。
+
+### 下次测试建议
+
+- 在实际 rootless Docker Engine 环境中执行 Adapter Broker 创建、启停和插件隔离的运行态验证。
+- 对真实生产规模的操作日志执行保留期清理性能评估，并确认备份策略不再包含已清理的请求正文。
+- 增加已登录浏览器 E2E，覆盖正确/错误管理员密码回查、响应缓存头和关闭弹窗后的敏感值清理。
+- 在工作流连接器使用动态 DNS 的部署环境中，持续验证网关的 DNS、CIDR 和出口网络策略。
+
 ## 知识库展示与维护优化测试结果（2026-09-01）
 
 ### Git 基准点
