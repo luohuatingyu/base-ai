@@ -1,5 +1,7 @@
 ARG NODE_IMAGE=node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
 FROM ${NODE_IMAGE}
+ARG APP_IMAGE_REVISION
+LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 WORKDIR /app
 RUN apk upgrade --no-cache \
     && npm install --global --ignore-scripts npm@12.0.2 \

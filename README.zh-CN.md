@@ -296,14 +296,17 @@ docker compose run --rm --entrypoint sh caddy -c \
 ## 使用 Docker Compose 启动
 
 启动前先验证最终配置。请注意，`docker compose config` 会展开敏感配置，请勿分享其输出。
+将 `APP_IMAGE_REVISION` 设置为本次构建对应的完整提交。Compose 会把该值同时用于全部本地镜像标签和 OCI revision 标签。
 
 ```bash
+export APP_IMAGE_REVISION="$(git rev-parse HEAD)"
 docker compose config --quiet
 docker compose up --build -d
 docker compose ps
 ```
 
 IP 学习和续期全部在 Caddy 容器中完成，直接使用标准 Docker Compose 命令即可，不需要宿主机脚本或额外运行时。
+默认 profile 只启动核心平台，不启用插件适配器。需要启用适配器时，将 `ADAPTER_DOCKER_SOCKET` 指向 rootless Docker Daemon，将 `ADAPTER_DOCKER_SOCKET_GID` 设为 Socket 的数字组 ID，配置插件密钥，然后执行 `docker compose --profile plugin-adapters up --build -d`。Broker 会在开放控制 Socket 前检查 Docker 的 `name=rootless` 安全选项，普通或不可用的 Daemon 会被拒绝。
 
 所有服务进入健康状态后，可访问：
 
@@ -376,6 +379,7 @@ node --test frontend/test/*.test.mjs frontend/tests/*.test.js
 代码变更后重新构建 Docker 环境：
 
 ```bash
+export APP_IMAGE_REVISION="$(git rev-parse HEAD)"
 docker compose up --build -d
 ```
 

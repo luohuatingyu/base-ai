@@ -301,14 +301,17 @@ After changing the sites list or replacing renewed domain certificate files, run
 ## Start with Docker Compose
 
 Validate the resolved configuration before starting the stack. Be aware that `docker compose config` expands secrets, so do not share its output.
+Set `APP_IMAGE_REVISION` to the full commit being built. Compose uses that value as every local image tag and writes it to the OCI revision label.
 
 ```bash
+export APP_IMAGE_REVISION="$(git rev-parse HEAD)"
 docker compose config --quiet
 docker compose up --build -d
 docker compose ps
 ```
 
 IP learning and renewal run entirely inside the Caddy container. Standard Docker Compose commands are sufficient; no host-side script or additional runtime is required.
+The default profile starts the core platform without plugin adapters. To enable adapters, point `ADAPTER_DOCKER_SOCKET` at a rootless Docker daemon, set `ADAPTER_DOCKER_SOCKET_GID` to the socket's numeric group ID, configure the plugin secrets, and run `docker compose --profile plugin-adapters up --build -d`. The Broker verifies Docker's `name=rootless` security option before opening its control sockets and refuses a conventional or unavailable daemon.
 
 After all services are healthy:
 
@@ -383,6 +386,7 @@ node --test frontend/test/*.test.mjs frontend/tests/*.test.js
 Rebuild the Docker environment after code changes:
 
 ```bash
+export APP_IMAGE_REVISION="$(git rev-parse HEAD)"
 docker compose up --build -d
 ```
 
@@ -402,6 +406,8 @@ TEST_REPORT.md                  Test baseline and execution history
 ## Production Notes
 
 - Keep the production environment file outside the repository and restrict its filesystem permissions.
+- Keep `APP_CORS_ALLOWED_ORIGINS` empty for the normal same-origin proxy deployment. If a separate browser origin is required, list each exact HTTP or HTTPS origin without paths or wildcards.
+- Review the container memory, CPU, and PID limits against measured production load before increasing them.
 - Use separate least-privilege accounts for the MySQL system database and PostgreSQL business database.
 - Rotate all example credentials before the first startup.
 - Keep provider credentials out of source code, shell history, logs, and Git history.

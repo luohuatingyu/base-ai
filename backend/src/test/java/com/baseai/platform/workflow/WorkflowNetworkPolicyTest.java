@@ -8,6 +8,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.net.InetAddress;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -60,5 +62,21 @@ class WorkflowNetworkPolicyTest {
             assertDoesNotThrow(() -> parser.parse(type,
                 new ObjectMapper().readTree("{\"url\":\"https://vectors.example.com\"}")), type);
         }
+    }
+
+    /** 实际建连解析若切换为私网地址，必须再次执行 CIDR 策略并拒绝。 */
+    @Test
+    void rejectsAddressThatRebindsBeforeConnection() throws Exception {
+        var host = new ApiTriggerSecurityConfigurationService.HostRule("EXACT", "switch.example.com");
+        when(configurationService.current()).thenReturn(
+            new WorkflowNetworkSecurityService.ConfigurationView(List.of(host), List.of(), true));
+        AtomicInteger resolutions = new AtomicInteger();
+        WorkflowNetworkPolicy rebindingPolicy = new WorkflowNetworkPolicy(configurationService, parser,
+            new ApiKeyCidrMatcher(), ignored -> resolutions.getAndIncrement() == 0
+                ? new InetAddress[]{InetAddress.getByAddress(new byte[]{93, (byte) 184, (byte) 216, 34})}
+                : new InetAddress[]{InetAddress.getByAddress(new byte[]{127, 0, 0, 1})});
+
+        assertDoesNotThrow(() -> rebindingPolicy.resolveVerifiedHost("switch.example.com"));
+        assertThrows(BusinessException.class, () -> rebindingPolicy.resolveVerifiedHost("switch.example.com"));
     }
 }

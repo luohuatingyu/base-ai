@@ -11,7 +11,7 @@ x-logging: &default-logging
 services:
   dify-plugin-worker:
     profiles: ["plugin-adapters"]
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker
     restart: "no"
     init: true
@@ -48,7 +48,7 @@ services:
 
   n8n-plugin-worker:
     profiles: ["plugin-adapters"]
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker
     restart: "no"
     init: true

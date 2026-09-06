@@ -278,6 +278,7 @@ type sandboxBrokerController struct {
 	runner            commandRunner
 	source            string
 	projectName       string
+	imageRevision     string
 	gatewayContainer  string
 	egressKey         string
 	packageDomains    []string
@@ -300,6 +301,7 @@ type sandboxBrokerController struct {
 
 var pluginFingerprintPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var dockerProjectPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+var imageRevisionPattern = regexp.MustCompile(`^(?:[a-f0-9]{40}|[a-f0-9]{64})$`)
 var resourceMemoryPattern = regexp.MustCompile(`^[1-9][0-9]*(?:[kKmMgG])?$`)
 var resourceCPUPattern = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)?$`)
 
@@ -572,7 +574,27 @@ func (c *sandboxBrokerController) volumeName(fingerprint string) string {
 
 // imageName 只允许当前 Compose 项目中固定来源的预构建 Worker 镜像。
 func (c *sandboxBrokerController) imageName() string {
-	return c.projectName + "-" + strings.ToLower(c.source) + "-plugin-worker:latest"
+	return c.projectName + "-" + strings.ToLower(c.source) + "-plugin-worker:" + c.imageRevision
+}
+
+// ensureRootlessDocker 拒绝把插件控制面连接到可取得宿主机根权限的 Docker Daemon。
+func ensureRootlessDocker(runner commandRunner) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	output, err := runner.Run(ctx, "info", "--format", "{{json .SecurityOptions}}")
+	if err != nil {
+		return errors.New("rootless Docker verification failed")
+	}
+	var options []string
+	if json.Unmarshal([]byte(output), &options) != nil {
+		return errors.New("rootless Docker security options are invalid")
+	}
+	for _, option := range options {
+		if option == "name=rootless" {
+			return nil
+		}
+	}
+	return errors.New("plugin adapters require a rootless Docker daemon")
 }
 
 // withFingerprintLock 串行化同一插件的安装与删除，调用阶段仍允许只读并发。
@@ -1112,16 +1134,14 @@ func runSupervisor() {
 
 // runBroker 启动唯一持有 Docker Socket 的固定命令 Broker。
 func runBroker() {
-	socketPath := required("ADAPTER_BROKER_SOCKET")
-	listener, err := secureUnixListener(socketPath)
-	if err != nil {
+	runner := dockerCommandRunner{}
+	if err := ensureRootlessDocker(runner); err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		_ = listener.Close()
-		_ = os.Remove(socketPath)
-	}()
-	runner := dockerCommandRunner{}
+	imageRevision := required("APP_IMAGE_REVISION")
+	if !imageRevisionPattern.MatchString(imageRevision) {
+		log.Fatal("APP_IMAGE_REVISION must be a full hexadecimal Git commit")
+	}
 	broker := &dockerBrokerController{
 		runner: runner, projectDir: required("COMPOSE_PROJECT_DIR"),
 		composeFile: required("COMPOSE_FILE"),
@@ -1134,8 +1154,17 @@ func runBroker() {
 	if len(egressKey) < 32 {
 		log.Fatal("PLUGIN_SANDBOX_EGRESS_SIGNING_KEY must contain at least 32 characters")
 	}
+	socketPath := required("ADAPTER_BROKER_SOCKET")
+	listener, err := secureUnixListener(socketPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		_ = listener.Close()
+		_ = os.Remove(socketPath)
+	}()
 	packageDomains := parseExactDomains(os.Getenv("PLUGIN_PACKAGE_ALLOWED_DOMAINS"))
-	common := sandboxBrokerController{runner: runner, projectName: projectName,
+	common := sandboxBrokerController{runner: runner, projectName: projectName, imageRevision: imageRevision,
 		gatewayContainer: projectName + "-outbound-gateway", egressKey: egressKey, packageDomains: packageDomains,
 		pipIndexURL:    safeRegistryURL(optional("PIP_INDEX_URL", "https://pypi.org/simple")),
 		npmRegistryURL: safeRegistryURL(optional("NPM_CONFIG_REGISTRY", "https://registry.npmjs.org")),

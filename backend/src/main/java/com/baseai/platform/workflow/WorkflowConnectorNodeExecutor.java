@@ -68,19 +68,21 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
     private final MailManagementService mailManagementService;
     private final MailDeliveryClient mailDeliveryClient;
     private final ApiTriggerService apiTriggerService;
+    private final WorkflowRedisClientFactory redisClients;
     private final int maxPayloadBytes;
 
     /** 注入连接、邮件及安全 HTTP 调用能力。 */
     public WorkflowConnectorNodeExecutor(ObjectMapper objectMapper, WorkflowExpressionService expressions,
                                          WorkflowConnectionService connections, MailManagementService mailManagementService,
                                          MailDeliveryClient mailDeliveryClient, ApiTriggerService apiTriggerService,
-                                         PlatformProperties properties) {
+                                         PlatformProperties properties, WorkflowRedisClientFactory redisClients) {
         this.objectMapper = objectMapper;
         this.expressions = expressions;
         this.connections = connections;
         this.mailManagementService = mailManagementService;
         this.mailDeliveryClient = mailDeliveryClient;
         this.apiTriggerService = apiTriggerService;
+        this.redisClients = redisClients;
         this.maxPayloadBytes = Math.max(1, properties.getWorkflow().getMaxPayloadBytes());
     }
 
@@ -240,7 +242,7 @@ public class WorkflowConnectorNodeExecutor implements WorkflowNodeExecutor {
         ArrayNode args = (ArrayNode) config.path("arguments");
         validateRedisArguments(command, args);
         RedisURI uri = RedisURI.create(secret.path("uri").asText());
-        try (RedisClient client = RedisClient.create(uri); StatefulRedisConnection<String, String> state = client.connect()) {
+        try (RedisClient client = redisClients.create(uri); StatefulRedisConnection<String, String> state = client.connect()) {
             register(client); register(state);
             RedisCommands<String, String> sync = state.sync();
             String prefix = secret.path("keyPrefix").asText("");

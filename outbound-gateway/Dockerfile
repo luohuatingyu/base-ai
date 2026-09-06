@@ -5,6 +5,8 @@ COPY go.mod main.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/outbound-gateway .
 
 FROM ${GO_IMAGE}
+ARG APP_IMAGE_REVISION
+LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 RUN apk upgrade --no-cache \
     && addgroup -S -g 10001 appuser \
     && adduser -S -D -H -u 10001 -G appuser appuser

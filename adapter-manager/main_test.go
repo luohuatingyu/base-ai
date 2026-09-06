@@ -283,13 +283,13 @@ func TestUnixSupervisorClientUsesPrivateSocket(t *testing.T) {
 // TestSandboxArgumentsProvidePerFingerprintIsolation 验证运行参数固定镜像、独立卷和强制容器边界。
 func TestSandboxArgumentsProvidePerFingerprintIsolation(t *testing.T) {
 	controller := &sandboxBrokerController{source: "DIFY", projectName: "base-ai", gatewayContainer: "base-ai-outbound-gateway",
-		egressKey: strings.Repeat("e", 32), memoryLimit: "512m", cpuLimit: "1.0", pidsLimit: 64}
+		imageRevision: strings.Repeat("a", 40), egressKey: strings.Repeat("e", 32), memoryLimit: "512m", cpuLimit: "1.0", pidsLimit: 64}
 	fingerprint := strings.Repeat("a", 64)
 	arguments := controller.runArguments("invoke", fingerprint, "scope-token", "sandbox-container", "sandbox-network")
 	joined := strings.Join(arguments, " ")
 	for _, required := range []string{"--interactive", "--read-only", "--cap-drop ALL", "no-new-privileges:true", "--network sandbox-network",
 		"--pids-limit 64", "src=base-ai-dify-plugin-" + fingerprint + ",dst=/data/packages,readonly",
-		"base-ai-dify-plugin-worker:latest", "python -m app.sandbox invoke"} {
+		"base-ai-dify-plugin-worker:" + strings.Repeat("a", 40), "python -m app.sandbox invoke"} {
 		if !strings.Contains(joined, required) {
 			t.Fatalf("sandbox argument missing %q: %s", required, joined)
 		}
@@ -305,7 +305,8 @@ func TestSandboxArgumentsProvidePerFingerprintIsolation(t *testing.T) {
 // TestSandboxVolumeInitializationHasNoPluginInput 验证独占卷仅由无网络固定命令初始化。
 func TestSandboxVolumeInitializationHasNoPluginInput(t *testing.T) {
 	runner := &fakeRunner{}
-	controller := &sandboxBrokerController{runner: runner, source: "N8N", projectName: "base-ai"}
+	controller := &sandboxBrokerController{runner: runner, source: "N8N", projectName: "base-ai",
+		imageRevision: strings.Repeat("a", 40)}
 	volume := controller.volumeName(strings.Repeat("a", 64))
 	if err := controller.prepareVolume(context.Background(), volume); err != nil {
 		t.Fatal(err)
@@ -326,7 +327,7 @@ func TestSandboxVolumeInitializationHasNoPluginInput(t *testing.T) {
 func TestSandboxBrokerRejectsCallerControlledDockerFields(t *testing.T) {
 	runner := &fakeRunner{}
 	controller := &sandboxBrokerController{runner: runner, source: "N8N", projectName: "base-ai",
-		gatewayContainer: "base-ai-outbound-gateway", egressKey: strings.Repeat("e", 32)}
+		imageRevision: strings.Repeat("a", 40), gatewayContainer: "base-ai-outbound-gateway", egressKey: strings.Repeat("e", 32)}
 	request := httptest.NewRequest(http.MethodPost, "/sandbox/invoke", strings.NewReader(
 		`{"fingerprint":"`+strings.Repeat("a", 64)+`","allowedDomains":[],"image":"evil:latest"}`))
 	response := httptest.NewRecorder()
@@ -336,5 +337,28 @@ func TestSandboxBrokerRejectsCallerControlledDockerFields(t *testing.T) {
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("invalid request reached Docker: %#v", runner.calls)
+	}
+}
+
+// TestBrokerRequiresRootlessDocker 验证普通 Docker Daemon 和畸形探测结果均被拒绝。
+func TestBrokerRequiresRootlessDocker(t *testing.T) {
+	for _, scenario := range []struct {
+		output string
+		err    error
+		valid  bool
+	}{
+		{output: `["name=seccomp,profile=builtin","name=rootless"]`, valid: true},
+		{output: `["name=seccomp,profile=builtin"]`},
+		{output: `not-json`},
+		{err: errors.New("daemon unavailable")},
+	} {
+		runner := &fakeRunner{outputs: []string{scenario.output}, errors: []error{scenario.err}}
+		err := ensureRootlessDocker(runner)
+		if scenario.valid && err != nil {
+			t.Fatalf("rootless daemon rejected: %v", err)
+		}
+		if !scenario.valid && err == nil {
+			t.Fatal("unsafe Docker daemon was accepted")
+		}
 	}
 }

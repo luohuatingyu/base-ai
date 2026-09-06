@@ -20,6 +20,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         -o /out/base-ai-ip-cert ip-cert-helper.go
 
 FROM ${CADDY_IMAGE}
+ARG APP_IMAGE_REVISION
+LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 ARG ALPINE_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/alpine
 
 COPY --from=build /out/caddy /usr/bin/caddy

@@ -23,16 +23,22 @@ RUN go test ./... \
     && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/adapter-manager .
 
 FROM scratch AS manager
+ARG APP_IMAGE_REVISION
+LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 COPY --from=build /out/adapter-manager /usr/local/bin/adapter-manager
 USER 10001:0
 EXPOSE 8090
 ENTRYPOINT ["/usr/local/bin/adapter-manager"]
 
 FROM scratch AS supervisor
+ARG APP_IMAGE_REVISION
+LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 COPY --from=build /out/adapter-manager /usr/local/bin/adapter-manager
 ENTRYPOINT ["/usr/local/bin/adapter-manager"]
 
 FROM scratch AS broker
+ARG APP_IMAGE_REVISION
+LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 COPY --from=docker-cli-build /out/docker /usr/local/bin/docker
 COPY --from=build /out/adapter-manager /usr/local/bin/adapter-manager
 ENTRYPOINT ["/usr/local/bin/adapter-manager"]

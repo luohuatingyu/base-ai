@@ -55,6 +55,8 @@ public class PlatformProperties {
     private Proxy proxy = new Proxy();
     /** 登录与密码安全配置。 */
     private LoginSecurity loginSecurity = new LoginSecurity();
+    /** 浏览器跨域访问配置。 */
+    private Cors cors = new Cors();
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }
     public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
@@ -113,6 +115,10 @@ public class PlatformProperties {
     public void setProxy(Proxy proxy) { this.proxy = proxy; }
     public LoginSecurity getLoginSecurity() { return loginSecurity; }
     public void setLoginSecurity(LoginSecurity loginSecurity) { this.loginSecurity = loginSecurity; }
+    /** 返回浏览器跨域访问配置。 */
+    public Cors getCors() { return cors; }
+    /** 设置浏览器跨域访问配置。 */
+    public void setCors(Cors value) { cors = value; }
 
     public static class Token {
         private String secret;
@@ -150,6 +156,9 @@ public class PlatformProperties {
         private int windowMinutes = 5;
         private int blockMinutes = 15;
         private int passwordMinLength = 12;
+        private int secretRevealFailures = 5;
+        private int secretRevealWindowMinutes = 5;
+        private int secretRevealBlockMinutes = 15;
         public int getAccountIpFailures() { return accountIpFailures; }
         public void setAccountIpFailures(int value) { accountIpFailures = value; }
         public int getIpFailures() { return ipFailures; }
@@ -160,6 +169,29 @@ public class PlatformProperties {
         public void setBlockMinutes(int value) { blockMinutes = value; }
         public int getPasswordMinLength() { return passwordMinLength; }
         public void setPasswordMinLength(int value) { passwordMinLength = value; }
+        /** 返回敏感凭据回查失败阈值。 */
+        public int getSecretRevealFailures() { return secretRevealFailures; }
+        /** 设置敏感凭据回查失败阈值。 */
+        public void setSecretRevealFailures(int value) { secretRevealFailures = value; }
+        /** 返回敏感凭据回查计数窗口分钟数。 */
+        public int getSecretRevealWindowMinutes() { return secretRevealWindowMinutes; }
+        /** 设置敏感凭据回查计数窗口分钟数。 */
+        public void setSecretRevealWindowMinutes(int value) { secretRevealWindowMinutes = value; }
+        /** 返回敏感凭据回查封禁分钟数。 */
+        public int getSecretRevealBlockMinutes() { return secretRevealBlockMinutes; }
+        /** 设置敏感凭据回查封禁分钟数。 */
+        public void setSecretRevealBlockMinutes(int value) { secretRevealBlockMinutes = value; }
+    }
+
+    /** 仅允许显式配置的浏览器来源访问 API。 */
+    public static class Cors {
+        private java.util.List<String> allowedOrigins = java.util.List.of();
+        /** 返回允许的精确浏览器来源。 */
+        public java.util.List<String> getAllowedOrigins() { return allowedOrigins; }
+        /** 设置允许的精确浏览器来源。 */
+        public void setAllowedOrigins(java.util.List<String> value) {
+            allowedOrigins = value == null ? java.util.List.of() : value;
+        }
     }
 
     public static class ResourceLimits {

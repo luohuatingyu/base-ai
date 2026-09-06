@@ -35,15 +35,18 @@ public class WorkflowConnectionTester {
     private final ApiTriggerService apiTriggerService;
     private final ObjectMapper objectMapper;
     private final com.baseai.platform.knowledge.VectorStoreService vectorStoreService;
+    private final WorkflowRedisClientFactory redisClients;
 
     /** 注入连接存储和安全 HTTP 服务。 */
     public WorkflowConnectionTester(WorkflowConnectionService connectionService, ApiTriggerService apiTriggerService,
                                     ObjectMapper objectMapper,
-                                    com.baseai.platform.knowledge.VectorStoreService vectorStoreService) {
+                                    com.baseai.platform.knowledge.VectorStoreService vectorStoreService,
+                                    WorkflowRedisClientFactory redisClients) {
         this.connectionService = connectionService;
         this.apiTriggerService = apiTriggerService;
         this.objectMapper = objectMapper;
         this.vectorStoreService = vectorStoreService;
+        this.redisClients = redisClients;
     }
 
     /** 按连接类型执行测试并隐藏底层异常细节。 */
@@ -97,7 +100,7 @@ public class WorkflowConnectionTester {
 
     /** 使用 PING 验证独立 Redis。 */
     private void testRedis(JsonNode config) {
-        try (RedisClient client = RedisClient.create(config.path("uri").asText());
+        try (RedisClient client = redisClients.create(io.lettuce.core.RedisURI.create(config.path("uri").asText()));
              io.lettuce.core.api.StatefulRedisConnection<String, String> connection = client.connect()) {
             if (!"PONG".equalsIgnoreCase(connection.sync().ping())) throw new BusinessException("workflow.connectionTestFailed");
         }

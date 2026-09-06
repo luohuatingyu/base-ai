@@ -13,6 +13,8 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package
 
 FROM ${JRE_IMAGE} AS runtime-base
+ARG APP_IMAGE_REVISION
+LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 WORKDIR /app
 RUN useradd -r -u 10001 appuser \
     && rm -f /usr/bin/pebble \

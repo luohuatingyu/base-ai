@@ -15,7 +15,7 @@ test('节点管理页为 n8n 与 Dify 展示独立容器开关并只在运行后
   assert.match(source, /stopAdapterPolling\(\)/)
 })
 
-test('Compose 默认不启动插件 Worker，且仅隔离 Broker 持有 Docker 权限', async () => {
+test('Compose 默认不启动插件适配器，且启用时仅隔离 Broker 持有 rootless Docker 权限', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
   const adapterCompose = await readFile(new URL('adapter-manager/adapter-compose.yml', root), 'utf8')
 
@@ -32,6 +32,7 @@ test('Compose 默认不启动插件 Worker，且仅隔离 Broker 持有 Docker �
   const managerStart = compose.indexOf('\n  adapter-manager:\n') + 1
   const managerEnd = compose.indexOf('\n  outbound-gateway:', managerStart)
   const manager = compose.slice(managerStart, managerEnd)
+  assert.match(manager, /profiles: \["plugin-adapters"\]/)
   assert.doesNotMatch(manager, /\/var\/run\/docker\.sock/)
   assert.doesNotMatch(manager, /\/workspace\/\.env/)
   assert.doesNotMatch(manager, /\/workspace\/docker-compose\.yml/)
@@ -43,6 +44,7 @@ test('Compose 默认不启动插件 Worker，且仅隔离 Broker 持有 Docker �
   const supervisorStart = compose.indexOf('\n  adapter-supervisor:\n') + 1
   const supervisorEnd = compose.indexOf('\n  adapter-manager:', supervisorStart)
   const supervisor = compose.slice(supervisorStart, supervisorEnd)
+  assert.match(supervisor, /profiles: \["plugin-adapters"\]/)
   assert.doesNotMatch(supervisor, /\/var\/run\/docker\.sock/)
   assert.doesNotMatch(supervisor, /\/workspace\/docker-compose\.yml/)
   assert.doesNotMatch(supervisor, /\/workspace\/\.env/)
@@ -54,8 +56,9 @@ test('Compose 默认不启动插件 Worker，且仅隔离 Broker 持有 Docker �
   const brokerStart = compose.indexOf('\n  adapter-docker-broker:\n') + 1
   const brokerEnd = compose.indexOf('\n  adapter-supervisor:', brokerStart)
   const broker = compose.slice(brokerStart, brokerEnd)
-  assert.match(broker, /ADAPTER_DOCKER_SOCKET.*rootless Docker socket/)
+  assert.match(broker, /profiles: \["plugin-adapters"\]/)
   assert.match(broker, /ADAPTER_DOCKER_SOCKET[^\n]*:\/var\/run\/docker\.sock/)
+  assert.match(broker, /ADAPTER_DOCKER_SOCKET_GID[^\n]*/)
   assert.match(broker, /\.\/adapter-manager\/adapter-compose\.yml:\/workspace\/adapter-compose\.yml:ro/)
   assert.doesNotMatch(broker, /\.\/docker-compose\.yml|\.\/\.env|COMPOSE_ENV_FILE/)
   assert.match(broker, /adapter-broker-control:\/run\/adapter-broker/)
@@ -64,9 +67,19 @@ test('Compose 默认不启动插件 Worker，且仅隔离 Broker 持有 Docker �
   assert.match(broker, /PLUGIN_SANDBOX_EGRESS_SIGNING_KEY/)
   assert.match(broker, /network_mode: none/)
   assert.match(broker, /read_only: true/)
+  assert.match(broker, /APP_IMAGE_REVISION/)
   assert.match(adapterCompose, /# 此文件仅描述由 Docker Broker 启停的两个插件 Worker。/)
   assert.match(adapterCompose, /external: true/)
   assert.doesNotMatch(adapterCompose, /MYSQL_PASSWORD|APP_TOKEN_SECRET|REDIS_PASSWORD/)
+
+  const backendStart = compose.indexOf('\n  backend:\n') + 1
+  const backendEnd = compose.indexOf('\n  python-worker:', backendStart)
+  const backend = compose.slice(backendStart, backendEnd)
+  assert.doesNotMatch(backend, /adapter-manager:\s*\n\s*condition:|outbound-gateway:\s*\n\s*condition:/)
+
+  const gatewayStart = compose.indexOf('\n  outbound-gateway:\n') + 1
+  const gatewayEnd = compose.indexOf('\n  dify-plugin-worker:', gatewayStart)
+  assert.match(compose.slice(gatewayStart, gatewayEnd), /profiles: \["plugin-adapters"\]/)
 })
 
 test('Broker 为每个插件创建独占卷、一次性容器和最小出站令牌', async () => {
@@ -96,6 +109,9 @@ test('adapter-manager 通过 Unix Socket 向 Supervisor 转发固定类型命令
   assert.match(manager, /type dockerBrokerController struct/)
   assert.match(manager, /type supervisorController struct/)
   assert.match(manager, /type managerController struct/)
+  assert.match(manager, /ensureRootlessDocker/)
+  assert.match(manager, /option == "name=rootless"/)
+  assert.match(manager, /imageRevisionPattern/)
   assert.match(manager, /"--no-build", "--no-deps", service/)
   assert.doesNotMatch(manager, /COMPOSE_ENV_FILE/)
 })

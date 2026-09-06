@@ -11,11 +11,14 @@ import org.springframework.stereotype.Component;
 public class SecretRevealAuthorizationService {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final SecretRevealAttemptService attemptService;
 
     /** 注入当前管理员账户查询和 BCrypt 密码校验器。 */
-    public SecretRevealAuthorizationService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder) {
+    public SecretRevealAuthorizationService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder,
+                                            SecretRevealAttemptService attemptService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.attemptService = attemptService;
     }
 
     /**
@@ -25,13 +28,17 @@ public class SecretRevealAuthorizationService {
      */
     public void requireAdminPassword(ReauthenticationCommand command) {
         AuthContext.requireAdmin();
+        Long userId = AuthContext.require().id();
+        attemptService.checkAllowed(userId);
         String password = command == null ? null : command.password();
-        UserAccount user = userRepository.findById(AuthContext.require().id())
+        UserAccount user = userRepository.findById(userId)
             .orElseThrow(() -> BusinessException.unauthorized("auth.userNotFound"));
         if (password == null || password.isBlank() || !passwordEncoder.matches(password, user.getPasswordHash())) {
+            attemptService.recordFailure(userId);
             // 当前会话仍有效；二次校验失败不应触发前端的登录态清理和跳转。
             throw BusinessException.forbidden("auth.secretRevealReauthenticationFailed");
         }
+        attemptService.clearFailures(userId);
     }
 
     /** 二次验证请求只包含当前管理员密码，禁止在审计记录中保留其值。 */

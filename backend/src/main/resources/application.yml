@@ -90,6 +90,11 @@ app:
     window-minutes: ${APP_LOGIN_WINDOW_MINUTES:5}
     block-minutes: ${APP_LOGIN_BLOCK_MINUTES:15}
     password-min-length: ${APP_PASSWORD_MIN_LENGTH:12}
+    secret-reveal-failures: ${APP_SECRET_REVEAL_FAILURES:5}
+    secret-reveal-window-minutes: ${APP_SECRET_REVEAL_WINDOW_MINUTES:5}
+    secret-reveal-block-minutes: ${APP_SECRET_REVEAL_BLOCK_MINUTES:15}
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}
   resource-limits:
     request-max-bytes: ${APP_MAX_REQUEST_BYTES:20971520}
     authentication-request-max-bytes: ${APP_AUTH_REQUEST_MAX_BYTES:65536}

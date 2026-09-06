@@ -386,6 +386,47 @@ test('文档解析器使用无网络只读容器且 Backend 仅只读共享 Unix
   assert.match(backend, /document-parser:\s*\n\s+condition: service_healthy/)
 })
 
+test('全部运行容器具备 CPU、内存和 PID 上限', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const services = [
+    'document-parser', 'backend', 'python-worker', 'adapter-docker-broker', 'adapter-supervisor',
+    'adapter-manager', 'outbound-gateway', 'dify-plugin-worker', 'n8n-plugin-worker', 'frontend', 'caddy',
+  ]
+  for (let index = 0; index < services.length; index += 1) {
+    const block = serviceBlock(compose, services[index], services[index + 1] ?? null)
+    assert.match(block, /\n\s+mem_limit:/, services[index])
+    assert.match(block, /\n\s+cpus:/, services[index])
+    assert.match(block, /\n\s+pids_limit:/, services[index])
+  }
+})
+
+test('自建镜像使用必填 Git revision 标签并写入 OCI 元数据', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const adapterCompose = await readFile(new URL('adapter-manager/adapter-compose.yml', root), 'utf8')
+  const dockerfiles = await Promise.all([
+    'backend/Dockerfile', 'python-worker/Dockerfile', 'adapter-manager/Dockerfile',
+    'outbound-gateway/Dockerfile', 'dify-plugin-worker/Dockerfile', 'n8n-plugin-worker/Dockerfile',
+    'frontend/Dockerfile', 'caddy/Dockerfile',
+  ].map(path => readFile(new URL(path, root), 'utf8')))
+  const imageLines = compose.match(/^\s+image:.*$/gm) ?? []
+
+  assert.equal(imageLines.length, 11)
+  imageLines.forEach(line => assert.match(line, /:\$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/))
+  assert.doesNotMatch(`${compose}\n${adapterCompose}`, /image:[^\n]*:latest/)
+  assert.equal((compose.match(/APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}/g) ?? []).length, 12)
+  dockerfiles.forEach(source => assert.match(source, /LABEL org\.opencontainers\.image\.revision=\$\{APP_IMAGE_REVISION\}/))
+})
+
+test('后端接收精确 CORS 白名单和敏感回查限流配置', async () => {
+  const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
+  const backend = serviceBlock(compose, 'backend', 'python-worker')
+
+  assert.match(backend, /APP_CORS_ALLOWED_ORIGINS: \$\{APP_CORS_ALLOWED_ORIGINS:-\}/)
+  assert.match(backend, /APP_SECRET_REVEAL_FAILURES:/)
+  assert.match(backend, /APP_SECRET_REVEAL_WINDOW_MINUTES:/)
+  assert.match(backend, /APP_SECRET_REVEAL_BLOCK_MINUTES:/)
+})
+
 test('部署环境模板覆盖 Compose 的全部可配置项', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
   const environmentExample = await readFile(new URL('.env.example', root), 'utf8')

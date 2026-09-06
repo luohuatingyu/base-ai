@@ -47,8 +47,9 @@ class WorkflowConnectorNodeExecutorTest {
         mailManagementService = mock(MailManagementService.class);
         mailDeliveryClient = mock(MailDeliveryClient.class);
         apiTriggerService = mock(ApiTriggerService.class);
+        WorkflowRedisClientFactory redisClients = mock(WorkflowRedisClientFactory.class);
         executor = new WorkflowConnectorNodeExecutor(objectMapper, new WorkflowExpressionService(objectMapper), connections,
-            mailManagementService, mailDeliveryClient, apiTriggerService, new PlatformProperties());
+            mailManagementService, mailDeliveryClient, apiTriggerService, new PlatformProperties(), redisClients);
         context = objectMapper.createObjectNode();
         context.set("input", objectMapper.createObjectNode());
         context.set("nodes", objectMapper.createObjectNode());

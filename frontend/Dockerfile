@@ -7,6 +7,8 @@ COPY . .
 RUN npm run build
 
 FROM ${NODE_IMAGE}
+ARG APP_IMAGE_REVISION
+LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 WORKDIR /app
 ENV PORT=8080
 ENV BACKEND_URL=http://backend:8080

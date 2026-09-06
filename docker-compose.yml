@@ -12,10 +12,11 @@ services:
       context: ./backend
       target: document-parser
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         MAVEN_IMAGE: maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc
         JRE_IMAGE: eclipse-temurin:17-jre@sha256:13cc28a6cc72a38ce1f00c906be3580c1a3e604b8984d694f369a96742abc93b
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-document-parser
     restart: unless-stopped
     read_only: true
@@ -49,12 +50,16 @@ services:
       context: ./backend
       target: backend
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         MAVEN_IMAGE: maven:3.9.9-eclipse-temurin-17@sha256:f58d59b6273e785ac0a4477f6e9b5ba1d7731c75b906c0f7b34076f1851318cc
         JRE_IMAGE: eclipse-temurin:17-jre@sha256:13cc28a6cc72a38ce1f00c906be3580c1a3e604b8984d694f369a96742abc93b
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-}
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend
     restart: unless-stopped
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-2g}
+    cpus: ${BACKEND_CPU_LIMIT:-2.0}
+    pids_limit: ${BACKEND_PIDS_LIMIT:-512}
     cap_drop:
       - ALL
     security_opt:
@@ -102,6 +107,10 @@ services:
       APP_LOGIN_IP_FAILURES: ${APP_LOGIN_IP_FAILURES:-20}
       APP_LOGIN_WINDOW_MINUTES: ${APP_LOGIN_WINDOW_MINUTES:-5}
       APP_LOGIN_BLOCK_MINUTES: ${APP_LOGIN_BLOCK_MINUTES:-15}
+      APP_SECRET_REVEAL_FAILURES: ${APP_SECRET_REVEAL_FAILURES:-5}
+      APP_SECRET_REVEAL_WINDOW_MINUTES: ${APP_SECRET_REVEAL_WINDOW_MINUTES:-5}
+      APP_SECRET_REVEAL_BLOCK_MINUTES: ${APP_SECRET_REVEAL_BLOCK_MINUTES:-15}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:-}
       APP_PASSWORD_MIN_LENGTH: ${APP_PASSWORD_MIN_LENGTH:-12}
       APP_MAX_REQUEST_BYTES: ${APP_MAX_REQUEST_BYTES:-20971520}
       APP_AUTH_REQUEST_MAX_BYTES: ${APP_AUTH_REQUEST_MAX_BYTES:-65536}
@@ -177,10 +186,6 @@ services:
         condition: service_healthy
       python-worker:
         condition: service_healthy
-      adapter-manager:
-        condition: service_healthy
-      outbound-gateway:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/open/health/ready"]
       interval: 15s
@@ -195,12 +200,16 @@ services:
     build:
       context: ./python-worker
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         PYTHON_IMAGE: python:3.12-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker
     restart: unless-stopped
+    mem_limit: ${PYTHON_WORKER_MEMORY_LIMIT:-1g}
+    cpus: ${PYTHON_WORKER_CPU_LIMIT:-2.0}
+    pids_limit: ${PYTHON_WORKER_PIDS_LIMIT:-256}
     cap_drop:
       - ALL
     security_opt:
@@ -228,17 +237,24 @@ services:
       - app-network
 
   adapter-docker-broker:
+    profiles: ["plugin-adapters"]
     build:
       context: ./adapter-manager
       target: broker
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-docker-broker
     restart: unless-stopped
+    mem_limit: ${ADAPTER_BROKER_MEMORY_LIMIT:-512m}
+    cpus: ${ADAPTER_BROKER_CPU_LIMIT:-1.0}
+    pids_limit: ${ADAPTER_BROKER_PIDS_LIMIT:-128}
     read_only: true
     cap_drop:
       - ALL
+    group_add:
+      - "${ADAPTER_DOCKER_SOCKET_GID:-1000}"
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -247,7 +263,7 @@ services:
       ADAPTER_BROKER_SOCKET: /run/adapter-broker/broker.sock
       DIFY_SANDBOX_BROKER_SOCKET: /run/dify-sandbox/broker.sock
       N8N_SANDBOX_BROKER_SOCKET: /run/n8n-sandbox/broker.sock
-      PLUGIN_SANDBOX_EGRESS_SIGNING_KEY: ${PLUGIN_SANDBOX_EGRESS_SIGNING_KEY:?Set PLUGIN_SANDBOX_EGRESS_SIGNING_KEY}
+      PLUGIN_SANDBOX_EGRESS_SIGNING_KEY: ${PLUGIN_SANDBOX_EGRESS_SIGNING_KEY:-}
       PLUGIN_PACKAGE_ALLOWED_DOMAINS: ${PLUGIN_PACKAGE_ALLOWED_DOMAINS:-mirrors.aliyun.com,registry.npmjs.org}
       PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
       NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}
@@ -268,12 +284,13 @@ services:
       DIFY_PLUGIN_WORKER_MEMORY_LIMIT: ${DIFY_PLUGIN_WORKER_MEMORY_LIMIT:-${PLUGIN_WORKER_MEMORY_LIMIT:-1g}}
       DIFY_PLUGIN_WORKER_CPU_LIMIT: ${DIFY_PLUGIN_WORKER_CPU_LIMIT:-${PLUGIN_WORKER_CPU_LIMIT:-2.0}}
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}
+      APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
       COMPOSE_PROJECT_DIR: /workspace
       COMPOSE_FILE: /workspace/adapter-compose.yml
       DOCKER_CONFIG: /tmp/docker-config
     volumes:
       - ./adapter-manager/adapter-compose.yml:/workspace/adapter-compose.yml:ro
-      - ${ADAPTER_DOCKER_SOCKET:?Set ADAPTER_DOCKER_SOCKET to a rootless Docker socket}:/var/run/docker.sock
+      - ${ADAPTER_DOCKER_SOCKET:-/run/base-ai-disabled-docker.sock}:/var/run/docker.sock
       - adapter-broker-control:/run/adapter-broker
       - dify-sandbox-control:/run/dify-sandbox
       - n8n-sandbox-control:/run/n8n-sandbox
@@ -287,14 +304,19 @@ services:
     network_mode: none
 
   adapter-supervisor:
+    profiles: ["plugin-adapters"]
     build:
       context: ./adapter-manager
       target: supervisor
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-supervisor:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-supervisor:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-supervisor
     restart: unless-stopped
+    mem_limit: ${ADAPTER_SUPERVISOR_MEMORY_LIMIT:-128m}
+    cpus: ${ADAPTER_SUPERVISOR_CPU_LIMIT:-0.5}
+    pids_limit: ${ADAPTER_SUPERVISOR_PIDS_LIMIT:-64}
     read_only: true
     cap_drop:
       - ALL
@@ -319,14 +341,19 @@ services:
     network_mode: none
 
   adapter-manager:
+    profiles: ["plugin-adapters"]
     build:
       context: ./adapter-manager
       target: manager
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-manager:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-manager:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-adapter-manager
     restart: unless-stopped
+    mem_limit: ${ADAPTER_MANAGER_MEMORY_LIMIT:-128m}
+    cpus: ${ADAPTER_MANAGER_CPU_LIMIT:-0.5}
+    pids_limit: ${ADAPTER_MANAGER_PIDS_LIMIT:-64}
     read_only: true
     cap_drop:
       - ALL
@@ -350,13 +377,18 @@ services:
       - app-network
 
   outbound-gateway:
+    profiles: ["plugin-adapters"]
     build:
       context: ./outbound-gateway
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-outbound-gateway
     restart: unless-stopped
+    mem_limit: ${OUTBOUND_GATEWAY_MEMORY_LIMIT:-256m}
+    cpus: ${OUTBOUND_GATEWAY_CPU_LIMIT:-1.0}
+    pids_limit: ${OUTBOUND_GATEWAY_PIDS_LIMIT:-128}
     read_only: true
     cap_drop:
       - ALL
@@ -365,7 +397,7 @@ services:
     logging: *default-logging
     environment:
       OUTBOUND_GATEWAY_TOKEN: ${OUTBOUND_GATEWAY_TOKEN:?Set OUTBOUND_GATEWAY_TOKEN}
-      PLUGIN_SANDBOX_EGRESS_SIGNING_KEY: ${PLUGIN_SANDBOX_EGRESS_SIGNING_KEY:?Set PLUGIN_SANDBOX_EGRESS_SIGNING_KEY}
+      PLUGIN_SANDBOX_EGRESS_SIGNING_KEY: ${PLUGIN_SANDBOX_EGRESS_SIGNING_KEY:-}
       OUTBOUND_ALLOWED_DOMAINS: ${OUTBOUND_ALLOWED_DOMAINS:-},${PLUGIN_PACKAGE_ALLOWED_DOMAINS:-mirrors.aliyun.com,registry.npmjs.org}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
@@ -381,9 +413,10 @@ services:
     build:
       context: ./dify-plugin-worker
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         PYTHON_IMAGE: python:3.12-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-dify-plugin-worker
     restart: "no"
     init: true
@@ -428,8 +461,9 @@ services:
     build:
       context: ./n8n-plugin-worker
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         NODE_IMAGE: node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-n8n-plugin-worker
     restart: "no"
     init: true
@@ -473,10 +507,14 @@ services:
     build:
       context: ./frontend
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         NODE_IMAGE: node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend
     restart: unless-stopped
+    mem_limit: ${FRONTEND_MEMORY_LIMIT:-256m}
+    cpus: ${FRONTEND_CPU_LIMIT:-1.0}
+    pids_limit: ${FRONTEND_PIDS_LIMIT:-128}
     cap_drop:
       - ALL
     security_opt:
@@ -508,12 +546,16 @@ services:
       context: ./caddy
       dockerfile: Dockerfile
       args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         CADDY_IMAGE: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         ALPINE_MIRROR: ${ALPINE_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/alpine}
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy:latest
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy
     restart: unless-stopped
+    mem_limit: ${CADDY_MEMORY_LIMIT:-256m}
+    cpus: ${CADDY_CPU_LIMIT:-1.0}
+    pids_limit: ${CADDY_PIDS_LIMIT:-128}
     cap_drop:
       - ALL
     cap_add:
