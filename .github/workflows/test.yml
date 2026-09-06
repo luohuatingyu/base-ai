@@ -80,6 +80,7 @@ jobs:
       - name: Validate Compose interpolation and service topology
         env:
           COMPOSE_PROJECT_NAME: ci
+          APP_IMAGE_REVISION: ${{ github.sha }}
           APP_PLATFORM_SHORT_NAME: AI
           MYSQL_URL: jdbc:mysql://mysql.example/base
           MYSQL_USERNAME: ci
@@ -99,4 +100,6 @@ jobs:
           ADAPTER_MANAGER_INTERNAL_TOKEN: ci-adapter-token-123456789012345678
           OUTBOUND_GATEWAY_TOKEN: ci-outbound-token-123456789012345678
           PLUGIN_SANDBOX_EGRESS_SIGNING_KEY: ci-plugin-sandbox-signing-key-1234567890
-        run: docker compose config --quiet
+        run: |
+          docker compose config --quiet
+          docker compose --profile plugin-adapters config --quiet

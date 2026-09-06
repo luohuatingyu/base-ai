@@ -403,6 +403,8 @@ test('全部运行容器具备 CPU、内存和 PID 上限', async () => {
 test('自建镜像使用必填 Git revision 标签并写入 OCI 元数据', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
   const adapterCompose = await readFile(new URL('adapter-manager/adapter-compose.yml', root), 'utf8')
+  const testWorkflow = await readFile(new URL('.github/workflows/test.yml', root), 'utf8')
+  const scanWorkflow = await readFile(new URL('.github/workflows/security-scan.yml', root), 'utf8')
   const dockerfiles = await Promise.all([
     'backend/Dockerfile', 'python-worker/Dockerfile', 'adapter-manager/Dockerfile',
     'outbound-gateway/Dockerfile', 'dify-plugin-worker/Dockerfile', 'n8n-plugin-worker/Dockerfile',
@@ -415,6 +417,9 @@ test('自建镜像使用必填 Git revision 标签并写入 OCI 元数据', asyn
   assert.doesNotMatch(`${compose}\n${adapterCompose}`, /image:[^\n]*:latest/)
   assert.equal((compose.match(/APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}/g) ?? []).length, 12)
   dockerfiles.forEach(source => assert.match(source, /LABEL org\.opencontainers\.image\.revision=\$\{APP_IMAGE_REVISION\}/))
+  assert.match(testWorkflow, /APP_IMAGE_REVISION: \$\{\{ github\.sha \}\}/)
+  assert.match(scanWorkflow, /APP_IMAGE_REVISION: \$\{\{ github\.sha \}\}/)
+  assert.match(scanWorkflow, /--build-arg "APP_IMAGE_REVISION=\$APP_IMAGE_REVISION"/)
 })
 
 test('后端接收精确 CORS 白名单和敏感回查限流配置', async () => {

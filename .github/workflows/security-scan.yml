@@ -81,12 +81,14 @@ jobs:
       - name: Build image
         env:
           BUILD_TARGET: ${{ matrix.target }}
+          APP_IMAGE_REVISION: ${{ github.sha }}
         run: |
           target_args=()
           if [ -n "$BUILD_TARGET" ]; then
             target_args+=(--target "$BUILD_TARGET")
           fi
           docker build "${target_args[@]}" \
+            --build-arg "APP_IMAGE_REVISION=$APP_IMAGE_REVISION" \
             --file "${{ matrix.dockerfile }}" \
             --tag "local/base-ai-${{ matrix.image }}:scan" \
             "${{ matrix.context }}"
