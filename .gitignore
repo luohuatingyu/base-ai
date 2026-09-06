@@ -225,6 +225,7 @@ __marimo__/
 # Java / Maven
 **/target/
 **/.mvn/wrapper/apache-maven-*/
+**/.m2/
 
 # Node / Vite
 **/node_modules/
