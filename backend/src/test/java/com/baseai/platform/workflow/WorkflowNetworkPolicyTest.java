@@ -6,12 +6,14 @@ import com.baseai.platform.security.ApiKeyCidrMatcher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.util.List;
 import java.net.InetAddress;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -27,6 +29,20 @@ class WorkflowNetworkPolicyTest {
         configurationService = mock(WorkflowNetworkSecurityService.class);
         parser = new WorkflowConnectionTargetParser();
         policy = new WorkflowNetworkPolicy(configurationService, parser, new ApiKeyCidrMatcher());
+    }
+
+    /** Spring 必须选择注入三个生产依赖的构造器创建网络策略。 */
+    @Test
+    void springSelectsProductionConstructor() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(WorkflowNetworkSecurityService.class, () -> configurationService);
+            context.registerBean(WorkflowConnectionTargetParser.class, () -> parser);
+            context.registerBean(ApiKeyCidrMatcher.class, ApiKeyCidrMatcher::new);
+            context.register(WorkflowNetworkPolicy.class);
+            context.refresh();
+
+            assertNotNull(context.getBean(WorkflowNetworkPolicy.class));
+        }
     }
 
     /** 未明确加入 Host 白名单的公网连接也必须默认拒绝。 */

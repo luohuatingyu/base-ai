@@ -4,6 +4,7 @@ import com.baseai.platform.automation.ApiTriggerSecurityConfigurationService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.security.ApiKeyCidrMatcher;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.net.InetAddress;
@@ -21,6 +22,7 @@ public class WorkflowNetworkPolicy {
     private final HostResolver hostResolver;
 
     /** 注入独立策略、目标解析和 CIDR 匹配组件。 */
+    @Autowired
     public WorkflowNetworkPolicy(WorkflowNetworkSecurityService configurationService,
                                  WorkflowConnectionTargetParser targetParser, ApiKeyCidrMatcher cidrMatcher) {
         this.configurationService = configurationService;
