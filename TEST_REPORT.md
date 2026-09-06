@@ -1,5 +1,88 @@
 # 最近分支覆盖测试报告
 
+## Rootless 插件适配器运行验收（2026-09-06）
+
+### Git 基准点
+
+Commit: 806666e9ee3fa147415105f04f95d51d0b77e491
+- 提交信息: Enable rootless adapter lifecycle
+- 上一完整测试基准点: 16fa0198aa9da9b9e8f8ae61e165f22a042138f6
+- 基准差异检查: `git diff 16fa0198aa9da9b9e8f8ae61e165f22a042138f6 806666e9ee3fa147415105f04f95d51d0b77e491 -- backend/src/main/java/` 无输出；本次只修改 Adapter Broker 镜像、Compose 运行配置和部署契约测试，未触发后端业务代码完整重测。
+- 测试日期: 2026-09-06
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 安装 Lima 2.2 并创建 `base-ai-rootless` 实例，配置 6 CPU、8 GiB 内存和 80 GiB 磁盘；实例使用 rootless Docker 29.8.0，并注册为 macOS 用户登录时自动启动。
+- 将 `bootstrap-secrets`、Caddy 状态和 DIFY/n8n 插件数据卷从 Docker Desktop 只读复制到 rootless Daemon；Docker Desktop 中原有五个 `ai-*` 服务保留为停止状态，其他项目未停止或重建。
+- Adapter Broker 镜像增加 Docker Compose 5.4.0 插件。ARM64 与 AMD64 发布文件分别使用固定 SHA-256 校验，Broker 仍为 `scratch` 镜像且只包含 Docker CLI、Compose 插件和 Adapter Manager 二进制。
+- Broker 仅新增 DIFY 与 n8n Worker 的专用内部 token，用于从窄化 Compose 创建 Worker；数据库、Redis、会话、配置加密等平台密钥仍不进入 Broker。
+- 完整 `plugin-adapters` profile 已在 rootless Daemon 运行。DIFY 与 n8n 的期望状态通过平台正式管理接口持久化为启用。
+- 按既定范围不修改数据库/Redis 传输协议，不轮换或增强现有生产凭据，也不修改 `domestic-trade` 仓库或容器。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| Broker 能在最小镜像内执行受控 Compose 生命周期命令 | Frontend 部署契约先稳定复现缺少 Compose 插件；镜像构建校验 ARM64 发布文件；容器内执行 `docker compose version --short` | 失败测试修复后通过；容器内 Compose 版本为 5.4.0 | 缺陷复现、供应链、兼容 |
+| Broker 只获得创建 Worker 必需的凭据 | 部署契约检查 Broker 服务块；输入 DIFY/n8n Worker token 并检查 MySQL、PostgreSQL、Redis、会话和配置加密密钥 | 两枚 Worker token 存在；平台核心密钥均不存在 | 权限、安全、回归 |
+| Docker 控制面真实运行于 rootless Daemon | Broker 启动预检与最终运行检查；读取宿主和 Broker 容器内 `SecurityOptions`、Socket、网络和挂载 | 两侧均包含 `name=rootless`；Broker 无网络、只读根文件系统、非特权且不挂载 `.env` 或根 Compose | 部署、权限、安全 |
+| DIFY 与 n8n 可由平台启停并保留期望状态 | 使用管理员正式接口依次对 DIFY、n8n 输入 `enabled=false` 和 `enabled=true`，轮询期望值与实际容器状态，并等待一次以上 15 秒 Backend 对账周期 | 两者均完成 `DISABLING → STOPPED → ENABLING → RUNNING`；最终期望值为 true，对账后保持 healthy | 正常、状态、持久化、回归 |
+| 全 profile 可追溯重建且资源受限 | rootless context 执行完整 Compose 重建；检查 11 个容器的镜像标签、OCI revision、Memory、NanoCPUs、PidsLimit 和 RestartCount | 11 个镜像均对应本基准提交；资源限额非零，重启数均为 0 | 构建、部署、稳定性 |
+| 外部入口边界在迁移后保持有效 | 宿主 18443 探测 readiness、未认证接口、内部接口和恶意 Origin | 返回 200、401、404；恶意 Origin 无允许来源响应头 | 权限、安全、兼容 |
+
+### 测试执行结果
+
+- 本次重新执行的可计数测试：Frontend 312/312，通过率 100%；失败 0；错误 0；跳过 0。
+- Frontend：ESLint、Vue 类型检查、311 个覆盖率测试、生产构建和 1 个 E2E 全部通过。工具函数覆盖率为行 98.01%、分支 80.19%、函数 96.09%。
+- Adapter Manager/Broker：Go 1.26.6 固定摘要容器执行 `go test ./...` 通过；Go 默认输出不提供可聚合用例数。
+- 部署契约定向测试先按缺陷修复规则失败，完成实现后 1/1 通过；完整部署契约 19/19 通过，包含在 Frontend 的 311 个覆盖率测试中。
+- 上一基准记录的 Backend 688/688、Python Worker 77/77、Dify Worker 25/25、n8n Worker 16/16 仍适用于未变更的业务源码；本次未重复执行。
+- Compose 默认及 `plugin-adapters` profile 静态解析、11 镜像完整构建、统一启动、平台生命周期和运行态安全检查全部通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 缺陷复现与部署契约 | Node Test Runner 定向执行 Adapter Broker 部署契约，再执行完整 `security-deployment.test.mjs` | 修复前 0/1 失败；修复后定向 1/1、完整 19/19 通过 |
+| Adapter Manager/Broker | Go 1.26.6 固定摘要容器只读挂载源码并执行 `go test ./...` | 通过 |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、Vue 类型检查、311 个覆盖率测试、生产构建和 1 个 E2E 全部通过 |
+| Compose 配置 | 复用运行容器中的既有配置且不输出密钥，执行默认及 `plugin-adapters` profile 的 `docker compose config --quiet` | 两种配置均通过 |
+| Rootless 完整重建 | `docker --context lima-base-ai-rootless compose --profile plugin-adapters up --build -d` | 11 个提交标记镜像构建成功；Compose ARM64 文件校验返回 OK；11 个服务启动成功 |
+| 平台生命周期 | 管理员正式 API 对 DIFY、n8n 分别执行关闭、等待停止、启用、等待运行并退出测试会话 | 两个来源全链路通过；最终均为 `enabled=true`、`RUNNING` |
+| 运行态安全 | 检查 rootless SecurityOptions、Broker Compose、挂载、权限、资源、revision、重启数、入口和 CORS | 11/11 healthy；重启 0；Compose 5.4.0；入口 200/401/404；恶意 Origin 被拒绝 |
+
+### 测试过程问题与处理
+
+- 第一次迁移脚本在停机前因使用 zsh 只读变量名退出，没有改变运行环境。更名后重试。
+- 第一次实际切换把容器内跟踪配置路径继承为 Lima 主机路径，Backend 创建失败；自动回滚恢复 Docker Desktop 五个服务全部 healthy。排除该容器内部变量后再次切换成功。
+- Caddy 首次使用了错误的端口变量名，在 Lima 内部可用但宿主 18443 不可达；改用 Compose 实际接受的 `HTTP_PORT=18080` 与 `HTTPS_PORT=18443` 后，宿主 readiness 恢复 200。
+- DIFY 插件卷约 7.4 GiB，复制时间来自真实数据迁移；源卷全程只读，复制完成后无临时归档文件。
+- 宿主未安装 Go。第一次固定镜像测试因只读 tmpfs 的执行限制失败；改为一次性可写容器根文件系统、源码只读挂载后，同一 `go test ./...` 通过，容器退出即删除。
+- 直接 Manager 生命周期测试后 Worker 被 Backend 按数据库中的默认关闭期望值回收，证明对账正常。随后改用平台正式接口持久化启用，再次执行完整生命周期后保持运行。
+- 登录响应使用统一数据包装，第一次验收脚本按根级 token 解析失败；修正为解析 `data.token` 后，后续测试会话均显式退出，并通过在线会话管理接口清理了首次测试会话。该失败未修改适配器期望状态。
+- 没有创建或遗留调试文件，运行密钥未输出、未写入仓库或临时文件。
+
+### 已知问题与限制
+
+- 按用户明确决定保留的风险：MySQL、PostgreSQL 与 Redis 的现有传输保护不在本次范围内；现有生产凭据强度也未调整或轮换。
+- Lima 配置为用户登录时自动启动。主机启动后、用户登录前，本项目不会提供服务；如需无人值守开机启动，应单独评估并改用 boot 条件。
+- 新增的插件签名密钥、出站网关 token 和 rootless Socket 参数未写入仓库 `.env`。现有容器和 VM 重启可复用已保存的容器配置；未来主动执行 Compose 重建时，仍须从密钥管理或受控运行环境重新注入。
+- 本次验证覆盖 Worker 生命周期与 rootless Docker 控制面，没有从外部市场下载并执行一个真实第三方插件包；插件包解析、一次性沙箱、出站域名令牌和清理行为由现有 Worker 与 Go 测试覆盖。
+
+### 下次测试建议
+
+- 选择一个经过审批的最小 DIFY 或 n8n 插件，在隔离测试数据上执行下载、探测和一次调用，补充一次性沙箱容器及卷清理的运行态证据。
+- 演练 macOS 注销、重新登录后的 Lima 自动启动、11 个容器恢复和 18443 端口转发，确认桌面环境的完整冷启动恢复时间。
+- 将 rootless Socket 参数与插件专用密钥接入部署密钥管理，提供不依赖运行容器反向读取环境变量的可重复重建入口。
+
+### 回滚方式
+
+- 代码回滚使用 `git revert 806666e`，不得强制重置工作区；回滚后重新执行部署契约、Go 测试和 Compose 配置检查。
+- 运行环境回滚时，先停止 Lima 中项目名为 `ai` 的容器，再启动 Docker Desktop 中保留的 `ai-document-parser`、`ai-python-worker`、`ai-backend`、`ai-frontend` 和 `ai-caddy`，随后检查 readiness 与重启数。不要删除已复制卷，确认稳定后再决定是否停用 Lima 登录自启动。
+- 回滚到默认 profile 会再次停用插件适配器；数据库中已持久化的两项启用期望应同步通过平台接口改回 false，避免 Backend 持续重试不可用的 Manager。
+
 ## 剩余安全风险修复测试结果（2026-09-06）
 
 ### Git 基准点
