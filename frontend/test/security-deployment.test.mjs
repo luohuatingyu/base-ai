@@ -355,17 +355,28 @@ test('全部运行时镜像使用非 root 用户和最小 Linux 权限', async (
   assert.match(serviceBlock(compose, 'caddy', null), /cap_add:\s*\n\s+- NET_BIND_SERVICE/)
 })
 
-test('适配器 broker 从校验源码构建最小 Docker CLI', async () => {
+test('适配器 broker 包含校验来源的 Docker CLI 与 Compose 插件及最小 Worker 凭据', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
   const dockerfile = await readFile(new URL('adapter-manager/Dockerfile', root), 'utf8')
+  const broker = serviceBlock(compose, 'adapter-docker-broker', 'adapter-supervisor')
 
   assert.match(dockerfile, /^ARG DOCKER_CLI_VERSION=29\.7\.2$/m)
   assert.match(dockerfile, /^ARG DOCKER_CLI_SOURCE_SHA256=[a-f0-9]{64}$/m)
   assert.match(dockerfile, /docker\/cli\/archive\/refs\/tags\/v\$\{DOCKER_CLI_VERSION\}\.tar\.gz/)
+  assert.match(dockerfile, /^ARG DOCKER_COMPOSE_VERSION=5\.4\.0$/m)
+  assert.match(dockerfile, /^ARG DOCKER_COMPOSE_LINUX_AMD64_SHA256=[a-f0-9]{64}$/m)
+  assert.match(dockerfile, /^ARG DOCKER_COMPOSE_LINUX_ARM64_SHA256=[a-f0-9]{64}$/m)
+  assert.match(dockerfile, /docker\/compose\/releases\/download\/v\$\{DOCKER_COMPOSE_VERSION\}/)
   assert.match(dockerfile, /sha256sum -c/)
+  assert.match(dockerfile, /\/usr\/local\/lib\/docker\/cli-plugins\/docker-compose/)
   assert.match(dockerfile, /^FROM scratch AS broker$/m)
   assert.doesNotMatch(dockerfile, /DOCKER_CLI_IMAGE/)
   assert.doesNotMatch(compose, /DOCKER_CLI_IMAGE/)
+  assert.match(broker, /DIFY_PLUGIN_WORKER_INTERNAL_TOKEN: \$\{DIFY_PLUGIN_WORKER_INTERNAL_TOKEN:\?Set DIFY_PLUGIN_WORKER_INTERNAL_TOKEN\}/)
+  assert.match(broker, /N8N_PLUGIN_WORKER_INTERNAL_TOKEN: \$\{N8N_PLUGIN_WORKER_INTERNAL_TOKEN:\?Set N8N_PLUGIN_WORKER_INTERNAL_TOKEN\}/)
+  for (const platformSecret of ['MYSQL_PASSWORD', 'POSTGRES_PASSWORD', 'REDIS_PASSWORD', 'APP_TOKEN_SECRET', 'APP_CONFIG_ENCRYPTION_KEY']) {
+    assert.doesNotMatch(broker, new RegExp(`${platformSecret}:`), platformSecret)
+  }
 })
 
 test('文档解析器使用无网络只读容器且 Backend 仅只读共享 Unix Socket', async () => {
