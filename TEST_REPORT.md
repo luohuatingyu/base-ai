@@ -1,5 +1,94 @@
 # 最近分支覆盖测试报告
 
+## 剩余安全风险修复测试结果（2026-09-06）
+
+### Git 基准点
+
+Commit: 16fa0198aa9da9b9e8f8ae61e165f22a042138f6
+- 提交信息: Pass image revisions through CI validation
+- 核心安全提交: 8d888ec9640eafdefb756cd6335dc4a487fa14d0（Harden application and container security）
+- 构造注入修复提交: 158b2b7a6f64f164a2665fdb85b22d84faf9126d（Fix workflow network policy constructor injection）
+- 上一测试报告业务基准点: a9fe614
+- 基准差异检查: 17 个后端业务代码文件、8 个后端测试文件以及 Compose、镜像、CI、Go Broker 和部署契约发生变化，已触发完整项目重测。
+- 测试日期: 2026-09-06
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 插件适配器改为可选 `plugin-adapters` profile；默认核心平台不启动适配器。Broker 只读取窄化 Adapter Compose，不读取平台 `.env` 或根 Compose，并在开放控制 Socket 前验证 Docker Daemon 的 rootless 安全选项。
+- 所有自建镜像使用必填 Git Commit 作为标签并写入 OCI revision；CI 构建与扫描显式传入当前提交，不再使用 `latest`。
+- Document Parser、Backend、Python Worker、Adapter Broker、Supervisor、Manager、Outbound Gateway、Dify/n8n Worker、Frontend 和 Caddy 均配置 CPU、内存与 PID 上限。
+- 工作流 Host/CIDR 策略在实际解析阶段复核地址；Lettuce 使用受控解析器，其他 JVM 网络客户端使用进程级固定正向 DNS 缓存，阻断校验与建连之间的 DNS 重绑定窗口。
+- 管理员敏感凭据回查增加 Redis 跨实例限流：默认连续失败 5 次后封禁 15 分钟，正确密码清理状态，Redis 异常时拒绝回查。
+- CORS 默认关闭；仅接受配置中的精确 HTTP/HTTPS Origin，拒绝通配符、路径、查询、用户信息和非 HTTP 协议。
+- 修复 `WorkflowNetworkPolicy` 多构造器下的 Spring 注入选择，防止 Backend 因 Bean 创建失败进入重启循环。
+- 按用户明确决定，本次不修改数据库/Redis 传输保护，也不轮换或增强现有生产凭据。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 默认停用插件适配器，启用时 Broker 只持有收敛后的 rootless Docker 权限 | Adapter Manager Go 完整测试；Frontend 部署契约测试；默认 Compose 重建后检查运行容器 | 未配置隔离 Docker 时无插件容器运行；Broker 固定命令、窄化挂载和 rootless 校验测试通过 | 正常、异常、权限、安全、兼容 |
+| 镜像可追溯到唯一 Git 提交 | Frontend 部署契约检查 11 个镜像声明、8 个 Dockerfile 和 CI；运行态检查五个默认镜像标签与 OCI revision | 无 `latest`；运行镜像标签和 revision 均为当前基准提交；通过 | 部署、供应链、回归 |
+| 核心及可选容器均有资源上限 | Frontend 部署契约覆盖全部 11 个服务；运行态读取五个默认容器的 Memory、NanoCPUs 和 PidsLimit | 静态配置完整，运行容器限额均为非零值；通过 | 边界、稳定性、回归 |
+| 工作流连接抵抗 DNS 重绑定 | Backend BaseAiApplication、WorkflowNetworkPolicy、WorkflowRedisClientFactory 和 Connector Executor 测试；模拟相邻解析从公网切换到回环地址 | 第二次受控解析拒绝私网地址，Redis 建连使用策略解析器，Spring 正确创建策略 Bean；通过 | 异常、安全、兼容、回归 |
+| 敏感凭据回查具有跨实例失败限流 | Backend SecretRevealAttemptService 与 SecretRevealAuthorizationService 测试输入首次失败、阈值失败、封禁、正确密码、非管理员和 Redis 异常 | 失败窗口、15 分钟封禁、成功清理、权限拒绝和 Redis 故障关闭均符合预期；通过 | 正常、边界、异常、权限、安全 |
+| 生产 CORS 只允许显式精确来源 | Backend WebConfig 参数化测试输入空配置、重复/大小写来源、通配符、路径、查询和非 HTTP 来源；运行态发送恶意 Origin | 空配置不注册 CORS；非法配置拒绝启动；`https://evil.example` 无允许来源响应头；通过 | 正常、边界、异常、安全、兼容 |
+| Backend 可稳定启动且外部入口边界有效 | Spring 构造注入测试；统一重建后检查 readiness、重启次数、启动错误、受保护接口和内部接口 | readiness 200，重启 0，构造失败 0；受保护接口 401，内部接口 404；通过 | 稳定性、权限、安全、回归 |
+
+### 测试执行结果
+
+- 可计数测试用例：1,118 个；通过 1,118 个（100%）；失败 0；错误 0；跳过 0。
+- Backend：688/688，通过完整 Maven 测试套件；其中本次风险相关定向测试 31/31，已包含在 688 个总数中。
+- Frontend：312/312；ESLint、Vue 类型检查、311 个覆盖率测试、生产构建和 1 个 E2E 全部通过。工具函数覆盖率：行 98.01%、分支 80.19%、函数 96.09%。
+- Python Worker（Python 3.12.14）：77/77；Dify Plugin Worker（Python 3.12.13）：25/25；n8n Plugin Worker：16/16。
+- Adapter Manager/Broker 与 Outbound Gateway 的 Go 完整包测试均通过；Go 默认输出不提供可聚合用例数，未计入上述 1,118 个可计数总数。
+- Compose 配置解析、统一重建、运行态健康与安全探测全部通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 风险相关套件 | 固定摘要 Maven 3.9.9 / Temurin 17 容器执行 7 个相关测试类 | 31/31，BUILD SUCCESS |
+| Backend 完整套件 | 固定摘要 Maven 3.9.9 / Temurin 17 容器执行 `mvn -B -ntp test` | 688/688，BUILD SUCCESS |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、Vue 类型检查、311 个覆盖率测试、生产构建和 1 个 E2E 均通过 |
+| Python Worker | Python 3.12 固定摘要容器只读挂载源码，安装锁定开发依赖后执行 pytest | 77/77，通过 |
+| Dify 与 n8n Plugin Worker | Python 3.12 执行 unittest；Node 执行内置 test runner | 25/25 与 16/16，通过 |
+| Go 服务 | Go 1.26.6 固定摘要容器分别执行 Adapter Manager/Broker 与 Outbound Gateway 的 `go test ./...` | 两个模块均通过 |
+| Compose 配置与启动 | 复用当前 `ai-*` 运行配置并为未启动 profile 提供未落盘临时令牌，执行 `docker compose config --quiet` 与 `docker compose up --build -d` | 五个默认服务重建成功并保持 healthy |
+| 运行态安全检查 | 检查容器来源、资源限额、OCI revision、可选 profile、readiness、重启数、CORS、认证和内部路由 | 全部通过；恶意 Origin 无 CORS 头，401/404 边界正确 |
+| 静态与工作区检查 | `git diff --check`、`git status --short` | 通过；提交前只有测试报告变更 |
+
+### 测试过程问题与处理
+
+- 宿主机未安装 Maven，按项目固定镜像使用 Maven 3.9.9 / Temurin 17 容器运行定向和完整测试，未修改宿主依赖。
+- 首次前端定向命令把测试路径交给了错误的 npm 执行工作目录，测试文件未执行；随后项目 `npm test` 完整质量门已覆盖该文件并全部通过。npm 临时解析未修改仓库。
+- 宿主 Python 3.12 未安装 pytest；改用 Python 3.12 固定摘要容器只读挂载源码、安装带哈希的锁定开发依赖后运行，77 个测试全部通过，仓库未生成 pytest 缓存。
+- 本地 `.env` 不保存部署值。Compose 验证从当前 `ai-backend` 容器复用既有必需配置，插件 profile 所需的临时令牌只存在于验证进程，未输出或落盘。
+- 历史上停止的 `ai-adapter-*`、`ai-outbound-gateway` 和两个插件 Worker 容器仍存在，但没有运行；本次未删除这些非当前任务产生的容器。
+
+### 已知问题与限制
+
+- 按用户明确决定保留的风险：MySQL、PostgreSQL 与 Redis 的现有传输保护不在本次范围内；现有生产凭据强度也未调整或轮换。
+- JVM 正向 DNS 结果会固定到 Backend 进程生命周期。工作流允许目标合法变更 IP 后，需要重启 Backend 才能使用新地址；部署侧仍应保留出口网络策略作为独立边界。
+- 当前主机没有可用于本项目的独立 rootless Docker Socket，因此插件适配器 profile 保持停用；Broker 的 rootless 拒绝逻辑由 Go 测试覆盖，未执行真实 rootless Daemon 上的插件运行态验收。
+- 本地 `.env` 为空；后续部署必须从密钥管理提供必需配置，并显式把 `APP_IMAGE_REVISION` 设为待部署的已测试 Git Commit。
+- Frontend 构建继续出现既有的运行配置脚本、第三方 PURE 注释和大分块警告；构建、覆盖率测试和 E2E 均通过。
+
+### 下次测试建议
+
+- 在独立 rootless Docker Engine 上启用 `plugin-adapters` profile，验证 Broker 启动校验、Socket 权限、一次性沙箱资源和停止后的清理行为。
+- 增加多 Backend 实例共享 Redis 的并发回查限流集成测试，覆盖阈值附近的并发失败和成功清理竞争。
+- 在隔离 DNS 测试环境中验证 JDBC、S3、Kafka 和 RabbitMQ 客户端在真实建连阶段复用 JVM 固定解析结果，并演练目标 IP 变更后的受控重启。
+- 将部署入口固化为只接收干净 Git Commit 或镜像 digest 的脚本/流水线，并从密钥管理注入变量，避免依赖人工 Shell 环境。
+
+### 回滚方式
+
+- 如需回滚，按从新到旧顺序分别执行 `git revert 16fa019`、`git revert 158b2b7`、`git revert 8d888ec`，不得使用破坏工作区的强制重置。
+- 回滚后必须重新执行 Backend、Frontend、Python、Go 和插件 Worker 完整测试，并运行 `docker compose up --build -d` 与运行态边界检查。
+- 回滚核心安全提交会重新开放宽 CORS、无限资源和未限流回查等风险，只应在隔离环境中进行。
+
 ## 风险修复方案 A 测试结果（2026-09-02）
 
 ### Git 基准点
