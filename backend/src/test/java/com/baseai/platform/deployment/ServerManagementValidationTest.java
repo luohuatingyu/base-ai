@@ -6,15 +6,21 @@ import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.service.TaskTraceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
+import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** 覆盖服务器配置的模式、SSH 凭据和路径安全校验。 */
@@ -109,6 +115,85 @@ class ServerManagementValidationTest {
         assertEquals("", merged.path("privateKey").asText());
         assertEquals("", merged.path("password").asText());
         assertEquals("", merged.path("hostKey").asText());
+    }
+
+    /** Agent 仅可返回 Backend 已持久化的精确任务编号。 */
+    @Test
+    void validatesAgentJobIdentifier() {
+        String jobId = "0123456789abcdef0123456789abcdef";
+        assertEquals(jobId, service.requireAgentJobId(Map.of("jobId", jobId), jobId));
+        assertThrows(BusinessException.class,
+            () -> service.requireAgentJobId(Map.of("jobId", "fedcba9876543210fedcba9876543210"), jobId));
+        assertThrows(BusinessException.class,
+            () -> service.requireAgentJobId(Map.of("jobId", "../other"), jobId));
+    }
+
+    /** Backend 重启后应通过 Agent 任务编号恢复成功结果并释放并发槽。 */
+    @Test
+    void reconcilesCompletedAgentJob() throws Exception {
+        String jobId = "0123456789abcdef0123456789abcdef";
+        HttpServer agentServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        agentServer.createContext("/jobs/" + jobId, exchange -> {
+            byte[] response = "{\"status\":\"SUCCEEDED\",\"output\":\"updated\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        agentServer.start();
+        try {
+            JdbcTemplate database = deploymentDatabase("reconcile-success");
+            database.update("INSERT INTO deployment_run VALUES (1,'trace-success',?,'RUNNING',1,NULL,?,NULL)",
+                "agent-job:" + jobId, LocalDateTime.now());
+            TaskTraceService traceService = Mockito.mock(TaskTraceService.class);
+            ServerManagementService recovering = serverService(database, traceService,
+                "http://127.0.0.1:" + agentServer.getAddress().getPort());
+
+            recovering.reconcileAgentJobs();
+
+            assertEquals("SUCCEEDED", database.queryForObject("SELECT status FROM deployment_run WHERE id=1", String.class));
+            assertEquals("updated", database.queryForObject("SELECT output_summary FROM deployment_run WHERE id=1", String.class));
+            assertNull(database.queryForObject("SELECT active_slot FROM deployment_run WHERE id=1", Integer.class));
+            Mockito.verify(traceService).markSuccess("trace-success");
+        } finally {
+            agentServer.stop(0);
+        }
+    }
+
+    /** 超过 Agent 执行上限的遗留任务必须失败并释放并发槽。 */
+    @Test
+    void failsUnrecoverableAgentJobAfterTimeout() {
+        JdbcTemplate database = deploymentDatabase("reconcile-timeout");
+        database.update("INSERT INTO deployment_run VALUES (1,'trace-timeout',?,'RUNNING',1,NULL,?,NULL)",
+            "agent-job:0123456789abcdef0123456789abcdef", LocalDateTime.now().minusMinutes(17));
+        TaskTraceService traceService = Mockito.mock(TaskTraceService.class);
+        ServerManagementService recovering = serverService(database, traceService, "");
+
+        recovering.reconcileAgentJobs();
+
+        assertEquals("FAILED", database.queryForObject("SELECT status FROM deployment_run WHERE id=1", String.class));
+        assertEquals("server.deployTimeout", database.queryForObject("SELECT error_message FROM deployment_run WHERE id=1", String.class));
+        assertNull(database.queryForObject("SELECT active_slot FROM deployment_run WHERE id=1", Integer.class));
+        Mockito.verify(traceService).markFailed("trace-timeout", "server.deployTimeout");
+    }
+
+    /** 创建部署恢复测试使用的最小 H2 表。 */
+    private JdbcTemplate deploymentDatabase(String name) {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:" + name + ";MODE=MySQL;DB_CLOSE_DELAY=-1");
+        JdbcTemplate database = new JdbcTemplate(dataSource);
+        database.execute("""
+            CREATE TABLE deployment_run(
+              id BIGINT PRIMARY KEY,trace_id VARCHAR(36),output_summary VARCHAR(2000),status VARCHAR(24),
+              active_slot INT,error_message VARCHAR(1000),started_at TIMESTAMP,finished_at TIMESTAMP)
+            """);
+        return database;
+    }
+
+    /** 创建带可控 Agent 地址的服务器管理服务。 */
+    private ServerManagementService serverService(JdbcTemplate database, TaskTraceService traceService, String agentUrl) {
+        return new ServerManagementService(database, new ObjectMapper(), new ConfigCryptoService(properties()), traceService,
+            Mockito.mock(ThreadPoolTaskExecutor.class), agentUrl, "internal-token-with-24-characters");
     }
 
     /** 创建加密服务所需的固定测试密钥。 */

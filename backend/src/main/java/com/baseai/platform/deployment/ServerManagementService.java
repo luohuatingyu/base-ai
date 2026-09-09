@@ -18,6 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +52,8 @@ public class ServerManagementService {
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9._-]{0,63}");
     private static final Pattern HOST_KEY_PATTERN = Pattern.compile("SHA256:[A-Za-z0-9+/]{43}");
     private static final Pattern REVISION_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}");
+    private static final Pattern AGENT_JOB_PATTERN = Pattern.compile("[a-f0-9]{32}");
+    private static final String AGENT_JOB_PREFIX = "agent-job:";
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ConfigCryptoService cryptoService;
@@ -127,7 +130,7 @@ public class ServerManagementService {
         ServerRecord server = require(id);
         requireOwner(server.ownerUserId());
         requireEnabled(server);
-        Map<String, Object> result = callAgent("test", server, "STATUS", "");
+        Map<String, Object> result = callAgent("test", server, "STATUS", "", "");
         String status = agentStatus(result);
         String error = result.get("error") == null ? null : safeText(String.valueOf(result.get("error")), 500);
         jdbcTemplate.update("UPDATE managed_server SET last_test_status=?,last_test_error=?,last_test_at=NOW(),updated_at=NOW() WHERE id=?", status, error, id);
@@ -190,27 +193,65 @@ public class ServerManagementService {
     /** 在 Agent 中执行部署并维护部署状态和任务追踪。 */
     private void executeDeployment(Long runId, String traceId, ServerRecord server, ServerModels.DeploymentCommand command) {
         try {
-            Map<String, Object> result = callAgent("execute", server, command.action(), command.revision());
-            String status = agentStatus(result);
-            if ("SUCCEEDED".equals(status)) {
-                jdbcTemplate.update("UPDATE deployment_run SET status='SUCCEEDED',active_slot=NULL,output_summary=?,finished_at=NOW() WHERE id=?", safeText(String.valueOf(result.getOrDefault("output", "")), 2000), runId);
-                taskTraceService.markSuccess(traceId);
-            } else {
-                String error = safeText(String.valueOf(result.getOrDefault("error", "server.deployFailed")), 1000);
-                jdbcTemplate.update("UPDATE deployment_run SET status='FAILED',active_slot=NULL,error_message=?,finished_at=NOW() WHERE id=?", error, runId);
-                taskTraceService.markFailed(traceId, error);
-            }
+            String jobId = traceId.replace("-", "").toLowerCase(Locale.ROOT);
+            jdbcTemplate.update("UPDATE deployment_run SET output_summary=? WHERE id=? AND status='RUNNING'", AGENT_JOB_PREFIX + jobId, runId);
+            Map<String, Object> result = callAgent("execute", server, command.action(), command.revision(), jobId);
+            String status = text(String.valueOf(result.getOrDefault("status", "FAILED"))).toUpperCase(Locale.ROOT);
+            if ("RUNNING".equals(status)) requireAgentJobId(result, jobId);
+            else if (!"UNKNOWN".equals(status)) completeDeployment(runId, traceId, result);
         } catch (Exception exception) {
             String error = safeText(exception.getMessage() == null ? "server.deployFailed" : exception.getMessage(), 1000);
-            jdbcTemplate.update("UPDATE deployment_run SET status='FAILED',active_slot=NULL,error_message=?,finished_at=NOW() WHERE id=?", error, runId);
-            taskTraceService.markFailed(traceId, error);
+            failDeployment(runId, traceId, error);
         } finally {
             running.remove(server.id());
         }
     }
 
+    /** 定期续查 Agent 任务，使本地部署重启 Backend 后仍能回收最终结果。 */
+    @Scheduled(fixedDelay = 5000)
+    public void reconcileAgentJobs() {
+        List<PendingDeployment> pending = jdbcTemplate.query("""
+            SELECT id,trace_id,output_summary,started_at FROM deployment_run
+            WHERE status='RUNNING' AND output_summary LIKE 'agent-job:%' ORDER BY id LIMIT 50
+            """, (rs, row) -> new PendingDeployment(rs.getLong("id"), rs.getString("trace_id"),
+                rs.getString("output_summary").substring(AGENT_JOB_PREFIX.length()), timestamp(rs, "started_at")));
+        for (PendingDeployment deployment : pending) {
+            try {
+                if (deployment.startedAt() == null || deployment.startedAt().isBefore(LocalDateTime.now().minusMinutes(16))) {
+                    failDeployment(deployment.id(), deployment.traceId(), "server.deployTimeout");
+                    continue;
+                }
+                Map<String, Object> result = callAgentJob(deployment.jobId());
+                if (result == null) continue;
+                String status = text(String.valueOf(result.getOrDefault("status", ""))).toUpperCase(Locale.ROOT);
+                if (Set.of("SUCCEEDED", "FAILED").contains(status)) completeDeployment(deployment.id(), deployment.traceId(), result);
+            } catch (RuntimeException ignored) {
+                // 单个 Agent 任务暂时不可用时保留运行状态，等待下一轮或超时回收。
+            }
+        }
+    }
+
+    /** 将 Agent 结束状态写回部署记录并仅由成功更新状态的实例完成追踪。 */
+    private void completeDeployment(Long runId, String traceId, Map<String, Object> result) {
+        String status = text(String.valueOf(result.getOrDefault("status", "FAILED"))).toUpperCase(Locale.ROOT);
+        if ("SUCCEEDED".equals(status)) {
+            int updated = jdbcTemplate.update("UPDATE deployment_run SET status='SUCCEEDED',active_slot=NULL,output_summary=?,error_message=NULL,finished_at=NOW() WHERE id=? AND status='RUNNING'",
+                safeText(String.valueOf(result.getOrDefault("output", "")), 2000), runId);
+            if (updated > 0) taskTraceService.markSuccess(traceId);
+            return;
+        }
+        failDeployment(runId, traceId, safeText(String.valueOf(result.getOrDefault("error", "server.deployFailed")), 1000));
+    }
+
+    /** 以幂等方式结束失败任务并释放服务器并发槽。 */
+    private void failDeployment(Long runId, String traceId, String error) {
+        int updated = jdbcTemplate.update("UPDATE deployment_run SET status='FAILED',active_slot=NULL,error_message=?,finished_at=NOW() WHERE id=? AND status='RUNNING'",
+            safeText(error, 1000), runId);
+        if (updated > 0) taskTraceService.markFailed(traceId, error);
+    }
+
     /** 通过内部 Agent 执行固定请求，不把数据库密钥传给 Agent。 */
-    private Map<String, Object> callAgent(String path, ServerRecord server, String action, String revision) {
+    private Map<String, Object> callAgent(String path, ServerRecord server, String action, String revision, String jobId) {
         if (agentUrl.isBlank() || agentToken.isBlank()) return Map.of("status", "FAILED", "error", "server.agentNotConfigured");
         try {
             Map<String, Object> payload = new java.util.LinkedHashMap<>();
@@ -219,14 +260,36 @@ public class ServerManagementService {
             payload.put("privateKey", value(server.config(), "privateKey")); payload.put("password", value(server.config(), "password"));
             payload.put("passphrase", value(server.config(), "passphrase")); payload.put("hostKey", value(server.config(), "hostKey"));
             payload.put("workingDir", value(server.config(), "workingDir")); payload.put("composeFile", value(server.config(), "composeFile"));
-            payload.put("action", action); payload.put("revision", revision);
+            payload.put("action", action); payload.put("revision", revision); payload.put("jobId", jobId);
             Map<String, Object> result = restClient.post().uri(agentUrl + "/" + path)
                 .header("Authorization", "Bearer " + agentToken).body(payload).retrieve()
                 .body(new ParameterizedTypeReference<>() { });
             return result == null ? Map.of("status", "FAILED", "error", "server.agentInvalidResponse") : result;
         } catch (Exception exception) {
+            if ("execute".equals(path)) return Map.of("status", "UNKNOWN", "jobId", jobId);
             return Map.of("status", "FAILED", "error", safeText(exception.getMessage() == null ? "server.testFailed" : exception.getMessage(), 500));
         }
+    }
+
+    /** 查询 Agent 中已启动任务；网络短暂不可用时返回空值等待下一轮。 */
+    private Map<String, Object> callAgentJob(String jobId) {
+        if (agentUrl.isBlank() || agentToken.isBlank() || !AGENT_JOB_PATTERN.matcher(text(jobId)).matches()) return null;
+        try {
+            return restClient.get().uri(agentUrl + "/jobs/" + jobId)
+                .header("Authorization", "Bearer " + agentToken).retrieve()
+                .body(new ParameterizedTypeReference<>() { });
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    /** 验证 Agent 接受结果仍对应 Backend 已持久化的任务编号。 */
+    String requireAgentJobId(Map<String, Object> result, String expected) {
+        String jobId = text(String.valueOf(result.getOrDefault("jobId", ""))).toLowerCase(Locale.ROOT);
+        if (!AGENT_JOB_PATTERN.matcher(jobId).matches() || !jobId.equals(expected)) {
+            throw new BusinessException("server.agentInvalidResponse");
+        }
+        return jobId;
     }
 
     /** 验证服务器字段和 SSH 安全配置。 */
@@ -411,4 +474,5 @@ public class ServerManagementService {
     private LocalDateTime timestamp(ResultSet rs, String name) throws SQLException { java.sql.Timestamp value = rs.getTimestamp(name); return value == null ? null : value.toLocalDateTime(); }
     private record ServerRecord(Long id, String name, String mode, Long ownerUserId, boolean enabled, JsonNode config) { }
     private record DeploymentRecord(Long id, Long serverId, Long ownerUserId) { }
+    private record PendingDeployment(Long id, String traceId, String jobId, LocalDateTime startedAt) { }
 }

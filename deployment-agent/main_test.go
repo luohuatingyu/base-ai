@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // TestValidateLocal 验证固定本地工作区和发布版本能够通过校验。
 func TestValidateLocal(t *testing.T) {
-	input := request{Mode: "LOCAL", WorkingDir: "/workspace", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123"}
+	input := request{Mode: "LOCAL", WorkingDir: "/workspace", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123", JobID: "0123456789abcdef0123456789abcdef"}
 	if err := validate(input, true); err != nil {
 		t.Fatalf("expected valid local request: %v", err)
 	}
@@ -15,7 +19,7 @@ func TestValidateLocal(t *testing.T) {
 
 // TestValidateRejectsCommandInjection 验证路径、文件和版本中的命令注入输入被拒绝。
 func TestValidateRejectsCommandInjection(t *testing.T) {
-	input := request{Mode: "LOCAL", WorkingDir: "/workspace;rm", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123"}
+	input := request{Mode: "LOCAL", WorkingDir: "/workspace;rm", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123", JobID: "0123456789abcdef0123456789abcdef"}
 	if err := validate(input, true); err == nil {
 		t.Fatal("expected invalid working directory")
 	}
@@ -38,7 +42,7 @@ func TestValidateRejectsCommandInjection(t *testing.T) {
 
 // TestValidateSSHRequiresHostKeyAndCredential 验证 SSH 模式必须提供完整指纹和凭据。
 func TestValidateSSHRequiresHostKeyAndCredential(t *testing.T) {
-	input := request{Mode: "SSH", Host: "example.com", Port: 22, Username: "deploy", AuthType: "KEY", WorkingDir: "/opt/base-ai", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123"}
+	input := request{Mode: "SSH", Host: "example.com", Port: 22, Username: "deploy", AuthType: "KEY", WorkingDir: "/opt/base-ai", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123", JobID: "0123456789abcdef0123456789abcdef"}
 	if err := validate(input, true); err == nil {
 		t.Fatal("expected host key and key validation")
 	}
@@ -52,7 +56,7 @@ func TestValidateSSHRequiresHostKeyAndCredential(t *testing.T) {
 func TestValidateRejectsUnsafeSSHIdentity(t *testing.T) {
 	input := request{Mode: "SSH", Host: "example.com", Port: 22, Username: "-oProxyCommand=id", AuthType: "KEY",
 		PrivateKey: "PRIVATE", HostKey: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-		WorkingDir: "/opt/base-ai", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123"}
+		WorkingDir: "/opt/base-ai", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123", JobID: "0123456789abcdef0123456789abcdef"}
 	if err := validate(input, true); err == nil {
 		t.Fatal("expected unsafe SSH username to be rejected")
 	}
@@ -101,5 +105,55 @@ func TestAuthorizedRequiresBearerScheme(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer "+agent.token)
 	if !agent.authorized(request) {
 		t.Fatal("Bearer token should be accepted")
+	}
+}
+
+// TestJobsHandlerReturnsPersistedJob 验证任务编号可鉴权查询且结果不包含执行凭据。
+func TestJobsHandlerReturnsPersistedJob(t *testing.T) {
+	jobID := "0123456789abcdef0123456789abcdef"
+	agent := &agent{token: "internal-token-with-24-characters", jobs: map[string]*deploymentJob{
+		jobID: {status: "SUCCEEDED", output: "done", createdAt: time.Now(), finishedAt: time.Now()},
+	}}
+	request := httptest.NewRequest(http.MethodGet, "/jobs/"+jobID, nil)
+	request.Header.Set("Authorization", "Bearer "+agent.token)
+	response := httptest.NewRecorder()
+
+	agent.jobsHandler(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", response.Code)
+	}
+	var result map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("invalid response: %v", err)
+	}
+	if result["status"] != "SUCCEEDED" || result["output"] != "done" {
+		t.Fatalf("unexpected job result: %#v", result)
+	}
+}
+
+// TestExecuteReturnsExistingJob 验证 Backend 重试相同任务编号时不会重复执行部署。
+func TestExecuteReturnsExistingJob(t *testing.T) {
+	jobID := "0123456789abcdef0123456789abcdef"
+	agent := &agent{token: "internal-token-with-24-characters", jobs: map[string]*deploymentJob{
+		jobID: {status: "SUCCEEDED", output: "done", createdAt: time.Now(), finishedAt: time.Now()},
+	}}
+	body, _ := json.Marshal(request{Mode: "LOCAL", WorkingDir: "/workspace", ComposeFile: "docker-compose.yml",
+		Action: "DEPLOY", Revision: "abc123", JobID: jobID})
+	request := httptest.NewRequest(http.MethodPost, "/execute", bytes.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+agent.token)
+	response := httptest.NewRecorder()
+
+	agent.execute(response, request)
+
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("unexpected status: %d", response.Code)
+	}
+	var result map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("invalid response: %v", err)
+	}
+	if result["status"] != "SUCCEEDED" || result["jobId"] != jobID {
+		t.Fatalf("unexpected execute response: %#v", result)
 	}
 }
