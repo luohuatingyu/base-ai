@@ -1,5 +1,90 @@
 # 最近分支覆盖测试报告
 
+## 数据同步与服务器管理验收（2026-09-09）
+
+### Git 基准点
+
+Commit: 3370c3fa283094bc629091414eae9d29eb63f101
+- 提交信息: Recover deployment results after backend restart
+- 上一完整测试基准点: 806666e9ee3fa147415105f04f95d51d0b77e491
+- 基准差异检查: `git diff 806666e9ee3fa147415105f04f95d51d0b77e491 3370c3fa283094bc629091414eae9d29eb63f101 -- backend/src/main/java/` 包含数据同步、服务器管理、连接引用保护、菜单与权限初始化等业务代码变更，已触发 Backend 完整测试和项目相关回归测试。
+- 测试日期: 2026-09-09
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 新增 MySQL/PostgreSQL 表级数据同步：从源连接选择表和目标连接，支持 `UPSERT`、`FULL_REPLACE`、`APPEND`，按批次复制数据；目标表不存在时创建，已存在时执行结构兼容性校验，不自动删除目标表。
+- 新增同步计划、手动执行、Spring 六字段 Cron 调度、执行记录、取消、失败重试和单计划并发互斥；禁止删除仍被同步计划引用的工作流数据库连接。
+- 新增服务器管理：支持本地服务器和 SSH 服务器，凭据加密保存，提供连接测试以及受限的 Docker Compose 部署动作；管理员和 `OPS` 角色可管理，普通用户仅可访问其所属数据。
+- 新增独立非 root Deployment Agent。Agent 仅接受固定动作、Bearer Token 和安全 Job ID，校验 SSH 主机指纹、参数与工作目录；本地部署可通过可选 `deployment` profile 运行。
+- 为本机自部署增加异步任务登记和 Backend 对账恢复：Backend 重启后轮询 Agent 任务结果，重复提交同一 Job ID 保持幂等，超过 16 分钟的不可恢复任务标记失败并释放运行槽位。
+- 新增 Flyway V26 数据表、后端接口与测试、前端数据同步/服务器管理页面及中英文文案、Compose 配置、环境变量示例和使用说明。实际 MySQL 已成功应用 V26，既有迁移未被修改。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 可选择源表同步到另一个数据库 | Backend 集成测试使用 H2 的 MySQL/PostgreSQL 兼容模式，输入单表、多表、空表和批量数据 | 仅选中表被复制；数据与关键副作用正确；9 个复制测试通过 | 正常、边界、兼容 |
+| 支持三种同步策略 | 对相同主键、已有目标数据和空目标分别执行 `UPSERT`、`FULL_REPLACE`、`APPEND` | 更新插入、清空重载和仅追加行为符合策略；事务失败按表回滚 | 正常、状态、回归 |
+| 缺表可创建，不安全结构必须拒绝 | 输入缺失目标表、窄化字段、不兼容类型、非法 Decimal、缺少主键、非法标识符和注入式表名 | 安全结构自动创建；不兼容结构、无主键 UPSERT 和恶意输入均在写入前失败 | 边界、异常、安全 |
+| 同步计划支持人工和 Cron 执行 | Service/Controller 测试输入禁用/启用计划、合法及非法六字段 Cron、重复运行、取消、失败后重试 | 人工执行与调度执行可追踪；非法 Cron、并发冲突和非法状态转换被拒绝 | 正常、边界、异常、状态 |
+| 连接引用和租户权限保持安全 | 输入被计划引用的连接、管理员、`OPS`、普通用户、跨用户资源和未认证请求 | 被引用连接不可删除；管理员/OPS 可管理，普通用户不可越权；凭据不出现在响应中 | 权限、安全、兼容、回归 |
+| 本地和 SSH 只执行受控 Compose 动作 | Backend 验证测试和 Agent Go 测试输入固定动作、Bearer Token、主机指纹、密钥/密码/口令、非法路径与命令注入 | 本地/SSH 请求仅映射到固定参数；精确主机密钥匹配；未授权、注入和非法输入被拒绝 | 正常、异常、权限、安全 |
+| 本机部署导致 Backend 重启后结果可恢复 | Backend 使用 H2 与本地 HTTP Server 模拟执行响应中断、Agent 成功/失败查询和超时；Agent 测试调用重复 Job ID | 运行记录保留 Job 标记并由定时对账完成；重复执行幂等；16 分钟超时失败并释放唯一运行槽 | 异常、恢复、并发、回归 |
+| 前端提供可操作入口且保持既有契约 | Frontend 完整质量门覆盖路由、表单、API 契约、导航、中英文文案和部署安全契约 | 数据同步与服务器页面可访问；表单校验、权限入口和安全契约通过，既有功能无回归 | 正常、权限、兼容、回归 |
+| 部署和数据库升级可重复执行 | Compose 静态解析、Agent profile 构建、默认服务统一重建、运行态健康检查和 Backend Flyway 日志 | 最终提交标记镜像构建成功；五个默认服务启动；Flyway 校验 26 个迁移且 Schema 为 V26 | 配置、部署、迁移、回归 |
+
+### 测试执行结果
+
+- 可计数测试用例共 1,035 个，通过 1,035 个，通过率 100%；失败 0；错误 0；跳过 0。
+- Backend：714/714，Maven 3.9.9 / Temurin 17 完整测试套件通过；恢复机制与消息定向测试 14/14、功能相关初始定向测试 46/46，均已包含在完整套件中。
+- Frontend：312/312；ESLint、Vue 类型检查、311 个覆盖率测试、生产构建和 1 个 E2E 全部通过。工具函数覆盖率为行 98.02%、分支 80.19%、函数 96.09%。
+- Deployment Agent：Go 1.26.6 执行 `go test ./...` 通过，源码中 9 个 `Test*` 用例全部通过；Agent 镜像构建成功并包含 Docker CLI、Compose 5.5.0、OpenSSH、sshpass 和主机密钥工具。
+- Compose 配置、Agent 可选 profile 构建、默认五服务统一重建、运行态健康及 MySQL Flyway V26 迁移均通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整套件 | Maven 3.9.9 / Temurin 17 容器挂载 `backend` 与本地 Maven 缓存，执行 `mvn test -B` | 714/714，BUILD SUCCESS |
+| Backend 定向回归 | 执行数据同步、服务器管理和消息资源相关测试类 | 初始相关测试 46/46；恢复机制与消息测试 14/14，均通过 |
+| Frontend 完整质量门 | Node 24 Alpine 容器挂载完整仓库和独立 `node_modules` 卷，执行 `npm test` | ESLint、类型检查、311 个覆盖率测试、构建和 1 个 E2E 全部通过 |
+| Deployment Agent | Go 1.26.6 容器执行 `gofmt -w main.go main_test.go && go test ./...` | 格式化通过；9/9 测试通过 |
+| Compose 配置与 Agent 镜像 | 执行 Compose 配置检查和 `docker compose --profile deployment build deployment-agent` | 配置有效；最终提交标记 Agent 镜像构建成功，运行工具检查通过 |
+| 默认服务统一重建 | 注入 `APP_IMAGE_REVISION=3370c3fa283094bc629091414eae9d29eb63f101` 后执行 `docker compose up --build -d` | Backend、Frontend、Python Worker、Document Parser、Caddy 重建并启动；最终检查保持 healthy |
+| 数据库迁移 | 检查 Backend 启动日志和实际外部 MySQL 的 Flyway 历史 | 26 个迁移校验成功，Schema 从 V25 升级至 V26 |
+| 静态与工作区检查 | 执行 `git diff --check`、`git status --short` 和测试基准差异检查 | 无空白错误；报告提交前仅包含本报告变更 |
+
+### 测试过程问题与处理
+
+- 首次 Compose 重建因未设置必填的 `APP_IMAGE_REVISION` 失败；随后使用当前已测试 Git Commit 注入该变量，构建和启动成功，未将运行值写入仓库。
+- 端口 80/443 被非本项目容器 `docker-nginx-nginx-1` 占用；按仓库规则停止该容器后重新执行 Compose，项目服务启动成功。该非项目容器目前保持停止。
+- 首次 Frontend 容器仅挂载 `frontend` 目录，依赖仓库根文件的测试出现 `ENOENT`；改为挂载完整仓库后重新执行完整质量门，312/312 全部通过。
+- 代码复核发现本机部署重建 Backend 时，同步等待 Agent 响应会丢失部署结果；补充 Agent Job 注册表、Backend 定时对账、幂等与超时回收后，重新执行定向及完整 Backend/Agent 测试并通过。
+- 没有创建或遗留调试文件；测试密钥未输出、未写入仓库或临时文件；未删除、跳过或弱化既有测试。
+
+### 已知问题与限制
+
+- 实际 MySQL 已完成 V26 迁移，但本次没有可用的隔离外部 MySQL/PostgreSQL 组合执行真实跨库业务同步；复制路径由 H2 的 MySQL/PostgreSQL 兼容模式覆盖，仍建议在独立真实数据库上补充双向 E2E。
+- 当前环境没有可用的真实 SSH 主机和 rootless Docker Socket；已完成 Agent 镜像、命令约束、认证、主机指纹和 Backend 集成模拟测试，但未执行真实远程 SSH 部署。
+- `FULL_REPLACE` 对单张表使用事务，不保证多表计划整体原子；MySQL 创建目标表的 DDL 也不是事务性的。失败后可从执行记录定位并重试未完成计划。
+- Agent Job 注册表位于内存。执行本机部署期间 Deployment Agent 必须持续运行；若 Agent 自身重启，Backend 会在 16 分钟后将任务标记失败并释放运行槽。
+- Frontend 构建仍输出既有运行配置脚本、第三方 PURE 注释和大分块警告；构建、测试与 E2E 均通过，本次未修改这些非相关问题。
+
+### 下次测试建议
+
+- 在隔离的真实 MySQL 和 PostgreSQL 中执行双向同步矩阵，覆盖大表分页、字符集、时区、Decimal 精度、二进制字段、断线重试和三种策略的数据一致性。
+- 在受控 SSH 主机上部署 rootless Docker 与 Compose，分别验证密钥、密码、密钥口令、主机指纹变更、网络超时和远端服务重启后的结果对账。
+- 演练 Deployment Agent 在任务运行中重启，确认 16 分钟超时告警与人工重试流程；如需 Agent 重启后继续恢复，应将 Job 状态迁移到受保护的持久存储。
+- 对多表强一致场景评估快照、变更数据捕获或目标暂存表切换，不应直接把当前逐表事务扩展为跨数据库事务。
+
+### 回滚方式
+
+- 代码回滚按从新到旧顺序执行 `git revert 3370c3f`、`git revert 2c6939a`，不得使用强制重置；回滚后重新执行 Backend、Frontend、Agent 测试和 `docker compose up --build -d`。
+- V26 已在实际 MySQL 应用，不得删除或修改已执行迁移。仅回滚应用代码不会删除新增表；如确需物理回滚，先备份并确认无同步计划、执行历史和服务器配置数据，再由数据库管理员手工删除新增表。
+- 运行环境回滚后应检查 Flyway 兼容性、五个默认服务健康、入口 readiness 和部署记录状态；被停止的非项目 `docker-nginx-nginx-1` 是否恢复由其所属项目负责人决定。
+
 ## Rootless 插件适配器运行验收（2026-09-06）
 
 ### Git 基准点
