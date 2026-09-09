@@ -65,7 +65,7 @@ export default {
     operations: '智能运营',
     collapse: '收起侧边栏',
     expand: '展开侧边栏',
-    items: { ai: 'AI 能力', aiChat: 'AI 对话', system: '系统管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', automation: '自动化', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', workflow: '工作流', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowConnections: '连接配置', workflowCanvas: '画布管理' }
+    items: { ai: 'AI 能力', aiChat: 'AI 对话', system: '系统管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', automation: '自动化', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', workflow: '工作流', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowConnections: '连接配置', workflowCanvas: '画布管理' }
   },
   common: {
     confirm: '确认',
@@ -449,6 +449,12 @@ export default {
       PLUGIN_AGENT_STRATEGY: { name: '插件 Agent 策略', description: '在 Base AI 限制下运行固定版本 Agent 策略' },
       PLUGIN_EXTENSION: { name: '插件扩展', description: '运行固定版本扩展或 OAuth 生命周期组件' }
     }
+  },
+  dataSync: {
+    title: '数据同步', description: '选择源数据库和目标数据库中的表，按批次安全同步数据。', securityNotice: '同步不会记录行内容；目标连接必须显式开启允许写入。全量替换会清空目标表。', name: '计划名称', source: '源连接', target: '目标连接', strategy: '同步策略', schedule: 'Cron 调度', schedulePlaceholder: '留空表示仅手动执行，例如 0 0/10 * * * *', tables: '同步表', sourceTable: '源表', targetTable: '目标表', sourceRows: '源行数', readRows: '读取行数', writtenRows: '写入行数', warnings: '预检提示', noWarnings: '未发现问题', lastStatus: '最近状态', preview: '预检', run: '执行', retry: '重试', cancel: '取消', details: '运行明细', traceId: 'Trace ID', error: '错误', confirmDestructive: '我确认全量替换会清空目标表', strategies: { UPSERT: '按主键更新/插入', FULL_REPLACE: '全量替换', APPEND: '仅追加' }, warningCodes: { sourceTableNotFound: '源表不存在', targetTableWillBeCreated: '目标表将自动创建', unsupportedColumnType: '字段 {column} 类型不受支持', missingTargetColumn: '目标表缺少字段 {column}', columnTypeMismatch: '字段 {column} 类型不兼容', primaryKeyRequired: 'UPSERT 必须包含主键', columnMismatch: '字段配置不匹配' }, formRequired: '请填写计划、连接并选择表', loadFailed: '数据同步数据加载失败', previewFailed: '数据同步预检失败', saveFailed: '数据同步计划保存失败', runAccepted: '同步任务已启动', runFailed: '同步任务启动失败', cancelFailed: '同步任务取消失败'
+  },
+  servers: {
+    title: '服务器管理', description: '配置当前主机或 SSH 远程主机，并通过受控 Agent 部署 Compose 服务。', securityNotice: 'SSH 凭据加密保存；部署只允许固定的 Compose 操作，不接受任意 Shell 命令。', add: '新增服务器', edit: '编辑服务器', name: '名称', mode: '模式', host: '主机地址', port: 'SSH 端口', username: 'SSH 用户', authType: '认证方式', hostKey: 'Host Key 指纹', hostKeyPlaceholder: '完整 SHA256 指纹', privateKey: '私钥', passphrase: '私钥口令', password: '密码', workingDir: 'Compose 目录', composeFile: 'Compose 文件', testStatus: '测试状态', test: '测试连接', deploy: '部署', history: '部署历史', action: '动作', revision: '发布版本', revisionPlaceholder: 'Git Commit 或合法镜像标签', revisionInvalid: '请输入合法的镜像标签版本', startedAt: '开始时间', result: '结果', deployAccepted: '部署任务已启动', loadFailed: '服务器列表加载失败', saveFailed: '服务器保存失败', testFailed: '服务器测试失败', deployFailed: '部署失败'
   },
   workflowConnections: {
     title: '连接配置', description: '按数据库、向量数据库、缓存、对象存储、消息队列、Webhook 和其他类型管理工作流连接。', add: '新增连接', edit: '编辑连接', oauth: 'OAuth 授权', oauthFailed: '插件 OAuth 授权失败', oauthConnected: '插件 OAuth 凭据已连接',

@@ -3,6 +3,7 @@ package com.baseai.platform.service;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.domain.DictionaryData;
 import com.baseai.platform.domain.Menu;
+import com.baseai.platform.domain.Role;
 import com.baseai.platform.domain.SystemSetting;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.repository.DepartmentRepository;
@@ -24,6 +25,7 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.util.Base64;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,19 +55,21 @@ class DataInitializerTest {
 
     private PlatformProperties properties;
     private MenuRepository menuRepository;
+    private RoleRepository roleRepository;
     private UserRepository userRepository;
     private BCryptPasswordEncoder passwordEncoder;
     private DictionaryDataRepository dictionaryDataRepository;
     private SystemSettingRepository systemSettingRepository;
     private SystemSettingCacheService systemSettingCacheService;
     private DataInitializer initializer;
+    private List<Menu> savedMenus;
 
     /** 为每个管理员初始化场景准备有效安全配置和隔离仓储。 */
     @BeforeEach
     void setUp() {
         properties = validProperties();
         menuRepository = mock(MenuRepository.class);
-        RoleRepository roleRepository = mock(RoleRepository.class);
+        roleRepository = mock(RoleRepository.class);
         userRepository = mock(UserRepository.class);
         DepartmentRepository departmentRepository = mock(DepartmentRepository.class);
         DictionaryTypeRepository dictionaryTypeRepository = mock(DictionaryTypeRepository.class);
@@ -75,12 +79,14 @@ class DataInitializerTest {
         passwordEncoder = mock(BCryptPasswordEncoder.class);
 
         AtomicLong menuId = new AtomicLong();
+        savedMenus = new ArrayList<>();
         when(menuRepository.save(any())).thenAnswer(invocation -> {
             Menu menu = invocation.getArgument(0);
             if (menu.getId() == null) menu.setId(menuId.incrementAndGet());
+            savedMenus.add(menu);
             return menu;
         });
-        when(menuRepository.findAll()).thenReturn(List.of());
+        when(menuRepository.findAll()).thenAnswer(invocation -> List.copyOf(savedMenus));
         when(roleRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(departmentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(dictionaryTypeRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -267,6 +273,23 @@ class DataInitializerTest {
         assertFalse(permissions.contains("system:user:manage"));
         assertFalse(permissions.contains("system:role:manage"));
         assertFalse(permissions.contains("system:menu:manage"));
+    }
+
+    /** 内置运维角色默认获得数据同步和服务器管理权限，但不获得其他系统管理权限。 */
+    @Test
+    void seedsOperationsRoleWithSynchronizationAndDeploymentPermissions() {
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        initializer.run(null);
+
+        ArgumentCaptor<Role> captor = ArgumentCaptor.forClass(Role.class);
+        verify(roleRepository, atLeastOnce()).save(captor.capture());
+        Role operations = captor.getAllValues().stream().filter(role -> "OPS".equals(role.getCode())).findFirst().orElseThrow();
+        Set<String> permissions = operations.getMenus().stream().map(Menu::getPermission).collect(Collectors.toSet());
+        assertEquals("SELF", operations.getDataScope());
+        assertTrue(permissions.containsAll(Set.of("system:catalog", "data-sync:list", "data-sync:run",
+            "server:list", "server:deploy", "server:rollback")));
+        assertFalse(permissions.contains("system:user:list"));
     }
 
     /** 邮件管理必须位于系统与模型目录之间，并保持账户、路由的独立权限层级。 */

@@ -308,6 +308,20 @@ docker compose ps
 IP 学习和续期全部在 Caddy 容器中完成，直接使用标准 Docker Compose 命令即可，不需要宿主机脚本或额外运行时。
 默认 profile 只启动核心平台，不启用插件适配器。需要启用适配器时，将 `ADAPTER_DOCKER_SOCKET` 指向 rootless Docker Daemon，将 `ADAPTER_DOCKER_SOCKET_GID` 设为 Socket 的数字组 ID，配置插件密钥，然后执行 `docker compose --profile plugin-adapters up --build -d`。Broker 会在开放控制 Socket 前检查 Docker 的 `name=rootless` 安全选项，普通或不可用的 Daemon 会被拒绝。
 
+### 数据同步与服务器管理
+
+- 数据同步使用“工作流 / 连接管理”中的 MySQL 或 PostgreSQL 连接；目标连接必须显式启用 `allowWrite`。计划可选择表并使用 UPSERT、全量替换或追加策略，支持手动执行和 Spring 六段 Cron。全量替换必须再次确认，执行前会预检字段、类型和主键。
+- 管理员与内置 `OPS` 角色可使用数据同步和服务器管理；普通授权用户只能管理本人创建的计划、连接和服务器。SSH 私钥、密码、口令和 Host Key 配置使用平台 AES-GCM 密钥加密保存，列表仅返回掩码。
+- 服务器部署只接受 `docker-compose.yml` 或 `compose.yml`，只执行 Compose 校验和 `up -d --no-build`，不会执行任意 Shell。发布版本必须是合法 Docker 镜像标签，因此建议使用完整 Git Commit Hash。
+- 本地或 SSH 部署需要启用隔离 Agent。将 `DEPLOYMENT_DOCKER_SOCKET` 指向 rootless Docker Socket，设置对应数字组 ID 和至少 24 位随机内部令牌，然后执行：
+
+```bash
+export DEPLOYMENT_AGENT_INTERNAL_TOKEN="$(openssl rand -hex 32)"
+docker compose --profile deployment up --build -d
+```
+
+本地模式固定使用 Agent 内的 `/workspace`；`DEPLOYMENT_PROJECT_DIR` 决定其只读挂载来源。SSH 模式需填写远端绝对目录、SSH 账号及通过 `ssh-keygen -lf -E sha256` 核验的完整 Host Key 指纹。远端主机需预先安装 Docker Compose，并预拉取发布版本对应镜像。
+
 所有服务进入健康状态后，可访问：
 
 - Web 控制台：<https://127.0.0.1:444>

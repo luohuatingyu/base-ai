@@ -29,6 +29,8 @@ import WorkflowCanvasView from '../views/WorkflowCanvasView.vue'
 import WorkflowConnectionsView from '../views/WorkflowConnectionsView.vue'
 import KnowledgeBasesView from '../views/KnowledgeBasesView.vue'
 import WorkflowNodeDocsView from '../views/WorkflowNodeDocsView.vue'
+import DataSyncView from '../views/DataSyncView.vue'
+import ServersView from '../views/ServersView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -56,6 +58,8 @@ const router = createRouter({
         { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'model:route:list', navigable: true, desc: 'routes.description' } },
         { path: 'knowledge-bases', component: KnowledgeBasesView, meta: { permission: 'knowledge:base:list', navigable: true, desc: 'knowledgeBases.description' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'system:task:view', navigable: true, desc: 'tasks.description' } },
+        { path: 'data-sync', component: DataSyncView, meta: { permission: 'data-sync:list', navigable: true, desc: 'dataSync.description' } },
+        { path: 'servers', component: ServersView, meta: { permission: 'server:list', navigable: true, desc: 'servers.description' } },
         { path: 'api-keys', component: ApiKeysView, meta: { permission: 'system:api-key:list', navigable: true, desc: 'apiKeys.description' } },
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
         { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } },

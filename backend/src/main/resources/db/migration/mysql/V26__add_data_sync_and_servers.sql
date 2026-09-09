@@ -1,0 +1,102 @@
+CREATE TABLE IF NOT EXISTS data_sync_plan (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    name VARCHAR(120) NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    source_connection_id BIGINT NOT NULL,
+    target_connection_id BIGINT NOT NULL,
+    strategy VARCHAR(20) NOT NULL DEFAULT 'UPSERT',
+    schedule_cron VARCHAR(120) NULL,
+    enabled BIT(1) NOT NULL DEFAULT b'1',
+    voided BIT(1) NOT NULL DEFAULT b'0',
+    tables_json LONGTEXT NOT NULL,
+    last_scheduled_at DATETIME(6) NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (id),
+    CONSTRAINT fk_data_sync_plan_owner FOREIGN KEY (owner_user_id) REFERENCES sys_user(id),
+    CONSTRAINT fk_data_sync_plan_source FOREIGN KEY (source_connection_id) REFERENCES workflow_connection(id),
+    CONSTRAINT fk_data_sync_plan_target FOREIGN KEY (target_connection_id) REFERENCES workflow_connection(id),
+    INDEX idx_data_sync_plan_owner (owner_user_id, voided, enabled),
+    INDEX idx_data_sync_plan_schedule (voided, enabled, schedule_cron)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS data_sync_run (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    plan_id BIGINT NOT NULL,
+    trace_id VARCHAR(36) NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    total_tables INT NOT NULL DEFAULT 0,
+    completed_tables INT NOT NULL DEFAULT 0,
+    read_rows BIGINT NOT NULL DEFAULT 0,
+    written_rows BIGINT NOT NULL DEFAULT 0,
+    error_message VARCHAR(1000) NULL,
+    started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    finished_at DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_data_sync_run_trace UNIQUE (trace_id),
+    CONSTRAINT fk_data_sync_run_plan FOREIGN KEY (plan_id) REFERENCES data_sync_plan(id),
+    CONSTRAINT fk_data_sync_run_owner FOREIGN KEY (owner_user_id) REFERENCES sys_user(id),
+    INDEX idx_data_sync_run_plan (plan_id, started_at),
+    INDEX idx_data_sync_run_status (status, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS data_sync_run_table (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    run_id BIGINT NOT NULL,
+    source_table VARCHAR(300) NOT NULL,
+    target_table VARCHAR(300) NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    read_rows BIGINT NOT NULL DEFAULT 0,
+    inserted_rows BIGINT NOT NULL DEFAULT 0,
+    updated_rows BIGINT NOT NULL DEFAULT 0,
+    error_message VARCHAR(1000) NULL,
+    started_at DATETIME(6) NULL,
+    finished_at DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_data_sync_run_table_run FOREIGN KEY (run_id) REFERENCES data_sync_run(id),
+    INDEX idx_data_sync_run_table_run (run_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS managed_server (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    name VARCHAR(120) NOT NULL,
+    mode VARCHAR(12) NOT NULL,
+    host VARCHAR(255) NULL,
+    port INT NULL,
+    username VARCHAR(120) NULL,
+    config_encrypted LONGTEXT NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    enabled BIT(1) NOT NULL DEFAULT b'1',
+    voided BIT(1) NOT NULL DEFAULT b'0',
+    last_test_status VARCHAR(24) NULL,
+    last_test_error VARCHAR(500) NULL,
+    last_test_at DATETIME(6) NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (id),
+    CONSTRAINT fk_managed_server_owner FOREIGN KEY (owner_user_id) REFERENCES sys_user(id),
+    INDEX idx_managed_server_owner (owner_user_id, voided, enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS deployment_run (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    server_id BIGINT NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    trace_id VARCHAR(36) NOT NULL,
+    action VARCHAR(24) NOT NULL,
+    revision VARCHAR(128) NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    active_slot TINYINT NULL,
+    output_summary VARCHAR(2000) NULL,
+    error_message VARCHAR(1000) NULL,
+    started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    finished_at DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_deployment_run_trace UNIQUE (trace_id),
+    CONSTRAINT uk_deployment_run_active UNIQUE (server_id, active_slot),
+    CONSTRAINT fk_deployment_run_server FOREIGN KEY (server_id) REFERENCES managed_server(id),
+    CONSTRAINT fk_deployment_run_owner FOREIGN KEY (owner_user_id) REFERENCES sys_user(id),
+    INDEX idx_deployment_run_server (server_id, started_at),
+    INDEX idx_deployment_run_status (status, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

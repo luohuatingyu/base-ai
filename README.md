@@ -313,6 +313,20 @@ docker compose ps
 IP learning and renewal run entirely inside the Caddy container. Standard Docker Compose commands are sufficient; no host-side script or additional runtime is required.
 The default profile starts the core platform without plugin adapters. To enable adapters, point `ADAPTER_DOCKER_SOCKET` at a rootless Docker daemon, set `ADAPTER_DOCKER_SOCKET_GID` to the socket's numeric group ID, configure the plugin secrets, and run `docker compose --profile plugin-adapters up --build -d`. The Broker verifies Docker's `name=rootless` security option before opening its control sockets and refuses a conventional or unavailable daemon.
 
+### Data synchronization and server management
+
+- Data synchronization uses MySQL or PostgreSQL entries from Workflow / Connections. The target connection must explicitly enable `allowWrite`. Plans select tables and support UPSERT, full replacement, or append, with manual execution and Spring six-field Cron schedules. Full replacement requires reconfirmation, and columns, types, and keys are checked before writes.
+- Administrators and the built-in `OPS` role can use synchronization and server management. Other explicitly authorized users can only manage resources they own. SSH keys, passwords, passphrases, and host-key configuration are encrypted with the platform AES-GCM key, and list responses only contain masks.
+- Server deployment only accepts `docker-compose.yml` or `compose.yml` and only runs Compose validation or `up -d --no-build`; arbitrary shell commands are never accepted. Revisions must be valid Docker image tags, so a full Git commit hash is recommended.
+- Local or SSH deployment requires the isolated Agent. Point `DEPLOYMENT_DOCKER_SOCKET` at a rootless Docker socket, set its numeric group ID and a random internal token of at least 24 characters, then run:
+
+```bash
+export DEPLOYMENT_AGENT_INTERNAL_TOKEN="$(openssl rand -hex 32)"
+docker compose --profile deployment up --build -d
+```
+
+Local mode always uses `/workspace` inside the Agent; `DEPLOYMENT_PROJECT_DIR` selects its read-only source mount. SSH mode requires an absolute remote directory, an SSH account, and the complete host-key fingerprint verified with `ssh-keygen -lf -E sha256`. The remote host must have Docker Compose installed and the revision images pre-pulled.
+
 After all services are healthy:
 
 - Web console: <https://127.0.0.1:444>

@@ -120,6 +120,10 @@ public class WorkflowConnectionService {
         Integer references = jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM workflow_version_connection WHERE connection_id=?", Integer.class, id);
         if (references != null && references > 0) throw new BusinessException(409, "workflow.connectionInUse");
+        Integer syncReferences = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM data_sync_plan WHERE voided=false AND (source_connection_id=? OR target_connection_id=?)",
+            Integer.class, id, id);
+        if (syncReferences != null && syncReferences > 0) throw new BusinessException(409, "workflow.connectionInUse");
         jdbcTemplate.update("UPDATE workflow_connection SET enabled=false,voided=true,updated_at=NOW() WHERE id=?", id);
     }
 

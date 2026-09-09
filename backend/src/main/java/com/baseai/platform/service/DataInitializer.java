@@ -169,6 +169,7 @@ public class DataInitializer implements ApplicationRunner {
         adminRole.setDataScope("ALL");  // 数据权限范围：全部数据
         adminRole.setEnabled(true);
         roleRepository.save(adminRole);
+        seedOperationsRole(menus);
 
         // 第五步：初始化或更新默认管理员账户
         String username = properties.getSeed().getAdminUsername();
@@ -190,6 +191,26 @@ public class DataInitializer implements ApplicationRunner {
 
         // 启动时将数据库中的系统参数完整回填到运行时缓存。
         systemSettingCacheService.applyAll(systemSettingRepository.findAll());
+    }
+
+    /** 初始化只管理本人同步计划和服务器的内置运维角色，并保留其他既有授权。 */
+    private void seedOperationsRole(List<Menu> menus) {
+        Role operations = roleRepository.findByCode("OPS").orElseGet(() -> {
+            Role role = new Role();
+            role.setCode("OPS");
+            role.setName("系统运维");
+            return role;
+        });
+        LinkedHashSet<Menu> permissions = new LinkedHashSet<>(operations.getMenus());
+        menus.stream().filter(menu -> "system:catalog".equals(menu.getPermission())
+            || menu.getPermission() != null && (menu.getPermission().startsWith("data-sync:")
+            || menu.getPermission().startsWith("server:"))).forEach(permissions::add);
+        operations.setMenus(permissions);
+        operations.setDescription("系统内置数据同步与服务器运维角色");
+        operations.setDataScope("SELF");
+        operations.setSortOrder(20);
+        operations.setEnabled(true);
+        roleRepository.save(operations);
     }
 
     /** 首次创建时设置密码，并按显式开关将已有管理员密码同步为种子密码。 */
@@ -398,6 +419,17 @@ public class DataInitializer implements ApplicationRunner {
         menu(apiKeys.getId(), "更新 API Key", "BUTTON", null, null, null, "system:api-key:update", 322, false);
         menu(apiKeys.getId(), "吊销 API Key", "BUTTON", null, null, null, "system:api-key:delete", 323, false);
         menu(apiKeys.getId(), "轮换 API Key", "BUTTON", null, null, null, "system:api-key:rotate", 324, false);
+        // 数据同步计划和服务器部署管理页面
+        Menu dataSync = seedCrud(system, "数据同步", "/data-sync", "DataSyncView", "Refresh", "data-sync", 33);
+        menu(dataSync.getId(), "预览同步结构", "BUTTON", null, null, null, "data-sync:preview", 334, false);
+        menu(dataSync.getId(), "执行同步", "BUTTON", null, null, null, "data-sync:run", 335, false);
+        menu(dataSync.getId(), "取消同步", "BUTTON", null, null, null, "data-sync:cancel", 336, false);
+        menu(dataSync.getId(), "查看同步日志", "BUTTON", null, null, null, "data-sync:logs", 337, false);
+        Menu servers = seedCrud(system, "服务器管理", "/servers", "ServersView", "Monitor", "server", 34);
+        menu(servers.getId(), "测试服务器", "BUTTON", null, null, null, "server:test", 345, false);
+        menu(servers.getId(), "执行部署", "BUTTON", null, null, null, "server:deploy", 346, false);
+        menu(servers.getId(), "部署回滚", "BUTTON", null, null, null, "server:rollback", 347, false);
+        menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null, "server:logs", 348, false);
 
         // ========== 邮件管理模块（位于系统管理和模型管理之间） ==========
         Menu mail = menu(null, "邮件管理", "CATALOG", "/mail", null, "Message",

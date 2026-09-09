@@ -177,3 +177,6 @@ app:
     marketplace-probe-queue-capacity: ${WORKFLOW_MARKETPLACE_PROBE_QUEUE_CAPACITY:100}
     marketplace-probe-max-attempts: ${WORKFLOW_MARKETPLACE_PROBE_MAX_ATTEMPTS:3}
     marketplace-probe-retention-hours: ${WORKFLOW_MARKETPLACE_PROBE_RETENTION_HOURS:168}
+  deployment-agent:
+    url: ${DEPLOYMENT_AGENT_URL:}
+    internal-token: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:}

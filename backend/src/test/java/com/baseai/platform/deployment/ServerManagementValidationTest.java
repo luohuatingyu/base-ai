@@ -1,0 +1,120 @@
+package com.baseai.platform.deployment;
+
+import com.baseai.platform.automation.ConfigCryptoService;
+import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.service.TaskTraceService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+/** 覆盖服务器配置的模式、SSH 凭据和路径安全校验。 */
+class ServerManagementValidationTest {
+    private final ServerManagementService service = new ServerManagementService(Mockito.mock(JdbcTemplate.class),
+        new ObjectMapper(), new ConfigCryptoService(properties()), Mockito.mock(TaskTraceService.class),
+        Mockito.mock(ThreadPoolTaskExecutor.class), "", "");
+
+    /** 非法模式必须被拒绝。 */
+    @Test
+    void rejectsInvalidMode() {
+        ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SHELL", "", null, "", "KEY", "", "", "", "", "/opt/base-ai", "docker-compose.yml", true);
+        assertEquals("server.modeInvalid", assertThrows(BusinessException.class, () -> service.create(command)).getMessageKey());
+    }
+
+    /** SSH 配置必须有主机指纹和对应认证凭据。 */
+    @Test
+    void rejectsIncompleteSsh() {
+        ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SSH", "host", 22, "deploy", "KEY", "", "", "", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "/opt/base-ai", "docker-compose.yml", true);
+        assertEquals("server.privateKeyRequired", assertThrows(BusinessException.class, () -> service.create(command)).getMessageKey());
+    }
+
+    /** 密码认证必须提供密码，且 Host Key 不允许使用部分指纹。 */
+    @Test
+    void rejectsMissingPasswordAndPartialFingerprint() {
+        ServerModels.ServerCommand password = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+            "deploy", "PASSWORD", "", "", "", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "/opt/base-ai", "docker-compose.yml", true);
+        assertEquals("server.passwordRequired",
+            assertThrows(BusinessException.class, () -> service.create(password)).getMessageKey());
+        ServerModels.ServerCommand fingerprint = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+            "deploy", "KEY", "PRIVATE", "", "", "SHA256:AAAA", "/opt/base-ai", "docker-compose.yml", true);
+        assertEquals("server.hostKeyRequired",
+            assertThrows(BusinessException.class, () -> service.create(fingerprint)).getMessageKey());
+    }
+
+    /** Compose 目录不允许携带 Shell 元字符。 */
+    @Test
+    void rejectsUnsafePath() {
+        ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "LOCAL", "", null, "", "KEY", "", "", "", "", "/opt/base-ai;id", "docker-compose.yml", true);
+        assertEquals("server.invalid", assertThrows(BusinessException.class, () -> service.create(command)).getMessageKey());
+    }
+
+    /** SSH 用户名选项注入和包含父目录的路径必须被拒绝。 */
+    @Test
+    void rejectsUnsafeUsernameAndParentPath() {
+        ServerModels.ServerCommand username = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+            "-oProxyCommand=id", "KEY", "PRIVATE", "", "",
+            "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "/opt/base-ai", "docker-compose.yml", true);
+        assertEquals("server.sshRequired",
+            assertThrows(BusinessException.class, () -> service.create(username)).getMessageKey());
+        ServerModels.ServerCommand parentPath = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+            "deploy", "KEY", "PRIVATE", "", "", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "/opt/base-ai/../other", "docker-compose.yml", true);
+        assertEquals("server.invalid",
+            assertThrows(BusinessException.class, () -> service.create(parentPath)).getMessageKey());
+    }
+
+    /** 发布版本必须能直接作为 Docker 镜像标签使用。 */
+    @Test
+    void rejectsInvalidDockerTagRevision() {
+        ServerModels.DeploymentCommand command = new ServerModels.DeploymentCommand("DEPLOY", "registry:tag");
+        assertEquals("server.revisionInvalid",
+            assertThrows(BusinessException.class, () -> service.validateDeployment(command)).getMessageKey());
+    }
+
+    /** 切换认证方式时不得错误复用另一种认证的旧凭据。 */
+    @Test
+    void rejectsCredentialTypeChangeWithoutNewCredential() throws Exception {
+        JsonNode old = new ObjectMapper().readTree("""
+            {"mode":"SSH","host":"host","port":22,"username":"deploy","authType":"KEY",
+             "privateKey":"PRIVATE","password":"","passphrase":"","hostKey":"SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+             "workingDir":"/opt/base-ai","composeFile":"docker-compose.yml"}
+            """);
+        ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+            "deploy", "PASSWORD", "", "", "", "******", "/opt/base-ai", "docker-compose.yml", true);
+        JsonNode merged = service.merge(old, command);
+        assertEquals("server.passwordRequired",
+            assertThrows(BusinessException.class, () -> service.validateMergedCredential(command, merged)).getMessageKey());
+    }
+
+    /** 切换为本地模式时必须清除历史 SSH 凭据。 */
+    @Test
+    void clearsSshCredentialWhenSwitchingToLocalMode() throws Exception {
+        JsonNode old = new ObjectMapper().readTree("""
+            {"authType":"KEY","privateKey":"PRIVATE","password":"secret","passphrase":"phrase",
+             "hostKey":"SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+            """);
+        ServerModels.ServerCommand command = new ServerModels.ServerCommand("local", "LOCAL", "", null,
+            "", "", "", "", "", "", "/workspace", "docker-compose.yml", true);
+        JsonNode merged = service.merge(old, command);
+        assertEquals("", merged.path("privateKey").asText());
+        assertEquals("", merged.path("password").asText());
+        assertEquals("", merged.path("hostKey").asText());
+    }
+
+    /** 创建加密服务所需的固定测试密钥。 */
+    private static PlatformProperties properties() {
+        PlatformProperties properties = new PlatformProperties();
+        properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
+        return properties;
+    }
+}

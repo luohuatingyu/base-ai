@@ -128,6 +128,8 @@ services:
       N8N_PLUGIN_WORKER_INTERNAL_TOKEN: ${N8N_PLUGIN_WORKER_INTERNAL_TOKEN:?Set N8N_PLUGIN_WORKER_INTERNAL_TOKEN}
       ADAPTER_MANAGER_URL: ${ADAPTER_MANAGER_URL:-http://adapter-manager:8090}
       ADAPTER_MANAGER_INTERNAL_TOKEN: ${ADAPTER_MANAGER_INTERNAL_TOKEN:?Set ADAPTER_MANAGER_INTERNAL_TOKEN}
+      DEPLOYMENT_AGENT_URL: ${DEPLOYMENT_AGENT_URL:-http://deployment-agent:8091}
+      DEPLOYMENT_AGENT_INTERNAL_TOKEN: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:-}
       WORKFLOW_PLUGIN_WORKER_TIMEOUT_SECONDS: ${WORKFLOW_PLUGIN_WORKER_TIMEOUT_SECONDS:-240}
       JAVA_INSTANCE_ID: ${JAVA_INSTANCE_ID:-java-backend-1}
       LLM_ROUTE_HEALTH_CHECK_ENABLED: ${LLM_ROUTE_HEALTH_CHECK_ENABLED:-true}
@@ -193,6 +195,42 @@ services:
       retries: 10
     stop_signal: SIGTERM
     stop_grace_period: 20s
+    networks:
+      - app-network
+
+  deployment-agent:
+    profiles: ["deployment"]
+    build:
+      context: ./deployment-agent
+      args:
+        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
+        GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-deployment-agent:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-deployment-agent
+    restart: unless-stopped
+    mem_limit: ${DEPLOYMENT_AGENT_MEMORY_LIMIT:-256m}
+    cpus: ${DEPLOYMENT_AGENT_CPU_LIMIT:-1.0}
+    pids_limit: ${DEPLOYMENT_AGENT_PIDS_LIMIT:-128}
+    read_only: true
+    cap_drop:
+      - ALL
+    group_add:
+      - "${DEPLOYMENT_DOCKER_SOCKET_GID:-1000}"
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    environment:
+      DEPLOYMENT_AGENT_INTERNAL_TOKEN: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:-}
+    volumes:
+      - ${DEPLOYMENT_DOCKER_SOCKET:-/run/base-ai-disabled-docker.sock}:/var/run/docker.sock
+      - ${DEPLOYMENT_PROJECT_DIR:-.}:/workspace:ro
+    tmpfs:
+      - /tmp:size=32m,mode=1700,uid=10001
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8091/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - app-network
 

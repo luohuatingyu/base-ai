@@ -41,6 +41,7 @@ class WorkflowConnectionServiceTest {
             """);
         jdbcTemplate.execute("CREATE TABLE workflow_version(id BIGINT AUTO_INCREMENT PRIMARY KEY,graph_json CLOB)");
         jdbcTemplate.execute("CREATE TABLE workflow_version_connection(workflow_version_id BIGINT,connection_id BIGINT,security_revision BIGINT)");
+        jdbcTemplate.execute("CREATE TABLE data_sync_plan(id BIGINT AUTO_INCREMENT PRIMARY KEY,source_connection_id BIGINT,target_connection_id BIGINT,voided BOOLEAN DEFAULT FALSE)");
         PlatformProperties properties = new PlatformProperties();
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
         service = new WorkflowConnectionService(jdbcTemplate, new ObjectMapper(), new ConfigCryptoService(properties),
