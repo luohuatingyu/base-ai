@@ -7,6 +7,7 @@ const automationStyles = readFileSync(new URL('../src/automation.css', import.me
 const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
 const languageSwitcherSource = readFileSync(new URL('../src/components/LanguageSwitcher.vue', import.meta.url), 'utf8')
+const sidebarThemeSwitcherSource = readFileSync(new URL('../src/components/SidebarThemeSwitcher.vue', import.meta.url), 'utf8')
 const zhLocaleSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const enLocaleSource = readFileSync(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
 const menuNodeSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
@@ -109,6 +110,22 @@ test('收缩侧边栏的菜单宽度适配内层可用空间，图标保持居�
   assertDeclarations(globalStyles, '.sidebar--collapsed .nav .el-menu-item,\n.sidebar--collapsed .nav .el-sub-menu__title', [/padding:\s*0\s*!important/, /justify-content:\s*center/])
 })
 
+test('侧边栏提供三套可持久化主题并同步桌面与移动端入口', () => {
+  assert.equal((adminLayoutSource.match(/<SidebarThemeSwitcher\b/g) || []).length, 2)
+  assert.match(adminLayoutSource, /:class="\[sidebarThemeClass, \{ 'sidebar--collapsed': sidebarCollapsed \}\]"/)
+  assert.match(adminLayoutSource, /<el-drawer[^>]*:class="\['mobile-nav-drawer', sidebarThemeClass\]"/)
+  assert.match(adminLayoutSource, /loadSidebarTheme\(sidebarThemeStorageKey\)/)
+  assert.match(adminLayoutSource, /persistSidebarTheme\(sidebarThemeStorageKey, theme\)/)
+  assert.match(sidebarThemeSwitcherSource, /:aria-label="t\('nav\.theme'\)"/)
+  assert.match(sidebarThemeSwitcherSource, /v-for="theme in SIDEBAR_THEMES"/)
+  assertDeclarations(globalStyles, '.sidebar-theme--midnight', [/--sidebar-background:/, /--sidebar-active-background:/])
+  assertDeclarations(globalStyles, '.sidebar-theme--cloud', [/--sidebar-background:/, /--sidebar-active-background:/])
+  assertDeclarations(globalStyles, '.sidebar-theme--aurora', [/--sidebar-background:/, /--sidebar-active-background:/])
+  assertDeclarations(globalStyles, '.mobile-nav-drawer .el-drawer__body', [/background:\s*var\(--sidebar-background\)/, /color:\s*var\(--sidebar-text\)/])
+  assert.match(zhLocaleSource, /themes:\s*\{ midnight: '暗夜蓝', cloud: '云雾白', aurora: '极光紫' \}/)
+  assert.match(enLocaleSource, /themes:\s*\{ midnight: 'Midnight Blue', cloud: 'Cloud White', aurora: 'Aurora Violet' \}/)
+})
+
 test('英文导航为长名称保留空间且文本不会撑破侧栏', () => {
   // 侧栏宽度由语言注册表按 code 提供：英文更宽，中文较窄
   const registrySource = readFileSync(new URL('../src/locales/registry.js', import.meta.url), 'utf8')
@@ -133,7 +150,7 @@ test('溢出提示统一使用深色可复制的 Element Plus Tooltip', () => {
   assert.match(appSource, /tooltipOptions:\s*\{[\s\S]*?enterable:\s*true[\s\S]*?popperClass:\s*'copyable-tooltip'/)
   assert.equal((menuNodeSource.match(/<el-tooltip\b/g) || []).length, 2, '侧栏菜单应统一使用 Element Plus Tooltip')
   assert.doesNotMatch(menuNodeSource, /<span\s+:title=/, '侧栏菜单不应继续使用浏览器原生 title')
-  assert.match(adminLayoutSource, /<el-tooltip[^>]*popper-class="copyable-tooltip"[\s\S]*?<button class="collapse-trigger"/)
+  assert.match(adminLayoutSource, /<el-tooltip[^>]*popper-class="copyable-tooltip"[\s\S]*?<button[\s\S]*?class="collapse-trigger"/)
   assert.doesNotMatch(adminLayoutSource, /<button class="collapse-trigger"[^>]*:title=/, '折叠按钮不应继续使用浏览器原生 title')
   assert.doesNotMatch(menusViewSource, /<span\s+:title="localizedName/, '菜单名称应复用全局表格溢出提示')
   assertDeclarations(globalStyles, '.copyable-tooltip', [/user-select:\s*text/, /cursor:\s*text/])

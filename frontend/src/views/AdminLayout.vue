@@ -1,6 +1,10 @@
 <template>
   <el-container class="shell">
-    <el-aside :width="sidebarCollapsed ? '64px' : expandedSidebarWidth" class="sidebar" :class="{ 'sidebar--collapsed': sidebarCollapsed }">
+    <el-aside
+      :width="sidebarCollapsed ? '64px' : expandedSidebarWidth"
+      class="sidebar"
+      :class="[sidebarThemeClass, { 'sidebar--collapsed': sidebarCollapsed }]"
+    >
       <div class="sidebar-brand">
         <div class="logo">
           <span>{{ appConfig.shortName }}</span>
@@ -16,8 +20,19 @@
         </el-menu>
       </el-scrollbar>
       <div v-show="!sidebarCollapsed" class="sidebar-footer"><span>{{ t('nav.permissionEnabled') }}</span><small>{{ t('nav.permissionDesc') }}</small></div>
+      <SidebarThemeSwitcher
+        :model-value="sidebarTheme"
+        :collapsed="sidebarCollapsed"
+        @update:model-value="changeSidebarTheme"
+      />
       <el-tooltip :content="sidebarCollapsed ? t('nav.expand') : t('nav.collapse')" effect="dark" placement="right" :enterable="true" popper-class="copyable-tooltip">
-        <button class="collapse-trigger" @click="sidebarCollapsed = !sidebarCollapsed">
+        <button
+          type="button"
+          class="collapse-trigger"
+          :aria-label="sidebarCollapsed ? t('nav.expand') : t('nav.collapse')"
+          :aria-expanded="!sidebarCollapsed"
+          @click="sidebarCollapsed = !sidebarCollapsed"
+        >
           <el-icon><component :is="sidebarCollapsed ? Expand : Fold" /></el-icon>
         </button>
       </el-tooltip>
@@ -42,7 +57,7 @@
       </el-header>
       <el-main class="main"><router-view /></el-main>
     </el-container>
-    <el-drawer v-model="mobileNavigationOpen" class="mobile-nav-drawer" direction="ltr" :size="expandedSidebarWidth" :with-header="false">
+    <el-drawer v-model="mobileNavigationOpen" :class="['mobile-nav-drawer', sidebarThemeClass]" direction="ltr" :size="expandedSidebarWidth" :with-header="false">
       <div class="sidebar-brand">
         <div class="logo"><span>{{ appConfig.shortName }}</span><strong>{{ appConfig.nameEn }}</strong></div>
         <p>{{ t('nav.operations') }}</p>
@@ -55,6 +70,7 @@
         </el-menu>
       </el-scrollbar>
       <div class="sidebar-footer"><span>{{ t('nav.permissionEnabled') }}</span><small>{{ t('nav.permissionDesc') }}</small></div>
+      <SidebarThemeSwitcher :model-value="sidebarTheme" @update:model-value="changeSidebarTheme" />
     </el-drawer>
   </el-container>
 </template>
@@ -68,9 +84,11 @@ import { useAuthStore } from '../stores/auth'
 import { appConfig } from '../config'
 import MenuNode from '../components/MenuNode.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import SidebarThemeSwitcher from '../components/SidebarThemeSwitcher.vue'
 import { findLocale } from '../locales/registry'
 import { buildAccessibleNavigation, findNavigationItem, getNavigablePaths, localizeMenuName } from '../utils/navigation'
 import { localizeAuthenticatedUserDisplayName } from '../utils/localization'
+import { loadSidebarTheme, persistSidebarTheme } from '../utils/sidebarTheme'
 
 const { locale, t } = useI18n()
 const auth = useAuthStore()
@@ -78,6 +96,9 @@ const route = useRoute()
 const router = useRouter()
 const mobileNavigationOpen = ref(false)
 const sidebarCollapsed = ref(false)
+const sidebarThemeStorageKey = `${appConfig.code}-sidebar-theme`
+const sidebarTheme = ref(loadSidebarTheme(sidebarThemeStorageKey))
+const sidebarThemeClass = computed(() => `sidebar-theme--${sidebarTheme.value}`)
 // 侧栏展开宽度由语言注册表提供，长名称语言可配置更宽空间，新增语言无需改此处
 const expandedSidebarWidth = computed(() => findLocale(locale.value).sidebarExpandedWidth)
 
@@ -93,6 +114,11 @@ const title = computed(() => {
   const item = findNavigationItem(menuTree.value, route.path)
   return localizeMenuName(item || { path: route.path, name: appConfig.nameEn }, t)
 })
+
+/** 切换并持久化侧边栏主题，存储不可用时仍保留本次页面选择。 */
+function changeSidebarTheme(theme) {
+  sidebarTheme.value = persistSidebarTheme(sidebarThemeStorageKey, theme)
+}
 
 /** 处理用户菜单命令。 */
 async function handleCommand(command) {

@@ -65,6 +65,8 @@ export default {
     operations: 'Intelligent Operations',
     collapse: 'Collapse Sidebar',
     expand: 'Expand Sidebar',
+    theme: 'Sidebar Theme',
+    themes: { midnight: 'Midnight Blue', cloud: 'Cloud White', aurora: 'Aurora Violet' },
     items: { ai: 'AI Capabilities', aiChat: 'AI Chat', automation: 'Automation', workflow: 'Workflow', operations: 'Operations', monitoring: 'Monitoring and Audit', system: 'System Management', access: 'Access Control', organization: 'Organization', users: 'Users', roles: 'Roles', menus: 'Menus', departments: 'Departments', positions: 'Positions', dictionaries: 'Dictionaries', settings: 'System Settings', onlineUsers: 'Online Users', operationLogs: 'Operation Logs', loginLogs: 'Login Logs', tasks: 'Task Scheduling', dataSources: 'Data Source Management', dataSync: 'Data Synchronization', servers: 'Server Management', apiKeys: 'API Keys', mail: 'Mail Management', mailAccounts: 'Mail Accounts', mailRoutes: 'Mail Routes', models: 'Model Management', providers: 'Model Providers', modelConfig: 'Model Configuration', routes: 'Capability Routes', knowledgeBases: 'Knowledge Bases', apiTriggers: 'API Triggers', apiTriggerSecurity: 'Trigger Security', deviceAgents: 'Device Agents', workflowNodes: 'Node Management', workflowNodeDocs: 'Node Documentation', workflowCanvas: 'Canvas Management' }
   },
   common: {
