@@ -6,6 +6,8 @@ import hashlib
 import io
 import os
 import shutil
+import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
@@ -39,11 +41,23 @@ def upgrade(backend_url: str) -> str:
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise
+    _install(target)
     temporary = CURRENT_LINK.with_name("current.next")
     temporary.unlink(missing_ok=True)
     temporary.symlink_to(target)
     os.replace(temporary, CURRENT_LINK)
     return version
+
+
+def _install(target: Path) -> None:
+    """使用当前虚拟环境原子重装已校验版本，不解析任何远端依赖。"""
+    try:
+        subprocess.run([
+            sys.executable, "-m", "pip", "install", "--disable-pip-version-check",
+            "--no-deps", "--force-reinstall", str(target),
+        ], check=True, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exception:
+        raise RuntimeError("UPGRADE_INSTALL_FAILED") from exception
 
 
 def _download(url: str) -> bytes:

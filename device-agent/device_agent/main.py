@@ -68,10 +68,12 @@ class AgentRuntime:
         """执行不含设备控制动作的白名单命令并上报终态。"""
         command_id = int(command["commandId"])
         lease_token = str(command["leaseToken"])
+        command_type = str(command.get("commandType") or "")
         try:
-            summary = self._dispatch(str(command.get("commandType") or ""),
-                                     command.get("commandParams") or {})
+            summary = self._dispatch(command_type, command.get("commandParams") or {})
             self.backend.report_command(command_id, lease_token, "COMPLETED", summary)
+            if command_type == "UPGRADE":
+                self.running = False
         except Exception as exception:
             code = str(exception)[:64] or "COMMAND_FAILED"
             self.backend.report_command(command_id, lease_token, "FAILED", "命令执行失败", code)
