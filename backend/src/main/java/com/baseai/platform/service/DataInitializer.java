@@ -365,10 +365,10 @@ public class DataInitializer implements ApplicationRunner {
      *
      * <p>该方法创建系统的所有菜单项，包括：
      * <ul>
+     *   <li>系统管理模块：访问控制、组织、字典和参数</li>
+     *   <li>运维管理模块：数据源、数据同步、服务器、设备 Agent、邮件和监控审计</li>
      *   <li>AI 能力模块：AI 对话、模型和知识库</li>
      *   <li>自动化模块：接口触发和工作流</li>
-     *   <li>运维管理模块：数据同步、服务器、设备 Agent 和监控审计</li>
-     *   <li>系统管理模块：访问控制、组织、字典、参数和邮件</li>
      * </ul>
      *
      * <p>菜单类型包括：
@@ -382,7 +382,7 @@ public class DataInitializer implements ApplicationRunner {
      */
     private void seedMenus() {
         // ========== AI 能力模块 ==========
-        Menu ai = menu(null, "AI 能力", "CATALOG", "/ai", null, "MagicStick", "ai:catalog", 10, true);
+        Menu ai = menu(null, "AI 能力", "CATALOG", "/ai", null, "MagicStick", "ai:catalog", 30, true);
         menu(ai.getId(), "AI 对话", "MENU", "/ai-chat", "AiChatView", "ChatDotRound", "ai:chat:invoke", 11, true);
         Menu model = menu(ai.getId(), "模型管理", "CATALOG", "/models", null, "Cpu",
             "ai:model:catalog", 20, true);
@@ -395,7 +395,7 @@ public class DataInitializer implements ApplicationRunner {
 
         // ========== 自动化模块 ==========
         Menu automation = menu(null, "自动化", "CATALOG", "/automation", null, "Operation",
-            "automation:catalog", 20, true);
+            "automation:catalog", 40, true);
         Menu trigger = menu(automation.getId(), "接口触发", "MENU", "/automation/api-triggers",
             "ApiTriggerView", "Promotion", "automation:api-trigger:list", 11, true);
         menu(trigger.getId(), "新增接口触发", "BUTTON", null, null, null,
@@ -447,7 +447,7 @@ public class DataInitializer implements ApplicationRunner {
 
         // ========== 运维管理模块 ==========
         Menu operations = menu(null, "运维管理", "CATALOG", "/operations", null, "Monitor",
-            "operations:catalog", 30, true);
+            "operations:catalog", 20, true);
         Menu dataSources = seedCrud(operations, "数据源管理", "/data-sources", "DataSourcesView", "Link",
             "operations:data-source", 11);
         menu(dataSources.getId(), "测试数据源", "BUTTON", null, null, null,
@@ -475,6 +475,13 @@ public class DataInitializer implements ApplicationRunner {
         // iOS 设备 Agent 只读管理设备和运行环境，不建立自动化控制会话。
         menu(operations.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
             "DeviceAgentsView", "Iphone", "operations:device-agent:list", 14, true);
+        // 邮件属于运维范畴，归入运维管理并排在服务器管理之后、监控审计之前。
+        Menu mail = menu(operations.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
+            "system:mail:catalog", 15, true);
+        seedCrud(mail, "邮箱配置", "/mail/accounts", "MailAccountsView", "MessageBox",
+            "system:mail:account", 41);
+        seedCrud(mail, "邮件路由", "/mail/routes", "MailRoutesView", "Promotion",
+            "system:mail:route", 42);
         Menu monitoring = menu(operations.getId(), "监控审计", "CATALOG", "/operations/monitoring",
             null, "DataAnalysis", "operations:monitoring:catalog", 20, true);
         Menu onlineUsers = menu(monitoring.getId(), "在线用户", "MENU", "/online-users",
@@ -492,7 +499,7 @@ public class DataInitializer implements ApplicationRunner {
 
         // ========== 系统管理模块 ==========
         Menu system = menu(null, "系统管理", "CATALOG", "/system", null, "Setting",
-            "system:catalog", 40, true);
+            "system:catalog", 10, true);
         Menu access = menu(system.getId(), "访问控制", "CATALOG", "/system/access", null, "Lock",
             "system:access:catalog", 10, true);
         seedCrud(access, "用户管理", "/users", "UsersView", "User", "system:user", 11);
@@ -517,12 +524,6 @@ public class DataInitializer implements ApplicationRunner {
         seedCrud(system, "字典管理", "/dictionaries", "DictionariesView", "Collection",
             "system:dictionary", 31);
         seedCrud(system, "系统参数", "/settings", "SettingsView", "Tools", "system:setting", 32);
-        Menu mail = menu(system.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
-            "system:mail:catalog", 40, true);
-        seedCrud(mail, "邮箱配置", "/mail/accounts", "MailAccountsView", "MessageBox",
-            "system:mail:account", 41);
-        seedCrud(mail, "邮件路由", "/mail/routes", "MailRoutesView", "Promotion",
-            "system:mail:route", 42);
 
     }
 

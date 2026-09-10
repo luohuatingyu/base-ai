@@ -318,7 +318,7 @@ class DataInitializerTest {
         Menu organization = menusByPermission.get("system:organization:catalog");
         Menu mail = menusByPermission.get("system:mail:catalog");
 
-        assertEquals(List.of("ai:catalog", "automation:catalog", "operations:catalog", "system:catalog"),
+        assertEquals(List.of("system:catalog", "operations:catalog", "ai:catalog", "automation:catalog"),
             List.of(ai, automation, operations, system).stream()
                 .sorted(java.util.Comparator.comparingInt(Menu::getSortOrder))
                 .map(Menu::getPermission).toList());
@@ -327,7 +327,7 @@ class DataInitializerTest {
         assertEquals(operations.getId(), monitoring.getParentId());
         assertEquals(system.getId(), access.getParentId());
         assertEquals(system.getId(), organization.getParentId());
-        assertEquals(system.getId(), mail.getParentId());
+        assertEquals(operations.getId(), mail.getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:data-source:list").getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:data-sync:list").getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:server:list").getParentId());
