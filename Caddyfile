@@ -53,6 +53,17 @@
 		respond "Not Found" 404
 	}
 
+	handle /agent-dist/root-ca.crt {
+		rewrite * /root.crt
+		root * /public-ca
+		file_server
+	}
+
+	handle_path /agent-dist/* {
+		root * /agent-dist
+		file_server
+	}
+
 	@api path /api/*
 	handle @api {
 		reverse_proxy backend:8080

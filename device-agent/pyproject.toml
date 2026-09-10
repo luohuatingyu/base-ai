@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "base-ai-device-agent"
+version = "1.0.0"
+description = "Base AI macOS iOS device management Agent"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.scripts]
+base-ai-device-agent = "device_agent.main:entrypoint"
+
+[tool.setuptools]
+packages = ["device_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -57,6 +57,8 @@ public class PlatformProperties {
     private LoginSecurity loginSecurity = new LoginSecurity();
     /** 浏览器跨域访问配置。 */
     private Cors cors = new Cors();
+    /** iOS 设备 Agent 通信、安全和发布配置。 */
+    private DeviceAgent deviceAgent = new DeviceAgent();
 
     public String getConfigEncryptionKey() { return configEncryptionKey; }
     public void setConfigEncryptionKey(String configEncryptionKey) { this.configEncryptionKey = configEncryptionKey; }
@@ -119,6 +121,10 @@ public class PlatformProperties {
     public Cors getCors() { return cors; }
     /** 设置浏览器跨域访问配置。 */
     public void setCors(Cors value) { cors = value; }
+    /** 返回 iOS 设备 Agent 配置。 */
+    public DeviceAgent getDeviceAgent() { return deviceAgent; }
+    /** 设置 iOS 设备 Agent 配置。 */
+    public void setDeviceAgent(DeviceAgent value) { deviceAgent = value; }
 
     public static class Token {
         private String secret;
@@ -206,6 +212,30 @@ public class PlatformProperties {
         public int getAuthenticationRequestMaxBytes() { return authenticationRequestMaxBytes; }
         /** 设置登录等匿名认证入口的正文上限。 */
         public void setAuthenticationRequestMaxBytes(int value) { authenticationRequestMaxBytes = value; }
+    }
+
+    /** 控制 iOS 设备 Agent 的签名与在线判定时限。 */
+    public static class DeviceAgent {
+        private int nonceTtlSeconds = 600;
+        private int signatureClockSkewSeconds = 300;
+        private int heartbeatStaleSeconds = 180;
+        private int pairingTtlSeconds = 900;
+        /** 返回 Nonce 防重放保留秒数。 */
+        public int getNonceTtlSeconds() { return nonceTtlSeconds; }
+        /** 设置 Nonce 防重放保留秒数。 */
+        public void setNonceTtlSeconds(int value) { nonceTtlSeconds = value; }
+        /** 返回签名时间戳最大偏差秒数。 */
+        public int getSignatureClockSkewSeconds() { return signatureClockSkewSeconds; }
+        /** 设置签名时间戳最大偏差秒数。 */
+        public void setSignatureClockSkewSeconds(int value) { signatureClockSkewSeconds = value; }
+        /** 返回心跳过期秒数。 */
+        public int getHeartbeatStaleSeconds() { return heartbeatStaleSeconds; }
+        /** 设置心跳过期秒数。 */
+        public void setHeartbeatStaleSeconds(int value) { heartbeatStaleSeconds = value; }
+        /** 返回配对码有效秒数。 */
+        public int getPairingTtlSeconds() { return pairingTtlSeconds; }
+        /** 设置配对码有效秒数。 */
+        public void setPairingTtlSeconds(int value) { pairingTtlSeconds = value; }
     }
 
     /** Backend 调用无网络解析容器时使用的协议与资源上限。 */

@@ -35,7 +35,8 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(traceIdInterceptor).order(Ordered.HIGHEST_PRECEDENCE).addPathPatterns("/api/**");
         registry.addInterceptor(authInterceptor).order(Ordered.HIGHEST_PRECEDENCE + 1).addPathPatterns("/api/**")
-            .excludePathPatterns("/api/auth/login", "/api/open/**", "/api/internal/**", "/api/workflow-hooks/**");
+            .excludePathPatterns("/api/auth/login", "/api/open/**", "/api/internal/**", "/api/workflow-hooks/**",
+                "/api/agent/ios-device/v1/**");
         registry.addInterceptor(httpRequestTraceInterceptor).order(Ordered.HIGHEST_PRECEDENCE + 2).addPathPatterns("/api/**");
     }
 

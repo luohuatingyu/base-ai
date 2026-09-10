@@ -1,0 +1,86 @@
+"""设备 Agent 后端协议客户端。"""
+
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any
+
+from .config import AgentConfig, load_secret
+from .signing import signed_headers
+
+
+class BackendError(RuntimeError):
+    """表示后端协议、网络或认证失败。"""
+
+    def __init__(self, code: str, status: int | None = None) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+@dataclass(slots=True)
+class BackendClient:
+    """封装签名请求和通用设备管理协议端点。"""
+
+    config: AgentConfig
+    timeout: float = 20.0
+
+    @classmethod
+    def claim(cls, backend_url: str, pairing_code: str) -> dict[str, Any]:
+        """用一次性配对码领取 Agent 身份与独立 Secret。"""
+        url = backend_url.rstrip("/") + "/api/agent/ios-device/v1/pairing/claim"
+        body = json.dumps({"pairingCode": pairing_code}, separators=(",", ":")).encode()
+        request = urllib.request.Request(url, data=body, method="POST", headers={
+            "Content-Type": "application/json", "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return json.loads(response.read())
+        except (urllib.error.URLError, ValueError) as exception:
+            raise BackendError("PAIRING_FAILED", getattr(exception, "code", None)) from exception
+
+    def request(self, method: str, path: str, payload: Any | None = None) -> Any:
+        """发送一次 HMAC 签名 JSON 请求。"""
+        url = self.config.backend_url.rstrip("/") + "/api/agent/ios-device/v1" + path
+        body = b"" if payload is None else json.dumps(payload, separators=(",", ":")).encode()
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        headers.update(signed_headers(method, url, body, self.config.agent_id,
+                                      load_secret(self.config.agent_id)))
+        request = urllib.request.Request(url, data=body if method.upper() != "GET" else None,
+                                         method=method.upper(), headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                raw = response.read()
+                return None if not raw else json.loads(raw)
+        except urllib.error.HTTPError as exception:
+            if exception.code == 204:
+                return None
+            raise BackendError("BACKEND_HTTP_ERROR", exception.code) from exception
+        except (urllib.error.URLError, ValueError) as exception:
+            raise BackendError("BACKEND_UNAVAILABLE") from exception
+
+    def health(self, payload: dict[str, Any]) -> None:
+        """上报 Agent 健康快照。"""
+        self.request("POST", "/health", payload)
+
+    def diagnostics(self, payload: dict[str, Any]) -> None:
+        """上报只读诊断结果。"""
+        self.request("POST", "/diagnostics", payload)
+
+    def synchronize_devices(self, devices: list[dict[str, Any]]) -> None:
+        """同步完整匿名设备快照。"""
+        self.request("POST", "/devices/sync", {"devices": devices})
+
+    def lease_command(self, capabilities: list[str]) -> dict[str, Any] | None:
+        """领取一条能力匹配的管理命令。"""
+        return self.request("POST", "/commands/lease", {"capabilities": capabilities})
+
+    def report_command(self, command_id: int, lease_token: str, status: str,
+                       result_summary: str = "", error_code: str | None = None) -> None:
+        """上报命令终态和稳定错误码。"""
+        self.request("POST", f"/commands/{command_id}/result", {
+            "leaseToken": lease_token, "status": status,
+            "resultSummary": result_summary, "errorCode": error_code,
+        })

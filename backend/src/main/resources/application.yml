@@ -102,6 +102,11 @@ app:
     socket-path: ${DOCUMENT_PARSER_SOCKET:/run/document-parser/parser.sock}
     max-document-bytes: ${DOCUMENT_PARSER_MAX_BYTES:10485760}
     max-characters: ${DOCUMENT_PARSER_MAX_CHARACTERS:2000000}
+  device-agent:
+    nonce-ttl-seconds: ${DEVICE_AGENT_NONCE_TTL_SECONDS:600}
+    signature-clock-skew-seconds: ${DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS:300}
+    heartbeat-stale-seconds: ${DEVICE_AGENT_HEARTBEAT_STALE_SECONDS:180}
+    pairing-ttl-seconds: ${DEVICE_AGENT_PAIRING_TTL_SECONDS:900}
   seed:
     admin-username: ${APP_SEED_ADMIN_USERNAME:admin}
     admin-password: ${APP_SEED_ADMIN_PASSWORD}

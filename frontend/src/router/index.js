@@ -31,6 +31,7 @@ import KnowledgeBasesView from '../views/KnowledgeBasesView.vue'
 import WorkflowNodeDocsView from '../views/WorkflowNodeDocsView.vue'
 import DataSyncView from '../views/DataSyncView.vue'
 import ServersView from '../views/ServersView.vue'
+import DeviceAgentsView from '../views/DeviceAgentsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -63,6 +64,7 @@ const router = createRouter({
         { path: 'api-keys', component: ApiKeysView, meta: { permission: 'system:api-key:list', navigable: true, desc: 'apiKeys.description' } },
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
         { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } },
+        { path: 'automation/device-agents', component: DeviceAgentsView, meta: { permission: 'automation:device-agent:list', navigable: true, desc: 'deviceAgents.description' } },
         { path: 'workflow/nodes', component: WorkflowNodesView, meta: { permission: 'workflow:node:list', navigable: true, desc: 'workflowNodes.description' } },
         { path: 'workflow/node-docs', component: WorkflowNodeDocsView, meta: { permission: 'workflow:node:docs', navigable: true, desc: 'workflowNodeDocs.description' } },
         { path: 'workflow/connections', component: WorkflowConnectionsView, meta: { permission: 'workflow:connection:list', navigable: true, desc: 'workflowConnections.description' } },

@@ -65,7 +65,7 @@ export default {
     operations: '智能运营',
     collapse: '收起侧边栏',
     expand: '展开侧边栏',
-    items: { ai: 'AI 能力', aiChat: 'AI 对话', system: '系统管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', automation: '自动化', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', workflow: '工作流', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowConnections: '连接配置', workflowCanvas: '画布管理' }
+    items: { ai: 'AI 能力', aiChat: 'AI 对话', system: '系统管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', automation: '自动化', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflow: '工作流', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowConnections: '连接配置', workflowCanvas: '画布管理' }
   },
   common: {
     confirm: '确认',
@@ -455,6 +455,9 @@ export default {
   },
   servers: {
     title: '服务器管理', description: '配置当前主机或 SSH 远程主机，并通过受控 Agent 部署 Compose 服务。', securityNotice: 'SSH 凭据加密保存；部署只允许固定的 Compose 操作，不接受任意 Shell 命令。', add: '新增服务器', edit: '编辑服务器', name: '名称', mode: '模式', host: '主机地址', port: 'SSH 端口', username: 'SSH 用户', authType: '认证方式', hostKey: 'Host Key 指纹', hostKeyPlaceholder: '完整 SHA256 指纹', privateKey: '私钥', passphrase: '私钥口令', password: '密码', workingDir: 'Compose 目录', composeFile: 'Compose 文件', testStatus: '测试状态', test: '测试连接', deploy: '部署', history: '部署历史', action: '动作', revision: '发布版本', revisionPlaceholder: 'Git Commit 或合法镜像标签', revisionInvalid: '请输入合法的镜像标签版本', startedAt: '开始时间', result: '结果', deployAccepted: '部署任务已启动', loadFailed: '服务器列表加载失败', saveFailed: '服务器保存失败', testFailed: '服务器测试失败', deployFailed: '部署失败'
+  },
+  deviceAgents: {
+    title: '设备 Agent 管理', description: '集中配对 Mac Agent，查看匿名 iOS 设备清单、运行状态和只读诊断。', readOnlyNotice: '当前 Agent 为只读设备管理模式：不会安装或启动设备自动化组件，不会建立自动化会话，也不会接管正在被其他程序控制的设备。', add: '添加 Agent', deviceName: '设备名称', features: '功能', diagnostics: '只读诊断', autostart: '自动启动', version: '版本', lastOnline: '最近在线', lastSeen: '最近发现', model: '型号', connection: '连接方式', detect: '检测设备', upgrade: '升级 Agent', more: '更多', setDefault: '设为默认', revoke: '撤销', revoked: '已撤销', detailDescription: '设备信息由 devicectl 列表只读采集，原始 UDID 不上传。', readiness: '就绪状态', backendUrl: '回连地址', devices: 'iOS 设备', commands: '最近命令', command: '命令', createPairing: '生成配对码', installTitle: '在目标 Mac 安装', installNotice: '命令安装自包含 Python 3.12 运行时。请勿在当前被其他程序控制的设备上执行任何额外自动化命令；本 Agent 自身只读取设备列表。', copyCommand: '复制安装命令', copied: '安装命令已复制', copyFailed: '复制失败，请检查剪贴板权限', commandAccepted: '命令已下发', revokeConfirm: '撤销「{name}」后其 Secret 和未完成命令立即失效，确认继续？', loadFailed: '设备 Agent 数据加载失败', pairingFailed: '配对码创建失败', commandFailed: 'Agent 命令下发失败'
   },
   workflowConnections: {
     title: '连接配置', description: '按数据库、向量数据库、缓存、对象存储、消息队列、Webhook 和其他类型管理工作流连接。', add: '新增连接', edit: '编辑连接', oauth: 'OAuth 授权', oauthFailed: '插件 OAuth 授权失败', oauthConnected: '插件 OAuth 凭据已连接',

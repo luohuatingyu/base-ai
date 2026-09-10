@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.baseai.device-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__AGENT_PYTHON__</string>
+    <string>-m</string>
+    <string>device_agent.main</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key><string>__AGENT_CURRENT__</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>__AGENT_LOG__/agent.log</string>
+  <key>StandardErrorPath</key><string>__AGENT_LOG__/agent-error.log</string>
+</dict>
+</plist>

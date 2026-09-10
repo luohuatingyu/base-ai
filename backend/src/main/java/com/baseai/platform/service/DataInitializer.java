@@ -464,6 +464,9 @@ public class DataInitializer implements ApplicationRunner {
             "ApiTriggerSecurityView", "Lock", "automation:api-trigger-security:view", 52, true);
         menu(triggerSecurity.getId(), "更新接口触发安全配置", "BUTTON", null, null, null,
             "automation:api-trigger-security:update", 521, false);
+        // iOS 设备 Agent 只读管理设备和运行环境，不建立自动化控制会话。
+        menu(automation.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
+            "DeviceAgentsView", "Iphone", "automation:device-agent:list", 53, true);
 
         // ========== 工作流模块（与自动化平级） ==========
         Menu workflow = menu(null, "工作流", "CATALOG", "/workflow", null, "Operation", "workflow:catalog", 60, true);
