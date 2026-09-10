@@ -1,5 +1,74 @@
 # 最近分支覆盖测试报告
 
+## MacAir iOS 设备池离线修复验收（2026-09-10）
+
+### Git 基准点
+
+Commit: 3902fd54bcba7f0ff3882759856fa2eff3432880
+- 提交信息: Fix device registry tunnel bootstrap
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 修复 Device Agent 的 Registry 隧道引导循环依赖：本机发现到的候选设备即使尚未建立隧道，也会通过受限 Unix Socket 交给 root Helper 创建隧道。
+- 设备池在线状态仍严格依据 `devicectl` 的真实隧道状态，不会把已配对但当前不可用的设备伪造成在线。
+- 原始 UDID 仍仅存在于 Agent 内存和 root-owned 本机 IPC 中，后端同步、数据库和前端继续只使用匿名 SHA-256 设备标识。
+- 未修改后端、前端、配置、数据库迁移或依赖。回滚可执行 `git revert 3902fd54bcba7f0ff3882759856fa2eff3432880`，重新发布 Caddy Agent 包，并将 MacAir Agent 切回本机保留的旧版本。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 未建隧道的候选设备可引导 Registry | Agent 参数化单测输入 `connected=false` 候选设备 | 原始 UDID 进入本机 `RegistryConfig`，修复前稳定失败、修复后通过 | 正常、回归 |
+| 不伪造设备在线状态 | 同一单测检查离线候选的后端安全报告 | Registry 可接收候选，但报告中的 `connected` 仍为 `false` | 兼容、安全 |
+| 已连接和空设备池行为兼容 | 参数化单测输入已连接设备、空列表及在线/离线混合集合 | 已连接设备继续传递，空列表保持为空，发现顺序不变 | 边界、兼容 |
+| 原始设备标识不进入后端 | 设备发现既有隐私测试及 Registry 本机 IPC 测试 | 后端报告仅含匿名摘要，原始 UDID 仅交给本机 Helper | 安全、回归 |
+| MacAir 设备池不再循环离线 | 升级真实 MacAir Agent 后跨 3 次约 30 秒同步周期读取数据库 | iPhone 持续为 `AVAILABLE`；Registry 持续 `ONLINE` 且错误码为空 | 集成、真实设备、回归 |
+| 当前不可用设备保持离线 | macOS `devicectl list devices` 返回 iPad `unavailable` | iPad 保持 `OFFLINE`，未被修复逻辑错误标记在线 | 异常、兼容 |
+| 统一重建不夹带并发改动 | 功能提交干净 worktree 执行默认 Compose 重建 | Backend 测试、Frontend/Caddy 构建通过；Python Worker 因外部 Debian 索引 404 阻断，完整重建未通过 | 集成、环境限制 |
+
+### 测试执行结果
+
+- Mac Agent 完整 pytest：30/30 通过，通过率 100%；失败 0、错误 0、跳过 0。
+- 缺陷复现：新增参数化回归用例修复前 2/4 通过，两个包含未建隧道候选设备的分支按预期失败；修复后相关定向测试 9/9 通过。
+- Backend：功能提交干净 worktree 的 Docker 构建阶段运行 Maven 完整测试，765/765 通过，失败 0、错误 0、跳过 0。
+- Frontend：功能提交干净 worktree 的生产构建通过；Caddy 成功生成带校验清单的新 Agent 包。
+- 真实 MacAir：Agent 从 `20260910.0956+d37912b9621c` 升级到 `20260910.1243+0d19436782c2` 并成功重启；BaseAI Registry Helper 的受管进程包含 2 个脱敏设备参数。
+- 运行态连续 3 次同步中，iPhone 均为 `AVAILABLE`；Registry 均为 `ONLINE`、无 `REGISTRY_DEVICE_NOT_CONFIGURED`；iPad 由 macOS 报告为 `unavailable`，因此保持离线。
+- 默认服务完整 Compose 重建连续两次失败，失败数 2：均为未修改的 Python Worker 镜像执行 `apt-get update` 时 Debian `trixie/main` 索引经当前网络代理返回连接失败/404。该项未通过，不以 Caddy 单服务发布替代完整重建结果。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Agent 失败复现 | 临时 Python 3.12 venv 执行 `python -m pytest -q tests/test_main.py::test_registry_receives_all_discovered_devices` | 修复前 2/4 通过、2/4 按预期失败 |
+| Agent 定向回归 | 临时 Python 3.12 venv 执行 Registry、设备发现和主循环相关测试 | 9/9 通过 |
+| Agent 完整回归 | 临时 Python 3.12 venv 执行 `python -m pytest` | 30/30 通过 |
+| 默认服务统一重建 | 功能提交干净 worktree 两次执行 `APP_IMAGE_REVISION=<feature-commit> docker compose up --build -d` | 两次均在 Python Worker Debian 包索引下载处失败；Backend 765/765 与 Frontend/Caddy 构建已通过，容器替换前退出 |
+| Caddy Agent 包发布 | 使用已成功生成的功能提交 Caddy 镜像，以 `--no-build --no-deps` 恢复正式工作区挂载 | Caddy 使用完整功能提交镜像并健康，新 Agent 清单和包校验可下载 |
+| MacAir Agent 升级 | 通过 Agent 既有校验下载与原子切换机制升级，随后 kickstart 用户 LaunchAgent | 新版本生效，进程运行，Agent 标准输出和错误日志均为空 |
+| 真实运行态验证 | 跨 3 个同步周期读取 Registry 和匿名设备池状态，并用 `devicectl` 核对物理状态 | iPhone 持续在线；Registry 持续在线且无错误；iPad 的离线状态与 macOS `unavailable` 一致 |
+
+### 重测触发条件
+
+- 后续修改设备发现在线语义、Registry 候选过滤、root Helper 参数、匿名标识边界或 Agent 同步周期时，必须重新执行本节定向测试、完整 Agent pytest 和真实 Mac 运行态验证。
+- 网络恢复后必须重新执行 `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`，确认五个默认服务使用同一提交镜像并全部健康。
+
+### 已知问题
+
+- 完整 Compose 重建尚未通过，原因是外部 Debian 包索引连接失败/404；当前仅 Caddy 使用本次功能提交镜像，其他默认服务保持各自此前健康版本。
+- 本机还有第三方 AppleAuto/WeComRegistry 进程同样配置了 Registry 端口 `42314`；检查时该端口没有活动 TCP 监听，但未来两套 Registry 同时建立隧道时可能冲突。本次未停止或修改第三方服务，也未更改 BaseAI 配置。
+- 当前 iPad 被 macOS 明确报告为 `unavailable`，因此仍显示离线；需要唤醒设备、开启无线连接或接入 USB 后再验证其实际在线状态。
+- 共享工作区存在其他任务的未提交后端和前端变更；本次提交、干净构建和 Caddy 发布未包含这些文件。一次从共享工作区触发的依赖构建在发现范围风险后立即中止，未替换相关容器。
+
+### 下次测试建议
+
+- 网络恢复后完成统一 Compose 重建，并核对 Backend、Frontend、Python Worker、Document Parser、Caddy 的镜像 revision 全部一致。
+- 唤醒或连接 iPad 后连续观察两个同步周期，确认其从 `unavailable/OFFLINE` 转为 `connected/AVAILABLE`。
+- 在启用 WDA 前为 BaseAI Registry 分配未被 AppleAuto 使用的端口，或停止不再使用的第三方 Registry，再验证 `tunnelCount` 和 WDA 会话建立。
+
 ## 设备 Agent 全栈管理同步验收（2026-09-10）
 
 ### Git 基准点
