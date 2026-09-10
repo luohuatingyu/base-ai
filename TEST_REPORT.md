@@ -1,5 +1,78 @@
 # 最近分支覆盖测试报告
 
+## 服务器手工维护与实时资源监控验收（2026-09-10）
+
+### Git 基准点
+
+Commit: 10fa8374d387760a142382093b6df3c8ee03ed80
+- 提交信息: Add real-time server resource monitoring
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 服务器管理页提供明确的“新增服务器”入口，新记录默认使用 SSH 模式并由用户手工维护主机、端口、账号、认证方式、Host Key 指纹和凭据；既有 LOCAL 模式继续兼容。
+- 新增只读 `GET /api/servers/{id}/monitor` 接口，复用 `operations:server:test` 权限、资源所有权和启用状态校验，通过隔离 Deployment Agent 实时采集，不保存监控历史。
+- 实时快照包含 CPU 核数、使用率、1/5/15 分钟负载、内存、磁盘、运行时长，以及最多 200 个 Docker 容器的名称、镜像、运行状态、健康状态和状态描述。
+- Docker 不可用时返回 `PARTIAL` 并保留主机指标；Agent 故障、越界指标或异常响应统一降级为安全错误键，不向页面透传 SSH 内部失败详情。
+- 未新增依赖、配置、数据库字段或迁移。回滚可执行 `git revert 10fa8374d387760a142382093b6df3c8ee03ed80`，随后使用相同 Compose 命令重建服务。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 页面可手工新增 SSH 服务器 | Frontend 契约测试读取服务器页面，输入新增表单默认值与 SSH/LOCAL 选项 | 新增按钮受 create 权限控制；默认 SSH，手工字段完整，LOCAL 保持可选 | 正常、权限、兼容 |
+| SSH 表单拒绝缺失必填项 | Frontend 页面逻辑测试名称、主机、端口、账号、Host Key 及新凭据分支；Backend 既有校验套件覆盖非法配置 | 缺失字段不提交；新增或切换认证方式时必须填写对应凭据 | 边界、异常、安全 |
+| 弹窗实时展示基础资源 | Backend H2 + HTTP Agent 集成测试返回 CPU、负载、内存、磁盘和运行时长；Frontend 契约测试检查弹窗与刷新请求 | 打开或刷新时请求当前快照，指标结构化展示且不建立历史轮询或持久化 | 正常、兼容 |
+| 展示容器状态并兼容 Docker 不可用 | Go 解析测试输入运行/退出/健康容器及 Docker 错误；Backend `PARTIAL` 集成测试；Frontend 空集合和健康标签测试 | 最多返回 200 个容器；Docker 失败时主机指标仍可见并展示受限提示 | 正常、边界、异常 |
+| 权限、所有权和停用状态受控 | Controller 权限契约测试；Service 使用其他所有者、停用服务器和不存在编号 | 仅 server:test 权限可访问；越权、停用和不存在均在调用 Agent 前拒绝 | 权限、安全、异常 |
+| Agent 输入输出和 SSH 执行安全 | Go 测试覆盖 Bearer 鉴权、未知/多余 JSON、SSH 注入输入、Host Key 与凭据；Backend 覆盖越界指标及失败详情 | 仅执行固定只读脚本，SSH 继续固定指纹校验；非法响应不透传敏感细节 | 安全、边界、异常 |
+| 运行环境应用功能提交 | 使用功能提交完整哈希构建并启动默认服务，随后检查镜像、健康状态与网关健康接口 | 五个默认服务使用同一功能版本并健康；网关健康请求成功 | 集成、回归 |
+
+### 测试执行结果
+
+- 唯一可计数自动化测试共 1,098 个，通过 1,098 个，通过率 100%；失败 0；错误 0；跳过 0。
+- Backend：751/751，Maven 3.9.9 / Temurin 17 完整测试通过；服务器管理定向模块 17/17 通过，其中监控服务 5/5、接口契约 1/1、既有校验 11/11。
+- Frontend：331/331 覆盖率测试与 1/1 E2E 通过；ESLint、Vue 类型检查和生产构建通过。工具覆盖率为行 98.09%、分支 80.58%、函数 96.21%。
+- Deployment Agent：15/15 Go 测试通过；包含参数边界、鉴权、结构化解析、Docker 部分失败和真实 Linux 基础指标采集。
+- Agent 镜像构建成功；临时运行态探针返回 `PARTIAL`、8 核 CPU、有效内存/磁盘指标和空容器列表，符合未挂载 Docker Socket 的预期降级行为。
+
+### 关键模块测试
+
+- 服务器监控 Controller 与 Service：6/6 通过。
+- 服务器配置兼容与安全校验：11/11 通过。
+- Deployment Agent 全部测试：15/15 通过。
+- 服务器页面新增契约：3/3 通过；完整前端质量门全部通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Deployment Agent 完整测试 | 锁定 Go 1.26.6 Alpine 容器执行 `gofmt -w main.go main_test.go && go test ./...` | 15/15 通过；真实 Linux 采集用例通过 |
+| Backend 定向测试 | Maven 容器执行 `mvn test -B -Dtest='ServerManagementValidationTest,ServerManagementControllerTest,ServerManagementMonitorTest'` | 初版 16/16 通过；安全失败详情用例加入后由完整套件验证，模块最终 17/17 通过 |
+| Backend 完整测试 | 临时干净工作树使用 Maven 3.9.9 / Temurin 17 容器执行 `mvn test -B` | 751/751，BUILD SUCCESS；临时工作树和补丁均已清理 |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、类型检查、331/331 覆盖率测试、生产构建和 1/1 E2E 全部通过 |
+| Agent 镜像验证 | `docker compose --profile deployment build deployment-agent` | 镜像构建成功，镜像内 Go 测试通过 |
+| 默认服务统一重建 | 功能提交干净工作树执行 `APP_IMAGE_REVISION=<feature-commit> docker compose up --build -d`，正式工作区用同版本镜像重建绑定 | backend/caddy/document-parser/frontend/python-worker 均运行且健康，网关健康接口成功 |
+| Agent 运行态探针 | 临时容器设置测试令牌，调用 `/monitor` 的 LOCAL 模式且不挂载 Docker Socket | 返回有效主机指标和预期 `PARTIAL`；临时容器已停止并删除 |
+
+### 重测触发条件
+
+- 后续修改服务器配置模型、Controller 权限、Service 所有权或 Agent 响应校验、Deployment Agent SSH/采集脚本、服务器管理弹窗或容器状态映射时，必须重新执行本节定向用例和完整测试。
+
+### 已知问题
+
+- 当前本机 `.env` 未配置至少 24 位 `DEPLOYMENT_AGENT_INTERNAL_TOKEN`，因此可选 deployment profile 未常驻启动；使用监控前需按 README 生成内部令牌、配置 Docker Socket 并执行 `docker compose --profile deployment up --build -d`。
+- 首次在共享工作区执行统一重建时，被另一组尚未完成的 Device Agent 业务代码阻断编译；本功能随后在不包含该未提交改动的干净工作树中完成 751/751 测试与镜像构建，未修改或提交那些并发文件。
+- 未连接真实 SSH 主机，避免使用或新增外部凭据；SSH 参数、Host Key 固定校验、凭据分支与命令注入防护已由自动化测试覆盖。
+- Frontend 构建继续输出既有运行配置脚本、第三方 PURE 注释和大分块警告，构建成功且与本次功能无关。
+
+### 下次测试建议
+
+- 配置 rootless Docker Socket 与随机内部令牌后启用 deployment profile，在页面新增一台专用 SSH 测试机并实际刷新资源监控弹窗。
+- 分别使用无 server:test 权限、非资源所有者和停用服务器验证页面入口及接口拒绝行为，再使用 Docker 健康/不健康/重启中容器核对标签展示。
+
 ## 数据源维护操作栏显示修复验收（2026-09-10）
 
 ### Git 基准点
