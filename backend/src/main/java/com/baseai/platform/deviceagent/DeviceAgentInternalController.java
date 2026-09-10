@@ -15,12 +15,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class DeviceAgentInternalController {
     private final DeviceAgentRegistrationService registrationService;
     private final DeviceAgentCommandService commandService;
+    private final DeviceAgentAutomationConfigService automationConfigService;
+    private final DeviceAgentRegistryService registryService;
 
     /** 注入 Agent 注册配置和命令租约服务。 */
     public DeviceAgentInternalController(DeviceAgentRegistrationService registrationService,
-                                         DeviceAgentCommandService commandService) {
+                                         DeviceAgentCommandService commandService,
+                                         DeviceAgentAutomationConfigService automationConfigService,
+                                         DeviceAgentRegistryService registryService) {
         this.registrationService = registrationService;
         this.commandService = commandService;
+        this.automationConfigService = automationConfigService;
+        this.registryService = registryService;
     }
 
     /** 使用一次性配对码领取独立 Secret。 */
@@ -34,6 +40,25 @@ public class DeviceAgentInternalController {
     @GetMapping("/config")
     public DeviceAgentModels.AgentConfigView config(HttpServletRequest request) {
         return registrationService.agentConfig(agentId(request));
+    }
+
+    /** 拉取加密存储并经服务端解密的 WDA 有效配置。 */
+    @GetMapping("/wda-config")
+    public DeviceAgentModels.AgentWdaConfigView wdaConfig(HttpServletRequest request) {
+        return automationConfigService.get(agentId(request));
+    }
+
+    /** 拉取 Root Helper 使用的 Registry 端口和期望状态。 */
+    @GetMapping("/registry/config")
+    public DeviceAgentModels.AgentRegistryConfigView registryConfig(HttpServletRequest request) {
+        return registryService.agentConfig(agentId(request));
+    }
+
+    /** 上报 Registry 脱敏运行状态。 */
+    @PostMapping("/registry/status")
+    public void registryStatus(HttpServletRequest request,
+                               @RequestBody DeviceAgentModels.AgentRegistryStatusRequest body) {
+        registryService.report(agentId(request), body);
     }
 
     /** 上报 Agent 与工具链健康状态。 */

@@ -107,6 +107,7 @@ app:
     signature-clock-skew-seconds: ${DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS:300}
     heartbeat-stale-seconds: ${DEVICE_AGENT_HEARTBEAT_STALE_SECONDS:180}
     pairing-ttl-seconds: ${DEVICE_AGENT_PAIRING_TTL_SECONDS:900}
+    registry-default-port: ${DEVICE_AGENT_REGISTRY_DEFAULT_PORT:42314}
   seed:
     admin-username: ${APP_SEED_ADMIN_USERNAME:admin}
     admin-password: ${APP_SEED_ADMIN_PASSWORD}

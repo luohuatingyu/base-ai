@@ -220,6 +220,7 @@ public class PlatformProperties {
         private int signatureClockSkewSeconds = 300;
         private int heartbeatStaleSeconds = 180;
         private int pairingTtlSeconds = 900;
+        private int registryDefaultPort = 42314;
         /** 返回 Nonce 防重放保留秒数。 */
         public int getNonceTtlSeconds() { return nonceTtlSeconds; }
         /** 设置 Nonce 防重放保留秒数。 */
@@ -236,6 +237,10 @@ public class PlatformProperties {
         public int getPairingTtlSeconds() { return pairingTtlSeconds; }
         /** 设置配对码有效秒数。 */
         public void setPairingTtlSeconds(int value) { pairingTtlSeconds = value; }
+        /** 返回 Remote XPC Registry 默认端口。 */
+        public int getRegistryDefaultPort() { return registryDefaultPort; }
+        /** 设置 Remote XPC Registry 默认端口。 */
+        public void setRegistryDefaultPort(int value) { registryDefaultPort = value; }
     }
 
     /** Backend 调用无网络解析容器时使用的协议与资源上限。 */

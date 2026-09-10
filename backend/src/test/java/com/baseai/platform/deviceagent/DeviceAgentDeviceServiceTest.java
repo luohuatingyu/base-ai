@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -33,8 +34,19 @@ class DeviceAgentDeviceServiceTest {
             CREATE TABLE automation_device_agent_device (
               agent_id VARCHAR(64), device_id CHAR(64), device_name VARCHAR(128), model VARCHAR(80),
               platform VARCHAR(20), os_version VARCHAR(40), connected BOOLEAN, connection_type VARCHAR(16),
-              status VARCHAR(32), last_error_code VARCHAR(64), last_seen_at TIMESTAMP,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (agent_id, device_id))
+              status VARCHAR(32), wda_status VARCHAR(16), wda_running BOOLEAN, wda_local_port INT,
+              observed_wda_local_port INT, wda_port_error_code VARCHAR(64), last_error_code VARCHAR(64),
+              last_seen_at TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (agent_id, device_id), UNIQUE (agent_id, wda_local_port))
+            """);
+        db.execute("""
+            CREATE TABLE automation_device_agent_wda_config (
+              agent_id VARCHAR(64) PRIMARY KEY, base_wda_local_port INT)
+            """);
+        db.execute("""
+            CREATE TABLE automation_device_agent_audit (
+              id BIGINT AUTO_INCREMENT PRIMARY KEY, agent_id VARCHAR(64), event_type VARCHAR(64),
+              event_detail JSON, user_id BIGINT)
             """);
         DeviceAgentRegistrationService registration = mock(DeviceAgentRegistrationService.class);
         when(registration.requirePaired(anyString())).thenReturn(
@@ -65,6 +77,35 @@ class DeviceAgentDeviceServiceTest {
         assertThrows(BusinessException.class, () -> service.synchronize("ios-agent-test",
             new DeviceAgentModels.AgentDeviceInventoryRequest(List.of(
                 report(FIRST, "Phone A", true), report(FIRST, "Phone B", true)))));
+    }
+
+    /** 多设备同步必须从基准端口开始稳定分配互不冲突的 WDA 端口。 */
+    @Test
+    void assignsStableUniqueWdaPortsAndReturnsAssignments() {
+        DeviceAgentModels.AgentDeviceInventoryResponse first = service.synchronize("ios-agent-test",
+            new DeviceAgentModels.AgentDeviceInventoryRequest(List.of(
+                report(FIRST, "Phone A", true), report(SECOND, "Phone B", true))));
+        DeviceAgentModels.AgentDeviceInventoryResponse second = service.synchronize("ios-agent-test",
+            new DeviceAgentModels.AgentDeviceInventoryRequest(List.of(
+                report(FIRST, "Phone A", true), report(SECOND, "Phone B", true))));
+
+        assertEquals(2, first.devices().size());
+        assertNotEquals(first.devices().get(0).wdaLocalPort(), first.devices().get(1).wdaLocalPort());
+        assertEquals(first.devices(), second.devices());
+    }
+
+    /** 管理端不能把两台设备配置到相同 WDA 端口。 */
+    @Test
+    void rejectsConflictingManagedPort() {
+        service.synchronize("ios-agent-test", new DeviceAgentModels.AgentDeviceInventoryRequest(List.of(
+            report(FIRST, "Phone A", true), report(SECOND, "Phone B", true))));
+        Integer occupied = service.list("ios-agent-test").stream()
+            .filter(device -> FIRST.equals(device.deviceId())).findFirst().orElseThrow().wdaLocalPort();
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.updateWdaPort(
+            "ios-agent-test", SECOND,
+            new DeviceAgentModels.UpdateAgentDeviceWdaPortRequest(occupied), 7L));
+        assertEquals("deviceAgent.wdaPortConflict", exception.getMessageKey());
     }
 
     /** 构造不含原始 UDID 和控制状态的设备上报。 */

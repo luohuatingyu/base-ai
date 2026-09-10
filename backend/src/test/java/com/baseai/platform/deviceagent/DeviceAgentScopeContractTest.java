@@ -10,21 +10,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证通用设备 Agent 不重新引入企业微信或设备自动化控制范围。 */
+/** 验证通用设备 Agent 包含 WDA 自动化但不引入企业微信业务范围。 */
 class DeviceAgentScopeContractTest {
-    /** 命令和功能白名单不得包含 WDA、Appium、账号、好友或任务执行。 */
+    /** 命令和功能白名单包含通用自动化，但不得包含账号、好友或业务任务。 */
     @Test
     void protocolExcludesAutomationAndBusinessCommands() {
         String values = (DeviceAgentModels.VALID_FEATURES + " " + DeviceAgentModels.VALID_COMMAND_TYPES)
             .toUpperCase();
 
-        assertFalse(values.contains("WDA"));
-        assertFalse(values.contains("APPIUM"));
+        assertTrue(values.contains("WDA"));
+        assertTrue(values.contains("APPIUM"));
         assertFalse(values.contains("ACCOUNT"));
         assertFalse(values.contains("FRIEND"));
         assertFalse(values.contains("TASK_EXECUTION"));
         assertEquals(Set.of("DIAGNOSTICS", "UPDATE_CONFIG", "HEALTH_CHECK", "DETECT_SIGNING",
-            "DETECT_DEVICE", "UPGRADE", "UPDATE_BACKEND_URL"), DeviceAgentModels.VALID_COMMAND_TYPES);
+            "DETECT_DEVICE", "SETUP_WDA", "START_WDA", "REGISTRY_ONLINE", "REGISTRY_OFFLINE",
+            "REGISTRY_RECREATE", "UPGRADE", "UPDATE_BACKEND_URL"),
+            DeviceAgentModels.VALID_COMMAND_TYPES);
     }
 
     /** MySQL 迁移只创建 Agent、配对、状态、命令、设备和审计表。 */
@@ -43,5 +45,14 @@ class DeviceAgentScopeContractTest {
         assertFalse(migration.contains("appium"));
         assertFalse(migration.contains("friend"));
         assertFalse(migration.contains("account_id"));
+
+        try (var input = new ClassPathResource(
+            "db/migration/mysql/V31__add_device_agent_automation.sql").getInputStream()) {
+            migration = new String(input.readAllBytes(), StandardCharsets.UTF_8).toLowerCase();
+        }
+        assertTrue(migration.contains("signing_config_encrypted"));
+        assertTrue(migration.contains("automation_device_agent_registry"));
+        assertFalse(migration.contains("raw_udid"));
+        assertFalse(migration.contains("wecom"));
     }
 }

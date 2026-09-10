@@ -472,9 +472,17 @@ public class DataInitializer implements ApplicationRunner {
             "operations:server:rollback", 136, false);
         menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null,
             "operations:server:logs", 137, false);
-        // iOS 设备 Agent 只读管理设备和运行环境，不建立自动化控制会话。
-        menu(operations.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
+        // 设备 Agent 的高权限自动化动作与查看、配置和删除权限分离。
+        Menu deviceAgents = menu(operations.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
             "DeviceAgentsView", "Iphone", "operations:device-agent:list", 14, true);
+        menu(deviceAgents.getId(), "新增设备 Agent", "BUTTON", null, null, null,
+            "operations:device-agent:create", 141, false);
+        menu(deviceAgents.getId(), "修改设备 Agent", "BUTTON", null, null, null,
+            "operations:device-agent:update", 142, false);
+        menu(deviceAgents.getId(), "删除设备 Agent", "BUTTON", null, null, null,
+            "operations:device-agent:delete", 143, false);
+        menu(deviceAgents.getId(), "执行设备自动化", "BUTTON", null, null, null,
+            "operations:device-agent:execute", 144, false);
         // 邮件属于运维范畴，归入运维管理并排在服务器管理之后、监控审计之前。
         Menu mail = menu(operations.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
             "system:mail:catalog", 15, true);

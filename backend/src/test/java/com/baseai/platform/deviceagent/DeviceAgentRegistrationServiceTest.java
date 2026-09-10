@@ -59,11 +59,19 @@ class DeviceAgentRegistrationServiceTest {
             new DeviceAgentModels.ClaimPairingRequest(pairing.pairingCode())));
     }
 
-    /** 企业微信自动化能力必须在配对入口被拒绝。 */
+    /** 通用 WDA 自动化能力可配对，企业微信业务能力必须被拒绝。 */
     @Test
-    void pairingRejectsRemovedAutomationFeature() {
+    void pairingAcceptsAutomationAndRejectsBusinessFeature() {
+        DeviceAgentModels.CreatePairingResponse pairing = service.createPairing(
+            new DeviceAgentModels.CreatePairingRequest("ios-agent-agent",
+                List.of("APPIUM_WDA_AUTOMATION"), null, "Test Mac"), 7L, "127.0.0.1");
+        service.claim(new DeviceAgentModels.ClaimPairingRequest(pairing.pairingCode()));
+
+        assertEquals("ENABLED", db.queryForObject("""
+            SELECT feature_automation_status FROM automation_device_agent_registration WHERE agent_id=?
+            """, String.class, "ios-agent-agent"));
         BusinessException exception = assertThrows(BusinessException.class, () -> service.createPairing(
-            new DeviceAgentModels.CreatePairingRequest("ios-agent-test", List.of("APPIUM_WDA_AUTOMATION"),
+            new DeviceAgentModels.CreatePairingRequest("ios-agent-test", List.of("WECOM_ACCOUNT"),
                 null, "Test Mac"), 7L, "127.0.0.1"));
 
         assertEquals("deviceAgent.featureInvalid", exception.getMessageKey());
@@ -77,15 +85,17 @@ class DeviceAgentRegistrationServiceTest {
               device_name VARCHAR(128), pairing_status VARCHAR(16) DEFAULT 'PENDING',
               agent_secret_encrypted TEXT, backend_url VARCHAR(512),
               feature_diagnostics_status VARCHAR(16) DEFAULT 'ENABLED',
+              feature_automation_status VARCHAR(16) DEFAULT 'DISABLED',
               feature_autostart_status VARCHAR(16) DEFAULT 'DISABLED', last_online_at TIMESTAMP,
-              last_agent_version VARCHAR(40), last_heartbeat_status VARCHAR(16), available_versions JSON,
+              last_agent_version VARCHAR(40), last_xcuitest_driver_version VARCHAR(40),
+              last_heartbeat_status VARCHAR(16), available_versions JSON,
               last_error_code VARCHAR(64), is_default BOOLEAN DEFAULT FALSE, revoked_at TIMESTAMP,
               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
         db.execute("""
             CREATE TABLE automation_device_agent_pairing (
               id BIGINT AUTO_INCREMENT PRIMARY KEY, agent_id VARCHAR(64), code_hash CHAR(64) UNIQUE,
-              code_ciphertext TEXT, requested_features JSON, failed_attempts INT DEFAULT 0,
+              code_ciphertext TEXT, requested_features VARCHAR(1000), failed_attempts INT DEFAULT 0,
               expires_at TIMESTAMP, used_at TIMESTAMP, revoked_at TIMESTAMP, created_by BIGINT,
               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
@@ -103,7 +113,8 @@ class DeviceAgentRegistrationServiceTest {
             """);
         db.execute("""
             CREATE TABLE automation_device_agent_command (
-              id BIGINT AUTO_INCREMENT PRIMARY KEY, agent_id VARCHAR(64), command_type VARCHAR(32),
+              id BIGINT AUTO_INCREMENT PRIMARY KEY, agent_id VARCHAR(64), target_device_id CHAR(64),
+              command_type VARCHAR(32),
               command_params JSON, status VARCHAR(16) DEFAULT 'PENDING', lease_token VARCHAR(96),
               lease_expires_at TIMESTAMP, result_summary VARCHAR(2000), error_code VARCHAR(64),
               started_at TIMESTAMP, completed_at TIMESTAMP, created_by BIGINT,

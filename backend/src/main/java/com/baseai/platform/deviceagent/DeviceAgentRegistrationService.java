@@ -29,7 +29,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/** 管理通用只读设备 Agent 的配对、配置、健康和诊断状态。 */
+/** 管理通用设备自动化 Agent 的配对、功能、健康和诊断状态。 */
 @Service
 public class DeviceAgentRegistrationService {
     private static final Pattern AGENT_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{2,63}");
@@ -187,6 +187,13 @@ public class DeviceAgentRegistrationService {
             WHERE agent_id=?
             """, cryptoService.encrypt(agentSecret), pairing.agentId());
         db.update("UPDATE automation_device_agent_pairing SET used_at=CURRENT_TIMESTAMP(6) WHERE id=?", pairing.id());
+        db.update("""
+            UPDATE automation_device_agent_registration
+            SET feature_diagnostics_status=?, feature_automation_status=?, feature_autostart_status=?
+            WHERE agent_id=?
+            """, pairing.features().contains("READ_ONLY_DIAGNOSTICS") ? "ENABLED" : "DISABLED",
+            pairing.features().contains("APPIUM_WDA_AUTOMATION") ? "ENABLED" : "DISABLED",
+            pairing.features().contains("AUTOSTART") ? "ENABLED" : "DISABLED", pairing.agentId());
         audit(pairing.agentId(), "AGENT_PAIRING_CLAIMED", Map.of(), null, null);
         return new DeviceAgentModels.ClaimPairingResponse(pairing.agentId(), agentSecret,
             pairing.backendUrl(), pairing.features());
@@ -256,15 +263,17 @@ public class DeviceAgentRegistrationService {
         return existing.revokedAt() == null && "PAIRED".equals(existing.pairingStatus());
     }
 
-    /** 更新只读诊断和自启动功能状态。 */
+    /** 更新诊断、WDA 自动化和自启动功能状态。 */
     public void updateFeatures(String agentId, DeviceAgentModels.UpdateFeaturesRequest request) {
         requireExists(agentId);
         String diagnostics = featureStatus(request == null ? null : request.featureDiagnostics());
+        String automation = featureStatus(request == null ? null : request.featureAutomation());
         String autostart = featureStatus(request == null ? null : request.featureAutostart());
         db.update("""
             UPDATE automation_device_agent_registration
-            SET feature_diagnostics_status=?, feature_autostart_status=? WHERE agent_id=?
-            """, diagnostics, autostart, normalizeAgentId(agentId));
+            SET feature_diagnostics_status=?, feature_automation_status=?, feature_autostart_status=?
+            WHERE agent_id=?
+            """, diagnostics, automation, autostart, normalizeAgentId(agentId));
     }
 
     /** 撤销 Agent 并使所有待执行命令与配对码立即失效。 */
@@ -324,12 +333,13 @@ public class DeviceAgentRegistrationService {
         try {
             return db.queryForObject("""
                 SELECT agent_id, pairing_status, feature_diagnostics_status,
-                       feature_autostart_status, last_online_at
+                       feature_automation_status, feature_autostart_status, last_online_at
                 FROM automation_device_agent_registration
                 WHERE agent_id=? AND pairing_status='PAIRED' AND revoked_at IS NULL
                 """, (resultSet, rowNum) -> new DeviceAgentModels.AgentConfigView(
                 resultSet.getString("agent_id"), resultSet.getString("pairing_status"),
                 resultSet.getString("feature_diagnostics_status"),
+                resultSet.getString("feature_automation_status"),
                 resultSet.getString("feature_autostart_status"), instant(resultSet, "last_online_at")),
                 normalizeAgentId(agentId));
         } catch (EmptyResultDataAccessException exception) {
@@ -349,8 +359,8 @@ public class DeviceAgentRegistrationService {
         db.update("""
             UPDATE automation_device_agent_registration
             SET last_online_at=CURRENT_TIMESTAMP(6), last_agent_version=?, last_heartbeat_status=?,
-                available_versions=?, last_error_code=? WHERE agent_id=?
-            """, trim(request.agentVersion(), 40), status, versions,
+                last_xcuitest_driver_version=?, available_versions=?, last_error_code=? WHERE agent_id=?
+            """, trim(request.agentVersion(), 40), status, trim(request.xcuitestDriverVersion(), 40), versions,
             trim(request.lastErrorCode(), 64), normalized);
         db.update("""
             INSERT INTO automation_device_agent_state
@@ -451,7 +461,8 @@ public class DeviceAgentRegistrationService {
             resultSet.getLong("id"), resultSet.getString("agent_id"), resultSet.getString("device_name"),
             resultSet.getString("pairing_status"), instant(resultSet, "revoked_at"),
             instant(resultSet, "last_online_at"), resultSet.getString("last_agent_version"),
-            resultSet.getString("last_heartbeat_status"), resultSet.getString("feature_diagnostics_status"),
+            resultSet.getString("last_xcuitest_driver_version"), resultSet.getString("last_heartbeat_status"),
+            resultSet.getString("feature_diagnostics_status"), resultSet.getString("feature_automation_status"),
             resultSet.getString("feature_autostart_status"), instant(resultSet, "created_at"),
             instant(resultSet, "updated_at"), instant(resultSet, "last_auth_failure_at"),
             resultSet.getString("last_auth_failure_reason"), resultSet.getBoolean("is_default"),
@@ -508,7 +519,7 @@ public class DeviceAgentRegistrationService {
         return normalized;
     }
 
-    /** 校验只读管理功能，不接受自动化控制能力。 */
+    /** 校验设备管理功能，业务账号和任务能力不在白名单中。 */
     private List<String> normalizeFeatures(List<String> values) {
         List<String> normalized = values == null ? List.of("READ_ONLY_DIAGNOSTICS")
             : values.stream().filter(item -> item != null && !item.isBlank())

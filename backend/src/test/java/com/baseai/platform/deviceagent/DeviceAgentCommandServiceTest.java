@@ -12,14 +12,17 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /** 验证通用 Agent 命令白名单、租约令牌和身份隔离。 */
 class DeviceAgentCommandServiceTest {
+    private static final String DEVICE_ID = "a".repeat(64);
     private DeviceAgentCommandService service;
     private JdbcTemplate db;
 
@@ -32,26 +35,71 @@ class DeviceAgentCommandServiceTest {
         db = new JdbcTemplate(dataSource);
         db.execute("""
             CREATE TABLE automation_device_agent_command (
-              id BIGINT AUTO_INCREMENT PRIMARY KEY, agent_id VARCHAR(64), command_type VARCHAR(32),
+              id BIGINT AUTO_INCREMENT PRIMARY KEY, agent_id VARCHAR(64), target_device_id CHAR(64),
+              command_type VARCHAR(32),
               command_params JSON, status VARCHAR(16) DEFAULT 'PENDING', lease_token VARCHAR(96),
               lease_expires_at TIMESTAMP, result_summary VARCHAR(2000), error_code VARCHAR(64),
               started_at TIMESTAMP, completed_at TIMESTAMP, created_by BIGINT,
               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
+        db.execute("""
+            CREATE TABLE automation_device_agent_device (
+              agent_id VARCHAR(64), device_id CHAR(64), connected BOOLEAN,
+              wda_status VARCHAR(16), wda_running BOOLEAN, wda_port_error_code VARCHAR(64),
+              last_error_code VARCHAR(64), PRIMARY KEY (agent_id, device_id))
+            """);
+        db.update("""
+            INSERT INTO automation_device_agent_device
+              (agent_id, device_id, connected, wda_status, wda_running)
+            VALUES ('ios-agent-test', ?, TRUE, 'MISSING', FALSE)
+            """, DEVICE_ID);
         DeviceAgentRegistrationService registration = mock(DeviceAgentRegistrationService.class);
         when(registration.requirePaired(anyString())).thenReturn(
             new DeviceAgentRegistrationService.ExistingRegistration("PAIRED", null));
         service = new DeviceAgentCommandService(db, new ObjectMapper(), registration);
     }
 
-    /** WDA 和 Appium 命令必须被通用设备 Agent 拒绝。 */
+    /** 企业微信业务命令和缺少设备目标的 WDA 命令必须被拒绝。 */
     @Test
-    void rejectsRemovedDeviceControlCommands() {
-        for (String command : List.of("SETUP_WDA", "START_WDA", "REGISTRY_ONLINE", "VERIFY_ACCOUNT")) {
-            BusinessException exception = assertThrows(BusinessException.class, () -> service.create(
-                new DeviceAgentModels.CreateCommandRequest("ios-agent-test", command, Map.of()), 7L));
-            assertEquals("deviceAgent.commandInvalid", exception.getMessageKey());
-        }
+    void rejectsBusinessAndUntargetedDeviceCommands() {
+        BusinessException business = assertThrows(BusinessException.class, () -> service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "VERIFY_ACCOUNT", Map.of()), 7L));
+        BusinessException untargeted = assertThrows(BusinessException.class, () -> service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "SETUP_WDA", Map.of()), 7L));
+
+        assertEquals("deviceAgent.commandInvalid", business.getMessageKey());
+        assertEquals("deviceAgent.commandTargetInvalid", untargeted.getMessageKey());
+    }
+
+    /** WDA 安装和启动命令应绑定匿名目标，并把执行终态回写到目标设备。 */
+    @Test
+    void executesTargetedWdaLifecycleAndUpdatesDeviceState() {
+        DeviceAgentModels.AgentCommandView setup = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", DEVICE_ID,
+                "SETUP_WDA", Map.of()), 7L);
+        DeviceAgentModels.LeaseCommandResponse setupLease = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("SETUP_WDA")));
+        service.reportResult("ios-agent-test", setup.id(), new DeviceAgentModels.ReportCommandResultRequest(
+            setupLease.leaseToken(), "COMPLETED", "ready", null));
+
+        assertEquals(DEVICE_ID, setup.targetDeviceId());
+        assertEquals("READY", db.queryForObject("""
+            SELECT wda_status FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            """, String.class));
+        assertFalse(Boolean.TRUE.equals(db.queryForObject("""
+            SELECT wda_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            """, Boolean.class)));
+
+        DeviceAgentModels.AgentCommandView start = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", DEVICE_ID,
+                "START_WDA", Map.of()), 7L);
+        DeviceAgentModels.LeaseCommandResponse startLease = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("START_WDA")));
+        service.reportResult("ios-agent-test", start.id(), new DeviceAgentModels.ReportCommandResultRequest(
+            startLease.leaseToken(), "COMPLETED", "online", null));
+        assertTrue(Boolean.TRUE.equals(db.queryForObject("""
+            SELECT wda_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            """, Boolean.class)));
     }
 
     /** 合法命令应被单个 Agent 领取，并只能使用匹配租约回报。 */
