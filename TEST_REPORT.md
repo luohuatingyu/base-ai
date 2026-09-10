@@ -1,5 +1,85 @@
 # 最近分支覆盖测试报告
 
+## 数据库连接图标与 Agent 升级互斥验收（2026-09-10）
+
+### Git 基准点
+
+Commit: 194ead1568267edc94c145663543cc5466e2a35b
+- 提交信息: Correct device registry test report
+- 本次功能提交: `511c63bfb72fbb00782547b07d2c0201607a6de3`（Agent 升级互斥）、`16c78fe1defc88e650e193f6d091ff2e1f7c7e8e`（连接图标）
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 数据库连接选择器将 Kafka、Qdrant、Milvus、Tavily 替换为官方矢量标志；MySQL、PostgreSQL、Elasticsearch 保留既有品牌图形。
+- Redis、S3、RabbitMQ、Webhook、Plugin 使用明确的中性语义图标，避免在授权不明确时直接复制品牌商标；S3 继续使用存储桶语义图标。
+- Agent 命令创建和领取使用注册行锁串行化状态判断：有活动租约时拒绝创建升级命令，升级排队或执行时拒绝创建其他命令，升级命令优先领取且执行期间停止派发其他命令。
+- 保留普通非升级命令的既有领取行为；升级失败、完成或租约过期后恢复后续命令处理。
+- 未新增依赖、配置或数据库迁移。可分别执行 `git revert 16c78fe1defc88e650e193f6d091ff2e1f7c7e8e` 和 `git revert 511c63bfb72fbb00782547b07d2c0201607a6de3` 回滚，然后重新构建服务。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 有官方来源的连接类型显示对应标志 | Frontend Node 契约测试读取图标组件，检查 Kafka、Qdrant、Milvus、Tavily 官方路径签名 | 四类官方路径、填色和缩放映射存在，旧占位图形不存在；通过 | 正常、兼容、回归 |
+| 无明确授权的类型使用可辨识语义图标 | Frontend Node 契约测试读取 Redis、S3、RabbitMQ、Webhook、Plugin 映射 | 各类型使用独立语义图形，未知类型回退 Plugin；通过 | 正常、边界、兼容 |
+| 图标样式和分类导航行为不回归 | Frontend 完整测试输入全部十二种连接类型和七类分类 | 类型颜色、分类图标、编辑配置与页面导航保持既有行为；340/340 通过 | 正常、边界、回归 |
+| 活动任务期间不能发起升级 | Backend H2（MySQL 模式）Service 测试先领取普通命令，再创建 UPGRADE | 返回 409 `upgradeAgentBusy`，不新增升级命令；通过 | 状态冲突、并发、安全 |
+| 升级排队和执行期间独占 Agent | Backend Service 测试同时准备普通命令和升级命令，并模拟能力缺失、领取、完成 | 升级优先；无升级能力不能绕过；升级执行期间无其他租约；通过 | 正常、异常、兼容 |
+| 升级终态后恢复普通任务 | Backend Service 测试分别回报升级 COMPLETED、FAILED，并保留待处理普通命令 | 终态清除互斥，普通命令随后可领取；通过 | 异常、回归 |
+| 没有升级任务时保留普通领取行为 | Backend Service 测试领取普通命令后再次领取另一条普通命令 | 仍可按原行为领取，未扩大为全局单租约限制；通过 | 兼容、回归 |
+| 当前代码应用到运行环境 | 五个默认服务统一使用基准点标签启动，检查容器健康、网关和前端产物 | 五个服务均健康，revision 一致，健康接口 UP，首页 200，官方图标路径存在 | 集成、运行态、回归 |
+
+### 测试执行结果
+
+- 可计数的完整自动化测试共 1,111 个，通过 1,111 个，通过率 100%；失败 0、错误 0、跳过 0。
+- Backend 定向测试：`DeviceAgentCommandServiceTest` 8/8 通过；Backend 完整 Maven 测试 770/770 通过。
+- Frontend 图标与连接配置定向测试 7/7 通过；完整覆盖率测试 340/340 通过；E2E 1/1 通过；ESLint、Vue 类型检查和生产构建通过。
+- Frontend 覆盖率：分支 80.44%、函数 95.65%、行 98.24%。
+- 运行态：Backend、Frontend、Python Worker、Document Parser、Caddy 均为 healthy，镜像 revision 均为 `194ead1568267edc94c145663543cc5466e2a35b`；`GET /api/open/health/ready` 返回 `UP`，HTTPS 首页返回 200。
+- 默认 Compose 完整重建两次在未修改的 Python Worker `apt-get update` 阶段失败：当前网络代理对 Debian `trixie/main` ARM64 索引持续返回连接失败/404。已使用成功构建并测试的当前 Backend JAR、Frontend dist 和 Caddy 镜像，结合未变更的 Python Worker 基础镜像进行无网络组装，再执行 Compose 统一替换；运行环境已应用本次代码，但完整联网重建仍需网络恢复后复验。
+
+### 关键模块测试
+
+- `DataSourceTypeIcon.vue` 与连接配置契约：7/7 通过，覆盖官方路径、语义回退、分类导航、样式和配置兼容。
+- `DeviceAgentCommandServiceTest`：8/8 通过，覆盖创建冲突、领取优先级、能力缺失、成功/失败终态和普通命令兼容。
+- Backend 完整回归：770/770 通过，覆盖 Domain、Repository、Service、Controller 及数据库迁移契约。
+- Frontend 完整回归：340/340 加 1/1 E2E 通过，覆盖页面、权限、运行时配置和生产产物。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Frontend 缺陷复现 | 修改前新增官方路径契约断言并执行 `node --test tests/workflowConnectionConfig.test.js` | 新断言稳定失败，确认旧 Kafka、Qdrant、Milvus、Tavily 占位图形不符合预期 |
+| Frontend 定向回归 | `cd frontend && node --test tests/workflowConnectionConfig.test.js` | 7/7 通过 |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、类型检查、340/340 覆盖率测试、生产构建及 1/1 E2E 全部通过 |
+| Backend 定向回归 | Maven 3.9.9 / Temurin 17 容器执行 `mvn -B -ntp -s /tmp/settings.xml -Dtest=DeviceAgentCommandServiceTest test` | 8/8 通过 |
+| Backend 完整回归 | Maven 3.9.9 / Temurin 17 容器执行 `mvn -B -ntp -s /tmp/settings.xml test` | 770/770 通过，失败 0、错误 0、跳过 0 |
+| 默认服务完整重建 | 两次执行 `APP_IMAGE_REVISION=<feature-commit> docker compose up --build -d` | Backend 测试和多个镜像阶段通过，均由外部 Debian ARM64 包索引连接失败/404 阻断 |
+| 无网络运行态替换 | 复用已验证构建产物组装统一 revision 镜像，再执行 `APP_IMAGE_REVISION=<baseline> docker compose up -d --no-build` | 五个默认服务全部 healthy，统一 revision 生效 |
+| 网关与产物验证 | 请求 `/api/open/health/ready`、HTTPS 首页，并在 Frontend 容器检查四类官方 SVG 路径签名 | 健康接口 UP、首页 200、官方图标签名全部存在 |
+
+### 重测触发条件
+
+- 后续修改连接类型、图标路径、分类导航或品牌使用策略时，必须重新执行 Frontend 定向测试和完整质量门。
+- 后续修改 Agent 命令状态、租约期限、能力协商、升级流程或注册锁粒度时，必须重新执行 `DeviceAgentCommandServiceTest` 和 Backend 完整测试。
+- 网络恢复后必须重新执行 `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`，确认联网完整重建和五个默认服务健康。
+
+### 已知问题
+
+- 完整联网 Compose 重建仍受当前外部 Debian 镜像索引连接失败/404 阻断；该问题不来自本次代码，当前运行态通过复用已验证且对应源码未变更的基础镜像完成。
+- Frontend 生产构建仍输出既有的 runtime-config 非 module、PURE 注解和大 chunk 警告；未影响构建和测试，本次未扩大范围处理。
+- Redis、S3、RabbitMQ 当前使用语义图标而非品牌商标；后续确认官方素材及授权条件后可单独替换，其中 S3 按本次确认暂不处理为 AWS 品牌图标。
+- 未使用登录态浏览器逐项截图比较连接选择器；当前由源文件契约、完整 Frontend E2E 和容器生产产物签名共同验证。
+
+### 下次测试建议
+
+- 网络恢复后完成一次不复用运行镜像的完整 Compose 重建，并再次核对五个服务的 revision 和健康状态。
+- 使用不同尺寸和深浅主题实际打开连接选择器，确认官方多色图标的 24px 可读性和视觉对齐。
+- 增加两个并发事务同时创建 UPGRADE 与普通命令的数据库集成测试，进一步验证 MySQL `FOR UPDATE` 的竞争顺序。
+
 ## MacAir iOS 设备池离线修复验收（2026-09-10）
 
 ### Git 基准点
