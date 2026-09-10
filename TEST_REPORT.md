@@ -1,5 +1,53 @@
 # 最近分支覆盖测试报告
 
+## 导航目录调整验收：邮件管理移入运维管理（2026-09-10）
+
+### Git 基准点
+
+Commit: abb3202cb63024ab921b23be7a2f480e12a22d5f
+- 提交信息: Move mail management under operations and reorder top catalogs
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 「邮件管理」目录（`system:mail:catalog`，含邮箱配置、邮件路由）从「系统管理」移入「运维管理」，排序位于服务器管理之后、监控审计之前（sort_order 15）。
+- 一级目录顺序调整为：工作台之后依次为系统管理(10)、运维管理(20)、AI 能力(30)、自动化(40)。
+- 权限标识保持 `system:mail:*` 不变，不涉及权限编码迁移、前端路由或接口改动。
+- 无数据库迁移脚本：`DataInitializer.menu()` 按权限标识幂等更新现有菜单行的父级与排序，应用启动即自动纠正存量数据。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 邮件管理归入运维管理 | Backend 单测 `DataInitializerTest`（Mockito 隔离仓储）：执行 `run()` 捕获菜单保存值 | `system:mail:catalog` 的 parentId 等于 `operations:catalog` 的 id，邮箱配置仍为其子菜单 | 正常、回归 |
+| 一级目录顺序为系统管理、运维管理、AI 能力、自动化 | Backend 单测 `DataInitializerTest`：按 sortOrder 排序四个一级目录 | 顺序为 `system → operations → ai → automation` | 正常 |
+| 存量菜单数据自动纠正 | 启动后查询远程库 `sys_menu` | `system:mail:catalog` 父级为 `operations:catalog`、sort_order 15；一级排序 10/20/30/40 | 兼容、回归 |
+
+### 测试执行结果
+
+- Backend 完整测试：740/740 通过，通过率 100%；失败 0；错误 0；跳过 0。
+- Frontend：本次未改动前端代码，未重跑前端套件（导航为数据库驱动，前端无需变更）。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向测试 | Maven 容器执行 `mvn test -B -Dtest=DataInitializerTest` | 17/17 通过 |
+| Backend 完整测试 | Maven 3.9.9 / Temurin 17 容器执行 `mvn test -B` | 740/740，BUILD SUCCESS |
+| 服务统一重建 | `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` | 五个服务（backend/caddy/document-parser/frontend/python-worker）全部构建并健康 |
+| 存量数据验证 | 容器内 mysql 客户端只读查询远程库 `sys_menu` | 邮件管理父级与一级排序均符合预期 |
+
+### 已知问题
+
+- 无新增问题。主机未安装 Maven，测试通过官方 Maven 容器执行；`docker compose` 需要 `APP_IMAGE_REVISION` 环境变量，已按 README 设置为当前提交号。
+
+### 下次测试建议
+
+- 使用管理员账号在浏览器中刷新导航，目视确认「邮件管理」出现在「运维管理」且一级顺序正确。
+- 使用仅含 `system:mail:*` 授权的自定义角色登录，确认菜单裁剪行为不变。
+
 ## 数据源页面改版与健康状态监测验收（2026-09-10）
 
 ### Git 基准点
