@@ -1,5 +1,87 @@
 # 最近分支覆盖测试报告
 
+## 通用只读 iOS 设备 Agent 验收（2026-09-10）
+
+### Git 基准点
+
+Commit: 9229d238c01cfe975604d7d80db5ffef69334283
+- 提交信息: Fix device agent self-upgrade
+- 核心功能提交: e8f52114e819aa46f1f7fdf848f3233d97cc1530（Add read-only iOS device agent management）
+- 上一完整测试基准点: 3370c3fa283094bc629091414eae9d29eb63f101
+- 基准差异检查: `git diff 3370c3fa283094bc629091414eae9d29eb63f101 9229d238c01cfe975604d7d80db5ffef69334283 -- backend/src/main/java/` 包含设备 Agent 配对、认证、命令、设备池、管理接口、配置和权限菜单业务代码，已触发 Backend 完整测试。
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 新增通用只读 iOS 设备 Agent，不再以企业微信或 WDA 定义 Agent；功能明确不包含好友任务、账号绑定、业务任务执行、设备自动化会话和设备接管。
+- 新增 Flyway V27 MySQL 系统表，保存 Agent 注册、一次性配对、健康状态、白名单命令、匿名设备清单和审计记录；每 Agent HMAC Secret 使用平台 AES-GCM 密钥加密。
+- Agent 请求使用正文 SHA-256、时间戳、Nonce 和独立 HMAC 签名；Redis `SET NX` 防重放，撤销 Agent 后 Secret、未完成命令和未使用配对码立即失效。
+- Mac Agent 固定使用 Python 3.12 标准库，只调用 `devicectl list devices` 和环境版本查询；原始 UDID 仅在单次进程内存中参与 Agent 范围 SHA-256 计算，不落盘也不上传。
+- Caddy 构建并分发 Apple Silicon/Intel 双架构自包含 Python 3.12 运行时、安装脚本和校验和保护的 Agent 包；自升级先重装已校验版本，再切换链接并由 LaunchAgent 重启。
+- 前端新增“设备 Agent 管理”权限页面，支持配对、只读设备清单、健康/诊断、升级、默认实例、撤销和删除，并持续提示只读边界。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| Agent 数据属于 MySQL 系统功能 | Backend Schema 契约检查 V27；Compose 连接现有 MySQL 启动 Backend | 仅创建六类通用 Agent 表；Flyway 实际应用 V27 后再次校验 27 个迁移成功 | 正常、迁移、兼容、回归 |
+| 配对和通信凭据安全 | H2 Service 测试输入一次性配对码、重复领取、非法能力；Filter 测试输入有效 HMAC 和重复 Nonce | Secret 独立生成且仅加密落库；配对码不可复用；正文可重复读取；重放返回 401 | 正常、异常、权限、安全 |
+| Agent 不接管正在被其他程序控制的设备 | Java/Python 精确能力白名单测试和前端范围契约检查全部命令与端点 | 仅允许诊断、设备列表发现、健康、配置、改址和升级；不存在设备会话、账号、好友或业务任务执行能力 | 边界、权限、安全、回归 |
+| 设备清单匿名且支持完整快照 | H2 设备服务输入多设备、空快照、重复摘要；Python 模拟 devicectl 返回 USB/无线重复项和原始 UDID | 在线设备去重保存，缺失设备转离线；报告不含原始 UDID，非 iOS 设备被忽略 | 正常、边界、异常、隐私 |
+| 管理页面受权限保护 | Frontend 契约检查路由、导航、只读动作和旧自动化端点；运行态未登录访问管理接口 | 路由绑定 `automation:device-agent:list`；页面动作保持通用只读；未登录返回 401 | 正常、权限、安全、兼容 |
+| 安装与升级可验证和回滚 | Python 3.12 测试配置权限、签名、诊断、升级成功/失败；Caddy 包检查双架构运行时、包 SHA-256 和升级源码 | 配置权限为 0600；升级失败保留旧进程，成功先上报再退出；分发包校验和及双架构运行时完整 | 正常、异常、供应链、恢复 |
+
+### 测试执行结果
+
+- 可计数测试用例共 1,050 个，通过 1,050 个，通过率 100%；失败 0；错误 0；跳过 0。
+- Backend：724/724，Maven 3.9.9 / Temurin 17 完整测试套件通过；设备 Agent 定向测试 10/10，包含在完整套件中。
+- Frontend：316/316；ESLint、Vue 类型检查、315 个覆盖率测试、生产构建和 1 个 E2E 全部通过。工具函数覆盖率为行 98.02%、分支 80.19%、函数 96.09%。
+- Device Agent：Python 3.12 执行 10/10 pytest 通过；安装包构建、Shell 语法和 LaunchAgent Plist 校验通过。
+- Compose 配置、默认五服务统一重建、运行态健康、权限入口、镜像修订、Agent 分发包和 MySQL Flyway V27 均通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 设备 Agent 定向测试 | Maven 3.9.9 / Temurin 17 容器执行 `mvn -B -ntp -Dtest='DeviceAgent*Test' test` | 10/10，BUILD SUCCESS |
+| Backend 完整套件 | Maven 3.9.9 / Temurin 17 容器执行 `mvn test -B -ntp` | 724/724，BUILD SUCCESS |
+| Device Agent | Python 3.12 临时虚拟环境安装 `requirements-dev.in` 后执行 pytest，并关闭字节码与 pytest 缓存 | 10/10，通过；临时环境和仓库测试元数据均已清理 |
+| Frontend 完整质量门 | `cd frontend && npm test`，并单独复核覆盖率汇总 | ESLint、类型检查、315/315 覆盖率测试、生产构建和 1/1 E2E 全部通过 |
+| 静态配置 | `docker compose config --quiet`、`sh -n`、`plutil -lint`、`git diff --check` | Compose、两个安装脚本、LaunchAgent Plist 和空白检查均通过 |
+| 默认服务统一重建 | 注入 `APP_IMAGE_REVISION=9229d238c01cfe975604d7d80db5ffef69334283` 后执行 `docker compose up --build -d` | Backend、Frontend、Python Worker、Document Parser、Caddy 均构建并启动，最终全部 healthy |
+| 数据库迁移与入口 | 检查 Backend Flyway 日志并探测 HTTPS health、readiness、管理与 Agent 协议入口 | V27 首次应用成功，27 个迁移再次校验成功；health/readiness 200，未登录管理和未知 Agent 均 401 |
+| Agent 分发包 | Caddy 容器检查双架构运行时、包内文件、SHA-256、自升级重装和退出逻辑 | Python 3.12.8 双架构运行时完整；包校验和、自升级源码和五个镜像修订均通过 |
+
+### 测试过程问题与处理
+
+- 宿主 Python 3.12 未安装 pytest；使用 `/tmp` 下临时 Python 3.12 虚拟环境安装开发依赖，测试结束由退出钩子删除，没有遗留调试目录。
+- 首次 Agent 测试安装发现 setuptools 把 `launchd` 误判为顶层包；显式限定只打包 `device_agent` 后，安装和 10 个 Agent 测试全部通过。
+- 首次前端契约断言按完整 `/api` URL 和顶层路由编写，与项目 Axios Base URL、子路由约定不符；调整为既有项目约定后，定向及完整质量门通过，未弱化业务边界断言。
+- 首次运行态探测使用 README 示例端口 444，但当前 `.env` 实际配置为标准 443；改用 Compose 显示的实际端口后，全部入口探测通过，没有停止或修改其他项目容器。
+- 代码复核发现自升级仅切换版本链接会继续加载虚拟环境中的旧包；改为校验后重装、切换、上报并退出，补充成功与失败分支测试后重新构建，分发包检查通过。
+- 没有连接或控制实体 iOS 设备，没有创建自动化会话；未创建或遗留调试文件，未删除、跳过或弱化已有有效测试。
+
+### 已知问题与限制
+
+- 当前实体 iOS 设备正被其他程序控制，本次按用户要求未执行连接、配对、断连恢复或任何实体设备验证；服务端、协议和模拟 devicectl 数据均已验证，但不能据此宣称实体链路已验收。
+- 未在另一台目标 Mac 上真实执行一次性配对、Keychain 写入和 LaunchAgent 冷启动；目标 Mac 使用 Caddy 内部 CA 时，必须先安全安装平台公开根证书。
+- 当前 Agent 有意不提供任何 iOS 自动化或企业微信业务能力；好友任务、账号绑定、业务任务接口与页面不在本次范围内。
+- Frontend 构建继续输出既有运行配置脚本、第三方 PURE 注释和大分块警告；构建、测试与 E2E 均通过，本次未修改这些非相关问题。
+
+### 下次测试建议
+
+- 待设备空闲后，在隔离目标 Mac 上安装平台根证书并执行一次真实配对，验证 Keychain、LaunchAgent、心跳和匿名设备清单，不运行任何设备自动化工具。
+- 依次验证 USB/无线发现、拔线离线、重连恢复、多设备去重和原始 UDID 不出现在本地配置、后端响应、数据库及日志中。
+- 在已配对测试 Agent 上发布一个新包，验证升级成功重启、新版本心跳，以及校验和错误或安装失败时旧进程继续服务。
+
+### 回滚方式
+
+- 代码回滚按从新到旧顺序执行 `git revert 9229d23`、`git revert e8f5211`，不得强制重置；回滚后重新执行 Backend、Frontend、Device Agent 测试和 `docker compose up --build -d`。
+- V27 已在实际 MySQL 应用，不得删除或修改已执行迁移。仅回滚应用代码不会删除新增表；若确需物理删除，必须先备份并由数据库管理员确认没有 Agent 注册、审计和设备数据。
+- 运行环境回滚后应核对五个默认服务健康、镜像修订、Flyway 兼容性和入口权限边界；无需恢复或启动任何 iOS 设备控制程序。
+
 ## 数据同步与服务器管理验收（2026-09-09）
 
 ### Git 基准点
