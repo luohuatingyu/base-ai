@@ -1,5 +1,76 @@
 # 最近分支覆盖测试报告
 
+## 数据源查看权限包含维护能力验收（2026-09-10）
+
+### Git 基准点
+
+Commit: 3a048c940e32cd2b1642afe82df66fad2cf10450
+- 提交信息: Grant data source maintenance with view access
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 拥有 `operations:data-source:list` 的用户自动拥有数据源新增、编辑和删除能力；前端按钮展示与后端 `RequiredPermission` 校验使用相同推导规则，现有角色无需数据迁移即可生效。
+- 角色权限树在勾选或回显数据源查看权限时自动补齐新增、编辑和删除按钮权限；后端保存角色时再次归一化，防止绕过前端直接提交不完整权限集合。
+- `operations:data-source:test` 继续独立授权；数据同步及其他资源权限不受影响，数据源更新和删除仍受所有者隔离与引用保护约束。
+- 未新增依赖、配置或数据库迁移；回滚可执行 `git revert 3a048c940e32cd2b1642afe82df66fad2cf10450` 后按相同 Compose 命令重建。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 查看权限自动拥有新增、编辑、删除 | Backend `AuthUserPermissionTest` 参数化输入三个维护权限；Frontend `permissions.test.mjs` 输入仅含 list 的普通用户 | 三个维护权限均判定为 true，页面已有按钮条件随之生效 | 正常、权限、兼容 |
+| 测试及其他资源权限保持独立 | 前后端权限单测输入 `operations:data-source:test` 与 `operations:data-sync:create` | 均判定为 false，不扩大确认范围外权限 | 边界、权限、安全 |
+| 角色配置自动归一化 | Backend `PlatformAdminServiceTest` 仅提交数据源 list；Frontend `role-permissions.test.mjs` 执行勾选、历史回显和单独取消维护按钮 | 保存与界面均固定包含 list/create/update/delete，不包含 test | 正常、边界、回归 |
+| 既有管理员、精确权限和 manage 兼容行为不变 | Frontend 权限单测覆盖 ADMIN、精确权限、历史 manage 和未登录输入 | 既有授权结果保持不变，未登录请求权限返回 false | 兼容、异常、回归 |
+| 数据源对象级安全边界不变 | Backend `WorkflowConnectionServiceTest` 使用其他用户更新非本人数据源 | 继续拒绝越权维护；被工作流或同步计划引用的数据源删除保护保持通过 | 权限、安全、回归 |
+| 运行环境应用新代码 | 使用功能提交完整哈希统一重建五个默认服务并访问就绪端点 | 五个镜像标签一致，服务健康，就绪接口返回 HTTP 200 和 `UP` | 集成、兼容、回归 |
+
+### 测试执行结果
+
+- 唯一可计数测试共 1,067 个，通过 1,067 个，通过率 100%；失败 0；错误 0；跳过 0。
+- Backend：745/745，Maven 3.9.9 / Temurin 17 完整测试通过；定向权限与数据源模块 33/33 通过。
+- Frontend：321/321 覆盖率测试与 1/1 E2E 通过；ESLint、Vue 类型检查和生产构建通过。
+- Frontend 工具覆盖率：行 98.06%、分支 80.42%、函数 96.15%；新增 `permissions.js` 为 100%/100%/100%。
+- 失败复现：实现前 Frontend 新增用例 2 个稳定失败；Backend 权限用例 3 个失败，修正测试夹具后角色归一化用例 1 个稳定失败。实现后全部转为通过。
+
+### 关键模块测试
+
+- 身份权限推导：4/4 通过。
+- 角色保存与权限委派：17/17 通过。
+- 数据源 Controller 权限契约：4/4 通过。
+- 数据源所有权、加密配置和删除保护：8/8 通过。
+- 前端权限推导、角色权限树及数据源页面定向用例：16/16 通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Frontend 失败复现 | `node --test test/role-permissions.test.mjs` | 实现前 8/10 通过，2 个新增联动用例按预期失败 |
+| Backend 失败复现 | Maven 容器执行 `mvn -B -ntp -Dtest='AuthUserPermissionTest,PlatformAdminServiceTest' test` | 测试夹具修正后 17/21 通过，4 个新增权限用例按预期失败 |
+| 前后端定向回归 | Frontend 三个定向文件；Backend `AuthUserPermissionTest,PlatformAdminServiceTest,DataSourceControllerTest,WorkflowConnectionServiceTest` | Frontend 16/16、Backend 33/33 通过 |
+| Backend 完整测试 | Maven 3.9.9 / Temurin 17 容器执行 `mvn -B -ntp test` | 745/745，BUILD SUCCESS |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、类型检查、321/321 覆盖率测试、生产构建和 1/1 E2E 全部通过 |
+| 默认服务统一重建 | `APP_IMAGE_REVISION=3a048c940e32cd2b1642afe82df66fad2cf10450 docker compose up --build -d` | backend/caddy/document-parser/frontend/python-worker 全部重建并启动 |
+| 运行态验证 | 检查五个容器镜像标签与健康状态；请求 `https://localhost/api/open/health/ready` | 镜像标签均为功能提交完整哈希，就绪接口 HTTP 200、状态 `UP` |
+
+### 重测触发条件
+
+- 后续修改 `AuthUser`、角色保存逻辑、前端权限判定、数据源 Controller 权限或所有权校验时，必须重新执行本节前后端定向用例和完整套件。
+
+### 已知问题
+
+- 未执行真实非管理员浏览器账号的写操作，避免为测试创建或删除生产数据；权限推导、角色持久化和对象级越权均由可执行自动化测试覆盖。
+- Frontend 构建仍输出既有运行配置脚本、第三方 PURE 注释和大分块警告，构建成功且与本次权限变更无关。
+- 主机未安装 Maven，Backend 测试使用项目锁定的 Maven 3.9.9 / Temurin 17 容器执行。
+
+### 下次测试建议
+
+- 使用仅授权 `operations:data-source:list` 的非管理员账号刷新页面，实际新增、编辑并删除一条无引用的测试数据源，确认按钮和接口行为一致。
+- 使用同一账号确认“测试连接”“全部检测”和状态详情仍不可见，除非额外授予 `operations:data-source:test`。
+
 ## 导航目录调整验收：邮件管理移入运维管理（2026-09-10）
 
 ### Git 基准点
