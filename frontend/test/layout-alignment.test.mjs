@@ -110,6 +110,11 @@ test('收缩侧边栏的菜单宽度适配内层可用空间，图标保持居�
   assertDeclarations(globalStyles, '.sidebar--collapsed .nav .el-menu-item,\n.sidebar--collapsed .nav .el-sub-menu__title', [/padding:\s*0\s*!important/, /justify-content:\s*center/])
 })
 
+test('激活目录不会向嵌套目录泄露 Element Plus 默认底边', () => {
+  assertDeclarations(globalStyles, '.nav .el-sub-menu.is-active .el-sub-menu__title', [/border-bottom-color:\s*transparent/])
+  assertDeclarations(globalStyles, '.nav .el-sub-menu.is-active > .el-sub-menu__title', [/background:\s*var\(--sidebar-parent-active-background\)/])
+})
+
 test('侧边栏提供三套可持久化主题并同步桌面与移动端入口', () => {
   assert.equal((adminLayoutSource.match(/<SidebarThemeSwitcher\b/g) || []).length, 2)
   assert.match(adminLayoutSource, /:class="\[sidebarThemeClass, \{ 'sidebar--collapsed': sidebarCollapsed \}\]"/)

@@ -299,6 +299,8 @@ body { margin: 0; background: var(--app-canvas); }
 
 .nav > .el-sub-menu > .el-sub-menu__title { color: var(--sidebar-menu-strong); font-weight: 600; }
 
+.nav .el-sub-menu.is-active .el-sub-menu__title { border-bottom-color: transparent; }
+
 .nav .el-sub-menu.is-active > .el-sub-menu__title { color: var(--sidebar-menu-hover-text); background: var(--sidebar-parent-active-background); }
 
 .nav .el-menu-item .el-icon,
