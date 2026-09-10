@@ -443,8 +443,9 @@ body { margin: 0; background: var(--app-canvas); }
 }
 
 /* 顶部已展示页面名称，内容区不重复标题与说明文字。 */
-.section-head > div { display: none; min-width: 0; }
-.section-head:not(:has(> .el-button)) { display: none; }
+.section-head > div { min-width: 0; }
+.section-head > div:first-child { display: none; }
+.section-head:not(:has(.el-button)) { display: none; }
 
 .section-head > strong { min-width: 0; overflow-wrap: anywhere; line-height: 32px; }
 
