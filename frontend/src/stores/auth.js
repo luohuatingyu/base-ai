@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import http from '../api/http'
 import { appConfig } from '../config'
+import { hasEffectivePermission } from '../utils/permissions'
 
 /** 清理旧版本遗留的可被脚本读取的 JWT，存储不可用时不阻断页面启动。 */
 function clearLegacyToken() {
@@ -43,9 +44,7 @@ export const useAuthStore = defineStore('auth', {
     },
     /** 判断当前用户是否拥有页面权限。 */
     hasPermission(permission) {
-      if (!permission || this.isAdmin || this.user?.permissions?.includes(permission)) return true
-      const separator = permission.lastIndexOf(':')
-      return separator > 0 && this.user?.permissions?.includes(`${permission.slice(0, separator)}:manage`) || false
+      return hasEffectivePermission(this.user, permission)
     }
   }
 })

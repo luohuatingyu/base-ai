@@ -44,6 +44,13 @@ public class PlatformAdminService {
     /** 数据权限范围常量：全部、本部门、本部门及下级、仅本人、自定义部门 */
     private static final Set<String> DATA_SCOPES = Set.of("ALL", "DEPARTMENT", "DEPARTMENT_AND_CHILDREN", "SELF", "CUSTOM");
 
+    /** 数据源查看权限固定包含新增、编辑和删除能力，连接测试继续独立授权。 */
+    private static final Set<String> DATA_SOURCE_MAINTENANCE_PERMISSIONS = Set.of(
+        "operations:data-source:create",
+        "operations:data-source:update",
+        "operations:data-source:delete"
+    );
+
     /** 用户数据访问对象 */
     private final UserRepository userRepository;
 
@@ -478,6 +485,7 @@ public class PlatformAdminService {
     /** 应用角色基础信息、菜单和数据范围。 */
     private void applyRole(Role role, RoleCommand command) {
         LinkedHashSet<Menu> selectedMenus = load(command.menuIds(), menuRepository::findAllById);
+        expandDataSourceMaintenancePermissions(selectedMenus);
         validateRoleMenuDependencies(selectedMenus);
         validatePermissionDelegation(selectedMenus);
         role.setName(require(command.name(), "role.nameRequired"));
@@ -488,6 +496,16 @@ public class PlatformAdminService {
         role.setDataScope(dataScope);
         role.setMenus(selectedMenus);
         role.setCustomDepartments("CUSTOM".equals(dataScope) ? load(command.departmentIds(), departmentRepository::findAllById) : new LinkedHashSet<>());
+    }
+
+    /** 角色包含数据源查看权限时补齐固定维护权限，保证界面配置和运行时语义一致。 */
+    private void expandDataSourceMaintenancePermissions(Set<Menu> selectedMenus) {
+        boolean canListDataSources = selectedMenus.stream()
+            .anyMatch(menu -> "operations:data-source:list".equals(menu.getPermission()));
+        if (!canListDataSources) return;
+        menuRepository.findAll().stream()
+            .filter(menu -> DATA_SOURCE_MAINTENANCE_PERMISSIONS.contains(menu.getPermission()))
+            .forEach(selectedMenus::add);
     }
 
     /** 校验每个按钮权限都同时包含其所属页面权限。 */

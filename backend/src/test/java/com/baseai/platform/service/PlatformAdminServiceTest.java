@@ -29,6 +29,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -116,6 +117,31 @@ class PlatformAdminServiceTest {
 
         assertEquals(List.of(2L, 3L), created.menuIds());
         verify(roleRepository).save(any());
+    }
+
+    /** 数据源查看权限保存时必须补齐新增、编辑和删除权限，但不补齐测试权限。 */
+    @Test
+    void expandsDataSourceListIntoMaintenancePermissions() {
+        Menu operations = menu(10L, null, "CATALOG", "operations:catalog");
+        Menu dataSources = menu(11L, 10L, "MENU", "operations:data-source:list");
+        Menu create = menu(12L, 11L, "BUTTON", "operations:data-source:create");
+        Menu update = menu(13L, 11L, "BUTTON", "operations:data-source:update");
+        Menu delete = menu(14L, 11L, "BUTTON", "operations:data-source:delete");
+        Menu test = menu(15L, 11L, "BUTTON", "operations:data-source:test");
+        List<Menu> dataSourceMenus = List.of(operations, dataSources, create, update, delete, test);
+        when(menuRepository.findAll()).thenReturn(dataSourceMenus);
+        doAnswer(invocation -> {
+            Iterable<Long> ids = invocation.getArgument(0);
+            Set<Long> selected = new java.util.LinkedHashSet<>();
+            ids.forEach(selected::add);
+            return dataSourceMenus.stream().filter(item -> selected.contains(item.getId())).toList();
+        }).when(menuRepository).findAllById(any());
+        when(roleRepository.findByCode("EDITOR")).thenReturn(Optional.empty());
+        AuthContext.set(actor(7L, Set.of("EDITOR"), Set.of("operations:data-source:list")));
+
+        PlatformAdminService.RoleView created = service.createRole(command(List.of(dataSources.getId())));
+
+        assertEquals(List.of(11L, 12L, 13L, 14L), created.menuIds());
     }
 
     /** 空权限角色保持兼容并允许保存。 */

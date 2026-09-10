@@ -19,6 +19,18 @@ function permissions() {
   ]
 }
 
+/** 创建数据源查看和维护操作组成的权限树测试数据。 */
+function dataSourcePermissions() {
+  return [
+    { id: 10, parentId: null, name: '运维管理', type: 'CATALOG', permission: 'operations:catalog', sortOrder: 10 },
+    { id: 11, parentId: 10, name: '数据源管理', type: 'MENU', permission: 'operations:data-source:list', sortOrder: 11 },
+    { id: 12, parentId: 11, name: '新增数据源', type: 'BUTTON', permission: 'operations:data-source:create', sortOrder: 111 },
+    { id: 13, parentId: 11, name: '编辑数据源', type: 'BUTTON', permission: 'operations:data-source:update', sortOrder: 112 },
+    { id: 14, parentId: 11, name: '删除数据源', type: 'BUTTON', permission: 'operations:data-source:delete', sortOrder: 113 },
+    { id: 15, parentId: 11, name: '测试数据源', type: 'BUTTON', permission: 'operations:data-source:test', sortOrder: 115 }
+  ]
+}
+
 test('角色权限按目录、页面和按钮构建有序树', () => {
   const tree = buildRolePermissionTree(permissions(), item => `本地化:${item.name}`)
 
@@ -36,6 +48,19 @@ test('勾选按钮只补齐所属页面和上级目录，不授予同级按钮',
 
 test('勾选页面不会自动授予其按钮', () => {
   assert.deepEqual(updateRolePermissionSelection(permissions(), [], 2, true), [1, 2])
+})
+
+test('勾选数据源查看权限自动授予新增编辑删除但不授予测试权限', () => {
+  assert.deepEqual(updateRolePermissionSelection(dataSourcePermissions(), [], 11, true), [10, 11, 12, 13, 14])
+})
+
+test('历史角色的数据源查看权限回显时自动补齐维护权限', () => {
+  assert.deepEqual(normalizeRolePermissionIds(dataSourcePermissions(), [11]), [10, 11, 12, 13, 14])
+})
+
+test('保留数据源查看权限时不能单独取消固定维护权限', () => {
+  assert.deepEqual(updateRolePermissionSelection(dataSourcePermissions(), [10, 11, 12, 13, 14], 12, false),
+    [10, 11, 12, 13, 14])
 })
 
 test('取消页面会清除其按钮并保留仍可独立存在的目录', () => {
