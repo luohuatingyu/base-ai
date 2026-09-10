@@ -19,13 +19,14 @@ public class ApiResponseAdvice implements ResponseBodyAdvice<Object> {
 
     @Override public boolean supports(MethodParameter parameter, Class<? extends HttpMessageConverter<?>> converterType) { return true; }
 
-    /** 包装外部业务 API，公开健康检查和内部服务协议保持原结构。 */
+    /** 包装外部业务 API，公开健康检查及内部机器协议保持原结构。 */
     @Override
     public Object beforeBodyWrite(Object body, MethodParameter returnType, MediaType contentType,
                                   Class<? extends HttpMessageConverter<?>> converterType,
                                   ServerHttpRequest request, ServerHttpResponse response) {
         String path = request.getURI().getPath();
-        if (path.startsWith("/api/open/") || path.startsWith("/api/internal/") || body instanceof ApiResponse<?>) return body;
+        if (path.startsWith("/api/open/") || path.startsWith("/api/internal/")
+            || path.startsWith("/api/agent/") || body instanceof ApiResponse<?>) return body;
         String message = messageSource.getMessage("common.success", null, LocaleContextHolder.getLocale());
         return ApiResponse.success(body, message);
     }

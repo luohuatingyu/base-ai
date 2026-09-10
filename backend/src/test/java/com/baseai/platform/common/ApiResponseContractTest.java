@@ -78,10 +78,12 @@ class ApiResponseContractTest {
         assertTrue(json.contains("\"data\":null"));
     }
 
-    /** 公开和内部协议应继续保持原始响应结构。 */
+    /** 公开、内部及 Agent 机器协议应继续保持原始响应结构。 */
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"/api/open/health", "/api/internal/traces/python/events"})
-    void openAndInternalResponsesRemainUnwrapped(String path) {
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "/api/open/health", "/api/internal/traces/python/events", "/api/agent/ios-device/v1/config"
+    })
+    void machineProtocolResponsesRemainUnwrapped(String path) {
         ApiResponseAdvice advice = new ApiResponseAdvice(messageSource);
         ServerHttpRequest request = mock(ServerHttpRequest.class);
         Map<String, String> body = Map.of("status", "UP");
