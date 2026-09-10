@@ -53,7 +53,7 @@ test('分类使用中性色且连接类型遵循外部常规品牌色', () => {
   const neutralCategoryStyle = { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#475569' }
   const expectedTypeColors = {
     MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31',
-    KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00A1EA',
+    KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00B3FF',
     ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
   }
 
@@ -71,16 +71,21 @@ test('分类使用中性色且连接类型遵循外部常规品牌色', () => {
   })
 })
 
-test('分类图标使用独立语义且数据库产品拥有各自图形', () => {
+test('分类图标使用独立语义且连接产品使用官方或明确的语义图形', () => {
   assert.match(iconSource, /const CATEGORY_ICONS = \{ DATABASE, VECTOR_DATABASE, CACHE, OBJECT_STORAGE, MESSAGE_QUEUE, WEBHOOK, OTHER \}/)
-  assert.match(iconSource, /const TYPE_ICONS = \{ MYSQL, POSTGRESQL,/)
+  assert.match(iconSource, /const TYPE_ICONS = \{ MYSQL, POSTGRESQL, REDIS, S3, KAFKA, RABBITMQ,/)
   assert.match(iconSource, /if \(category\) return CATEGORY_ICONS\[category\] \|\| OTHER/)
   assert.match(iconSource, /M117\.688 98\.242c-6\.973-.191/)
   assert.match(iconSource, /M23\.5594 14\.7228a\.5269\.5269/)
+  assert.match(iconSource, /M201\.816 230\.216c-16\.186 0-30\.697 7\.171-40\.634 18\.461/)
+  assert.match(iconSource, /M86\.6 0 0 50 0 150 86\.6 200 119\.08 181\.25/)
+  assert.match(iconSource, /M21\.1411 22\.5376C25\.208 22\.5376 28\.5048 19\.1691/)
+  assert.match(iconSource, /M38\.8088 0C44\.4762 0 47\.3101 9\.1895e-5 49\.4748 1\.10306/)
   assert.match(iconSource, /const MYSQL = \[\s*\{ fill: 'currentColor', stroke: 'none'/)
   assert.match(iconSource, /const POSTGRESQL = \[\s*\{ fill: 'currentColor', stroke: 'none'/)
   assert.match(iconSource, /const ELASTICSEARCH = \[\s*\{ fill: '#F4BD19', stroke: 'none', transform: 'scale\(\.09375\)'/)
   assert.match(iconSource, /\{ fill: '#3CBEB1', stroke: 'none', transform: 'scale\(\.09375\)'/)
+  assert.doesNotMatch(iconSource, /const PIPELINE|const GLOBE|const HEX|const TRIANGLE/)
   assert.match(iconSource, /:fill="path\.fill"/)
   assert.match(viewSource, /<DataSourceTypeIcon :category="group\.key" \/>/)
   assert.match(viewSource, /<DataSourceTypeIcon :category="category\.key" \/>/)
