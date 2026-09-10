@@ -20,7 +20,7 @@
     <el-empty v-if="!rows.length" :description="t('dataSources.empty')" />
     <section v-for="group in groupedRows" :key="group.key" class="ds-group">
       <div class="ds-group-head">
-        <span class="ds-group-icon" :style="categoryStyle(group.key)"><DataSourceTypeIcon :type="categoryIconType(group.key)" /></span>
+        <span class="ds-group-icon" :style="categoryStyle(group.key)"><DataSourceTypeIcon :category="group.key" /></span>
         <h3>{{ categoryLabel(group.key) }}</h3>
         <el-tag size="small" type="info" effect="plain">{{ group.items.length }}</el-tag>
       </div>
@@ -102,7 +102,7 @@
                       class="connection-category-option" :class="{ active: form.connectionCategory === category.key }"
                       :aria-pressed="form.connectionCategory === category.key" @click="selectCategory(category.key)">
                 <span class="connection-nav-icon" :style="categoryStyle(category.key)">
-                  <DataSourceTypeIcon :type="categoryIconType(category.key)" />
+                  <DataSourceTypeIcon :category="category.key" />
                 </span>
                 <span class="connection-nav-copy"><strong>{{ categoryLabel(category.key) }}</strong><small>{{ category.types.length }}</small></span>
                 <span v-if="form.connectionCategory === category.key" class="connection-nav-check" aria-hidden="true">✓</span>
@@ -388,8 +388,6 @@ function preferredCategory(connectionType) { return connectionCategoriesForType(
 function categoryLabel(category) { return t(`workflowConnections.categories.${category || 'OTHER'}`) }
 /** 返回本地化连接类型名称。 */
 function typeLabel(type) { return t(`workflowConnections.types.${type || 'PLUGIN'}`) }
-/** 返回分类的代表类型，供分类导航展示可识别图标。 */
-function categoryIconType(category) { return connectionTypesForCategory(category)[0] || 'PLUGIN' }
 /** 返回分类标签色板。 */
 function categoryStyle(category) { return connectionCategoryStyle(category) }
 /** 返回连接类型在当前分类中的同色系深浅样式。 */

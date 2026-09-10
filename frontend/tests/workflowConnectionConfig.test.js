@@ -18,6 +18,7 @@ import {
 } from '../src/utils/workflowConnectionConfig.js'
 
 const viewSource = readFileSync(new URL('../src/views/DataSourcesView.vue', import.meta.url), 'utf8')
+const iconSource = readFileSync(new URL('../src/components/DataSourceTypeIcon.vue', import.meta.url), 'utf8')
 
 test('十二类连接均提供类型化标准字段和安全默认值', () => {
   assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH', 'PLUGIN'])
@@ -59,6 +60,16 @@ test('不同分类使用不同色相且同分类连接类型使用递进深度',
   assert.notEqual(mysql.backgroundColor, postgresql.backgroundColor)
   assert.equal(connectionTypeStyle('POSTGRESQL', 'VECTOR_DATABASE').color, vectorDatabase.color)
   assert.deepEqual(connectionCategoryStyle('UNKNOWN'), connectionCategoryStyle('OTHER'))
+})
+
+test('分类图标使用独立语义且数据库产品拥有各自图形', () => {
+  assert.match(iconSource, /const CATEGORY_ICONS = \{ DATABASE, VECTOR_DATABASE, CACHE, OBJECT_STORAGE, MESSAGE_QUEUE, WEBHOOK, OTHER \}/)
+  assert.match(iconSource, /const TYPE_ICONS = \{ MYSQL, POSTGRESQL,/)
+  assert.match(iconSource, /if \(category\) return CATEGORY_ICONS\[category\] \|\| OTHER/)
+  assert.match(viewSource, /<DataSourceTypeIcon :category="group\.key" \/>/)
+  assert.match(viewSource, /<DataSourceTypeIcon :category="category\.key" \/>/)
+  assert.doesNotMatch(viewSource, /categoryIconType/)
+  assert.doesNotMatch(iconSource, /MYSQL: DATABASE|POSTGRESQL: DATABASE/)
 })
 
 test('编辑配置时保留脱敏密钥、嵌套值和未知自定义字段', () => {
