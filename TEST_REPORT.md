@@ -1,5 +1,65 @@
 # 最近分支覆盖测试报告
 
+## 数据源管理独立页面验收（2026-09-10）
+
+### Git 基准点
+
+Commit: 2888353fac1badbd4f7ee64a129faea9fe4a937d
+- 提交信息: Restore applied V28 migration checksum
+- 核心功能提交: 2f78119（Add dedicated data source management）
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 新增运维管理下与数据同步平级的“数据源管理”页面（`/data-sources`），支持全部十二类受管连接类型的新增、编辑、删除、启停、连接测试和插件 OAuth 授权。
+- 新增 `/api/data-sources` 专用接口和 `operations:data-source:{list,create,update,delete,test}` 独立权限，复用 `workflow_connection` 表、AES-GCM 加密和出站安全校验，不新增业务表。
+- 使用 Flyway V29 将存量 `automation:workflow:connection:*` 权限原位迁移到 `operations:data-source:*`，保留菜单 ID 与角色授权，并补齐运维目录祖先。
+- 移除“工作流 → 连接配置”维护入口；工作流画布、数据同步和知识库继续按所有者复用同一批数据源。
+- 内置 OPS 角色新增数据源维护权限；恢复已应用 V28 迁移文件的原始内容以修复 Flyway 校验和。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 数据源接口使用独立路径和权限 | Backend 反射契约测试检查 `/api/data-sources` 全部方法的权限注解和 HTTP 动词 | list/create/update/delete/test 使用独立权限和正确动词 | 正常、权限、安全 |
+| 插件 OAuth 归属数据源权限 | Backend 契约测试检查组件选项、授权和回调端点 | 全部使用 `operations:data-source:*` 权限 | 权限、安全、兼容 |
+| 存量权限和角色授权无损迁移 | Backend H2 执行 V29，输入旧连接权限菜单和自定义角色授权 | 权限 KEY 原位更新，页面移动到运维目录，角色授权保留并补齐目录 | 正常、迁移、兼容、回归 |
+| 页面与导航正确迁移 | Frontend 契约测试检查路由、导航、按钮权限、双语资源和旧入口移除 | `/data-sources` 平级注册，旧连接维护入口不再存在 | 正常、兼容、回归 |
+| 数据同步与知识库继续可用 | 既有 DataSync 和 KnowledgeBase 测试复用同一连接服务 | 同步计划引用和知识库向量连接选择不受影响 | 回归 |
+| 运行环境可升级 | Compose 使用提交号统一构建并连接现有 MySQL | V29 已成功应用，默认五个服务最终健康 | 集成、迁移、回归 |
+
+### 测试执行结果
+
+- 唯一可计数测试共 1,048 个，通过 1,048 个，通过率 100%；失败 0；错误 0；跳过 0。
+- Backend：732/732，Maven 3.9.9 / Temurin 17 完整测试通过（新增 5 个数据源契约与迁移用例）。
+- Frontend：315/315，ESLint、Vue 类型检查、覆盖率测试和生产构建通过；E2E 1/1 通过。
+- Frontend 工具覆盖率：行 98.03%、分支 80.19%、函数 96.09%。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向测试 | Maven 容器执行 `mvn -Dtest='PermissionKeyMigrationTest,DataInitializerTest,DataSourceControllerTest,DataSourcePermissionMigrationTest,WorkflowModelOptionsControllerTest,ApiKeyEndpointCatalogServiceTest' test` | 首轮发现测试建表缺少自增，修正后通过 |
+| Backend 完整测试 | Maven 3.9.9 / Temurin 17 容器执行 `mvn test -B -ntp` | 732/732，BUILD SUCCESS |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、类型检查、315/315 覆盖率测试、生产构建和 1/1 E2E 全部通过 |
+| 默认服务统一重建 | `APP_IMAGE_REVISION=2888353fac1badbd4f7ee64a129faea9fe4a937d docker compose up --build -d` | 五个服务全部构建并启动健康 |
+| 数据库迁移 | 检查 Backend Flyway 启动日志 | V29 成功应用，Schema 升级到 v29 |
+| 运行态探测 | 前端首页和 `/api/open/health/ready` | 前端可访问，后端就绪 200 |
+
+### 已知问题
+
+- 已应用的 V28 迁移文件曾被并发修改格式导致 Flyway 校验和不匹配、后端无法启动；已恢复为已应用的原始内容（提交 2888353），对应测试加固保留在提交 11c7c35。今后不得修改任何已应用迁移文件。
+- 首次后端定向测试失败原因为测试自身 H2 建表缺少 `AUTO_INCREMENT`，与生产 Schema 不一致；已按 V1 真实结构修正，非业务缺陷。
+- 插件组件选项接口从 `automation:workflow:node:list` 改为 `operations:data-source:list`，需要插件配置权限的账号需同步授予数据源查看权限。
+- Frontend 构建继续输出既有运行配置脚本、第三方 PURE 注释和大分块警告，构建与测试均通过，本次未修改这些非相关问题。
+
+### 下次测试建议
+
+- 使用具备数据源权限的非管理员账号在运行环境中实际新增、测试、编辑并删除一个 MySQL 数据源，再验证数据同步计划选择和删除保护（`workflow.connectionInUse`）。
+- 验证拥有旧 `automation:workflow:connection:*` 授权的自定义角色在升级后可以继续访问数据源页面。
+
 ## 管理权限域重构验收（2026-09-10）
 
 ### Git 基准点
