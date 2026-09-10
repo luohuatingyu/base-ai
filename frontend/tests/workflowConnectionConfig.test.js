@@ -79,7 +79,7 @@ test('分类图标使用独立语义且数据库产品拥有各自图形', () =>
   assert.match(iconSource, /M23\.5594 14\.7228a\.5269\.5269/)
   assert.match(iconSource, /const MYSQL = \[\s*\{ fill: 'currentColor', stroke: 'none'/)
   assert.match(iconSource, /const POSTGRESQL = \[\s*\{ fill: 'currentColor', stroke: 'none'/)
-  assert.match(iconSource, /const ELASTICSEARCH = \[\s*\{ fill: 'currentColor', stroke: 'none', d: 'M13\.394 0C8\.683 0/)
+  assert.match(iconSource, /const ELASTICSEARCH = \[\s*\{ fill: 'currentColor', stroke: 'none', transform: 'scale\(\.75\)', d: 'M28\.4 5\.8/)
   assert.match(iconSource, /:fill="path\.fill"/)
   assert.match(viewSource, /<DataSourceTypeIcon :category="group\.key" \/>/)
   assert.match(viewSource, /<DataSourceTypeIcon :category="category\.key" \/>/)
