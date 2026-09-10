@@ -1,5 +1,59 @@
 # 最近分支覆盖测试报告
 
+## 管理权限域重构验收（2026-09-10）
+
+### Git 基准点
+
+Commit: 05ff1d5659279bc4e918d7f10817f8e68af4df19
+- 提交信息: Reorganize management permission domains
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 将模型、工作流、运维和邮件权限迁入明确业务域，并同步后端接口、前端路由、按钮和导航权限。
+- 使用 Flyway V28 原位迁移菜单权限 KEY，保持菜单 ID 和既有角色资源授权不变，仅补齐新目录祖先。
+- 重组 AI、自动化、运维和系统管理导航，新增内置 OPS 角色的运维权限种子。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 存量权限原位迁移 | Backend H2 执行 V28，输入旧权限菜单和自定义角色授权，并重复执行迁移 | 权限 KEY 全部更新，菜单 ID 和资源授权保持，目录祖先补齐，重复执行无重复数据 | 正常、迁移、兼容、回归 |
+| 前后端权限保持一致 | Backend Controller 契约测试与 Frontend 路由、导航、按钮契约测试 | 新权限 KEY 在菜单、接口、路由和按钮中一致，旧 KEY 不再作为管理入口 | 正常、权限、兼容 |
+| 默认角色授权正确 | DataInitializer 测试 ADMIN、OPS 和自定义角色 | ADMIN 获得完整权限，OPS 仅获得数据同步和服务器权限，自定义授权不扩权 | 权限、安全、回归 |
+| 运行环境可升级 | Compose 使用提交号统一构建并连接现有 MySQL | V28 已成功应用，默认五个服务最终健康 | 集成、迁移、回归 |
+
+### 测试执行结果
+
+- 唯一可计数测试共 1,043 个，通过 1,043 个，通过率 100%；失败 0；错误 0；跳过 0。
+- Backend：727/727，Maven 3.9.9 / Temurin 17 完整测试通过。
+- Frontend：315/315，ESLint、Vue 类型检查、覆盖率测试和生产构建通过；E2E 1/1 通过。
+- Frontend 工具覆盖率：行 98.03%、分支 80.19%、函数 96.09%。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整测试 | Maven 3.9.9 / Temurin 17 容器执行 `mvn test -B -ntp` | 727/727，BUILD SUCCESS |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、类型检查、315/315 覆盖率测试、生产构建和 1/1 E2E 全部通过 |
+| 默认服务统一重建 | `APP_IMAGE_REVISION=05ff1d5659279bc4e918d7f10817f8e68af4df19 docker compose up --build -d` | Backend、Frontend、Python Worker、Document Parser、Caddy 全部构建并启动健康 |
+| 数据库迁移 | 检查 Backend Flyway 启动日志 | V28 成功应用，Schema 升级到 v28 |
+| 静态检查 | `git diff --check`、`docker compose config --quiet`（补充必填修订变量后） | 空白检查通过，Compose 配置有效 |
+
+### 已知问题
+
+- 宿主机未安装 Maven，后端测试使用项目固定版本的 Maven 容器执行。
+- 首次未设置 `APP_IMAGE_REVISION` 的 Compose 配置检查按预期被必填变量校验拒绝；补充当前提交号后重建成功。
+- Backend 历史日志中保留一次 V28 半完成状态校验失败记录；随后数据库迁移记录已修复，V28 成功应用且当前服务健康。
+- Frontend 构建继续输出既有运行配置脚本、第三方 PURE 注释和大分块警告，本次构建与测试不受影响。
+
+### 下次测试建议
+
+- 新增或调整任一业务域权限时，继续同时覆盖菜单种子、迁移、Controller、前端路由和按钮。
+- 在生产升级前备份 `sys_menu`、`sys_role_menu` 和 Flyway 历史表，并在副本环境复核 V28。
+
 ## 通用只读 iOS 设备 Agent 验收（2026-09-10）
 
 ### Git 基准点
