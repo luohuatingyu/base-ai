@@ -193,7 +193,7 @@ public class DataInitializer implements ApplicationRunner {
         systemSettingCacheService.applyAll(systemSettingRepository.findAll());
     }
 
-    /** 初始化只管理本人数据源、同步计划和服务器的内置运维角色，并保留其他既有授权。 */
+    /** 初始化只管理本人数据源、同步计划、服务器和设备 Agent 的运维角色。 */
     private void seedOperationsRole(List<Menu> menus) {
         Role operations = roleRepository.findByCode("OPS").orElseGet(() -> {
             Role role = new Role();
@@ -205,9 +205,10 @@ public class DataInitializer implements ApplicationRunner {
         menus.stream().filter(menu -> "operations:catalog".equals(menu.getPermission())
             || menu.getPermission() != null && (menu.getPermission().startsWith("operations:data-source:")
             || menu.getPermission().startsWith("operations:data-sync:")
-            || menu.getPermission().startsWith("operations:server:"))).forEach(permissions::add);
+            || menu.getPermission().startsWith("operations:server:")
+            || menu.getPermission().startsWith("operations:device-agent:"))).forEach(permissions::add);
         operations.setMenus(permissions);
-        operations.setDescription("系统内置数据源、数据同步与服务器运维角色");
+        operations.setDescription("系统内置数据源、数据同步、服务器与设备 Agent 运维角色");
         operations.setDataScope("SELF");
         operations.setSortOrder(20);
         operations.setEnabled(true);

@@ -38,27 +38,37 @@ case "$(uname -m)" in
   arm64)
     PYTHON_FILE="$(manifest_value PYTHON_ARM64_FILE)"
     PYTHON_SHA="$(manifest_value PYTHON_ARM64_SHA256)"
+    NODE_FILE="$(manifest_value NODE_ARM64_FILE)"
+    NODE_SHA="$(manifest_value NODE_ARM64_SHA256)"
     ;;
   x86_64)
     PYTHON_FILE="$(manifest_value PYTHON_X86_64_FILE)"
     PYTHON_SHA="$(manifest_value PYTHON_X86_64_SHA256)"
+    NODE_FILE="$(manifest_value NODE_X86_64_FILE)"
+    NODE_SHA="$(manifest_value NODE_X86_64_SHA256)"
     ;;
   *) echo "Unsupported Mac architecture." >&2; exit 1 ;;
 esac
 AGENT_VERSION="$(manifest_value AGENT_CODE_VERSION)"
 AGENT_SHA="$(manifest_value AGENT_PACKAGE_SHA256)"
-for value in "$PYTHON_FILE" "$PYTHON_SHA" "$AGENT_VERSION" "$AGENT_SHA"; do
+for value in "$PYTHON_FILE" "$PYTHON_SHA" "$NODE_FILE" "$NODE_SHA" "$AGENT_VERSION" "$AGENT_SHA"; do
   [ -n "$value" ] || { echo "Incomplete Agent manifest." >&2; exit 1; }
 done
 
 curl -fsSL --proto '=https' --tlsv1.2 "$DIST_URL/runtime/$PYTHON_FILE" -o "$WORK_DIR/python.tar.gz"
+curl -fsSL --proto '=https' --tlsv1.2 "$DIST_URL/runtime/$NODE_FILE" -o "$WORK_DIR/node.tar.gz"
 curl -fsSL --proto '=https' --tlsv1.2 "$DIST_URL/device-agent.tar.gz" -o "$WORK_DIR/agent.tar.gz"
 verify_file "$WORK_DIR/python.tar.gz" "$PYTHON_SHA"
+verify_file "$WORK_DIR/node.tar.gz" "$NODE_SHA"
 verify_file "$WORK_DIR/agent.tar.gz" "$AGENT_SHA"
 
 rm -rf "$RUNTIME_DIR/python"
 mkdir -p "$RUNTIME_DIR/python"
 tar -xzf "$WORK_DIR/python.tar.gz" -C "$RUNTIME_DIR/python" --strip-components=1
+rm -rf "$RUNTIME_DIR/node"
+mkdir -p "$RUNTIME_DIR/node"
+tar -xzf "$WORK_DIR/node.tar.gz" -C "$RUNTIME_DIR/node" --strip-components=1
+cp "$WORK_DIR/manifest.env" "$RUNTIME_DIR/manifest.env"
 
 TARGET_DIR="$VERSIONS_DIR/$AGENT_VERSION"
 rm -rf "$TARGET_DIR"

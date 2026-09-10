@@ -13,7 +13,8 @@ def test_successful_upgrade_stops_loop_after_reporting(monkeypatch) -> None:
     runtime = AgentRuntime.__new__(AgentRuntime)
     runtime.running = True
     runtime.backend = SimpleNamespace(report_command=lambda *values: reports.append(values))
-    monkeypatch.setattr(runtime, "_dispatch", lambda _command, _params: "upgraded")
+    runtime.wda = SimpleNamespace(fail=lambda *_values: None)
+    monkeypatch.setattr(runtime, "_dispatch", lambda _command, _params, _target: "upgraded")
 
     runtime.execute({
         "commandId": 9,
@@ -32,8 +33,9 @@ def test_failed_upgrade_keeps_current_process_running(monkeypatch) -> None:
     runtime = AgentRuntime.__new__(AgentRuntime)
     runtime.running = True
     runtime.backend = SimpleNamespace(report_command=lambda *values: reports.append(values))
+    runtime.wda = SimpleNamespace(fail=lambda *_values: None)
 
-    def fail(_command, _params):
+    def fail(_command, _params, _target):
         raise RuntimeError("UPGRADE_INSTALL_FAILED")
 
     monkeypatch.setattr(runtime, "_dispatch", fail)

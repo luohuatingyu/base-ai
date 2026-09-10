@@ -15,7 +15,7 @@ Base AI 是一个可扩展的管理与 AI 集成平台，由 Vue 管理控制台
 - 浏览器会话使用带签名 CSRF 防护的 HttpOnly Cookie，同时兼容 Bearer Token 客户端，并提供带有效期、吊销、IP 白名单和限流能力的 `X-API-Key` 凭据。
 - 支持跨服务任务追踪、任务取消、任务恢复、操作日志和登录日志。
 - 支持手动和基于 Cron 的 HTTP 自动化，并提供加密请求配置与目标 Host 访问控制。
-- 支持基于 MySQL 的 macOS 设备 Agent 配对、匿名 iOS 设备清单、健康检查和只读诊断。
+- 支持基于 MySQL 的 macOS 设备 Agent 配对、匿名 iOS 设备池、WDA/Appium 自动化、Remote XPC Registry 和健康诊断。
 - 支持带版本的可视化工作流、复用节点模板、条件分支、迭代、循环、工具调用 Agent、手动运行及 API Key 调用。
 - 支持运行时平台品牌和语言配置。
 
@@ -63,10 +63,10 @@ MySQL 是平台的主数据库，存储以下数据：
 - 模型供应商、加密的供应商凭据、模型和能力路由。
 - 外部 API Key 元数据、HMAC-SHA256 摘要及仅供管理员查看的加密副本。
 - 工作流节点模板、定义、不可变发布版本、工作流运行记录及逐节点执行日志。
-- 设备 Agent 注册、一次性配对、健康状态、只读命令、匿名设备清单和审计记录。
+- 设备 Agent 注册、一次性配对、健康状态、设备级 WDA 命令、匿名设备池、Registry 状态和审计记录。
 - 系统任务、Java/Python 链路记录、操作日志和登录日志。
 
-Flyway 通过不可变的 V1-V27 迁移链管理完整 MySQL Schema，覆盖 JPA 平台实体、任务链路、日志、内置工作流节点模板和设备 Agent 管理。已存在的非空数据库会先基线到版本 0 再执行迁移；Hibernate 以 `validate` 模式运行，不会修改表结构。`MYSQL_MIGRATION_*` 可使用具有 DDL 权限的迁移账号，`MYSQL_*` 使用最小权限运行账号；未配置迁移账号时为兼容旧部署而回退运行连接。
+Flyway 通过不可变的 V1-V31 迁移链管理完整 MySQL Schema，覆盖 JPA 平台实体、任务链路、日志、内置工作流节点模板和设备 Agent 自动化管理。已存在的非空数据库会先基线到版本 0 再执行迁移；Hibernate 以 `validate` 模式运行，不会修改表结构。`MYSQL_MIGRATION_*` 可使用具有 DDL 权限的迁移账号，`MYSQL_*` 使用最小权限运行账号；未配置迁移账号时为兼容旧部署而回退运行连接。
 
 ### PostgreSQL 业务数据库
 
@@ -218,7 +218,7 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **路由健康检查：** `LLM_ROUTE_HEALTH_CHECK_ENABLED`、`LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`。
 - **任务追踪与日志：** `TRACE_TRACKING_EXCLUSIONS_FILE`、`TRACE_LOG_PERSIST_LEVEL`、`TRACE_LOG_QUEUE_CAPACITY`、`TRACE_LOG_BATCH_SIZE`、`TRACE_LOG_FLUSH_INTERVAL_MS`、`TRACE_LOG_RETENTION_DAYS`、`TRACE_HEARTBEAT_TIMEOUT_SECONDS`。
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
-- **设备 Agent：** `DEVICE_AGENT_NONCE_TTL_SECONDS`、`DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS`、`DEVICE_AGENT_HEARTBEAT_STALE_SECONDS`、`DEVICE_AGENT_PAIRING_TTL_SECONDS`。
+- **设备 Agent：** `DEVICE_AGENT_NONCE_TTL_SECONDS`、`DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS`、`DEVICE_AGENT_HEARTBEAT_STALE_SECONDS`、`DEVICE_AGENT_PAIRING_TTL_SECONDS`、`DEVICE_AGENT_REGISTRY_DEFAULT_PORT`，以及固定运行时版本 `AGENT_NODE_VERSION`、`AGENT_APPIUM_SPEC`、`AGENT_XCUITEST_SPEC`。
 - **工作流：** `WORKFLOW_EXECUTOR_POOL_SIZE`、`WORKFLOW_EXECUTOR_QUEUE_CAPACITY`、`WORKFLOW_MAX_NODES`、`WORKFLOW_MAX_ITERATIONS`、`WORKFLOW_MAX_AGENT_STEPS`、`WORKFLOW_MAX_RECURSION_DEPTH`、`WORKFLOW_MAX_PAYLOAD_BYTES`、`WORKFLOW_MAX_WAIT_SECONDS`、`WORKFLOW_MAX_EXECUTION_STEPS`、`WORKFLOW_MAX_RUN_LOG_BYTES`、`WORKFLOW_LEASE_SECONDS`、`WORKFLOW_WEBHOOK_MAX_BODY_BYTES`、`WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE`、`WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS`。
 - **HTTPS 入口、端口和镜像：** `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR`、`APP_HTTPS_IPS`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
@@ -312,11 +312,13 @@ docker compose ps
 IP 学习和续期全部在 Caddy 容器中完成，直接使用标准 Docker Compose 命令即可，不需要宿主机脚本或额外运行时。
 默认 profile 只启动核心平台，不启用插件适配器。需要启用适配器时，将 `ADAPTER_DOCKER_SOCKET` 指向 rootless Docker Daemon，将 `ADAPTER_DOCKER_SOCKET_GID` 设为 Socket 的数字组 ID，配置插件密钥，然后执行 `docker compose --profile plugin-adapters up --build -d`。Broker 会在开放控制 Socket 前检查 Docker 的 `name=rootless` 安全选项，普通或不可用的 Daemon 会被拒绝。
 
-### 只读 iOS 设备 Agent
+### iOS 设备自动化 Agent
 
-在“自动化 / 设备 Agent 管理”页面生成有效期 15 分钟的一次性配对码和目标 Mac 安装命令。Caddy 会同时分发 Apple Silicon 与 Intel 的自包含 Python 3.12 运行时，目标 Mac 无需预装 Python，但必须安装带 `devicectl` 的 Xcode，并在执行命令前信任平台 HTTPS 证书。使用 Caddy 内部 CA 时，请先按下文说明导出并安全传递公开根证书；绝不要分发 CA 私钥。
+在“自动化 / 设备 Agent 管理”页面生成有效期 15 分钟的一次性配对码和目标 Mac 安装命令。Caddy 会同时分发 Apple Silicon 与 Intel 的自包含 Python 3.12 和 Node.js 22 运行时；安装器固定安装 Appium 3.7 与 XCUITest Driver 12.11，并配置登录级 Appium LaunchAgent 和 root-owned Remote XPC Registry LaunchDaemon。目标 Mac 必须安装完整 Xcode，iPhone/iPad 必须信任 Mac 并启用开发者模式。使用 Caddy 内部 CA 时，请先按下文说明导出并安全传递公开根证书；绝不要分发 CA 私钥。
 
-Agent 只执行 `devicectl list devices` 和固定的环境版本检查，不安装或启动设备自动化组件、不建立自动化会话，也不会接管正在被其他程序控制的设备。原始 iOS UDID 仅在进程内存中用于计算摘要，既不在本机持久化也不上传；MySQL 只保存 Agent 范围内的 SHA-256 标识和只读元数据。实体 iOS 验证应等待设备空闲后另行执行，本次服务端部署验证明确不包含该项。
+管理页按设备摘要定向下发 `SETUP_WDA` 与 `START_WDA`，支持多设备独立端口、冲突检测、WDA 签名配置加密、Registry 上线/下线/重建及命令取消。原始 UDID 不进入后端、日志或管理页面，只在 Agent 内存和权限受限的本机 Unix Socket 请求中传给 root Helper。该 Agent 不包含企业微信账号、好友或业务任务功能。
+
+Agent 只执行已定义的固定命令集：设备发现、诊断、WDA 安装/启动、Registry 生命周期、配置刷新、回连改址和签名自升级。设备选择使用 Agent 范围内的 SHA-256 摘要，原始 iOS UDID 始终留在目标 Mac；启动 WDA 前，操作人员必须确认目标设备未被其他自动化程序控制。
 
 ### 数据同步与服务器管理
 

@@ -26,13 +26,19 @@ class DeviceCandidate:
         """生成仅对当前 Agent 稳定的不可逆设备摘要。"""
         return hashlib.sha256(f"{agent_id}:{self.udid}".encode()).hexdigest()
 
-    def report(self, agent_id: str) -> dict[str, object]:
-        """生成不含原始 UDID 的后端只读设备快照。"""
+    def report(self, agent_id: str, automation: dict[str, object] | None = None) -> dict[str, object]:
+        """生成不含原始 UDID、但包含脱敏 WDA 状态的后端设备快照。"""
+        state = automation or {}
         return {
             "deviceId": self.device_id(agent_id), "deviceName": self.name,
             "model": self.model, "platform": "iOS", "osVersion": self.os_version,
             "connected": self.connected, "connectionType": self.connection_type,
-            "status": "AVAILABLE" if self.connected else "OFFLINE", "lastErrorCode": None,
+            "status": "AVAILABLE" if self.connected else "OFFLINE",
+            "wdaStatus": state.get("wdaStatus", "UNKNOWN"),
+            "wdaRunning": bool(state.get("wdaRunning", False)),
+            "wdaLocalPort": state.get("wdaLocalPort"),
+            "wdaPortErrorCode": state.get("wdaPortErrorCode"),
+            "lastErrorCode": state.get("lastErrorCode"),
         }
 
 

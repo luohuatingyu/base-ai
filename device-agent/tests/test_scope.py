@@ -5,12 +5,15 @@ from __future__ import annotations
 from device_agent.main import CAPABILITIES
 
 
-def test_capabilities_exclude_device_and_business_automation() -> None:
-    """能力白名单只允许诊断、发现和 Agent 自维护。"""
+def test_capabilities_include_generic_automation_and_exclude_business_actions() -> None:
+    """能力白名单包含 WDA 与 Registry，但不包含账号、好友和业务任务。"""
     values = " ".join(CAPABILITIES).upper()
-    for forbidden in ("WDA", "APPIUM", "ACCOUNT", "FRIEND", "TASK_EXECUTION"):
+    assert "WDA" in values
+    assert "REGISTRY" in values
+    for forbidden in ("ACCOUNT", "FRIEND", "TASK_EXECUTION", "WECOM"):
         assert forbidden not in values
     assert set(CAPABILITIES) == {
         "DIAGNOSTICS", "UPDATE_CONFIG", "HEALTH_CHECK", "DETECT_SIGNING", "DETECT_DEVICE",
-        "UPGRADE", "UPDATE_BACKEND_URL",
+        "SETUP_WDA", "START_WDA", "REGISTRY_ONLINE", "REGISTRY_OFFLINE",
+        "REGISTRY_RECREATE", "UPGRADE", "UPDATE_BACKEND_URL",
     }

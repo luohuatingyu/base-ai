@@ -601,6 +601,10 @@ services:
         AGENT_PYTHON_VERSION: ${AGENT_PYTHON_VERSION:-3.12.8}
         AGENT_PYTHON_TAG: ${AGENT_PYTHON_TAG:-20250106}
         AGENT_PYTHON_BASE_URL: ${AGENT_PYTHON_BASE_URL:-https://github.com/astral-sh/python-build-standalone/releases/download}
+        AGENT_NODE_VERSION: ${AGENT_NODE_VERSION:-22.22.0}
+        AGENT_NODE_BASE_URL: ${AGENT_NODE_BASE_URL:-https://nodejs.org/dist}
+        AGENT_APPIUM_SPEC: ${AGENT_APPIUM_SPEC:-appium@3.7.0}
+        AGENT_XCUITEST_SPEC: ${AGENT_XCUITEST_SPEC:-xcuitest@12.11.1}
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-caddy
     restart: unless-stopped

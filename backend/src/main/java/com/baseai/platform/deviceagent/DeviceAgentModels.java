@@ -126,8 +126,9 @@ public final class DeviceAgentModels {
                                   Integer observedWdaLocalPort, String wdaPortErrorCode,
                                   String lastErrorCode, Instant lastSeenAt) {}
     /** WDA 签名参数，私钥和证书内容不进入协议。 */
-    public record WdaSigningConfig(String xcodeOrgId, String signingIdentity,
-                                   String updatedByBundleId, Boolean allowDeviceRegistration) {}
+    public record WdaSigningConfig(String xcodeOrgId, String xcodeSigningId,
+                                   String updatedWdaBundleId,
+                                   Boolean allowProvisioningDeviceRegistration) {}
     /** 管理端和 Agent 共同使用的 WDA 配置。 */
     public record AgentWdaConfigView(String agentId, WdaSigningConfig signingConfig,
                                      String launchMode, String wdaUrl, String appiumServerUrl,

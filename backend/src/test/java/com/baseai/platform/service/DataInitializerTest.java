@@ -275,7 +275,7 @@ class DataInitializerTest {
         assertFalse(permissions.contains("system:menu:manage"));
     }
 
-    /** 内置运维角色默认获得数据源、数据同步和服务器权限，但不获得其他运维或系统权限。 */
+    /** 内置运维角色默认获得数据、服务器和设备 Agent 权限，但不获得系统权限。 */
     @Test
     void seedsOperationsRoleWithSynchronizationAndDeploymentPermissions() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
@@ -290,8 +290,9 @@ class DataInitializerTest {
         assertTrue(permissions.containsAll(Set.of("operations:catalog", "operations:data-source:list",
             "operations:data-source:create", "operations:data-source:test", "operations:data-sync:list",
             "operations:data-sync:run", "operations:server:list", "operations:server:deploy",
-            "operations:server:rollback")));
-        assertFalse(permissions.contains("operations:device-agent:list"));
+            "operations:server:rollback", "operations:device-agent:list",
+            "operations:device-agent:create", "operations:device-agent:update",
+            "operations:device-agent:delete", "operations:device-agent:execute")));
         assertFalse(permissions.contains("operations:monitoring:catalog"));
         assertFalse(permissions.contains("system:user:list"));
     }

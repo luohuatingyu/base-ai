@@ -19,13 +19,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
         -o /out/base-ai-ip-cert ip-cert-helper.go
 
-# 构建时下载并校验 macOS 双架构 Python 3.12 自包含运行时。
+# 构建时下载并校验 macOS 双架构 Python 3.12 与 Node.js 自包含运行时。
 FROM ${CADDY_IMAGE} AS agent-runtime
 ARG ALPINE_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/alpine
 ARG AGENT_RUNTIME_BUNDLE=true
 ARG AGENT_PYTHON_VERSION=3.12.8
 ARG AGENT_PYTHON_TAG=20250106
 ARG AGENT_PYTHON_BASE_URL=https://github.com/astral-sh/python-build-standalone/releases/download
+ARG AGENT_NODE_VERSION=22.22.0
+ARG AGENT_NODE_BASE_URL=https://nodejs.org/dist
+ARG AGENT_APPIUM_SPEC=appium@3.7.0
+ARG AGENT_XCUITEST_SPEC=xcuitest@12.11.1
 RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR}#g" /etc/apk/repositories \
     && apk add --no-cache curl
 RUN --mount=type=cache,target=/agent-runtime-cache,sharing=locked set -eu; \
@@ -50,12 +54,34 @@ RUN --mount=type=cache,target=/agent-runtime-cache,sharing=locked set -eu; \
       cp "$cached" "/runtime/$file"; printf '%s' "$checksum"; \
     }; \
     arm_sha="$(fetch "$arm")"; x86_sha="$(fetch "$x86")"; \
+    node_checksums="$(curl -fsSL --connect-timeout 15 --retry 3 \
+      "${AGENT_NODE_BASE_URL}/v${AGENT_NODE_VERSION}/SHASUMS256.txt")"; \
+    node_arm="node-v${AGENT_NODE_VERSION}-darwin-arm64.tar.gz"; \
+    node_x86="node-v${AGENT_NODE_VERSION}-darwin-x64.tar.gz"; \
+    fetch_node() { \
+      file="$1"; checksum="$(printf '%s\n' "$node_checksums" | awk -v file="$file" '$2 == file {print $1}')"; \
+      [ "${#checksum}" -eq 64 ] || { echo "Invalid Node checksum for $file" >&2; exit 1; }; \
+      cached="/agent-runtime-cache/$file"; \
+      if [ ! -f "$cached" ] || [ "$(sha256sum "$cached" | cut -d' ' -f1)" != "$checksum" ]; then \
+        curl -fsSL --connect-timeout 15 --retry 3 -o "$cached" \
+          "${AGENT_NODE_BASE_URL}/v${AGENT_NODE_VERSION}/$file"; \
+      fi; \
+      [ "$(sha256sum "$cached" | cut -d' ' -f1)" = "$checksum" ] \
+        || { echo "Checksum mismatch for $file" >&2; exit 1; }; \
+      cp "$cached" "/runtime/$file"; printf '%s' "$checksum"; \
+    }; \
+    node_arm_sha="$(fetch_node "$node_arm")"; node_x86_sha="$(fetch_node "$node_x86")"; \
     { echo "AGENT_RUNTIME_BUNDLED=true"; echo "PYTHON_VERSION=${AGENT_PYTHON_VERSION}"; \
       echo "PYTHON_ARM64_FILE=$arm"; echo "PYTHON_ARM64_SHA256=$arm_sha"; \
-      echo "PYTHON_X86_64_FILE=$x86"; echo "PYTHON_X86_64_SHA256=$x86_sha"; } \
+      echo "PYTHON_X86_64_FILE=$x86"; echo "PYTHON_X86_64_SHA256=$x86_sha"; \
+      echo "NODE_VERSION=${AGENT_NODE_VERSION}"; \
+      echo "NODE_ARM64_FILE=$node_arm"; echo "NODE_ARM64_SHA256=$node_arm_sha"; \
+      echo "NODE_X86_64_FILE=$node_x86"; echo "NODE_X86_64_SHA256=$node_x86_sha"; \
+      echo "APPIUM_SPEC=${AGENT_APPIUM_SPEC}"; \
+      echo "XCUITEST_SPEC=${AGENT_XCUITEST_SPEC}"; } \
       > /runtime/manifest.env
 
-# 仅打包通用设备 Agent 的运行文件，不包含测试、缓存或设备自动化组件。
+# 仅打包通用设备 Agent 的运行文件，不包含测试或缓存。
 FROM ${CADDY_IMAGE} AS agent-dist
 COPY --from=agent-src / /agent-src/
 COPY --from=agent-runtime /runtime /dist/runtime

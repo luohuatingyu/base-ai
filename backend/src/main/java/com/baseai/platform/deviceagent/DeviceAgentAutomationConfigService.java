@@ -156,8 +156,8 @@ public class DeviceAgentAutomationConfigService {
         if (value == null) return null;
         String teamId = optional(value.xcodeOrgId());
         if (teamId != null) teamId = teamId.toUpperCase(Locale.ROOT);
-        String identity = optional(value.signingIdentity());
-        String bundleId = optional(value.updatedByBundleId());
+        String identity = optional(value.xcodeSigningId());
+        String bundleId = optional(value.updatedWdaBundleId());
         if (teamId != null && !TEAM_ID.matcher(teamId).matches()
             || identity != null && !SIGNING_IDENTITY.matcher(identity).matches()
             || identity != null && teamId == null
@@ -165,7 +165,8 @@ public class DeviceAgentAutomationConfigService {
             throw new BusinessException("deviceAgent.wdaConfigInvalid");
         }
         return new DeviceAgentModels.WdaSigningConfig(
-            teamId, identity, bundleId, Boolean.TRUE.equals(value.allowDeviceRegistration()));
+            teamId, identity, bundleId,
+            Boolean.TRUE.equals(value.allowProvisioningDeviceRegistration()));
     }
 
     /** 只允许 HTTP 回环地址，阻止 Agent 访问外部 Appium 或 WDA 服务。 */

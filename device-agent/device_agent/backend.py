@@ -69,9 +69,28 @@ class BackendClient:
         """上报只读诊断结果。"""
         self.request("POST", "/diagnostics", payload)
 
-    def synchronize_devices(self, devices: list[dict[str, Any]]) -> None:
-        """同步完整匿名设备快照。"""
-        self.request("POST", "/devices/sync", {"devices": devices})
+    def synchronize_devices(self, devices: list[dict[str, Any]]) -> dict[str, Any]:
+        """同步完整匿名设备快照并接收每台设备的期望 WDA 端口。"""
+        result = self.request("POST", "/devices/sync", {"devices": devices})
+        return result if isinstance(result, dict) else {"devices": []}
+
+    def wda_config(self) -> dict[str, Any]:
+        """拉取当前 Agent 的 WDA 签名与本地服务配置。"""
+        result = self.request("GET", "/wda-config")
+        if not isinstance(result, dict):
+            raise BackendError("WDA_CONFIG_INVALID")
+        return result
+
+    def registry_config(self) -> dict[str, Any]:
+        """拉取 Remote XPC Registry 的期望配置。"""
+        result = self.request("GET", "/registry/config")
+        if not isinstance(result, dict):
+            raise BackendError("REGISTRY_CONFIG_INVALID")
+        return result
+
+    def registry_status(self, payload: dict[str, Any]) -> None:
+        """上报不含设备标识和日志的 Registry 状态。"""
+        self.request("POST", "/registry/status", payload)
 
     def lease_command(self, capabilities: list[str]) -> dict[str, Any] | None:
         """领取一条能力匹配的管理命令。"""

@@ -15,7 +15,7 @@ The platform provides identity and access management, OpenAI-compatible model ro
 - HttpOnly-cookie browser sessions with signed CSRF protection, compatible Bearer-token clients, and scoped `X-API-Key` credentials with expiry, revocation, IP allowlists, and rate limits.
 - Cross-service task tracing, cancellation, recovery, operation logs, and login logs.
 - Manual and Cron-based HTTP automation with encrypted request configuration and outbound-host controls.
-- MySQL-backed macOS Device Agent pairing, anonymous iOS inventory, health checks, and read-only diagnostics.
+- MySQL-backed macOS Device Agent pairing, anonymous iOS device pools, WDA/Appium automation, Remote XPC Registry, and health diagnostics.
 - Versioned visual workflows with reusable node templates, conditional branches, iteration, loops, tool-calling agents, manual runs, and API-key invocation.
 - Runtime platform branding and language configuration.
 
@@ -63,10 +63,10 @@ MySQL is the primary platform database. It contains:
 - Model providers, encrypted provider credentials, models, and capability routes.
 - External API key metadata, HMAC-SHA256 digests, and encrypted copies for administrator-only reveal.
 - Workflow node templates, definitions, immutable published versions, workflow runs, and per-node execution logs.
-- Device Agent registrations, one-time pairings, health, read-only commands, anonymous device inventory, and audits.
+- Device Agent registrations, one-time pairings, health, device-scoped WDA commands, anonymous device pools, Registry status, and audits.
 - System tasks, Java/Python trace records, operation logs, and login logs.
 
-Flyway manages the complete MySQL schema through the immutable V1-V27 migration chain, including JPA platform entities, task traces, logs, built-in workflow node templates, and Device Agent management. Existing non-empty databases are baselined at version 0 before migrations run; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application. `MYSQL_MIGRATION_*` may use a DDL-capable migration account while `MYSQL_*` uses a least-privilege runtime account; omitted migration values fall back to the runtime connection for compatibility.
+Flyway manages the complete MySQL schema through the immutable V1-V31 migration chain, including JPA platform entities, task traces, logs, built-in workflow node templates, and Device Agent automation management. Existing non-empty databases are baselined at version 0 before migrations run; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application. `MYSQL_MIGRATION_*` may use a DDL-capable migration account while `MYSQL_*` uses a least-privilege runtime account; omitted migration values fall back to the runtime connection for compatibility.
 
 ### PostgreSQL business database
 
@@ -223,7 +223,7 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Route health checks:** `LLM_ROUTE_HEALTH_CHECK_ENABLED`, `LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS`.
 - **Task tracing and logging:** `TRACE_TRACKING_EXCLUSIONS_FILE`, `TRACE_LOG_PERSIST_LEVEL`, `TRACE_LOG_QUEUE_CAPACITY`, `TRACE_LOG_BATCH_SIZE`, `TRACE_LOG_FLUSH_INTERVAL_MS`, `TRACE_LOG_RETENTION_DAYS`, `TRACE_HEARTBEAT_TIMEOUT_SECONDS`.
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
-- **Device Agent:** `DEVICE_AGENT_NONCE_TTL_SECONDS`, `DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS`, `DEVICE_AGENT_HEARTBEAT_STALE_SECONDS`, and `DEVICE_AGENT_PAIRING_TTL_SECONDS`.
+- **Device Agent:** `DEVICE_AGENT_NONCE_TTL_SECONDS`, `DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS`, `DEVICE_AGENT_HEARTBEAT_STALE_SECONDS`, `DEVICE_AGENT_PAIRING_TTL_SECONDS`, `DEVICE_AGENT_REGISTRY_DEFAULT_PORT`, plus pinned runtime versions `AGENT_NODE_VERSION`, `AGENT_APPIUM_SPEC`, and `AGENT_XCUITEST_SPEC`.
 - **Workflow:** `WORKFLOW_EXECUTOR_POOL_SIZE`, `WORKFLOW_EXECUTOR_QUEUE_CAPACITY`, `WORKFLOW_MAX_NODES`, `WORKFLOW_MAX_ITERATIONS`, `WORKFLOW_MAX_AGENT_STEPS`, `WORKFLOW_MAX_RECURSION_DEPTH`, `WORKFLOW_MAX_PAYLOAD_BYTES`, `WORKFLOW_MAX_WAIT_SECONDS`, `WORKFLOW_MAX_EXECUTION_STEPS`, `WORKFLOW_MAX_RUN_LOG_BYTES`, `WORKFLOW_LEASE_SECONDS`, `WORKFLOW_WEBHOOK_MAX_BODY_BYTES`, `WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE`, and `WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS`.
 - **HTTPS ingress and images:** `APP_HTTPS_SITES_FILE`, `TLS_CERTS_DIR`, `APP_HTTPS_IPS`, `TLS_CERT_CHECK_INTERVAL_SECONDS`, `IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`, `IP_CERT_MAX_LEARNED_HOSTS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
 
@@ -317,11 +317,13 @@ docker compose ps
 IP learning and renewal run entirely inside the Caddy container. Standard Docker Compose commands are sufficient; no host-side script or additional runtime is required.
 The default profile starts the core platform without plugin adapters. To enable adapters, point `ADAPTER_DOCKER_SOCKET` at a rootless Docker daemon, set `ADAPTER_DOCKER_SOCKET_GID` to the socket's numeric group ID, configure the plugin secrets, and run `docker compose --profile plugin-adapters up --build -d`. The Broker verifies Docker's `name=rootless` security option before opening its control sockets and refuses a conventional or unavailable daemon.
 
-### Read-only iOS Device Agent
+### iOS Device Automation Agent
 
-The **Automation / Device Agent Management** page creates a 15-minute one-time pairing code and an installation command for a target Mac. Caddy distributes a self-contained Python 3.12 runtime for both Apple Silicon and Intel, so no host Python installation is required. The target Mac must have Xcode with `devicectl` available and must trust the platform HTTPS certificate before running the command. For an internal Caddy CA, transfer and install the exported public root certificate described below; never distribute the CA private key.
+The **Automation / Device Agent Management** page creates a 15-minute one-time pairing code and an installation command for a target Mac. Caddy distributes self-contained Python 3.12 and Node.js 22 runtimes for Apple Silicon and Intel; the installer pins Appium 3.7 and XCUITest Driver 12.11 and configures a login-level Appium LaunchAgent plus a root-owned Remote XPC Registry LaunchDaemon. The target Mac needs full Xcode, and each iPhone/iPad must trust the Mac and enable Developer Mode. For an internal Caddy CA, transfer and install the exported public root certificate described below; never distribute the CA private key.
 
-The Agent only executes `devicectl list devices` and fixed environment-version checks. It does not install or launch device automation components, create automation sessions, or take over a device already controlled by another program. Raw iOS UDIDs stay in process memory for hashing and are neither persisted locally nor uploaded; MySQL stores only an Agent-scoped SHA-256 identifier and read-only metadata. Physical iOS validation should be performed later on an idle device; it is intentionally not part of server-side deployment verification.
+The management page dispatches device-scoped `SETUP_WDA` and `START_WDA` commands, supports stable per-device ports and conflict detection, encrypts WDA signing metadata, manages Registry online/offline/recreate actions, and cancels active commands. Raw UDIDs never enter the backend, logs, or UI; they are used only in Agent memory and restricted local Unix Socket requests to the root helper. WeCom accounts, friends, and business tasks remain out of scope.
+
+The Agent executes only the documented fixed command set: device discovery, diagnostics, WDA setup/start, Registry lifecycle, configuration refresh, relocation, and signed self-upgrade. Device selection uses Agent-scoped SHA-256 identifiers while raw iOS UDIDs stay on the target Mac. Before starting WDA, operators must ensure the selected device is not controlled by another automation process.
 
 ### Data synchronization and server management
 

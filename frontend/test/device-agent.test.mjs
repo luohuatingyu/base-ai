@@ -17,23 +17,31 @@ test('device Agent route is protected by its dedicated permission', () => {
   assert.match(navigation, /operations:device-agent:list/)
 })
 
-test('device Agent page exposes generic read-only management actions', () => {
+test('device Agent page exposes complete generic automation management actions', () => {
   assert.match(view, /\/automation\/device-agents/)
   assert.match(view, /DIAGNOSTICS/)
   assert.match(view, /DETECT_DEVICE/)
+  assert.match(view, /SETUP_WDA/)
+  assert.match(view, /START_WDA/)
+  assert.match(view, /registry\/actions/)
+  assert.match(view, /APPIUM_WDA_AUTOMATION/)
   assert.match(view, /UPGRADE/)
-  assert.match(zhLocale, /不会建立自动化会话/)
+  assert.match(view, /Number\(value\) >= 1024/)
+  assert.match(view, /Number\(value\) <= 65535/)
+  assert.match(zhLocale, /原始 UDID 始终只保留在目标 Mac/)
 })
 
-test('device Agent page contains no removed automation endpoints', () => {
-  assert.doesNotMatch(view, /\/wda|\/appium|\/accounts|\/friends|\/tasks\/execute/i)
+test('device Agent page contains no business automation endpoints', () => {
+  assert.doesNotMatch(view, /\/accounts|\/friends|\/tasks\/execute|wecom/i)
 })
 
-test('device Agent distribution is self-contained and Python 3.12 only', () => {
+test('device Agent distribution is self-contained with pinned automation runtimes', () => {
   assert.match(compose, /agent-src:\s*\.\/device-agent/)
   assert.match(caddyDockerfile, /aarch64-apple-darwin-install_only/)
   assert.match(caddyDockerfile, /x86_64-apple-darwin-install_only/)
   assert.match(caddyfile, /handle_path \/agent-dist\/\*/)
   assert.match(agentProject, /requires-python = ">=3\.12,<3\.13"/)
-  assert.doesNotMatch(caddyDockerfile, /node-runtime|appium-runtime|wda-runtime/i)
+  assert.match(caddyDockerfile, /AGENT_NODE_VERSION=22\.22\.0/)
+  assert.match(caddyDockerfile, /AGENT_APPIUM_SPEC=appium@3\.7\.0/)
+  assert.match(caddyDockerfile, /AGENT_XCUITEST_SPEC=xcuitest@12\.11\.1/)
 })
