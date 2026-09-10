@@ -14,6 +14,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -33,6 +34,15 @@ class DeviceAgentCommandServiceTest {
         dataSource.setURL("jdbc:h2:mem:device-agent-command-" + UUID.randomUUID()
             + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
         db = new JdbcTemplate(dataSource);
+        db.execute("""
+            CREATE TABLE automation_device_agent_registration (
+              id BIGINT AUTO_INCREMENT PRIMARY KEY, agent_id VARCHAR(64) UNIQUE,
+              pairing_status VARCHAR(16))
+            """);
+        db.update("""
+            INSERT INTO automation_device_agent_registration (agent_id, pairing_status)
+            VALUES ('ios-agent-test', 'PAIRED')
+            """);
         db.execute("""
             CREATE TABLE automation_device_agent_command (
               id BIGINT AUTO_INCREMENT PRIMARY KEY, agent_id VARCHAR(64), target_device_id CHAR(64),
@@ -120,5 +130,108 @@ class DeviceAgentCommandServiceTest {
         service.reportResult("ios-agent-test", lease.commandId(),
             new DeviceAgentModels.ReportCommandResultRequest(lease.leaseToken(), "COMPLETED", "ok", null));
         assertEquals("COMPLETED", service.get(lease.commandId()).status());
+    }
+
+    /** Agent 正在执行任务时必须拒绝升级，不能把升级命令放入队列。 */
+    @Test
+    void rejectsUpgradeWhileAnotherCommandIsExecuting() {
+        DeviceAgentModels.AgentCommandView diagnostics = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "DIAGNOSTICS", Map.of()), 7L);
+        DeviceAgentModels.LeaseCommandResponse lease = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("DIAGNOSTICS")));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "UPGRADE", Map.of()), 7L));
+
+        assertEquals("deviceAgent.upgradeAgentBusy", exception.getMessageKey());
+        assertEquals("LEASED", service.get(diagnostics.id()).status());
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM automation_device_agent_command", Integer.class));
+        assertNotNull(lease);
+    }
+
+    /** 升级应抢在旧排队任务前执行，并在终态前拒绝和停止领取其他任务。 */
+    @Test
+    void prioritizesUpgradeAndBlocksOtherCommandsUntilCompletion() {
+        DeviceAgentModels.AgentCommandView diagnostics = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "DIAGNOSTICS", Map.of()), 7L);
+        DeviceAgentModels.AgentCommandView upgrade = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "UPGRADE", Map.of()), 7L);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "HEALTH_CHECK", Map.of()), 7L));
+        DeviceAgentModels.LeaseCommandResponse upgradeLease = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("DIAGNOSTICS", "UPGRADE")));
+
+        assertEquals("deviceAgent.upgradeInProgress", exception.getMessageKey());
+        assertNotNull(upgradeLease);
+        assertEquals(upgrade.id(), upgradeLease.commandId());
+        assertNull(service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("DIAGNOSTICS", "UPGRADE"))));
+
+        service.reportResult("ios-agent-test", upgrade.id(),
+            new DeviceAgentModels.ReportCommandResultRequest(
+                upgradeLease.leaseToken(), "COMPLETED", "upgraded", null));
+        DeviceAgentModels.LeaseCommandResponse resumed = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("DIAGNOSTICS")));
+
+        assertNotNull(resumed);
+        assertEquals(diagnostics.id(), resumed.commandId());
+    }
+
+    /** 待升级时旧版 Agent 即使未声明升级能力，也不能越过升级命令领取普通任务。 */
+    @Test
+    void blocksOtherLeasesWhenUpgradeCapabilityIsMissing() {
+        service.create(new DeviceAgentModels.CreateCommandRequest(
+            "ios-agent-test", "DIAGNOSTICS", Map.of()), 7L);
+        service.create(new DeviceAgentModels.CreateCommandRequest(
+            "ios-agent-test", "UPGRADE", Map.of()), 7L);
+
+        DeviceAgentModels.LeaseCommandResponse lease = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("DIAGNOSTICS")));
+
+        assertNull(lease);
+        assertEquals(2, db.queryForObject("""
+            SELECT COUNT(*) FROM automation_device_agent_command WHERE status='PENDING'
+            """, Integer.class));
+    }
+
+    /** 升级失败进入终态后应解除门禁，让旧版本 Agent 继续领取任务。 */
+    @Test
+    void resumesTaskLeasingAfterUpgradeFailure() {
+        DeviceAgentModels.AgentCommandView upgrade = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "UPGRADE", Map.of()), 7L);
+        DeviceAgentModels.LeaseCommandResponse upgradeLease = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("UPGRADE")));
+        assertNotNull(upgradeLease);
+        service.reportResult("ios-agent-test", upgrade.id(),
+            new DeviceAgentModels.ReportCommandResultRequest(
+                upgradeLease.leaseToken(), "FAILED", "upgrade failed", "UPGRADE_INSTALL_FAILED"));
+
+        DeviceAgentModels.AgentCommandView healthCheck = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "HEALTH_CHECK", Map.of()), 7L);
+        DeviceAgentModels.LeaseCommandResponse resumed = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("HEALTH_CHECK")));
+
+        assertNotNull(resumed);
+        assertEquals(healthCheck.id(), resumed.commandId());
+    }
+
+    /** 没有升级任务时继续保留普通命令独立领取的既有行为。 */
+    @Test
+    void preservesOrdinaryCommandLeasingWithoutUpgrade() {
+        DeviceAgentModels.AgentCommandView diagnostics = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "DIAGNOSTICS", Map.of()), 7L);
+        DeviceAgentModels.AgentCommandView healthCheck = service.create(
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "HEALTH_CHECK", Map.of()), 7L);
+
+        DeviceAgentModels.LeaseCommandResponse diagnosticsLease = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("DIAGNOSTICS")));
+        DeviceAgentModels.LeaseCommandResponse healthCheckLease = service.lease("ios-agent-test",
+            new DeviceAgentModels.LeaseCommandRequest(List.of("HEALTH_CHECK")));
+
+        assertNotNull(diagnosticsLease);
+        assertNotNull(healthCheckLease);
+        assertEquals(diagnostics.id(), diagnosticsLease.commandId());
+        assertEquals(healthCheck.id(), healthCheckLease.commandId());
     }
 }

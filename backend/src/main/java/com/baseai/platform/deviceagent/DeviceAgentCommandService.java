@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 public class DeviceAgentCommandService {
     private static final Pattern DEVICE_ID = Pattern.compile("[a-f0-9]{64}");
     private static final Set<String> DEVICE_COMMANDS = Set.of("SETUP_WDA", "START_WDA");
+    private static final String UPGRADE_COMMAND = "UPGRADE";
     private final JdbcTemplate db;
     private final ObjectMapper objectMapper;
     private final DeviceAgentRegistrationService registrationService;
@@ -50,6 +51,15 @@ public class DeviceAgentCommandService {
         String targetDeviceId = normalizeTargetDevice(request.targetDeviceId(), commandType);
         validateTargetDevice(agentId, targetDeviceId, commandType);
         String params = writeParams(request.commandParams());
+        lockAgent(agentId);
+        expireLeasesForAgent(agentId);
+        if (UPGRADE_COMMAND.equals(commandType)) {
+            if (hasActiveLease(agentId)) {
+                throw new BusinessException(409, "deviceAgent.upgradeAgentBusy");
+            }
+        } else if (hasActiveUpgrade(agentId)) {
+            throw new BusinessException(409, "deviceAgent.upgradeInProgress");
+        }
         List<Long> active = db.query("""
             SELECT id FROM automation_device_agent_command
             WHERE agent_id=? AND command_type=?
@@ -77,18 +87,25 @@ public class DeviceAgentCommandService {
     public DeviceAgentModels.LeaseCommandResponse lease(String agentId,
                                                          DeviceAgentModels.LeaseCommandRequest request) {
         registrationService.requirePaired(agentId);
+        lockAgent(agentId);
         expireLeasesForAgent(agentId);
+        if (hasLeasedUpgrade(agentId)) return null;
         List<String> capabilities = request == null || request.capabilities() == null ? List.of()
             : request.capabilities().stream().filter(DeviceAgentModels.VALID_COMMAND_TYPES::contains).distinct().toList();
         if (capabilities.isEmpty()) return null;
         List<LeaseCandidate> candidates = db.query("""
             SELECT id, target_device_id, command_type, command_params FROM automation_device_agent_command
-            WHERE agent_id=? AND status='PENDING' ORDER BY id LIMIT 100 FOR UPDATE
+            WHERE agent_id=? AND status='PENDING'
+            ORDER BY CASE WHEN command_type='UPGRADE' THEN 0 ELSE 1 END, id
+            LIMIT 100 FOR UPDATE
             """, (resultSet, rowNum) -> new LeaseCandidate(resultSet.getLong("id"),
             resultSet.getString("target_device_id"),
             resultSet.getString("command_type"), resultSet.getString("command_params")), agentId);
-        LeaseCandidate candidate = candidates.stream().filter(item -> capabilities.contains(item.commandType()))
-            .findFirst().orElse(null);
+        LeaseCandidate pendingUpgrade = candidates.stream()
+            .filter(item -> UPGRADE_COMMAND.equals(item.commandType())).findFirst().orElse(null);
+        LeaseCandidate candidate = pendingUpgrade == null
+            ? candidates.stream().filter(item -> capabilities.contains(item.commandType())).findFirst().orElse(null)
+            : capabilities.contains(UPGRADE_COMMAND) ? pendingUpgrade : null;
         if (candidate == null) return null;
         String token = leaseToken();
         Instant expiresAt = Instant.now().plusSeconds(leaseSeconds(candidate.commandType()));
@@ -172,6 +189,40 @@ public class DeviceAgentCommandService {
             SET status='EXPIRED', completed_at=CURRENT_TIMESTAMP(6), lease_token=NULL
             WHERE agent_id=? AND status='LEASED' AND lease_expires_at<=CURRENT_TIMESTAMP(6)
             """, agentId);
+    }
+
+    /** 锁定 Agent 注册行，串行化升级创建与命令领取的状态判断。 */
+    private void lockAgent(String agentId) {
+        db.queryForObject("""
+            SELECT id FROM automation_device_agent_registration WHERE agent_id=? FOR UPDATE
+            """, Long.class, agentId);
+    }
+
+    /** 判断 Agent 是否已经有一条仍在执行期内的命令租约。 */
+    private boolean hasActiveLease(String agentId) {
+        Integer count = db.queryForObject("""
+            SELECT COUNT(*) FROM automation_device_agent_command
+            WHERE agent_id=? AND status='LEASED' AND lease_expires_at>CURRENT_TIMESTAMP(6)
+            """, Integer.class, agentId);
+        return count != null && count > 0;
+    }
+
+    /** 判断 Agent 是否处于升级排队或执行阶段。 */
+    private boolean hasActiveUpgrade(String agentId) {
+        Integer count = db.queryForObject("""
+            SELECT COUNT(*) FROM automation_device_agent_command
+            WHERE agent_id=? AND command_type='UPGRADE' AND status IN ('PENDING','LEASED')
+            """, Integer.class, agentId);
+        return count != null && count > 0;
+    }
+
+    /** 判断升级命令是否已被领取，执行期间不得继续派发其他命令。 */
+    private boolean hasLeasedUpgrade(String agentId) {
+        Integer count = db.queryForObject("""
+            SELECT COUNT(*) FROM automation_device_agent_command
+            WHERE agent_id=? AND command_type='UPGRADE' AND status='LEASED'
+            """, Integer.class, agentId);
+        return count != null && count > 0;
     }
 
     /** 校验命令类型严格属于设备自动化和 Agent 自维护白名单。 */
