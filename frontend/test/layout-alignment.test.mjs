@@ -126,8 +126,16 @@ test('侧边栏提供三套可持久化主题并同步桌面与移动端入口',
   assert.match(enLocaleSource, /themes:\s*\{ midnight: 'Midnight Blue', cloud: 'Cloud White', aurora: 'Aurora Violet' \}/)
 })
 
-test('侧边栏主题下拉使用可接收点击事件的直接 DOM 触发节点', () => {
-  assert.match(sidebarThemeSwitcherSource, /<el-dropdown[\s\S]*?@command="handleCommand"\s*>\s*<button\b/)
+test('侧边栏主题切换使用紧凑色板并支持折叠态循环切换', () => {
+  assert.doesNotMatch(sidebarThemeSwitcherSource, /<el-dropdown/)
+  assert.match(sidebarThemeSwitcherSource, /class="sidebar-theme-options" role="radiogroup"/)
+  assert.match(sidebarThemeSwitcherSource, /role="radio"[\s\S]*?:aria-checked=/)
+  assert.match(sidebarThemeSwitcherSource, /@click="selectTheme\(theme\.id\)"/)
+  assert.match(sidebarThemeSwitcherSource, /class="sidebar-theme-cycle"[\s\S]*?@click="selectNextTheme"/)
+  assert.match(sidebarThemeSwitcherSource, /findNextSidebarTheme\(props\.modelValue\)/)
+  assertDeclarations(sidebarThemeSwitcherSource, '.sidebar-theme-switcher', [/display:\s*flex/, /height:\s*44px/, /border-radius:\s*12px/])
+  assertDeclarations(sidebarThemeSwitcherSource, '.sidebar-theme-option', [/width:\s*32px/, /height:\s*32px/, /background:\s*transparent/])
+  assertDeclarations(sidebarThemeSwitcherSource, '.sidebar-theme-switcher--collapsed', [/height:\s*40px/, /justify-content:\s*center/])
 })
 
 test('英文导航为长名称保留空间且文本不会撑破侧栏', () => {

@@ -321,31 +321,6 @@ body { margin: 0; background: var(--app-canvas); }
 .sidebar-footer span,
 .sidebar-footer small { overflow-wrap: anywhere; line-height: 1.45; }
 
-.sidebar-theme-preview {
-  position: relative;
-  display: inline-flex;
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  align-items: flex-end;
-  padding: 5px;
-  overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 30%);
-  border-radius: 9px;
-  box-shadow: 0 3px 8px rgb(24 36 61 / 16%);
-}
-
-.sidebar-theme-preview i { width: 12px; height: 3px; border-radius: 3px; background: rgb(255 255 255 / 82%); box-shadow: 0 -6px 0 rgb(255 255 255 / 44%); }
-.sidebar-theme-preview--midnight { background: linear-gradient(145deg, #0d172a, #315b96); }
-.sidebar-theme-preview--cloud { border-color: #cfd9e8; background: linear-gradient(145deg, #fff, #dce6f5); }
-.sidebar-theme-preview--cloud i { background: #356ae6; box-shadow: 0 -6px 0 rgb(53 106 230 / 34%); }
-.sidebar-theme-preview--aurora { background: linear-gradient(145deg, #7c3aed, #18b9cf); }
-
-.sidebar-theme-option { display: flex; min-width: 184px; align-items: center; gap: 10px; }
-.sidebar-theme-option > span:nth-child(2) { flex: 1; }
-.sidebar-theme-option > .el-icon { margin-left: auto; color: var(--app-primary); }
-.sidebar-theme-option.is-active { color: var(--app-primary); font-weight: 700; }
-
 .topbar {
   display: flex;
   align-items: center;

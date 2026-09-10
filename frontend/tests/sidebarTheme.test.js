@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   DEFAULT_SIDEBAR_THEME,
   SIDEBAR_THEMES,
+  findNextSidebarTheme,
   loadSidebarTheme,
   persistSidebarTheme,
   resolveSidebarTheme
@@ -19,6 +20,13 @@ test('有效主题保持不变，空值和非法主题回退暗夜蓝', () => {
   assert.equal(resolveSidebarTheme(''), 'midnight')
   assert.equal(resolveSidebarTheme(null), 'midnight')
   assert.equal(resolveSidebarTheme('unknown'), 'midnight')
+})
+
+test('折叠态按注册顺序循环切换三套主题', () => {
+  assert.equal(findNextSidebarTheme('midnight'), 'cloud')
+  assert.equal(findNextSidebarTheme('cloud'), 'aurora')
+  assert.equal(findNextSidebarTheme('aurora'), 'midnight')
+  assert.equal(findNextSidebarTheme('unknown'), 'cloud')
 })
 
 test('读取已保存主题并在无效值或存储异常时安全回退', () => {

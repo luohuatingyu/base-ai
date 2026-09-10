@@ -13,6 +13,13 @@ export function resolveSidebarTheme(theme) {
   return supportedThemes.has(theme) ? theme : DEFAULT_SIDEBAR_THEME
 }
 
+/** 按注册顺序返回下一个侧边栏主题，无效值从默认主题继续。 */
+export function findNextSidebarTheme(theme) {
+  const currentTheme = resolveSidebarTheme(theme)
+  const currentIndex = SIDEBAR_THEMES.findIndex(option => option.id === currentTheme)
+  return SIDEBAR_THEMES[(currentIndex + 1) % SIDEBAR_THEMES.length].id
+}
+
 /** 从浏览器存储读取侧边栏主题，隐私模式或存储异常时安全回退。 */
 export function loadSidebarTheme(storageKey, runtime = globalThis) {
   try {
