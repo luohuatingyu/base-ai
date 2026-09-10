@@ -93,7 +93,7 @@ const CONNECTION_CATEGORY_STYLE = { backgroundColor: '#f8fafc', borderColor: '#c
 const CONNECTION_TYPE_SURFACE = { backgroundColor: '#ffffff', borderColor: '#dbe3ee' }
 /** 连接产品采用主流品牌图标库使用的品牌主色，通用类型保持中性。 */
 const CONNECTION_TYPE_COLORS = {
-  MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#3F8624',
+  MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31',
   KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00A1EA',
   ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
 }

@@ -52,7 +52,7 @@ test('七类连接完整覆盖全部类型并允许 PostgreSQL 双重归属', ()
 test('分类使用中性色且连接类型遵循外部常规品牌色', () => {
   const neutralCategoryStyle = { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#475569' }
   const expectedTypeColors = {
-    MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#3F8624',
+    MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31',
     KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00A1EA',
     ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
   }
