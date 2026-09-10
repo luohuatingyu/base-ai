@@ -35,7 +35,7 @@ Commit: 3902fd54bcba7f0ff3882759856fa2eff3432880
 - 缺陷复现：新增参数化回归用例修复前 2/4 通过，两个包含未建隧道候选设备的分支按预期失败；修复后相关定向测试 9/9 通过。
 - Backend：功能提交干净 worktree 的 Docker 构建阶段运行 Maven 完整测试，765/765 通过，失败 0、错误 0、跳过 0。
 - Frontend：功能提交干净 worktree 的生产构建通过；Caddy 成功生成带校验清单的新 Agent 包。
-- 真实 MacAir：Agent 从 `20260910.0956+d37912b9621c` 升级到 `20260910.1243+0d19436782c2` 并成功重启；BaseAI Registry Helper 的受管进程包含 2 个脱敏设备参数。
+- 真实 MacAir：Agent 从 `20260910.0956+d37912b9621c` 升级到最终干净包 `20260910.1340+0d19436782c2` 并成功重启；BaseAI Registry Helper 的受管进程包含 2 个脱敏设备参数。
 - 运行态连续 3 次同步中，iPhone 均为 `AVAILABLE`；Registry 均为 `ONLINE`、无 `REGISTRY_DEVICE_NOT_CONFIGURED`；iPad 由 macOS 报告为 `unavailable`，因此保持离线。
 - 默认服务完整 Compose 重建连续两次失败，失败数 2：均为未修改的 Python Worker 镜像执行 `apt-get update` 时 Debian `trixie/main` 索引经当前网络代理返回连接失败/404。该项未通过，不以 Caddy 单服务发布替代完整重建结果。
 
