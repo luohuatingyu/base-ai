@@ -7,28 +7,19 @@
     popper-class="sidebar-theme-popper"
     @command="handleCommand"
   >
-    <el-tooltip
-      :disabled="!collapsed"
-      :content="t('nav.theme')"
-      effect="dark"
-      placement="right"
-      :enterable="true"
-      popper-class="copyable-tooltip"
+    <button
+      type="button"
+      class="sidebar-theme-trigger"
+      :class="{ 'sidebar-theme-trigger--collapsed': collapsed }"
+      :aria-label="t('nav.theme')"
     >
-      <button
-        type="button"
-        class="sidebar-theme-trigger"
-        :class="{ 'sidebar-theme-trigger--collapsed': collapsed }"
-        :aria-label="t('nav.theme')"
-      >
-        <span class="sidebar-theme-preview" :class="`sidebar-theme-preview--${currentTheme.id}`" aria-hidden="true"><i /></span>
-        <span v-if="!collapsed" class="sidebar-theme-copy">
-          <small>{{ t('nav.theme') }}</small>
-          <strong>{{ t(currentTheme.labelKey) }}</strong>
-        </span>
-        <el-icon v-if="!collapsed" class="sidebar-theme-arrow"><ArrowUp /></el-icon>
-      </button>
-    </el-tooltip>
+      <span class="sidebar-theme-preview" :class="`sidebar-theme-preview--${currentTheme.id}`" aria-hidden="true"><i /></span>
+      <span v-if="!collapsed" class="sidebar-theme-copy">
+        <small>{{ t('nav.theme') }}</small>
+        <strong>{{ t(currentTheme.labelKey) }}</strong>
+      </span>
+      <el-icon v-if="!collapsed" class="sidebar-theme-arrow"><ArrowUp /></el-icon>
+    </button>
     <template #dropdown>
       <el-dropdown-menu>
         <el-dropdown-item

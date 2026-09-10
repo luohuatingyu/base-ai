@@ -126,6 +126,10 @@ test('侧边栏提供三套可持久化主题并同步桌面与移动端入口',
   assert.match(enLocaleSource, /themes:\s*\{ midnight: 'Midnight Blue', cloud: 'Cloud White', aurora: 'Aurora Violet' \}/)
 })
 
+test('侧边栏主题下拉使用可接收点击事件的直接 DOM 触发节点', () => {
+  assert.match(sidebarThemeSwitcherSource, /<el-dropdown[\s\S]*?@command="handleCommand"\s*>\s*<button\b/)
+})
+
 test('英文导航为长名称保留空间且文本不会撑破侧栏', () => {
   // 侧栏宽度由语言注册表按 code 提供：英文更宽，中文较窄
   const registrySource = readFileSync(new URL('../src/locales/registry.js', import.meta.url), 'utf8')
