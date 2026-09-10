@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -49,6 +50,23 @@ func TestValidateSSHRequiresHostKeyAndCredential(t *testing.T) {
 	input.HostKey, input.PrivateKey = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "PRIVATE"
 	if err := validate(input, true); err != nil {
 		t.Fatalf("expected valid SSH request: %v", err)
+	}
+}
+
+// TestValidateMonitorOnlyRequiresConnection 验证实时监控不要求部署目录但仍严格校验 SSH 身份。
+func TestValidateMonitorOnlyRequiresConnection(t *testing.T) {
+	local := request{Mode: "LOCAL"}
+	if err := validateMonitor(local); err != nil {
+		t.Fatalf("expected valid local monitor request: %v", err)
+	}
+	ssh := request{Mode: "SSH", Host: "example.com", Port: 22, Username: "deploy", AuthType: "PASSWORD",
+		Password: "secret", HostKey: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+	if err := validateMonitor(ssh); err != nil {
+		t.Fatalf("expected valid SSH monitor request: %v", err)
+	}
+	ssh.Username = "-oProxyCommand=id"
+	if err := validateMonitor(ssh); err == nil {
+		t.Fatal("expected unsafe monitor identity to be rejected")
 	}
 }
 
@@ -155,5 +173,98 @@ func TestExecuteReturnsExistingJob(t *testing.T) {
 	}
 	if result["status"] != "SUCCEEDED" || result["jobId"] != jobID {
 		t.Fatalf("unexpected execute response: %#v", result)
+	}
+}
+
+// TestParseMonitorOutput 验证主机资源、容器状态和健康状态能够被结构化解析。
+func TestParseMonitorOutput(t *testing.T) {
+	output := "BASEAI_CPU_FIRST\tcpu 100 0 50 850 0 0 0 0 0 0\n" +
+		"BASEAI_CPU_SECOND\tcpu 160 0 70 970 0 0 0 0 0 0\n" +
+		"BASEAI_CPU_CORES\t4\nBASEAI_LOAD\t0.25 0.50 0.75 1/100 123\n" +
+		"BASEAI_UPTIME\t7200.50 100.00\nBASEAI_MEMORY\t1000 250\nBASEAI_DISK\t2000 500 1500\n" +
+		"BASEAI_CONTAINER\t0123456789abcdef\tapi\tbase-ai:latest\trunning\tUp 2 minutes (healthy)\n" +
+		"BASEAI_CONTAINER\tfedcba9876543210\tworker\tworker:latest\texited\tExited (1) 1 minute ago\n"
+
+	result, err := parseMonitorOutput(output, "/")
+
+	if err != nil {
+		t.Fatalf("expected valid monitor output: %v", err)
+	}
+	if result.Status != "SUCCEEDED" || result.Host.CPUCores != 4 || result.Host.CPUUsagePercent != 40 {
+		t.Fatalf("unexpected host metrics: %#v", result.Host)
+	}
+	if result.Host.MemoryUsagePercent != 75 || result.Host.DiskUsagePercent != 25 || result.Host.UptimeSeconds != 7200 {
+		t.Fatalf("unexpected resource percentages: %#v", result.Host)
+	}
+	if len(result.Containers) != 2 || result.Containers[0].Health != "HEALTHY" || result.Containers[1].State != "EXITED" {
+		t.Fatalf("unexpected containers: %#v", result.Containers)
+	}
+}
+
+// TestParseMonitorOutputAllowsContainerFailure 验证 Docker 不可用时仍返回基础资源并标记部分成功。
+func TestParseMonitorOutputAllowsContainerFailure(t *testing.T) {
+	output := "BASEAI_CPU_FIRST\tcpu 10 0 10 80 0 0 0 0\n" +
+		"BASEAI_CPU_SECOND\tcpu 20 0 20 160 0 0 0 0\n" +
+		"BASEAI_CPU_CORES\t2\nBASEAI_LOAD\t0 0 0\nBASEAI_UPTIME\t10 1\n" +
+		"BASEAI_MEMORY\t100 50\nBASEAI_DISK\t100 20 80\nBASEAI_CONTAINER_ERROR\tDocker unavailable\n"
+
+	result, err := parseMonitorOutput(output, "/")
+
+	if err != nil || result.Status != "PARTIAL" || result.ContainerError != "Docker unavailable" || len(result.Containers) != 0 {
+		t.Fatalf("unexpected partial result: %#v, %v", result, err)
+	}
+}
+
+// TestParseMonitorOutputRejectsMalformedMetrics 验证缺失或倒退的资源计数不会生成误导结果。
+func TestParseMonitorOutputRejectsMalformedMetrics(t *testing.T) {
+	output := "BASEAI_CPU_FIRST\tcpu 100 0 50 850\nBASEAI_CPU_SECOND\tcpu 90 0 40 800\n" +
+		"BASEAI_CPU_CORES\t4\nBASEAI_LOAD\t0 0 0\nBASEAI_UPTIME\t10\nBASEAI_MEMORY\t100 50\nBASEAI_DISK\t100 20 80\n"
+	if _, err := parseMonitorOutput(output, "/"); err == nil {
+		t.Fatal("expected malformed resource counters to be rejected")
+	}
+}
+
+// TestCollectMonitorReadsLiveLinuxMetrics 验证固定脚本可在最小 Linux 环境采集真实基础资源。
+func TestCollectMonitorReadsLiveLinuxMetrics(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := collectMonitor(ctx, request{Mode: "LOCAL"})
+
+	if err != nil {
+		t.Fatalf("expected live host metrics: %v", err)
+	}
+	if result.Host.CPUCores < 1 || result.Host.MemoryTotalBytes < 1 || result.Host.DiskTotalBytes < 1 {
+		t.Fatalf("unexpected live host metrics: %#v", result.Host)
+	}
+	if result.Status != "SUCCEEDED" && result.Status != "PARTIAL" {
+		t.Fatalf("unexpected live monitor status: %s", result.Status)
+	}
+}
+
+// TestMonitorHandlerRequiresAuthAndReturnsSnapshot 验证监控端点必须鉴权并返回实时结构化快照。
+func TestMonitorHandlerRequiresAuthAndReturnsSnapshot(t *testing.T) {
+	agent := &agent{token: "internal-token-with-24-characters", monitorRunner: func(context.Context, request) (monitorResult, error) {
+		return monitorResult{Status: "SUCCEEDED", CollectedAt: time.Now().UTC().Format(time.RFC3339),
+			Host: hostMetrics{CPUCores: 2}, Containers: []containerStatus{}}, nil
+	}}
+	body, _ := json.Marshal(request{Mode: "LOCAL"})
+	unauthorized := httptest.NewRequest(http.MethodPost, "/monitor", bytes.NewReader(body))
+	unauthorizedResponse := httptest.NewRecorder()
+	agent.monitor(unauthorizedResponse, unauthorized)
+	if unauthorizedResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected unauthorized status: %d", unauthorizedResponse.Code)
+	}
+
+	authorized := httptest.NewRequest(http.MethodPost, "/monitor", bytes.NewReader(body))
+	authorized.Header.Set("Authorization", "Bearer "+agent.token)
+	response := httptest.NewRecorder()
+	agent.monitor(response, authorized)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected monitor status: %d", response.Code)
+	}
+	var result monitorResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.Status != "SUCCEEDED" || result.Host.CPUCores != 2 {
+		t.Fatalf("unexpected monitor response: %#v, %v", result, err)
 	}
 }

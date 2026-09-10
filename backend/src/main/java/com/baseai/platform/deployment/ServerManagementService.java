@@ -32,6 +32,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -135,6 +136,14 @@ public class ServerManagementService {
         String error = result.get("error") == null ? null : safeText(String.valueOf(result.get("error")), 500);
         jdbcTemplate.update("UPDATE managed_server SET last_test_status=?,last_test_error=?,last_test_at=NOW(),updated_at=NOW() WHERE id=?", status, error, id);
         return result;
+    }
+
+    /** 通过隔离 Agent 实时查询服务器资源，不持久化监控快照。 */
+    public ServerModels.ServerMonitorView monitor(Long id) {
+        ServerRecord server = require(id);
+        requireOwner(server.ownerUserId());
+        requireEnabled(server);
+        return callAgentMonitor(server);
     }
 
     /** 异步执行固定的部署或回滚动作。 */
@@ -254,13 +263,7 @@ public class ServerManagementService {
     private Map<String, Object> callAgent(String path, ServerRecord server, String action, String revision, String jobId) {
         if (agentUrl.isBlank() || agentToken.isBlank()) return Map.of("status", "FAILED", "error", "server.agentNotConfigured");
         try {
-            Map<String, Object> payload = new java.util.LinkedHashMap<>();
-            payload.put("mode", server.mode()); payload.put("host", value(server.config(), "host")); payload.put("port", number(server.config(), "port", 22));
-            payload.put("username", value(server.config(), "username")); payload.put("authType", value(server.config(), "authType"));
-            payload.put("privateKey", value(server.config(), "privateKey")); payload.put("password", value(server.config(), "password"));
-            payload.put("passphrase", value(server.config(), "passphrase")); payload.put("hostKey", value(server.config(), "hostKey"));
-            payload.put("workingDir", value(server.config(), "workingDir")); payload.put("composeFile", value(server.config(), "composeFile"));
-            payload.put("action", action); payload.put("revision", revision); payload.put("jobId", jobId);
+            Map<String, Object> payload = agentPayload(server, action, revision, jobId);
             Map<String, Object> result = restClient.post().uri(agentUrl + "/" + path)
                 .header("Authorization", "Bearer " + agentToken).body(payload).retrieve()
                 .body(new ParameterizedTypeReference<>() { });
@@ -270,6 +273,88 @@ public class ServerManagementService {
             return Map.of("status", "FAILED", "error", safeText(exception.getMessage() == null ? "server.testFailed" : exception.getMessage(), 500));
         }
     }
+
+    /** 调用 Agent 监控端点并严格规范内部响应，避免异常数据透传到页面。 */
+    private ServerModels.ServerMonitorView callAgentMonitor(ServerRecord server) {
+        if (agentUrl.isBlank() || agentToken.isBlank()) return failedMonitor("server.agentNotConfigured");
+        try {
+            Map<String, Object> result = restClient.post().uri(agentUrl + "/monitor")
+                .header("Authorization", "Bearer " + agentToken)
+                .body(agentPayload(server, "", "", "")).retrieve()
+                .body(new ParameterizedTypeReference<>() { });
+            if (result == null) return failedMonitor("server.agentInvalidResponse");
+            ServerModels.ServerMonitorView monitor = objectMapper.convertValue(result, ServerModels.ServerMonitorView.class);
+            return normalizeMonitor(monitor);
+        } catch (Exception exception) {
+            return failedMonitor("server.monitorFailed");
+        }
+    }
+
+    /** 组装仅发送至内部 Agent 的服务器解密配置。 */
+    private Map<String, Object> agentPayload(ServerRecord server, String action, String revision, String jobId) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("mode", server.mode()); payload.put("host", value(server.config(), "host")); payload.put("port", number(server.config(), "port", 22));
+        payload.put("username", value(server.config(), "username")); payload.put("authType", value(server.config(), "authType"));
+        payload.put("privateKey", value(server.config(), "privateKey")); payload.put("password", value(server.config(), "password"));
+        payload.put("passphrase", value(server.config(), "passphrase")); payload.put("hostKey", value(server.config(), "hostKey"));
+        payload.put("workingDir", value(server.config(), "workingDir")); payload.put("composeFile", value(server.config(), "composeFile"));
+        payload.put("action", action); payload.put("revision", revision); payload.put("jobId", jobId);
+        return payload;
+    }
+
+    /** 校验数值边界并限制容器文本长度和数量。 */
+    private ServerModels.ServerMonitorView normalizeMonitor(ServerModels.ServerMonitorView monitor) {
+        if (monitor == null || !Set.of("SUCCEEDED", "PARTIAL", "FAILED").contains(text(monitor.status()).toUpperCase(Locale.ROOT))) {
+            return failedMonitor("server.agentInvalidResponse");
+        }
+        String status = text(monitor.status()).toUpperCase(Locale.ROOT);
+        if ("FAILED".equals(status)) return failedMonitor("server.monitorFailed");
+        if (monitor.collectedAt() == null || !validHostMetrics(monitor.host())
+            || monitor.containers() == null || monitor.containers().size() > 200) {
+            return failedMonitor("server.agentInvalidResponse");
+        }
+        List<ServerModels.ContainerStatusView> containers = monitor.containers().stream()
+            .map(container -> new ServerModels.ContainerStatusView(
+                truncate(container == null ? "" : container.id(), 64),
+                truncate(container == null ? "" : container.name(), 255),
+                truncate(container == null ? "" : container.image(), 500),
+                truncate(container == null ? "" : container.state(), 32),
+                truncate(container == null ? "" : container.health(), 32),
+                truncate(container == null ? "" : container.status(), 500)))
+            .toList();
+        return new ServerModels.ServerMonitorView(status, monitor.collectedAt(), monitor.host(), containers,
+            safeText(monitor.containerError(), 500), null);
+    }
+
+    /** 验证 Agent 返回的主机资源不存在负值、非有限值或越界百分比。 */
+    private boolean validHostMetrics(ServerModels.HostResourceView host) {
+        return host != null && positive(host.cpuCores()) && percentage(host.cpuUsagePercent())
+            && nonNegative(host.load1()) && nonNegative(host.load5()) && nonNegative(host.load15())
+            && positive(host.memoryTotalBytes()) && nonNegative(host.memoryUsedBytes())
+            && host.memoryUsedBytes() <= host.memoryTotalBytes() && percentage(host.memoryUsagePercent())
+            && positive(host.diskTotalBytes()) && nonNegative(host.diskUsedBytes())
+            && host.diskUsedBytes() <= host.diskTotalBytes() && percentage(host.diskUsagePercent())
+            && nonNegative(host.uptimeSeconds()) && !text(host.diskPath()).isBlank();
+    }
+
+    /** 创建不包含内部异常细节的失败监控响应。 */
+    private ServerModels.ServerMonitorView failedMonitor(String error) {
+        String normalized = text(error);
+        if (normalized.isBlank()) normalized = "server.monitorFailed";
+        return new ServerModels.ServerMonitorView("FAILED", Instant.now(), null, List.of(), null,
+            safeText(normalized, 500));
+    }
+
+    /** 判断整数资源字段为正数。 */
+    private boolean positive(Integer value) { return value != null && value > 0; }
+    /** 判断长整数资源字段为正数。 */
+    private boolean positive(Long value) { return value != null && value > 0; }
+    /** 判断长整数资源字段为非负数。 */
+    private boolean nonNegative(Long value) { return value != null && value >= 0; }
+    /** 判断浮点资源字段为有限非负数。 */
+    private boolean nonNegative(Double value) { return value != null && Double.isFinite(value) && value >= 0; }
+    /** 判断资源百分比位于零到一百之间。 */
+    private boolean percentage(Double value) { return nonNegative(value) && value <= 100; }
 
     /** 查询 Agent 中已启动任务；网络短暂不可用时返回空值等待下一轮。 */
     private Map<String, Object> callAgentJob(String jobId) {

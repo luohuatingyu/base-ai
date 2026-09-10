@@ -1,6 +1,8 @@
 package com.baseai.platform.deployment;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /** 服务器管理和部署接口模型。 */
 public final class ServerModels {
@@ -22,4 +24,19 @@ public final class ServerModels {
                                  String revision, String status, String outputSummary,
                                  String errorMessage, LocalDateTime startedAt,
                                  LocalDateTime finishedAt) { }
+
+    public record HostResourceView(Integer cpuCores, Double cpuUsagePercent,
+                                   Double load1, Double load5, Double load15,
+                                   Long memoryTotalBytes, Long memoryUsedBytes,
+                                   Double memoryUsagePercent, String diskPath,
+                                   Long diskTotalBytes, Long diskUsedBytes,
+                                   Double diskUsagePercent, Long uptimeSeconds) { }
+
+    public record ContainerStatusView(String id, String name, String image,
+                                      String state, String health, String status) { }
+
+    public record ServerMonitorView(String status, Instant collectedAt,
+                                    HostResourceView host,
+                                    List<ContainerStatusView> containers,
+                                    String containerError, String error) { }
 }

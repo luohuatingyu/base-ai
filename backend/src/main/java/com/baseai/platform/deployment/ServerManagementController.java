@@ -32,6 +32,8 @@ public class ServerManagementController {
     @DeleteMapping("/{id}") @RequiredPermission("operations:server:delete") public void delete(@PathVariable Long id) { service.delete(id); }
     /** 测试服务器。 */
     @PostMapping("/{id}/test") @RequiredPermission("operations:server:test") public Map<String, Object> test(@PathVariable Long id) { return service.test(id); }
+    /** 实时查询服务器基础资源和容器状态。 */
+    @GetMapping("/{id}/monitor") @RequiredPermission("operations:server:test") public ServerModels.ServerMonitorView monitor(@PathVariable Long id) { return service.monitor(id); }
     /** 异步部署或回滚指定版本。 */
     @PostMapping("/{id}/deploy") @RequiredPermission("operations:server:deploy") @TraceIgnored public ServerModels.DeploymentView deploy(@PathVariable Long id, @RequestBody ServerModels.DeploymentCommand command) { return service.deploy(id, command); }
     /** 查询服务器部署历史。 */

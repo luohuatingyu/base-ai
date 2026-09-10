@@ -322,6 +322,7 @@ Agent 只执行 `devicectl list devices` 和固定的环境版本检查，不安
 
 - 数据同步使用“工作流 / 连接管理”中的 MySQL 或 PostgreSQL 连接；目标连接必须显式启用 `allowWrite`。计划可选择表并使用 UPSERT、全量替换或追加策略，支持手动执行和 Spring 六段 Cron。全量替换必须再次确认，执行前会预检字段、类型和主键。
 - 管理员与内置 `OPS` 角色可使用数据同步和服务器管理；普通授权用户只能管理本人创建的计划、连接和服务器。SSH 私钥、密码、口令和 Host Key 配置使用平台 AES-GCM 密钥加密保存，列表仅返回掩码。
+- 服务器在管理页面中手工新增和维护，新增记录默认使用 SSH 模式。具有服务器测试权限的用户可打开“资源监控”弹窗实时查询 CPU、系统负载、内存、磁盘、运行时长以及最多 200 个 Docker 容器的运行与健康状态；监控快照不持久化，Docker 状态不可用时仍展示已采集的主机指标。
 - 服务器部署只接受 `docker-compose.yml` 或 `compose.yml`，只执行 Compose 校验和 `up -d --no-build`，不会执行任意 Shell。发布版本必须是合法 Docker 镜像标签，因此建议使用完整 Git Commit Hash。
 - 本地或 SSH 部署需要启用隔离 Agent。将 `DEPLOYMENT_DOCKER_SOCKET` 指向 rootless Docker Socket，设置对应数字组 ID 和至少 24 位随机内部令牌，然后执行：
 
