@@ -57,9 +57,12 @@ public class DeviceAgentManagementController {
 
     /** 查询配对码元数据，绝不返回明文或摘要。 */
     @GetMapping("/pairing")
-    public List<DeviceAgentModels.PairingCodeView> pairingCodes(
-        @RequestParam(required = false) String agentId) {
-        return registrationService.pairings(agentId);
+    public DeviceAgentModels.PageResult<DeviceAgentModels.PairingCodeView> pairingCodes(
+        @RequestParam(required = false) String agentId,
+        @RequestParam(defaultValue = "false") boolean includeInactive,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size) {
+        return registrationService.pairings(agentId, includeInactive, page, size);
     }
 
     /** 查看仍有效配对码的明文。 */
@@ -114,10 +117,14 @@ public class DeviceAgentManagementController {
     public DeviceAgentModels.UpdateAgentBackendUrlResult updateBackendUrl(
         @PathVariable String agentId, @RequestBody DeviceAgentModels.UpdateAgentBackendUrlRequest body) {
         boolean paired = registrationService.updateBackendUrl(agentId, body == null ? null : body.backendUrl());
-        DeviceAgentModels.AgentCommandView command = paired ? commandService.create(
+        // 只下发归一化后实际落库的地址：清空回退全局默认时 Agent 没有可执行的
+        // 目标地址，改址命令会被 Agent 拒绝，这种情况交给管理页的本机改址命令处理
+        String effectiveUrl = registrationService.registration(agentId).backendUrl();
+        DeviceAgentModels.AgentCommandView command =
+            paired && effectiveUrl != null ? commandService.create(
             new DeviceAgentModels.CreateCommandRequest(agentId, "UPDATE_BACKEND_URL",
-                java.util.Collections.singletonMap("backendUrl", body == null ? null : body.backendUrl())), userId()) : null;
-        return new DeviceAgentModels.UpdateAgentBackendUrlResult(body == null ? null : body.backendUrl(),
+                java.util.Collections.singletonMap("backendUrl", effectiveUrl)), userId()) : null;
+        return new DeviceAgentModels.UpdateAgentBackendUrlResult(effectiveUrl,
             command != null, command == null ? null : command.id());
     }
 
@@ -198,6 +205,20 @@ public class DeviceAgentManagementController {
         return automationConfigService.update(agentId, body, userId());
     }
 
+    /** 查询通用设备操作速度档位。 */
+    @GetMapping("/{agentId:" + AGENT_ID_PATTERN + "}/operation-speed")
+    public DeviceAgentModels.AgentOperationSpeedView operationSpeed(@PathVariable String agentId) {
+        return automationConfigService.getOperationSpeed(agentId);
+    }
+
+    /** 保存通用设备操作速度档位并通知 Agent 热加载。 */
+    @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/operation-speed")
+    @RequiredPermission("operations:device-agent:update")
+    public DeviceAgentModels.AgentOperationSpeedView updateOperationSpeed(
+        @PathVariable String agentId, @RequestBody DeviceAgentModels.UpdateAgentOperationSpeedRequest body) {
+        return automationConfigService.updateOperationSpeed(agentId, body, userId());
+    }
+
     /** 删除 WDA 配置并恢复安全默认值。 */
     @DeleteMapping("/{agentId:" + AGENT_ID_PATTERN + "}/wda-config")
     @RequiredPermission("operations:device-agent:delete")
@@ -231,8 +252,9 @@ public class DeviceAgentManagementController {
     @GetMapping
     public DeviceAgentModels.PageResult<DeviceAgentModels.AgentRegistrationView> agents(
         @RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "10") int size,
-        @RequestParam(required = false) String search) {
-        return registrationService.registrations(page, size, search);
+        @RequestParam(required = false) String search,
+        @RequestParam(required = false) String status) {
+        return registrationService.registrations(page, size, search, status);
     }
 
     /** 返回当前登录用户 ID，不使用固定用户回退。 */

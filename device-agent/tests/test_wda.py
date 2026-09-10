@@ -56,6 +56,40 @@ def test_setup_uses_raw_udid_only_in_local_appium_request() -> None:
     assert runtime.report(device_id)["wdaRunning"] is False
 
 
+def test_fast_operation_speed_applies_fixed_typing_frequency() -> None:
+    """速度档位必须使用后端派生参数，并映射到固定 Appium 输入频率。"""
+    requests = []
+
+    def opener(request, **_kwargs):
+        requests.append(request)
+        return Response({"value": {"sessionId": "session-fast"}})
+
+    runtime = WdaRuntime(opener)
+    device = DeviceCandidate("fast-device", "Phone", "iPhone", "18.0", True, "USB")
+    device_id = device.device_id("ios-agent-test")
+    runtime.refresh("ios-agent-test", [device])
+    runtime.apply_assignments({"devices": [{"deviceId": device_id, "wdaLocalPort": 8100}]})
+
+    runtime.start(device_id, WdaConfig.from_payload({
+        "operationSpeed": "FAST",
+        "wirelessSourcePollIntervalSeconds": 5,
+        "wirelessSourceMaxAttempts": 24,
+    }))
+
+    payload = json.loads(requests[0].data)
+    assert payload["capabilities"]["alwaysMatch"]["appium:maxTypingFrequency"] == 240
+
+
+def test_operation_speed_rejects_tampered_derived_values() -> None:
+    """Agent 不接受与固定档位不一致的派生轮询参数。"""
+    with pytest.raises(WdaError, match="WDA_CONFIG_INVALID"):
+        WdaConfig.from_payload({
+            "operationSpeed": "FAST",
+            "wirelessSourcePollIntervalSeconds": 10,
+            "wirelessSourceMaxAttempts": 12,
+        })
+
+
 def test_assignments_reject_duplicate_port_and_external_urls() -> None:
     """端口冲突应局部失败，外部 Appium/WDA 地址应整体拒绝。"""
     runtime = WdaRuntime()

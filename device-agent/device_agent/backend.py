@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -29,14 +30,18 @@ class BackendClient:
     timeout: float = 20.0
 
     @classmethod
-    def claim(cls, backend_url: str, pairing_code: str) -> dict[str, Any]:
+    def claim(
+        cls, backend_url: str, pairing_code: str, ca_file: str | None = None,
+    ) -> dict[str, Any]:
         """用一次性配对码领取 Agent 身份与独立 Secret。"""
         url = backend_url.rstrip("/") + "/api/agent/ios-device/v1/pairing/claim"
         body = json.dumps({"pairingCode": pairing_code}, separators=(",", ":")).encode()
         request = urllib.request.Request(url, data=body, method="POST", headers={
             "Content-Type": "application/json", "Accept": "application/json"})
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:
+            with urllib.request.urlopen(
+                request, timeout=20, context=_ssl_context(ca_file),
+            ) as response:
                 return json.loads(response.read())
         except (urllib.error.URLError, ValueError) as exception:
             raise BackendError("PAIRING_FAILED", getattr(exception, "code", None)) from exception
@@ -51,7 +56,9 @@ class BackendClient:
         request = urllib.request.Request(url, data=body if method.upper() != "GET" else None,
                                          method=method.upper(), headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(
+                request, timeout=self.timeout, context=_ssl_context(self.config.ca_file),
+            ) as response:
                 raw = response.read()
                 return None if not raw else json.loads(raw)
         except urllib.error.HTTPError as exception:
@@ -103,3 +110,15 @@ class BackendClient:
             "leaseToken": lease_token, "status": status,
             "resultSummary": result_summary, "errorCode": error_code,
         })
+
+
+def _ssl_context(ca_file: str | None) -> ssl.SSLContext:
+    """创建保留系统根证书、可附加平台自签根证书的 TLS 上下文。
+
+    cafile 参数会替换整个信任库，导致自签部署改址到公网证书地址后无法验证；
+    必须先加载系统默认信任，再把平台根证书追加进去。
+    """
+    context = ssl.create_default_context()
+    if ca_file:
+        context.load_verify_locations(cafile=ca_file)
+    return context

@@ -29,6 +29,12 @@ public class DeviceAgentAutomationConfigService {
     private static final Pattern SIGNING_IDENTITY = Pattern.compile("[A-Za-z0-9 .:_()\\-]{1,128}");
     private static final Pattern BUNDLE_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9.-]{2,127}");
     private static final Set<String> LAUNCH_MODES = Set.of("XCODEBUILD", "PREINSTALLED", "URL");
+    private static final String DEFAULT_OPERATION_SPEED = "STANDARD";
+    private static final Map<String, OperationSpeedProfile> OPERATION_SPEED_PROFILES = Map.of(
+        "SLOW", new OperationSpeedProfile(15, 8),
+        "STANDARD", new OperationSpeedProfile(10, 12),
+        "FAST", new OperationSpeedProfile(5, 24)
+    );
     private final JdbcTemplate db;
     private final ObjectMapper objectMapper;
     private final ConfigCryptoService cryptoService;
@@ -53,7 +59,9 @@ public class DeviceAgentAutomationConfigService {
         try {
             return db.queryForObject("""
                 SELECT agent_id, signing_config_encrypted, launch_mode, wda_url,
-                       appium_server_url, base_wda_local_port, config_version, updated_at
+                       appium_server_url, base_wda_local_port, operation_speed,
+                       wireless_source_poll_interval_seconds, wireless_source_max_attempts,
+                       config_version, updated_at
                 FROM automation_device_agent_wda_config WHERE agent_id=?
                 """, (resultSet, rowNum) -> view(resultSet), agentId);
         } catch (EmptyResultDataAccessException exception) {
@@ -93,6 +101,63 @@ public class DeviceAgentAutomationConfigService {
         return get(agentId);
     }
 
+    /** 查询通用设备操作速度，尚未建立 WDA 配置时返回标准档。 */
+    public DeviceAgentModels.AgentOperationSpeedView getOperationSpeed(String agentId) {
+        registrationService.requireExists(agentId);
+        try {
+            return db.queryForObject("""
+                SELECT agent_id, operation_speed, wireless_source_poll_interval_seconds,
+                       wireless_source_max_attempts, config_version, updated_at
+                FROM automation_device_agent_wda_config WHERE agent_id=?
+                """, (resultSet, rowNum) -> operationSpeedView(resultSet), agentId);
+        } catch (EmptyResultDataAccessException exception) {
+            OperationSpeedProfile profile = OPERATION_SPEED_PROFILES.get(DEFAULT_OPERATION_SPEED);
+            return new DeviceAgentModels.AgentOperationSpeedView(
+                agentId, DEFAULT_OPERATION_SPEED, profile.wirelessPollIntervalSeconds(),
+                profile.wirelessMaxAttempts(), 0, null);
+        }
+    }
+
+    /** 保存固定速度档位、派生采样参数并通知已配对 Agent 热加载。 */
+    @Transactional
+    public DeviceAgentModels.AgentOperationSpeedView updateOperationSpeed(
+        String agentId, DeviceAgentModels.UpdateAgentOperationSpeedRequest request, Long userId) {
+        DeviceAgentRegistrationService.ExistingRegistration registration =
+            registrationService.requireExists(agentId);
+        String speed = normalizeOperationSpeed(request == null ? null : request.operationSpeed());
+        OperationSpeedProfile profile = OPERATION_SPEED_PROFILES.get(speed);
+        // 档位未变化时直接返回：重复写库、递增版本并下发 UPDATE_CONFIG
+        // 会触发 Agent 健康、设备和 Registry 全链路无意义刷新
+        String currentSpeed;
+        try {
+            currentSpeed = db.queryForObject(
+                "SELECT operation_speed FROM automation_device_agent_wda_config WHERE agent_id=?",
+                String.class, agentId);
+        } catch (EmptyResultDataAccessException exception) {
+            currentSpeed = null;
+        }
+        if (speed.equals(currentSpeed)) return getOperationSpeed(agentId);
+        db.update("""
+            INSERT INTO automation_device_agent_wda_config
+                (agent_id, signing_config_encrypted, launch_mode, appium_server_url,
+                 base_wda_local_port, operation_speed, wireless_source_poll_interval_seconds,
+                 wireless_source_max_attempts, config_version, config_hash, created_by, updated_by)
+            VALUES (?, NULL, 'XCODEBUILD', 'http://127.0.0.1:4723', 8100, ?, ?, ?, 1, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE operation_speed=VALUES(operation_speed),
+                wireless_source_poll_interval_seconds=VALUES(wireless_source_poll_interval_seconds),
+                wireless_source_max_attempts=VALUES(wireless_source_max_attempts),
+                config_version=config_version+1, config_hash=VALUES(config_hash),
+                updated_by=VALUES(updated_by), updated_at=CURRENT_TIMESTAMP(6)
+            """, agentId, speed, profile.wirelessPollIntervalSeconds(),
+            profile.wirelessMaxAttempts(), sha256("operationSpeed:" + speed), userId, userId);
+        audit(agentId, "AGENT_OPERATION_SPEED_UPDATED", Map.of("operationSpeed", speed), userId);
+        if (registration.revokedAt() == null && "PAIRED".equals(registration.pairingStatus())) {
+            commandService.create(new DeviceAgentModels.CreateCommandRequest(
+                agentId, "UPDATE_CONFIG", Map.of()), userId);
+        }
+        return getOperationSpeed(agentId);
+    }
+
     /** 删除 WDA 配置并通知在线 Agent 回退本机安全默认值。 */
     @Transactional
     public void delete(String agentId, Long userId) {
@@ -122,14 +187,30 @@ public class DeviceAgentAutomationConfigService {
         return new DeviceAgentModels.AgentWdaConfigView(
             resultSet.getString("agent_id"), signing, resultSet.getString("launch_mode"),
             resultSet.getString("wda_url"), resultSet.getString("appium_server_url"),
-            resultSet.getInt("base_wda_local_port"), resultSet.getLong("config_version"),
+            resultSet.getInt("base_wda_local_port"), resultSet.getString("operation_speed"),
+            resultSet.getInt("wireless_source_poll_interval_seconds"),
+            resultSet.getInt("wireless_source_max_attempts"), resultSet.getLong("config_version"),
             updatedAt == null ? null : updatedAt.toInstant());
     }
 
     /** 返回不会访问远程服务的默认配置。 */
     private DeviceAgentModels.AgentWdaConfigView defaults(String agentId) {
+        OperationSpeedProfile profile = OPERATION_SPEED_PROFILES.get(DEFAULT_OPERATION_SPEED);
         return new DeviceAgentModels.AgentWdaConfigView(
-            agentId, null, "XCODEBUILD", null, "http://127.0.0.1:4723", 8100, 0, null);
+            agentId, null, "XCODEBUILD", null, "http://127.0.0.1:4723", 8100,
+            DEFAULT_OPERATION_SPEED, profile.wirelessPollIntervalSeconds(),
+            profile.wirelessMaxAttempts(), 0, null);
+    }
+
+    /** 映射操作速度视图。 */
+    private DeviceAgentModels.AgentOperationSpeedView operationSpeedView(ResultSet resultSet)
+        throws SQLException {
+        Timestamp updatedAt = resultSet.getTimestamp("updated_at");
+        return new DeviceAgentModels.AgentOperationSpeedView(
+            resultSet.getString("agent_id"), resultSet.getString("operation_speed"),
+            resultSet.getInt("wireless_source_poll_interval_seconds"),
+            resultSet.getInt("wireless_source_max_attempts"),
+            resultSet.getLong("config_version"), updatedAt == null ? null : updatedAt.toInstant());
     }
 
     /** 归一化并完成签名、启动模式、回环地址和端口校验。 */
@@ -195,6 +276,16 @@ public class DeviceAgentAutomationConfigService {
         if (port < 1024 || port > 65535) throw new BusinessException("deviceAgent.wdaConfigInvalid");
     }
 
+    /** 只接受平台固定的三档操作速度。 */
+    private String normalizeOperationSpeed(String value) {
+        String normalized = optional(value);
+        normalized = normalized == null ? "" : normalized.toUpperCase(Locale.ROOT);
+        if (!OPERATION_SPEED_PROFILES.containsKey(normalized)) {
+            throw new BusinessException("deviceAgent.operationSpeedInvalid");
+        }
+        return normalized;
+    }
+
     /** 将空白字符串收敛为空值。 */
     private String optional(String value) {
         return value == null || value.isBlank() ? null : value.trim();
@@ -229,4 +320,7 @@ public class DeviceAgentAutomationConfigService {
     private record NormalizedConfig(DeviceAgentModels.WdaSigningConfig signingConfig,
                                     String launchMode, String wdaUrl, String appiumServerUrl,
                                     int baseWdaLocalPort) {}
+    /** 固定速度档位派生的无线页面采样参数。 */
+    private record OperationSpeedProfile(int wirelessPollIntervalSeconds,
+                                         int wirelessMaxAttempts) {}
 }

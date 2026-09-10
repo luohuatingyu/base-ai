@@ -27,6 +27,7 @@ class AgentConfig:
     backend_url: str
     agent_id: str
     installation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    ca_file: str | None = None
 
     def save(self, path: Path = CONFIG_PATH) -> None:
         """以仅当前用户可读权限原子保存非敏感配置。"""
@@ -45,6 +46,8 @@ class AgentConfig:
         except (OSError, ValueError, TypeError) as exception:
             raise ConfigError("AGENT_CONFIG_INVALID") from exception
         if not config.backend_url.startswith(("http://", "https://")) or not config.agent_id:
+            raise ConfigError("AGENT_CONFIG_INVALID")
+        if config.ca_file is not None and not Path(config.ca_file).is_file():
             raise ConfigError("AGENT_CONFIG_INVALID")
         return config
 

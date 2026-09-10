@@ -152,6 +152,8 @@ const menuKeysByPath = Object.freeze({
   '/automation/api-triggers': 'nav.items.apiTriggers',
   '/automation/api-trigger-security': 'nav.items.apiTriggerSecurity',
   '/automation/device-agents': 'nav.items.deviceAgents',
+  '/automation/device-agents/config-guide': 'deviceAgentGuide.title',
+  '/automation/device-agents/onboarding': 'deviceAgentOnboarding.title',
   '/workflow': 'nav.items.workflow',
   '/workflow/nodes': 'nav.items.workflowNodes',
   '/workflow/node-docs': 'nav.items.workflowNodeDocs',

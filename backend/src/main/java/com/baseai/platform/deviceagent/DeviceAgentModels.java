@@ -132,12 +132,21 @@ public final class DeviceAgentModels {
     /** 管理端和 Agent 共同使用的 WDA 配置。 */
     public record AgentWdaConfigView(String agentId, WdaSigningConfig signingConfig,
                                      String launchMode, String wdaUrl, String appiumServerUrl,
-                                     Integer baseWdaLocalPort, long configVersion,
+                                     Integer baseWdaLocalPort, String operationSpeed,
+                                     Integer wirelessSourcePollIntervalSeconds,
+                                     Integer wirelessSourceMaxAttempts, long configVersion,
                                      Instant updatedAt) {}
     /** 更新 WDA 配置请求。 */
     public record UpdateAgentWdaConfigRequest(WdaSigningConfig signingConfig, String launchMode,
                                               String wdaUrl, String appiumServerUrl,
                                               Integer baseWdaLocalPort) {}
+    /** 管理端展示的通用设备操作速度及其派生采样参数。 */
+    public record AgentOperationSpeedView(String agentId, String operationSpeed,
+                                          Integer wirelessSourcePollIntervalSeconds,
+                                          Integer wirelessSourceMaxAttempts,
+                                          long configVersion, Instant updatedAt) {}
+    /** 更新通用设备操作速度的请求。 */
+    public record UpdateAgentOperationSpeedRequest(String operationSpeed) {}
     /** Agent 拉取的 Registry 有效配置。 */
     public record AgentRegistryConfigView(String agentId, int defaultPort, Integer portOverride,
                                           int effectivePort, String desiredState,

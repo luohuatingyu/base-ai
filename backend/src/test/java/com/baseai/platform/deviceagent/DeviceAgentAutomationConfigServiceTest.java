@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,7 +40,10 @@ class DeviceAgentAutomationConfigServiceTest {
             CREATE TABLE automation_device_agent_wda_config (
               agent_id VARCHAR(64) PRIMARY KEY, signing_config_encrypted TEXT,
               launch_mode VARCHAR(16), wda_url VARCHAR(256), appium_server_url VARCHAR(256),
-              base_wda_local_port INT, config_version BIGINT, config_hash CHAR(64),
+              base_wda_local_port INT, operation_speed VARCHAR(16) DEFAULT 'STANDARD',
+              wireless_source_poll_interval_seconds INT DEFAULT 10,
+              wireless_source_max_attempts INT DEFAULT 12,
+              config_version BIGINT, config_hash CHAR(64),
               created_by BIGINT, updated_by BIGINT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
               updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
@@ -85,5 +89,39 @@ class DeviceAgentAutomationConfigServiceTest {
         assertThrows(BusinessException.class, () -> service.update("ios-agent-test",
             new DeviceAgentModels.UpdateAgentWdaConfigRequest(null, "XCODEBUILD", null,
                 "http://localhost:4723", 80), 7L));
+    }
+
+    /** 操作速度必须使用固定档位，并把派生参数写入 MySQL 后通知 Agent。 */
+    @Test
+    void storesFixedOperationSpeedProfileAndDispatchesReload() {
+        DeviceAgentModels.AgentOperationSpeedView view = service.updateOperationSpeed(
+            "ios-agent-test", new DeviceAgentModels.UpdateAgentOperationSpeedRequest("fast"), 7L);
+
+        assertEquals("FAST", view.operationSpeed());
+        assertEquals(5, view.wirelessSourcePollIntervalSeconds());
+        assertEquals(24, view.wirelessSourceMaxAttempts());
+        assertEquals("FAST", db.queryForObject("""
+            SELECT operation_speed FROM automation_device_agent_wda_config WHERE agent_id=?
+            """, String.class, "ios-agent-test"));
+        verify(commandService).create(any(DeviceAgentModels.CreateCommandRequest.class), anyLong());
+    }
+
+    /** 非固定速度值不得进入系统配置。 */
+    @Test
+    void rejectsUnknownOperationSpeed() {
+        assertThrows(BusinessException.class, () -> service.updateOperationSpeed(
+            "ios-agent-test", new DeviceAgentModels.UpdateAgentOperationSpeedRequest("TURBO"), 7L));
+    }
+
+    /** 重复保存相同速度档位不得再次写库、审计或下发 UPDATE_CONFIG。 */
+    @Test
+    void skipsNoChangeOperationSpeedUpdate() {
+        service.updateOperationSpeed("ios-agent-test",
+            new DeviceAgentModels.UpdateAgentOperationSpeedRequest("FAST"), 7L);
+        service.updateOperationSpeed("ios-agent-test",
+            new DeviceAgentModels.UpdateAgentOperationSpeedRequest("FAST"), 7L);
+
+        verify(commandService, times(1)).create(
+            any(DeviceAgentModels.CreateCommandRequest.class), anyLong());
     }
 }

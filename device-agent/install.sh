@@ -18,10 +18,14 @@ fi
 
 BACKEND_URL=""
 PAIRING_CODE=""
+CA_FILE=""
+NPM_REGISTRY=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --backend-url) BACKEND_URL="$2"; shift 2 ;;
     --pairing-code) PAIRING_CODE="$2"; shift 2 ;;
+    --ca-file) CA_FILE="$2"; shift 2 ;;
+    --npm-registry) NPM_REGISTRY="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -42,7 +46,9 @@ mkdir -p "$SUPPORT_DIR" "$LOG_DIR"
 chmod 700 "$SUPPORT_DIR" "$LOG_DIR"
 "$PYTHON_BIN" -m venv "$VENV_DIR"
 "$VENV_DIR/bin/python" -m pip install --disable-pip-version-check --require-virtualenv "$CURRENT_DIR"
-"$VENV_DIR/bin/python" -m device_agent.main pair --backend-url "$BACKEND_URL" --pairing-code "$PAIRING_CODE"
+set -- --backend-url "$BACKEND_URL" --pairing-code "$PAIRING_CODE"
+[ -z "$CA_FILE" ] || set -- "$@" --ca-file "$CA_FILE"
+"$VENV_DIR/bin/python" -m device_agent.main pair "$@"
 
 # 从已校验清单读取固定运行依赖，不执行清单之外的任意命令。
 manifest_value() {
@@ -61,7 +67,12 @@ mkdir -p "$APPIUM_PREFIX" "$APPIUM_HOME"
 chmod 700 "$APPIUM_PREFIX" "$APPIUM_HOME"
 export PATH="$RUNTIME_DIR/node/bin:$APPIUM_PREFIX/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export APPIUM_HOME
-"$NPM_BIN" install -g --engine-strict --prefix "$APPIUM_PREFIX" "$APPIUM_SPEC"
+set -- install -g --engine-strict --prefix "$APPIUM_PREFIX"
+[ -z "$NPM_REGISTRY" ] || set -- "$@" --registry "$NPM_REGISTRY"
+"$NPM_BIN" "$@" "$APPIUM_SPEC"
+# Appium driver install 内部独立调用 npm，不会继承命令行 registry 参数，
+# 必须通过环境变量把私有镜像同步给驱动安装，否则内网机器装完 Appium 也装不上驱动
+[ -z "$NPM_REGISTRY" ] || export npm_config_registry="$NPM_REGISTRY"
 if ! "$APPIUM_PREFIX/bin/appium" driver list --installed 2>&1 | grep -Fq 'xcuitest'; then
   "$APPIUM_PREFIX/bin/appium" driver install "$XCUITEST_SPEC"
 fi

@@ -19,7 +19,7 @@ def test_config_round_trip_contains_no_device_identifier(tmp_path) -> None:
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert AgentConfig.load(path) == config
-    assert set(payload) == {"backend_url", "agent_id", "installation_id"}
+    assert set(payload) == {"backend_url", "agent_id", "installation_id", "ca_file"}
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
@@ -28,6 +28,19 @@ def test_config_rejects_invalid_payload(tmp_path, payload) -> None:
     """空配置和非 HTTP 回连地址均不得加载。"""
     path = tmp_path / "config.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="AGENT_CONFIG_INVALID"):
+        AgentConfig.load(path)
+
+
+def test_config_rejects_missing_extra_ca_file(tmp_path) -> None:
+    """附加 CA 路径必须指向真实文件，避免配对后静默回退到错误信任配置。"""
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({
+        "backend_url": "https://base.example.com",
+        "agent_id": "ios-agent-test",
+        "ca_file": str(tmp_path / "missing.pem"),
+    }), encoding="utf-8")
 
     with pytest.raises(ConfigError, match="AGENT_CONFIG_INVALID"):
         AgentConfig.load(path)

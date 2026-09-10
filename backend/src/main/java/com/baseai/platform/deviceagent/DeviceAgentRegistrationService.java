@@ -101,15 +101,30 @@ public class DeviceAgentRegistrationService {
         return new DeviceAgentModels.CreatePairingResponse(code, agentId, expiresAt, pairingTtlSeconds());
     }
 
-    /** 查询配对记录，明文与哈希始终从列表结果中排除。 */
-    public List<DeviceAgentModels.PairingCodeView> pairings(String agentId) {
+    /** 分页查询配对记录，可选择包含已使用、撤销和过期记录。 */
+    public DeviceAgentModels.PageResult<DeviceAgentModels.PairingCodeView> pairings(
+        String agentId, boolean includeInactive, int page, int size) {
         String normalized = agentId == null || agentId.isBlank() ? null : normalizeAgentId(agentId);
-        return db.query("""
+        int normalizedPage = Math.max(1, page);
+        int normalizedSize = Math.min(100, Math.max(1, size));
+        Long total = db.queryForObject("""
+            SELECT COUNT(*) FROM automation_device_agent_pairing
+            WHERE (? IS NULL OR agent_id=?)
+              AND (? OR (used_at IS NULL AND revoked_at IS NULL
+                         AND expires_at>CURRENT_TIMESTAMP(6)))
+            """, Long.class, normalized, normalized, includeInactive);
+        List<DeviceAgentModels.PairingCodeView> items = db.query("""
             SELECT id, agent_id, requested_features, failed_attempts, expires_at, used_at,
                    revoked_at, created_by, created_at
             FROM automation_device_agent_pairing
-            WHERE (? IS NULL OR agent_id=?) ORDER BY id DESC LIMIT 200
-            """, (resultSet, rowNum) -> pairingView(resultSet), normalized, normalized);
+            WHERE (? IS NULL OR agent_id=?)
+              AND (? OR (used_at IS NULL AND revoked_at IS NULL
+                         AND expires_at>CURRENT_TIMESTAMP(6)))
+            ORDER BY id DESC LIMIT ? OFFSET ?
+            """, (resultSet, rowNum) -> pairingView(resultSet), normalized, normalized,
+            includeInactive, normalizedSize, (normalizedPage - 1) * normalizedSize);
+        return new DeviceAgentModels.PageResult<>(items, total == null ? 0 : total,
+            normalizedPage, normalizedSize);
     }
 
     /** 仅允许查看仍有效配对码的明文。 */
@@ -201,14 +216,18 @@ public class DeviceAgentRegistrationService {
 
     /** 查询管理端 Agent 分页列表。 */
     public DeviceAgentModels.PageResult<DeviceAgentModels.AgentRegistrationView> registrations(
-        int page, int size, String keyword) {
+        int page, int size, String keyword, String status) {
         int normalizedPage = Math.max(1, page);
         int normalizedSize = Math.min(100, Math.max(1, size));
         String pattern = "%" + (keyword == null ? "" : keyword.trim()) + "%";
+        String normalizedStatus = status == null || status.isBlank() ? null
+            : normalizeEnum(status, List.of("PENDING", "PAIRED", "REVOKED"),
+                "deviceAgent.requestInvalid");
         Long total = db.queryForObject("""
             SELECT COUNT(*) FROM automation_device_agent_registration
-            WHERE agent_id LIKE ? OR COALESCE(device_name, '') LIKE ?
-            """, Long.class, pattern, pattern);
+            WHERE (agent_id LIKE ? OR COALESCE(device_name, '') LIKE ?)
+              AND (? IS NULL OR pairing_status=?)
+            """, Long.class, pattern, pattern, normalizedStatus, normalizedStatus);
         List<DeviceAgentModels.AgentRegistrationView> items = db.query("""
             SELECT r.*,
                    (SELECT a.created_at FROM automation_device_agent_audit a
@@ -219,10 +238,12 @@ public class DeviceAgentRegistrationService {
                     WHERE a.agent_id=r.agent_id AND a.event_type='AGENT_AUTH_FAILED'
                     ORDER BY a.id DESC LIMIT 1) AS last_auth_failure_reason
             FROM automation_device_agent_registration r
-            WHERE r.agent_id LIKE ? OR COALESCE(r.device_name, '') LIKE ?
+            WHERE (r.agent_id LIKE ? OR COALESCE(r.device_name, '') LIKE ?)
+              AND (? IS NULL OR r.pairing_status=?)
             ORDER BY r.is_default DESC, r.id DESC LIMIT ? OFFSET ?
             """, (resultSet, rowNum) -> registrationView(resultSet), pattern, pattern,
-            normalizedSize, (normalizedPage - 1) * normalizedSize);
+            normalizedStatus, normalizedStatus, normalizedSize,
+            (normalizedPage - 1) * normalizedSize);
         return new DeviceAgentModels.PageResult<>(items, total == null ? 0 : total,
             normalizedPage, normalizedSize);
     }
@@ -252,7 +273,7 @@ public class DeviceAgentRegistrationService {
     public void updateDeviceName(String agentId, String deviceName) {
         requireExists(agentId);
         db.update("UPDATE automation_device_agent_registration SET device_name=? WHERE agent_id=?",
-            trimRequired(deviceName, 128, "deviceAgent.requestInvalid"), normalizeAgentId(agentId));
+            trim(deviceName, 128), normalizeAgentId(agentId));
     }
 
     /** 保存回连地址并返回 Agent 当前是否可接收改址命令。 */

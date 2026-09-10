@@ -77,6 +77,41 @@ class DeviceAgentRegistrationServiceTest {
         assertEquals("deviceAgent.featureInvalid", exception.getMessageKey());
     }
 
+    /** 配对记录支持按 Agent 分页，并可显式包含撤销记录。 */
+    @Test
+    void pairingHistorySupportsFilteringPaginationAndInactiveRecords() {
+        service.createPairing(new DeviceAgentModels.CreatePairingRequest(
+            "ios-agent-one", List.of("READ_ONLY_DIAGNOSTICS"), null, "One"), 7L, "127.0.0.1");
+        service.createPairing(new DeviceAgentModels.CreatePairingRequest(
+            "ios-agent-two", List.of("READ_ONLY_DIAGNOSTICS"), null, "Two"), 7L, "127.0.0.1");
+        Long firstId = db.queryForObject("""
+            SELECT id FROM automation_device_agent_pairing WHERE agent_id='ios-agent-one'
+            """, Long.class);
+        service.revokePairing(firstId, 7L, "127.0.0.1");
+
+        DeviceAgentModels.PageResult<DeviceAgentModels.PairingCodeView> active =
+            service.pairings(null, false, 1, 10);
+        DeviceAgentModels.PageResult<DeviceAgentModels.PairingCodeView> firstPage =
+            service.pairings(null, true, 1, 1);
+        DeviceAgentModels.PageResult<DeviceAgentModels.PairingCodeView> filtered =
+            service.pairings("ios-agent-one", true, 1, 10);
+
+        assertEquals(1, active.total());
+        assertEquals("ios-agent-two", active.items().get(0).agentId());
+        assertEquals(2, firstPage.total());
+        assertEquals(1, firstPage.items().size());
+        assertEquals(1, filtered.total());
+        assertEquals("REVOKED", filtered.items().get(0).status());
+    }
+
+    /** Agent 状态筛选仅接受配对生命周期中的固定值。 */
+    @Test
+    void registrationStatusFilterRejectsUnknownValue() {
+        BusinessException exception = assertThrows(BusinessException.class,
+            () -> service.registrations(1, 10, null, "ONLINE"));
+        assertEquals("deviceAgent.requestInvalid", exception.getMessageKey());
+    }
+
     /** 创建测试所需的 MySQL 兼容表。 */
     private void createSchema() {
         db.execute("""

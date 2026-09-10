@@ -54,5 +54,14 @@ class DeviceAgentScopeContractTest {
         assertTrue(migration.contains("automation_device_agent_registry"));
         assertFalse(migration.contains("raw_udid"));
         assertFalse(migration.contains("wecom"));
+
+        try (var input = new ClassPathResource(
+            "db/migration/mysql/V32__add_device_agent_operation_speed.sql").getInputStream()) {
+            migration = new String(input.readAllBytes(), StandardCharsets.UTF_8).toLowerCase();
+        }
+        assertTrue(migration.contains("operation_speed"));
+        assertTrue(migration.contains("'slow', 'standard', 'fast'"));
+        assertTrue(migration.contains("automation_device_agent_wda_config"));
+        assertFalse(migration.contains("wecom"));
     }
 }

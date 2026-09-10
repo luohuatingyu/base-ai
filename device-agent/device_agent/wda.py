@@ -29,6 +29,9 @@ class WdaConfig:
     xcode_signing_id: str | None
     bundle_id: str | None
     allow_registration: bool
+    operation_speed: str
+    wireless_source_poll_interval_seconds: int
+    wireless_source_max_attempts: int
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "WdaConfig":
@@ -39,11 +42,19 @@ class WdaConfig:
         wda_url = str(payload.get("wdaUrl") or "").rstrip("/") or None
         try:
             base_port = int(payload.get("baseWdaLocalPort") or 8100)
+            wireless_interval = int(payload.get("wirelessSourcePollIntervalSeconds") or 10)
+            wireless_attempts = int(payload.get("wirelessSourceMaxAttempts") or 12)
         except (TypeError, ValueError) as exception:
             raise WdaError("WDA_CONFIG_INVALID") from exception
+        operation_speed = str(payload.get("operationSpeed") or "STANDARD").upper()
         if launch_mode not in {"XCODEBUILD", "PREINSTALLED", "URL"}:
             raise WdaError("WDA_CONFIG_INVALID")
-        if not _loopback_http(appium_url) or not 1024 <= base_port <= 65535:
+        if (not _loopback_http(appium_url) or not 1024 <= base_port <= 65535
+                or operation_speed not in OPERATION_SPEED_PROFILES):
+            raise WdaError("WDA_CONFIG_INVALID")
+        expected = OPERATION_SPEED_PROFILES[operation_speed]
+        if (wireless_interval, wireless_attempts) != (
+                expected.wireless_poll_interval_seconds, expected.wireless_max_attempts):
             raise WdaError("WDA_CONFIG_INVALID")
         if launch_mode == "URL" and (wda_url is None or not _loopback_http(wda_url)):
             raise WdaError("WDA_CONFIG_INVALID")
@@ -52,7 +63,26 @@ class WdaConfig:
             _optional(signing.get("xcodeOrgId")), _optional(signing.get("xcodeSigningId")),
             _optional(signing.get("updatedWdaBundleId")),
             bool(signing.get("allowProvisioningDeviceRegistration", False)),
+            operation_speed, wireless_interval, wireless_attempts,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class OperationSpeedProfile:
+    """通用 Appium 动作、滑动、输入和页面采样的固定节奏。"""
+
+    action_interval_seconds: float
+    swipe_interval_seconds: float
+    typing_frequency: int
+    wireless_poll_interval_seconds: int
+    wireless_max_attempts: int
+
+
+OPERATION_SPEED_PROFILES = {
+    "SLOW": OperationSpeedProfile(2.0, 3.0, 60, 15, 8),
+    "STANDARD": OperationSpeedProfile(1.0, 2.0, 120, 10, 12),
+    "FAST": OperationSpeedProfile(0.5, 1.0, 240, 5, 24),
+}
 
 
 class WdaRuntime:
@@ -180,6 +210,8 @@ class WdaRuntime:
             "appium:platformVersion": candidate.os_version, "appium:wdaLocalPort": port,
             "appium:autoLaunch": False, "appium:newCommandTimeout": 3600,
             "appium:showXcodeLog": False,
+            "appium:maxTypingFrequency":
+                OPERATION_SPEED_PROFILES[config.operation_speed].typing_frequency,
         }
         if config.launch_mode == "URL":
             capabilities["appium:webDriverAgentUrl"] = config.wda_url

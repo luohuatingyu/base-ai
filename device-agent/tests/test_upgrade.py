@@ -8,6 +8,8 @@ import tarfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from device_agent import upgrade as module
 
 
@@ -24,7 +26,10 @@ def test_upgrade_installs_verified_package_before_switching(tmp_path, monkeypatc
     monkeypatch.setattr(module, "SUPPORT_DIR", support)
     monkeypatch.setattr(module, "VERSIONS_DIR", versions)
     monkeypatch.setattr(module, "CURRENT_LINK", current)
-    monkeypatch.setattr(module, "_download", lambda url: manifest if url.endswith("manifest.env") else archive)
+    monkeypatch.setattr(
+        module, "_download",
+        lambda url, _ca_file=None: manifest if url.endswith("manifest.env") else archive,
+    )
     monkeypatch.setattr(module.subprocess, "run", lambda command, **_kwargs: (
         calls.append(command) or SimpleNamespace(returncode=0)))
 
@@ -35,6 +40,27 @@ def test_upgrade_installs_verified_package_before_switching(tmp_path, monkeypatc
     assert (current / "device_agent" / "__init__.py").is_file()
     assert calls and calls[0][-1] == str(versions / "1.2.3")
     assert "--no-deps" in calls[0]
+
+
+def test_upgrade_can_switch_to_retained_version_without_network(tmp_path, monkeypatch) -> None:
+    """指定已保留版本时应直接原子回退，不得访问远端清单。"""
+    support = tmp_path / "support"
+    target = support / "versions" / "1.1.0"
+    target.mkdir(parents=True)
+    (target / "pyproject.toml").write_text("[build-system]\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(module, "SUPPORT_DIR", support)
+    monkeypatch.setattr(module, "VERSIONS_DIR", support / "versions")
+    monkeypatch.setattr(module, "CURRENT_LINK", support / "current")
+    monkeypatch.setattr(module, "_download", lambda *_args: pytest.fail("不应下载远端文件"))
+    monkeypatch.setattr(module.subprocess, "run", lambda command, **_kwargs: (
+        calls.append(command) or SimpleNamespace(returncode=0)))
+
+    version = module.upgrade("https://base.example.com", "1.1.0")
+
+    assert version == "1.1.0"
+    assert module.CURRENT_LINK.resolve() == target
+    assert calls
 
 
 def _archive() -> bytes:

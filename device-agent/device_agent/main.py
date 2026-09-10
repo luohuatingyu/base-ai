@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import signal
 import time
 from typing import Any
@@ -13,7 +14,8 @@ from .config import AgentConfig, ConfigError, store_secret
 from .device_detect import detect_devices
 from .diagnostics import collect_diagnostics
 from .registry import RegistryClient, RegistryConfig, RegistryError
-from .upgrade import upgrade
+from .signing_detect import detect_signing_candidates
+from .upgrade import available_versions, upgrade
 from .wda import WdaConfig, WdaError, WdaRuntime, xcuitest_driver_version
 
 
@@ -62,7 +64,7 @@ class AgentRuntime:
         self.backend.health({
             "status": "ONLINE", "agentVersion": __version__, "iosVersion": None,
             "xcuitestDriverVersion": xcuitest_driver_version(),
-            "lastErrorCode": None, "availableVersions": [],
+            "lastErrorCode": None, "availableVersions": available_versions(),
         })
 
     def synchronize_devices(self) -> int:
@@ -97,17 +99,27 @@ class AgentRuntime:
 
     def _dispatch(self, command_type: str, params: dict[str, Any], target_device_id: str = "") -> str:
         """分派诊断、WDA、Registry、改址和 Agent 自升级命令。"""
-        if command_type in {"DIAGNOSTICS", "DETECT_SIGNING"}:
+        if command_type == "DIAGNOSTICS":
             self.backend.diagnostics(collect_diagnostics())
             return "只读环境诊断已上报"
+        if command_type == "DETECT_SIGNING":
+            identities = [item.as_payload() for item in detect_signing_candidates()]
+            return json.dumps({"identities": identities}, ensure_ascii=False, separators=(",", ":"))
         if command_type == "DETECT_DEVICE":
-            return f"已只读同步 {self.synchronize_devices()} 台设备"
+            count = self.synchronize_devices()
+            return json.dumps({"synchronized": True, "deviceCount": count}, separators=(",", ":"))
         if command_type in {"HEALTH_CHECK", "UPDATE_CONFIG"}:
             self.report_health()
             self.synchronize_devices()
             return "Agent 配置与健康状态已刷新"
         if command_type == "SETUP_WDA":
-            return self.wda.setup(target_device_id, WdaConfig.from_payload(self.backend.wda_config()))
+            config = WdaConfig.from_payload(self.backend.wda_config())
+            # xcodebuild 构建前先做签名预检：缺签名时回稳定错误码，
+            # 控制台按码展示补救指引，而不是透传 Appium 的长日志
+            if config.launch_mode == "XCODEBUILD" and not (
+                config.xcode_org_id and config.xcode_signing_id):
+                raise WdaError("SIGNING_IDENTITY_MISSING")
+            return self.wda.setup(target_device_id, config)
         if command_type == "START_WDA":
             return self.wda.start(target_device_id, WdaConfig.from_payload(self.backend.wda_config()))
         if command_type in {"REGISTRY_ONLINE", "REGISTRY_OFFLINE", "REGISTRY_RECREATE"}:
@@ -117,8 +129,12 @@ class AgentRuntime:
             self.backend.registry_status(status)
             return f"Remote XPC Registry 已执行 {action}"
         if command_type == "UPGRADE":
-            version = upgrade(self.config.backend_url)
-            return f"Agent 已切换到版本 {version}，等待服务重启"
+            target_version = str(params.get("targetVersion") or "") or None
+            version = upgrade(self.config.backend_url, target_version, self.config.ca_file)
+            return json.dumps(
+                {"status": "SWITCHED", "version": version, "summary": "等待服务重启"},
+                ensure_ascii=False, separators=(",", ":"),
+            )
         if command_type == "UPDATE_BACKEND_URL":
             return self._relocate(str(params.get("backendUrl") or ""))
         raise RuntimeError("COMMAND_NOT_SUPPORTED")
@@ -145,7 +161,7 @@ class AgentRuntime:
         if not backend_url.startswith(("http://", "https://")):
             raise RuntimeError("BACKEND_URL_INVALID")
         candidate = AgentConfig(backend_url.rstrip("/"), self.config.agent_id,
-                                self.config.installation_id)
+                                self.config.installation_id, self.config.ca_file)
         BackendClient(candidate).request("GET", "/config")
         self.config.backend_url = candidate.backend_url
         self.config.save()
@@ -153,16 +169,16 @@ class AgentRuntime:
         return "Agent 回连地址已更新"
 
 
-def pair(backend_url: str, pairing_code: str) -> AgentConfig:
+def pair(backend_url: str, pairing_code: str, ca_file: str | None = None) -> AgentConfig:
     """领取配对身份，把 Secret 写入 Keychain 并保存非敏感配置。"""
-    result = BackendClient.claim(backend_url.rstrip("/"), pairing_code)
+    result = BackendClient.claim(backend_url.rstrip("/"), pairing_code, ca_file)
     agent_id = str(result.get("agentId") or "")
     secret = str(result.get("agentSecret") or "")
     effective_url = str(result.get("backendUrl") or backend_url).rstrip("/")
     if not agent_id or len(secret) < 32:
         raise BackendError("PAIRING_RESPONSE_INVALID")
     store_secret(agent_id, secret)
-    config = AgentConfig(effective_url, agent_id)
+    config = AgentConfig(effective_url, agent_id, ca_file=ca_file)
     config.save()
     return config
 
@@ -174,16 +190,26 @@ def entrypoint() -> None:
     pairing = subcommands.add_parser("pair")
     pairing.add_argument("--backend-url", required=True)
     pairing.add_argument("--pairing-code", required=True)
+    pairing.add_argument("--ca-file")
     subcommands.add_parser("run")
     subcommands.add_parser("diagnose")
+    relocate = subcommands.add_parser("set-server")
+    relocate.add_argument("--backend-url", required=True)
+    relocate.add_argument("--ca-file")
     arguments = parser.parse_args()
     if arguments.command == "pair":
-        config = pair(arguments.backend_url, arguments.pairing_code)
+        config = pair(arguments.backend_url, arguments.pairing_code, arguments.ca_file)
         print(f"Paired Agent {config.agent_id}")
         return
     if arguments.command == "diagnose":
-        import json
         print(json.dumps(collect_diagnostics(), ensure_ascii=False, indent=2))
+        return
+    if arguments.command == "set-server":
+        config = AgentConfig.load()
+        if arguments.ca_file:
+            config.ca_file = arguments.ca_file
+        runtime = AgentRuntime(config)
+        print(runtime._relocate(arguments.backend_url))
         return
     runtime = AgentRuntime(AgentConfig.load())
     signal.signal(signal.SIGTERM, runtime.stop)
