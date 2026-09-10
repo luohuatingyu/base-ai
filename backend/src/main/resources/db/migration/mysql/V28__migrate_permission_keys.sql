@@ -85,24 +85,24 @@ WHERE type='MENU' AND permission='ai:chat:invoke';
 UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='ai:model:catalog') AS parent_lookup)
 WHERE type='MENU' AND permission LIKE 'ai:model:%';
 
-UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='automation:catalog') AS parent_lookup)
-    ,sort_order=11
+UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='automation:catalog') AS parent_lookup),
+    sort_order=11
 WHERE type='MENU' AND (permission LIKE 'automation:api-trigger:%'
     AND permission NOT LIKE 'automation:api-trigger-security:%');
-UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='automation:catalog') AS parent_lookup)
-    ,sort_order=12
+UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='automation:catalog') AS parent_lookup),
+    sort_order=12
 WHERE type='MENU' AND permission LIKE 'automation:api-trigger-security:%';
 UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='automation:workflow:catalog') AS parent_lookup)
 WHERE type='MENU' AND permission LIKE 'automation:workflow:%';
 
-UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='operations:catalog') AS parent_lookup)
-    ,sort_order=11
+UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='operations:catalog') AS parent_lookup),
+    sort_order=11
 WHERE type='MENU' AND permission LIKE 'operations:data-sync:%';
-UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='operations:catalog') AS parent_lookup)
-    ,sort_order=12
+UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='operations:catalog') AS parent_lookup),
+    sort_order=12
 WHERE type='MENU' AND permission LIKE 'operations:server:%';
-UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='operations:catalog') AS parent_lookup)
-    ,sort_order=13
+UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='operations:catalog') AS parent_lookup),
+    sort_order=13
 WHERE type='MENU' AND permission LIKE 'operations:device-agent:%';
 UPDATE sys_menu SET parent_id=(SELECT parent_lookup.id FROM (SELECT id FROM sys_menu WHERE permission='operations:monitoring:catalog') AS parent_lookup)
 WHERE type='MENU' AND (permission LIKE 'operations:session:%'

@@ -25,25 +25,27 @@ class PermissionKeyMigrationTest {
         seedLegacyMenus(jdbc);
         jdbc.update("INSERT INTO sys_role VALUES (1,'CUSTOM')");
         jdbc.update("INSERT INTO sys_role VALUES (2,'SYSTEM_CUSTOM')");
-        jdbc.update("INSERT INTO sys_role_menu VALUES (1,101),(1,111),(1,121),(1,131),(1,141),(1,151),(1,161)");
+        jdbc.update("INSERT INTO sys_role_menu VALUES (1,101),(1,102),(1,111),(1,121),(1,131),(1,141),(1,151),(1,161)");
         jdbc.update("INSERT INTO sys_role_menu VALUES (2,171),(2,181),(2,191)");
 
         executeMigration(dataSource);
 
-        assertEquals(Map.of(
-            101L, "ai:model:model:list",
-            111L, "ai:model:knowledge-base:list",
-            121L, "automation:workflow:canvas:list",
-            131L, "operations:data-sync:list",
-            141L, "operations:server:list",
-            151L, "operations:device-agent:list",
-            161L, "operations:task:view",
-            171L, "system:user:list",
-            181L, "system:department:list",
-            191L, "system:mail:account:list"
-        ), permissionsById(jdbc, Set.of(101L, 111L, 121L, 131L, 141L, 151L, 161L, 171L, 181L, 191L)));
+        assertEquals(Map.ofEntries(
+            Map.entry(101L, "ai:model:model:list"),
+            Map.entry(102L, "ai:model:model:update"),
+            Map.entry(111L, "ai:model:knowledge-base:list"),
+            Map.entry(121L, "automation:workflow:canvas:list"),
+            Map.entry(131L, "operations:data-sync:list"),
+            Map.entry(141L, "operations:server:list"),
+            Map.entry(151L, "operations:device-agent:list"),
+            Map.entry(161L, "operations:task:view"),
+            Map.entry(171L, "system:user:list"),
+            Map.entry(181L, "system:department:list"),
+            Map.entry(191L, "system:mail:account:list")
+        ), permissionsById(jdbc, Set.of(101L, 102L, 111L, 121L, 131L, 141L, 151L, 161L, 171L, 181L, 191L)));
         assertEquals(Set.of(
-            "ai:catalog", "ai:model:catalog", "ai:model:model:list", "ai:model:knowledge-base:list",
+            "ai:catalog", "ai:model:catalog", "ai:model:model:list", "ai:model:model:update",
+            "ai:model:knowledge-base:list",
             "automation:catalog", "automation:workflow:catalog", "automation:workflow:canvas:list",
             "operations:catalog", "operations:monitoring:catalog", "operations:data-sync:list",
             "operations:server:list", "operations:device-agent:list", "operations:task:view"
@@ -53,6 +55,8 @@ class PermissionKeyMigrationTest {
             "system:organization:catalog", "system:department:list",
             "system:mail:catalog", "system:mail:account:list"
         ), rolePermissions(jdbc, 2L));
+        assertEquals(Long.valueOf(101L), jdbc.queryForObject(
+            "SELECT parent_id FROM sys_menu WHERE id=102", Long.class));
         assertFalse(hasLegacyPermission(jdbc));
     }
 
@@ -69,9 +73,31 @@ class PermissionKeyMigrationTest {
         executeMigration(dataSource);
 
         assertEquals(firstIds, catalogIds(jdbc));
+        assertEquals(Long.valueOf(10L), firstIds.get("ai:model:catalog"));
+        assertEquals(Long.valueOf(20L), firstIds.get("system:mail:catalog"));
+        assertEquals(Long.valueOf(30L), firstIds.get("automation:workflow:catalog"));
         assertEquals(10, firstIds.size());
         assertEquals(10, jdbc.queryForObject(
             "SELECT COUNT(*) FROM sys_menu WHERE type='CATALOG'", Integer.class));
+    }
+
+    /** V28 必须能从权限前缀和目录插入已经部分完成的状态继续执行。 */
+    @Test
+    void resumesFromPartiallyAppliedState() {
+        DriverManagerDataSource dataSource = dataSource("permission-key-partial-retry");
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        createSchema(jdbc);
+        seedLegacyMenus(jdbc);
+        jdbc.update("UPDATE sys_menu SET permission='ai:model:catalog' WHERE permission='model:catalog'");
+        jdbc.update("UPDATE sys_menu SET permission='ai:model:model:list' WHERE permission='model:model:list'");
+        insertMenu(jdbc, 40, null, "运维管理", "CATALOG", "operations:catalog");
+
+        executeMigration(dataSource);
+
+        assertFalse(hasLegacyPermission(jdbc));
+        assertEquals(Long.valueOf(10L), catalogIds(jdbc).get("ai:model:catalog"));
+        assertEquals(Long.valueOf(40L), catalogIds(jdbc).get("operations:catalog"));
+        assertEquals(10, catalogIds(jdbc).size());
     }
 
     /** 创建与权限迁移所需约束一致的隔离数据库。 */
@@ -118,6 +144,7 @@ class PermissionKeyMigrationTest {
         insertMenu(jdbc, 20, null, "邮件管理", "CATALOG", "mail:catalog");
         insertMenu(jdbc, 30, null, "工作流", "CATALOG", "workflow:catalog");
         insertMenu(jdbc, 101, 10L, "模型配置", "MENU", "model:model:list");
+        insertMenu(jdbc, 102, 101L, "编辑模型配置", "BUTTON", "model:model:update");
         insertMenu(jdbc, 111, 10L, "知识库", "MENU", "knowledge:base:list");
         insertMenu(jdbc, 121, 30L, "画布管理", "MENU", "workflow:canvas:list");
         insertMenu(jdbc, 131, 2L, "数据同步", "MENU", "data-sync:list");
