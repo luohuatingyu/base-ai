@@ -23,7 +23,7 @@ public class WorkflowOpenController {
 
     /** 按稳定编码异步启动已发布工作流。 */
     @PostMapping("/{code}/runs")
-    @RequiredPermission("workflow:canvas:execute")
+    @RequiredPermission("automation:workflow:canvas:execute")
     @ApiKeyEndpoint(code = "workflow.execute", nameKey = "apiKeys.endpointNames.workflowExecute",
         groupKey = "apiKeys.endpointGroups.workflow", descriptionKey = "openPlatform.endpointDescriptions.workflowExecute",
         risk = ApiKeyRisk.HIGH,
@@ -47,7 +47,7 @@ public class WorkflowOpenController {
 
     /** 查询属于当前 API Key 绑定用户的运行结果。 */
     @GetMapping("/runs/{runId}")
-    @RequiredPermission("workflow:canvas:logs")
+    @RequiredPermission("automation:workflow:canvas:logs")
     @ApiKeyEndpoint(code = "workflow.run.read", nameKey = "apiKeys.endpointNames.workflowRunRead",
         groupKey = "apiKeys.endpointGroups.workflow", descriptionKey = "openPlatform.endpointDescriptions.workflowRunRead",
         risk = ApiKeyRisk.SENSITIVE,

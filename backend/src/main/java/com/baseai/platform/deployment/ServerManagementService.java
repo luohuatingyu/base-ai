@@ -144,7 +144,7 @@ public class ServerManagementService {
         requireOwner(server.ownerUserId());
         requireEnabled(server);
         validateDeployment(command);
-        if ("ROLLBACK".equalsIgnoreCase(command.action()) && !AuthContext.require().hasPermission("server:rollback")) throw BusinessException.forbidden("server.accessForbidden");
+        if ("ROLLBACK".equalsIgnoreCase(command.action()) && !AuthContext.require().hasPermission("operations:server:rollback")) throw BusinessException.forbidden("server.accessForbidden");
         if (running.containsKey(serverId) || hasActiveDeployment(serverId)) throw new BusinessException("server.running");
         String action = text(command.action()).toUpperCase(Locale.ROOT);
         String revision = text(command.revision());

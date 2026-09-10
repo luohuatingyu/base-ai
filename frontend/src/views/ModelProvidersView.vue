@@ -5,7 +5,7 @@
         <h2>{{ t('providers.title') }}</h2>
         <p>{{ t('providers.description') }}</p>
       </div>
-      <el-button v-if="auth.hasPermission('model:provider:create')" type="primary" @click="open()">
+      <el-button v-if="auth.hasPermission('ai:model:provider:create')" type="primary" @click="open()">
         {{ t('providers.add') }}
       </el-button>
     </div>
@@ -22,7 +22,7 @@
             <el-button v-if="auth.isAdmin" link type="primary" @click="viewKeys(scope.row)">
               {{ t('providers.viewKeys') }}
             </el-button>
-            <el-button v-if="auth.hasPermission('model:provider:update')" link type="primary" @click="open(scope.row)">
+            <el-button v-if="auth.hasPermission('ai:model:provider:update')" link type="primary" @click="open(scope.row)">
               {{ t('common.edit') }}
             </el-button>
             <el-button link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>

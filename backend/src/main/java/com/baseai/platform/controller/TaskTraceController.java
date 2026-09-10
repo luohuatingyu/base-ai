@@ -19,7 +19,7 @@ import java.util.Map;
 @TraceIgnored
 @RestController
 @RequestMapping("/api/system/tasks")
-@RequiredPermission("system:task:view")
+@RequiredPermission("operations:task:view")
 public class TaskTraceController {
     private final TaskTraceService service;
     public TaskTraceController(TaskTraceService service) { this.service = service; }
@@ -79,7 +79,7 @@ public class TaskTraceController {
 
     /** 请求取消本人任务，管理员可取消任意任务。 */
     @PostMapping("/{traceId}/cancel")
-    @RequiredPermission("system:task:manage")
+    @RequiredPermission("operations:task:manage")
     public Map<String, Object> cancel(@PathVariable String traceId, @RequestBody(required = false) CancelRequest request) {
         AuthUser user = AuthContext.require();
         return service.cancel(traceId, user.id(), isAdmin(user), request == null ? null : request.reason());
@@ -87,7 +87,7 @@ public class TaskTraceController {
 
     /** 仅管理员可强制中断任务。 */
     @PostMapping("/{traceId}/force-terminate")
-    @RequiredPermission("system:task:manage")
+    @RequiredPermission("operations:task:manage")
     public Map<String, Object> forceTerminate(@PathVariable String traceId, @RequestBody(required = false) CancelRequest request) {
         AuthUser user = AuthContext.require();
         return service.forceTerminate(traceId, user.id(), isAdmin(user), request == null ? null : request.reason());

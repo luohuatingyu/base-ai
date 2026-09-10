@@ -37,12 +37,12 @@ public class MailManagementController {
 
     /** 查询邮箱账户。 */
     @GetMapping("/accounts")
-    @RequiredPermission("mail:account:list")
+    @RequiredPermission("system:mail:account:list")
     public List<MailManagementService.AccountView> accounts() { return service.accounts(); }
 
     /** 经管理员二次密码验证后回查指定邮箱账户的明文密码。 */
     @PostMapping("/accounts/{id}/password")
-    @RequiredPermission("mail:account:update")
+    @RequiredPermission("system:mail:account:update")
     @TraceType(value = "MAIL_ACCOUNT_PASSWORD_REVEAL", captureRequest = false)
     public ResponseEntity<MailManagementService.AccountPasswordView> accountPassword(@PathVariable Long id,
         @RequestBody SecretRevealAuthorizationService.ReauthenticationCommand command) {
@@ -52,12 +52,12 @@ public class MailManagementController {
 
     /** 查询邮件路由编辑所需的启用邮箱选项。 */
     @GetMapping("/account-options")
-    @RequiredPermission("mail:route:list")
+    @RequiredPermission("system:mail:route:list")
     public List<MailManagementService.AccountOption> accountOptions() { return service.accountOptions(); }
 
     /** 创建邮箱账户，追踪记录不保存密码请求。 */
     @PostMapping("/accounts")
-    @RequiredPermission("mail:account:create")
+    @RequiredPermission("system:mail:account:create")
     @TraceType(value = "MAIL_ACCOUNT_CREATE", captureRequest = false)
     public MailManagementService.AccountView createAccount(@RequestBody MailManagementService.AccountCommand command) {
         return service.createAccount(command);
@@ -65,7 +65,7 @@ public class MailManagementController {
 
     /** 更新邮箱账户，追踪记录不保存密码请求。 */
     @PutMapping("/accounts/{id}")
-    @RequiredPermission("mail:account:update")
+    @RequiredPermission("system:mail:account:update")
     @TraceType(value = "MAIL_ACCOUNT_UPDATE", captureRequest = false)
     public MailManagementService.AccountView updateAccount(@PathVariable Long id,
                                                             @RequestBody MailManagementService.AccountCommand command) {
@@ -74,17 +74,17 @@ public class MailManagementController {
 
     /** 删除未被路由引用的邮箱账户。 */
     @DeleteMapping("/accounts/{id}")
-    @RequiredPermission("mail:account:delete")
+    @RequiredPermission("system:mail:account:delete")
     public void deleteAccount(@PathVariable Long id) { service.deleteAccount(id); }
 
     /** 查询邮件业务路由。 */
     @GetMapping("/routes")
-    @RequiredPermission("mail:route:list")
+    @RequiredPermission("system:mail:route:list")
     public List<MailManagementService.RouteView> routes() { return service.routes(); }
 
     /** 创建邮件业务路由。 */
     @PostMapping("/routes")
-    @RequiredPermission("mail:route:create")
+    @RequiredPermission("system:mail:route:create")
     @TraceType(value = "MAIL_ROUTE_CREATE", captureRequest = false)
     public MailManagementService.RouteView createRoute(@RequestBody MailManagementService.RouteCommand command) {
         return service.createRoute(command);
@@ -92,7 +92,7 @@ public class MailManagementController {
 
     /** 更新邮件业务路由。 */
     @PutMapping("/routes/{id}")
-    @RequiredPermission("mail:route:update")
+    @RequiredPermission("system:mail:route:update")
     @TraceType(value = "MAIL_ROUTE_UPDATE", captureRequest = false)
     public MailManagementService.RouteView updateRoute(@PathVariable Long id,
                                                         @RequestBody MailManagementService.RouteCommand command) {
@@ -101,7 +101,7 @@ public class MailManagementController {
 
     /** 使用当前请求语言向所选路由发送固定测试邮件。 */
     @PostMapping("/routes/{id}/test")
-    @RequiredPermission("mail:route:update")
+    @RequiredPermission("system:mail:route:update")
     @TraceType(value = "MAIL_ROUTE_TEST", captureRequest = false)
     public MailDeliveryService.DeliveryResult testRoute(@PathVariable Long id, Locale locale) {
         return deliveryService.sendTest(id, locale);
@@ -109,7 +109,7 @@ public class MailManagementController {
 
     /** 删除非默认邮件业务路由。 */
     @DeleteMapping("/routes/{id}")
-    @RequiredPermission("mail:route:delete")
+    @RequiredPermission("system:mail:route:delete")
     public void deleteRoute(@PathVariable Long id) { service.deleteRoute(id); }
 
     /** 为包含 SMTP 密码的响应禁止浏览器和中间代理缓存。 */

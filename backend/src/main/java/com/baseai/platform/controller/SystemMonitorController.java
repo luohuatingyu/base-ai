@@ -32,17 +32,17 @@ public class SystemMonitorController {
     }
 
     /** 查询当前在线会话。 */
-    @GetMapping("/online-sessions") @RequiredPermission("system:session:list")
+    @GetMapping("/online-sessions") @RequiredPermission("operations:session:list")
     public List<SessionService.OnlineSession> sessions() { return sessionService.sessions(); }
     /** 按令牌撤销单个在线会话。 */
-    @DeleteMapping("/online-sessions/{tokenId}") @RequiredPermission("system:session:terminate")
+    @DeleteMapping("/online-sessions/{tokenId}") @RequiredPermission("operations:session:terminate")
     public void terminate(@PathVariable String tokenId) { sessionService.terminate(tokenId); }
     /** 撤销指定用户的全部在线会话。 */
-    @DeleteMapping("/online-users/{userId}") @RequiredPermission("system:session:terminate")
+    @DeleteMapping("/online-users/{userId}") @RequiredPermission("operations:session:terminate")
     public void terminateUser(@PathVariable Long userId) { sessionService.terminateUser(userId); }
 
     /** 按时间倒序分页查询操作日志。 */
-    @GetMapping("/operation-logs") @RequiredPermission("system:audit:operation:list")
+    @GetMapping("/operation-logs") @RequiredPermission("operations:audit:operation:list")
     public PlatformAdminService.PageResult<OperationLogView> operationLogs(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "5") int size) {
@@ -52,7 +52,7 @@ public class SystemMonitorController {
             paged.getTotalElements(), page, safeSize);
     }
     /** 按时间倒序分页查询登录日志。 */
-    @GetMapping("/login-logs") @RequiredPermission("system:audit:login:list")
+    @GetMapping("/login-logs") @RequiredPermission("operations:audit:login:list")
     public PlatformAdminService.PageResult<LoginLog> loginLogs(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "5") int size) {

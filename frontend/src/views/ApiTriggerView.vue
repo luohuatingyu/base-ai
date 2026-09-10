@@ -69,7 +69,7 @@
           </el-form>
         </el-tab-pane>
 
-        <el-tab-pane v-if="auth.hasPermission('system:task:view')" :label="t('apiTrigger.progress')" name="progress">
+        <el-tab-pane v-if="auth.hasPermission('operations:task:view')" :label="t('apiTrigger.progress')" name="progress">
           <div v-loading="progressLoading" class="progress-panel">
             <div class="progress-toolbar">
               <div>
@@ -199,7 +199,7 @@ function resetProgress(responseBody){
 function setExecutionResult(data){
   result.value=data||{}
   resetProgress(result.value.responseBody)
-  if(activeTab.value==='progress'&&progressTraceId.value&&auth.hasPermission('system:task:view'))queryProgress()
+  if(activeTab.value==='progress'&&progressTraceId.value&&auth.hasPermission('operations:task:view'))queryProgress()
 }
 /** 查询目标接口返回 Trace ID 对应的平台进度与统一日志。 */
 async function queryProgress(){
@@ -237,7 +237,7 @@ async function disable(row){await ElMessageBox.confirm(t('apiTrigger.disableConf
 async function voidConfig(row){await ElMessageBox.confirm(t('apiTrigger.voidConfirm',{name:row.name}),t('apiTrigger.voidTitle'),{type:'warning'});await http.post(`/automation/api-triggers/${row.id}/void`);load()}
 watch(()=>form.authEnabled,enabled=>{activeTab.value=resolveActiveTab(enabled,activeTab.value)})
 watch(activeTab,tab=>{
-  if(tab==='progress'&&progressTraceId.value&&progressLoadedTraceId.value!==progressTraceId.value&&auth.hasPermission('system:task:view'))queryProgress()
+  if(tab==='progress'&&progressTraceId.value&&progressLoadedTraceId.value!==progressTraceId.value&&auth.hasPermission('operations:task:view'))queryProgress()
 })
 onMounted(load)
 </script>

@@ -9,7 +9,7 @@ test('节点管理页为 n8n 与 Dify 展示独立容器开关并只在运行后
 
   assert.match(source, /http\.get\('\/workflow\/adapters'/)
   assert.match(source, /http\.put\(`\/workflow\/adapters\/\$\{adapter\.source\}`/)
-  assert.match(source, /auth\.hasPermission\('workflow:adapter:manage'\)/)
+  assert.match(source, /auth\.hasPermission\('automation:workflow:adapter:manage'\)/)
   assert.match(source, /selectedAdapter\?\.status !== 'RUNNING'/)
   assert.match(source, /\['ENABLING', 'STARTING', 'DISABLING'\]/)
   assert.match(source, /stopAdapterPolling\(\)/)
@@ -121,7 +121,7 @@ test('插件准入清单使用独立权限并强制保存后审批', async () =>
   const zh = await readFile(new URL('frontend/src/locales/zh-CN.js', root), 'utf8')
   const en = await readFile(new URL('frontend/src/locales/en-US.js', root), 'utf8')
 
-  assert.match(source, /auth\.hasPermission\('workflow:plugin:admission'\)/)
+  assert.match(source, /auth\.hasPermission\('automation:workflow:plugin:admission'\)/)
   assert.match(source, /http\.get\('\/workflow\/plugin-admissions'\)/)
   assert.match(source, /http\.put\(`\/workflow\/plugin-admissions\/\$\{admissionForm\.pluginId\}`/)
   assert.match(source, /\/review`/)

@@ -16,12 +16,12 @@ class MailManagementControllerContractTest {
     @Test
     void protectsMailManagementEndpoints() {
         Map<String, String> permissions = Map.ofEntries(
-            Map.entry("accounts", "mail:account:list"), Map.entry("accountOptions", "mail:route:list"),
-            Map.entry("accountPassword", "mail:account:update"),
-            Map.entry("createAccount", "mail:account:create"), Map.entry("updateAccount", "mail:account:update"),
-            Map.entry("deleteAccount", "mail:account:delete"), Map.entry("routes", "mail:route:list"),
-            Map.entry("createRoute", "mail:route:create"), Map.entry("updateRoute", "mail:route:update"),
-            Map.entry("deleteRoute", "mail:route:delete"), Map.entry("testRoute", "mail:route:update")
+            Map.entry("accounts", "system:mail:account:list"), Map.entry("accountOptions", "system:mail:route:list"),
+            Map.entry("accountPassword", "system:mail:account:update"),
+            Map.entry("createAccount", "system:mail:account:create"), Map.entry("updateAccount", "system:mail:account:update"),
+            Map.entry("deleteAccount", "system:mail:account:delete"), Map.entry("routes", "system:mail:route:list"),
+            Map.entry("createRoute", "system:mail:route:create"), Map.entry("updateRoute", "system:mail:route:update"),
+            Map.entry("deleteRoute", "system:mail:route:delete"), Map.entry("testRoute", "system:mail:route:update")
         );
         for (Map.Entry<String, String> entry : permissions.entrySet()) {
             Method method = java.util.Arrays.stream(MailManagementController.class.getDeclaredMethods())

@@ -202,9 +202,9 @@ public class DataInitializer implements ApplicationRunner {
             return role;
         });
         LinkedHashSet<Menu> permissions = new LinkedHashSet<>(operations.getMenus());
-        menus.stream().filter(menu -> "system:catalog".equals(menu.getPermission())
-            || menu.getPermission() != null && (menu.getPermission().startsWith("data-sync:")
-            || menu.getPermission().startsWith("server:"))).forEach(permissions::add);
+        menus.stream().filter(menu -> "operations:catalog".equals(menu.getPermission())
+            || menu.getPermission() != null && (menu.getPermission().startsWith("operations:data-sync:")
+            || menu.getPermission().startsWith("operations:server:"))).forEach(permissions::add);
         operations.setMenus(permissions);
         operations.setDescription("系统内置数据同步与服务器运维角色");
         operations.setDataScope("SELF");
@@ -383,116 +383,149 @@ public class DataInitializer implements ApplicationRunner {
         // ========== AI 能力模块 ==========
         Menu ai = menu(null, "AI 能力", "CATALOG", "/ai", null, "MagicStick", "ai:catalog", 10, true);
         menu(ai.getId(), "AI 对话", "MENU", "/ai-chat", "AiChatView", "ChatDotRound", "ai:chat:invoke", 11, true);
-
-        // ========== 系统管理模块 ==========
-        Menu system = menu(null, "系统管理", "CATALOG", "/system", null, "Setting", "system:catalog", 20, true);
-        // 初始化用户管理的页面和 CRUD 权限
-        Menu users = seedCrud(system, "用户管理", "/users", "UsersView", "User", "system:user", 21);
-        // 初始化角色管理的页面和 CRUD 权限
-        Menu roles = seedCrud(system, "角色管理", "/roles", "RolesView", "Avatar", "system:role", 22);
-        // 初始化菜单管理的页面和 CRUD 权限
-        Menu menus = seedCrud(system, "菜单管理", "/menus", "MenusView", "Menu", "system:menu", 23);
-        // 初始化部门管理的页面和 CRUD 权限
-        seedCrud(system, "部门管理", "/departments", "DepartmentsView", "OfficeBuilding", "system:department", 24);
-        // 初始化岗位管理的页面和 CRUD 权限
-        seedCrud(system, "岗位管理", "/positions", "PositionsView", "Briefcase", "system:position", 25);
-        // 初始化字典管理的页面和 CRUD 权限
-        seedCrud(system, "字典管理", "/dictionaries", "DictionariesView", "Collection", "system:dictionary", 26);
-        // 初始化系统参数的页面和 CRUD 权限
-        seedCrud(system, "系统参数", "/settings", "SettingsView", "Tools", "system:setting", 27);
-        // 在线用户管理页面
-        Menu onlineUsers = menu(system.getId(), "在线用户", "MENU", "/online-users", "OnlineUsersView", "Connection", "system:session:list", 28, true);
-        // 强制下线操作按钮权限
-        menu(onlineUsers.getId(), "强制下线", "BUTTON", null, null, null, "system:session:terminate", 281, false);
-        // 操作日志查看页面
-        menu(system.getId(), "操作日志", "MENU", "/operation-logs", "OperationLogsView", "Document", "system:audit:operation:list", 29, true);
-        // 登录日志查看页面
-        menu(system.getId(), "登录日志", "MENU", "/login-logs", "LoginLogsView", "Tickets", "system:audit:login:list", 30, true);
-        // 任务调度查看页面
-        Menu tasks = menu(system.getId(), "任务调度", "MENU", "/tasks", "TasksView", "List", "system:task:view", 31, true);
-        // 任务管理操作按钮权限（包括启动、停止、编辑等）
-        menu(tasks.getId(), "任务管理", "BUTTON", null, null, null, "system:task:manage", 311, false);
-        // API Key 管理页面和独立操作权限
-        Menu apiKeys = menu(system.getId(), "API Key 管理", "MENU", "/api-keys", "ApiKeysView", "Key",
-            "system:api-key:list", 32, true);
-        menu(apiKeys.getId(), "新增 API Key", "BUTTON", null, null, null, "system:api-key:create", 321, false);
-        menu(apiKeys.getId(), "更新 API Key", "BUTTON", null, null, null, "system:api-key:update", 322, false);
-        menu(apiKeys.getId(), "吊销 API Key", "BUTTON", null, null, null, "system:api-key:delete", 323, false);
-        menu(apiKeys.getId(), "轮换 API Key", "BUTTON", null, null, null, "system:api-key:rotate", 324, false);
-        // 数据同步计划和服务器部署管理页面
-        Menu dataSync = seedCrud(system, "数据同步", "/data-sync", "DataSyncView", "Refresh", "data-sync", 33);
-        menu(dataSync.getId(), "预览同步结构", "BUTTON", null, null, null, "data-sync:preview", 334, false);
-        menu(dataSync.getId(), "执行同步", "BUTTON", null, null, null, "data-sync:run", 335, false);
-        menu(dataSync.getId(), "取消同步", "BUTTON", null, null, null, "data-sync:cancel", 336, false);
-        menu(dataSync.getId(), "查看同步日志", "BUTTON", null, null, null, "data-sync:logs", 337, false);
-        Menu servers = seedCrud(system, "服务器管理", "/servers", "ServersView", "Monitor", "server", 34);
-        menu(servers.getId(), "测试服务器", "BUTTON", null, null, null, "server:test", 345, false);
-        menu(servers.getId(), "执行部署", "BUTTON", null, null, null, "server:deploy", 346, false);
-        menu(servers.getId(), "部署回滚", "BUTTON", null, null, null, "server:rollback", 347, false);
-        menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null, "server:logs", 348, false);
-
-        // ========== 邮件管理模块（位于系统管理和模型管理之间） ==========
-        Menu mail = menu(null, "邮件管理", "CATALOG", "/mail", null, "Message",
-            "mail:catalog", 35, true);
-        seedCrud(mail, "邮箱配置", "/mail/accounts", "MailAccountsView", "MessageBox",
-            "mail:account", 36);
-        seedCrud(mail, "邮件路由", "/mail/routes", "MailRoutesView", "Promotion",
-            "mail:route", 37);
-
-        // ========== 模型管理模块 ==========
-        Menu model = menu(null, "模型管理", "CATALOG", "/models", null, "Cpu", "model:catalog", 40, true);
-        // 初始化模型供应商的页面和 CRUD 权限
-        seedCrud(model, "模型供应商", "/model-providers", "ModelProvidersView", "Link", "model:provider", 41);
-        // 初始化模型配置的页面和 CRUD 权限
-        seedCrud(model, "模型配置", "/models", "ModelsView", "Cpu", "model:model", 42);
-        // 初始化能力路由的页面和 CRUD 权限
-        seedCrud(model, "能力路由", "/model-routes", "ModelRoutesView", "Guide", "model:route", 43);
-        seedCrud(model, "知识库", "/knowledge-bases", "KnowledgeBasesView", "Collection", "knowledge:base", 44);
+        Menu model = menu(ai.getId(), "模型管理", "CATALOG", "/models", null, "Cpu",
+            "ai:model:catalog", 20, true);
+        seedCrud(model, "模型供应商", "/model-providers", "ModelProvidersView", "Link",
+            "ai:model:provider", 21);
+        seedCrud(model, "模型配置", "/models", "ModelsView", "Cpu", "ai:model:model", 22);
+        seedCrud(model, "能力路由", "/model-routes", "ModelRoutesView", "Guide", "ai:model:route", 23);
+        seedCrud(model, "知识库", "/knowledge-bases", "KnowledgeBasesView", "Collection",
+            "ai:model:knowledge-base", 24);
 
         // ========== 自动化模块 ==========
-        Menu automation = menu(null, "自动化", "CATALOG", "/automation", null, "Operation", "automation:catalog", 50, true);
-        // 接口触发管理页面
-        Menu trigger = menu(automation.getId(), "接口触发", "MENU", "/automation/api-triggers", "ApiTriggerView", "Promotion", "automation:api-trigger:list", 51, true);
-        // 接口触发相关的各项操作按钮权限
-        menu(trigger.getId(), "新增接口触发", "BUTTON", null, null, null, "automation:api-trigger:create", 511, false);
-        menu(trigger.getId(), "更新接口触发", "BUTTON", null, null, null, "automation:api-trigger:update", 512, false);
-        menu(trigger.getId(), "删除接口触发", "BUTTON", null, null, null, "automation:api-trigger:delete", 513, false);
-        menu(trigger.getId(), "执行接口触发", "BUTTON", null, null, null, "automation:api-trigger:trigger", 514, false);
-        menu(trigger.getId(), "接口触发日志", "BUTTON", null, null, null, "automation:api-trigger:logs", 515, false);
-        // 接口触发安全配置页面和更新权限
+        Menu automation = menu(null, "自动化", "CATALOG", "/automation", null, "Operation",
+            "automation:catalog", 20, true);
+        Menu trigger = menu(automation.getId(), "接口触发", "MENU", "/automation/api-triggers",
+            "ApiTriggerView", "Promotion", "automation:api-trigger:list", 11, true);
+        menu(trigger.getId(), "新增接口触发", "BUTTON", null, null, null,
+            "automation:api-trigger:create", 111, false);
+        menu(trigger.getId(), "更新接口触发", "BUTTON", null, null, null,
+            "automation:api-trigger:update", 112, false);
+        menu(trigger.getId(), "删除接口触发", "BUTTON", null, null, null,
+            "automation:api-trigger:delete", 113, false);
+        menu(trigger.getId(), "执行接口触发", "BUTTON", null, null, null,
+            "automation:api-trigger:trigger", 114, false);
+        menu(trigger.getId(), "接口触发日志", "BUTTON", null, null, null,
+            "automation:api-trigger:logs", 115, false);
         Menu triggerSecurity = menu(automation.getId(), "接口触发安全配置", "MENU", "/automation/api-trigger-security",
-            "ApiTriggerSecurityView", "Lock", "automation:api-trigger-security:view", 52, true);
+            "ApiTriggerSecurityView", "Lock", "automation:api-trigger-security:view", 12, true);
         menu(triggerSecurity.getId(), "更新接口触发安全配置", "BUTTON", null, null, null,
-            "automation:api-trigger-security:update", 521, false);
-        // iOS 设备 Agent 只读管理设备和运行环境，不建立自动化控制会话。
-        menu(automation.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
-            "DeviceAgentsView", "Iphone", "automation:device-agent:list", 53, true);
-
-        // ========== 工作流模块（与自动化平级） ==========
-        Menu workflow = menu(null, "工作流", "CATALOG", "/workflow", null, "Operation", "workflow:catalog", 60, true);
+            "automation:api-trigger-security:update", 121, false);
+        Menu workflow = menu(automation.getId(), "工作流", "CATALOG", "/workflow", null, "Operation",
+            "automation:workflow:catalog", 20, true);
         Menu node = menu(workflow.getId(), "节点管理", "MENU", "/workflow/nodes", "WorkflowNodesView", "List",
-            "workflow:node:list", 61, true);
-        menu(node.getId(), "新增节点模板", "BUTTON", null, null, null, "workflow:node:create", 611, false);
-        menu(node.getId(), "更新节点模板", "BUTTON", null, null, null, "workflow:node:update", 612, false);
-        menu(node.getId(), "删除节点模板", "BUTTON", null, null, null, "workflow:node:delete", 613, false);
-        menu(node.getId(), "导入市场节点", "BUTTON", null, null, null, "workflow:node:import", 614, false);
-        menu(node.getId(), "管理插件适配服务", "BUTTON", null, null, null, "workflow:adapter:manage", 615, false);
-        menu(node.getId(), "审批市场插件", "BUTTON", null, null, null, "workflow:plugin:admission", 616, false);
-        menu(workflow.getId(), "节点文档", "MENU", "/workflow/node-docs", "WorkflowNodeDocsView", "Document",
-            "workflow:node:docs", 64, true);
-        Menu connection = menu(workflow.getId(), "连接配置", "MENU", "/workflow/connections", "WorkflowConnectionsView", "Link",
-            "workflow:connection:list", 62, true);
-        menu(connection.getId(), "新增连接配置", "BUTTON", null, null, null, "workflow:connection:create", 621, false);
-        menu(connection.getId(), "更新连接配置", "BUTTON", null, null, null, "workflow:connection:update", 622, false);
-        menu(connection.getId(), "删除连接配置", "BUTTON", null, null, null, "workflow:connection:delete", 623, false);
+            "automation:workflow:node:list", 21, true);
+        menu(node.getId(), "新增节点模板", "BUTTON", null, null, null,
+            "automation:workflow:node:create", 211, false);
+        menu(node.getId(), "更新节点模板", "BUTTON", null, null, null,
+            "automation:workflow:node:update", 212, false);
+        menu(node.getId(), "删除节点模板", "BUTTON", null, null, null,
+            "automation:workflow:node:delete", 213, false);
+        menu(node.getId(), "导入市场节点", "BUTTON", null, null, null,
+            "automation:workflow:node:import", 214, false);
+        menu(node.getId(), "管理插件适配服务", "BUTTON", null, null, null,
+            "automation:workflow:adapter:manage", 215, false);
+        menu(node.getId(), "审批市场插件", "BUTTON", null, null, null,
+            "automation:workflow:plugin:admission", 216, false);
+        Menu connection = menu(workflow.getId(), "连接配置", "MENU", "/workflow/connections",
+            "WorkflowConnectionsView", "Link", "automation:workflow:connection:list", 22, true);
+        menu(connection.getId(), "新增连接配置", "BUTTON", null, null, null,
+            "automation:workflow:connection:create", 221, false);
+        menu(connection.getId(), "更新连接配置", "BUTTON", null, null, null,
+            "automation:workflow:connection:update", 222, false);
+        menu(connection.getId(), "删除连接配置", "BUTTON", null, null, null,
+            "automation:workflow:connection:delete", 223, false);
         Menu canvas = menu(workflow.getId(), "画布管理", "MENU", "/workflow/canvases", "WorkflowCanvasView", "Connection",
-            "workflow:canvas:list", 63, true);
-        menu(canvas.getId(), "新增工作流", "BUTTON", null, null, null, "workflow:canvas:create", 631, false);
-        menu(canvas.getId(), "更新工作流", "BUTTON", null, null, null, "workflow:canvas:update", 632, false);
-        menu(canvas.getId(), "删除工作流", "BUTTON", null, null, null, "workflow:canvas:delete", 633, false);
-        menu(canvas.getId(), "发布工作流", "BUTTON", null, null, null, "workflow:canvas:publish", 634, false);
-        menu(canvas.getId(), "执行工作流", "BUTTON", null, null, null, "workflow:canvas:execute", 635, false);
-        menu(canvas.getId(), "工作流日志", "BUTTON", null, null, null, "workflow:canvas:logs", 636, false);
+            "automation:workflow:canvas:list", 23, true);
+        menu(canvas.getId(), "新增工作流", "BUTTON", null, null, null,
+            "automation:workflow:canvas:create", 231, false);
+        menu(canvas.getId(), "更新工作流", "BUTTON", null, null, null,
+            "automation:workflow:canvas:update", 232, false);
+        menu(canvas.getId(), "删除工作流", "BUTTON", null, null, null,
+            "automation:workflow:canvas:delete", 233, false);
+        menu(canvas.getId(), "发布工作流", "BUTTON", null, null, null,
+            "automation:workflow:canvas:publish", 234, false);
+        menu(canvas.getId(), "执行工作流", "BUTTON", null, null, null,
+            "automation:workflow:canvas:execute", 235, false);
+        menu(canvas.getId(), "工作流日志", "BUTTON", null, null, null,
+            "automation:workflow:canvas:logs", 236, false);
+        menu(workflow.getId(), "节点文档", "MENU", "/workflow/node-docs", "WorkflowNodeDocsView", "Document",
+            "automation:workflow:node:docs", 24, true);
+
+        // ========== 运维管理模块 ==========
+        Menu operations = menu(null, "运维管理", "CATALOG", "/operations", null, "Monitor",
+            "operations:catalog", 30, true);
+        Menu dataSync = seedCrud(operations, "数据同步", "/data-sync", "DataSyncView", "Refresh",
+            "operations:data-sync", 11);
+        menu(dataSync.getId(), "预览同步结构", "BUTTON", null, null, null,
+            "operations:data-sync:preview", 114, false);
+        menu(dataSync.getId(), "执行同步", "BUTTON", null, null, null,
+            "operations:data-sync:run", 115, false);
+        menu(dataSync.getId(), "取消同步", "BUTTON", null, null, null,
+            "operations:data-sync:cancel", 116, false);
+        menu(dataSync.getId(), "查看同步日志", "BUTTON", null, null, null,
+            "operations:data-sync:logs", 117, false);
+        Menu servers = seedCrud(operations, "服务器管理", "/servers", "ServersView", "Monitor",
+            "operations:server", 12);
+        menu(servers.getId(), "测试服务器", "BUTTON", null, null, null,
+            "operations:server:test", 124, false);
+        menu(servers.getId(), "执行部署", "BUTTON", null, null, null,
+            "operations:server:deploy", 125, false);
+        menu(servers.getId(), "部署回滚", "BUTTON", null, null, null,
+            "operations:server:rollback", 126, false);
+        menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null,
+            "operations:server:logs", 127, false);
+        // iOS 设备 Agent 只读管理设备和运行环境，不建立自动化控制会话。
+        menu(operations.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
+            "DeviceAgentsView", "Iphone", "operations:device-agent:list", 13, true);
+        Menu monitoring = menu(operations.getId(), "监控审计", "CATALOG", "/operations/monitoring",
+            null, "DataAnalysis", "operations:monitoring:catalog", 20, true);
+        Menu onlineUsers = menu(monitoring.getId(), "在线用户", "MENU", "/online-users",
+            "OnlineUsersView", "Connection", "operations:session:list", 21, true);
+        menu(onlineUsers.getId(), "强制下线", "BUTTON", null, null, null,
+            "operations:session:terminate", 211, false);
+        menu(monitoring.getId(), "操作日志", "MENU", "/operation-logs", "OperationLogsView",
+            "Document", "operations:audit:operation:list", 22, true);
+        menu(monitoring.getId(), "登录日志", "MENU", "/login-logs", "LoginLogsView",
+            "Tickets", "operations:audit:login:list", 23, true);
+        Menu tasks = menu(monitoring.getId(), "任务调度", "MENU", "/tasks", "TasksView", "List",
+            "operations:task:view", 24, true);
+        menu(tasks.getId(), "任务管理", "BUTTON", null, null, null,
+            "operations:task:manage", 241, false);
+
+        // ========== 系统管理模块 ==========
+        Menu system = menu(null, "系统管理", "CATALOG", "/system", null, "Setting",
+            "system:catalog", 40, true);
+        Menu access = menu(system.getId(), "访问控制", "CATALOG", "/system/access", null, "Lock",
+            "system:access:catalog", 10, true);
+        seedCrud(access, "用户管理", "/users", "UsersView", "User", "system:user", 11);
+        seedCrud(access, "角色管理", "/roles", "RolesView", "Avatar", "system:role", 12);
+        seedCrud(access, "菜单管理", "/menus", "MenusView", "Menu", "system:menu", 13);
+        Menu apiKeys = menu(access.getId(), "API Key 管理", "MENU", "/api-keys", "ApiKeysView", "Key",
+            "system:api-key:list", 14, true);
+        menu(apiKeys.getId(), "新增 API Key", "BUTTON", null, null, null,
+            "system:api-key:create", 141, false);
+        menu(apiKeys.getId(), "更新 API Key", "BUTTON", null, null, null,
+            "system:api-key:update", 142, false);
+        menu(apiKeys.getId(), "吊销 API Key", "BUTTON", null, null, null,
+            "system:api-key:delete", 143, false);
+        menu(apiKeys.getId(), "轮换 API Key", "BUTTON", null, null, null,
+            "system:api-key:rotate", 144, false);
+        Menu organization = menu(system.getId(), "组织管理", "CATALOG", "/system/organization",
+            null, "OfficeBuilding", "system:organization:catalog", 20, true);
+        seedCrud(organization, "部门管理", "/departments", "DepartmentsView", "OfficeBuilding",
+            "system:department", 21);
+        seedCrud(organization, "岗位管理", "/positions", "PositionsView", "Briefcase",
+            "system:position", 22);
+        seedCrud(system, "字典管理", "/dictionaries", "DictionariesView", "Collection",
+            "system:dictionary", 31);
+        seedCrud(system, "系统参数", "/settings", "SettingsView", "Tools", "system:setting", 32);
+        Menu mail = menu(system.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
+            "system:mail:catalog", 40, true);
+        seedCrud(mail, "邮箱配置", "/mail/accounts", "MailAccountsView", "MessageBox",
+            "system:mail:account", 41);
+        seedCrud(mail, "邮件路由", "/mail/routes", "MailRoutesView", "Promotion",
+            "system:mail:route", 42);
 
     }
 

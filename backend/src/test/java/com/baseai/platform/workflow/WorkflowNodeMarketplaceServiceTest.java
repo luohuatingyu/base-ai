@@ -106,7 +106,7 @@ class WorkflowNodeMarketplaceServiceTest {
     @Test
     void listOnlyPermissionDoesNotEnqueuePluginProbe() {
         AuthContext.set(new AuthUser(2L, "reader", java.util.Set.of("USER"),
-            java.util.Set.of("workflow:node:list"), AuthenticationType.TOKEN, null, null));
+            java.util.Set.of("automation:workflow:node:list"), AuthenticationType.TOKEN, null, null));
         var plugin = entry("n8n-nodes-example.action", "Example", "1.0.0", "vendor", "community-node",
             Map.of("packageName", "n8n-nodes-example"));
         when(clients.searchN8n("", 1, 20)).thenReturn(

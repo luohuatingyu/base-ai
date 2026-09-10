@@ -97,7 +97,7 @@ test('新增和编辑弹窗按四类 tab 分隔字段且进度页没有手工输
   }
 
   assert.match(viewSource, /v-if="form\.authEnabled" :label="t\('apiTrigger\.auth'\)" name="auth"/)
-  assert.match(viewSource, /v-if="auth\.hasPermission\('system:task:view'\)" :label="t\('apiTrigger\.progress'\)" name="progress"/)
+  assert.match(viewSource, /v-if="auth\.hasPermission\('operations:task:view'\)" :label="t\('apiTrigger\.progress'\)" name="progress"/)
   assert.match(viewSource, /const activeTab\s*=\s*ref\('basic'\)/)
   assert.match(progress, /\{\{ progressTraceId \}\}/)
   assert.doesNotMatch(progress, /v-model="progressTraceId"/)

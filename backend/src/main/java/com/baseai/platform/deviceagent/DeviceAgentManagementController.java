@@ -20,7 +20,7 @@ import java.util.List;
 /** 提供设备 Agent 配对、配置、只读诊断和自维护命令管理接口。 */
 @RestController
 @RequestMapping("/api/automation/device-agents")
-@RequiredPermission("automation:device-agent:list")
+@RequiredPermission("operations:device-agent:list")
 public class DeviceAgentManagementController {
     private static final String AGENT_ID_PATTERN = "[A-Za-z0-9][A-Za-z0-9._-]{0,63}";
     private final DeviceAgentRegistrationService registrationService;

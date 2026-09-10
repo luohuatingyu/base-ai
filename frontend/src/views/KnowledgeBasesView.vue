@@ -2,7 +2,7 @@
   <div class="knowledge-page">
     <header class="knowledge-hero">
       <div><h2>{{ t('knowledgeBases.title') }}</h2><p>{{ t('knowledgeBases.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('knowledge:base:create')" type="primary" @click="openForm()">{{ t('knowledgeBases.add') }}</el-button>
+      <el-button v-if="auth.hasPermission('ai:model:knowledge-base:create')" type="primary" @click="openForm()">{{ t('knowledgeBases.add') }}</el-button>
     </header>
 
     <section class="knowledge-summary" aria-live="polite">
@@ -25,7 +25,7 @@
         <div v-if="loading" class="directory-state"><el-skeleton :rows="5" animated /></div>
         <div v-else-if="loadError" class="directory-state"><el-result icon="error" :title="t('knowledgeBases.loadFailed')"><template #extra><el-button type="primary" @click="loadBases()">{{ t('knowledgeBases.retry') }}</el-button></template></el-result></div>
         <el-empty v-else-if="!rows.length" :description="hasBaseFilters ? t('knowledgeBases.noResults') : t('knowledgeBases.empty')">
-          <el-button v-if="!hasBaseFilters&&auth.hasPermission('knowledge:base:create')" type="primary" @click="openForm()">{{ t('knowledgeBases.add') }}</el-button>
+          <el-button v-if="!hasBaseFilters&&auth.hasPermission('ai:model:knowledge-base:create')" type="primary" @click="openForm()">{{ t('knowledgeBases.add') }}</el-button>
         </el-empty>
         <div v-else class="directory-list">
           <button v-for="row in rows" :key="row.id" type="button" :class="['directory-item',{ active: activeBase?.id===row.id }]" @click="selectBase(row)">
@@ -43,9 +43,9 @@
           <header class="detail-head">
             <div><div class="detail-title"><h3>{{ activeBase.name }}</h3><el-tag :type="activeBase.enabled?'success':'info'">{{ activeBase.enabled?t('common.enabled'):t('common.disabled') }}</el-tag><el-tag v-if="!canMaintain(activeBase)" type="warning">{{ t('knowledgeBases.readOnly') }}</el-tag></div><p>{{ activeBase.description || t('knowledgeBases.noDescription') }}</p></div>
             <div v-if="canMaintain(activeBase)" class="detail-actions">
-              <el-switch v-if="auth.hasPermission('knowledge:base:update')" :model-value="activeBase.enabled" :loading="toggling" :active-text="t('common.enabled')" :inactive-text="t('common.disabled')" @change="toggleEnabled" />
-              <el-button v-if="auth.hasPermission('knowledge:base:update')" @click="openForm(activeBase)">{{ t('common.edit') }}</el-button>
-              <el-button v-if="auth.hasPermission('knowledge:base:delete')" type="danger" plain @click="removeBase(activeBase)">{{ t('common.delete') }}</el-button>
+              <el-switch v-if="auth.hasPermission('ai:model:knowledge-base:update')" :model-value="activeBase.enabled" :loading="toggling" :active-text="t('common.enabled')" :inactive-text="t('common.disabled')" @change="toggleEnabled" />
+              <el-button v-if="auth.hasPermission('ai:model:knowledge-base:update')" @click="openForm(activeBase)">{{ t('common.edit') }}</el-button>
+              <el-button v-if="auth.hasPermission('ai:model:knowledge-base:delete')" type="danger" plain @click="removeBase(activeBase)">{{ t('common.delete') }}</el-button>
             </div>
           </header>
 
@@ -75,20 +75,20 @@
           <section class="documents-section">
             <div class="subsection-head"><div><h4>{{ t('knowledgeBases.documents') }}</h4><p>{{ t('knowledgeBases.documentsHint') }}</p></div><div class="document-actions">
               <input ref="fileInput" type="file" multiple hidden @change="chooseFiles">
-              <el-button v-if="canMaintain(activeBase)&&auth.hasPermission('knowledge:base:update')" type="primary" :disabled="!activeBase.enabled" @click="fileInput?.click()">{{ t('knowledgeBases.upload') }}</el-button>
-              <el-button v-if="canMaintain(activeBase)&&auth.hasPermission('knowledge:base:update')" type="danger" plain :disabled="!selectedDocuments.length" @click="removeSelectedDocuments">{{ t('knowledgeBases.deleteSelected', { count: selectedDocuments.length }) }}</el-button>
+              <el-button v-if="canMaintain(activeBase)&&auth.hasPermission('ai:model:knowledge-base:update')" type="primary" :disabled="!activeBase.enabled" @click="fileInput?.click()">{{ t('knowledgeBases.upload') }}</el-button>
+              <el-button v-if="canMaintain(activeBase)&&auth.hasPermission('ai:model:knowledge-base:update')" type="danger" plain :disabled="!selectedDocuments.length" @click="removeSelectedDocuments">{{ t('knowledgeBases.deleteSelected', { count: selectedDocuments.length }) }}</el-button>
             </div></div>
             <el-alert v-if="!activeBase.enabled" class="document-notice" :title="t('knowledgeBases.disabledUploadHint')" type="warning" show-icon :closable="false" />
             <div class="document-filters"><el-input v-model="documentQuery.keyword" clearable :placeholder="t('knowledgeBases.documentSearch')" @keyup.enter="searchDocuments" @clear="searchDocuments"/><el-select v-model="documentQuery.status" clearable :placeholder="t('knowledgeBases.allDocumentStatuses')" @change="searchDocuments"><el-option v-for="status in documentStatuses" :key="status" :label="t(`knowledgeBases.documentStatuses.${status}`)" :value="status"/></el-select><el-button :loading="documentLoading" @click="loadDocuments">{{ t('common.refresh') }}</el-button></div>
             <el-table v-loading="documentLoading" :data="documents" table-layout="auto" empty-text=" " @selection-change="selectedDocuments=$event">
-              <el-table-column v-if="canMaintain(activeBase)" type="selection" width="46" :selectable="()=>auth.hasPermission('knowledge:base:update')"/>
+              <el-table-column v-if="canMaintain(activeBase)" type="selection" width="46" :selectable="()=>auth.hasPermission('ai:model:knowledge-base:update')"/>
               <el-table-column prop="fileName" :label="t('knowledgeBases.fileName')" min-width="210" show-overflow-tooltip/>
               <el-table-column prop="contentType" :label="t('knowledgeBases.contentType')" min-width="150" show-overflow-tooltip/>
               <el-table-column :label="t('common.status')" width="105"><template #default="scope"><el-tag :type="documentStatusType(scope.row.status)">{{ t(`knowledgeBases.documentStatuses.${scope.row.status}`) }}</el-tag></template></el-table-column>
               <el-table-column prop="chunkCount" :label="t('knowledgeBases.chunks')" width="80"/>
               <el-table-column :label="t('knowledgeBases.updatedAt')" min-width="165"><template #default="scope">{{ formatDate(scope.row.updatedAt) }}</template></el-table-column>
               <el-table-column :label="t('knowledgeBases.failureReason')" min-width="180"><template #default="scope"><span v-if="scope.row.errorMessage" class="document-error">{{ t(documentErrorTranslationKey(scope.row.errorMessage)) }}</span><span v-else>-</span></template></el-table-column>
-              <el-table-column v-if="canMaintain(activeBase)" :label="t('common.operation')" width="86" fixed="right"><template #default="scope"><el-button v-if="auth.hasPermission('knowledge:base:update')" link type="danger" @click="removeDocument(scope.row)">{{ t('common.delete') }}</el-button></template></el-table-column>
+              <el-table-column v-if="canMaintain(activeBase)" :label="t('common.operation')" width="86" fixed="right"><template #default="scope"><el-button v-if="auth.hasPermission('ai:model:knowledge-base:update')" link type="danger" @click="removeDocument(scope.row)">{{ t('common.delete') }}</el-button></template></el-table-column>
               <template #empty><el-empty :description="hasDocumentFilters?t('knowledgeBases.noDocumentResults'):t('knowledgeBases.noDocuments')" :image-size="64"/></template>
             </el-table>
             <el-pagination v-if="documentTotal>documentQuery.size" v-model:current-page="documentQuery.page" v-model:page-size="documentQuery.size" background :page-sizes="[20,50,100]" :total="documentTotal" layout="total, sizes, prev, pager, next" @size-change="resizeDocuments" @current-change="loadDocuments" />

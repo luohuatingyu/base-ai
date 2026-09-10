@@ -65,7 +65,7 @@ export default {
     operations: '智能运营',
     collapse: '收起侧边栏',
     expand: '展开侧边栏',
-    items: { ai: 'AI 能力', aiChat: 'AI 对话', system: '系统管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', automation: '自动化', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflow: '工作流', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowConnections: '连接配置', workflowCanvas: '画布管理' }
+    items: { ai: 'AI 能力', aiChat: 'AI 对话', automation: '自动化', workflow: '工作流', operations: '运维管理', monitoring: '监控审计', system: '系统管理', access: '访问控制', organization: '组织管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowConnections: '连接配置', workflowCanvas: '画布管理' }
   },
   common: {
     confirm: '确认',

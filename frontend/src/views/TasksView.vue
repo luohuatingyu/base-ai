@@ -418,7 +418,7 @@ function reset() {
 }
 
 function manageable(row) {
-  return ['RUNNING', 'CANCEL_REQUESTED'].includes(row.status) && auth.hasPermission('system:task:manage')
+  return ['RUNNING', 'CANCEL_REQUESTED'].includes(row.status) && auth.hasPermission('operations:task:manage')
 }
 
 function statusType(status) {

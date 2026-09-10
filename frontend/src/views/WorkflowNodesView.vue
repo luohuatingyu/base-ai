@@ -3,9 +3,9 @@
     <div class="section-head">
       <div><h2>{{ t('workflowNodes.title') }}</h2><p>{{ t('workflowNodes.description') }}</p></div>
       <router-link to="/workflow/node-docs"><el-button>{{ t('workflowNodeDocs.title') }}</el-button></router-link>
-      <el-button v-if="auth.hasPermission('workflow:plugin:admission')" @click="openAdmissions">{{ t('pluginAdmission.title') }}</el-button>
-      <el-button v-if="selectedSource === 'SYSTEM' && auth.hasPermission('workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
-      <el-button v-else-if="selectedSource !== 'SYSTEM' && auth.hasPermission('workflow:node:import')" type="primary"
+      <el-button v-if="auth.hasPermission('automation:workflow:plugin:admission')" @click="openAdmissions">{{ t('pluginAdmission.title') }}</el-button>
+      <el-button v-if="selectedSource === 'SYSTEM' && auth.hasPermission('automation:workflow:node:create')" type="primary" @click="open()">{{ t('workflowNodes.add') }}</el-button>
+      <el-button v-else-if="selectedSource !== 'SYSTEM' && auth.hasPermission('automation:workflow:node:import')" type="primary"
         :disabled="selectedAdapter?.status !== 'RUNNING'" @click="openMarketplace">{{ t('workflowNodes.importFrom', { source: t(`workflowCatalog.sources.${selectedSource}`) }) }}</el-button>
     </div>
     <div class="node-template-source-filter" :aria-label="t('workflowNodes.source')">
@@ -17,7 +17,7 @@
         <span><strong>{{ t(`workflowCatalog.sources.${selectedAdapter.source}`) }} Worker</strong><small>{{ adapterStateLabel(selectedAdapter) }}</small></span>
         <el-tag :type="adapterStateTag(selectedAdapter)" size="small">{{ adapterStateLabel(selectedAdapter) }}</el-tag>
         <el-switch :model-value="selectedAdapter.enabled" :loading="adapterUpdating === selectedAdapter.source"
-          :disabled="!auth.hasPermission('workflow:adapter:manage') || adapterTransitioning(selectedAdapter)"
+          :disabled="!auth.hasPermission('automation:workflow:adapter:manage') || adapterTransitioning(selectedAdapter)"
           @change="toggleAdapter(selectedAdapter, $event)" />
       </div>
     </div>
@@ -35,7 +35,7 @@
       <section class="node-template-group">
       <div v-if="filteredRows.length" class="node-template-grid">
         <article v-for="row in filteredRows" :key="row.id" class="node-template-card" :class="[`node-template-card--${row.nodeType.toLowerCase()}`, { disabled: !row.enabled }]">
-          <button type="button" class="node-template-card-main" :disabled="!auth.hasPermission('workflow:node:update')" @click="open(row)">
+          <button type="button" class="node-template-card-main" :disabled="!auth.hasPermission('automation:workflow:node:update')" @click="open(row)">
             <span class="node-template-icon" :style="workflowTemplateCategoryStyle(row.functionalCategory, row.nodeType)">{{ templateIcon(row) }}</span>
             <span class="node-template-summary"><strong>{{ templateText(row, 'name') }}</strong></span>
             <el-tag size="small" :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag>
@@ -43,8 +43,8 @@
             <small>{{ templateText(row, 'description') || t('workflowNodes.noDescription') }}</small>
           </button>
           <div class="node-template-actions">
-            <el-button v-if="auth.hasPermission('workflow:node:update')" link type="primary" @click="open(row)">{{ t('common.edit') }}</el-button>
-            <el-button v-if="!row.systemTemplate && auth.hasPermission('workflow:node:delete')" link type="danger" @click="remove(row)">{{ t('common.delete') }}</el-button>
+            <el-button v-if="auth.hasPermission('automation:workflow:node:update')" link type="primary" @click="open(row)">{{ t('common.edit') }}</el-button>
+            <el-button v-if="!row.systemTemplate && auth.hasPermission('automation:workflow:node:delete')" link type="danger" @click="remove(row)">{{ t('common.delete') }}</el-button>
           </div>
         </article>
       </div>

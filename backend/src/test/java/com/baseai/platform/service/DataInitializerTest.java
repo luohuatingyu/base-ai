@@ -275,7 +275,7 @@ class DataInitializerTest {
         assertFalse(permissions.contains("system:menu:manage"));
     }
 
-    /** 内置运维角色默认获得数据同步和服务器管理权限，但不获得其他系统管理权限。 */
+    /** 内置运维角色默认获得数据同步和服务器管理权限，但不获得其他运维或系统管理权限。 */
     @Test
     void seedsOperationsRoleWithSynchronizationAndDeploymentPermissions() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
@@ -287,14 +287,17 @@ class DataInitializerTest {
         Role operations = captor.getAllValues().stream().filter(role -> "OPS".equals(role.getCode())).findFirst().orElseThrow();
         Set<String> permissions = operations.getMenus().stream().map(Menu::getPermission).collect(Collectors.toSet());
         assertEquals("SELF", operations.getDataScope());
-        assertTrue(permissions.containsAll(Set.of("system:catalog", "data-sync:list", "data-sync:run",
-            "server:list", "server:deploy", "server:rollback")));
+        assertTrue(permissions.containsAll(Set.of("operations:catalog", "operations:data-sync:list",
+            "operations:data-sync:run", "operations:server:list", "operations:server:deploy",
+            "operations:server:rollback")));
+        assertFalse(permissions.contains("operations:device-agent:list"));
+        assertFalse(permissions.contains("operations:monitoring:catalog"));
         assertFalse(permissions.contains("system:user:list"));
     }
 
-    /** 邮件管理必须位于系统与模型目录之间，并保持账户、路由的独立权限层级。 */
+    /** 四个一级目录及其二级目录必须按确认后的业务域组织。 */
     @Test
-    void seedsMailManagementBeforeModelManagement() {
+    void seedsFourDomainCatalogsWithExpectedSubcatalogs() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
 
         initializer.run(null);
@@ -303,21 +306,40 @@ class DataInitializerTest {
         verify(menuRepository, atLeastOnce()).save(captor.capture());
         Map<String, Menu> menusByPermission = captor.getAllValues().stream()
             .collect(Collectors.toMap(Menu::getPermission, Function.identity(), (first, ignored) -> first));
+        Menu ai = menusByPermission.get("ai:catalog");
+        Menu automation = menusByPermission.get("automation:catalog");
+        Menu operations = menusByPermission.get("operations:catalog");
         Menu system = menusByPermission.get("system:catalog");
-        Menu mail = menusByPermission.get("mail:catalog");
-        Menu model = menusByPermission.get("model:catalog");
+        Menu model = menusByPermission.get("ai:model:catalog");
+        Menu workflow = menusByPermission.get("automation:workflow:catalog");
+        Menu monitoring = menusByPermission.get("operations:monitoring:catalog");
+        Menu access = menusByPermission.get("system:access:catalog");
+        Menu organization = menusByPermission.get("system:organization:catalog");
+        Menu mail = menusByPermission.get("system:mail:catalog");
 
-        assertTrue(system.getSortOrder() < mail.getSortOrder());
-        assertTrue(mail.getSortOrder() < model.getSortOrder());
-        assertEquals(mail.getId(), menusByPermission.get("mail:account:list").getParentId());
-        assertEquals(mail.getId(), menusByPermission.get("mail:route:list").getParentId());
-        assertEquals(menusByPermission.get("mail:account:list").getId(),
-            menusByPermission.get("mail:account:update").getParentId());
-        assertEquals(menusByPermission.get("mail:route:list").getId(),
-            menusByPermission.get("mail:route:update").getParentId());
+        assertEquals(List.of("ai:catalog", "automation:catalog", "operations:catalog", "system:catalog"),
+            List.of(ai, automation, operations, system).stream()
+                .sorted(java.util.Comparator.comparingInt(Menu::getSortOrder))
+                .map(Menu::getPermission).toList());
+        assertEquals(ai.getId(), model.getParentId());
+        assertEquals(automation.getId(), workflow.getParentId());
+        assertEquals(operations.getId(), monitoring.getParentId());
+        assertEquals(system.getId(), access.getParentId());
+        assertEquals(system.getId(), organization.getParentId());
+        assertEquals(system.getId(), mail.getParentId());
+        assertEquals(operations.getId(), menusByPermission.get("operations:data-sync:list").getParentId());
+        assertEquals(operations.getId(), menusByPermission.get("operations:server:list").getParentId());
+        assertEquals(operations.getId(), menusByPermission.get("operations:device-agent:list").getParentId());
+        assertEquals(monitoring.getId(), menusByPermission.get("operations:session:list").getParentId());
+        assertEquals(monitoring.getId(), menusByPermission.get("operations:audit:operation:list").getParentId());
+        assertEquals(monitoring.getId(), menusByPermission.get("operations:task:view").getParentId());
+        assertEquals(access.getId(), menusByPermission.get("system:user:list").getParentId());
+        assertEquals(access.getId(), menusByPermission.get("system:api-key:list").getParentId());
+        assertEquals(organization.getId(), menusByPermission.get("system:department:list").getParentId());
+        assertEquals(mail.getId(), menusByPermission.get("system:mail:account:list").getParentId());
     }
 
-    /** 工作流必须作为独立一级目录，并包含节点、连接和画布管理页面。 */
+    /** 工作流必须归入自动化二级目录，并包含节点、连接和画布管理页面。 */
     @Test
     void seedsWorkflowCatalogWithNodeAndCanvasPages() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
@@ -328,22 +350,22 @@ class DataInitializerTest {
         verify(menuRepository, atLeastOnce()).save(captor.capture());
         Map<String, Menu> menusByPermission = captor.getAllValues().stream()
             .collect(Collectors.toMap(Menu::getPermission, Function.identity(), (first, ignored) -> first));
-        Menu workflow = menusByPermission.get("workflow:catalog");
+        Menu workflow = menusByPermission.get("automation:workflow:catalog");
 
         assertEquals("CATALOG", workflow.getType());
-        assertEquals(workflow.getId(), menusByPermission.get("workflow:node:list").getParentId());
-        assertEquals(workflow.getId(), menusByPermission.get("workflow:connection:list").getParentId());
-        assertEquals(workflow.getId(), menusByPermission.get("workflow:canvas:list").getParentId());
-        assertEquals(menusByPermission.get("workflow:node:list").getId(),
-            menusByPermission.get("workflow:node:update").getParentId());
-        assertEquals(menusByPermission.get("workflow:node:list").getId(),
-            menusByPermission.get("workflow:adapter:manage").getParentId());
-        assertEquals(menusByPermission.get("workflow:node:list").getId(),
-            menusByPermission.get("workflow:plugin:admission").getParentId());
-        assertEquals(menusByPermission.get("workflow:connection:list").getId(),
-            menusByPermission.get("workflow:connection:update").getParentId());
-        assertEquals(menusByPermission.get("workflow:canvas:list").getId(),
-            menusByPermission.get("workflow:canvas:execute").getParentId());
+        assertEquals(workflow.getId(), menusByPermission.get("automation:workflow:node:list").getParentId());
+        assertEquals(workflow.getId(), menusByPermission.get("automation:workflow:connection:list").getParentId());
+        assertEquals(workflow.getId(), menusByPermission.get("automation:workflow:canvas:list").getParentId());
+        assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
+            menusByPermission.get("automation:workflow:node:update").getParentId());
+        assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
+            menusByPermission.get("automation:workflow:adapter:manage").getParentId());
+        assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
+            menusByPermission.get("automation:workflow:plugin:admission").getParentId());
+        assertEquals(menusByPermission.get("automation:workflow:connection:list").getId(),
+            menusByPermission.get("automation:workflow:connection:update").getParentId());
+        assertEquals(menusByPermission.get("automation:workflow:canvas:list").getId(),
+            menusByPermission.get("automation:workflow:canvas:execute").getParentId());
     }
 
     /** 首次启动必须创建两个默认关闭且不可由通用参数页面修改的适配器开关。 */

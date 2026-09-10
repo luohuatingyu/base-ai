@@ -50,7 +50,7 @@ test('缺失或非法元数据不会影响 AI 回复内容', () => {
 })
 
 test('Trace ID 在有任务权限时可直达链路日志', () => {
-  assert.match(chatView, /v-if="item\.traceId && auth\.hasPermission\('system:task:view'\)"/)
+  assert.match(chatView, /v-if="item\.traceId && auth\.hasPermission\('operations:task:view'\)"/)
   assert.match(chatView, /@click="openTraceLogs\(item\.traceId\)"/)
   assert.match(chatView, /router\.push\(\{ path: '\/tasks', query: \{ traceId, openLogs: 'true' \} \}\)/)
   assert.match(chatView, /<span v-else-if="item\.traceId">\{\{ t\('chat\.traceId'\) \}\}: \{\{ item\.traceId \}\}<\/span>/)

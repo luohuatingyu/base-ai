@@ -176,8 +176,8 @@ test('节点管理使用必选来源和功能类型级联标签并校验表单�
 })
 
 test('节点来源切换后系统使用新增入口且外部来源使用官方市场导入', () => {
-  assert.match(nodeManagementSource, /selectedSource === 'SYSTEM'[^>]*workflow:node:create/)
-  assert.match(nodeManagementSource, /selectedSource !== 'SYSTEM'[^>]*workflow:node:import/)
+  assert.match(nodeManagementSource, /selectedSource === 'SYSTEM'[^>]*automation:workflow:node:create/)
+  assert.match(nodeManagementSource, /selectedSource !== 'SYSTEM'[^>]*automation:workflow:node:import/)
   assert.match(nodeManagementSource, /openMarketplace/)
   assert.match(nodeManagementSource, /\/workflow\/node-marketplaces\/\$\{selectedSource\.value\}\/nodes/)
   assert.match(nodeManagementSource, /\/workflow\/node-marketplaces\/\$\{selectedSource\.value\}\/imports/)

@@ -89,7 +89,7 @@ class MailManagementServiceTest {
         AuthContext.clear();
         assertThat(assertThrows(BusinessException.class, () -> service.accountPassword(1L)).getStatus()).isEqualTo(401);
 
-        AuthContext.set(new AuthUser(2L, "operator", Set.of("OPERATOR"), Set.of("mail:account:update"),
+        AuthContext.set(new AuthUser(2L, "operator", Set.of("OPERATOR"), Set.of("system:mail:account:update"),
             AuthenticationType.TOKEN, null, null));
         BusinessException forbidden = assertThrows(BusinessException.class, () -> service.accountPassword(1L));
 

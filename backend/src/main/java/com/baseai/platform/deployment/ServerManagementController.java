@@ -23,19 +23,19 @@ public class ServerManagementController {
     /** 注入服务器管理服务。 */
     public ServerManagementController(ServerManagementService service) { this.service = service; }
     /** 查询服务器列表。 */
-    @GetMapping @RequiredPermission("server:list") public List<ServerModels.ServerView> list() { return service.servers(); }
+    @GetMapping @RequiredPermission("operations:server:list") public List<ServerModels.ServerView> list() { return service.servers(); }
     /** 创建服务器。 */
-    @PostMapping @RequiredPermission("server:create") public ServerModels.ServerView create(@RequestBody ServerModels.ServerCommand command) { return service.create(command); }
+    @PostMapping @RequiredPermission("operations:server:create") public ServerModels.ServerView create(@RequestBody ServerModels.ServerCommand command) { return service.create(command); }
     /** 更新服务器。 */
-    @PutMapping("/{id}") @RequiredPermission("server:update") public ServerModels.ServerView update(@PathVariable Long id, @RequestBody ServerModels.ServerCommand command) { return service.update(id, command); }
+    @PutMapping("/{id}") @RequiredPermission("operations:server:update") public ServerModels.ServerView update(@PathVariable Long id, @RequestBody ServerModels.ServerCommand command) { return service.update(id, command); }
     /** 删除服务器。 */
-    @DeleteMapping("/{id}") @RequiredPermission("server:delete") public void delete(@PathVariable Long id) { service.delete(id); }
+    @DeleteMapping("/{id}") @RequiredPermission("operations:server:delete") public void delete(@PathVariable Long id) { service.delete(id); }
     /** 测试服务器。 */
-    @PostMapping("/{id}/test") @RequiredPermission("server:test") public Map<String, Object> test(@PathVariable Long id) { return service.test(id); }
+    @PostMapping("/{id}/test") @RequiredPermission("operations:server:test") public Map<String, Object> test(@PathVariable Long id) { return service.test(id); }
     /** 异步部署或回滚指定版本。 */
-    @PostMapping("/{id}/deploy") @RequiredPermission("server:deploy") @TraceIgnored public ServerModels.DeploymentView deploy(@PathVariable Long id, @RequestBody ServerModels.DeploymentCommand command) { return service.deploy(id, command); }
+    @PostMapping("/{id}/deploy") @RequiredPermission("operations:server:deploy") @TraceIgnored public ServerModels.DeploymentView deploy(@PathVariable Long id, @RequestBody ServerModels.DeploymentCommand command) { return service.deploy(id, command); }
     /** 查询服务器部署历史。 */
-    @GetMapping("/{id}/deployments") @RequiredPermission("server:logs") public List<ServerModels.DeploymentView> deployments(@PathVariable Long id) { return service.deployments(id); }
+    @GetMapping("/{id}/deployments") @RequiredPermission("operations:server:logs") public List<ServerModels.DeploymentView> deployments(@PathVariable Long id) { return service.deployments(id); }
     /** 查询部署详情。 */
-    @GetMapping("/deployments/{id}") @RequiredPermission("server:logs") public ServerModels.DeploymentView deployment(@PathVariable Long id) { return service.deployment(id); }
+    @GetMapping("/deployments/{id}") @RequiredPermission("operations:server:logs") public ServerModels.DeploymentView deployment(@PathVariable Long id) { return service.deployment(id); }
 }

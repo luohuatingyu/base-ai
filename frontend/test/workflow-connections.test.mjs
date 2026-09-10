@@ -14,16 +14,16 @@ test('连接管理页面覆盖七类受管连接和安全占位符', () => {
     assert.ok(CONNECTION_TYPES.includes(type), type)
   }
   assert.match(viewSource, /\/workflow\/connections/)
-  assert.match(viewSource, /workflow:connection:create/)
-  assert.match(viewSource, /workflow:connection:update/)
-  assert.match(viewSource, /workflow:connection:delete/)
+  assert.match(viewSource, /automation:workflow:connection:create/)
+  assert.match(viewSource, /automation:workflow:connection:update/)
+  assert.match(viewSource, /automation:workflow:connection:delete/)
   assert.match(zhCN.workflowConnections.maskHelp, /\*\*\*\*\*\*/)
   assert.match(enUS.workflowConnections.maskHelp, /\*\*\*\*\*\*/)
 })
 
 test('连接管理路由、导航和双语资源保持一致', () => {
   assert.match(routerSource, /path: 'workflow\/connections'/)
-  assert.match(routerSource, /permission: 'workflow:connection:list'/)
+  assert.match(routerSource, /permission: 'automation:workflow:connection:list'/)
   assert.match(navigationSource, /'\/workflow\/connections': 'nav\.items\.workflowConnections'/)
   assert.equal(zhCN.nav.items.workflowConnections, '连接配置')
   assert.equal(enUS.nav.items.workflowConnections, 'Connections')

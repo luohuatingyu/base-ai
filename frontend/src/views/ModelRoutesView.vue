@@ -2,8 +2,8 @@
   <div class="panel model-routes-panel">
     <div class="section-head">
       <div><h2>{{ t('routes.title') }}</h2><p>{{ t('routes.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('model:route:create')" type="primary" @click="open()">{{ t('routes.add') }}</el-button>
-      <el-button v-if="auth.hasPermission('model:route:update')" @click="openSync()">{{ t('routes.syncRoutes') }}</el-button>
+      <el-button v-if="auth.hasPermission('ai:model:route:create')" type="primary" @click="open()">{{ t('routes.add') }}</el-button>
+      <el-button v-if="auth.hasPermission('ai:model:route:update')" @click="openSync()">{{ t('routes.syncRoutes') }}</el-button>
     </div>
     <el-alert class="route-sync-notice" :title="routeSyncNotice" :type="routeSyncNoticeType" show-icon :closable="false"/>
     <el-table :data="rows" table-layout="auto">
@@ -14,8 +14,8 @@
       <el-table-column :label="t('common.operation')" width="180" fixed="right">
         <template #default="scope">
           <div class="table-actions">
-            <el-button v-if="auth.hasPermission('model:route:update')" link type="primary" @click="openSync(scope.row)">{{ t('routes.sync') }}</el-button>
-            <el-button v-if="auth.hasPermission('model:route:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+            <el-button v-if="auth.hasPermission('ai:model:route:update')" link type="primary" @click="openSync(scope.row)">{{ t('routes.sync') }}</el-button>
+            <el-button v-if="auth.hasPermission('ai:model:route:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
           </div>
         </template>
       </el-table-column>

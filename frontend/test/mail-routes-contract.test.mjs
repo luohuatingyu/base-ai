@@ -20,7 +20,7 @@ test('DEFAULT 路由固定业务编码、名称和启用状态且不提供删除
 })
 
 test('邮件路由测试受更新权限保护并阻止待配置路由发送', () => {
-  assert.match(source, /v-if="auth\.hasPermission\('mail:route:update'\)"[^>]+:disabled="!scope\.row\.configured"[^>]+@click="testRoute\(scope\.row\)"/)
+  assert.match(source, /v-if="auth\.hasPermission\('system:mail:route:update'\)"[^>]+:disabled="!scope\.row\.configured"[^>]+@click="testRoute\(scope\.row\)"/)
   assert.match(source, /http\.post\(`\/mail\/routes\/\$\{row\.id\}\/test`, null, \{ silentError: true \}\)/)
   assert.match(source, /showHttpError\(error, 'mailRoutes\.testFailed'\)/)
   assert.match(source, /:loading="testingId === scope\.row\.id"/)

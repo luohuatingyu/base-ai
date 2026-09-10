@@ -13,8 +13,8 @@ const agentProject = readFileSync(new URL('../../device-agent/pyproject.toml', i
 
 test('device Agent route is protected by its dedicated permission', () => {
   assert.match(router, /path:\s*['"]automation\/device-agents['"]/)
-  assert.match(router, /permission:\s*['"]automation:device-agent:list['"]/)
-  assert.match(navigation, /automation:device-agent:list/)
+  assert.match(router, /permission:\s*['"]operations:device-agent:list['"]/)
+  assert.match(navigation, /operations:device-agent:list/)
 })
 
 test('device Agent page exposes generic read-only management actions', () => {

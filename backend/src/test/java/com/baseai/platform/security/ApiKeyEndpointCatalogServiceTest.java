@@ -56,9 +56,9 @@ class ApiKeyEndpointCatalogServiceTest {
         assertEquals("automation:api-trigger:trigger", trigger.permission());
         ApiKeyEndpointCatalogService.EndpointView workflow = endpoints.get(2);
         assertEquals("code", workflow.pathParameters().get(0).name());
-        assertEquals("workflow:canvas:execute", workflow.permission());
+        assertEquals("automation:workflow:canvas:execute", workflow.permission());
         assertTrue(workflow.requestFields().stream().anyMatch(field -> field.name().equals("inputs") && field.required()));
-        assertEquals("workflow:canvas:logs", endpoints.get(3).permission());
+        assertEquals("automation:workflow:canvas:logs", endpoints.get(3).permission());
     }
 
     /** 枚举元数据应与示例值一并公开给开放平台页面。 */

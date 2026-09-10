@@ -64,8 +64,8 @@ test('capability route page provides a top-level multi-route sync entry', () => 
 })
 
 test('capability route actions remain direct children of the section header', () => {
-  assert.match(routeView, /<div class="section-head">\s*<div>[\s\S]*?<\/div>\s*<el-button[^>]*model:route:create/)
-  assert.match(routeView, /<\/el-button>\s*<el-button[^>]*model:route:update[^>]*@click="openSync\(\)"/)
+  assert.match(routeView, /<div class="section-head">\s*<div>[\s\S]*?<\/div>\s*<el-button[^>]*ai:model:route:create/)
+  assert.match(routeView, /<\/el-button>\s*<el-button[^>]*ai:model:route:update[^>]*@click="openSync\(\)"/)
   assert.doesNotMatch(routeView, /<div class="route-actions">/)
 })
 

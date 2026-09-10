@@ -19,7 +19,7 @@ class WorkflowModelOptionsControllerTest {
         Method method = WorkflowController.class.getMethod("modelOptions",String.class,String.class);
 
         assertArrayEquals(new String[]{"/model-options"}, method.getAnnotation(GetMapping.class).value());
-        assertEquals("workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
     }
 
     /** 模型路由选项接口必须保持只读并复用工作流节点查看权限。 */
@@ -28,7 +28,7 @@ class WorkflowModelOptionsControllerTest {
         Method method = WorkflowController.class.getMethod("routeOptions",String.class,String.class);
 
         assertArrayEquals(new String[]{"/route-options"}, method.getAnnotation(GetMapping.class).value());
-        assertEquals("workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
     }
 
     /** 模型类型选择与文档兼容目录必须使用各自只读权限。 */
@@ -37,9 +37,9 @@ class WorkflowModelOptionsControllerTest {
         Method options=WorkflowController.class.getMethod("modelTypeOptions",String.class);
         Method documentation=WorkflowController.class.getMethod("nodeModelCompatibility");
         assertArrayEquals(new String[]{"/model-type-options"},options.getAnnotation(GetMapping.class).value());
-        assertEquals("workflow:node:list",options.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:node:list",options.getAnnotation(RequiredPermission.class).value());
         assertArrayEquals(new String[]{"/node-model-compatibility"},documentation.getAnnotation(GetMapping.class).value());
-        assertEquals("workflow:node:docs",documentation.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:node:docs",documentation.getAnnotation(RequiredPermission.class).value());
     }
 
     /** 邮件路由和连接选项接口必须保持只读并复用节点查看权限。 */
@@ -52,7 +52,7 @@ class WorkflowModelOptionsControllerTest {
         for (Map.Entry<String, String> entry : paths.entrySet()) {
             Method method = WorkflowController.class.getMethod(entry.getKey());
             assertArrayEquals(new String[]{entry.getValue()}, method.getAnnotation(GetMapping.class).value());
-            assertEquals("workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
+            assertEquals("automation:workflow:node:list", method.getAnnotation(RequiredPermission.class).value());
         }
     }
 
@@ -65,9 +65,9 @@ class WorkflowModelOptionsControllerTest {
             WorkflowModels.MarketplaceImportCommand.class);
 
         assertArrayEquals(new String[]{"/node-marketplaces/{source}/nodes"}, list.getAnnotation(GetMapping.class).value());
-        assertEquals("workflow:node:list", list.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:node:list", list.getAnnotation(RequiredPermission.class).value());
         assertArrayEquals(new String[]{"/node-marketplaces/{source}/imports"}, imports.getAnnotation(PostMapping.class).value());
-        assertEquals("workflow:node:import", imports.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:node:import", imports.getAnnotation(RequiredPermission.class).value());
     }
 
     /** 适配器状态复用只读权限，容器启停必须使用独立管理权限。 */
@@ -78,9 +78,9 @@ class WorkflowModelOptionsControllerTest {
             WorkflowController.AdapterCommand.class);
 
         assertArrayEquals(new String[]{"/adapters"}, list.getAnnotation(GetMapping.class).value());
-        assertEquals("workflow:node:list", list.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:node:list", list.getAnnotation(RequiredPermission.class).value());
         assertArrayEquals(new String[]{"/adapters/{source}"}, update.getAnnotation(PutMapping.class).value());
-        assertEquals("workflow:adapter:manage", update.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:adapter:manage", update.getAnnotation(RequiredPermission.class).value());
     }
 
     /** 插件准入查询、维护与审批必须统一使用独立高权限。 */
@@ -89,7 +89,7 @@ class WorkflowModelOptionsControllerTest {
         for (Method method : new Method[]{WorkflowController.class.getMethod("pluginAdmissions"),
             WorkflowController.class.getMethod("updatePluginAdmission", Long.class, WorkflowModels.PluginAdmissionCommand.class),
             WorkflowController.class.getMethod("reviewPluginAdmission", Long.class, WorkflowModels.PluginAdmissionReviewCommand.class)}) {
-            assertEquals("workflow:plugin:admission", method.getAnnotation(RequiredPermission.class).value());
+            assertEquals("automation:workflow:plugin:admission", method.getAnnotation(RequiredPermission.class).value());
         }
     }
 }

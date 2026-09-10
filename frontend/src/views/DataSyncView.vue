@@ -6,7 +6,7 @@
     </div>
 
     <el-alert :title="t('dataSync.securityNotice')" type="warning" show-icon :closable="false" />
-    <el-form v-if="auth.hasPermission(form.id ? 'data-sync:update' : 'data-sync:create')" label-position="top" class="data-sync-form">
+    <el-form v-if="auth.hasPermission(form.id ? 'operations:data-sync:update' : 'operations:data-sync:create')" label-position="top" class="data-sync-form">
       <div class="data-sync-grid">
         <el-form-item :label="t('dataSync.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('dataSync.strategy')"><el-select v-model="form.strategy" class="full"><el-option v-for="item in strategies" :key="item" :label="t(`dataSync.strategies.${item}`)" :value="item" /></el-select></el-form-item>
@@ -25,7 +25,7 @@
       <el-checkbox v-if="form.strategy === 'FULL_REPLACE'" v-model="form.confirmDestructive">{{ t('dataSync.confirmDestructive') }}</el-checkbox>
       <div class="table-actions data-sync-actions">
         <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
-        <el-button v-if="auth.hasPermission('data-sync:preview')" :loading="previewing" @click="preview">{{ t('dataSync.preview') }}</el-button>
+        <el-button v-if="auth.hasPermission('operations:data-sync:preview')" :loading="previewing" @click="preview">{{ t('dataSync.preview') }}</el-button>
       </div>
     </el-form>
 
@@ -35,7 +35,7 @@
       <el-table-column :label="t('dataSync.tables')" width="100"><template #default="scope">{{ scope.row.tables?.length || 0 }}</template></el-table-column>
       <el-table-column prop="scheduleCron" :label="t('dataSync.schedule')" min-width="150" />
       <el-table-column prop="lastRunStatus" :label="t('dataSync.lastStatus')" width="140" />
-      <el-table-column :label="t('common.operation')" width="390" fixed="right"><template #default="scope"><div class="table-actions"><el-button v-if="auth.hasPermission('data-sync:update')" link @click="edit(scope.row)">{{ t('common.edit') }}</el-button><el-button v-if="auth.hasPermission('data-sync:run')" link type="primary" :disabled="running(scope.row)" @click="run(scope.row)">{{ t('dataSync.run') }}</el-button><el-button v-if="auth.hasPermission('data-sync:cancel')" link type="warning" :disabled="!running(scope.row)" @click="cancel(scope.row)">{{ t('dataSync.cancel') }}</el-button><el-button v-if="auth.hasPermission('data-sync:run') && ['FAILED', 'CANCELLED'].includes(scope.row.lastRunStatus)" link type="primary" @click="retry(scope.row)">{{ t('dataSync.retry') }}</el-button><el-button v-if="auth.hasPermission('data-sync:logs') && scope.row.lastRunId" link @click="showRun(scope.row)">{{ t('dataSync.details') }}</el-button><el-button v-if="auth.hasPermission('data-sync:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button></div></template></el-table-column>
+      <el-table-column :label="t('common.operation')" width="390" fixed="right"><template #default="scope"><div class="table-actions"><el-button v-if="auth.hasPermission('operations:data-sync:update')" link @click="edit(scope.row)">{{ t('common.edit') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:run')" link type="primary" :disabled="running(scope.row)" @click="run(scope.row)">{{ t('dataSync.run') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:cancel')" link type="warning" :disabled="!running(scope.row)" @click="cancel(scope.row)">{{ t('dataSync.cancel') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:run') && ['FAILED', 'CANCELLED'].includes(scope.row.lastRunStatus)" link type="primary" @click="retry(scope.row)">{{ t('dataSync.retry') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:logs') && scope.row.lastRunId" link @click="showRun(scope.row)">{{ t('dataSync.details') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button></div></template></el-table-column>
     </el-table>
 
     <el-dialog v-model="previewVisible" :title="t('dataSync.preview')" width="min(960px, 94vw)">

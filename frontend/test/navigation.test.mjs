@@ -65,12 +65,16 @@ test('只将显式标记且绑定页面组件的路由加入导航白名单', ()
 test('内置菜单按当前语言显示并通过权限区分相同路径', () => {
   const translateEnglish = translator(enUS)
   const translateChinese = translator(zhCN)
-  const modelCatalog = menu(20, null, '模型管理', 'CATALOG', '/models', 'model:catalog')
-  const modelPage = menu(21, 20, '模型配置', 'MENU', '/models', 'model:model:list')
+  const modelCatalog = menu(20, null, '模型管理', 'CATALOG', '/models', 'ai:model:catalog')
+  const modelPage = menu(21, 20, '模型配置', 'MENU', '/models', 'ai:model:model:list')
 
   assert.equal(localizeMenuName(modelCatalog, translateEnglish), 'Model Management')
   assert.equal(localizeMenuName(modelPage, translateEnglish), 'Model Configuration')
   assert.equal(localizeMenuName(modelPage, translateChinese), '模型配置')
+  assert.equal(localizeMenuName(menu(24, null, '运维管理', 'CATALOG', '/operations', 'operations:catalog'), translateEnglish), 'Operations')
+  assert.equal(localizeMenuName(menu(25, null, '监控审计', 'CATALOG', '/operations/monitoring', 'operations:monitoring:catalog'), translateChinese), '监控审计')
+  assert.equal(localizeMenuName(menu(26, null, '访问控制', 'CATALOG', '/system/access', 'system:access:catalog'), translateEnglish), 'Access Control')
+  assert.equal(localizeMenuName(menu(27, null, '组织管理', 'CATALOG', '/system/organization', 'system:organization:catalog'), translateChinese), '组织管理')
   assert.equal(localizeMenuName(menu(22, null, 'API Key 管理', 'MENU', '/api-keys', 'system:api-key:list'), translateEnglish), 'API Keys')
   assert.equal(localizeMenuName(menu(23, null, '触发安全配置', 'MENU', '/automation/api-trigger-security', 'automation:api-trigger-security:view'), translateEnglish), 'Trigger Security')
 })
@@ -85,13 +89,13 @@ test('全部内置 BUTTON 权限均使用稳定权限编码翻译', () => {
     'system:position:create', 'system:position:update', 'system:position:delete',
     'system:dictionary:create', 'system:dictionary:update', 'system:dictionary:delete',
     'system:setting:create', 'system:setting:update', 'system:setting:delete',
-    'system:session:terminate', 'system:task:manage',
+    'operations:session:terminate', 'operations:task:manage',
     'system:api-key:create', 'system:api-key:update', 'system:api-key:delete', 'system:api-key:rotate',
-    'mail:account:create', 'mail:account:update', 'mail:account:delete',
-    'mail:route:create', 'mail:route:update', 'mail:route:delete',
-    'model:provider:create', 'model:provider:update', 'model:provider:delete',
-    'model:model:create', 'model:model:update', 'model:model:delete',
-    'model:route:create', 'model:route:update', 'model:route:delete',
+    'system:mail:account:create', 'system:mail:account:update', 'system:mail:account:delete',
+    'system:mail:route:create', 'system:mail:route:update', 'system:mail:route:delete',
+    'ai:model:provider:create', 'ai:model:provider:update', 'ai:model:provider:delete',
+    'ai:model:model:create', 'ai:model:model:update', 'ai:model:model:delete',
+    'ai:model:route:create', 'ai:model:route:update', 'ai:model:route:delete',
     'automation:api-trigger:create', 'automation:api-trigger:update', 'automation:api-trigger:delete',
     'automation:api-trigger:trigger', 'automation:api-trigger:logs',
     'automation:api-trigger-security:update'
@@ -104,11 +108,11 @@ test('全部内置 BUTTON 权限均使用稳定权限编码翻译', () => {
 })
 
 test('顶部标题在目录与页面路径相同时优先使用页面名称', () => {
-  const modelCatalog = { ...menu(20, null, '模型管理', 'CATALOG', '/models', 'model:catalog'), children: [
-    menu(21, 20, '模型配置', 'MENU', '/models', 'model:model:list')
+  const modelCatalog = { ...menu(20, null, '模型管理', 'CATALOG', '/models', 'ai:model:catalog'), children: [
+    menu(21, 20, '模型配置', 'MENU', '/models', 'ai:model:model:list')
   ] }
 
-  assert.equal(findNavigationItem([modelCatalog], '/models')?.permission, 'model:model:list')
+  assert.equal(findNavigationItem([modelCatalog], '/models')?.permission, 'ai:model:model:list')
 })
 
 test('未知和空菜单名称安全回退后台原值', () => {

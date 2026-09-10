@@ -16,6 +16,6 @@ class WorkflowNodeDocumentationControllerTest {
         Method method = WorkflowController.class.getMethod("nodeDocumentation");
 
         assertArrayEquals(new String[]{"/node-docs"}, method.getAnnotation(GetMapping.class).value());
-        assertEquals("workflow:node:docs", method.getAnnotation(RequiredPermission.class).value());
+        assertEquals("automation:workflow:node:docs", method.getAnnotation(RequiredPermission.class).value());
     }
 }

@@ -2,7 +2,7 @@
   <div class="panel">
     <div class="section-head">
       <div><h2>{{ t('mailRoutes.title') }}</h2><p>{{ t('mailRoutes.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('mail:route:create')" type="primary" @click="open()">{{ t('mailRoutes.add') }}</el-button>
+      <el-button v-if="auth.hasPermission('system:mail:route:create')" type="primary" @click="open()">{{ t('mailRoutes.add') }}</el-button>
     </div>
     <el-table :data="rows" table-layout="auto">
       <el-table-column prop="businessCode" :label="t('mailRoutes.businessCode')" min-width="210" />
@@ -12,9 +12,9 @@
       <el-table-column :label="t('common.status')" width="110"><template #default="scope">{{ !scope.row.configured ? t('mailRoutes.pendingConfiguration') : (scope.row.enabled ? t('common.enabled') : t('common.disabled')) }}</template></el-table-column>
       <el-table-column :label="t('common.operation')" width="180" fixed="right">
         <template #default="scope"><div class="table-actions">
-          <el-button v-if="auth.hasPermission('mail:route:update')" link type="success" :loading="testingId === scope.row.id" :disabled="!scope.row.configured" @click="testRoute(scope.row)">{{ t('mailRoutes.test') }}</el-button>
-          <el-button v-if="auth.hasPermission('mail:route:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
-          <el-button v-if="auth.hasPermission('mail:route:delete') && scope.row.businessCode !== 'DEFAULT'" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
+          <el-button v-if="auth.hasPermission('system:mail:route:update')" link type="success" :loading="testingId === scope.row.id" :disabled="!scope.row.configured" @click="testRoute(scope.row)">{{ t('mailRoutes.test') }}</el-button>
+          <el-button v-if="auth.hasPermission('system:mail:route:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+          <el-button v-if="auth.hasPermission('system:mail:route:delete') && scope.row.businessCode !== 'DEFAULT'" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
         </div></template>
       </el-table-column>
     </el-table>

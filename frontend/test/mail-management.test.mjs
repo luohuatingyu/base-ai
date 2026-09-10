@@ -15,14 +15,14 @@ function translator(messages) {
 }
 
 test('邮件账户和路由使用独立页面及列表权限', () => {
-  assert.match(routerSource, /path: 'mail\/accounts'.*permission: 'mail:account:list'/)
-  assert.match(routerSource, /path: 'mail\/routes'.*permission: 'mail:route:list'/)
-  assert.match(accountSource, /mail:account:create/)
-  assert.match(accountSource, /mail:account:update/)
-  assert.match(accountSource, /mail:account:delete/)
-  assert.match(routeSource, /mail:route:create/)
-  assert.match(routeSource, /mail:route:update/)
-  assert.match(routeSource, /mail:route:delete/)
+  assert.match(routerSource, /path: 'mail\/accounts'.*permission: 'system:mail:account:list'/)
+  assert.match(routerSource, /path: 'mail\/routes'.*permission: 'system:mail:route:list'/)
+  assert.match(accountSource, /system:mail:account:create/)
+  assert.match(accountSource, /system:mail:account:update/)
+  assert.match(accountSource, /system:mail:account:delete/)
+  assert.match(routeSource, /system:mail:route:create/)
+  assert.match(routeSource, /system:mail:route:update/)
+  assert.match(routeSource, /system:mail:route:delete/)
 })
 
 test('邮箱编辑不自动回读密码，并在弹窗关闭后清除输入内容', () => {
@@ -37,9 +37,9 @@ test('邮件菜单和页面名称支持中英文权限本地化', () => {
   const zh = translator(zhCN)
   const en = translator(enUS)
   const entries = [
-    [{ permission: 'mail:catalog' }, '邮件管理', 'Mail Management'],
-    [{ permission: 'mail:account:list' }, '邮箱配置', 'Mail Accounts'],
-    [{ permission: 'mail:route:list' }, '邮件路由', 'Mail Routes']
+    [{ permission: 'system:mail:catalog' }, '邮件管理', 'Mail Management'],
+    [{ permission: 'system:mail:account:list' }, '邮箱配置', 'Mail Accounts'],
+    [{ permission: 'system:mail:route:list' }, '邮件路由', 'Mail Routes']
   ]
 
   for (const [menu, zhName, enName] of entries) {

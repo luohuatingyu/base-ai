@@ -14,8 +14,8 @@ test('节点管理按两层必选条件展示卡片并保留模板保护权限',
   assert.match(nodeManagementSource, /class="node-template-card"/)
   assert.match(nodeManagementSource, /filterWorkflowTemplates\(rows\.value, selectedSource\.value, selectedCategory\.value, true\)/)
   assert.match(nodeManagementSource, /!row\.systemTemplate/)
-  assert.match(nodeManagementSource, /workflow:node:update/)
-  assert.match(nodeManagementSource, /workflow:node:delete/)
+  assert.match(nodeManagementSource, /automation:workflow:node:update/)
+  assert.match(nodeManagementSource, /automation:workflow:node:delete/)
 })
 
 test('模板和画布节点配置统一使用可视化编辑器', () => {

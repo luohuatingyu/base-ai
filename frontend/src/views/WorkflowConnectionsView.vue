@@ -2,7 +2,7 @@
   <div class="panel">
     <div class="section-head">
       <div><h2>{{ t('workflowConnections.title') }}</h2><p>{{ t('workflowConnections.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('workflow:connection:create')" type="primary" @click="open()">{{ t('workflowConnections.add') }}</el-button>
+      <el-button v-if="auth.hasPermission('automation:workflow:connection:create')" type="primary" @click="open()">{{ t('workflowConnections.add') }}</el-button>
     </div>
     <el-alert :title="t('workflowConnections.securityNotice')" type="warning" show-icon :closable="false" />
     <el-table :data="rows" table-layout="auto">
@@ -17,10 +17,10 @@
       <el-table-column :label="t('workflowConnections.vectorCapability')" min-width="190"><template #default="scope"><el-tag :type="vectorStatusType(scope.row.vectorStatus)">{{ t(`workflowConnections.vectorStatuses.${scope.row.vectorStatus || 'UNKNOWN'}`) }}</el-tag><small v-if="scope.row.vectorEngine" class="vector-detail">{{ scope.row.vectorEngine }} {{ scope.row.vectorVersion }}</small></template></el-table-column>
       <el-table-column :label="t('common.status')" width="100"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'info'">{{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag></template></el-table-column>
       <el-table-column :label="t('common.operation')" width="280" fixed="right"><template #default="scope"><div class="table-actions">
-        <el-button v-if="auth.hasPermission('workflow:connection:update')" link type="success" @click="test(scope.row)">{{ t('workflowConnections.test') }}</el-button>
-        <el-button v-if="scope.row.connectionType === 'PLUGIN' && auth.hasPermission('workflow:connection:update')" link type="warning" @click="oauth(scope.row)">{{ t('workflowConnections.oauth') }}</el-button>
-        <el-button v-if="auth.hasPermission('workflow:connection:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
-        <el-button v-if="auth.hasPermission('workflow:connection:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
+        <el-button v-if="auth.hasPermission('automation:workflow:connection:update')" link type="success" @click="test(scope.row)">{{ t('workflowConnections.test') }}</el-button>
+        <el-button v-if="scope.row.connectionType === 'PLUGIN' && auth.hasPermission('automation:workflow:connection:update')" link type="warning" @click="oauth(scope.row)">{{ t('workflowConnections.oauth') }}</el-button>
+        <el-button v-if="auth.hasPermission('automation:workflow:connection:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+        <el-button v-if="auth.hasPermission('automation:workflow:connection:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
       </div></template></el-table-column>
     </el-table>
 

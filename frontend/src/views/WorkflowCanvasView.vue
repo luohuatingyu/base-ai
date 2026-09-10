@@ -1,7 +1,7 @@
 <template>
   <div class="workflow-canvas-page">
     <section class="panel workflow-list-panel">
-      <div class="workflow-list-heading"><strong>{{ t('workflowCanvas.workflows') }}</strong><el-button v-if="auth.hasPermission('workflow:canvas:create')" size="small" type="primary" @click="openCreate">+</el-button></div>
+      <div class="workflow-list-heading"><strong>{{ t('workflowCanvas.workflows') }}</strong><el-button v-if="auth.hasPermission('automation:workflow:canvas:create')" size="small" type="primary" @click="openCreate">+</el-button></div>
       <el-input v-model="keyword" clearable :placeholder="t('workflowCanvas.search')" />
       <div class="workflow-list">
         <button v-for="item in filteredRows" :key="item.id" :class="{ active: selected?.id === item.id }" @click="select(item)">
@@ -15,11 +15,11 @@
         <div><strong>{{ selected.name }}</strong><small>{{ selected.code }} · v{{ selected.currentVersion }}</small></div>
         <div class="workflow-toolbar-actions">
           <router-link to="/workflow/node-docs"><el-button>{{ t('workflowNodeDocs.title') }}</el-button></router-link>
-          <el-button v-if="auth.hasPermission('workflow:canvas:update')" @click="save">{{ t('common.save') }}</el-button>
-          <el-button v-if="auth.hasPermission('workflow:canvas:publish')" type="success" @click="publish">{{ t('workflowCanvas.publish') }}</el-button>
-          <el-button v-if="auth.hasPermission('workflow:canvas:execute')" type="primary" @click="runVisible=true">{{ t('workflowCanvas.run') }}</el-button>
-          <el-button v-if="auth.hasPermission('workflow:canvas:logs')" @click="openRuns">{{ t('workflowCanvas.logs') }}</el-button>
-          <el-dropdown><el-button>⋯</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item v-if="auth.hasPermission('workflow:canvas:delete')" @click="remove">{{ t('common.delete') }}</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
+          <el-button v-if="auth.hasPermission('automation:workflow:canvas:update')" @click="save">{{ t('common.save') }}</el-button>
+          <el-button v-if="auth.hasPermission('automation:workflow:canvas:publish')" type="success" @click="publish">{{ t('workflowCanvas.publish') }}</el-button>
+          <el-button v-if="auth.hasPermission('automation:workflow:canvas:execute')" type="primary" @click="runVisible=true">{{ t('workflowCanvas.run') }}</el-button>
+          <el-button v-if="auth.hasPermission('automation:workflow:canvas:logs')" @click="openRuns">{{ t('workflowCanvas.logs') }}</el-button>
+          <el-dropdown><el-button>⋯</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item v-if="auth.hasPermission('automation:workflow:canvas:delete')" @click="remove">{{ t('common.delete') }}</el-dropdown-item></el-dropdown-menu></template></el-dropdown>
         </div>
       </div>
       <div class="workflow-metadata">

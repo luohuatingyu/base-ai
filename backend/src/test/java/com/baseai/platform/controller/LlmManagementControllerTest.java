@@ -16,7 +16,7 @@ class LlmManagementControllerTest {
             .getMethod("providerApiKeys", Long.class, SecretRevealAuthorizationService.ReauthenticationCommand.class)
             .getAnnotation(RequiredPermission.class);
 
-        assertEquals("model:provider:update", permission.value());
+        assertEquals("ai:model:provider:update", permission.value());
         assertEquals(false, LlmManagementController.class
             .getMethod("providerApiKeys", Long.class, SecretRevealAuthorizationService.ReauthenticationCommand.class)
             .getAnnotation(TraceType.class).captureRequest());
@@ -32,7 +32,7 @@ class LlmManagementControllerTest {
             .getMethod("syncRoutes", com.baseai.platform.service.LlmManagementService.RouteSyncCommand.class)
             .getAnnotation(RequiredPermission.class);
 
-        assertEquals("model:route:update", permission.value());
+        assertEquals("ai:model:route:update", permission.value());
     }
 
     /** 批量路由同步接口必须要求路由更新权限。 */
@@ -42,7 +42,7 @@ class LlmManagementControllerTest {
             .getMethod("syncRouteBatch", com.baseai.platform.service.LlmManagementService.RouteBatchSyncCommand.class)
             .getAnnotation(RequiredPermission.class);
 
-        assertEquals("model:route:update", permission.value());
+        assertEquals("ai:model:route:update", permission.value());
     }
 
     /** 删除当前路由供应商必须继续要求路由更新权限。 */
@@ -52,6 +52,6 @@ class LlmManagementControllerTest {
             .getMethod("removeProvider", Long.class, Long.class)
             .getAnnotation(RequiredPermission.class);
 
-        assertEquals("model:route:update", permission.value());
+        assertEquals("ai:model:route:update", permission.value());
     }
 }

@@ -2,7 +2,7 @@
   <div class="panel">
     <div class="section-head">
       <div><h2>{{ t('mailAccounts.title') }}</h2><p>{{ t('mailAccounts.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('mail:account:create')" type="primary" @click="open()">{{ t('mailAccounts.add') }}</el-button>
+      <el-button v-if="auth.hasPermission('system:mail:account:create')" type="primary" @click="open()">{{ t('mailAccounts.add') }}</el-button>
     </div>
     <el-table :data="rows" table-layout="auto">
       <el-table-column prop="code" :label="t('mailAccounts.code')" min-width="140" />
@@ -15,8 +15,8 @@
       <el-table-column :label="t('common.status')" width="100"><template #default="scope">{{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}</template></el-table-column>
       <el-table-column :label="t('common.operation')" width="180" fixed="right">
         <template #default="scope"><div class="table-actions">
-          <el-button v-if="auth.hasPermission('mail:account:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
-          <el-button v-if="auth.hasPermission('mail:account:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
+          <el-button v-if="auth.hasPermission('system:mail:account:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+          <el-button v-if="auth.hasPermission('system:mail:account:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
         </div></template>
       </el-table-column>
     </el-table>

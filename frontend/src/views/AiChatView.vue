@@ -61,7 +61,7 @@
           <span>{{ t('chat.outputTokens') }}: {{ item.outputTokens ?? '-' }}</span>
           <span>{{ t('chat.totalTokens') }}: {{ item.totalTokens ?? '-' }}</span>
           <el-link
-            v-if="item.traceId && auth.hasPermission('system:task:view')"
+            v-if="item.traceId && auth.hasPermission('operations:task:view')"
             type="primary"
             @click="openTraceLogs(item.traceId)"
           >{{ t('chat.traceId') }}: {{ item.traceId }}</el-link>

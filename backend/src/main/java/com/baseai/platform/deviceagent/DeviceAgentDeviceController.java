@@ -35,14 +35,14 @@ public class DeviceAgentDeviceController {
 
     /** 查询一台 Mac Agent 下的 iOS 设备池。 */
     @GetMapping("/automation/device-agents/{agentId:" + AGENT_ID_PATTERN + "}/devices")
-    @RequiredPermission("automation:device-agent:list")
+    @RequiredPermission("operations:device-agent:list")
     public List<DeviceAgentModels.AgentDeviceView> devices(@PathVariable String agentId) {
         return deviceService.list(agentId);
     }
 
     /** 下发只读设备检测命令并返回 202。 */
     @PostMapping("/automation/device-agents/{agentId:" + AGENT_ID_PATTERN + "}/devices/detect")
-    @RequiredPermission("automation:device-agent:list")
+    @RequiredPermission("operations:device-agent:list")
     public ResponseEntity<DeviceAgentModels.AgentCommandView> detect(@PathVariable String agentId) {
         return ResponseEntity.accepted().body(deviceService.detect(agentId, AuthContext.require().id()));
     }

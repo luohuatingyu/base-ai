@@ -197,7 +197,7 @@ class LlmManagementServiceTest {
     /** 具备供应商更新权限但没有 ADMIN 角色时仍不得读取明文密钥。 */
     @Test
     void nonAdminCannotViewProviderApiKeys() {
-        AuthContext.set(new AuthUser(2L, "operator", Set.of("OPERATOR"), Set.of("model:provider:update"),
+        AuthContext.set(new AuthUser(2L, "operator", Set.of("OPERATOR"), Set.of("ai:model:provider:update"),
             AuthenticationType.TOKEN, null, null));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.providerApiKeys(3L));

@@ -60,7 +60,7 @@ public class WorkflowNodeMarketplaceService {
         WorkflowMarketplaceClients.SearchResult result = "N8N".equals(source)
             ? clients.searchN8n(query, page, pageSize) : clients.searchDify(query, category, page, pageSize);
         boolean enqueue = AuthContext.current() != null
-            && AuthContext.current().hasPermission("workflow:node:import");
+            && AuthContext.current().hasPermission("automation:workflow:node:import");
         Map<String, String> activeTemplates = workflowService.activeMarketplaceTemplateFingerprints(source);
         List<WorkflowModels.MarketplaceNodeView> items = new ArrayList<>();
         for (WorkflowMarketplaceClients.MarketplaceEntry entry : result.items()) {
