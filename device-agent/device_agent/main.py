@@ -149,11 +149,11 @@ class AgentRuntime:
         self.backend.registry_status(status)
 
     def _apply_registry_config(self, devices: list[Any] | None = None) -> dict[str, Any]:
-        """拉取 Registry 配置并仅在本机补充原始 UDID。"""
+        """拉取 Registry 配置并仅在本机补充所有已发现设备的原始 UDID。"""
         payload = dict(self.backend.registry_config())
         candidates = devices if devices is not None else list(self.wda.devices.values())
         payload["agentId"] = self.config.agent_id
-        payload["deviceUdids"] = [device.udid for device in candidates if device.connected]
+        payload["deviceUdids"] = [device.udid for device in candidates]
         return self.registry.apply(RegistryConfig.from_payload(payload))
 
     def _relocate(self, backend_url: str) -> str:

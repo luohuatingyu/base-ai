@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from device_agent.device_detect import DeviceCandidate
 from device_agent.main import AgentRuntime
 from device_agent.wda import WdaError
 
@@ -60,3 +61,37 @@ def test_setup_wda_prechecks_signing_configuration() -> None:
 
     with pytest.raises(WdaError, match="SIGNING_IDENTITY_MISSING"):
         runtime._dispatch("SETUP_WDA", {}, "device")
+
+
+@pytest.mark.parametrize(("connected_states", "expected_udids"), [
+    ([], ()),
+    ([False], ("raw-udid-0",)),
+    ([True], ("raw-udid-0",)),
+    ([False, True], ("raw-udid-0", "raw-udid-1")),
+])
+def test_registry_receives_all_discovered_devices(
+    connected_states: list[bool], expected_udids: tuple[str, ...],
+) -> None:
+    """Registry 必须接收未建隧道的候选设备，同时不得伪造设备在线状态。"""
+    applied = []
+    runtime = AgentRuntime.__new__(AgentRuntime)
+    runtime.config = SimpleNamespace(agent_id="ios-agent-test")
+    runtime.backend = SimpleNamespace(registry_config=lambda: {
+        "effectivePort": 42314,
+        "desiredState": "ONLINE",
+        "configVersion": 1,
+    })
+    runtime.registry = SimpleNamespace(
+        apply=lambda config: applied.append(config) or {"state": "STARTING"},
+    )
+    devices = [
+        DeviceCandidate(f"raw-udid-{index}", f"Device {index}", "iPhone", "18.0",
+                        connected, "USB")
+        for index, connected in enumerate(connected_states)
+    ]
+
+    status = runtime._apply_registry_config(devices)
+
+    assert status == {"state": "STARTING"}
+    assert applied[0].device_udids == expected_udids
+    assert [device.report("ios-agent-test")["connected"] for device in devices] == connected_states
