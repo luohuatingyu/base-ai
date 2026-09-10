@@ -1,5 +1,84 @@
 # 最近分支覆盖测试报告
 
+## 设备 Agent 全栈管理同步验收（2026-09-10）
+
+### Git 基准点
+
+Commit: 5dd20f394a61326c2c7e01146baaeb8958007c47
+- 提交信息: Complete device agent full-stack management sync
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 将源项目设备 Agent 管理能力完整同步到本项目的通用设备 Agent 体系，排除企业微信账号、好友任务、`TASK_EXECUTION` 等业务逻辑；设备 Agent、配对码、配置、设备池、命令、Registry 与操作速度全部持久化到 MySQL。
+- 新增 MySQL V32 迁移：`automation_device_agent_wda_config` 增加 `SLOW/STANDARD/FAST` 固定操作速度档位及派生无线/USB 页面采样参数和一致性约束。
+- 后端新增操作速度查询/保存接口（保存后审计并下发 `UPDATE_CONFIG`，档位无变化时跳过写库与下发）；配对码列表支持分页、`includeInactive` 和按 Agent 筛选；Agent 列表支持配对状态筛选；设备名允许清空。
+- Mac Agent 新增 Apple 开发签名身份探测（含团队 ID 与到期日）、结构化设备检测结果、指定版本升级回退与本地版本上报、操作速度档位校验、额外 CA 信任（保留系统根证书）、`set-server` 本机改址命令；安装器支持 `--ca-file`、`--insecure`、`--npm-registry`，下载强制 HTTPS。
+- 前端同步完整管理页交互（配对码生命周期、设备名/回连地址维护、升级回退、配置重发、设备池、WDA 配置、Registry、操作速度、撤销删除），新增通用配置指南与七步接入向导，注册路由与导航，接入 `operations:device-agent:*` 细粒度权限；`config.js` 移植部署前缀工具 `resolvePlatformBaseUrl`/`withBasePath`。
+- 代码审查后修复：WDA 配置保存保留既有 `launchMode/wdaUrl`；回连地址清空时不再下发 Agent 无法执行的改址命令，且下发值改为实际落库地址；改址弹窗提供自签名开关；本机改址命令追加 launchd 重启；命令轮询统一把 `CANCELLED` 视为终态并在页面卸载时终止；等待重启轮询增加在途保护；签名探测限制候选数量；SETUP_WDA 增加签名预检并回稳定错误码 `SIGNING_IDENTITY_MISSING`。
+- 回滚方式：`git revert 5dd20f394a61326c2c7e01146baaeb8958007c47` 后重新执行 `docker compose up --build -d`。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 操作速度档位持久化到 MySQL 并下发 | Backend H2(MySQL 模式) Service 测试保存 FAST 档位 | 档位与派生采样参数写入 `automation_device_agent_wda_config`，并创建 `UPDATE_CONFIG` 命令 | 正常 |
+| 非法速度档位被拒绝 | Backend Service 测试输入 TURBO | 抛出业务异常，不落库 | 异常 |
+| 相同档位重复保存不重复下发 | Backend Service 测试连续保存两次 FAST | 仅创建一次命令，无重复审计 | 边界、回归 |
+| 配对码分页与状态筛选 | Backend Service 测试创建两条配对并撤销一条 | 活跃查询排除撤销记录，分页与 Agent 筛选计数正确，非法状态值拒绝 | 正常、边界、异常 |
+| 协议与迁移不引入企业微信业务 | Backend 契约测试读取命令白名单与 V27/V31/V32 迁移 | 白名单仅含通用命令；迁移不含 wecom/账号/好友内容 | 安全、兼容、回归 |
+| Agent 速度档位映射与防篡改 | Agent pytest 输入 FAST 与被篡改的派生参数 | 输入频率映射 240；派生值与档位不一致时拒绝 | 正常、安全 |
+| 签名探测过滤与失败语义 | Agent pytest 模拟 security/openssl 输出 | 仅返回开发证书并提取团队 ID；解析失败显式报 `SIGNING_DETECT_FAILED` | 正常、异常 |
+| 指定版本回退不访问网络 | Agent pytest 固定已保留版本并禁止下载 | 原子切换符号链接并重装，不请求远端清单 | 正常、回归 |
+| 配置 CA 文件校验 | Agent pytest 写入不存在的 CA 路径 | 加载失败返回 `AGENT_CONFIG_INVALID` | 边界、安全 |
+| 安装命令构建与自签名探测 | Frontend Node 测试构造含引号配对码、自签名、npm 镜像的命令并模拟 fetch | 参数安全转义，`--ca-file`/`--insecure`/`--npm-registry`/`--force-pair` 齐备，探测失败安全回退 | 正常、边界、异常 |
+| 管理页入口与权限 | Frontend Node 契约测试读取管理页与路由 | 指南/向导路由已注册，权限 helper 存在，分页与速度交互齐备，无企业微信残留 | 权限、兼容、回归 |
+| 运行环境应用功能提交 | 功能提交哈希重建默认服务 | backend/caddy/document-parser/frontend/python-worker 全部健康 | 集成、回归 |
+
+### 测试执行结果
+
+- 唯一可计数自动化测试共 1,131 个，通过 1,131 个，通过率 100%；失败 0；错误 0；跳过 0。
+- Backend：765/765，Maven 3.9.9 / Temurin 17 完整测试通过；设备 Agent 定向模块 24/24 通过（含操作速度、分页筛选、V32 迁移契约）。
+- Frontend：339/339 覆盖率测试与 1/1 E2E 通过；ESLint、Vue 类型检查和生产构建通过。
+- Mac Agent：26/26 pytest 通过（含签名探测、速度档位、版本回退、CA 校验、SETUP_WDA 签名预检）。
+
+### 关键模块测试
+
+- DeviceAgentAutomationConfigService：5/5 通过（速度持久化、派生值、非法档位、无变化跳过、回环地址限制）。
+- DeviceAgentRegistrationService：4/4 通过（配对一次领取、能力白名单、分页筛选、状态校验）。
+- DeviceAgentScopeContractTest：2/2 通过（命令白名单与 V27/V31/V32 迁移范围）。
+- device-agent pytest：10 个测试模块全部通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向测试 | Maven 容器执行 `mvn test -B -Dtest='DeviceAgent*Test'` | 24/24 通过 |
+| Backend 完整测试 | Maven 3.9.9 / Temurin 17 容器执行 `mvn test -B` | 765/765，BUILD SUCCESS |
+| Frontend 质量门 | `cd frontend && npm run lint && npm run typecheck` | 通过 |
+| Frontend 覆盖率测试 | `cd frontend && npm run test:coverage` | 339/339 通过 |
+| Frontend E2E | `cd frontend && npm run test:e2e` | 1/1 通过（含生产构建） |
+| Mac Agent 测试 | 临时 venv 执行 `python3.12 -m pytest` | 26/26 通过 |
+| 默认服务统一重建 | `APP_IMAGE_REVISION=<commit> docker compose up --build -d` | backend/caddy/document-parser/frontend/python-worker 均运行且健康 |
+
+### 重测触发条件
+
+- 后续修改操作速度模型/派生参数、配对码分页与筛选、WDA 配置契约、Agent 签名探测、升级回退、安装器参数或管理页交互时，必须重新执行本节定向用例和完整测试。
+
+### 已知问题
+
+- 操作速度档位中的动作间隔、滑动间隔在通用 Agent 中目前仅作为固定档位契约保存与校验；通用 Agent 无业务任务执行能力，实际生效的运行时参数为输入频率与无线/USB 页面采样，相关 UI 文案描述的是档位契约语义。
+- 前端 `test/device-agent.test.mjs` 中三条断言按新实现等价更新：设备检测由 `/devices/detect` 端点承担、端口范围由 `el-input-number` min/max 承担、隐私承诺文案迁移到指南文案，测试意图未弱化。
+- 本机无 Maven/pytest 全局安装，测试分别通过 Maven 官方容器和 `/tmp/base-ai-device-agent-test` 临时虚拟环境执行；两个临时环境已在收尾清理。
+- 未连接真实 iOS 设备与真实 Mac Agent，签名探测、WDA 构建、设备检测和升级回退仅由模拟命令测试覆盖。
+
+### 下次测试建议
+
+- 在真实 Mac 上执行一键安装与接入向导，验证自签名证书链、npm 镜像、SETUP_WDA 签名预检和版本回退的端到端行为。
+- 使用无 `operations:device-agent:execute` 权限的账号验证管理页、指南与向导的按钮隐藏及后端拒绝行为。
+
 ## 服务器手工维护与实时资源监控验收（2026-09-10）
 
 ### Git 基准点
