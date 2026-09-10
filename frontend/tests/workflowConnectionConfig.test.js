@@ -49,17 +49,26 @@ test('七类连接完整覆盖全部类型并允许 PostgreSQL 双重归属', ()
   assert.deepEqual([...coveredTypes].sort(), [...CONNECTION_TYPES].sort())
 })
 
-test('不同分类使用不同色相且同分类连接类型使用递进深度', () => {
-  const database = connectionCategoryStyle('DATABASE')
-  const vectorDatabase = connectionCategoryStyle('VECTOR_DATABASE')
-  const mysql = connectionTypeStyle('MYSQL', 'DATABASE')
-  const postgresql = connectionTypeStyle('POSTGRESQL', 'DATABASE')
+test('分类使用中性色且连接类型遵循外部常规品牌色', () => {
+  const neutralCategoryStyle = { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#475569' }
+  const expectedTypeColors = {
+    MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#3F8624',
+    KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00A1EA',
+    ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
+  }
 
-  assert.notEqual(database.color, vectorDatabase.color)
-  assert.equal(mysql.color, postgresql.color)
-  assert.notEqual(mysql.backgroundColor, postgresql.backgroundColor)
-  assert.equal(connectionTypeStyle('POSTGRESQL', 'VECTOR_DATABASE').color, vectorDatabase.color)
-  assert.deepEqual(connectionCategoryStyle('UNKNOWN'), connectionCategoryStyle('OTHER'))
+  assert.deepEqual(connectionCategoryStyle('DATABASE'), neutralCategoryStyle)
+  assert.deepEqual(connectionCategoryStyle('VECTOR_DATABASE'), neutralCategoryStyle)
+  assert.deepEqual(connectionCategoryStyle('UNKNOWN'), neutralCategoryStyle)
+  Object.entries(expectedTypeColors).forEach(([type, color]) => {
+    assert.deepEqual(connectionTypeStyle(type), {
+      backgroundColor: '#ffffff', borderColor: '#dbe3ee', color
+    })
+  })
+  assert.deepEqual(connectionTypeStyle('POSTGRESQL', 'VECTOR_DATABASE'), connectionTypeStyle('POSTGRESQL'))
+  assert.deepEqual(connectionTypeStyle('UNKNOWN'), {
+    backgroundColor: '#ffffff', borderColor: '#dbe3ee', color: '#475569'
+  })
 })
 
 test('分类图标使用独立语义且数据库产品拥有各自图形', () => {
@@ -68,11 +77,12 @@ test('分类图标使用独立语义且数据库产品拥有各自图形', () =>
   assert.match(iconSource, /if \(category\) return CATEGORY_ICONS\[category\] \|\| OTHER/)
   assert.match(iconSource, /M117\.688 98\.242c-6\.973-.191/)
   assert.match(iconSource, /M23\.5594 14\.7228a\.5269\.5269/)
-  assert.match(iconSource, /const MYSQL = \[\s*\{ fill: '#00618A', stroke: 'none'/)
-  assert.match(iconSource, /const POSTGRESQL = \[\s*\{ fill: '#336791', stroke: 'none'/)
+  assert.match(iconSource, /const MYSQL = \[\s*\{ fill: 'currentColor', stroke: 'none'/)
+  assert.match(iconSource, /const POSTGRESQL = \[\s*\{ fill: 'currentColor', stroke: 'none'/)
   assert.match(iconSource, /:fill="path\.fill"/)
   assert.match(viewSource, /<DataSourceTypeIcon :category="group\.key" \/>/)
   assert.match(viewSource, /<DataSourceTypeIcon :category="category\.key" \/>/)
+  assert.doesNotMatch(viewSource, /typeStyle\([^)]*,/)
   assert.doesNotMatch(viewSource, /categoryIconType/)
   assert.doesNotMatch(iconSource, /MYSQL: DATABASE|POSTGRESQL: DATABASE/)
 })

@@ -89,19 +89,13 @@ export const CONNECTION_CATEGORIES = [
   { key: 'OTHER', types: ['TAVILY', 'PLUGIN'] }
 ]
 
-const CONNECTION_CATEGORY_COLORS = {
-  DATABASE: ['#eff6ff', '#dbeafe', '#bfdbfe', '#93c5fd'],
-  VECTOR_DATABASE: ['#faf5ff', '#f3e8ff', '#e9d5ff', '#d8b4fe', '#c084fc'],
-  CACHE: ['#ecfdf5', '#d1fae5'],
-  OBJECT_STORAGE: ['#fffbeb', '#fef3c7'],
-  MESSAGE_QUEUE: ['#fff1f2', '#ffe4e6', '#fecdd3'],
-  WEBHOOK: ['#ecfeff', '#cffafe'],
-  OTHER: ['#f8fafc', '#e2e8f0', '#cbd5e1']
-}
-
-const CONNECTION_CATEGORY_TEXT_COLORS = {
-  DATABASE: '#1d4ed8', VECTOR_DATABASE: '#7e22ce', CACHE: '#047857', OBJECT_STORAGE: '#b45309',
-  MESSAGE_QUEUE: '#be123c', WEBHOOK: '#0e7490', OTHER: '#475569'
+const CONNECTION_CATEGORY_STYLE = { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#475569' }
+const CONNECTION_TYPE_SURFACE = { backgroundColor: '#ffffff', borderColor: '#dbe3ee' }
+/** 连接产品采用主流品牌图标库使用的品牌主色，通用类型保持中性。 */
+const CONNECTION_TYPE_COLORS = {
+  MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#3F8624',
+  KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00A1EA',
+  ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
 }
 
 /** 返回指定连接类型的标准字段。 */
@@ -120,28 +114,15 @@ export function connectionCategoriesForType(connectionType) {
   return CONNECTION_CATEGORIES.filter(category => category.types.includes(normalized)).map(category => category.key)
 }
 
-/** 返回连接分类标签使用的稳定颜色。 */
-export function connectionCategoryStyle(categoryKey) {
-  const colors = CONNECTION_CATEGORY_COLORS[categoryKey] || CONNECTION_CATEGORY_COLORS.OTHER
-  const color = CONNECTION_CATEGORY_TEXT_COLORS[categoryKey] || CONNECTION_CATEGORY_TEXT_COLORS.OTHER
-  return { backgroundColor: colors[0], borderColor: colors.at(-1), color }
+/** 返回连接分类统一使用的中性导航样式，分类差异由语义图形表达。 */
+export function connectionCategoryStyle() {
+  return { ...CONNECTION_CATEGORY_STYLE }
 }
 
-/**
- * 返回具体连接类型的颜色；同分类共享色相，并按类型顺序逐步加深。
- * 对于多分类类型，调用方传入当前分类即可保持选择上下文中的色彩语义。
- */
-export function connectionTypeStyle(connectionType, categoryKey) {
-  const categories = connectionCategoriesForType(connectionType)
-  const resolvedCategory = categories.includes(categoryKey) ? categoryKey : categories[0] || 'OTHER'
-  const types = connectionTypesForCategory(resolvedCategory)
-  const colors = CONNECTION_CATEGORY_COLORS[resolvedCategory] || CONNECTION_CATEGORY_COLORS.OTHER
-  const index = Math.max(0, types.indexOf(String(connectionType || '').toUpperCase()))
-  return {
-    backgroundColor: colors[Math.min(index + 1, colors.length - 1)],
-    borderColor: colors.at(-1),
-    color: CONNECTION_CATEGORY_TEXT_COLORS[resolvedCategory] || CONNECTION_CATEGORY_TEXT_COLORS.OTHER
-  }
+/** 返回连接类型的常规品牌主色，颜色不再由其所属分类决定。 */
+export function connectionTypeStyle(connectionType) {
+  const normalized = String(connectionType || '').toUpperCase()
+  return { ...CONNECTION_TYPE_SURFACE, color: CONNECTION_TYPE_COLORS[normalized] || CONNECTION_CATEGORY_STYLE.color }
 }
 
 /** 深复制连接配置，避免表单编辑污染列表数据。 */

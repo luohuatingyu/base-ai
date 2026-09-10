@@ -27,14 +27,14 @@
       <div class="ds-grid">
         <article v-for="row in group.items" :key="row.id" class="ds-card" :class="{ 'ds-card--disabled': !row.enabled }">
           <div class="ds-card-top">
-            <span class="ds-logo" :style="typeStyle(row.connectionType, preferredCategory(row.connectionType))">
+            <span class="ds-logo" :style="typeStyle(row.connectionType)">
               <DataSourceTypeIcon :type="row.connectionType" />
             </span>
             <div class="ds-titles">
               <strong>{{ row.name }}</strong>
               <small>{{ row.code }}</small>
             </div>
-            <el-tag class="connection-tag" :style="typeStyle(row.connectionType, preferredCategory(row.connectionType))">
+            <el-tag class="connection-tag" :style="typeStyle(row.connectionType)">
               {{ typeLabel(row.connectionType) }}
             </el-tag>
           </div>
@@ -114,7 +114,7 @@
                 <button v-for="type in availableConnectionTypes" :key="type" type="button"
                         class="connection-type-option" :class="{ active: form.connectionType === type }"
                         :aria-pressed="form.connectionType === type" @click="selectConnectionType(type)">
-                  <span class="connection-nav-icon" :style="typeStyle(type, form.connectionCategory)"><DataSourceTypeIcon :type="type" /></span>
+                  <span class="connection-nav-icon" :style="typeStyle(type)"><DataSourceTypeIcon :type="type" /></span>
                   <strong>{{ typeLabel(type) }}</strong>
                   <span v-if="form.connectionType === type" class="connection-nav-check" aria-hidden="true">✓</span>
                 </button>
@@ -124,7 +124,7 @@
 
           <main class="connection-form-pane">
             <div v-if="form.connectionType" class="connection-selection-head">
-              <span class="connection-selection-icon" :style="typeStyle(form.connectionType, form.connectionCategory)">
+              <span class="connection-selection-icon" :style="typeStyle(form.connectionType)">
                 <DataSourceTypeIcon :type="form.connectionType" />
               </span>
               <div><small>{{ categoryLabel(form.connectionCategory) }}</small><strong>{{ typeLabel(form.connectionType) }}</strong></div>
@@ -390,8 +390,8 @@ function categoryLabel(category) { return t(`workflowConnections.categories.${ca
 function typeLabel(type) { return t(`workflowConnections.types.${type || 'PLUGIN'}`) }
 /** 返回分类标签色板。 */
 function categoryStyle(category) { return connectionCategoryStyle(category) }
-/** 返回连接类型在当前分类中的同色系深浅样式。 */
-function typeStyle(type, category) { return connectionTypeStyle(type, category) }
+/** 返回连接类型独立于分类的常规品牌样式。 */
+function typeStyle(type) { return connectionTypeStyle(type) }
 /** 删除未被工作流引用的连接。 */
 async function remove(row) { try { await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm')); await http.delete(`/data-sources/${row.id}`); await load() } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) } }
 /** 返回当前语言下的连接字段名称。 */
