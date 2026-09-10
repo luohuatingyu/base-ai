@@ -179,6 +179,14 @@ public class WorkflowConnectionService {
             """, text(status), text(engine), text(version), truncate(error, 500), id);
     }
 
+    /** 保存最近一次连通性检测结果和轻量指标，供数据源页面展示健康状态。 */
+    public void recordTestResult(Long id, boolean ok, Integer latencyMs, String infoJson) {
+        jdbcTemplate.update("""
+            UPDATE workflow_connection SET last_test_at=NOW(),last_test_ok=?,last_test_latency_ms=?,last_test_info=?,updated_at=NOW()
+            WHERE id=? AND voided=false
+            """, ok, latencyMs, truncate(infoJson, 4000), id);
+    }
+
     /** 当前用户只能维护自己的连接，管理员仍需显式成为记录所有者。 */
     private StoredConnection requireOwned(Long id) {
         StoredConnection connection = requireStored(id);
@@ -247,9 +255,15 @@ public class WorkflowConnectionService {
 
     /** 从内部记录创建脱敏视图。 */
     private WorkflowModels.ConnectionView mapView(StoredConnection connection) {
+        JsonNode lastTestInfo = null;
+        try {
+            lastTestInfo = connection.lastTestInfo() == null || connection.lastTestInfo().isBlank()
+                ? null : objectMapper.readTree(connection.lastTestInfo());
+        } catch (Exception ignored) { /* 留存指标不是关键路径，解析失败按无数据处理。 */ }
         return new WorkflowModels.ConnectionView(connection.id(), connection.code(), connection.name(), connection.connectionType(),
             masked(connection.config()), connection.enabled(), connection.ownerUserId(), connection.vectorStatus(), connection.vectorEngine(),
-            connection.vectorVersion(), connection.vectorCheckedAt(), connection.vectorError(), connection.createdAt(), connection.updatedAt());
+            connection.vectorVersion(), connection.vectorCheckedAt(), connection.vectorError(), connection.lastTestAt(),
+            connection.lastTestOk(), connection.lastTestLatencyMs(), lastTestInfo, connection.createdAt(), connection.updatedAt());
     }
 
     /** 映射并解密内部连接记录。 */
@@ -258,7 +272,9 @@ public class WorkflowConnectionService {
             rs.getString("connection_type"), decrypt(rs.getString("config_encrypted")), rs.getLong("owner_user_id"),
             rs.getBoolean("enabled"), timestamp(rs, "created_at"), timestamp(rs, "updated_at"),
             rs.getLong("security_revision"), rs.getString("vector_status"), rs.getString("vector_engine"),
-            rs.getString("vector_version"), timestamp(rs, "vector_checked_at"), rs.getString("vector_error"));
+            rs.getString("vector_version"), timestamp(rs, "vector_checked_at"), rs.getString("vector_error"),
+            timestamp(rs, "last_test_at"), booleanValue(rs, "last_test_ok"), (Integer) rs.getObject("last_test_latency_ms"),
+            rs.getString("last_test_info"));
     }
 
     /** 规范连接编码。 */
@@ -301,15 +317,25 @@ public class WorkflowConnectionService {
         java.sql.Timestamp value = rs.getTimestamp(column); return value == null ? null : value.toLocalDateTime();
     }
 
+    /** 映射可空的 BIT 布尔列。 */
+    private Boolean booleanValue(ResultSet rs, String column) throws SQLException {
+        Object value = rs.getObject(column);
+        if (value instanceof Boolean flag) return flag;
+        if (value instanceof Number number) return number.intValue() != 0;
+        return null;
+    }
+
     public record StoredConnection(Long id, String code, String name, String connectionType, JsonNode config,
                                    Long ownerUserId, boolean enabled, LocalDateTime createdAt, LocalDateTime updatedAt,
                                    long securityRevision, String vectorStatus, String vectorEngine, String vectorVersion,
-                                   LocalDateTime vectorCheckedAt, String vectorError) {
+                                   LocalDateTime vectorCheckedAt, String vectorError,
+                                   LocalDateTime lastTestAt, Boolean lastTestOk, Integer lastTestLatencyMs,
+                                   String lastTestInfo) {
         /** 兼容不关心修订号的隔离单元测试和内部构造。 */
         public StoredConnection(Long id, String code, String name, String connectionType, JsonNode config,
                                 Long ownerUserId, boolean enabled, LocalDateTime createdAt, LocalDateTime updatedAt) {
             this(id, code, name, connectionType, config, ownerUserId, enabled, createdAt, updatedAt, 1L,
-                "UNKNOWN", null, null, null, "");
+                "UNKNOWN", null, null, null, "", null, null, null, null);
         }
     }
     public record ConnectionOption(Long id, String code, String name, String connectionType) { }

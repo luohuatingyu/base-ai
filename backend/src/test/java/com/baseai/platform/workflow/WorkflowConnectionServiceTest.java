@@ -20,6 +20,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class WorkflowConnectionServiceTest {
@@ -37,6 +38,7 @@ class WorkflowConnectionServiceTest {
             connection_type VARCHAR(24),plugin_component_id BIGINT,config_encrypted CLOB,owner_user_id BIGINT,enabled BOOLEAN,voided BOOLEAN DEFAULT FALSE,
             security_revision BIGINT DEFAULT 1,vector_status VARCHAR(16) DEFAULT 'UNKNOWN',vector_engine VARCHAR(32),
             vector_version VARCHAR(64),vector_checked_at TIMESTAMP,vector_error VARCHAR(500) DEFAULT '',
+            last_test_at TIMESTAMP,last_test_ok BOOLEAN,last_test_latency_ms INT,last_test_info CLOB,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
         jdbcTemplate.execute("CREATE TABLE workflow_version(id BIGINT AUTO_INCREMENT PRIMARY KEY,graph_json CLOB)");
@@ -149,6 +151,27 @@ class WorkflowConnectionServiceTest {
         service.update(created.id(),new WorkflowModels.ConnectionCommand("VECTORS","Vectors","QDRANT",
             new ObjectMapper().readTree("{\"url\":\"https://vectors-v2.example.com\",\"apiKey\":\"******\"}"),true));
         assertEquals("UNKNOWN",service.view(created.id()).vectorStatus());
+    }
+
+    /** 最近检测结果必须留存并在列表视图中返回，供数据源页面展示健康状态。 */
+    @Test
+    void recordsAndExposesLastTestResult() throws Exception {
+        WorkflowModels.ConnectionView created = service.create(new WorkflowModels.ConnectionCommand("main", "Main", "MYSQL",
+            new ObjectMapper().readTree("{\"url\":\"jdbc:mysql://db/orders\",\"username\":\"app\",\"password\":\"secret\"}"), true));
+        assertNull(service.view(created.id()).lastTestOk());
+
+        service.recordTestResult(created.id(), true, 35, "{\"version\":\"8.0.36\",\"activeConnections\":12}");
+        WorkflowModels.ConnectionView after = service.view(created.id());
+        assertEquals(Boolean.TRUE, after.lastTestOk());
+        assertEquals(35, after.lastTestLatencyMs());
+        assertEquals("8.0.36", after.lastTestInfo().path("version").asText());
+        assertEquals(12, after.lastTestInfo().path("activeConnections").asInt());
+
+        service.recordTestResult(created.id(), false, 900, "{}");
+        WorkflowModels.ConnectionView failed = service.connections().stream()
+            .filter(item -> item.id().equals(created.id())).findFirst().orElseThrow();
+        assertEquals(Boolean.FALSE, failed.lastTestOk());
+        assertEquals(900, failed.lastTestLatencyMs());
     }
 
     /** 设置当前会话用户。 */

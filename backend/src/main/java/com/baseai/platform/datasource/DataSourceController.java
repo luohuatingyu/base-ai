@@ -68,6 +68,11 @@ public class DataSourceController {
     @RequiredPermission("operations:data-source:test")
     public Map<String, Object> test(@PathVariable Long id) { return connectionTester.test(id); }
 
+    /** 实时探测数据源状态并返回轻量指标，同时刷新页面展示的最近检测结果。 */
+    @GetMapping("/{id}/status")
+    @RequiredPermission("operations:data-source:test")
+    public Map<String, Object> status(@PathVariable Long id) { return connectionTester.test(id); }
+
     /** 查询已安装且可用于插件数据源配置的组件。 */
     @GetMapping("/plugin-component-options")
     @RequiredPermission("operations:data-source:list")

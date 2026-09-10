@@ -119,7 +119,8 @@ public final class WorkflowModels {
     public record ConnectionView(Long id, String code, String name, String connectionType, JsonNode config,
                                  boolean enabled, Long ownerUserId, String vectorStatus, String vectorEngine,
                                  String vectorVersion, LocalDateTime vectorCheckedAt, String vectorError,
-                                 LocalDateTime createdAt, LocalDateTime updatedAt) {}
+                                 LocalDateTime lastTestAt, Boolean lastTestOk, Integer lastTestLatencyMs,
+                                 JsonNode lastTestInfo, LocalDateTime createdAt, LocalDateTime updatedAt) {}
     public record TriggerDefinition(Long workflowId, String workflowCode, Long versionId, Long ownerUserId,
                                     String nodeId, String nodeType, JsonNode config) {}
 }

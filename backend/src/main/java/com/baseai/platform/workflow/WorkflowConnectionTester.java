@@ -49,13 +49,15 @@ public class WorkflowConnectionTester {
         this.redisClients = redisClients;
     }
 
-    /** 按连接类型执行测试并隐藏底层异常细节。 */
+    /** 按连接类型执行测试，采集轻量只读指标并留存最近一次检测结果。 */
     public Map<String, Object> test(Long id) {
         WorkflowConnectionService.StoredConnection connection = connectionService.ownedForTest(id);
+        long start = System.currentTimeMillis();
         try {
+            Map<String, Object> info = new LinkedHashMap<>();
             switch (connection.connectionType()) {
-                case "MYSQL", "POSTGRESQL" -> testJdbc(connection.config());
-                case "REDIS" -> testRedis(connection.config());
+                case "MYSQL", "POSTGRESQL" -> info.putAll(probeJdbc(connection.config()));
+                case "REDIS" -> info.putAll(probeRedis(connection.config()));
                 case "S3" -> testS3(connection.config());
                 case "KAFKA" -> testKafka(connection.config());
                 case "RABBITMQ" -> testRabbit(connection.config());
@@ -65,18 +67,42 @@ public class WorkflowConnectionTester {
                 case "QDRANT", "MILVUS", "ELASTICSEARCH" -> { /* 向量探测同时验证连通性。 */ }
                 default -> throw new BusinessException("workflow.connectionTypeInvalid");
             }
+            int latency = (int) (System.currentTimeMillis() - start);
+            boolean connected = true;
             if (Set.of("POSTGRESQL", "QDRANT", "MILVUS", "ELASTICSEARCH").contains(connection.connectionType())) {
                 com.baseai.platform.knowledge.VectorStoreService.Capability capability = vectorStoreService.probe(connection);
                 String status = capability.supported() ? "SUPPORTED" : "UNSUPPORTED";
                 connectionService.recordVectorCapability(id, status, capability.engine(), capability.version(), capability.reason());
-                Map<String,Object> result = new LinkedHashMap<>(); result.put("connected", capability.supported());
-                result.put("connectionType", connection.connectionType()); result.put("vectorSupported", capability.supported());
-                result.put("vectorEngine", capability.engine()); result.put("vectorVersion", capability.version());
-                result.put("reason", capability.reason()); return Map.copyOf(result);
+                connected = capability.supported();
+                info.put("vectorEngine", capability.engine());
+                info.put("vectorVersion", capability.version());
+                if (!connected) info.put("reason", capability.reason());
             }
-            return Map.of("connected", true, "connectionType", connection.connectionType(), "vectorSupported", false);
-        } catch (BusinessException exception) { throw exception; }
-        catch (Exception exception) { throw new BusinessException("workflow.connectionTestFailed"); }
+            connectionService.recordTestResult(id, connected, latency, jsonInfo(info));
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("connected", connected);
+            result.put("connectionType", connection.connectionType());
+            result.put("vectorSupported", connected && Set.of("POSTGRESQL", "QDRANT", "MILVUS", "ELASTICSEARCH")
+                .contains(connection.connectionType()));
+            result.put("latencyMs", latency);
+            result.put("info", info);
+            return result;
+        } catch (BusinessException exception) {
+            recordFailure(id, start); throw exception;
+        } catch (Exception exception) {
+            recordFailure(id, start); throw new BusinessException("workflow.connectionTestFailed");
+        }
+    }
+
+    /** 失败同样留存最近一次检测结果和耗时，便于页面展示离线状态。 */
+    private void recordFailure(Long id, long start) {
+        try { connectionService.recordTestResult(id, false, (int) (System.currentTimeMillis() - start), "{}"); }
+        catch (Exception ignored) { /* 留存失败不能掩盖原始业务异常。 */ }
+    }
+
+    /** 序列化留存指标，失败时退化为空对象。 */
+    private String jsonInfo(Map<String, Object> info) {
+        try { return objectMapper.writeValueAsString(info); } catch (Exception exception) { return "{}"; }
     }
 
     /** 确认插件连接具备固定组件身份和结构化凭据；实际调用仍在节点执行时校验。 */
@@ -86,24 +112,47 @@ public class WorkflowConnectionTester {
         }
     }
 
-    /** 使用只读查询验证 JDBC 连接。 */
-    private void testJdbc(JsonNode config) throws Exception {
+    /** 使用只读查询验证 JDBC 连接并采集版本与活动连接数指标。 */
+    private Map<String, Object> probeJdbc(JsonNode config) throws Exception {
         Properties properties = new Properties();
         properties.setProperty("user", config.path("username").asText());
         properties.setProperty("password", config.path("password").asText());
+        Map<String, Object> info = new LinkedHashMap<>();
         try (Connection connection = DriverManager.getConnection(config.path("url").asText(), properties);
              Statement statement = connection.createStatement()) {
             statement.setQueryTimeout(10);
             try (ResultSet ignored = statement.executeQuery("SELECT 1")) { /* 连接与查询均成功即通过。 */ }
+            try (ResultSet rs = statement.executeQuery("SELECT version()")) {
+                if (rs.next()) info.put("version", rs.getString(1));
+            } catch (Exception ignored) { /* 版本指标采集失败不影响连通性结论。 */ }
+            try (ResultSet rs = statement.executeQuery("SELECT COUNT(*) FROM information_schema.processlist")) {
+                if (rs.next()) info.put("activeConnections", rs.getInt(1));
+            } catch (Exception ignored) { /* PostgreSQL 无 processlist，改用 pg_stat_activity。 */ }
+            try (ResultSet rs = statement.executeQuery("SELECT COUNT(*) FROM pg_stat_activity")) {
+                if (rs.next()) info.putIfAbsent("activeConnections", rs.getInt(1));
+            } catch (Exception ignored) { /* MySQL 已在上方采集，忽略。 */ }
         }
+        return info;
     }
 
-    /** 使用 PING 验证独立 Redis。 */
-    private void testRedis(JsonNode config) {
+    /** 使用 PING 验证独立 Redis 并采集版本与内存指标。 */
+    private Map<String, Object> probeRedis(JsonNode config) {
+        Map<String, Object> info = new LinkedHashMap<>();
         try (RedisClient client = redisClients.create(io.lettuce.core.RedisURI.create(config.path("uri").asText()));
              io.lettuce.core.api.StatefulRedisConnection<String, String> connection = client.connect()) {
             if (!"PONG".equalsIgnoreCase(connection.sync().ping())) throw new BusinessException("workflow.connectionTestFailed");
+            try {
+                Map<String, String> sections = new LinkedHashMap<>();
+                for (String line : connection.sync().info().split("\\r?\\n")) {
+                    int colon = line.indexOf(':');
+                    if (colon > 0) sections.put(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
+                }
+                if (sections.get("redis_version") != null) info.put("version", sections.get("redis_version"));
+                if (sections.get("used_memory_human") != null) info.put("usedMemory", sections.get("used_memory_human"));
+                if (sections.get("connected_clients") != null) info.put("connectedClients", Long.valueOf(sections.get("connected_clients")));
+            } catch (Exception ignored) { /* 指标采集失败不影响连通性结论。 */ }
         }
+        return info;
     }
 
     /** 使用 HeadBucket 验证 S3 凭据和限定 Bucket。 */

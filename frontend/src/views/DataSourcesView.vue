@@ -2,27 +2,95 @@
   <div class="panel">
     <div class="section-head">
       <div><h2>{{ t('dataSources.title') }}</h2><p>{{ t('dataSources.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('operations:data-source:create')" type="primary" @click="open()">{{ t('dataSources.add') }}</el-button>
+      <div class="head-actions">
+        <div class="auto-detect" v-if="auth.hasPermission('operations:data-source:test')">
+          <el-switch v-model="autoDetect" size="small" />
+          <span class="auto-detect-label">{{ t('dataSources.autoDetect') }}</span>
+          <el-select v-if="autoDetect" v-model="autoDetectInterval" size="small" class="auto-detect-interval">
+            <el-option v-for="option in AUTO_DETECT_INTERVALS" :key="option" :label="`${option}s`" :value="option" />
+          </el-select>
+        </div>
+        <el-button v-if="auth.hasPermission('operations:data-source:test')" @click="testAll" :loading="batchTesting">
+          {{ t('dataSources.detectAll') }}
+        </el-button>
+        <el-button v-if="auth.hasPermission('operations:data-source:create')" type="primary" @click="open()">{{ t('dataSources.add') }}</el-button>
+      </div>
     </div>
     <el-alert :title="t('workflowConnections.securityNotice')" type="warning" show-icon :closable="false" />
-    <el-table :data="rows" table-layout="auto">
-      <el-table-column prop="code" :label="t('common.code')" min-width="150" />
-      <el-table-column prop="name" :label="t('common.name')" min-width="160" />
-      <el-table-column :label="t('workflowConnections.category')" min-width="150"><template #default="scope">
-        <el-tag class="connection-tag" :style="categoryStyle(preferredCategory(scope.row.connectionType))">{{ categoryLabel(preferredCategory(scope.row.connectionType)) }}</el-tag>
-      </template></el-table-column>
-      <el-table-column :label="t('workflowConnections.connectionType')" min-width="160"><template #default="scope">
-        <el-tag class="connection-tag" :style="typeStyle(scope.row.connectionType, preferredCategory(scope.row.connectionType))">{{ typeLabel(scope.row.connectionType) }}</el-tag>
-      </template></el-table-column>
-      <el-table-column :label="t('workflowConnections.vectorCapability')" min-width="190"><template #default="scope"><el-tag :type="vectorStatusType(scope.row.vectorStatus)">{{ t(`workflowConnections.vectorStatuses.${scope.row.vectorStatus || 'UNKNOWN'}`) }}</el-tag><small v-if="scope.row.vectorEngine" class="vector-detail">{{ scope.row.vectorEngine }} {{ scope.row.vectorVersion }}</small></template></el-table-column>
-      <el-table-column :label="t('common.status')" width="100"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'info'">{{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag></template></el-table-column>
-      <el-table-column :label="t('common.operation')" width="280" fixed="right"><template #default="scope"><div class="table-actions">
-        <el-button v-if="auth.hasPermission('operations:data-source:test')" link type="success" @click="test(scope.row)">{{ t('dataSources.test') }}</el-button>
-        <el-button v-if="scope.row.connectionType === 'PLUGIN' && auth.hasPermission('operations:data-source:update')" link type="warning" @click="oauth(scope.row)">{{ t('dataSources.oauth') }}</el-button>
-        <el-button v-if="auth.hasPermission('operations:data-source:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
-        <el-button v-if="auth.hasPermission('operations:data-source:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
-      </div></template></el-table-column>
-    </el-table>
+    <el-empty v-if="!rows.length" :description="t('dataSources.empty')" />
+    <section v-for="group in groupedRows" :key="group.key" class="ds-group">
+      <div class="ds-group-head">
+        <span class="ds-group-icon" :style="categoryStyle(group.key)"><DataSourceTypeIcon :type="group.key" /></span>
+        <h3>{{ categoryLabel(group.key) }}</h3>
+        <el-tag size="small" type="info" effect="plain">{{ group.items.length }}</el-tag>
+      </div>
+      <div class="ds-grid">
+        <article v-for="row in group.items" :key="row.id" class="ds-card" :class="{ 'ds-card--disabled': !row.enabled }">
+          <div class="ds-card-top">
+            <span class="ds-logo" :style="typeStyle(row.connectionType, preferredCategory(row.connectionType))">
+              <DataSourceTypeIcon :type="row.connectionType" />
+            </span>
+            <div class="ds-titles">
+              <strong>{{ row.name }}</strong>
+              <small>{{ row.code }}</small>
+            </div>
+            <el-tag class="connection-tag" :style="typeStyle(row.connectionType, preferredCategory(row.connectionType))">
+              {{ typeLabel(row.connectionType) }}
+            </el-tag>
+          </div>
+          <div class="ds-status-line">
+            <span class="ds-status" :class="`ds-status--${statusKind(row)}`">
+              <span class="ds-dot" />{{ statusText(row) }}
+            </span>
+            <span v-if="row.lastTestLatencyMs !== null && row.lastTestLatencyMs !== undefined" class="ds-latency">
+              {{ row.lastTestLatencyMs }}ms
+            </span>
+          </div>
+          <div class="ds-meta-line">
+            <small v-if="row.lastTestAt">{{ t('dataSources.lastTestAt') }}: {{ formatTime(row.lastTestAt) }}</small>
+            <small v-else class="ds-muted">{{ t('dataSources.notTested') }}</small>
+          </div>
+          <div class="ds-tags">
+            <el-tag size="small" :type="vectorStatusType(row.vectorStatus)">
+              {{ t(`workflowConnections.vectorStatuses.${row.vectorStatus || 'UNKNOWN'}`) }}
+            </el-tag>
+            <el-tag v-if="!row.enabled" size="small" type="info">{{ t('common.disabled') }}</el-tag>
+          </div>
+          <div class="ds-actions">
+            <el-button v-if="auth.hasPermission('operations:data-source:test')" link type="success"
+                       :loading="testingId === row.id" @click="test(row)">{{ t('dataSources.test') }}</el-button>
+            <el-button v-if="auth.hasPermission('operations:data-source:test')" link type="info" @click="openStatus(row)">
+              {{ t('dataSources.statusTitle') }}
+            </el-button>
+            <el-button v-if="row.connectionType === 'PLUGIN' && auth.hasPermission('operations:data-source:update')"
+                       link type="warning" @click="oauth(row)">{{ t('dataSources.oauth') }}</el-button>
+            <el-button v-if="auth.hasPermission('operations:data-source:update')" link type="primary" @click="open(row)">
+              {{ t('common.edit') }}</el-button>
+            <el-button v-if="auth.hasPermission('operations:data-source:delete')" link type="danger" @click="remove(row)">
+              {{ t('common.delete') }}</el-button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <el-drawer v-model="statusVisible" :title="statusRow ? `${statusRow.name} · ${t('dataSources.statusTitle')}` : ''" size="380px">
+      <div v-loading="statusLoading" class="status-body">
+        <template v-if="statusData">
+          <div class="status-hero" :class="`ds-status--${statusData.connected ? 'ok' : 'bad'}`">
+            <span class="ds-dot" />
+            <strong>{{ statusData.connected ? t('dataSources.connected') : t('dataSources.statusFailed') }}</strong>
+            <span class="status-latency">{{ statusData.latencyMs }}ms</span>
+          </div>
+          <div class="status-metrics">
+            <div v-for="entry in statusEntries" :key="entry.label" class="status-metric">
+              <small>{{ entry.label }}</small><strong>{{ entry.value }}</strong>
+            </div>
+          </div>
+          <el-alert v-if="statusData.vectorSupported === false && isVectorType" :title="t('dataSources.vectorUnsupported')"
+                    type="warning" show-icon :closable="false" />
+        </template>
+      </div>
+    </el-drawer>
 
     <el-dialog v-model="visible" :title="form.id ? t('dataSources.edit') : t('dataSources.add')" width="min(980px, 94vw)">
       <el-form label-position="top">
@@ -31,14 +99,14 @@
           <el-form-item :label="t('workflowConnections.category')">
             <el-select v-model="form.connectionCategory" class="full" :placeholder="t('workflowConnections.selectCategory')" @change="selectCategory">
               <el-option v-for="category in connectionCategories" :key="category.key" :label="categoryLabel(category.key)" :value="category.key">
-                <el-tag class="connection-tag" :style="categoryStyle(category.key)">{{ categoryLabel(category.key) }}</el-tag>
+                <span class="option-row"><el-tag class="connection-tag" :style="categoryStyle(category.key)">{{ categoryLabel(category.key) }}</el-tag></span>
               </el-option>
             </el-select>
           </el-form-item>
           <el-form-item :label="t('workflowConnections.connectionType')">
             <el-select v-model="form.connectionType" class="full" :disabled="!form.connectionCategory" :placeholder="t('workflowConnections.selectConnectionType')" @change="resetConfig">
               <el-option v-for="type in availableConnectionTypes" :key="type" :label="typeLabel(type)" :value="type">
-                <el-tag class="connection-tag" :style="typeStyle(type, form.connectionCategory)">{{ typeLabel(type) }}</el-tag>
+                <span class="option-row"><el-tag class="connection-tag" :style="typeStyle(type, form.connectionCategory)">{{ typeLabel(type) }}</el-tag></span>
               </el-option>
             </el-select>
           </el-form-item>
@@ -107,10 +175,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
+import DataSourceTypeIcon from '../components/DataSourceTypeIcon.vue'
 import WorkflowConfigValueEditor from '../components/WorkflowConfigValueEditor.vue'
 import { useAuthStore } from '../stores/auth'
 import { CONFIG_VALUE_TYPES, createConfigValue, isSafeConfigKey } from '../utils/workflowNodeConfig'
@@ -127,11 +196,35 @@ const connectionCategories = CONNECTION_CATEGORIES
 const form = reactive(emptyForm())
 const mapDraft = reactive({ key: '', value: '' })
 const mapError = ref(''), customKey = ref(''), customType = ref('string'), customError = ref('')
+const testingId = ref(null), batchTesting = ref(false)
+const statusVisible = ref(false), statusLoading = ref(false), statusRow = ref(null), statusData = ref(null)
+const AUTO_DETECT_KEY = 'dataSources.autoDetect', AUTO_DETECT_INTERVAL_KEY = 'dataSources.autoDetectInterval'
+const AUTO_DETECT_INTERVALS = [30, 60, 120]
+/** 自动检测默认关闭，用户可切换为按固定间隔轮询。 */
+const autoDetect = ref(localStorage.getItem(AUTO_DETECT_KEY) === 'true')
+const autoDetectInterval = ref(Number(localStorage.getItem(AUTO_DETECT_INTERVAL_KEY)) || 30)
+let autoDetectTimer = null
 const selectedPluginComponent = computed(() => pluginComponents.value.find(item => item.id === Number(form.config.pluginComponentId)))
 const configFields = computed(() => form.connectionType === 'PLUGIN' ? pluginCredentialFields(selectedPluginComponent.value)
   : connectionConfigFields(form.connectionType))
 const customKeys = computed(() => extraConnectionConfigKeys(form.config, form.connectionType))
 const availableConnectionTypes = computed(() => connectionTypesForCategory(form.connectionCategory))
+/** 按首选分类分组并保持分类定义顺序，空分类不展示。 */
+const groupedRows = computed(() => CONNECTION_CATEGORIES.map(category => ({
+  key: category.key, items: rows.value.filter(row => preferredCategory(row.connectionType) === category.key)
+})).filter(group => group.items.length))
+/** 状态详情抽屉中的指标条目，过滤空值并本地化已知键。 */
+const statusEntries = computed(() => {
+  const info = statusData.value?.info || {}
+  return Object.entries(info).filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => {
+      const path = `dataSources.infoLabels.${key}`
+      return { label: te(path) ? t(path) : key, value: String(value) }
+    })
+})
+/** 当前抽屉中的数据源是否为向量类型，用于展示向量能力告警。 */
+const isVectorType = computed(() => statusData.value?.vectorSupported !== undefined
+  && ['POSTGRESQL', 'QDRANT', 'MILVUS', 'ELASTICSEARCH'].includes(statusData.value?.connectionType))
 
 /** 加载当前用户可见的脱敏连接。 */
 async function load() {
@@ -171,8 +264,60 @@ async function save() {
     visible.value = false; await load(); ElMessage.success(t('common.successSaved'))
   } catch (error) { showHttpError(error, 'common.saveFailed') }
 }
-/** 执行无副作用连接测试。 */
-async function test(row) { try { const { data } = await http.post(`/data-sources/${row.id}/test`); await load(); data.vectorSupported === false && ['POSTGRESQL','QDRANT','MILVUS','ELASTICSEARCH'].includes(row.connectionType) ? ElMessage.warning(t('dataSources.vectorUnsupported')) : ElMessage.success(t('dataSources.connected')) } catch (error) { showHttpError(error, 'dataSources.testFailed') } }
+/** 执行单条连通性测试并刷新卡片上的最近检测状态。 */
+async function test(row) {
+  testingId.value = row.id
+  try {
+    const { data } = await http.post(`/data-sources/${row.id}/test`)
+    await load()
+    data.vectorSupported === false && ['POSTGRESQL','QDRANT','MILVUS','ELASTICSEARCH'].includes(row.connectionType)
+      ? ElMessage.warning(t('dataSources.vectorUnsupported')) : ElMessage.success(t('dataSources.connected'))
+  } catch (error) { await load(); showHttpError(error, 'dataSources.testFailed') }
+  finally { testingId.value = null }
+}
+/** 批量检测全部数据源，供手动“全部检测”和自动轮询复用。 */
+async function testAll() {
+  if (batchTesting.value || !auth.hasPermission('operations:data-source:test')) return
+  batchTesting.value = true
+  try {
+    for (const row of rows.value) {
+      try { await http.post(`/data-sources/${row.id}/test`) } catch (ignored) { /* 单条失败由最近状态记录呈现。 */ }
+    }
+    await load()
+  } finally { batchTesting.value = false }
+}
+/** 打开状态抽屉并执行一次实时探测。 */
+async function openStatus(row) {
+  statusRow.value = row; statusData.value = null; statusVisible.value = true; statusLoading.value = true
+  try {
+    const { data } = await http.get(`/data-sources/${row.id}/status`)
+    statusData.value = data
+  } catch (error) { showHttpError(error, 'dataSources.testFailed'); statusVisible.value = false }
+  finally { statusLoading.value = false }
+}
+/** 映射卡片健康状态样式：正常、异常、未检测或已停用。 */
+function statusKind(row) {
+  if (!row.enabled) return 'off'
+  if (row.lastTestOk === true) return 'ok'
+  if (row.lastTestOk === false) return 'bad'
+  return 'unknown'
+}
+/** 返回卡片健康状态文案。 */
+function statusText(row) {
+  const kind = statusKind(row)
+  return kind === 'off' ? t('common.disabled') : kind === 'ok' ? t('dataSources.statusOk')
+    : kind === 'bad' ? t('dataSources.statusFailed') : t('dataSources.statusUnknown')
+}
+/** 本地化最近检测时间。 */
+function formatTime(value) { return new Date(value).toLocaleString() }
+/** 启动或停止自动检测定时器，配置变化即时生效。 */
+watch([autoDetect, autoDetectInterval], () => {
+  localStorage.setItem(AUTO_DETECT_KEY, String(autoDetect.value))
+  localStorage.setItem(AUTO_DETECT_INTERVAL_KEY, String(autoDetectInterval.value))
+  clearInterval(autoDetectTimer)
+  if (autoDetect.value) autoDetectTimer = setInterval(() => { if (!document.hidden) testAll() }, autoDetectInterval.value * 1000)
+})
+onBeforeUnmount(() => clearInterval(autoDetectTimer))
 /** 启动插件提供的 OAuth 生命周期并跳转到经过后端校验的授权地址。 */
 async function oauth(row) {
   try {
@@ -279,12 +424,52 @@ onMounted(async () => { await completeOAuthCallback(); await load() })
 
 <style scoped>
 .panel { display: grid; gap: 18px; }
+.head-actions { display: flex; align-items: center; gap: 12px; }
+.auto-detect { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid #dfe7f2; border-radius: 8px; background: #f8fafc; }
+.auto-detect-label { font-size: 13px; color: var(--app-muted); }
+.auto-detect-interval { width: 88px; }
+.ds-group { display: grid; gap: 12px; }
+.ds-group-head { display: flex; align-items: center; gap: 10px; }
+.ds-group-head h3 { margin: 0; font-size: 15px; }
+.ds-group-icon { display: inline-flex; width: 28px; height: 28px; align-items: center; justify-content: center; border-radius: 8px; }
+.ds-group-icon svg { width: 16px; height: 16px; }
+.ds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.ds-card { display: grid; gap: 10px; padding: 16px; border: 1px solid #dfe7f2; border-radius: 14px; background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); transition: box-shadow .2s, border-color .2s; }
+.ds-card:hover { border-color: #c3d4f5; box-shadow: 0 6px 18px rgba(15, 23, 42, .08); }
+.ds-card--disabled { opacity: .62; }
+.ds-card-top { display: flex; align-items: center; gap: 12px; }
+.ds-logo { display: inline-flex; width: 42px; height: 42px; flex: none; align-items: center; justify-content: center; border-radius: 12px; }
+.ds-logo svg { width: 24px; height: 24px; }
+.ds-titles { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ds-titles strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-titles small { color: var(--app-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-status-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ds-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.ds-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.ds-status--ok { color: #047857; }
+.ds-status--bad { color: #be123c; }
+.ds-status--unknown, .ds-status--off { color: var(--app-muted); }
+.ds-latency { font-size: 12px; color: var(--app-muted); font-variant-numeric: tabular-nums; }
+.ds-meta-line small { color: var(--app-muted); }
+.ds-muted { color: var(--app-muted); }
+.ds-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.ds-actions { display: flex; flex-wrap: wrap; gap: 4px; border-top: 1px solid #eef2f8; padding-top: 8px; }
+.status-body { display: grid; gap: 16px; min-height: 120px; }
+.status-hero { display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: 12px; font-size: 15px; }
+.ds-status--ok.status-hero { background: #ecfdf5; color: #047857; }
+.ds-status--bad.status-hero { background: #fff1f2; color: #be123c; }
+.status-latency { margin-left: auto; font-variant-numeric: tabular-nums; }
+.status-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.status-metric { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid #dfe7f2; border-radius: 10px; background: #f8fafc; }
+.status-metric small { color: var(--app-muted); }
+.status-metric strong { overflow-wrap: anywhere; }
 .connection-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .form-help { margin: -8px 0 18px; color: var(--app-muted); font-size: 13px; }
 .connection-config-section, .connection-custom-section { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; }
 .connection-config-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .connection-tag-group { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .connection-tag { font-weight: 600; }
+.option-row { display: inline-flex; align-items: center; }
 .connection-config-head h3, .connection-config-head p { margin: 0; }
 .connection-config-head p { margin-top: 4px; color: var(--app-muted); font-size: 13px; }
 .connection-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -301,10 +486,10 @@ onMounted(async () => { await completeOAuthCallback(); await load() })
 .connection-custom-add { display: grid; grid-template-columns: minmax(160px, 1fr) 150px auto; gap: 8px; }
 .connection-error { color: var(--el-color-danger); }
 .connection-required { color: var(--el-color-danger); }
-.vector-detail { display: block; margin-top: 4px; color: var(--app-muted); }
 @media (max-width: 720px) {
   .connection-grid, .connection-config-grid, .connection-key-value, .connection-custom-add { grid-template-columns: 1fr; }
   .connection-grid { gap: 0; }
   .connection-key-value { align-items: stretch; }
+  .head-actions { flex-wrap: wrap; }
 }
 </style>

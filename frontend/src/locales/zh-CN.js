@@ -451,7 +451,9 @@ export default {
     }
   },
   dataSources: {
-    title: '数据源管理', description: '统一维护数据库、向量数据库、缓存、对象存储、消息队列、Webhook、搜索服务和插件数据源。', add: '新增数据源', edit: '编辑数据源', test: '测试连接', oauth: 'OAuth 授权', oauthFailed: '插件 OAuth 授权失败', oauthConnected: '插件 OAuth 凭据已连接', connected: '连接成功', testFailed: '连接测试失败', vectorUnsupported: '连接成功，但当前实例不支持所需向量能力'
+    title: '数据源管理', description: '统一维护数据库、向量数据库、缓存、对象存储、消息队列、Webhook、搜索服务和插件数据源。', add: '新增数据源', edit: '编辑数据源', test: '测试连接', oauth: 'OAuth 授权', oauthFailed: '插件 OAuth 授权失败', oauthConnected: '插件 OAuth 凭据已连接', connected: '连接成功', testFailed: '连接测试失败', vectorUnsupported: '连接成功，但当前实例不支持所需向量能力',
+    statusTitle: '状态详情', statusOk: '正常', statusFailed: '连接异常', statusUnknown: '未检测', lastTestAt: '最近检测', notTested: '尚未检测', detectAll: '全部检测', autoDetect: '自动检测', empty: '暂无数据源',
+    infoLabels: { version: '版本', activeConnections: '活动连接数', usedMemory: '内存使用', connectedClients: '客户端连接', vectorEngine: '向量引擎', vectorVersion: '向量版本', reason: '原因' }
   },
   dataSync: {
     title: '数据同步', description: '选择源数据库和目标数据库中的表，按批次安全同步数据。', securityNotice: '同步不会记录行内容；目标连接必须显式开启允许写入。全量替换会清空目标表。', name: '计划名称', source: '源连接', target: '目标连接', strategy: '同步策略', schedule: 'Cron 调度', schedulePlaceholder: '留空表示仅手动执行，例如 0 0/10 * * * *', tables: '同步表', sourceTable: '源表', targetTable: '目标表', sourceRows: '源行数', readRows: '读取行数', writtenRows: '写入行数', warnings: '预检提示', noWarnings: '未发现问题', lastStatus: '最近状态', preview: '预检', run: '执行', retry: '重试', cancel: '取消', details: '运行明细', traceId: 'Trace ID', error: '错误', confirmDestructive: '我确认全量替换会清空目标表', strategies: { UPSERT: '按主键更新/插入', FULL_REPLACE: '全量替换', APPEND: '仅追加' }, warningCodes: { sourceTableNotFound: '源表不存在', targetTableWillBeCreated: '目标表将自动创建', unsupportedColumnType: '字段 {column} 类型不受支持', missingTargetColumn: '目标表缺少字段 {column}', columnTypeMismatch: '字段 {column} 类型不兼容', primaryKeyRequired: 'UPSERT 必须包含主键', columnMismatch: '字段配置不匹配' }, formRequired: '请填写计划、连接并选择表', loadFailed: '数据同步数据加载失败', previewFailed: '数据同步预检失败', saveFailed: '数据同步计划保存失败', runAccepted: '同步任务已启动', runFailed: '同步任务启动失败', cancelFailed: '同步任务取消失败'

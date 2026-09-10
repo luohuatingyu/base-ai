@@ -67,4 +67,12 @@ class DataSourceControllerTest {
         assertArrayEquals(new String[]{"/{id}"}, DataSourceController.class.getMethod("delete",
             Long.class).getAnnotation(DeleteMapping.class).value());
     }
+
+    /** 状态查询接口必须复用测试权限，避免状态探测绕过权限控制。 */
+    @Test
+    void protectsStatusEndpointWithTestPermission() throws Exception {
+        Method status = DataSourceController.class.getMethod("status", Long.class);
+        assertArrayEquals(new String[]{"/{id}/status"}, status.getAnnotation(GetMapping.class).value());
+        assertEquals("operations:data-source:test", status.getAnnotation(RequiredPermission.class).value());
+    }
 }
