@@ -1,5 +1,66 @@
 # 最近分支覆盖测试报告
 
+## 数据源页面改版与健康状态监测验收（2026-09-10）
+
+### Git 基准点
+
+Commit: b9d620f5038bdb3a4d52c7671eeedf7b03564db9
+- 提交信息: Redesign data source page with health status monitoring
+- 测试日期: 2026-09-10
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 数据源管理页由表格改为按分类分组的卡片布局，新增十二类连接类型的内联 SVG 图标（`DataSourceTypeIcon.vue`，不新增依赖）。
+- 卡片展示健康状态圆点（正常 / 异常 / 未检测 / 已停用）、最近检测时间、测试延迟与向量能力标签，并提供“状态详情”抽屉实时探测。
+- Flyway V30 为 `workflow_connection` 新增 `last_test_at`、`last_test_ok`、`last_test_latency_ms`、`last_test_info` 四个可空列，留存最近一次连通性检测结果。
+- `WorkflowConnectionTester` 在测试时采集轻量只读指标并留存：MySQL/PostgreSQL 版本与活动连接数、Redis 版本 / 内存 / 客户端数、全部类型测试延迟；失败结果同样留存。
+- 新增 `GET /api/data-sources/{id}/status` 实时状态接口，复用 `operations:data-source:test` 权限。
+- 页面状态检测方式可配置：默认手动点击检测，用户可开启自动检测并选择 30/60/120 秒间隔（保存在浏览器本地）。
+- 中英文文案同步补充；自动检测与全部检测仅对具备测试权限的账号可见。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 检测结果与指标留存 | Backend 单测（Mockito 隔离外部连接）：插件连接测试成功 | `recordTestResult(true, latency, info)` 被调用，返回含 `connected` 和 `latencyMs` | 正常 |
+| 检测失败同样留存 | Backend 单测：非法插件配置、不可达 JDBC URL | `recordTestResult(false, ...)` 被调用并抛出业务异常 | 异常 |
+| 向量能力与检测结果联动 | Backend 单测：H2 JDBC + Mock 向量探测（支持 / 不支持） | `recordVectorCapability` 与 `recordTestResult` 均被调用，不支持时 `connected=false` | 正常、异常、分支 |
+| 非向量类型不写向量记录 | Backend 单测：插件连接测试 | `recordVectorCapability` 从未被调用 | 分支、回归 |
+| 留存结果在列表视图可见 | Backend H2 集成测试：`recordTestResult` 后查询视图 | `lastTestOk`、`lastTestLatencyMs`、`lastTestInfo` 正确返回 | 正常、兼容 |
+| 状态接口权限 | Backend 反射契约测试：`GET /{id}/status` | 使用 `operations:data-source:test`，路径正确 | 权限、安全 |
+| 页面展示与交互 | Frontend 覆盖率测试套件与生产构建 | 315/315 通过，构建成功，页面卡片 / 图标 / 状态文案正常 | 正常、兼容、回归 |
+
+### 测试执行结果
+
+- 唯一可计数测试共 1,056 个，通过 1,056 个，通过率 100%；失败 0；错误 0；跳过 0。
+- Backend：740/740，Maven 3.9 / Temurin 17 完整测试通过（新增 7 个测试器与留存用例、1 个状态接口契约用例、1 个留存视图用例）。
+- Frontend：315/315 覆盖率测试与 1/1 E2E 通过；ESLint、Vue 类型检查和生产构建通过。
+- Backend 定向首轮：`WorkflowConnectionTesterTest,WorkflowConnectionServiceTest,DataSourceControllerTest` 18/18 通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向测试 | Maven 容器执行 `mvn test -B -Dtest='WorkflowConnectionTesterTest,WorkflowConnectionServiceTest,DataSourceControllerTest'` | 首轮编译错误（Lettuce `info()` 返回 String）修复后 18/18 通过 |
+| Backend 完整测试 | Maven 3.9 / Temurin 17 容器执行 `mvn test -B` | 740/740，BUILD SUCCESS |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、类型检查、315/315 覆盖率测试、生产构建与 1/1 E2E 全部通过 |
+| 默认服务统一重建 | `APP_IMAGE_REVISION=b9d620f... docker compose up --build -d` | 五个服务全部构建并启动健康 |
+| 数据库迁移 | 检查 Backend Flyway 启动日志 | V30 成功应用，Schema 升级到 v30 |
+
+### 已知问题
+
+- 重建时暴露历史遗留问题：远程库中 V28 校验和（856266360）是 12:21 用未提交的临时文件版本记录的，早于恢复提交（12:33）；经用户确认后已按 `flyway repair` 等价方式将 `flyway_schema_history` 中 V28 校验和更新为当前仓库文件的 -293149862（仅元数据，未执行迁移 SQL）。今后不得修改任何已应用迁移文件。
+- 状态检测为按需探测：MySQL/PostgreSQL/Redis 返回版本与连接 / 内存指标，其余类型返回连通与延迟；Kafka、RabbitMQ、S3 等暂不采集深度指标。
+- 自动检测基于浏览器定时器，页面隐藏（`document.hidden`）时暂停轮询，关闭标签页即停止。
+- Frontend 构建继续输出既有运行配置脚本、第三方 PURE 注释和大分块警告，构建与测试均通过，本次未修改这些非相关问题。
+
+### 下次测试建议
+
+- 在运行环境中对 MySQL、Redis 数据源实际执行“状态详情”，核对版本、活动连接数和延迟指标与真实实例一致。
+- 开启自动检测后观察一段时间，确认远程数据库探测频率符合预期且无权限报错。
+
 ## 数据源管理独立页面验收（2026-09-10）
 
 ### Git 基准点
