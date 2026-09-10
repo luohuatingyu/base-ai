@@ -193,7 +193,7 @@ public class DataInitializer implements ApplicationRunner {
         systemSettingCacheService.applyAll(systemSettingRepository.findAll());
     }
 
-    /** 初始化只管理本人同步计划和服务器的内置运维角色，并保留其他既有授权。 */
+    /** 初始化只管理本人数据源、同步计划和服务器的内置运维角色，并保留其他既有授权。 */
     private void seedOperationsRole(List<Menu> menus) {
         Role operations = roleRepository.findByCode("OPS").orElseGet(() -> {
             Role role = new Role();
@@ -203,10 +203,11 @@ public class DataInitializer implements ApplicationRunner {
         });
         LinkedHashSet<Menu> permissions = new LinkedHashSet<>(operations.getMenus());
         menus.stream().filter(menu -> "operations:catalog".equals(menu.getPermission())
-            || menu.getPermission() != null && (menu.getPermission().startsWith("operations:data-sync:")
+            || menu.getPermission() != null && (menu.getPermission().startsWith("operations:data-source:")
+            || menu.getPermission().startsWith("operations:data-sync:")
             || menu.getPermission().startsWith("operations:server:"))).forEach(permissions::add);
         operations.setMenus(permissions);
-        operations.setDescription("系统内置数据同步与服务器运维角色");
+        operations.setDescription("系统内置数据源、数据同步与服务器运维角色");
         operations.setDataScope("SELF");
         operations.setSortOrder(20);
         operations.setEnabled(true);
@@ -364,10 +365,10 @@ public class DataInitializer implements ApplicationRunner {
      *
      * <p>该方法创建系统的所有菜单项，包括：
      * <ul>
-     *   <li>AI 能力模块：AI 对话等功能</li>
-     *   <li>系统管理模块：用户、角色、菜单、部门、岗位、字典、参数、在线用户、日志、任务调度等</li>
-     *   <li>模型管理模块：模型供应商、模型配置、能力路由等</li>
-     *   <li>自动化模块：接口触发及相关操作</li>
+     *   <li>AI 能力模块：AI 对话、模型和知识库</li>
+     *   <li>自动化模块：接口触发和工作流</li>
+     *   <li>运维管理模块：数据同步、服务器、设备 Agent 和监控审计</li>
+     *   <li>系统管理模块：访问控制、组织、字典、参数和邮件</li>
      * </ul>
      *
      * <p>菜单类型包括：
@@ -427,14 +428,6 @@ public class DataInitializer implements ApplicationRunner {
             "automation:workflow:adapter:manage", 215, false);
         menu(node.getId(), "审批市场插件", "BUTTON", null, null, null,
             "automation:workflow:plugin:admission", 216, false);
-        Menu connection = menu(workflow.getId(), "连接配置", "MENU", "/workflow/connections",
-            "WorkflowConnectionsView", "Link", "automation:workflow:connection:list", 22, true);
-        menu(connection.getId(), "新增连接配置", "BUTTON", null, null, null,
-            "automation:workflow:connection:create", 221, false);
-        menu(connection.getId(), "更新连接配置", "BUTTON", null, null, null,
-            "automation:workflow:connection:update", 222, false);
-        menu(connection.getId(), "删除连接配置", "BUTTON", null, null, null,
-            "automation:workflow:connection:delete", 223, false);
         Menu canvas = menu(workflow.getId(), "画布管理", "MENU", "/workflow/canvases", "WorkflowCanvasView", "Connection",
             "automation:workflow:canvas:list", 23, true);
         menu(canvas.getId(), "新增工作流", "BUTTON", null, null, null,
@@ -455,29 +448,33 @@ public class DataInitializer implements ApplicationRunner {
         // ========== 运维管理模块 ==========
         Menu operations = menu(null, "运维管理", "CATALOG", "/operations", null, "Monitor",
             "operations:catalog", 30, true);
+        Menu dataSources = seedCrud(operations, "数据源管理", "/data-sources", "DataSourcesView", "Link",
+            "operations:data-source", 11);
+        menu(dataSources.getId(), "测试数据源", "BUTTON", null, null, null,
+            "operations:data-source:test", 115, false);
         Menu dataSync = seedCrud(operations, "数据同步", "/data-sync", "DataSyncView", "Refresh",
-            "operations:data-sync", 11);
+            "operations:data-sync", 12);
         menu(dataSync.getId(), "预览同步结构", "BUTTON", null, null, null,
-            "operations:data-sync:preview", 114, false);
+            "operations:data-sync:preview", 124, false);
         menu(dataSync.getId(), "执行同步", "BUTTON", null, null, null,
-            "operations:data-sync:run", 115, false);
+            "operations:data-sync:run", 125, false);
         menu(dataSync.getId(), "取消同步", "BUTTON", null, null, null,
-            "operations:data-sync:cancel", 116, false);
+            "operations:data-sync:cancel", 126, false);
         menu(dataSync.getId(), "查看同步日志", "BUTTON", null, null, null,
-            "operations:data-sync:logs", 117, false);
+            "operations:data-sync:logs", 127, false);
         Menu servers = seedCrud(operations, "服务器管理", "/servers", "ServersView", "Monitor",
-            "operations:server", 12);
+            "operations:server", 13);
         menu(servers.getId(), "测试服务器", "BUTTON", null, null, null,
-            "operations:server:test", 124, false);
+            "operations:server:test", 134, false);
         menu(servers.getId(), "执行部署", "BUTTON", null, null, null,
-            "operations:server:deploy", 125, false);
+            "operations:server:deploy", 135, false);
         menu(servers.getId(), "部署回滚", "BUTTON", null, null, null,
-            "operations:server:rollback", 126, false);
+            "operations:server:rollback", 136, false);
         menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null,
-            "operations:server:logs", 127, false);
+            "operations:server:logs", 137, false);
         // iOS 设备 Agent 只读管理设备和运行环境，不建立自动化控制会话。
         menu(operations.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
-            "DeviceAgentsView", "Iphone", "operations:device-agent:list", 13, true);
+            "DeviceAgentsView", "Iphone", "operations:device-agent:list", 14, true);
         Menu monitoring = menu(operations.getId(), "监控审计", "CATALOG", "/operations/monitoring",
             null, "DataAnalysis", "operations:monitoring:catalog", 20, true);
         Menu onlineUsers = menu(monitoring.getId(), "在线用户", "MENU", "/online-users",

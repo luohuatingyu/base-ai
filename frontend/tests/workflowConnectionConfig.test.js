@@ -17,7 +17,7 @@ import {
   extraConnectionConfigKeys
 } from '../src/utils/workflowConnectionConfig.js'
 
-const viewSource = readFileSync(new URL('../src/views/WorkflowConnectionsView.vue', import.meta.url), 'utf8')
+const viewSource = readFileSync(new URL('../src/views/DataSourcesView.vue', import.meta.url), 'utf8')
 
 test('十二类连接均提供类型化标准字段和安全默认值', () => {
   assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH', 'PLUGIN'])
@@ -73,7 +73,7 @@ test('编辑配置时保留脱敏密钥、嵌套值和未知自定义字段', ()
   assert.notEqual(cloneConnectionConfig(config), config)
 })
 
-test('连接页面只使用卡片及键值输入并由结构化配置直接保存', () => {
+test('数据源页面只使用卡片及键值输入并由结构化配置直接保存', () => {
   assert.match(viewSource, /class="connection-config-card"/)
   assert.match(viewSource, /class="connection-custom-card"/)
   assert.match(viewSource, /WorkflowConfigValueEditor/)

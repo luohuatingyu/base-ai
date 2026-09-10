@@ -180,7 +180,7 @@ async function loadBases(preferredId = activeBase.value?.id) {
 
 /** 加载创建和详情展示所需的连接与模型资源。 */
 async function loadResources() {
-  try { const [connectionRows, modelRows] = await Promise.all([http.get('/workflow/connections'), http.get('/models')]); connections.value = connectionRows.data || []; models.value = modelRows.data || [] }
+  try { const [connectionRows, modelRows] = await Promise.all([http.get('/data-sources'), http.get('/models')]); connections.value = connectionRows.data || []; models.value = modelRows.data || [] }
   catch (error) { showHttpError(error, 'knowledgeBases.resourcesFailed') }
 }
 

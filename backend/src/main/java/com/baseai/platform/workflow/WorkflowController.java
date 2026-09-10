@@ -23,80 +23,29 @@ public class WorkflowController {
     private final WorkflowService workflowService;
     private final WorkflowExecutionService executionService;
     private final WorkflowConnectionService connectionService;
-    private final WorkflowConnectionTester connectionTester;
     private final WorkflowNodeMarketplaceService marketplaceService;
     private final WorkflowAdapterLifecycleService adapterLifecycleService;
-    private final WorkflowPluginOAuthService pluginOAuthService;
     private final LlmManagementService llmManagementService;
     private final MailManagementService mailManagementService;
 
     /** 注入工作流配置和执行服务。 */
     public WorkflowController(WorkflowService workflowService, WorkflowExecutionService executionService,
-                              WorkflowConnectionService connectionService, WorkflowConnectionTester connectionTester,
+                              WorkflowConnectionService connectionService,
                               LlmManagementService llmManagementService, MailManagementService mailManagementService,
                               WorkflowNodeMarketplaceService marketplaceService,
-                              WorkflowPluginOAuthService pluginOAuthService,
                               WorkflowAdapterLifecycleService adapterLifecycleService) {
         this.workflowService = workflowService;
         this.executionService = executionService;
         this.connectionService = connectionService;
-        this.connectionTester = connectionTester;
         this.llmManagementService = llmManagementService;
         this.mailManagementService = mailManagementService;
         this.marketplaceService = marketplaceService;
-        this.pluginOAuthService = pluginOAuthService;
         this.adapterLifecycleService = adapterLifecycleService;
-    }
-
-    /** 查询当前用户可见的脱敏连接配置。 */
-    @GetMapping("/connections")
-    @RequiredPermission("automation:workflow:connection:list")
-    public List<WorkflowModels.ConnectionView> connections() { return connectionService.connections(); }
-
-    /** 创建工作流外部连接。 */
-    @PostMapping("/connections")
-    @RequiredPermission("automation:workflow:connection:create")
-    public WorkflowModels.ConnectionView createConnection(@RequestBody WorkflowModels.ConnectionCommand command) {
-        return connectionService.create(command);
-    }
-
-    /** 更新当前用户拥有的连接。 */
-    @PutMapping("/connections/{id}")
-    @RequiredPermission("automation:workflow:connection:update")
-    public WorkflowModels.ConnectionView updateConnection(@PathVariable Long id,
-                                                           @RequestBody WorkflowModels.ConnectionCommand command) {
-        return connectionService.update(id, command);
-    }
-
-    /** 软删除未被工作流版本引用的连接。 */
-    @DeleteMapping("/connections/{id}")
-    @RequiredPermission("automation:workflow:connection:delete")
-    public void deleteConnection(@PathVariable Long id) { connectionService.delete(id); }
-
-    /** 测试当前用户拥有的连接并只返回脱敏结果。 */
-    @PostMapping("/connections/{id}/test")
-    @RequiredPermission("automation:workflow:connection:update")
-    public java.util.Map<String, Object> testConnection(@PathVariable Long id) { return connectionTester.test(id); }
-
-    /** 为当前用户拥有的插件连接创建一次性 OAuth 授权请求。 */
-    @PostMapping("/connections/{id}/oauth/authorize")
-    @RequiredPermission("automation:workflow:connection:update")
-    public WorkflowModels.PluginOAuthAuthorization authorizePluginConnection(
-        @PathVariable Long id, @RequestBody WorkflowModels.PluginOAuthAuthorizeCommand command) {
-        return pluginOAuthService.authorize(id, command);
-    }
-
-    /** 消费一次性 OAuth state 并把交换结果加密写回插件连接。 */
-    @PostMapping("/plugin-oauth/callback")
-    @RequiredPermission("automation:workflow:connection:update")
-    public WorkflowModels.PluginOAuthCallbackResult pluginOAuthCallback(
-        @RequestBody WorkflowModels.PluginOAuthCallbackCommand command) {
-        return pluginOAuthService.callback(command);
     }
 
     /** 查询可复用节点模板。 */
     @GetMapping("/nodes")
-    @RequiredPermission("automation:workflow:connection:list")
+    @RequiredPermission("automation:workflow:node:list")
     public List<WorkflowModels.NodeTemplateView> templates() { return workflowService.templates(); }
 
     /** 使用独立只读权限查询节点文档所需的模板元数据。 */
@@ -163,13 +112,6 @@ public class WorkflowController {
     public WorkflowModels.PluginAdmissionView reviewPluginAdmission(
         @PathVariable Long pluginId, @RequestBody WorkflowModels.PluginAdmissionReviewCommand command) {
         return marketplaceService.reviewPluginAdmission(pluginId, command);
-    }
-
-    /** 查询已安装且可用于节点和凭据配置的插件组件。 */
-    @GetMapping("/plugin-component-options")
-    @RequiredPermission("automation:workflow:node:list")
-    public List<WorkflowModels.PluginComponentOption> pluginComponentOptions() {
-        return marketplaceService.componentOptions();
     }
 
     /** 查询 AI 节点可选择的启用模型，不返回供应商密钥或健康错误。 */

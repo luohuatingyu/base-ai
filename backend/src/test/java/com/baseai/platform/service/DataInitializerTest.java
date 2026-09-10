@@ -275,7 +275,7 @@ class DataInitializerTest {
         assertFalse(permissions.contains("system:menu:manage"));
     }
 
-    /** 内置运维角色默认获得数据同步和服务器管理权限，但不获得其他运维或系统管理权限。 */
+    /** 内置运维角色默认获得数据源、数据同步和服务器权限，但不获得其他运维或系统权限。 */
     @Test
     void seedsOperationsRoleWithSynchronizationAndDeploymentPermissions() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
@@ -287,7 +287,8 @@ class DataInitializerTest {
         Role operations = captor.getAllValues().stream().filter(role -> "OPS".equals(role.getCode())).findFirst().orElseThrow();
         Set<String> permissions = operations.getMenus().stream().map(Menu::getPermission).collect(Collectors.toSet());
         assertEquals("SELF", operations.getDataScope());
-        assertTrue(permissions.containsAll(Set.of("operations:catalog", "operations:data-sync:list",
+        assertTrue(permissions.containsAll(Set.of("operations:catalog", "operations:data-source:list",
+            "operations:data-source:create", "operations:data-source:test", "operations:data-sync:list",
             "operations:data-sync:run", "operations:server:list", "operations:server:deploy",
             "operations:server:rollback")));
         assertFalse(permissions.contains("operations:device-agent:list"));
@@ -327,6 +328,7 @@ class DataInitializerTest {
         assertEquals(system.getId(), access.getParentId());
         assertEquals(system.getId(), organization.getParentId());
         assertEquals(system.getId(), mail.getParentId());
+        assertEquals(operations.getId(), menusByPermission.get("operations:data-source:list").getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:data-sync:list").getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:server:list").getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:device-agent:list").getParentId());
@@ -339,7 +341,7 @@ class DataInitializerTest {
         assertEquals(mail.getId(), menusByPermission.get("system:mail:account:list").getParentId());
     }
 
-    /** 工作流必须归入自动化二级目录，并包含节点、连接和画布管理页面。 */
+    /** 工作流必须归入自动化二级目录，并只包含节点、文档和画布管理页面。 */
     @Test
     void seedsWorkflowCatalogWithNodeAndCanvasPages() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
@@ -354,16 +356,14 @@ class DataInitializerTest {
 
         assertEquals("CATALOG", workflow.getType());
         assertEquals(workflow.getId(), menusByPermission.get("automation:workflow:node:list").getParentId());
-        assertEquals(workflow.getId(), menusByPermission.get("automation:workflow:connection:list").getParentId());
         assertEquals(workflow.getId(), menusByPermission.get("automation:workflow:canvas:list").getParentId());
+        assertFalse(menusByPermission.containsKey("automation:workflow:connection:list"));
         assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
             menusByPermission.get("automation:workflow:node:update").getParentId());
         assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
             menusByPermission.get("automation:workflow:adapter:manage").getParentId());
         assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
             menusByPermission.get("automation:workflow:plugin:admission").getParentId());
-        assertEquals(menusByPermission.get("automation:workflow:connection:list").getId(),
-            menusByPermission.get("automation:workflow:connection:update").getParentId());
         assertEquals(menusByPermission.get("automation:workflow:canvas:list").getId(),
             menusByPermission.get("automation:workflow:canvas:execute").getParentId());
     }

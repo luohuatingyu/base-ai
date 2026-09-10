@@ -1,8 +1,8 @@
 <template>
   <div class="panel">
     <div class="section-head">
-      <div><h2>{{ t('workflowConnections.title') }}</h2><p>{{ t('workflowConnections.description') }}</p></div>
-      <el-button v-if="auth.hasPermission('automation:workflow:connection:create')" type="primary" @click="open()">{{ t('workflowConnections.add') }}</el-button>
+      <div><h2>{{ t('dataSources.title') }}</h2><p>{{ t('dataSources.description') }}</p></div>
+      <el-button v-if="auth.hasPermission('operations:data-source:create')" type="primary" @click="open()">{{ t('dataSources.add') }}</el-button>
     </div>
     <el-alert :title="t('workflowConnections.securityNotice')" type="warning" show-icon :closable="false" />
     <el-table :data="rows" table-layout="auto">
@@ -17,14 +17,14 @@
       <el-table-column :label="t('workflowConnections.vectorCapability')" min-width="190"><template #default="scope"><el-tag :type="vectorStatusType(scope.row.vectorStatus)">{{ t(`workflowConnections.vectorStatuses.${scope.row.vectorStatus || 'UNKNOWN'}`) }}</el-tag><small v-if="scope.row.vectorEngine" class="vector-detail">{{ scope.row.vectorEngine }} {{ scope.row.vectorVersion }}</small></template></el-table-column>
       <el-table-column :label="t('common.status')" width="100"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'info'">{{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}</el-tag></template></el-table-column>
       <el-table-column :label="t('common.operation')" width="280" fixed="right"><template #default="scope"><div class="table-actions">
-        <el-button v-if="auth.hasPermission('automation:workflow:connection:update')" link type="success" @click="test(scope.row)">{{ t('workflowConnections.test') }}</el-button>
-        <el-button v-if="scope.row.connectionType === 'PLUGIN' && auth.hasPermission('automation:workflow:connection:update')" link type="warning" @click="oauth(scope.row)">{{ t('workflowConnections.oauth') }}</el-button>
-        <el-button v-if="auth.hasPermission('automation:workflow:connection:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
-        <el-button v-if="auth.hasPermission('automation:workflow:connection:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
+        <el-button v-if="auth.hasPermission('operations:data-source:test')" link type="success" @click="test(scope.row)">{{ t('dataSources.test') }}</el-button>
+        <el-button v-if="scope.row.connectionType === 'PLUGIN' && auth.hasPermission('operations:data-source:update')" link type="warning" @click="oauth(scope.row)">{{ t('dataSources.oauth') }}</el-button>
+        <el-button v-if="auth.hasPermission('operations:data-source:update')" link type="primary" @click="open(scope.row)">{{ t('common.edit') }}</el-button>
+        <el-button v-if="auth.hasPermission('operations:data-source:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
       </div></template></el-table-column>
     </el-table>
 
-    <el-dialog v-model="visible" :title="form.id ? t('workflowConnections.edit') : t('workflowConnections.add')" width="min(980px, 94vw)">
+    <el-dialog v-model="visible" :title="form.id ? t('dataSources.edit') : t('dataSources.add')" width="min(980px, 94vw)">
       <el-form label-position="top">
         <div class="connection-grid"><el-form-item :label="t('common.code')"><el-input v-model="form.code" /></el-form-item><el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item></div>
         <div class="connection-grid">
@@ -136,7 +136,7 @@ const availableConnectionTypes = computed(() => connectionTypesForCategory(form.
 /** 加载当前用户可见的脱敏连接。 */
 async function load() {
   const [connections, components] = await Promise.all([
-    http.get('/workflow/connections'), http.get('/workflow/plugin-component-options')
+    http.get('/data-sources'), http.get('/data-sources/plugin-component-options')
   ])
   rows.value = connections.data || []; pluginComponents.value = components.data || []
 }
@@ -166,20 +166,20 @@ async function save() {
   }
   const command = { code: form.code, name: form.name, connectionType: form.connectionType, config: cloneConnectionConfig(form.config), enabled: form.enabled }
   try {
-    if (form.id) await http.put(`/workflow/connections/${form.id}`, command)
-    else await http.post('/workflow/connections', command)
+    if (form.id) await http.put(`/data-sources/${form.id}`, command)
+    else await http.post('/data-sources', command)
     visible.value = false; await load(); ElMessage.success(t('common.successSaved'))
   } catch (error) { showHttpError(error, 'common.saveFailed') }
 }
 /** 执行无副作用连接测试。 */
-async function test(row) { try { const { data } = await http.post(`/workflow/connections/${row.id}/test`); await load(); data.vectorSupported === false && ['POSTGRESQL','QDRANT','MILVUS','ELASTICSEARCH'].includes(row.connectionType) ? ElMessage.warning(t('workflowConnections.vectorUnsupported')) : ElMessage.success(t('workflowConnections.connected')) } catch (error) { showHttpError(error, 'workflowConnections.testFailed') } }
+async function test(row) { try { const { data } = await http.post(`/data-sources/${row.id}/test`); await load(); data.vectorSupported === false && ['POSTGRESQL','QDRANT','MILVUS','ELASTICSEARCH'].includes(row.connectionType) ? ElMessage.warning(t('dataSources.vectorUnsupported')) : ElMessage.success(t('dataSources.connected')) } catch (error) { showHttpError(error, 'dataSources.testFailed') } }
 /** 启动插件提供的 OAuth 生命周期并跳转到经过后端校验的授权地址。 */
 async function oauth(row) {
   try {
     const redirectUri = `${window.location.origin}${window.location.pathname}`
-    const { data } = await http.post(`/workflow/connections/${row.id}/oauth/authorize`, { redirectUri })
+    const { data } = await http.post(`/data-sources/${row.id}/oauth/authorize`, { redirectUri })
     window.location.assign(data.authorizationUrl)
-  } catch (error) { showHttpError(error, 'workflowConnections.oauthFailed') }
+  } catch (error) { showHttpError(error, 'dataSources.oauthFailed') }
 }
 /** 在连接页面消费授权方回传的一次性 code/state，并清理浏览器地址。 */
 async function completeOAuthCallback() {
@@ -187,9 +187,9 @@ async function completeOAuthCallback() {
   const code = query.get('code'), state = query.get('state')
   if (!code || !state) return
   try {
-    await http.post('/workflow/plugin-oauth/callback', { code, state })
-    ElMessage.success(t('workflowConnections.oauthConnected'))
-  } catch (error) { showHttpError(error, 'workflowConnections.oauthFailed') }
+    await http.post('/data-sources/plugin-oauth/callback', { code, state })
+    ElMessage.success(t('dataSources.oauthConnected'))
+  } catch (error) { showHttpError(error, 'dataSources.oauthFailed') }
   finally { window.history.replaceState({}, '', window.location.pathname) }
 }
 /** 将向量能力状态映射为稳定标签颜色。 */
@@ -205,7 +205,7 @@ function categoryStyle(category) { return connectionCategoryStyle(category) }
 /** 返回连接类型在当前分类中的同色系深浅样式。 */
 function typeStyle(type, category) { return connectionTypeStyle(type, category) }
 /** 删除未被工作流引用的连接。 */
-async function remove(row) { try { await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm')); await http.delete(`/workflow/connections/${row.id}`); await load() } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) } }
+async function remove(row) { try { await ElMessageBox.confirm(t('common.confirmDelete', { name: row.name }), t('common.deleteConfirm')); await http.delete(`/data-sources/${row.id}`); await load() } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) } }
 /** 返回当前语言下的连接字段名称。 */
 function fieldLabel(key) {
   const dynamic = configFields.value.find(field => field.key === key)?.label

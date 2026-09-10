@@ -43,6 +43,11 @@ const menuKeysByPermission = Object.freeze({
   'operations:audit:login:list': 'nav.items.loginLogs',
   'operations:task:view': 'nav.items.tasks',
   'operations:task:manage': 'menus.buttons.manageTask',
+  'operations:data-source:list': 'nav.items.dataSources',
+  'operations:data-source:create': 'dataSources.add',
+  'operations:data-source:update': 'common.edit',
+  'operations:data-source:delete': 'common.delete',
+  'operations:data-source:test': 'dataSources.test',
   'operations:data-sync:list': 'nav.items.dataSync',
   'operations:data-sync:create': 'dataSync.title',
   'operations:data-sync:update': 'common.edit',
@@ -104,10 +109,6 @@ const menuKeysByPermission = Object.freeze({
   'automation:workflow:node:update': 'workflowNodes.edit',
   'automation:workflow:node:delete': 'common.delete',
   'automation:workflow:node:docs': 'nav.items.workflowNodeDocs',
-  'automation:workflow:connection:list': 'nav.items.workflowConnections',
-  'automation:workflow:connection:create': 'workflowConnections.add',
-  'automation:workflow:connection:update': 'common.edit',
-  'automation:workflow:connection:delete': 'common.delete',
   'automation:workflow:canvas:list': 'nav.items.workflowCanvas',
   'automation:workflow:canvas:create': 'workflowCanvas.add',
   'automation:workflow:canvas:update': 'common.edit',
@@ -136,6 +137,7 @@ const menuKeysByPath = Object.freeze({
   '/operation-logs': 'nav.items.operationLogs',
   '/login-logs': 'nav.items.loginLogs',
   '/tasks': 'nav.items.tasks',
+  '/data-sources': 'nav.items.dataSources',
   '/data-sync': 'nav.items.dataSync',
   '/servers': 'nav.items.servers',
   '/api-keys': 'nav.items.apiKeys',
@@ -153,7 +155,6 @@ const menuKeysByPath = Object.freeze({
   '/workflow': 'nav.items.workflow',
   '/workflow/nodes': 'nav.items.workflowNodes',
   '/workflow/node-docs': 'nav.items.workflowNodeDocs',
-  '/workflow/connections': 'nav.items.workflowConnections',
   '/workflow/canvases': 'nav.items.workflowCanvas'
 })
 
