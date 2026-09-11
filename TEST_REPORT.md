@@ -1,5 +1,65 @@
 # 最近分支覆盖测试报告
 
+## SSH 运行用户修复与操作系统探测（2026-09-11）
+
+### Git 基准点与交付状态
+
+Commit: cb5ee140660424ff340234a8daefe313021f8464
+- 提交信息：Fix SSH runtime user and display detected server OS；分支：master；测试日期：2026-09-11。
+- 技术栈：Go/OpenSSH、Java 17/Spring/JDBC、Vue 3/Element Plus、Docker Compose；Python 服务仍使用 3.12。
+- 自动化测试、镜像重建和服务健康检查通过。阿里云实际连接和监控尚未验收通过，用户选择“先不处理，我调整方案”，已暂停进一步远端认证调整。
+
+### 已确认原因与变更范围
+
+- 原运行容器使用 UID 10001，但镜像未创建对应系统用户；实际执行 `docker exec ai-deployment-agent ssh -V` 返回 `No user exists for uid 10001`，退出 255。修复镜像用户，并在镜像构建阶段以该用户执行 `ssh -V` 验证。
+- 原 Agent 只返回子进程退出状态，后端进一步隐藏监控故障原因。新增白名单错误码，区分本地用户缺失、认证失败、网络超时、连接拒绝、DNS、路由、私钥加载、Agent 通信和监控兼容问题，避免原始 SSH 输出或凭据泄漏。
+- 连接测试和监控通过固定只读命令读取系统家族、发行版、版本、内核和架构；只解析系统标识文件，不执行其内容。系统信息有长度和控制字符校验，识别失败不伪造系统身份。
+- 系统信息复用现有加密 JSON 字段保存，列表返回独立字段；使用密文乐观锁防止慢探测覆盖并发修改，连接目标变化后清除旧身份。监控资源快照仍不持久化。
+- 前端列表新增本地操作系统图标、发行版、版本、可展开的内核/架构/探测时间，以及未探测状态；错误说明支持中英文。没有新增依赖或数据库迁移。
+- 涉及 Agent Dockerfile、Agent 连接/监控逻辑、服务器 Service/Models、服务器列表、现有语言文件和正式测试。共享 SSH 入口仍用于部署，数据同步的标准输入认证通道已回归。
+
+### 实际执行命令与结果
+
+- 缺陷复现：`docker run --rm -v "$PWD/deployment-agent:/workspace:ro" -w /workspace golang:1.26.6-alpine go test -run TestRemoteDiagnostics -v ./...`。修复前 8 个参数场景全部失败，实际返回均为 `exit status 255`；修复后完整测试全部通过。
+- Go 完整单元测试：`docker run --rm -v "$PWD/deployment-agent:/workspace" -w /workspace golang:1.26.6-alpine sh -c 'gofmt -w main.go main_test.go && go test -cover -v ./...'`。30 个顶层测试及参数场景通过，失败 0；当次语句覆盖率 55.6%。
+- Go 最终完整与真实 SSH 集成：`docker run --rm --name base-ai-server-ssh-tests --tmpfs /tmp:rw,noexec,nosuid,nodev -e GOTMPDIR=/build -v "$PWD/deployment-agent:/source:ro" -w /workspace golang:1.26.6-alpine sh -c 'apk add --no-cache openssh >/dev/null && mkdir -p /run/sshd /build && cp /source/*.go /source/go.mod . && gofmt -d *.go && go test -tags integration -cover -v ./...'`。31 个顶层测试及参数场景全部通过，失败 0、跳过 0，语句覆盖率 56.4%；格式检查无差异。真实 sshd 覆盖私钥、密码、组合认证、加密私钥、错误凭据、超时、标准输入、系统探测和实时资源采集。
+- 后端最终定向及完整测试：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp -Dtest=ServerManagementValidationTest,ServerManagementControllerTest,ServerManagementMonitorTest test && mvn -B -ntp test'`。定向 51/51（监控与身份 28、服务器校验 22、Controller 1），完整 826/826；通过率 100%，失败 0、错误 0、跳过 0。
+- 前端定向：`node --test frontend/test/servers.test.mjs`，11/11 通过。
+- 前端完整检查：在 frontend 工作目录执行 `npm run lint && npm run typecheck && npm run test:coverage && node --test e2e/*.test.mjs`，lint、类型检查、361 项单元测试与 1 项生产服务 E2E 通过，失败 0。工具函数行覆盖率 98.40%、分支 80.95%、函数 95.27%。前端生产编译通过统一 Compose 构建执行，未单独运行 `npm run build`。
+- 最终重建：`APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`，退出 0；镜像标签对应上述代码基准点，构建中的 Maven package 826 项测试也全部通过。运行的 backend、frontend、deployment-agent、document-parser、python-worker、caddy 六个容器均 healthy。
+- 生产运行用户验证：`docker exec ai-deployment-agent sh -c 'id; ssh -V'`，退出 0，运行身份 `10001(agent)`，SSH 能正常启动。
+- 变更检查：`git diff --check`、`git diff --cached --check` 均通过；测试容器使用 `--rm`，测试临时目录由正式用例清理，没有创建工作区调试文件。
+
+### 验收标准与测试覆盖映射
+
+| 验收标准 | 测试层级与前置条件/输入 | 预期与实际结果 | 场景 |
+| --- | --- | --- | --- |
+| 生产用户能够运行 SSH | 镜像构建和运行容器，UID 10001 执行 ssh；隔离 sshd 三种认证 | 用户可解析，SSH 启动成功，合法凭据认证通过 | 正常、回归 |
+| 失败原因可定位且不泄密 | Go TestRemoteDiagnostics；Java preservesSafeDiagnostics、hidesAgentFailureDetails；输入错误密码、网络故障、任意敏感输出 | 返回对应安全码，未知信息隐藏，列表保存安全错误 | 异常、安全 |
+| 系统信息准确且有界 | Go TestSystemInfoParsing；Linux 实际采集；Alibaba Cloud Linux/Ubuntu/CentOS、缺失文本、超长/控制字符/恶意文本 | 系统字段正确，危险内容不执行，旧响应不捏造 OS | 正常、边界、安全、兼容 |
+| 连接成功不依赖系统信息有效 | Java ignoresMalformedIdentity、rejectsUnsafeIdentityFields；缺失字段、无效日期、超长或非法标识 | 连接成功保留，无效系统信息不保存 | 边界、异常、兼容 |
+| 信息持久化且并发安全 | Java persistsSystemIdentityAndInvalidatesChangedTarget、doesNotOverwriteConcurrentCredentialEdit；同目标编辑、新目标、探测期间修改凭据 | 列表可读、原凭据保留、目标变化清理旧 OS、并发新配置不被覆盖 | 正常、状态冲突、回归 |
+| 非 Linux 识别不伪造监控数据 | Go 非 Linux 参数与 Java persistsIdentityWhenMonitoringUnsupported | 保留系统身份，返回 MONITOR_OS_UNSUPPORTED，主机指标为空 | 边界、兼容 |
+| 所有权和启用约束生效 | 现有服务器权限/停用/不存在测试与完整后端权限套件 | 越权和非法状态不触发远端采集 | 权限、异常、回归 |
+| 列表图标及信息安全展示 | 前端参数化图标、字段插值、未探测占位、双语错误测试 | 图标正确回退，字段齐全，不使用 v-html | 正常、边界、安全、兼容 |
+
+### 阿里云实机验收与阻塞
+
+- 通过应用现有登录和服务器接口读取名为“阿里云”的记录，原状态 FAILED，错误为 `exit status 255`。
+- 修复运行用户后，实机监控和连接测试都到达 SSH 认证阶段并返回 `SSH_AUTHENTICATION_FAILED`；当前服务器记录为 `root` 用户、`PASSWORD` 认证。
+- 使用 `PreferredAuthentications=none` 做只读 SSH 握手诊断，远端实际通告 `publickey,gssapi-keyex,gssapi-with-mic`，未通告 password 或 keyboard-interactive；服务器软件为 OpenSSH_9.6。不能从 SSH 软件版本推断具体操作系统。
+- 结论：平台镜像用户缺失已修复；当前阿里云记录的密码认证方式与远端策略不匹配，仍需要有效私钥或另行确认的远端策略变更。未修改阿里云安全组、远端 SSH 配置或平台记录的认证方式。
+- 首次临时 HTTP 验证脚本遗漏 CSRF 请求头，POST 测试返回 403；补充应用的 X-CSRF-Token 后 POST 返回 HTTP 200 和上述真实 SSH 认证错误。这是验证脚本问题，不是应用功能测试失败；没有通过关闭 CSRF 绕过验证。
+- 用户明确暂停认证处理，等待其调整方案。因此本轮未获得阿里云真实系统信息，不将“操作系统实机识别、列表展示及远端资源监控恢复”判为验收通过。
+
+### 已知限制与下次验证
+
+- 资源采集仍依赖 Linux procfs 和基础命令；非 Linux 只保留可识别的系统身份并提示不支持监控。LOCAL 模式反映 Agent 容器环境，不代表 Docker 宿主操作系统。
+- 新增操作系统列通过前端单元测试、类型检查和生产编译；未执行登录态浏览器视觉验收。前端 E2E 为现有生产 HTTP 服务测试，不等同于操作系统列的真实浏览器交互测试。
+- Java 没有配置本轮 JaCoCo 覆盖率测量，不提供未经测量的 Java 百分比；Go 百分比为整个 Agent 语句覆盖率，不代表全部业务分支已覆盖。原有构建警告不影响本轮测试结果。
+- 用户确认认证新方案并配置对应私钥后，重新执行服务器连接测试、资源监控和列表刷新，验证真实发行版/版本/内核/架构/时间，并完成浏览器展示验收。
+- SSH 执行、镜像用户、系统解析、服务器存储/接口、权限或前端展示变化时重跑相关和完整测试并更新本报告；回滚可撤销本次代码提交后执行统一 Compose 重建。仅报告更新不触发重复业务测试。
+
 ## SSH 自动信任与组合认证（2026-09-11）
 
 ### Git 基准点
