@@ -1,5 +1,86 @@
 # 最近分支覆盖测试报告
 
+## USB 实连设备与开发隧道状态解耦验收（2026-09-11）
+
+### Git 基准点
+
+Commit: ee42649574b042d6853ffa79c39fef4f97bfc498
+- 提交信息: Fix USB device detection without developer tunnels
+- 测试日期: 2026-09-11
+- 分支: master
+- 本次仅修改 Agent 设备检测及正式测试，不修改后端、前端、数据库、运行配置或生产依赖。
+- 用户已批准按当前完整工作区重建；并行完成的 OSS 提交保留在当前历史中，未由本次任务修改或重复提交。
+- 未执行 git push；测试报告单独提交。
+
+### 变更范围与实现
+
+- 使用 Python 3.12 标准库经 `/var/run/usbmuxd` 发送一次只读 `ListDevices` 请求，在本机内存中取得真实 USB 实连标识。
+- 对 devicectl 已发现的同一设备，USB 实连证据优先于开发隧道状态及历史接入方式，报告 `connected=true`、`connectionType=USB`、`status=AVAILABLE`。
+- 没有 USB 实连证据时保持既有 devicectl 判定；不把历史 `wired` 字符串本身作为在线证据，不改变无线兼容行为。
+- Socket 操作具有超时，响应分片共享一个 5 秒接收截止时间，响应上限为 1 MiB；校验协议版本、消息类型、请求标记及 plist 结构，异常时安全降级。
+- 保持设备摘要、设备池上限、WDA 端口分配和后端报告格式不变；USB 在线不设置 IDA 就绪或运行状态，原始 UDID 不进入后端报告。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| USB 在线不依赖开发隧道 | Python 单元测试，USB 枚举存在目标，隧道为 disconnected、unavailable、空字符串或空值，接入方式为 wired、localNetwork 或空值 | 全部报告 USB、AVAILABLE，IDA 仍 UNKNOWN 且未运行；通过 | 正常、边界、缺陷回归 |
+| 不伪造离线设备的 USB 证据 | Python 参数化测试，USB 清单为空或仅有其他设备，目标为历史 wired 且隧道断开 | 目标仍为 OFFLINE；通过 | 边界、异常、回归 |
+| 多连接、多设备准确匹配 | Python 单元测试，同设备 USB 和网络记录重复、另一台设备离线 | 按本机标识去重，USB 优先，不串设备，报告不含原始标识；通过 | 正常、兼容、隐私 |
+| USB 查询只读且响应有界 | Socket 边界单元测试，一字节分片及整块响应，空清单、非法条目、128/129 字符标识、恰好 1 MiB 响应 | 只发送 ListDevices，分片正确重组，过滤网络和非法标识，边界合法响应可解析；通过 | 正常、边界、安全 |
+| 本机依赖故障安全降级 | Socket 参数化测试，创建、连接、发送、读取阶段的文件不存在、权限错误、超时；错误协议头、超限、截断、非法 plist 和慢速分片 | 不崩溃、不增加虚假 USB 证据，保留无线与离线判定；通过 | 异常、权限、安全 |
+| 不掩盖 devicectl 故障 | Python 参数化测试，退出失败、无输出、非法 JSON、系统错误及超时 | 保留 DEVICE_DETECTION_FAILED，不执行 USB 查询或同步不完整清单；通过 | 异常、兼容 |
+| 原有候选和数量约束不变 | Python 单元测试，缺少标识、非 iOS、非法条目及 101 台有效设备 | 非法候选过滤，最多返回 100 台；通过 | 边界、回归 |
+| 两种同步入口均生效 | AgentRuntime 集成测试，周期同步及 DETECT_DEVICE 使用真实检测、报告和 WdaRuntime，只隔离外部依赖 | 后端收到 USB 在线摘要，端口应用成功，不创建 Appium 会话，即时检测返回 synchronized=true；通过 | 集成、兼容、副作用 |
+| 已部署 Agent 持续同步 USB 在线 | 本机实测及只读数据库核对，三次采样覆盖开发隧道断开、连接、再次断开 | 每次本机检测及后端记录均为 USB、AVAILABLE，Agent 新版本心跳在线且设备时间戳继续推进；通过 | 运行态、回归 |
+
+### 测试执行结果
+
+- 修复前：新增业务回归集合 21 个用例中 13 个失败、8 个通过，稳定复现 USB 被开发隧道误判离线以及 USB 优先级错误。
+- 修复后定向测试：70/70 通过，通过率 100%，失败 0、错误 0、跳过 0。
+- Agent 完整测试：97/97 通过，通过率 100%，失败 0、错误 0、跳过 0。
+- `device_agent/device_detect.py`：101/101 可执行语句、30/30 分支覆盖，行及分支覆盖率均为 100%。
+- Agent 全模块综合覆盖率为 63%；100% 仅指本次修改的设备检测模块，不代表整个 Agent。
+- `git diff --check` 通过。
+- Compose 重建成功，5/5 默认服务 healthy，镜像 revision 均为 `ee42649574b042d6853ffa79c39fef4f97bfc498`。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| 测试环境 | `/opt/homebrew/bin/python3.12 -m venv /tmp/baseai-usb-fix.aqgl25/venv`，临时环境安装 `pytest>=8.4,<9`、`coverage>=7,<8` | 使用 pytest 8.4.2、coverage 7.16.0，不修改项目依赖 |
+| 失败复现 | 在 `device-agent/` 执行临时 Python 的 `-m pytest -p no:cacheprovider tests/test_device_detect.py` | 修复前 13 失败、8 通过，失败业务断言随后全部修复 |
+| 定向回归 | `PYTHONDONTWRITEBYTECODE=1 /tmp/baseai-usb-fix.aqgl25/venv/bin/python -m pytest -p no:cacheprovider --color=no --tb=short tests/test_device_detect.py tests/test_main.py` | 70/70 通过 |
+| 完整 Agent 覆盖测试 | `PYTHONDONTWRITEBYTECODE=1 COVERAGE_FILE=/tmp/baseai-usb-fix.aqgl25/.coverage /tmp/baseai-usb-fix.aqgl25/venv/bin/python -m coverage run --branch --source=device_agent -m pytest -p no:cacheprovider --color=no --tb=short`，随后 `coverage report -m` | 97/97 通过，修改模块行与分支均 100% |
+| 平台重建 | 根目录执行 `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` | 全部工作区代码构建并启动，后端 Maven package 层复用缓存，前端构建实际执行 |
+| 健康与版本检查 | `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose ps`，定向读取容器健康和镜像 revision | 5/5 healthy，版本与修复提交一致 |
+| 安装包校验 | 通过已配置 CA 的 HTTPS 下载当前平台 Agent 包，在内存中校验 SHA-256，并逐字节比较设备检测源码 | 发布包与已测代码完全一致 |
+| Agent 升级 | 先只读确认无待执行/租约中命令及运行中的受管 IDA，再调用现有 `upgrade` 流程并向用户级 Agent 发送 SIGTERM | 切换到 `20260911.0400+52651ceb69c3`，Agent 自动重启，未重启 Appium 或 Registry |
+| 运行态验收 | 12:03:55、12:04:16、12:04:36（UTC+08:00）连续本机检测并执行只读数据库 SELECT | 隧道分别 disconnected、connected、disconnected；设备始终 USB、AVAILABLE；IDA 保持 UNKNOWN/未运行 |
+| 环境清理 | 删除本任务创建的 `/tmp/baseai-usb-fix.aqgl25` 虚拟环境和覆盖数据 | 已清理，未提交临时脚本或调试文件 |
+
+### 已知问题与未执行项
+
+- 本次未新增执行 Backend Maven 全量测试：`git diff fa50f51 HEAD -- backend/src/main/java/` 无变化，Compose 的 Maven 测试构建层为缓存，不冒充本次重跑结果。
+- 本次不修改前端，未重跑前端 lint、类型检查、完整单测或浏览器 E2E；Compose 中的生产构建成功不替代这些测试。
+- 管理页未登录，本次通过只读数据库验证设备池数据和 Agent 心跳，未进行登录后的页面操作。
+- Appium 旧 `/sessions` 读取返回 404，`/appium/sessions` 因未启用 `session_discovery` 返回 500；未放宽安全配置。升级前改用后台命令/设备状态及本机进程、日志确认无受管自动化运行。
+- 首次单独执行 `docker compose ps` 未传 `APP_IMAGE_REVISION`，发生插值失败；补齐该变量后检查通过。实际重建命令已正确传入变量。
+- 实机未执行人工拔线、插线或 IDA 安装/启动；拔线后的无 USB 证据及异常情况由正式自动化测试覆盖。
+- 开发隧道本身仍可能断开，本次只修复物理连接状态判定，不宣称修复隧道或 IDA 的就绪问题。
+- USB 枚举失败时沿用既有隧道判定，可能再次显示离线；此降级避免查询失败时假报 USB 在线。
+
+### 重测触发条件与下次测试建议
+
+- 修改设备发现、usbmuxd 协议、设备摘要、报告格式或周期/即时同步时，重跑本节定向及完整 Agent 覆盖测试。
+- 修改 WDA、Registry 或后端设备池处理时，补跑对应模块测试并验证真实设备的独立连接和就绪状态。
+- 建议在另一台 Mac、仅无线设备及 USB 拔插场景补做实机验证，并在登录后的设备池页面核对显示。
+
+### 回滚方式
+
+- 本机保留升级前 `20260911.0322+26473798d735` 版本，可通过现有指定版本升级流程切回，并在无自动化运行时重启 Agent。
+- 如需回滚源码，撤销 `ee42649574b042d6853ffa79c39fef4f97bfc498` 后重新执行 Compose 重建；不涉及数据迁移。
+
 ## 阿里云 OSS 对象存储数据源类型验收（2026-09-11）
 
 ### Git 基准点
