@@ -94,11 +94,13 @@ def _parse(item: Any) -> DeviceCandidate | None:
         return None
     tunnel = str(connection.get("tunnelState") or "").strip().lower()
     transport = str(connection.get("transportType") or "").strip().lower()
+    # devicectl 能枚举到无线设备即表示当前无线连接可用，不受开发隧道瞬时状态影响。
+    connected = True if transport == "localnetwork" else tunnel not in {"", "unavailable", "disconnected"}
     return DeviceCandidate(
         udid=udid, name=str(device.get("name") or "iOS Device").strip(),
         model=str(hardware.get("marketingName") or "").strip(),
         os_version=str(device.get("osVersionNumber") or "").strip(),
-        connected=tunnel not in {"", "unavailable", "disconnected"},
+        connected=connected,
         connection_type={"wired": "USB", "localnetwork": "WIRELESS"}.get(transport, "UNKNOWN"),
     )
 

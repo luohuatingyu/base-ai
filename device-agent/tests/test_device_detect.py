@@ -87,11 +87,11 @@ def test_historical_wired_device_without_usb_or_tunnel_stays_offline(
 
 
 @pytest.mark.parametrize(("tunnel", "connected"), [
-    ("connected", True), ("connecting", True), ("disconnected", False),
-    ("unavailable", False), ("", False),
+    ("connected", True), ("connecting", True), ("disconnected", True),
+    ("unavailable", True), ("", True), (None, True),
 ])
-def test_wireless_detection_keeps_existing_behavior(monkeypatch, tunnel, connected) -> None:
-    """未发现真实 USB 时保持无线设备的既有隧道判定行为。"""
+def test_wireless_detection_is_online_when_devicectl_discovers_device(monkeypatch, tunnel, connected) -> None:
+    """无线设备被 devicectl 发现时不因开发隧道状态短暂异常而离线。"""
     monkeypatch.setattr(module, "_connected_usb_udids", lambda: set(), raising=False)
 
     devices = detect_devices(_runner([_device("wireless", "Tablet", "localNetwork", tunnel)]))
