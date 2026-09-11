@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -15,6 +19,36 @@ func TestValidateLocal(t *testing.T) {
 	input := request{Mode: "LOCAL", WorkingDir: "/workspace", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123", JobID: "0123456789abcdef0123456789abcdef"}
 	if err := validate(input, true); err != nil {
 		t.Fatalf("expected valid local request: %v", err)
+	}
+}
+
+// TestConnectionValidationDoesNotRequireCompose 验证连接测试不依赖部署目录和 Compose 文件。
+func TestConnectionValidationDoesNotRequireCompose(t *testing.T) {
+	input := request{Mode: "SSH", Host: "example.com", Port: 22, Username: "deploy", AuthType: "KEY",
+		PrivateKey: "PRIVATE", HostKey: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+	if err := validate(input, false); err != nil {
+		t.Fatalf("expected connection-only request to be valid: %v", err)
+	}
+	input.Action = "DEPLOY"
+	input.Revision = "abc123"
+	input.JobID = "0123456789abcdef0123456789abcdef"
+	if err := validate(input, true); err != nil {
+		t.Fatalf("expected deployment request to allow automatic Compose detection: %v", err)
+	}
+}
+
+// TestLocalConnectionHandlerDoesNotRequireCompose 验证本地连接测试无需 Compose 配置即可成功。
+func TestLocalConnectionHandlerDoesNotRequireCompose(t *testing.T) {
+	agent := &agent{token: "internal-token-with-24-characters"}
+	body, _ := json.Marshal(request{Mode: "LOCAL"})
+	request := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(body))
+	request.Header.Set("Authorization", "Bearer "+agent.token)
+	response := httptest.NewRecorder()
+
+	agent.test(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected connection test status: %d, body: %s", response.Code, response.Body.String())
 	}
 }
 
@@ -81,6 +115,89 @@ func TestValidateRejectsUnsafeSSHIdentity(t *testing.T) {
 	input.Username, input.HostKey = "deploy", "SHA256:AAAA"
 	if err := validate(input, true); err == nil {
 		t.Fatal("expected partial host fingerprint to be rejected")
+	}
+}
+
+// TestSelectComposeProjectPrefersUniqueBaseAI 验证多项目环境只选择唯一的 Base AI 项目并去重。
+func TestSelectComposeProjectPrefersUniqueBaseAI(t *testing.T) {
+	output := "warning\nBASEAI_COMPOSE\t/opt/other\tcompose.yml\tOTHER\n" +
+		"BASEAI_COMPOSE\t/opt/base-ai\tdocker-compose.yml\tBASE_AI\n" +
+		"BASEAI_COMPOSE\t/opt/base-ai\tdocker-compose.yml\tBASE_AI\n"
+
+	project, err := selectComposeProject(parseComposeProjects(output))
+
+	if err != nil || project.WorkingDir != "/opt/base-ai" || project.ComposeFile != "docker-compose.yml" {
+		t.Fatalf("unexpected detected project: %#v, %v", project, err)
+	}
+}
+
+// TestSelectComposeProjectRejectsAmbiguousAndUnsafeCandidates 验证无法区分或路径不安全时不执行部署。
+func TestSelectComposeProjectRejectsAmbiguousAndUnsafeCandidates(t *testing.T) {
+	_, ambiguous := selectComposeProject([]composeProject{
+		{WorkingDir: "/opt/base-ai-a", ComposeFile: "compose.yml", BaseAI: true},
+		{WorkingDir: "/opt/base-ai-b", ComposeFile: "compose.yml", BaseAI: true},
+	})
+	if ambiguous == nil || ambiguous.Error() != "COMPOSE_PROJECT_AMBIGUOUS" {
+		t.Fatalf("expected ambiguous project error: %v", ambiguous)
+	}
+	_, unsafe := selectComposeProject([]composeProject{{WorkingDir: "/opt/base-ai;id", ComposeFile: "compose.yml", BaseAI: true}})
+	if unsafe == nil || unsafe.Error() != "COMPOSE_PROJECT_NOT_FOUND" {
+		t.Fatalf("expected unsafe project to be ignored: %v", unsafe)
+	}
+	many := make([]composeProject, 41)
+	for index := range many {
+		many[index] = composeProject{WorkingDir: fmt.Sprintf("/opt/project-%d", index), ComposeFile: "compose.yml"}
+	}
+	if _, err := selectComposeProject(many); err == nil || err.Error() != "COMPOSE_PROJECT_LIMIT_EXCEEDED" {
+		t.Fatalf("expected candidate limit error: %v", err)
+	}
+}
+
+// TestDetectLocalComposeProjectRequiresUniqueSupportedFile 验证本地仅自动接受唯一受支持文件。
+func TestDetectLocalComposeProjectRequiresUniqueSupportedFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "compose.yml"), []byte("services: {}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	project, err := detectLocalComposeProject(root)
+	if err != nil || project.WorkingDir != root || project.ComposeFile != "compose.yml" {
+		t.Fatalf("unexpected local project: %#v, %v", project, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docker-compose.yml"), []byte("services: {}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := detectLocalComposeProject(root); err == nil || err.Error() != "COMPOSE_PROJECT_AMBIGUOUS" {
+		t.Fatalf("expected ambiguous local project: %v", err)
+	}
+}
+
+// TestComposeDiscoveryCommandFindsBaseAIHomeProject 验证固定远端脚本可从 SSH 用户目录识别 Base AI 服务集合。
+func TestComposeDiscoveryCommandFindsBaseAIHomeProject(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "base-ai")
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(projectDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(binDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "compose.yml"), []byte("services: {}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fakeDocker := "#!/bin/sh\nif [ \"$1\" = ps ]; then exit 0; fi\nprintf 'backend\\nfrontend\\ncaddy\\n'\n"
+	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte(fakeDocker), 0700); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("sh", "-c", composeDiscoveryCommand())
+	command.Env = []string{"HOME=" + root, "PATH=" + binDir + ":/usr/bin:/bin"}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("unexpected discovery command failure: %v, %s", err, output)
+	}
+	project, err := selectComposeProject(parseComposeProjects(string(output)))
+	if err != nil || project.WorkingDir != projectDir || !project.BaseAI {
+		t.Fatalf("unexpected discovered project: %#v, %v, output: %s", project, err, output)
 	}
 }
 

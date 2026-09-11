@@ -126,7 +126,7 @@ public class ServerManagementService {
         jdbcTemplate.update("UPDATE managed_server SET voided=true,enabled=false,updated_at=NOW() WHERE id=?", id);
     }
 
-    /** 使用 Agent 测试服务器连通性和 Compose 能力。 */
+    /** 使用 Agent 测试本地或 SSH 服务器连通性。 */
     public Map<String, Object> test(Long id) {
         ServerRecord server = require(id);
         requireOwner(server.ownerUserId());
@@ -397,9 +397,7 @@ public class ServerManagementService {
                 validateHostKey(command.hostKey());
             }
         }
-        validateWorkingDir(command.workingDir());
-        if ("LOCAL".equals(mode) && !"/workspace".equals(text(command.workingDir()))) throw new BusinessException("server.invalid");
-        if (!Set.of("docker-compose.yml", "compose.yml").contains(text(command.composeFile()))) throw new BusinessException("server.invalid");
+        validateOptionalCompose(command.workingDir(), command.composeFile(), mode);
         if (text(command.privateKey()).length() > 65536 || text(command.password()).length() > 1024
             || text(command.passphrase()).length() > 1024) throw new BusinessException("server.invalid");
     }
@@ -420,6 +418,17 @@ public class ServerManagementService {
     private void validateCredential(String authType, String privateKey, String password) {
         if ("KEY".equals(authType) && text(privateKey).isBlank()) throw new BusinessException("server.privateKeyRequired");
         if ("PASSWORD".equals(authType) && text(password).isBlank()) throw new BusinessException("server.passwordRequired");
+    }
+
+    /** 兼容旧服务器的 Compose 配置，同时允许新增服务器完全留空并交由 Agent 检测。 */
+    private void validateOptionalCompose(String workingDir, String composeFile, String mode) {
+        String directory = text(workingDir);
+        String file = text(composeFile);
+        if (directory.isBlank() && file.isBlank()) return;
+        if (directory.isBlank() || file.isBlank()) throw new BusinessException("server.invalid");
+        validateWorkingDir(directory);
+        if ("LOCAL".equals(mode) && !"/workspace".equals(directory)) throw new BusinessException("server.invalid");
+        if (!Set.of("docker-compose.yml", "compose.yml").contains(file)) throw new BusinessException("server.invalid");
     }
 
     /** Compose 工作目录必须是规范化绝对路径且不包含 Shell 字符。 */

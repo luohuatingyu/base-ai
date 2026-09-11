@@ -92,7 +92,7 @@
             <el-input v-model="form.name" maxlength="120" />
           </el-form-item>
           <el-form-item :label="t('servers.mode')">
-            <el-select v-model="form.mode" class="full" @change="applyModeDefaults">
+            <el-select v-model="form.mode" class="full">
               <el-option label="SSH" value="SSH" />
               <el-option label="LOCAL" value="LOCAL" />
             </el-select>
@@ -121,20 +121,17 @@
           </el-form-item>
           <el-form-item v-if="form.authType === 'KEY'" :label="t('servers.privateKey')">
             <el-input v-model="form.privateKey" type="textarea" :rows="4" autocomplete="off" />
+            <div class="private-key-file-row">
+              <input ref="privateKeyFileInput" class="hidden-file-input" type="file" @change="onPrivateKeyFileSelected" />
+              <el-button @click="openPrivateKeyFilePicker">{{ t('servers.selectPrivateKeyFile') }}</el-button>
+              <span v-if="privateKeyFileName" class="private-key-file-name">{{ privateKeyFileName }}</span>
+            </div>
           </el-form-item>
           <el-form-item v-if="form.authType === 'KEY'" :label="t('servers.passphrase')">
             <el-input v-model="form.passphrase" type="password" show-password autocomplete="off" />
           </el-form-item>
           <el-form-item v-else :label="t('servers.password')">
             <el-input v-model="form.password" type="password" show-password autocomplete="off" />
-          </el-form-item>
-        </div>
-        <div class="server-grid">
-          <el-form-item :label="t('servers.workingDir')">
-            <el-input v-model="form.workingDir" placeholder="/opt/base-ai" />
-          </el-form-item>
-          <el-form-item :label="t('servers.composeFile')">
-            <el-input v-model="form.composeFile" placeholder="docker-compose.yml" />
           </el-form-item>
         </div>
         <el-form-item :label="t('common.status')">
@@ -262,6 +259,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
+import { readPrivateKeyFile } from '../utils/serverCredentials'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -279,12 +277,14 @@ const monitorLoading = ref(false)
 const monitorServer = ref(null)
 const monitorData = ref(null)
 const originalAuthType = ref('KEY')
+const privateKeyFileInput = ref(null)
+const privateKeyFileName = ref('')
 const form = reactive(emptyForm())
 const deployForm = reactive({ action: 'DEPLOY', revision: '' })
 
 // 创建不携带敏感值且默认使用 SSH 的服务器表单。
 function emptyForm() {
-  return { id: null, name: '', mode: 'SSH', host: '', port: 22, username: '', authType: 'KEY', privateKey: '', password: '', passphrase: '', hostKey: '', workingDir: '/opt/base-ai', composeFile: 'docker-compose.yml', enabled: true }
+  return { id: null, name: '', mode: 'SSH', host: '', port: 22, username: '', authType: 'KEY', privateKey: '', password: '', passphrase: '', hostKey: '', workingDir: '', composeFile: '', enabled: true }
 }
 
 // 加载当前用户可见的服务器配置。
@@ -304,13 +304,35 @@ async function load() {
 function open(row) {
   Object.assign(form, emptyForm(), row || {})
   originalAuthType.value = form.authType
+  privateKeyFileName.value = ''
   visible.value = true
 }
 
-// 切换执行模式时应用受控工作目录默认值。
-function applyModeDefaults(mode) {
-  if (mode === 'LOCAL') form.workingDir = '/workspace'
-  else if (form.workingDir === '/workspace') form.workingDir = '/opt/base-ai'
+// 打开系统文件选择器，让用户从本机选择 SSH 私钥文件。
+function openPrivateKeyFilePicker() {
+  privateKeyFileInput.value?.click()
+}
+
+// 读取本地私钥文件到表单内存，文件本身和本地路径不会提交。
+async function onPrivateKeyFileSelected(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  try {
+    form.privateKey = await readPrivateKeyFile(file)
+    privateKeyFileName.value = file.name
+    ElMessage.success(t('servers.privateKeyFileLoaded', { name: file.name }))
+  } catch (error) {
+    privateKeyFileName.value = ''
+    ElMessage.warning(t(privateKeyFileErrorKey(error)))
+  }
+}
+
+// 将私钥文件读取错误转换为不包含本地信息的提示文案。
+function privateKeyFileErrorKey(error) {
+  if (error?.message === 'PRIVATE_KEY_FILE_EMPTY') return 'servers.privateKeyFileEmpty'
+  if (error?.message === 'PRIVATE_KEY_FILE_TOO_LARGE') return 'servers.privateKeyFileTooLarge'
+  return 'servers.privateKeyFileReadFailed'
 }
 
 // 校验页面手工维护的服务器名称、SSH 身份和新凭据。
@@ -505,6 +527,9 @@ onMounted(load)
 <style scoped>
 .servers-table { margin-top: 20px; }
 .server-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.private-key-file-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.private-key-file-name { min-width: 0; overflow: hidden; color: var(--el-text-color-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.hidden-file-input { display: none; }
 .deployment-result { white-space: pre-wrap; overflow-wrap: anywhere; }
 .full { width: 100%; }
 .monitor-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }

@@ -44,6 +44,12 @@ type request struct {
 	JobID       string `json:"jobId"`
 }
 
+type composeProject struct {
+	WorkingDir  string
+	ComposeFile string
+	BaseAI      bool
+}
+
 type deploymentJob struct {
 	status     string
 	output     string
@@ -180,15 +186,9 @@ func (a *agent) handle(w http.ResponseWriter, r *http.Request, execute bool) {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": status, "jobId": input.JobID})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	var output string
-	var err error
-	if input.Mode == "LOCAL" {
-		output, err = local(ctx, input, false)
-	} else {
-		output, err = remote(ctx, input, false)
-	}
+	output, err := testConnection(ctx, input)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "FAILED", "error": trimOutput(err.Error())})
 		return
@@ -255,10 +255,13 @@ func (a *agent) runJob(jobID string, input request) {
 	defer cancel()
 	var output string
 	var err error
-	if input.Mode == "LOCAL" {
-		output, err = local(ctx, input, true)
-	} else {
-		output, err = remote(ctx, input, true)
+	input, err = resolveComposeProject(ctx, input)
+	if err == nil {
+		if input.Mode == "LOCAL" {
+			output, err = local(ctx, input, true)
+		} else {
+			output, err = remote(ctx, input, true)
+		}
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -315,10 +318,28 @@ func (a *agent) authorized(r *http.Request) bool {
 	return value != "" && subtle.ConstantTimeCompare([]byte(value), []byte(a.token)) == 1
 }
 
-// validate 严格限制模式、路径、版本和 SSH 参数。
+// validate 严格限制模式、兼容配置、版本和 SSH 参数。
 func validate(input request, execute bool) error {
 	if input.Mode != "LOCAL" && input.Mode != "SSH" {
 		return errors.New("MODE_INVALID")
+	}
+	if err := validateOptionalCompose(input); err != nil {
+		return err
+	}
+	if execute && (!revisionPattern.MatchString(input.Revision) || !jobIDPattern.MatchString(input.JobID) ||
+		(input.Action != "DEPLOY" && input.Action != "ROLLBACK")) {
+		return errors.New("DEPLOYMENT_ARGUMENT_INVALID")
+	}
+	if input.Mode == "SSH" {
+		return validateSSH(input)
+	}
+	return nil
+}
+
+// validateOptionalCompose 允许新服务器省略 Compose，同时严格验证旧服务器保留的配置。
+func validateOptionalCompose(input request) error {
+	if input.WorkingDir == "" && input.ComposeFile == "" {
+		return nil
 	}
 	if input.WorkingDir == "" || !pathPattern.MatchString(input.WorkingDir) || filepath.Clean(input.WorkingDir) != input.WorkingDir {
 		return errors.New("WORKING_DIR_INVALID")
@@ -331,13 +352,6 @@ func validate(input request, execute bool) error {
 	}
 	if input.Mode == "LOCAL" && input.WorkingDir != "/workspace" {
 		return errors.New("LOCAL_WORKING_DIR_FORBIDDEN")
-	}
-	if execute && (!revisionPattern.MatchString(input.Revision) || !jobIDPattern.MatchString(input.JobID) ||
-		(input.Action != "DEPLOY" && input.Action != "ROLLBACK")) {
-		return errors.New("DEPLOYMENT_ARGUMENT_INVALID")
-	}
-	if input.Mode == "SSH" {
-		return validateSSH(input)
 	}
 	return nil
 }
@@ -370,6 +384,14 @@ func validateSSH(input request) error {
 		return errors.New("SSH_AUTH_TYPE_INVALID")
 	}
 	return nil
+}
+
+// testConnection 仅验证 Agent 本地可用性或 SSH 登录，不依赖 Compose 项目。
+func testConnection(ctx context.Context, input request) (string, error) {
+	if input.Mode == "LOCAL" {
+		return "CONNECTION_SUCCEEDED", nil
+	}
+	return runRemoteCommand(ctx, input, "printf 'BASEAI_CONNECTION_SUCCEEDED\\n'")
 }
 
 // collectMonitor 使用固定脚本采集资源快照，SSH 模式仍执行严格主机指纹校验。
@@ -601,6 +623,119 @@ func local(ctx context.Context, input request, execute bool) (string, error) {
 	command.Env = append(os.Environ(), "APP_IMAGE_REVISION="+revision)
 	output, err := command.CombinedOutput()
 	return string(output), err
+}
+
+// resolveComposeProject 优先兼容旧配置，否则在执行部署前自动检测唯一项目。
+func resolveComposeProject(ctx context.Context, input request) (request, error) {
+	if input.WorkingDir != "" || input.ComposeFile != "" {
+		if err := validateOptionalCompose(input); err != nil {
+			return request{}, err
+		}
+		return input, nil
+	}
+	var project composeProject
+	var err error
+	if input.Mode == "LOCAL" {
+		project, err = detectLocalComposeProject("/workspace")
+	} else {
+		output, commandErr := runRemoteCommand(ctx, input, composeDiscoveryCommand())
+		if commandErr != nil {
+			return request{}, errors.New("COMPOSE_PROJECT_DETECTION_FAILED")
+		}
+		project, err = selectComposeProject(parseComposeProjects(output))
+	}
+	if err != nil {
+		return request{}, err
+	}
+	input.WorkingDir = project.WorkingDir
+	input.ComposeFile = project.ComposeFile
+	return input, nil
+}
+
+// detectLocalComposeProject 检查固定本地工作区支持的 Compose 文件。
+func detectLocalComposeProject(root string) (composeProject, error) {
+	candidates := make([]composeProject, 0, 2)
+	for _, name := range []string{"docker-compose.yml", "compose.yml"} {
+		if info, err := os.Stat(filepath.Join(root, name)); err == nil && !info.IsDir() {
+			candidates = append(candidates, composeProject{WorkingDir: root, ComposeFile: name, BaseAI: true})
+		}
+	}
+	return selectComposeProject(candidates)
+}
+
+// parseComposeProjects 解析远端固定探测脚本的有界输出并忽略其他命令文本。
+func parseComposeProjects(output string) []composeProject {
+	projects := make([]composeProject, 0)
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 4 || fields[0] != "BASEAI_COMPOSE" {
+			continue
+		}
+		projects = append(projects, composeProject{WorkingDir: fields[1], ComposeFile: fields[2], BaseAI: fields[3] == "BASE_AI"})
+	}
+	return projects
+}
+
+// selectComposeProject 验证、去重并确定唯一候选，优先选择唯一 Base AI 项目。
+func selectComposeProject(projects []composeProject) (composeProject, error) {
+	unique := make(map[string]composeProject)
+	for _, project := range projects {
+		if !pathPattern.MatchString(project.WorkingDir) || filepath.Clean(project.WorkingDir) != project.WorkingDir {
+			continue
+		}
+		if project.ComposeFile != "docker-compose.yml" && project.ComposeFile != "compose.yml" {
+			continue
+		}
+		unique[filepath.Join(project.WorkingDir, project.ComposeFile)] = project
+		if len(unique) > 40 {
+			return composeProject{}, errors.New("COMPOSE_PROJECT_LIMIT_EXCEEDED")
+		}
+	}
+	baseAI := make([]composeProject, 0)
+	all := make([]composeProject, 0, len(unique))
+	for _, project := range unique {
+		all = append(all, project)
+		if project.BaseAI {
+			baseAI = append(baseAI, project)
+		}
+	}
+	if len(baseAI) == 1 {
+		return baseAI[0], nil
+	}
+	if len(baseAI) > 1 || len(all) > 1 {
+		return composeProject{}, errors.New("COMPOSE_PROJECT_AMBIGUOUS")
+	}
+	if len(all) == 1 {
+		return all[0], nil
+	}
+	return composeProject{}, errors.New("COMPOSE_PROJECT_NOT_FOUND")
+}
+
+// composeDiscoveryCommand 返回不含用户输入的远端 Compose 项目探测脚本。
+func composeDiscoveryCommand() string {
+	return `emit_compose() {
+  candidate="$1"
+  [ -f "$candidate" ] || return 0
+  case "$candidate" in
+    */docker-compose.yml|*/compose.yml) ;;
+    *) return 0 ;;
+  esac
+  directory="${candidate%/*}"
+  [ -n "$directory" ] || directory="/"
+  services="$(APP_IMAGE_REVISION=validation docker compose --project-directory "$directory" -f "$candidate" config --services 2>/dev/null)" || return 0
+  signature="OTHER"
+  if printf '%s\n' "$services" | grep -qx 'backend' && printf '%s\n' "$services" | grep -qx 'frontend' && printf '%s\n' "$services" | grep -qx 'caddy'; then
+    signature="BASE_AI"
+  fi
+  printf 'BASEAI_COMPOSE\t%s\t%s\t%s\n' "$directory" "${candidate##*/}" "$signature"
+}
+docker ps -a --filter label=com.docker.compose.project --format '{{.Label "com.docker.compose.project.config_files"}}' 2>/dev/null | while IFS= read -r files; do
+  printf '%s\n' "$files" | tr ',' '\n' | while IFS= read -r candidate; do emit_compose "$candidate"; done
+done
+for root in "$HOME" /opt /srv; do
+  [ -d "$root" ] || continue
+  find "$root" -maxdepth 4 -type f \( -name docker-compose.yml -o -name compose.yml \) 2>/dev/null
+done | awk '!seen[$0]++' | head -n 40 | while IFS= read -r candidate; do emit_compose "$candidate"; done`
 }
 
 // remote 校验远端 Host Key 后执行由安全参数拼接的固定 Compose 命令。

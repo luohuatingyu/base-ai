@@ -3,6 +3,9 @@ package com.baseai.platform.deployment;
 import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
 import com.baseai.platform.service.TaskTraceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -28,6 +32,12 @@ class ServerManagementValidationTest {
     private final ServerManagementService service = new ServerManagementService(Mockito.mock(JdbcTemplate.class),
         new ObjectMapper(), new ConfigCryptoService(properties()), Mockito.mock(TaskTraceService.class),
         Mockito.mock(ThreadPoolTaskExecutor.class), "", "");
+
+    /** 每个用例结束后清除线程身份，避免影响其他测试。 */
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() {
+        AuthContext.clear();
+    }
 
     /** 非法模式必须被拒绝。 */
     @Test
@@ -41,6 +51,35 @@ class ServerManagementValidationTest {
     void rejectsIncompleteSsh() {
         ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SSH", "host", 22, "deploy", "KEY", "", "", "", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "/opt/base-ai", "docker-compose.yml", true);
         assertEquals("server.privateKeyRequired", assertThrows(BusinessException.class, () -> service.create(command)).getMessageKey());
+    }
+
+    /** 新增服务器只需连接配置，Compose 目录和文件均可留空。 */
+    @Test
+    void createsServerWithoutComposeConfiguration() {
+        JdbcTemplate database = Mockito.spy(serverDatabase("create-without-compose"));
+        Mockito.doReturn(1L).when(database).queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        ServerManagementService creating = serverService(database, Mockito.mock(TaskTraceService.class), "");
+        AuthContext.set(new AuthUser(7L, "owner", Set.of("USER"), Set.of("operations:server:create"),
+            AuthenticationType.TOKEN, null, null));
+        ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+            "deploy", "KEY", "PRIVATE", "", "", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            null, null, true);
+
+        ServerModels.ServerView created = creating.create(command);
+
+        assertEquals("", created.workingDir());
+        assertEquals("", created.composeFile());
+    }
+
+    /** Compose 兼容字段必须同时提供，避免半配置绕过路径安全校验。 */
+    @Test
+    void rejectsPartialComposeConfiguration() {
+        ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+            "deploy", "KEY", "PRIVATE", "", "", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "", "compose.yml", true);
+
+        assertEquals("server.invalid",
+            assertThrows(BusinessException.class, () -> service.create(command)).getMessageKey());
     }
 
     /** 密码认证必须提供密码，且 Host Key 不允许使用部分指纹。 */
@@ -186,6 +225,22 @@ class ServerManagementValidationTest {
             CREATE TABLE deployment_run(
               id BIGINT PRIMARY KEY,trace_id VARCHAR(36),output_summary VARCHAR(2000),status VARCHAR(24),
               active_slot INT,error_message VARCHAR(1000),started_at TIMESTAMP,finished_at TIMESTAMP)
+            """);
+        return database;
+    }
+
+    /** 创建服务器新增测试使用的最小 H2 表。 */
+    private JdbcTemplate serverDatabase(String name) {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:" + name + ";MODE=MySQL;DB_CLOSE_DELAY=-1");
+        JdbcTemplate database = new JdbcTemplate(dataSource);
+        database.execute("""
+            CREATE TABLE managed_server(
+              id BIGINT AUTO_INCREMENT PRIMARY KEY,name VARCHAR(120),mode VARCHAR(12),host VARCHAR(255),
+              port INT,username VARCHAR(120),config_encrypted CLOB,owner_user_id BIGINT,enabled BOOLEAN,
+              voided BOOLEAN DEFAULT FALSE,last_test_status VARCHAR(24),last_test_error VARCHAR(500),
+              last_test_at TIMESTAMP,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
         return database;
     }

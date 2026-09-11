@@ -329,8 +329,9 @@ The Agent executes only the documented fixed command set: device discovery, diag
 
 - Data synchronization uses MySQL or PostgreSQL entries from Workflow / Connections. The target connection must explicitly enable `allowWrite`. Plans select tables and support UPSERT, full replacement, or append, with manual execution and Spring six-field Cron schedules. Full replacement requires reconfirmation, and columns, types, and keys are checked before writes.
 - Administrators and the built-in `OPS` role can use synchronization and server management. Other explicitly authorized users can only manage resources they own. SSH keys, passwords, passphrases, and host-key configuration are encrypted with the platform AES-GCM key, and list responses only contain masks.
-- Servers are added and maintained manually on the management page, with SSH as the default for new entries. Users with server-test permission can open the resource-monitoring dialog to query CPU, system load, memory, disk, uptime, and the runtime and health state of up to 200 Docker containers. Snapshots are not persisted, and host metrics remain visible when Docker status is unavailable.
-- Server deployment only accepts `docker-compose.yml` or `compose.yml` and only runs Compose validation or `up -d --no-build`; arbitrary shell commands are never accepted. Revisions must be valid Docker image tags, so a full Git commit hash is recommended.
+- Servers are added and maintained manually on the management page, with SSH as the default for new entries. Compose paths are not required. Pasted private keys and locally selected private-key files enter the same encrypted credential field; the browser never submits the local file path. The connection test verifies only Agent or SSH connectivity.
+- Users with server-test permission can open the resource-monitoring dialog to query CPU, system load, memory, disk, uptime, and the runtime and health state of up to 200 Docker containers. Snapshots are not persisted, and host metrics remain visible when Docker status is unavailable.
+- Server deployment automatically detects `docker-compose.yml` or `compose.yml` from the fixed local workspace, existing Compose container metadata, or a bounded search of the SSH account home, `/opt`, and `/srv`. A unique Base AI project is preferred; missing or ambiguous projects fail without executing a deployment. Only `up -d --no-build` is executed, arbitrary shell commands are never accepted, and revisions must be valid Docker image tags, so a full Git commit hash is recommended.
 - Local or SSH deployment requires the isolated Agent. Point `DEPLOYMENT_DOCKER_SOCKET` at a rootless Docker socket, set its numeric group ID and a random internal token of at least 24 characters, then run:
 
 ```bash
@@ -338,7 +339,7 @@ export DEPLOYMENT_AGENT_INTERNAL_TOKEN="$(openssl rand -hex 32)"
 docker compose --profile deployment up --build -d
 ```
 
-Local mode always uses `/workspace` inside the Agent; `DEPLOYMENT_PROJECT_DIR` selects its read-only source mount. SSH mode requires an absolute remote directory, an SSH account, and the complete host-key fingerprint verified with `ssh-keygen -lf -E sha256`. The remote host must have Docker Compose installed and the revision images pre-pulled.
+Local mode always detects the project under `/workspace` inside the Agent; `DEPLOYMENT_PROJECT_DIR` selects its read-only source mount. SSH mode requires an SSH account and the complete host-key fingerprint verified with `ssh-keygen -lf -E sha256`. The remote host must have Docker Compose installed, expose exactly one detectable target project, and have the revision images pre-pulled.
 
 After all services are healthy:
 
