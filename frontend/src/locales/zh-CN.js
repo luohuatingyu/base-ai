@@ -461,12 +461,19 @@ export default {
     title: '数据同步', description: '选择执行服务器及源、目标数据库中的表，按批次安全同步数据。', securityNotice: '表查询、预检和同步均在所选服务器的一次性 Worker 中执行且不会记录行内容；目标连接必须显式开启允许写入。全量替换会清空目标表。', name: '计划名称', server: '执行服务器', platformLocal: '平台本机（历史计划）', source: '源连接', target: '目标连接', strategy: '同步策略', schedule: 'Cron 调度', schedulePlaceholder: '留空表示仅手动执行，例如 0 0/10 * * * *', tables: '同步表', sourceTable: '源表', targetTable: '目标表', sourceRows: '源行数', readRows: '读取行数', writtenRows: '写入行数', warnings: '预检提示', noWarnings: '未发现问题', lastStatus: '最近状态', preview: '预检', run: '执行', retry: '重试', cancel: '取消', details: '运行明细', traceId: 'Trace ID', error: '错误', confirmDestructive: '我确认全量替换会清空目标表', strategies: { UPSERT: '按主键更新/插入', FULL_REPLACE: '全量替换', APPEND: '仅追加' }, warningCodes: { sourceTableNotFound: '源表不存在', targetTableWillBeCreated: '目标表将自动创建', unsupportedColumnType: '字段 {column} 类型不受支持', missingTargetColumn: '目标表缺少字段 {column}', columnTypeMismatch: '字段 {column} 类型不兼容', primaryKeyRequired: 'UPSERT 必须包含主键', columnMismatch: '字段配置不匹配' }, formRequired: '请填写计划、选择执行服务器和连接，并至少选择一张表', loadFailed: '数据同步数据加载失败', previewFailed: '数据同步预检失败', saveFailed: '数据同步计划保存失败', runAccepted: '同步任务已启动', runFailed: '同步任务启动失败', cancelFailed: '同步任务取消失败'
   },
   serverCredentials: {
-    title: '秘钥管理', description: '集中保存 RSA 密钥、证书和账号密码，供多台服务器复用。私钥、密码和口令使用 AES-GCM 加密；证书目前仅保存，不用于 SSH 证书认证。',
-    add: '新增凭据', edit: '编辑凭据', label: '标签', type: '密钥类型', materials: '已保存内容', publicKey: 'Public Key', certificate: 'Certificate',
+    total: '条凭据', search: '搜索标签或账号', allTypes: '全部类型', empty: '暂无匹配凭据',
+    passwordType: '账号密码', keyType: '秘钥', legacyType: '历史凭据',
+    passwordHint: '使用账号和登录密码认证', keyHint: '使用 SSH 私钥和可选口令认证',
+    labelHint: '例如：生产环境跳板机', details: '认证信息',
+    switchHint: '切换类型将清除另一类型的认证材料；被服务器引用时不可切换。',
+    legacyHint: '这是历史凭据。现有连接保持可用；转换前请先解除服务器引用，并明确选择一种类型。',
+    certificateHint: '公钥和证书为可选存档内容；SSH 连接使用私钥，不支持证书认证。',
+    title: '秘钥管理', description: '统一维护秘钥与账号密码两类凭据，供服务器安全复用。选择一种认证方式，集中管理与轮换。',
+    add: '新增凭据', edit: '编辑凭据', label: '标签', type: '认证类型', materials: '已保存内容', publicKey: '公钥', certificate: '证书',
     select: '选择凭据', selectionHint: '请选择当前服务器所有者的可用凭据；账号自动带入，空账号可在服务器填写。历史服务器可保留原认证配置。',
     rotationHint: '更新账号或秘密后，所有引用服务器的后续连接立即使用新值。敏感字段留空保留原值；如需移除秘密，请新建凭据再切换引用。',
     reveal: '查看秘密', secretHint: '仅系统管理员可查看明文，关闭弹窗后清除。', fileInvalid: '读取失败或文件超过 32 KiB',
-    required: '请填写标签；填写密码时必须提供账号。', deleteConfirm: '确认删除凭据“{label}”？被服务器引用的凭据不能删除。'
+    required: '请填写标签并选择类型：账号密码需要账号和密码，秘钥需要私钥；已保存的秘密可留空保留。', deleteConfirm: '确认删除凭据“{label}”？被服务器引用的凭据不能删除。'
   },
   servers: {
     operatingSystem: '操作系统', osVersion: '版本', osKernel: '内核', osArchitecture: '架构', osDetectedAt: '最近探测', osNotDetected: '未探测 · 请测试连接或打开监控',

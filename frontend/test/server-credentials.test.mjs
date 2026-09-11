@@ -5,6 +5,22 @@ import test from 'node:test'
 
 const source = readFileSync(new URL('../src/components/ServerCredentialManager.vue', import.meta.url), 'utf8')
 
+// 搜索与类型过滤组合执行，历史凭据和空账号均保持可检索。
+test('凭据搜索和类型筛选返回匹配记录', () => {
+  const expression = source.slice(source.indexOf('const filteredRows ='), source.indexOf('const loading ='))
+  const rows = { value: [
+    { id: 1, label: 'Production', username: 'deploy', type: 'KEY' },
+    { id: 2, label: 'Legacy', username: '', type: 'RSA' },
+    { id: 3, label: 'Account', username: 'root', type: 'PASSWORD' },
+  ] }
+  for (const [query, type, expected] of [[' PROD ', '', [1]], ['root', 'PASSWORD', [3]], ['', 'RSA', [2]], ['missing', '', []], ['', '', [1, 2, 3]]]) {
+    const result = runInNewContext(expression + '; filteredRows', {
+      rows, query: { value: query }, typeFilter: { value: type }, computed: callback => callback(),
+    })
+    assert.deepEqual(Array.from(result, row => row.id), expected)
+  }
+})
+
 /** 执行组件真实表单函数，隔离 HTTP 和消息框外部依赖。 */
 function method(name, context) {
   const body = source.match(new RegExp(`(?:async )?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))[0]
@@ -15,7 +31,7 @@ function method(name, context) {
 test('凭据创建编辑保留材料并在成功后清除敏感输入', async () => {
   for (const [id, fails] of [[null, false], [7, false], [7, true]]) {
     const calls = []
-    const form = { id, label: 'credential', username: 'deploy', password: 'secret', privateKey: 'private', publicKey: 'public', certificate: 'certificate', type: 'RSA' }
+    const form = { id, label: 'credential', username: 'deploy', password: 'secret', privateKey: 'private', publicKey: 'public', certificate: 'certificate', type: 'PASSWORD' }
     const send = async (url, body) => { calls.push([url, body]); if (fails) throw new Error('failed') }
     const saving = { value: false }
     const editing = { value: true }
@@ -26,12 +42,47 @@ test('凭据创建编辑保留材料并在成功后清除敏感输入', async ()
     }
     await method('save', context)()
     assert.equal(calls[0][0], id ? '/server-credentials/7' : '/server-credentials')
-    assert.equal(calls[0][1].certificate, 'certificate')
+    assert.equal(calls[0][1].certificate, '')
+    assert.equal(calls[0][1].privateKey, '')
     assert.equal(calls[0][1].password, 'secret')
     assert.deepEqual(calls.slice(1), fails ? ['error'] : ['clear', 'load', 'changed'])
     assert.equal(saving.value, false)
     assert.equal(editing.value, fails)
   }
+})
+
+// 私钥和密码各自验证必填、保留秘密和掩码边界，历史类型必须显式转换。
+test('两类凭据的必填校验与秘密保留', async () => {
+  for (const [type, secret, saved, username, allowed] of [
+    ['KEY', 'private', false, '', true], ['KEY', '', false, '', false],
+    ['KEY', '', true, '', true], ['KEY', '******', false, '', false],
+    ['PASSWORD', 'secret', false, 'deploy', true], ['PASSWORD', '', false, 'deploy', false],
+    ['PASSWORD', '', true, 'deploy', true], ['PASSWORD', '******', false, 'deploy', false],
+    ['PASSWORD', 'secret', false, '', false], ['RSA', 'secret', true, 'deploy', false],
+  ]) {
+    const calls = []
+    const form = { id: saved ? 7 : null, label: 'valid', type, username,
+      privateKey: type === 'KEY' ? secret : '', password: type === 'PASSWORD' ? secret : '',
+      publicKey: '', certificate: '', passphrase: '', hasPrivateKey: saved, hasPassword: saved }
+    const send = async (url, body) => calls.push(body)
+    await method('save', { form, saving: { value: false }, editing: { value: true },
+      http: { post: send, put: send }, clearForm() {}, async load() {}, emit() {},
+      t: key => key, ElMessage: { warning() {} }, showHttpError(error) { throw error },
+    })()
+    assert.equal(calls.length, allowed ? 1 : 0, JSON.stringify([type, secret, saved, username]))
+    if (allowed) assert.equal(type === 'KEY' ? calls[0].password : calls[0].privateKey, '')
+  }
+})
+
+// 类型切换清理不适用的输入，不把隐藏的秘密提交到另一种类型。
+test('切换类型清理临时输入且保留账号', () => {
+  const form = { type: 'PASSWORD', username: 'deploy', password: 'secret', privateKey: 'private', publicKey: 'public', certificate: 'certificate', passphrase: 'phrase' }
+  method('changeType', { form })('KEY')
+  assert.equal(form.password, '')
+  assert.equal(form.privateKey, 'private')
+  method('changeType', { form })('PASSWORD')
+  for (const field of ['privateKey', 'publicKey', 'certificate', 'passphrase']) assert.equal(form[field], '')
+  assert.equal(form.username, 'deploy')
 })
 
 // 校验空标签、缺失账号以及重复点击不发送写请求。

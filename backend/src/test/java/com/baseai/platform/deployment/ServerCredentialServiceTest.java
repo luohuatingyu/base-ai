@@ -61,30 +61,32 @@ class ServerCredentialServiceTest {
     @AfterEach
     void cleanup() { AuthContext.clear(); }
 
-    /** 保存所有材料，脱敏视图不泄密，空更新保留密码和私钥。 */
+    /** 分别保存两类材料，脱敏视图不泄密，空更新保留原始秘密。 */
     @Test
     void storesEncryptedMaterialsAndPreservesSecretsOnEdit() throws Exception {
-        var created = credentials.save(null, command("label", "private", " password ", "phrase"));
+        var created = credentials.save(null, command("label", "private", "", "phrase"));
+        var account = credentials.save(null, command("account", "", " password ", ""));
         assertTrue(created.hasPrivateKey());
-        assertTrue(created.hasPassword());
+        assertFalse(created.hasPassword());
         assertTrue(created.hasPassphrase());
-        assertEquals("public", created.publicKey());
-        assertEquals("certificate", created.certificate());
-        String encrypted = jdbc.queryForObject("SELECT password_encrypted FROM server_credential WHERE id=?", String.class, created.id());
+        assertEquals("", created.publicKey());
+        assertEquals("", created.certificate());
+        String encrypted = jdbc.queryForObject("SELECT password_encrypted FROM server_credential WHERE id=?", String.class, account.id());
         assertTrue(encrypted.startsWith("enc:v1:"));
         assertEquals(" password ", crypto.decrypt(encrypted));
         assertFalse(new ObjectMapper().findAndRegisterModules().writeValueAsString(created).contains(" password "));
-        credentials.save(created.id(), command("changed", "", "******", ""));
+        credentials.save(created.id(), new CredentialModels.Command("changed", "KEY", "deploy", "", "", "", "", true, ""));
+        credentials.save(account.id(), command("changed", "", "******", ""));
         assertEquals("private", credentials.resolve(created.id(), 7L, false).privateKey());
-        assertEquals(" password ", credentials.resolve(created.id(), 7L, false).password());
+        assertEquals(" password ", credentials.resolve(account.id(), 7L, false).password());
         assertEquals("phrase", credentials.resolve(created.id(), 7L, false).passphrase());
     }
 
     /** 多台服务器共享引用，轮换后数据同步读取新密码而服务器不保存副本。 */
     @Test
     void sharesCredentialsAndResolvesLatestValues() throws Exception {
-        var credential = credentials.save(null, command("shared", "private", "first", "phrase"));
-        var first = servers.create(server(credential.id(), "KEY_PASSWORD"));
+        var credential = credentials.save(null, command("shared", "", "first", ""));
+        var first = servers.create(server(credential.id(), "PASSWORD"));
         var second = servers.create(server(credential.id(), "PASSWORD"));
         assertEquals(credential.id(), first.credentialId());
         assertEquals("deploy", first.username());
@@ -94,17 +96,17 @@ class ServerCredentialServiceTest {
         credentials.save(credential.id(), command("rotated", "", "second", ""));
         assertEquals("second", servers.requireDataSyncTarget(first.id(), 7L).password());
         assertEquals("second", servers.requireDataSyncTarget(second.id(), 7L).password());
-        assertEquals("private", servers.requireDataSyncTarget(first.id(), 7L).privateKey());
-        assertEquals("phrase", servers.requireDataSyncTarget(first.id(), 7L).passphrase());
+        assertEquals("", servers.requireDataSyncTarget(first.id(), 7L).privateKey());
+        assertEquals("", servers.requireDataSyncTarget(first.id(), 7L).passphrase());
         assertEquals(409, assertThrows(BusinessException.class, () -> credentials.delete(credential.id())).getStatus());
-        var disabled = new CredentialModels.Command("shared", "PASSWORD", "deploy", "public", "", "certificate", "", false, "");
+        var disabled = new CredentialModels.Command("shared", "PASSWORD", "deploy", "", "", "", "", false, "");
         assertEquals(409, assertThrows(BusinessException.class, () -> credentials.save(credential.id(), disabled)).getStatus());
     }
 
     /** 普通用户无法跨所有者读取、修改、删除或绑定，也不能查看明文。 */
     @Test
     void enforcesOwnershipAndAdminSecretAccess() {
-        var credential = credentials.save(null, command("owned", "private", "secret", ""));
+        var credential = credentials.save(null, command("owned", "", "secret", ""));
         assertEquals(403, assertThrows(BusinessException.class, () -> credentials.reveal(credential.id())).getStatus());
         authenticate(8L, false);
         assertTrue(credentials.list().isEmpty());
@@ -183,16 +185,16 @@ class ServerCredentialServiceTest {
         try {
             var connected = new ServerManagementService(jdbc, new ObjectMapper(), crypto, mock(TaskTraceService.class),
                 mock(ThreadPoolTaskExecutor.class), "http://127.0.0.1:" + agent.getAddress().getPort(), "internal-test-token");
-            var credential = credentials.save(null, command("shared", "first-private", "first-password", "phrase"));
-            var server = connected.create(server(credential.id(), "KEY_PASSWORD"));
-            credentials.save(credential.id(), command("shared", "rotated-private", "rotated-password", ""));
+            var credential = credentials.save(null, command("shared", "first-private", "", "phrase"));
+            var server = connected.create(server(credential.id(), "KEY"));
+            credentials.save(credential.id(), command("shared", "rotated-private", "", ""));
             assertEquals("CONNECTION_SUCCEEDED", connected.test(server.id()).get("output"));
             connected.monitor(server.id());
             assertEquals(2, received.size());
             for (var payload : received) {
                 assertEquals("deploy", payload.path("username").asText());
                 assertEquals("rotated-private", payload.path("privateKey").asText());
-                assertEquals("rotated-password", payload.path("password").asText());
+                assertEquals("", payload.path("password").asText());
                 assertEquals("phrase", payload.path("passphrase").asText());
             }
             String external = new ObjectMapper().findAndRegisterModules().writeValueAsString(connected.servers());
@@ -203,8 +205,8 @@ class ServerCredentialServiceTest {
     /** 边界长度可保存，多次新建返回自己的记录，损坏密文只返回稳定错误。 */
     @Test
     void supportsBoundariesAndReportsUnreadableSecret() {
-        var maximum = credentials.save(null, new CredentialModels.Command("a".repeat(120), "PASSWORD", "deploy", "p".repeat(32768),
-            "", "c".repeat(32768), "s".repeat(1024), true, ""));
+        var maximum = credentials.save(null, new CredentialModels.Command("a".repeat(120), "KEY", "deploy", "p".repeat(32768),
+            "k".repeat(32768), "c".repeat(32768), "", true, "s".repeat(1024)));
         var next = credentials.save(null, command("next", "", "secret", ""));
         assertNotEquals(maximum.id(), next.id());
         assertEquals("next", next.label());
@@ -231,9 +233,73 @@ class ServerCredentialServiceTest {
             () -> servers.requireDataSyncTarget(server.id(), 7L)).getMessageKey());
     }
 
-    /** 构造含全部材料的标准凭据。 */
+    /** 切换类型必须持久化且清除旧秘密，避免产生隐式组合认证。 */
+    @Test
+    void switchesTypeAndClearsOldSecrets() {
+        var account = credentials.save(null, new CredentialModels.Command("account", "PASSWORD", "deploy", "", "", "", "secret", true, ""));
+        var key = credentials.save(account.id(), new CredentialModels.Command("key", "KEY", "", "", "private", "", "", true, "phrase"));
+        assertEquals("KEY", key.type());
+        assertFalse(key.hasPassword());
+        assertEquals("", credentials.resolve(key.id(), 7L, false).password());
+        var password = credentials.save(key.id(), new CredentialModels.Command("account", "PASSWORD", "deploy", "", "", "", "next", true, ""));
+        assertEquals("PASSWORD", password.type());
+        assertFalse(password.hasPrivateKey());
+        assertFalse(password.hasPassphrase());
+    }
+
+    /** 两种类型均拒绝混合材料，并返回可翻译的业务错误。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"KEY", "PASSWORD"})
+    void rejectsMixedMaterials(String type) {
+        var mixed = new CredentialModels.Command("mixed", type, "deploy", "", "private", "", "secret", true, "");
+        assertEquals("server.credentialTypeConflict", assertThrows(BusinessException.class,
+            () -> credentials.save(null, mixed)).getMessageKey());
+        assertTrue(credentials.list().isEmpty());
+    }
+
+    /** 历史组合凭据继续供原服务器使用，引用期间不得改成单一类型。 */
+    @Test
+    void preservesLegacyCombinedCredentials() {
+        var account = credentials.save(null, command("legacy", "", "password", ""));
+        jdbc.update("UPDATE server_credential SET credential_type='RSA',private_key_encrypted=? WHERE id=?",
+            crypto.encrypt("private"), account.id());
+        var server = servers.create(server(account.id(), "KEY_PASSWORD"));
+        assertEquals("RSA", credentials.list().get(0).type());
+        assertEquals("private", servers.requireDataSyncTarget(server.id(), 7L).privateKey());
+        assertEquals("password", servers.requireDataSyncTarget(server.id(), 7L).password());
+        assertEquals(409, assertThrows(BusinessException.class,
+            () -> credentials.save(account.id(), command("convert", "", "next", ""))).getStatus());
+        assertEquals("password", credentials.resolve(account.id(), 7L, false).password());
+    }
+
+    /** 已引用的新类型禁止切换，历史单一密码可保留密文并显式更新类型。 */
+    @Test
+    void protectsReferencedTypeAndNormalizesLegacyAccount() {
+        var account = credentials.save(null, command("account", "", "secret", ""));
+        jdbc.update("UPDATE server_credential SET credential_type='RSA' WHERE id=?", account.id());
+        assertEquals("PASSWORD", credentials.list().get(0).type());
+        servers.create(server(account.id(), "PASSWORD"));
+        credentials.save(account.id(), command("rename", "", "", ""));
+        assertEquals("PASSWORD", jdbc.queryForObject("SELECT credential_type FROM server_credential WHERE id=?", String.class, account.id()));
+        assertEquals(409, assertThrows(BusinessException.class,
+            () -> credentials.save(account.id(), command("switch", "private", "", ""))).getStatus());
+        assertEquals("secret", credentials.resolve(account.id(), 7L, false).password());
+    }
+
+    /** 缺失私钥、账号密码和掩码新建均返回业务错误，不落库。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"KEY", "PASSWORD"})
+    void rejectsMissingSecrets(String type) {
+        for (String secret : new String[]{"", "******"}) {
+            var command = new CredentialModels.Command("empty", type, "deploy", "", secret, "", "", true, "");
+            assertThrows(BusinessException.class, () -> credentials.save(null, command));
+            assertTrue(credentials.list().isEmpty());
+        }
+    }
+
+    /** 按认证材料构造互斥类型，测试不隐藏任何混合输入。 */
     private CredentialModels.Command command(String label, String privateKey, String password, String passphrase) {
-        return new CredentialModels.Command(label, "PASSWORD", "deploy", "public", privateKey, "certificate", password, true, passphrase);
+        return new CredentialModels.Command(label, privateKey.isEmpty() ? "PASSWORD" : "KEY", "deploy", "", privateKey, "", password, true, passphrase);
     }
 
     /** 构造仅引用凭据且账号由凭据提供的 SSH 服务器。 */

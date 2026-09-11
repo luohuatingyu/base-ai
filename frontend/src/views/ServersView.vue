@@ -6,7 +6,7 @@
         <p>{{ t('servers.description') }}</p>
       </div>
       <div class="table-actions">
-        <el-button class="credential-entry" type="success" plain @click="credentialsVisible = true"><el-icon><Key /></el-icon>{{ t('serverCredentials.title') }}<el-tag size="small" effect="dark">安全</el-tag></el-button>
+        <el-button class="credential-entry" type="primary" plain @click="credentialsVisible = true"><el-icon><Key /></el-icon>{{ t('serverCredentials.title') }}</el-button>
         <el-button @click="load">{{ t('common.refresh') }}</el-button>
         <el-button
           v-if="auth.hasPermission('operations:server:create')"
@@ -231,6 +231,7 @@
                 <button
                   type="button"
                   class="selection-card"
+                  v-if="form.id && form.authType === 'KEY_PASSWORD'"
                   :class="{ 'is-active': form.authType === 'KEY_PASSWORD' }"
                   @click="form.authType = 'KEY_PASSWORD'"
                 >

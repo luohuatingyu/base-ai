@@ -42,14 +42,13 @@ public class ServerCredentialService {
         validate(command);
         boolean enabled = !Boolean.FALSE.equals(command.enabled());
         if (existing != null && !enabled) requireUnused(id);
-        String privateKey = secret(command.privateKey(), existing == null ? "" : existing.privateKey());
-        String password = secret(command.password(), existing == null ? "" : existing.password());
-        String passphrase = secret(command.passphrase(), existing == null ? "" : existing.passphrase());
         boolean keyMode = "KEY".equals(command.type());
+        if (existing != null && !command.type().equals(existing.view().type())) requireUnused(id);
+        String privateKey = keyMode ? secret(command.privateKey(), existing == null ? "" : existing.privateKey()) : "";
+        String password = keyMode ? "" : secret(command.password(), existing == null ? "" : existing.password());
+        String passphrase = keyMode ? secret(command.passphrase(), existing == null ? "" : existing.passphrase()) : "";
         if (keyMode && privateKey.isBlank()) throw new BusinessException("server.privateKeyRequired");
         if (!keyMode && password.isBlank()) throw new BusinessException("server.passwordRequired");
-        if (keyMode && (!password.isBlank() || !text(command.certificate()).isBlank())) throw new BusinessException("server.credentialTypeConflict");
-        if (!keyMode && (!privateKey.isBlank() || !text(command.publicKey()).isBlank() || !text(command.certificate()).isBlank() || !passphrase.isBlank())) throw new BusinessException("server.credentialTypeConflict");
         if (privateKey.isBlank() && password.isBlank() && text(command.publicKey()).isBlank() && text(command.certificate()).isBlank()) {
             throw new BusinessException("server.credentialEmpty");
         }
@@ -77,9 +76,9 @@ public class ServerCredentialService {
             id = holder.getKey().longValue();
         } else {
             jdbc.update("""
-                UPDATE server_credential SET label=?,username=?,public_key=?,private_key_encrypted=?,
+                UPDATE server_credential SET credential_type=?,label=?,username=?,public_key=?,private_key_encrypted=?,
                     certificate=?,password_encrypted=?,passphrase_encrypted=?,enabled=?,updated_at=NOW() WHERE id=?
-                """, text(command.label()), text(command.username()), text(command.publicKey()), privateKey,
+                """, command.type(), text(command.label()), text(command.username()), text(command.publicKey()), privateKey,
                 text(command.certificate()), password, passphrase, enabled, id);
         }
         return require(id, false).view();
@@ -133,6 +132,10 @@ public class ServerCredentialService {
     private void validate(CredentialModels.Command command) {
         if (command == null || text(command.label()).isBlank() || text(command.label()).length() > 120) throw new BusinessException("server.credentialLabelRequired");
         if (!"KEY".equals(command.type()) && !"PASSWORD".equals(command.type())) throw new BusinessException("server.credentialTypeInvalid");
+        if ("KEY".equals(command.type()) && !text(command.password()).isEmpty()
+            || "PASSWORD".equals(command.type()) && (!text(command.privateKey()).isEmpty()
+                || !text(command.publicKey()).isEmpty() || !text(command.certificate()).isEmpty()
+                || !text(command.passphrase()).isEmpty())) throw new BusinessException("server.credentialTypeConflict");
         if (!text(command.username()).isBlank() && !text(command.username()).matches("[A-Za-z_][A-Za-z0-9._-]{0,63}")) throw new BusinessException("server.sshRequired");
         for (String value : new String[]{command.publicKey(), command.privateKey(), command.certificate()}) {
             if (value != null && value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 32768) throw new BusinessException("server.invalid");
@@ -159,7 +162,16 @@ public class ServerCredentialService {
 
     /** 映射列表元数据，敏感字段仅返回是否设置。 */
     private CredentialModels.View view(ResultSet result) throws SQLException {
-        return new CredentialModels.View(result.getLong("id"), result.getString("label"), result.getString("credential_type"),
+        String type = result.getString("credential_type");
+        if ("RSA".equals(type)) {
+            boolean hasKey = !text(result.getString("private_key_encrypted")).isBlank();
+            boolean hasPassword = !text(result.getString("password_encrypted")).isBlank();
+            if (hasKey && !hasPassword) type = "KEY";
+            else if (hasPassword && !hasKey && text(result.getString("public_key")).isBlank()
+                && text(result.getString("certificate")).isBlank()
+                && text(result.getString("passphrase_encrypted")).isBlank()) type = "PASSWORD";
+        }
+        return new CredentialModels.View(result.getLong("id"), result.getString("label"), type,
             result.getString("username"), result.getString("public_key"), result.getString("certificate"),
             !text(result.getString("private_key_encrypted")).isBlank(), !text(result.getString("password_encrypted")).isBlank(),
             result.getBoolean("enabled"), result.getTimestamp("created_at").toLocalDateTime(), result.getTimestamp("updated_at").toLocalDateTime(),
