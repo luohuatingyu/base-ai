@@ -1,5 +1,43 @@
 # 最近分支覆盖测试报告
 
+## 移除 Docker 容器监控（2026-09-11）
+
+### Git 基准点与范围
+
+Commit: b0b7e034f304e564a5e353004e0eeb2f8aa3de02
+- 提交信息：Remove Docker container monitoring from server resources；分支：master；测试日期：2026-09-11。
+- 本节验收本次监控移除提交；共享工作区同时存在独立 SSH 认证变更，本次仅分块提交监控相关内容。完整套件和镜像构建基于执行时共享工作区，因此不将本报告视为其他后续提交的独立验收。
+- 前端移除容器列表、健康状态、Docker 错误提示及相关样式；Go Agent 不再调用 Docker 查询；Java 后端只验证主机指标，兼容旧 Agent 的 PARTIAL 响应并忽略容器错误。
+- 为兼容旧接口保留空 `containers` 字段和容器数据类型，不再采集或展示容器数据。保留 Docker 部署和数据同步能力，不修改 Docker Socket 权限或挂载配置。
+
+### 执行命令与结果
+
+- `node --test frontend/test/servers.test.mjs`：新增移除断言先复现失败，修改后 9/9 通过。
+- `cd frontend && npm test`：lint、typecheck、覆盖测试及生产服务测试通过；单元测试 359/359，生产服务测试 1/1，失败 0。工具函数行覆盖率 98.40%、分支 80.95%、函数 95.27%。
+- `docker run --rm -v "$PWD/deployment-agent:/workspace:ro" -w /workspace golang:1.26.6-alpine go test ./...`：通过；另将 `git archive $(git write-tree) deployment-agent` 输送到一次性 Go 容器，独立验证仅含本次暂存变更的 Agent 完整套件，通过。
+- 后端 Docker Maven 容器命令：`mvn -B -ntp -Dtest=ServerManagementMonitorTest test && mvn -B -ntp test`。监控 5/5 通过；完整套件 803/803，通过率 100%，失败 0、错误 0、跳过 0。完整测试包含服务器校验、权限和数据同步回归。
+- Maven 通过 `docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17` 运行，容器内复制 pom.xml 和 src 后执行上述命令。
+- 初期 Go 编译发现未清理的容器解析引用及缺少 strings 导入，Java 测试缺少 assertNull 导入；均已修复并重新执行通过。一次 Compose 构建因此失败，最终重试成功，未跳过或弱化主机错误和权限测试。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：最终成功。镜像标签为构建开始时 HEAD `dc716cadb263c312d14bfcc3c836e4decf2f9d4e`，实际构建输入包含本次及共享工作区代码；六个应用服务均健康。
+- 运行验证：Backend 容器使用内部认证调用 Agent `/monitor`，LOCAL 返回 `SUCCEEDED`，CPU、内存、磁盘及运行时长均有有效值，`containers: []`，不再出现 Docker 错误。运行环境未开放 Docker Socket 权限。
+- `git diff --cached --check`：通过。
+
+### 验收标准—测试映射
+
+| 验收标准 | 层级、前置条件和输入 | 预期结果与场景 |
+| --- | --- | --- |
+| 页面不再监控容器 | 前端回归，读取实际服务器组件 | 无容器列表和 Docker 错误，保留主机指标与采集失败提示；正常、回归 |
+| 采集不依赖 Docker | Go 实时 Linux 测试，检查固定脚本并调用 collectMonitor | 脚本无 docker 命令和容器标记，返回有效指标及 SUCCEEDED；正常、无 Docker 环境 |
+| 兼容旧响应 | Go 解析及后端 HTTP 集成测试，输入旧容器数据或错误 | 忽略容器数据和错误，有效主机指标返回成功；兼容、异常 |
+| 主机异常仍被拒绝 | 保留现有异常指标和失败响应测试 | 缺失或无效指标、计数倒退、Agent 失败仍失败；边界、异常 |
+| 权限继续生效 | 后端监控测试，越权、停用和不存在的服务器 | 拒绝采集；安全、回归 |
+
+### 限制与重测建议
+
+- 未运行真实 SSH 服务器端到端测试和登录态浏览器操作；本次已验证本地运行端点与正式测试套件。独立 SSH 认证集成任务不属于本报告范围。
+- 无新增依赖、数据库变更或宿主机临时调试文件。一次性验证容器自动删除；其他任务产生的文件未删除或纳入本次提交。
+- 修改监控业务逻辑、Agent 协议或核心配置后，重跑相关及完整测试并更新本报告；前端或 Go 后续独立变更应使用对应套件复验。
+
 ## IDA 数据库存储兼容修复（2026-09-11）
 
 ### Git 基准点
