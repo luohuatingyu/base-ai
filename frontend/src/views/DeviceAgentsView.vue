@@ -499,6 +499,7 @@
       v-model="registryDialogVisible"
       :title="$t('deviceAgents.registry.dialogTitle')"
       width="720px"
+      @closed="stopRegistryPolling"
     >
       <div v-loading="registryLoading">
         <el-descriptions :column="2" border>
@@ -1050,6 +1051,7 @@ import {
   buildInstallCommand, buildDiagnoseCommand, buildSetServerCommand,
   detectSelfSignedDeployment, isPrivateOrigin
 } from '../utils/deviceAgentInstallCommand'
+import { createRegistryStatusPoller } from '../utils/deviceAgentRegistryPoller'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -2010,6 +2012,7 @@ const registryDialogVisible = ref(false)
 const registryLoading = ref(false)
 const registrySaving = ref(false)
 const registryActionLoading = ref('')
+let registryLoadPromise = null
 const registryForm = reactive({
   agentId: '',
   defaultPort: 42314,
@@ -2039,24 +2042,37 @@ const applyRegistryView = (view) => {
 }
 
 /** 查询当前对话框 Agent 的 Registry 配置与最近状态。 */
-const loadRegistry = async () => {
+const loadRegistry = async ({ silent = false } = {}) => {
   if (!registryForm.agentId) return
-  registryLoading.value = true
-  try {
-    const response = await http.get(`/automation/device-agents/${registryForm.agentId}/registry`)
-    applyRegistryView(response.data)
-  } catch (error) {
-    showHttpError(error, 'deviceAgents.registry.loadError')
-  } finally {
-    registryLoading.value = false
-  }
+  if (registryLoadPromise) return registryLoadPromise
+  if (!silent) registryLoading.value = true
+  registryLoadPromise = (async () => {
+    try {
+      const response = await http.get(`/automation/device-agents/${registryForm.agentId}/registry`)
+      applyRegistryView(response.data)
+    } catch (error) {
+      if (!silent) showHttpError(error, 'deviceAgents.registry.loadError')
+    } finally {
+      if (!silent) registryLoading.value = false
+      registryLoadPromise = null
+    }
+  })()
+  return registryLoadPromise
 }
+
+const registryStatusPoller = createRegistryStatusPoller({
+  refresh: () => loadRegistry({ silent: true })
+})
+
+/** 停止 Registry 弹窗的后台状态轮询。 */
+const stopRegistryPolling = () => registryStatusPoller.stop()
 
 /** 打开 Registry 管理对话框并读取服务端状态。 */
 const handleRegistry = async (agent) => {
   registryForm.agentId = agent.agentId
   registryDialogVisible.value = true
   await loadRegistry()
+  if (registryDialogVisible.value) registryStatusPoller.start()
 }
 
 /** 保存单机端口覆盖；选择全局端口时显式提交 null。 */
@@ -2705,6 +2721,7 @@ onMounted(() => {
 onUnmounted(() => {
   pageAlive = false
   stopRestartWatch()
+  stopRegistryPolling()
   if (pairingTimer) clearInterval(pairingTimer)
 })
 </script>

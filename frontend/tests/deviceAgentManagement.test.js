@@ -13,6 +13,7 @@ import {
   buildDetectedWdaConfigPayload,
   loadExistingWdaConfig
 } from '../src/utils/deviceAgentWdaConfig.js'
+import { createRegistryStatusPoller } from '../src/utils/deviceAgentRegistryPoller.js'
 
 const agentView = readFileSync(new URL('../src/views/DeviceAgentsView.vue', import.meta.url), 'utf8')
 const router = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
@@ -116,4 +117,64 @@ test('管理页和路由包含完整通用 Agent 入口且不含企业微信业�
   assert.match(agentView, /pairingPagination/)
   assert.match(agentView, /operationSpeed/)
   assert.doesNotMatch(agentView, /wecom|accountCode|TASK_EXECUTION/i)
+})
+
+test('Registry 弹窗轮询状态且关闭后停止，不堆叠刷新请求', async () => {
+  let intervalCallback
+  let intervalStarts = 0
+  let clearedTimer = null
+  let refreshCalls = 0
+  let finishRefresh
+  const poller = createRegistryStatusPoller({
+    refresh: () => {
+      refreshCalls += 1
+      return new Promise((resolve) => { finishRefresh = resolve })
+    },
+    setIntervalFn: (callback, intervalMs) => {
+      intervalCallback = callback
+      intervalStarts += 1
+      assert.equal(intervalMs, 5000)
+      return 17
+    },
+    clearIntervalFn: (timer) => { clearedTimer = timer }
+  })
+
+  poller.start()
+  poller.start()
+  assert.equal(intervalStarts, 1)
+
+  const firstRefresh = intervalCallback()
+  await intervalCallback()
+  assert.equal(refreshCalls, 1)
+  finishRefresh()
+  await firstRefresh
+
+  poller.stop()
+  poller.stop()
+  assert.equal(clearedTimer, 17)
+  assert.match(agentView, /refresh:\s*\(\)\s*=>\s*loadRegistry\(\{ silent: true \}\)/)
+  assert.match(agentView, /if \(!silent\) showHttpError\(error, 'deviceAgents\.registry\.loadError'\)/)
+  assert.match(agentView, /@closed="stopRegistryPolling"/)
+  assert.match(agentView, /if \(registryDialogVisible\.value\) registryStatusPoller\.start\(\)/)
+})
+
+test('Registry 后台刷新失败后允许下一轮继续恢复', async () => {
+  let intervalCallback
+  let refreshCalls = 0
+  const poller = createRegistryStatusPoller({
+    refresh: async () => {
+      refreshCalls += 1
+      if (refreshCalls === 1) throw new Error('temporary failure')
+    },
+    setIntervalFn: (callback) => {
+      intervalCallback = callback
+      return 23
+    }
+  })
+
+  poller.start()
+  await intervalCallback()
+  await intervalCallback()
+
+  assert.equal(refreshCalls, 2)
 })
