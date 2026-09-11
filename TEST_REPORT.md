@@ -1,5 +1,15 @@
 # 最近分支覆盖测试报告
 
+## 容器未更新排查（2026-09-11）
+
+- 待验证提交：3ad5ee0c95b52b073fedb46752e2018318f29a14。该提交未通过验收，不更新已通过测试的基准点。
+- 实际运行：ai-frontend、ai-backend 等容器仍使用 f1d1cde80ba6c1a9768fb532c8821dad71a93579 镜像。
+- 执行 `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`；构建内 `mvn -B -ntp package` 失败，844 项测试中通过 837、错误 7、失败断言 0、跳过 0；因此未部署新版本。外层输出经 tail 截取，管道退出码不代表 Compose 成功。
+- 错误用例均属于 ServerCredentialServiceTest：enforcesOwnershipAndAdminSecretAccess、passesRotatedCredentialsToAgentWithoutExposingThem、sharesCredentialsAndResolvesLatestValues、storesEncryptedMaterialsAndPreservesSecretsOnEdit、supportsBoundariesAndReportsUnreadableSecret、switchesReferencesAndUsesServerUsernameForKeyOnly、updatesLegacyServerAndUnlinksLocalMode。组合材料触发新互斥校验后，缺少 server.credentialTypeConflict 消息资源导致 MissingResourceException；这些问题由此前类型拆分引入，尚未修复。
+- 前端定向 `node --test frontend/test/server-credentials.test.mjs frontend/test/servers.test.mjs`：16/16 通过。frontend 工作目录执行 `npm run lint && npm run typecheck && npm run test:coverage`：退出 0，覆盖率门槛通过，工具函数行 98.40%、分支 80.95%、函数 95.27%。现有前端测试通过不能证明新旧凭据兼容或页面部署成功。
+- 未执行浏览器登录后验收和本轮前端 E2E。下一步需修复凭据类型保存、旧数据兼容、消息资源和相关测试，再运行完整后端测试及统一构建，最后核验容器镜像和浏览器资源版本。
+- 本次没有创建调试文件，没有跳过测试部署失败版本。此前聊天中“构建启动成功、完整测试通过”的结论不成立。
+
 ## 可复用服务器秘钥与账号密码管理（2026-09-11）
 
 ### Git 基准点与实现范围
