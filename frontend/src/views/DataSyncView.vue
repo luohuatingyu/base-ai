@@ -1,51 +1,77 @@
 <template>
-  <div class="panel">
-    <div class="section-head">
-      <div><h2>{{ t('dataSync.title') }}</h2><p>{{ t('dataSync.description') }}</p></div>
-      <el-button @click="load" :loading="loading">{{ t('common.refresh') }}</el-button>
+  <div class="panel sync-workspace">
+    <div class="sync-header">
+      <div class="sync-heading"><span class="sync-icon"><el-icon><Connection /></el-icon></span><div><h2>{{ t('dataSync.title') }}</h2><p>{{ t('dataSync.description') }}</p></div></div>
+      <el-button :icon="Refresh" @click="load" :loading="loading">{{ t('common.refresh') }}</el-button>
     </div>
 
-    <el-alert :title="t('dataSync.securityNotice')" type="warning" show-icon :closable="false" />
+    <div class="sync-overview" :aria-label="t('dataSync.overview')">
+      <div><span>{{ t('dataSync.plans') }}</span><strong>{{ loading ? '—' : plans.length }}</strong></div>
+      <div><span>{{ t('common.enabled') }}</span><strong>{{ loading ? '—' : plans.filter(plan => plan.enabled).length }}</strong></div>
+      <div><span>{{ t('dataSync.statuses.RUNNING') }}</span><strong class="sync-active">{{ loading ? '—' : plans.filter(running).length }}</strong></div>
+    </div>
+    <el-alert class="sync-security" :title="t('dataSync.securityNotice')" type="warning" show-icon :closable="false" />
     <el-form v-if="auth.hasPermission(form.id ? 'operations:data-sync:update' : 'operations:data-sync:create')" label-position="top" class="data-sync-form">
+      <div class="sync-card-heading"><div><h3>{{ t(form.id ? 'dataSync.editPlan' : 'dataSync.configure') }}</h3><p>{{ t('dataSync.configureHint') }}</p></div><el-tag effect="plain">{{ t(`dataSync.strategies.${form.strategy}`) }}</el-tag></div>
+      <section class="sync-section">
+      <h4><span>01</span>{{ t('dataSync.basic') }}</h4>
       <div class="data-sync-grid">
         <el-form-item :label="t('dataSync.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('dataSync.strategy')"><el-select v-model="form.strategy" class="full"><el-option v-for="item in strategies" :key="item" :label="t(`dataSync.strategies.${item}`)" :value="item" /></el-select></el-form-item>
         <el-form-item :label="t('dataSync.server')"><el-select v-model="form.serverId" class="full" @change="loadTables"><el-option v-for="item in servers" :key="item.id" :label="`${item.name} (${item.mode})`" :value="item.id" :disabled="!item.enabled" /></el-select></el-form-item>
-        <el-form-item :label="t('dataSync.source')"><el-select v-model="form.sourceConnectionId" class="full" @change="loadTables"><el-option v-for="item in connections" :key="item.id" :label="`${item.name} (${item.connectionType})`" :value="item.id" /></el-select></el-form-item>
-        <el-form-item :label="t('dataSync.target')"><el-select v-model="form.targetConnectionId" class="full"><el-option v-for="item in connections" :key="item.id" :label="`${item.name} (${item.connectionType})`" :value="item.id" /></el-select></el-form-item>
       </div>
+      </section>
+      <section class="sync-section">
+      <h4><span>02</span>{{ t('dataSync.connections') }}</h4>
+      <div class="sync-flow">
+        <div class="sync-endpoint"><span class="sync-endpoint-label"><el-icon><Coin /></el-icon>{{ t('dataSync.readOnly') }}</span><el-form-item :label="t('dataSync.source')"><el-select v-model="form.sourceConnectionId" class="full" @change="loadTables"><el-option v-for="item in connections" :key="item.id" :label="`${item.name} (${item.connectionType})`" :value="item.id" /></el-select></el-form-item></div>
+        <span class="sync-direction" aria-hidden="true"><el-icon><Right /></el-icon></span>
+        <div class="sync-endpoint sync-target"><span class="sync-endpoint-label"><el-icon><Coin /></el-icon>{{ t('dataSync.writeTarget') }}</span><el-form-item :label="t('dataSync.target')"><el-select v-model="form.targetConnectionId" class="full"><el-option v-for="item in connections" :key="item.id" :label="`${item.name} (${item.connectionType})`" :value="item.id" /></el-select></el-form-item></div>
+      </div>
+      </section>
+      <section class="sync-section">
+      <div class="sync-card-heading"><h4><span>03</span>{{ t('dataSync.tablesAndSchedule') }}</h4><el-tag type="info" effect="plain">{{ t('dataSync.selectedCount', { count: selectedTables.length }) }}</el-tag></div>
+      <el-form-item :label="t('dataSync.tables')">
+        <div class="sync-table-picker">
+          <el-checkbox-group v-if="sourceTables.length" v-model="selectedTables" class="data-sync-tables">
+            <el-checkbox v-for="item in sourceTables" :key="item.name" :label="item.name" border><span :title="`${item.schema ? `${item.schema}.` : ''}${item.name}`">{{ item.schema ? `${item.schema}.` : '' }}{{ item.name }}</span></el-checkbox>
+          </el-checkbox-group>
+          <div v-else class="sync-empty-tables"><el-icon><Grid /></el-icon><span>{{ t('dataSync.tablesHint') }}</span></div>
+        </div>
+      </el-form-item>
       <div class="data-sync-grid">
         <el-form-item :label="t('dataSync.schedule')"><el-input v-model="form.scheduleCron" :placeholder="t('dataSync.schedulePlaceholder')" /></el-form-item>
         <el-form-item :label="t('common.status')"><el-switch v-model="form.enabled" :active-text="t('common.enabled')" /></el-form-item>
       </div>
-      <el-form-item :label="t('dataSync.tables')">
-        <el-checkbox-group v-model="selectedTables" class="data-sync-tables">
-          <el-checkbox v-for="item in sourceTables" :key="item.name" :label="item.name">{{ item.schema ? `${item.schema}.` : '' }}{{ item.name }}</el-checkbox>
-        </el-checkbox-group>
-      </el-form-item>
-      <el-checkbox v-if="form.strategy === 'FULL_REPLACE'" v-model="form.confirmDestructive">{{ t('dataSync.confirmDestructive') }}</el-checkbox>
+      <div v-if="form.strategy === 'FULL_REPLACE'" class="sync-destructive"><el-checkbox v-model="form.confirmDestructive">{{ t('dataSync.confirmDestructive') }}</el-checkbox></div>
+      </section>
       <div class="table-actions data-sync-actions">
-        <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
-        <el-button v-if="auth.hasPermission('operations:data-sync:preview')" :loading="previewing" @click="preview">{{ t('dataSync.preview') }}</el-button>
+        <el-button v-if="auth.hasPermission('operations:data-sync:preview')" :icon="View" :loading="previewing" @click="preview">{{ t('dataSync.preview') }}</el-button>
+        <el-button type="primary" :icon="Check" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
       </div>
     </el-form>
 
+    <section class="sync-plans">
+    <div class="sync-card-heading"><div><h3>{{ t('dataSync.plans') }}</h3><p>{{ t('dataSync.plansHint') }}</p></div><el-tag type="info" effect="plain">{{ plans.length }}</el-tag></div>
     <el-table :data="plans" v-loading="loading" class="data-sync-table">
-      <el-table-column prop="name" :label="t('dataSync.name')" min-width="180" />
+      <template #empty><el-empty :image-size="64" :description="t('dataSync.emptyPlans')" /></template>
+      <el-table-column prop="name" :label="t('dataSync.name')" min-width="180" show-overflow-tooltip><template #default="scope"><strong class="sync-plan-name">{{ scope.row.name }}</strong></template></el-table-column>
       <el-table-column :label="t('dataSync.server')" min-width="160"><template #default="scope">{{ scope.row.serverName || t('dataSync.platformLocal') }}</template></el-table-column>
       <el-table-column prop="strategy" :label="t('dataSync.strategy')" width="150"><template #default="scope">{{ t(`dataSync.strategies.${scope.row.strategy}`) }}</template></el-table-column>
       <el-table-column :label="t('dataSync.tables')" width="100"><template #default="scope">{{ scope.row.tables?.length || 0 }}</template></el-table-column>
-      <el-table-column prop="scheduleCron" :label="t('dataSync.schedule')" min-width="150" />
-      <el-table-column prop="lastRunStatus" :label="t('dataSync.lastStatus')" width="140" />
-      <el-table-column :label="t('common.operation')" width="390" fixed="right"><template #default="scope"><div class="table-actions"><el-button v-if="auth.hasPermission('operations:data-sync:update')" link @click="edit(scope.row)">{{ t('common.edit') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:run')" link type="primary" :disabled="running(scope.row)" @click="run(scope.row)">{{ t('dataSync.run') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:cancel')" link type="warning" :disabled="!running(scope.row)" @click="cancel(scope.row)">{{ t('dataSync.cancel') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:run') && ['FAILED', 'CANCELLED'].includes(scope.row.lastRunStatus)" link type="primary" @click="retry(scope.row)">{{ t('dataSync.retry') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:logs') && scope.row.lastRunId" link @click="showRun(scope.row)">{{ t('dataSync.details') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button></div></template></el-table-column>
+      <el-table-column prop="scheduleCron" :label="t('dataSync.schedule')" min-width="150" show-overflow-tooltip><template #default="scope"><span class="sync-schedule">{{ scope.row.scheduleCron || t('dataSync.manual') }}</span></template></el-table-column>
+      <el-table-column prop="lastRunStatus" :label="t('dataSync.lastStatus')" width="150"><template #default="scope"><el-tag :type="statusType(scope.row.lastRunStatus)" effect="light">{{ statusLabel(scope.row.lastRunStatus) }}</el-tag></template></el-table-column>
+      <el-table-column :label="t('common.operation')" width="240"><template #default="scope"><div class="table-actions sync-row-actions"><el-button v-if="auth.hasPermission('operations:data-sync:update')" link @click="edit(scope.row)">{{ t('common.edit') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:run')" link type="primary" :disabled="running(scope.row)" @click="run(scope.row)">{{ t('dataSync.run') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:cancel')" link type="warning" :disabled="!running(scope.row)" @click="cancel(scope.row)">{{ t('dataSync.cancel') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:run') && ['FAILED', 'CANCELLED'].includes(scope.row.lastRunStatus)" link type="primary" @click="retry(scope.row)">{{ t('dataSync.retry') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:logs') && scope.row.lastRunId" link @click="showRun(scope.row)">{{ t('dataSync.details') }}</el-button><el-button v-if="auth.hasPermission('operations:data-sync:delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button></div></template></el-table-column>
     </el-table>
+    </section>
 
     <el-dialog v-model="previewVisible" :title="t('dataSync.preview')" width="min(960px, 94vw)">
-      <el-table :data="previewRows"><el-table-column prop="mapping.sourceTable" :label="t('dataSync.sourceTable')" /><el-table-column prop="mapping.targetTable" :label="t('dataSync.targetTable')" /><el-table-column prop="sourceRows" :label="t('dataSync.sourceRows')" /><el-table-column :label="t('dataSync.warnings')"><template #default="scope">{{ formatWarnings(scope.row.warnings) }}</template></el-table-column></el-table>
+      <p class="sync-dialog-hint">{{ t('dataSync.previewHint') }}</p>
+      <el-table :data="previewRows" stripe><el-table-column prop="mapping.sourceTable" :label="t('dataSync.sourceTable')" min-width="160" show-overflow-tooltip /><el-table-column prop="mapping.targetTable" :label="t('dataSync.targetTable')" min-width="160" show-overflow-tooltip /><el-table-column prop="sourceRows" :label="t('dataSync.sourceRows')" min-width="100" /><el-table-column :label="t('dataSync.warnings')" min-width="220"><template #default="scope">{{ formatWarnings(scope.row.warnings) }}</template></el-table-column></el-table>
     </el-dialog>
     <el-dialog v-model="runVisible" :title="t('dataSync.details')" width="min(1040px, 94vw)">
-      <el-descriptions v-if="runDetail" :column="3" border>
-        <el-descriptions-item :label="t('common.status')">{{ runDetail.status }}</el-descriptions-item>
+      <el-descriptions v-if="runDetail" :column="1" border class="sync-run-summary">
+        <el-descriptions-item :label="t('common.status')"><el-tag :type="statusType(runDetail.status)">{{ statusLabel(runDetail.status) }}</el-tag></el-descriptions-item>
         <el-descriptions-item :label="t('dataSync.server')">{{ runDetail.serverName || t('dataSync.platformLocal') }}</el-descriptions-item>
         <el-descriptions-item :label="t('dataSync.readRows')">{{ runDetail.readRows }}</el-descriptions-item>
         <el-descriptions-item :label="t('dataSync.writtenRows')">{{ runDetail.writtenRows }}</el-descriptions-item>
@@ -55,7 +81,7 @@
       <el-table :data="runDetail?.tables || []" v-loading="runLoading" class="run-table">
         <el-table-column prop="sourceTable" :label="t('dataSync.sourceTable')" min-width="160" />
         <el-table-column prop="targetTable" :label="t('dataSync.targetTable')" min-width="160" />
-        <el-table-column prop="status" :label="t('common.status')" width="130" />
+        <el-table-column prop="status" :label="t('common.status')" width="150"><template #default="scope"><el-tag :type="statusType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag></template></el-table-column>
         <el-table-column prop="readRows" :label="t('dataSync.readRows')" width="110" />
         <el-table-column prop="insertedRows" :label="t('dataSync.writtenRows')" width="110" />
         <el-table-column prop="errorMessage" :label="t('dataSync.error')" min-width="220" show-overflow-tooltip />
@@ -67,6 +93,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Check, Coin, Connection, Grid, Refresh, Right, View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
@@ -77,6 +104,18 @@ const loading = ref(false), saving = ref(false), previewing = ref(false), previe
 const runVisible = ref(false), runLoading = ref(false), runDetail = ref(null)
 const strategies = ['UPSERT', 'FULL_REPLACE', 'APPEND']
 const form = reactive({ id: null, name: '', serverId: null, sourceConnectionId: null, targetConnectionId: null, strategy: 'UPSERT', scheduleCron: '', enabled: true, confirmDestructive: false })
+
+// 根据运行状态呈现语义颜色，未知状态使用中性色。
+function statusType(status) {
+  const colors = { SUCCEEDED: 'success', SUCCESS: 'success', FAILED: 'danger', RUNNING: 'primary', CANCEL_REQUESTED: 'warning', CANCELLED: 'info' }
+  return Object.hasOwn(colors, status) ? colors[status] : 'info'
+}
+
+// 已知状态使用本地化文案，保留未知状态以兼容后端扩展。
+function statusLabel(status) {
+  if (!status) return t('dataSync.notRun')
+  return ['PENDING', 'RUNNING', 'SUCCEEDED', 'SUCCESS', 'FAILED', 'CANCEL_REQUESTED', 'CANCELLED', 'SKIPPED'].includes(status) ? t(`dataSync.statuses.${status}`) : status
+}
 
 // 加载当前用户可见的数据库连接和同步计划。
 async function load() {
@@ -128,12 +167,75 @@ onMounted(load)
 </script>
 
 <style scoped>
-.data-sync-form { margin: 18px 0 24px; padding: 18px; border: 1px solid #dfe7f2; border-radius: 12px; background: #f8fafc; }
-.data-sync-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.data-sync-tables { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 14px; }
-.data-sync-actions { margin-top: 8px; }
-.data-sync-table { margin-top: 20px; }
+.sync-workspace { background: var(--app-canvas); border: 0; box-shadow: none; min-width: 0; }
+.sync-header, .sync-heading, .sync-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.sync-header { margin-bottom: 24px; }
+.sync-heading { justify-content: flex-start; min-width: 0; }
+.sync-heading h2 { margin: 0 0 6px; font-size: 23px; letter-spacing: -.5px; }
+.sync-heading p, .sync-card-heading p, .sync-dialog-hint { margin: 0; color: var(--app-muted); font-size: 13px; line-height: 1.7; }
+.sync-icon { display: grid; place-items: center; width: 48px; height: 48px; flex-shrink: 0; color: var(--app-primary); background: var(--el-color-primary-light-9); border: 1px solid var(--el-color-primary-light-8); border-radius: 14px; font-size: 25px; }
+.sync-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 20px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 12px; padding: 20px 0; }
+.sync-overview > div { display: flex; flex-direction: column; gap: 8px; padding: 0 24px; }
+.sync-overview > div + div { border-left: 1px solid var(--app-border); }
+.sync-overview span { color: var(--app-muted); font-size: 13px; }
+.sync-overview strong { font-size: 28px; font-variant-numeric: tabular-nums; }
+.sync-active { color: var(--app-primary); }
+.sync-security { border: 1px solid var(--el-color-warning-light-8); }
+.data-sync-form, .sync-plans { margin-top: 22px; border: 1px solid var(--app-border); border-radius: 14px; background: var(--app-surface); overflow: hidden; min-width: 0; }
+.sync-card-heading { padding: 20px 24px; border-bottom: 1px solid var(--app-border); }
+.sync-card-heading h3 { margin: 0 0 5px; font-size: 16px; }
+.sync-section { padding: 20px 24px; }
+.sync-section + .sync-section { border-top: 1px solid var(--app-border); }
+.sync-section h4 { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; font-size: 14px; }
+.sync-section h4 > span { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--el-color-primary-light-9); color: var(--app-primary); font-size: 11px; }
+.sync-section > .sync-card-heading { padding: 0 0 18px; border: 0; }
+.sync-section > .sync-card-heading h4 { margin: 0; }
+.data-sync-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 22px; }
+.sync-section :deep(.el-form-item) { min-width: 0; margin-bottom: 16px; }
+.sync-section :deep(.el-form-item__label) { font-weight: 500; }
+.sync-flow { display: grid; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr); align-items: center; gap: 14px; }
+.sync-endpoint { min-width: 0; padding: 18px; border: 1px solid var(--app-border); background: var(--app-canvas); border-radius: 10px; }
+.sync-target { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-8); }
+.sync-endpoint-label { display: flex; align-items: center; gap: 7px; margin-bottom: 14px; color: var(--app-muted); font-size: 12px; }
+.sync-target .sync-endpoint-label { color: var(--app-primary); }
+.sync-endpoint :deep(.el-form-item) { margin-bottom: 0; }
+.sync-direction { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--app-border); color: var(--app-primary); font-size: 20px; }
+.sync-table-picker { width: 100%; padding: 14px; border: 1px dashed var(--app-border); border-radius: 10px; background: var(--app-canvas); }
+.data-sync-tables { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; max-height: 280px; overflow-y: auto; padding: 2px; }
+.data-sync-tables :deep(.el-checkbox) { margin: 0; width: 100%; min-width: 0; background: var(--app-surface); }
+.data-sync-tables :deep(.el-checkbox.is-checked) { background: var(--el-color-primary-light-9); }
+.data-sync-tables :deep(.el-checkbox__label) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sync-empty-tables { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 86px; color: var(--app-muted); line-height: 1.6; }
+.sync-empty-tables > .el-icon { flex-shrink: 0; font-size: 24px; }
+.sync-destructive { padding: 12px 16px; border: 1px solid var(--el-color-danger-light-8); border-radius: 8px; background: var(--el-color-danger-light-9); }
+.sync-destructive :deep(.el-checkbox) { white-space: normal; height: auto; margin: 0; }
+.sync-destructive :deep(.el-checkbox__label) { line-height: 1.6; color: var(--el-color-danger); }
+.data-sync-actions { padding: 16px 24px; margin: 0; justify-content: flex-end; border-top: 1px solid var(--app-border); background: var(--app-canvas); }
+.data-sync-table { margin: 0; }
+.data-sync-table :deep(th.el-table__cell) { background: var(--app-canvas); font-weight: 500; }
+.data-sync-table :deep(td.el-table__cell) { padding: 15px 0; }
+.sync-plan-name { font-weight: 600; }
+.sync-schedule { font-size: 12px; color: var(--app-muted); }
+.sync-row-actions { flex-wrap: wrap; gap: 8px 12px; }
+.sync-row-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.sync-dialog-hint { margin-bottom: 18px; }
+.sync-run-summary :deep(.el-descriptions__table) { table-layout: fixed; }
+.sync-run-summary :deep(.el-descriptions__label) { width: 125px; }
+.sync-run-summary :deep(.el-descriptions__content) { overflow-wrap: anywhere; }
 .run-table { margin-top: 18px; }
 .full { width: 100%; }
-@media (max-width: 760px) { .data-sync-grid, .data-sync-tables { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .data-sync-tables { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .sync-header { align-items: flex-start; flex-wrap: wrap; }
+  .sync-heading { align-items: flex-start; }
+  .sync-heading h2 { font-size: 20px; }
+  .sync-icon { width: 38px; height: 38px; font-size: 21px; }
+  .sync-overview > div { padding: 0 12px; }
+  .sync-overview strong { font-size: 24px; }
+  .sync-card-heading { flex-wrap: wrap; padding: 16px; }
+  .sync-section { padding: 18px 16px; }
+  .data-sync-grid, .data-sync-tables, .sync-flow { grid-template-columns: 1fr; }
+  .sync-direction { justify-self: center; transform: rotate(90deg); width: 30px; height: 30px; }
+  .data-sync-actions { padding: 16px; flex-wrap: wrap; }
+}
 </style>
