@@ -29,9 +29,9 @@
       </el-table-column>
     </el-table>
     <el-dialog v-model="editing" append-to-body :title="t(form.id ? 'serverCredentials.edit' : 'serverCredentials.add')" width="min(760px, 94vw)" @closed="clearForm">
-      <el-form label-position="top" @submit.prevent="save">
-        <el-form-item :label="t('serverCredentials.label')" required><el-input v-model="form.label" maxlength="120" /></el-form-item>
-        <el-form-item :label="t('serverCredentials.type')"><el-select v-model="form.type"><el-option label="账号密码" value="PASSWORD" /><el-option label="秘钥" value="KEY" /></el-select></el-form-item>
+      <el-form label-position="top" @submit.prevent="save" class="credential-form">
+        <div class="form-section"><div class="section-title">基本信息</div><div class="section-grid"><el-form-item :label="t('serverCredentials.label')" required><el-input v-model="form.label" maxlength="120" placeholder="例如：生产环境跳板机" /></el-form-item><el-form-item :label="t('common.status')"><el-switch v-model="form.enabled" inline-prompt active-text="启用" inactive-text="停用" /></el-form-item></div></div>
+        <div class="form-section"><div class="section-title">认证方式</div><div class="type-cards"><button type="button" :class="['type-card', { selected: form.type === 'PASSWORD' }]" @click="form.type = 'PASSWORD'"><strong>账号密码</strong><span>使用用户名和登录密码认证</span></button><button type="button" :class="['type-card', { selected: form.type === 'KEY' }]" @click="form.type = 'KEY'"><strong>秘钥</strong><span>使用 SSH 私钥进行安全认证</span></button></div></div>
         <el-form-item :label="t('servers.username')"><el-input v-model="form.username" maxlength="64" autocomplete="off" /></el-form-item>
         <el-form-item v-if="form.type === 'PASSWORD'" :label="t('servers.password')"><el-input v-model="form.password" type="password" show-password maxlength="1024" autocomplete="new-password" :placeholder="keepHint" /></el-form-item>
         <el-form-item v-if="form.type === 'KEY'" :label="t('servers.privateKey')">
@@ -39,7 +39,6 @@
           <el-input v-model="form.privateKey" type="textarea" :rows="4" maxlength="32768" autocomplete="off" :placeholder="keepHint" />
         </el-form-item>
         <el-form-item v-if="form.type === 'KEY'" :label="t('servers.passphrase')"><el-input v-model="form.passphrase" type="password" show-password maxlength="1024" autocomplete="new-password" :placeholder="keepHint" /></el-form-item>
-        <el-form-item :label="t('common.status')"><el-switch v-model="form.enabled" /></el-form-item>
         <el-alert v-if="form.id" :title="t('serverCredentials.rotationHint')" type="warning" :closable="false" />
       </el-form>
       <template #footer><el-button @click="editing = false">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button></template>
@@ -156,5 +155,15 @@ watch(() => props.modelValue, value => {
 .credential-table { border-radius: 10px; overflow: hidden; }
 .credential-table :deep(.el-table__cell) { padding: 13px 0; }
 .credential-table :deep(.el-tag) { margin: 2px 4px 2px 0; }
+.credential-form { padding-top: 4px; }
+.form-section { margin-bottom: 22px; padding: 18px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; background: var(--el-fill-color-extra-light); }
+.section-title { margin-bottom: 14px; color: var(--el-text-color-primary); font-weight: 650; font-size: 15px; }
+.section-grid { display: grid; grid-template-columns: 1fr 140px; gap: 18px; }
+.section-grid .el-form-item { margin-bottom: 0; }
+.type-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.type-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 15px; border: 1px solid var(--el-border-color); border-radius: 10px; background: var(--el-bg-color); color: var(--el-text-color-secondary); text-align: left; cursor: pointer; transition: .2s; }
+.type-card strong { color: var(--el-text-color-primary); font-size: 15px; }
+.type-card:hover, .type-card.selected { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); box-shadow: 0 0 0 1px var(--el-color-primary); }
 @media (max-width: 640px) { .credential-toolbar { align-items: stretch; flex-direction: column; } .credential-actions { justify-content: flex-end; } }
+@media (max-width: 560px) { .section-grid, .type-cards { grid-template-columns: 1fr; } }
 </style>
