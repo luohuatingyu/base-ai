@@ -23,4 +23,16 @@ class DataSyncSchemaResourceTest {
         assertTrue(sql.contains("voided BIT(1) NOT NULL DEFAULT b'0'"));
         assertTrue(sql.contains("uk_deployment_run_active UNIQUE (server_id, active_slot)"));
     }
+
+    /** V33 必须以增量字段绑定计划、运行和受管服务器。 */
+    @Test
+    void remoteExecutionMigrationContainsServerAndAgentConstraints() throws Exception {
+        String sql = new ClassPathResource("db/migration/mysql/V33__run_data_sync_on_managed_servers.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(sql.contains("ADD COLUMN server_id BIGINT NULL"));
+        assertTrue(sql.contains("fk_data_sync_plan_server"));
+        assertTrue(sql.contains("agent_job_id VARCHAR(32)"));
+        assertTrue(sql.contains("uk_data_sync_run_agent_job"));
+        assertTrue(sql.contains("uk_data_sync_run_active UNIQUE (plan_id, active_slot)"));
+    }
 }

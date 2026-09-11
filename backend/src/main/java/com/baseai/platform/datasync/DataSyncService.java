@@ -1,6 +1,8 @@
 package com.baseai.platform.datasync;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.deployment.ServerManagementService;
+import com.baseai.platform.deployment.ServerModels;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.service.TaskTraceService;
@@ -8,8 +10,10 @@ import com.baseai.platform.trace.TraceIgnored;
 import com.baseai.platform.trace.TraceSnapshot;
 import com.baseai.platform.workflow.WorkflowConnectionService;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -38,10 +42,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.FutureTask;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 /** 负责同步计划管理、数据库预检和批量数据复制。 */
 @Service
@@ -58,27 +64,44 @@ public class DataSyncService {
     private final StringRedisTemplate redisTemplate;
     private final ThreadPoolTaskExecutor executor;
     private final TaskTraceService taskTraceService;
+    private final DataSyncAgentClient agentClient;
+    private final ServerManagementService serverService;
     private final ConcurrentHashMap<Long, FutureTask<Void>> running = new ConcurrentHashMap<>();
 
     /** 注入平台数据库、连接配置、缓存锁和同步线程池。 */
+    @Autowired
     public DataSyncService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate,
                            WorkflowConnectionService connectionService, ObjectMapper objectMapper,
                            StringRedisTemplate redisTemplate,
                            @Qualifier("dataSyncTaskExecutor") ThreadPoolTaskExecutor executor,
-                           TaskTraceService taskTraceService) {
+                           TaskTraceService taskTraceService, DataSyncAgentClient agentClient,
+                           ServerManagementService serverService) {
         this.jdbcTemplate = jdbcTemplate;
         this.connectionService = connectionService;
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
         this.executor = executor;
         this.taskTraceService = taskTraceService;
+        this.agentClient = agentClient;
+        this.serverService = serverService;
+    }
+
+    /** 为纯 JDBC 单元测试和一次性远程 Worker 创建不访问平台资源的引擎。 */
+    DataSyncService(JdbcTemplate jdbcTemplate, WorkflowConnectionService connectionService, ObjectMapper objectMapper,
+                    StringRedisTemplate redisTemplate, ThreadPoolTaskExecutor executor, TaskTraceService taskTraceService) {
+        this(jdbcTemplate, connectionService, objectMapper, redisTemplate, executor, taskTraceService, null, null);
+    }
+
+    /** 创建供独立进程复用的纯 JDBC 引擎。 */
+    static DataSyncService workerEngine(ObjectMapper objectMapper) {
+        return new DataSyncService(null, null, objectMapper, null, null, null, null, null);
     }
 
     /** 查询当前用户可见的同步计划。 */
     public List<DataSyncModels.PlanView> plans() {
         AuthUser user = AuthContext.require();
-        String sql = "SELECT p.*, (SELECT r.id FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_id, (SELECT r.status FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_status FROM data_sync_plan p WHERE p.voided=false ORDER BY p.id DESC";
-        if (!user.roles().contains("ADMIN")) sql = "SELECT p.*, (SELECT r.id FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_id, (SELECT r.status FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_status FROM data_sync_plan p WHERE p.voided=false AND p.owner_user_id=? ORDER BY p.id DESC";
+        String sql = "SELECT p.*,s.name AS server_name,(SELECT r.id FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_id,(SELECT r.status FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_status FROM data_sync_plan p LEFT JOIN managed_server s ON s.id=p.server_id WHERE p.voided=false ORDER BY p.id DESC";
+        if (!user.roles().contains("ADMIN")) sql = "SELECT p.*,s.name AS server_name,(SELECT r.id FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_id,(SELECT r.status FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_status FROM data_sync_plan p LEFT JOIN managed_server s ON s.id=p.server_id WHERE p.voided=false AND p.owner_user_id=? ORDER BY p.id DESC";
         return user.roles().contains("ADMIN")
             ? jdbcTemplate.query(sql, (rs, row) -> mapPlan(rs))
             : jdbcTemplate.query(sql, (rs, row) -> mapPlan(rs), user.id());
@@ -92,6 +115,9 @@ public class DataSyncService {
             .toList();
     }
 
+    /** 查询当前用户拥有的数据同步执行服务器。 */
+    public List<ServerModels.DataSyncServerOption> servers() { return serverService.dataSyncServers(); }
+
     /** 创建同步计划并在保存前完成连接、策略和表名校验。 */
     @Transactional
     public DataSyncModels.PlanView create(DataSyncModels.PlanCommand command) {
@@ -99,11 +125,12 @@ public class DataSyncService {
         Long ownerId = AuthContext.require().id();
         requireConnection(command.sourceConnectionId(), ownerId, false);
         requireConnection(command.targetConnectionId(), ownerId, true);
+        serverService.requireDataSyncTarget(command.serverId(), ownerId);
         String tables = json(command.tables());
         jdbcTemplate.update("""
-            INSERT INTO data_sync_plan(name,owner_user_id,source_connection_id,target_connection_id,strategy,schedule_cron,enabled,tables_json)
-            VALUES (?,?,?,?,?,?,?,?)
-            """, text(command.name()), ownerId, command.sourceConnectionId(), command.targetConnectionId(),
+            INSERT INTO data_sync_plan(name,owner_user_id,source_connection_id,target_connection_id,server_id,strategy,schedule_cron,enabled,tables_json)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            """, text(command.name()), ownerId, command.sourceConnectionId(), command.targetConnectionId(), command.serverId(),
             strategy(command.strategy()), blankToNull(command.scheduleCron()), !Boolean.FALSE.equals(command.enabled()), tables);
         Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
         return plan(id);
@@ -117,10 +144,11 @@ public class DataSyncService {
         requireOwner(existing.ownerUserId());
         requireConnection(command.sourceConnectionId(), existing.ownerUserId(), false);
         requireConnection(command.targetConnectionId(), existing.ownerUserId(), true);
+        serverService.requireDataSyncTarget(command.serverId(), existing.ownerUserId());
         jdbcTemplate.update("""
-            UPDATE data_sync_plan SET name=?,source_connection_id=?,target_connection_id=?,strategy=?,schedule_cron=?,enabled=?,tables_json=?,updated_at=NOW()
+            UPDATE data_sync_plan SET name=?,source_connection_id=?,target_connection_id=?,server_id=?,strategy=?,schedule_cron=?,enabled=?,tables_json=?,updated_at=NOW()
             WHERE id=?
-            """, text(command.name()), command.sourceConnectionId(), command.targetConnectionId(), strategy(command.strategy()),
+            """, text(command.name()), command.sourceConnectionId(), command.targetConnectionId(), command.serverId(), strategy(command.strategy()),
             blankToNull(command.scheduleCron()), !Boolean.FALSE.equals(command.enabled()), json(command.tables()), id);
         return plan(id);
     }
@@ -135,22 +163,12 @@ public class DataSyncService {
     }
 
     /** 查询数据库中的可选表，只返回元数据，不返回行内容。 */
-    public List<DataSyncModels.TableView> tables(Long connectionId, String schema) {
+    public List<DataSyncModels.TableView> tables(Long connectionId, String schema, Long serverId) {
         if (schema != null && !schema.isBlank() && !validIdentifier(schema)) throw new BusinessException("dataSync.tableNameInvalid");
-        WorkflowConnectionService.StoredConnection connection = requireConnection(connectionId, AuthContext.require().id(), false);
-        try (Connection jdbc = open(connection)) {
-            DatabaseMetaData metadata = jdbc.getMetaData();
-            List<DataSyncModels.TableView> result = new ArrayList<>();
-            try (ResultSet rows = metadata.getTables(catalog(jdbc, connection), schemaOrNull(schema, connection), "%", new String[]{"TABLE"})) {
-                while (rows.next() && result.size() < 500) {
-                    String name = rows.getString("TABLE_NAME");
-                    if (validIdentifier(name)) result.add(new DataSyncModels.TableView(rows.getString("TABLE_SCHEM"), name, rows.getString("TABLE_TYPE")));
-                }
-            }
-            return result;
-        } catch (SQLException exception) {
-            throw new BusinessException("dataSync.connectionFailed");
-        }
+        Long ownerId = AuthContext.require().id();
+        WorkflowConnectionService.StoredConnection connection = requireConnection(connectionId, ownerId, false);
+        ServerModels.DataSyncExecutionTarget server = serverService.requireDataSyncTarget(serverId, ownerId);
+        return agentClient.tables(server, connection, schema);
     }
 
     /** 对选定表执行源端和目标端结构预检。 */
@@ -163,24 +181,11 @@ public class DataSyncService {
         Long ownerId = AuthContext.require().id();
         WorkflowConnectionService.StoredConnection source = requireConnection(command.sourceConnectionId(), ownerId, false);
         WorkflowConnectionService.StoredConnection target = requireConnection(command.targetConnectionId(), ownerId, true);
+        ServerModels.DataSyncExecutionTarget server = serverService.requireDataSyncTarget(command.serverId(), ownerId);
         validateTables(command.tables());
         String selectedStrategy = command.strategy() == null || command.strategy().isBlank()
             ? "UPSERT" : strategy(command.strategy());
-        try (Connection sourceJdbc = open(source); Connection targetJdbc = open(target)) {
-            List<DataSyncModels.TablePreview> result = new ArrayList<>();
-            for (DataSyncModels.TableMapping mapping : command.tables()) {
-                List<DataSyncModels.ColumnView> sourceColumns = columns(sourceJdbc, source, mapping.sourceSchema(), mapping.sourceTable());
-                List<DataSyncModels.ColumnView> targetColumns = columns(targetJdbc, target, mapping.targetSchema(), mapping.targetTable());
-                boolean sourceExists = !sourceColumns.isEmpty();
-                boolean targetExists = !targetColumns.isEmpty();
-                List<String> warnings = compatibilityWarnings(selectedStrategy, mapping, sourceColumns, targetColumns);
-                long rows = sourceExists ? count(sourceJdbc, source, mapping.sourceSchema(), mapping.sourceTable()) : 0;
-                result.add(new DataSyncModels.TablePreview(mapping, sourceExists, targetExists, rows, sourceColumns, targetColumns, warnings));
-            }
-            return new DataSyncModels.PreviewView(result);
-        } catch (SQLException exception) {
-            throw new BusinessException("dataSync.connectionFailed");
-        }
+        return agentClient.preview(server, source, target, selectedStrategy, command.tables());
     }
 
     /** 异步启动一个同步运行并返回可追踪的运行记录。 */
@@ -188,6 +193,7 @@ public class DataSyncService {
     public DataSyncModels.RunView run(Long planId) {
         DataSyncModels.PlanView plan = requirePlan(planId);
         requireOwner(plan.ownerUserId());
+        serverService.requireDataSyncTarget(plan.serverId(), plan.ownerUserId());
         if (running.containsKey(planId) || hasActiveRun(planId)) throw new BusinessException("dataSync.running");
         String traceId = taskTraceService.create(null, plan.ownerUserId(), "DATA_SYNC", "MANUAL", "POST",
             "/api/data-sync/plans/" + planId + "/run", new TraceSnapshot("{}", "{}"));
@@ -207,6 +213,10 @@ public class DataSyncService {
         requireOwner(run.ownerUserId());
         if (!Set.of("RUNNING", "CANCEL_REQUESTED").contains(run.status())) throw new BusinessException("dataSync.notRunning");
         jdbcTemplate.update("UPDATE data_sync_run SET status='CANCEL_REQUESTED' WHERE id=? AND status='RUNNING'", runId);
+        String jobId = jdbcTemplate.queryForObject("SELECT agent_job_id FROM data_sync_run WHERE id=?", String.class, runId);
+        if (jobId != null && !jobId.isBlank()) {
+            try { agentClient.cancel(jobId); } catch (RuntimeException ignored) { }
+        }
         return runDetail(runId);
     }
 
@@ -243,59 +253,40 @@ public class DataSyncService {
         }
     }
 
-    /** 在独立线程中执行完整同步并释放分布式锁。 */
-    private void execute(Long runId, DataSyncModels.PlanView plan, String traceId) {
-        String lockKey = MASKED_LOCK_PREFIX + plan.targetConnectionId() + ":" + plan.id();
-        String token = traceId;
-        boolean locked = false;
-        try {
-            locked = Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(lockKey, token, Duration.ofHours(6)));
-            if (!locked) {
-                finishFailed(runId, traceId, "dataSync.locked");
-                return;
+    /** 每两秒将远程 Agent 进度对账到平台运行记录，支持 Backend 重启恢复。 */
+    @Scheduled(fixedDelay = 2000)
+    public void reconcileRemoteRuns() {
+        List<PendingRemoteRun> pending = jdbcTemplate.query("""
+            SELECT id,agent_job_id,status FROM data_sync_run
+            WHERE status IN ('RUNNING','CANCEL_REQUESTED') AND agent_job_id IS NOT NULL
+            ORDER BY id LIMIT 50
+            """, (rs, row) -> new PendingRemoteRun(rs.getLong("id"), rs.getString("agent_job_id"), rs.getString("status")));
+        for (PendingRemoteRun run : pending) {
+            try {
+                if ("CANCEL_REQUESTED".equals(run.status())) agentClient.cancel(run.jobId());
+                applyAgentJob(run.id(), agentClient.job(run.jobId()));
+            } catch (BusinessException exception) {
+                if (!"dataSync.agentUnavailable".equals(exception.getMessageKey())) {
+                    finishFailed(run.id(), traceId(run.id()), exception.getMessageKey());
+                }
+            } catch (RuntimeException ignored) {
+                // 网络短暂不可用时保留运行态，等待下一轮继续对账。
             }
+        }
+    }
+
+    /** 在独立线程中向所选服务器提交一次性同步 Worker。 */
+    private void execute(Long runId, DataSyncModels.PlanView plan, String traceId) {
+        try {
             WorkflowConnectionService.StoredConnection source = requireConnectionForOwner(plan.sourceConnectionId(), plan.ownerUserId(), false);
             WorkflowConnectionService.StoredConnection target = requireConnectionForOwner(plan.targetConnectionId(), plan.ownerUserId(), true);
-            try (Connection sourceJdbc = open(source); Connection targetJdbc = open(target)) {
-                List<Long> tableRunIds = tableRunIds(runId);
-                preflightRun(runId, plan, sourceJdbc, targetJdbc, source, target, tableRunIds);
-                int completed = 0;
-                for (Long tableRunId : tableRunIds) {
-                    ensureNotCancelled(runId);
-                    DataSyncModels.TableMapping mapping = plan.tables().get(completed);
-                    markTableStarted(tableRunId);
-                    try {
-                        TableResult result = copyTable(sourceJdbc, targetJdbc, source, target, mapping,
-                            plan.strategy(), () -> cancellationRequested(runId));
-                        markTableSuccess(tableRunId, result);
-                        completed++;
-                        jdbcTemplate.update("UPDATE data_sync_run SET completed_tables=?,read_rows=read_rows+?,written_rows=written_rows+? WHERE id=?",
-                            completed, result.readRows(), result.writtenRows(), runId);
-                    } catch (CancellationException exception) {
-                        markTableCancelled(tableRunId);
-                        throw exception;
-                    } catch (Exception exception) {
-                        markTableFailed(tableRunId, exception.getMessage());
-                        throw exception;
-                    }
-                }
-            }
-            ensureNotCancelled(runId);
-            jdbcTemplate.update("UPDATE data_sync_run SET status='SUCCESS',finished_at=NOW() WHERE id=?", runId);
-            taskTraceService.markSuccess(traceId);
-        } catch (CancellationException exception) {
-            finishCancelled(runId, traceId);
+            ServerModels.DataSyncExecutionTarget server = serverService.requireDataSyncTarget(plan.serverId(), plan.ownerUserId());
+            String jobId = jdbcTemplate.queryForObject("SELECT agent_job_id FROM data_sync_run WHERE id=?", String.class, runId);
+            agentClient.start(server, jobId, source, target, plan.strategy(), plan.tables());
         } catch (Exception exception) {
-            if (Thread.currentThread().isInterrupted() || cancellationRequested(runId)) finishCancelled(runId, traceId);
-            else finishFailed(runId, traceId, safeError(exception));
+            finishFailed(runId, traceId, safeError(exception));
         } finally {
-            try {
-                if (locked && token.equals(redisTemplate.opsForValue().get(lockKey))) redisTemplate.delete(lockKey);
-            } catch (RuntimeException ignored) {
-                // Redis 短暂不可用时依赖锁的过期时间释放资源。
-            } finally {
-                running.remove(plan.id());
-            }
+            running.remove(plan.id());
         }
     }
 
@@ -662,6 +653,7 @@ public class DataSyncService {
             || command.sourceConnectionId() == null || command.targetConnectionId() == null) {
             throw new BusinessException("dataSync.planInvalid");
         }
+        if (command.serverId() == null) throw new BusinessException("dataSync.serverRequired");
         if (command.sourceConnectionId().equals(command.targetConnectionId())) throw new BusinessException("dataSync.sameConnection");
         strategy(command.strategy());
         validateTables(command.tables());
@@ -744,8 +736,167 @@ public class DataSyncService {
     private List<String> primaryKeys(List<DataSyncModels.ColumnView> columns) { return columns.stream().filter(column -> column.primaryKeyOrdinal() > 0).sorted((left, right) -> Integer.compare(left.primaryKeyOrdinal(), right.primaryKeyOrdinal())).map(DataSyncModels.ColumnView::name).toList(); }
     /** 统计批量执行结果，兼容驱动返回 SUCCESS_NO_INFO。 */
     private long countWrites(int[] result) { long count = 0; for (int item : result) if (item >= 0) count += item; else count++; return count; }
+
+    /** 纯 JDBC Worker 查询数据库表元数据。 */
+    List<DataSyncModels.TableView> workerTables(WorkflowConnectionService.StoredConnection connection, String schema) {
+        if (schema != null && !schema.isBlank() && !validIdentifier(schema)) throw new BusinessException("dataSync.tableNameInvalid");
+        try (Connection jdbc = open(connection)) {
+            DatabaseMetaData metadata = jdbc.getMetaData();
+            List<DataSyncModels.TableView> result = new ArrayList<>();
+            try (ResultSet rows = metadata.getTables(catalog(jdbc, connection), schemaOrNull(schema, connection), "%", new String[]{"TABLE"})) {
+                while (rows.next() && result.size() < 500) {
+                    String name = rows.getString("TABLE_NAME");
+                    if (validIdentifier(name)) result.add(new DataSyncModels.TableView(rows.getString("TABLE_SCHEM"), name, rows.getString("TABLE_TYPE")));
+                }
+            }
+            return result;
+        } catch (SQLException exception) {
+            throw new BusinessException("dataSync.connectionFailed");
+        }
+    }
+
+    /** 纯 JDBC Worker 对源目标表执行结构和行数预检。 */
+    DataSyncModels.PreviewView workerPreview(WorkflowConnectionService.StoredConnection source,
+                                             WorkflowConnectionService.StoredConnection target,
+                                             String selectedStrategy,
+                                             List<DataSyncModels.TableMapping> tables) {
+        validateTables(tables);
+        String normalizedStrategy = strategy(selectedStrategy);
+        try (Connection sourceJdbc = open(source); Connection targetJdbc = open(target)) {
+            return workerPreview(sourceJdbc, targetJdbc, source, target, normalizedStrategy, tables);
+        } catch (SQLException exception) {
+            throw new BusinessException("dataSync.connectionFailed");
+        }
+    }
+
+    /** 使用调用方提供的 JDBC 连接执行 Worker 预检，便于隔离数据库测试。 */
+    DataSyncModels.PreviewView workerPreview(Connection sourceJdbc, Connection targetJdbc,
+                                             WorkflowConnectionService.StoredConnection source,
+                                             WorkflowConnectionService.StoredConnection target,
+                                             String selectedStrategy,
+                                             List<DataSyncModels.TableMapping> tables) throws SQLException {
+        List<DataSyncModels.TablePreview> result = new ArrayList<>();
+        for (DataSyncModels.TableMapping mapping : tables) {
+            List<DataSyncModels.ColumnView> sourceColumns = columns(sourceJdbc, source, mapping.sourceSchema(), mapping.sourceTable());
+            List<DataSyncModels.ColumnView> targetColumns = columns(targetJdbc, target, mapping.targetSchema(), mapping.targetTable());
+            boolean sourceExists = !sourceColumns.isEmpty();
+            boolean targetExists = !targetColumns.isEmpty();
+            List<String> warnings = compatibilityWarnings(selectedStrategy, mapping, sourceColumns, targetColumns);
+            long rows = sourceExists ? count(sourceJdbc, source, mapping.sourceSchema(), mapping.sourceTable()) : 0;
+            result.add(new DataSyncModels.TablePreview(mapping, sourceExists, targetExists, rows,
+                sourceColumns, targetColumns, warnings));
+        }
+        return new DataSyncModels.PreviewView(result);
+    }
+
+    /** 纯 JDBC Worker 预检全部表后逐表复制并输出累计进度。 */
+    void workerRun(WorkflowConnectionService.StoredConnection source,
+                   WorkflowConnectionService.StoredConnection target, String selectedStrategy,
+                   List<DataSyncModels.TableMapping> tables, Consumer<WorkerProgress> progress) {
+        validateTables(tables);
+        String normalizedStrategy = strategy(selectedStrategy);
+        progress.accept(new WorkerProgress("RUNNING", 0, 0, 0, List.of(), ""));
+        try (Connection sourceJdbc = open(source); Connection targetJdbc = open(target)) {
+            workerRun(sourceJdbc, targetJdbc, source, target, normalizedStrategy, tables, progress);
+        } catch (Exception exception) {
+            progress.accept(new WorkerProgress("FAILED", 0, 0, 0, List.of(), safeError(exception)));
+        }
+    }
+
+    /** 使用调用方提供的 JDBC 连接执行 Worker 复制，便于隔离数据库测试。 */
+    void workerRun(Connection sourceJdbc, Connection targetJdbc,
+                   WorkflowConnectionService.StoredConnection source,
+                   WorkflowConnectionService.StoredConnection target, String normalizedStrategy,
+                   List<DataSyncModels.TableMapping> tables, Consumer<WorkerProgress> progress) {
+        List<WorkerTableResult> results = new ArrayList<>();
+        long readRows = 0;
+        long writtenRows = 0;
+        try {
+            for (DataSyncModels.TableMapping mapping : tables) {
+                List<DataSyncModels.ColumnView> sourceColumns = columns(sourceJdbc, source,
+                    mapping.sourceSchema(), mapping.sourceTable());
+                if (sourceColumns.isEmpty()) throw new BusinessException("dataSync.sourceTableNotFound");
+                List<DataSyncModels.ColumnView> targetColumns = columns(targetJdbc, target,
+                    mapping.targetSchema(), mapping.targetTable());
+                validateCompatibility(normalizedStrategy, mapping, sourceColumns, targetColumns, target);
+            }
+            for (DataSyncModels.TableMapping mapping : tables) {
+                try {
+                    TableResult result = copyTable(sourceJdbc, targetJdbc, source, target, mapping, normalizedStrategy);
+                    readRows += result.readRows();
+                    writtenRows += result.writtenRows();
+                    results.add(new WorkerTableResult(qualified(mapping.sourceSchema(), mapping.sourceTable()),
+                        qualified(mapping.targetSchema(), mapping.targetTable()), "SUCCESS", result.readRows(),
+                        result.writtenRows(), ""));
+                    progress.accept(new WorkerProgress("RUNNING", results.size(), readRows, writtenRows,
+                        List.copyOf(results), ""));
+                } catch (Exception exception) {
+                    results.add(new WorkerTableResult(qualified(mapping.sourceSchema(), mapping.sourceTable()),
+                        qualified(mapping.targetSchema(), mapping.targetTable()), "FAILED", 0, 0,
+                        safeError(exception)));
+                    progress.accept(new WorkerProgress("FAILED", results.size() - 1, readRows, writtenRows,
+                        List.copyOf(results), safeError(exception)));
+                    return;
+                }
+            }
+            progress.accept(new WorkerProgress("SUCCESS", results.size(), readRows, writtenRows,
+                List.copyOf(results), ""));
+        } catch (Exception exception) {
+            progress.accept(new WorkerProgress("FAILED", results.size(), readRows, writtenRows,
+                List.copyOf(results), safeError(exception)));
+        }
+    }
+
     /** 读取计划表对应的运行表 ID。 */
     private List<Long> tableRunIds(Long runId) { return jdbcTemplate.queryForList("SELECT id FROM data_sync_run_table WHERE run_id=? ORDER BY id", Long.class, runId); }
+
+    /** 将 Agent 返回的累计进度和终态写回平台任务记录。 */
+    private void applyAgentJob(Long runId, DataSyncAgentClient.AgentJob job) {
+        JsonNode result = job.result();
+        if (result != null) applyRemoteProgress(runId, result);
+        if ("SUCCEEDED".equals(job.status())) {
+            if (result == null || !"SUCCESS".equals(result.path("status").asText())) {
+                finishFailed(runId, traceId(runId), result == null ? "dataSync.agentInvalidResponse"
+                    : result.path("error").asText("dataSync.executionFailed"));
+                return;
+            }
+            jdbcTemplate.update("UPDATE data_sync_run SET status='SUCCESS',active_slot=NULL,finished_at=NOW() WHERE id=?", runId);
+            taskTraceService.markSuccess(traceId(runId));
+        } else if ("FAILED".equals(job.status())) {
+            String error = result == null ? job.error() : result.path("error").asText(job.error());
+            finishFailed(runId, traceId(runId), error);
+        } else if ("CANCELLED".equals(job.status())) {
+            finishCancelled(runId, traceId(runId));
+        }
+    }
+
+    /** 按计划表顺序应用远程 Worker 的逐表快照。 */
+    private void applyRemoteProgress(Long runId, JsonNode result) {
+        int completed = Math.max(0, result.path("completedTables").asInt(0));
+        long readRows = Math.max(0, result.path("readRows").asLong(0));
+        long writtenRows = Math.max(0, result.path("writtenRows").asLong(0));
+        jdbcTemplate.update("UPDATE data_sync_run SET completed_tables=?,read_rows=?,written_rows=? WHERE id=?",
+            completed, readRows, writtenRows, runId);
+        List<Long> ids = tableRunIds(runId);
+        JsonNode tables = result.path("tableResults");
+        if (!tables.isArray() || tables.size() > ids.size()) return;
+        for (int index = 0; index < tables.size(); index++) {
+            JsonNode table = tables.get(index);
+            String status = table.path("status").asText();
+            if (!Set.of("SUCCESS", "FAILED").contains(status)) continue;
+            jdbcTemplate.update("""
+                UPDATE data_sync_run_table SET status=?,read_rows=?,inserted_rows=?,error_message=?,
+                started_at=COALESCE(started_at,NOW()),finished_at=NOW() WHERE id=?
+                """, status, Math.max(0, table.path("readRows").asLong()),
+                Math.max(0, table.path("writtenRows").asLong()),
+                blankToNull(truncate(table.path("error").asText(), 1000)), ids.get(index));
+        }
+    }
+
+    /** 查询运行记录对应的任务追踪编号。 */
+    private String traceId(Long runId) {
+        return jdbcTemplate.queryForObject("SELECT trace_id FROM data_sync_run WHERE id=?", String.class, runId);
+    }
     /** 查询计划是否仍存在持久化运行任务，覆盖多实例和进程重启场景。 */
     private boolean hasActiveRun(Long planId) {
         Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM data_sync_run WHERE plan_id=? AND status IN ('RUNNING','CANCEL_REQUESTED')", Integer.class, planId);
@@ -777,21 +928,24 @@ public class DataSyncService {
     /** 记录当前表因用户取消而停止。 */
     private void markTableCancelled(Long id) { jdbcTemplate.update("UPDATE data_sync_run_table SET status='CANCELLED',error_message='cancelled',finished_at=NOW() WHERE id=?", id); }
     /** 记录运行失败并同步任务追踪状态。 */
-    private void finishFailed(Long runId, String traceId, String message) { jdbcTemplate.update("UPDATE data_sync_run SET status='FAILED',error_message=?,finished_at=NOW() WHERE id=?", truncate(message, 1000), runId); taskTraceService.markFailed(traceId, message); }
+    private void finishFailed(Long runId, String traceId, String message) { jdbcTemplate.update("UPDATE data_sync_run SET status='FAILED',active_slot=NULL,error_message=?,finished_at=NOW() WHERE id=?", truncate(message, 1000), runId); taskTraceService.markFailed(traceId, message); }
     /** 记录运行取消并同步任务追踪状态。 */
-    private void finishCancelled(Long runId, String traceId) { jdbcTemplate.update("UPDATE data_sync_run SET status='CANCELLED',error_message='cancelled',finished_at=NOW() WHERE id=?", runId); taskTraceService.completeCancellation(traceId); }
+    private void finishCancelled(Long runId, String traceId) { jdbcTemplate.update("UPDATE data_sync_run SET status='CANCELLED',active_slot=NULL,error_message='cancelled',finished_at=NOW() WHERE id=?", runId); taskTraceService.completeCancellation(traceId); }
     /** 创建运行及逐表记录，并使用 JDBC 生成键避免跨连接读取 LAST_INSERT_ID。 */
     private Long createRunRecord(DataSyncModels.PlanView plan, String traceId) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
+        String jobId = UUID.randomUUID().toString().replace("-", "");
         jdbcTemplate.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
-                INSERT INTO data_sync_run(plan_id,trace_id,owner_user_id,status,total_tables)
-                VALUES (?,?,?,'RUNNING',?)
+                INSERT INTO data_sync_run(plan_id,trace_id,owner_user_id,server_id,agent_job_id,status,active_slot,total_tables)
+                VALUES (?,?,?,?,?,'RUNNING',1,?)
                 """, Statement.RETURN_GENERATED_KEYS);
             statement.setLong(1, plan.id());
             statement.setString(2, traceId);
             statement.setLong(3, plan.ownerUserId());
-            statement.setInt(4, plan.tables().size());
+            if (plan.serverId() == null) statement.setNull(4, Types.BIGINT); else statement.setLong(4, plan.serverId());
+            statement.setString(5, jobId);
+            statement.setInt(6, plan.tables().size());
             return statement;
         }, keyHolder);
         Number key = keyHolder.getKey();
@@ -828,15 +982,15 @@ public class DataSyncService {
     /** 判断计划在最近一分钟内是否到期，非法 Cron 会被忽略并留在错误日志中。 */
     private boolean due(DataSyncModels.PlanView plan) { if (plan.scheduleCron() == null || plan.scheduleCron().isBlank()) return false; try { CronExpression cron = CronExpression.parse(plan.scheduleCron()); LocalDateTime base = plan.lastRunAt() == null ? LocalDateTime.now().minusMinutes(1) : plan.lastRunAt(); LocalDateTime next = cron.next(base); return next != null && !next.isAfter(LocalDateTime.now()); } catch (IllegalArgumentException exception) { return false; } }
     /** 映射计划数据库记录。 */
-    private DataSyncModels.PlanView mapPlan(java.sql.ResultSet rs) throws SQLException { Number lastRunId = (Number) rs.getObject("last_run_id"); return new DataSyncModels.PlanView(rs.getLong("id"), rs.getString("name"), rs.getLong("owner_user_id"), rs.getLong("source_connection_id"), rs.getLong("target_connection_id"), rs.getString("strategy"), rs.getString("schedule_cron"), rs.getBoolean("enabled"), parseTables(rs.getString("tables_json")), timestamp(rs, "last_scheduled_at"), lastRunId == null ? null : lastRunId.longValue(), rs.getString("last_run_status"), timestamp(rs, "created_at"), timestamp(rs, "updated_at")); }
+    private DataSyncModels.PlanView mapPlan(java.sql.ResultSet rs) throws SQLException { Number lastRunId = (Number) rs.getObject("last_run_id"); Number serverId = (Number) rs.getObject("server_id"); return new DataSyncModels.PlanView(rs.getLong("id"), rs.getString("name"), rs.getLong("owner_user_id"), rs.getLong("source_connection_id"), rs.getLong("target_connection_id"), serverId == null ? null : serverId.longValue(), rs.getString("server_name"), rs.getString("strategy"), rs.getString("schedule_cron"), rs.getBoolean("enabled"), parseTables(rs.getString("tables_json")), timestamp(rs, "last_scheduled_at"), lastRunId == null ? null : lastRunId.longValue(), rs.getString("last_run_status"), timestamp(rs, "created_at"), timestamp(rs, "updated_at")); }
     /** 读取计划表列表。 */
-    private DataSyncModels.PlanView plan(Long id) { return jdbcTemplate.query("SELECT p.*, (SELECT r.id FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_id, (SELECT r.status FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_status FROM data_sync_plan p WHERE p.id=? AND p.voided=false", (rs, row) -> mapPlan(rs), id).stream().findFirst().orElseThrow(() -> BusinessException.notFound("dataSync.planNotFound")); }
+    private DataSyncModels.PlanView plan(Long id) { return jdbcTemplate.query("SELECT p.*,s.name AS server_name,(SELECT r.id FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_id,(SELECT r.status FROM data_sync_run r WHERE r.plan_id=p.id ORDER BY r.id DESC LIMIT 1) AS last_run_status FROM data_sync_plan p LEFT JOIN managed_server s ON s.id=p.server_id WHERE p.id=? AND p.voided=false", (rs, row) -> mapPlan(rs), id).stream().findFirst().orElseThrow(() -> BusinessException.notFound("dataSync.planNotFound")); }
     /** 获取并校验计划。 */
     private DataSyncModels.PlanView requirePlan(Long id) { if (id == null) throw BusinessException.notFound("dataSync.planNotFound"); return plan(id); }
     /** 获取运行记录并转换为内部视图。 */
-    private DataSyncModels.RunView requireRun(Long id) { List<DataSyncModels.RunView> runs = jdbcTemplate.query("SELECT r.*,p.owner_user_id AS plan_owner FROM data_sync_run r JOIN data_sync_plan p ON p.id=r.plan_id WHERE r.id=?", (rs, row) -> new DataSyncModels.RunView(rs.getLong("id"), rs.getLong("plan_id"), rs.getLong("plan_owner"), rs.getString("trace_id"), rs.getString("status"), rs.getInt("total_tables"), rs.getInt("completed_tables"), rs.getLong("read_rows"), rs.getLong("written_rows"), rs.getString("error_message"), timestamp(rs, "started_at"), timestamp(rs, "finished_at"), List.of()), id); if (runs.isEmpty()) throw BusinessException.notFound("dataSync.runNotFound"); return runs.get(0); }
+    private DataSyncModels.RunView requireRun(Long id) { List<DataSyncModels.RunView> runs = jdbcTemplate.query("SELECT r.*,p.owner_user_id AS plan_owner,s.name AS server_name FROM data_sync_run r JOIN data_sync_plan p ON p.id=r.plan_id LEFT JOIN managed_server s ON s.id=r.server_id WHERE r.id=?", (rs, row) -> { Number serverId = (Number) rs.getObject("server_id"); return new DataSyncModels.RunView(rs.getLong("id"), rs.getLong("plan_id"), rs.getLong("plan_owner"), serverId == null ? null : serverId.longValue(), rs.getString("server_name"), rs.getString("trace_id"), rs.getString("status"), rs.getInt("total_tables"), rs.getInt("completed_tables"), rs.getLong("read_rows"), rs.getLong("written_rows"), rs.getString("error_message"), timestamp(rs, "started_at"), timestamp(rs, "finished_at"), List.of()); }, id); if (runs.isEmpty()) throw BusinessException.notFound("dataSync.runNotFound"); return runs.get(0); }
     /** 查询运行逐表统计。 */
-    private DataSyncModels.RunView runView(Long id) { DataSyncModels.RunView base = requireRun(id); List<DataSyncModels.RunTableView> tables = jdbcTemplate.query("SELECT * FROM data_sync_run_table WHERE run_id=? ORDER BY id", (rs, row) -> new DataSyncModels.RunTableView(rs.getLong("id"), rs.getString("source_table"), rs.getString("target_table"), rs.getString("status"), rs.getLong("read_rows"), rs.getLong("inserted_rows"), rs.getLong("updated_rows"), rs.getString("error_message"), timestamp(rs, "started_at"), timestamp(rs, "finished_at")), id); return new DataSyncModels.RunView(base.id(), base.planId(), base.ownerUserId(), base.traceId(), base.status(), base.totalTables(), base.completedTables(), base.readRows(), base.writtenRows(), base.errorMessage(), base.startedAt(), base.finishedAt(), tables); }
+    private DataSyncModels.RunView runView(Long id) { DataSyncModels.RunView base = requireRun(id); List<DataSyncModels.RunTableView> tables = jdbcTemplate.query("SELECT * FROM data_sync_run_table WHERE run_id=? ORDER BY id", (rs, row) -> new DataSyncModels.RunTableView(rs.getLong("id"), rs.getString("source_table"), rs.getString("target_table"), rs.getString("status"), rs.getLong("read_rows"), rs.getLong("inserted_rows"), rs.getLong("updated_rows"), rs.getString("error_message"), timestamp(rs, "started_at"), timestamp(rs, "finished_at")), id); return new DataSyncModels.RunView(base.id(), base.planId(), base.ownerUserId(), base.serverId(), base.serverName(), base.traceId(), base.status(), base.totalTables(), base.completedTables(), base.readRows(), base.writtenRows(), base.errorMessage(), base.startedAt(), base.finishedAt(), tables); }
     /** 校验计划所有者，管理员仍需使用管理员拥有的资源。 */
     private void requireOwner(Long ownerId) { AuthUser user = AuthContext.require(); if (!user.roles().contains("ADMIN") && !user.id().equals(ownerId)) throw BusinessException.forbidden("dataSync.accessForbidden"); }
     /** 反序列化表配置。 */
@@ -868,4 +1022,9 @@ public class DataSyncService {
     /** 转换 SQL 时间。 */
     private LocalDateTime timestamp(java.sql.ResultSet rs, String column) throws SQLException { java.sql.Timestamp value = rs.getTimestamp(column); return value == null ? null : value.toLocalDateTime(); }
     record TableResult(long readRows, long writtenRows) { }
+    record WorkerTableResult(String sourceTable, String targetTable, String status,
+                             long readRows, long writtenRows, String error) { }
+    record WorkerProgress(String status, int completedTables, long readRows, long writtenRows,
+                          List<WorkerTableResult> tables, String error) { }
+    private record PendingRemoteRun(Long id, String jobId, String status) { }
 }

@@ -10,12 +10,13 @@ public final class DataSyncModels {
     public record TableMapping(String sourceSchema, String sourceTable, String targetSchema,
                                String targetTable, List<String> columns) { }
 
-    public record PlanCommand(String name, Long sourceConnectionId, Long targetConnectionId,
+    public record PlanCommand(String name, Long sourceConnectionId, Long targetConnectionId, Long serverId,
                               String strategy, String scheduleCron, Boolean enabled,
                               Boolean confirmDestructive, List<TableMapping> tables) { }
 
     public record PlanView(Long id, String name, Long ownerUserId, Long sourceConnectionId,
-                           Long targetConnectionId, String strategy, String scheduleCron,
+                           Long targetConnectionId, Long serverId, String serverName,
+                           String strategy, String scheduleCron,
                            boolean enabled, List<TableMapping> tables, LocalDateTime lastRunAt,
                            Long lastRunId, String lastRunStatus, LocalDateTime createdAt,
                            LocalDateTime updatedAt) { }
@@ -27,7 +28,7 @@ public final class DataSyncModels {
     public record ColumnView(String name, int sqlType, String typeName, int size, int decimalDigits,
                              boolean nullable, int primaryKeyOrdinal) { }
 
-    public record PreviewCommand(Long sourceConnectionId, Long targetConnectionId,
+    public record PreviewCommand(Long sourceConnectionId, Long targetConnectionId, Long serverId,
                                  String strategy, List<TableMapping> tables) { }
 
     public record TablePreview(TableMapping mapping, boolean sourceExists, boolean targetExists,
@@ -36,7 +37,8 @@ public final class DataSyncModels {
 
     public record PreviewView(List<TablePreview> tables) { }
 
-    public record RunView(Long id, Long planId, Long ownerUserId, String traceId, String status, int totalTables,
+    public record RunView(Long id, Long planId, Long ownerUserId, Long serverId, String serverName,
+                          String traceId, String status, int totalTables,
                           int completedTables, long readRows, long writtenRows, String errorMessage,
                           LocalDateTime startedAt, LocalDateTime finishedAt,
                           List<RunTableView> tables) { }

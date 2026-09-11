@@ -18,6 +18,12 @@ public final class ServerModels {
                              String lastTestError, LocalDateTime lastTestAt, Long ownerUserId,
                              LocalDateTime createdAt, LocalDateTime updatedAt) { }
 
+    public record DataSyncServerOption(Long id, String name, String mode, boolean enabled) { }
+
+    public record DataSyncExecutionTarget(Long id, String name, String mode, String host, Integer port,
+                                          String username, String authType, String privateKey, String password,
+                                          String passphrase, String hostKey, Long ownerUserId) { }
+
     public record DeploymentCommand(String action, String revision) { }
 
     public record DeploymentView(Long id, Long serverId, String traceId, String action,

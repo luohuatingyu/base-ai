@@ -42,7 +42,7 @@ class DataSyncServiceValidationTest {
         DataSyncModels.PlanCommand unsafe = command("UPSERT", false, "orders;DROP");
         assertEquals("dataSync.tableNameInvalid", assertThrows(BusinessException.class, () -> service.create(unsafe)).getMessageKey());
         DataSyncModels.TableMapping table = new DataSyncModels.TableMapping("", "orders", "", "orders", List.of());
-        DataSyncModels.PlanCommand duplicate = new DataSyncModels.PlanCommand("copy", 1L, 2L, "UPSERT", "", true, false, List.of(table, table));
+        DataSyncModels.PlanCommand duplicate = new DataSyncModels.PlanCommand("copy", 1L, 2L, 3L, "UPSERT", "", true, false, List.of(table, table));
         assertEquals("dataSync.duplicateTable", assertThrows(BusinessException.class, () -> service.create(duplicate)).getMessageKey());
     }
 
@@ -50,10 +50,10 @@ class DataSyncServiceValidationTest {
     @Test
     void rejectsInvalidColumnsAndCron() {
         DataSyncModels.TableMapping duplicateColumns = new DataSyncModels.TableMapping("", "orders", "", "orders", List.of("id", "ID"));
-        DataSyncModels.PlanCommand duplicate = new DataSyncModels.PlanCommand("copy", 1L, 2L, "UPSERT", "", true, false, List.of(duplicateColumns));
+        DataSyncModels.PlanCommand duplicate = new DataSyncModels.PlanCommand("copy", 1L, 2L, 3L, "UPSERT", "", true, false, List.of(duplicateColumns));
         assertEquals("dataSync.columnsInvalid",
             assertThrows(BusinessException.class, () -> service.create(duplicate)).getMessageKey());
-        DataSyncModels.PlanCommand cron = new DataSyncModels.PlanCommand("copy", 1L, 2L, "UPSERT", "invalid", true, false,
+        DataSyncModels.PlanCommand cron = new DataSyncModels.PlanCommand("copy", 1L, 2L, 3L, "UPSERT", "invalid", true, false,
             List.of(new DataSyncModels.TableMapping("", "orders", "", "orders", List.of())));
         assertEquals("dataSync.scheduleInvalid",
             assertThrows(BusinessException.class, () -> service.create(cron)).getMessageKey());
@@ -61,7 +61,7 @@ class DataSyncServiceValidationTest {
 
     /** 构造仅用于参数验证的计划命令。 */
     private DataSyncModels.PlanCommand command(String strategy, boolean confirmed, String table) {
-        return new DataSyncModels.PlanCommand("copy", 1L, 2L, strategy, "", true, confirmed,
+        return new DataSyncModels.PlanCommand("copy", 1L, 2L, 3L, strategy, "", true, confirmed,
             List.of(new DataSyncModels.TableMapping("", table, "", table, List.of())));
     }
 }

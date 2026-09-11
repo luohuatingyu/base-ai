@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -26,22 +28,25 @@ var hostPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:-]{0,253}$`)
 var usernamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9._-]{0,63}$`)
 var fingerprintPattern = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`)
 var jobIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
+var workerImagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$`)
 
 type request struct {
-	Mode        string `json:"mode"`
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Username    string `json:"username"`
-	AuthType    string `json:"authType"`
-	PrivateKey  string `json:"privateKey"`
-	Password    string `json:"password"`
-	Passphrase  string `json:"passphrase"`
-	HostKey     string `json:"hostKey"`
-	WorkingDir  string `json:"workingDir"`
-	ComposeFile string `json:"composeFile"`
-	Action      string `json:"action"`
-	Revision    string `json:"revision"`
-	JobID       string `json:"jobId"`
+	Mode        string          `json:"mode"`
+	Host        string          `json:"host"`
+	Port        int             `json:"port"`
+	Username    string          `json:"username"`
+	AuthType    string          `json:"authType"`
+	PrivateKey  string          `json:"privateKey"`
+	Password    string          `json:"password"`
+	Passphrase  string          `json:"passphrase"`
+	HostKey     string          `json:"hostKey"`
+	WorkingDir  string          `json:"workingDir"`
+	ComposeFile string          `json:"composeFile"`
+	Action      string          `json:"action"`
+	Revision    string          `json:"revision"`
+	JobID       string          `json:"jobId"`
+	WorkerImage string          `json:"workerImage"`
+	Task        json.RawMessage `json:"task"`
 }
 
 type composeProject struct {
@@ -56,6 +61,9 @@ type deploymentJob struct {
 	error      string
 	createdAt  time.Time
 	finishedAt time.Time
+	result     json.RawMessage
+	cancel     context.CancelFunc
+	dataSync   *request
 }
 
 type hostMetrics struct {
@@ -110,6 +118,9 @@ func main() {
 	mux.HandleFunc("/monitor", a.monitor)
 	mux.HandleFunc("/execute", a.execute)
 	mux.HandleFunc("/jobs/", a.jobsHandler)
+	mux.HandleFunc("/data-sync/query", a.dataSyncQuery)
+	mux.HandleFunc("/data-sync/execute", a.dataSyncExecute)
+	mux.HandleFunc("/data-sync/jobs/", a.dataSyncJobs)
 	server := &http.Server{Addr: ":8091", Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Minute, WriteTimeout: 15 * time.Minute}
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		panic(err)
@@ -163,6 +174,81 @@ func (a *agent) monitor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// dataSyncQuery 在所选服务器的一次性容器中执行表查询或同步预检。
+func (a *agent) dataSyncQuery(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"status": "FAILED", "error": "METHOD_NOT_ALLOWED"})
+		return
+	}
+	if !a.authorized(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"status": "FAILED", "error": "UNAUTHORIZED"})
+		return
+	}
+	input, ok := decodeRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := validateDataSync(input, false); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"status": "FAILED", "error": err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+	defer cancel()
+	result, _, err := runDataSync(ctx, input, "", nil)
+	if err != nil || len(result) == 0 {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "FAILED", "error": "DATA_SYNC_EXECUTION_FAILED"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(result)
+}
+
+// dataSyncExecute 以 Backend 预先持久化的任务编号启动远程同步。
+func (a *agent) dataSyncExecute(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"status": "FAILED", "error": "METHOD_NOT_ALLOWED"})
+		return
+	}
+	if !a.authorized(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"status": "FAILED", "error": "UNAUTHORIZED"})
+		return
+	}
+	input, ok := decodeRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := validateDataSync(input, true); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"status": "FAILED", "error": err.Error()})
+		return
+	}
+	status := a.createAndStartDataSyncJob(input)
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": status, "jobId": input.JobID})
+}
+
+// dataSyncJobs 查询或取消远程同步任务，不回传任何连接配置。
+func (a *agent) dataSyncJobs(w http.ResponseWriter, r *http.Request) {
+	if !a.authorized(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"status": "FAILED", "error": "UNAUTHORIZED"})
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/data-sync/jobs/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || !jobIDPattern.MatchString(parts[0]) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"status": "FAILED", "error": "JOB_NOT_FOUND"})
+		return
+	}
+	if r.Method == http.MethodGet && len(parts) == 1 {
+		a.writeJob(w, parts[0])
+		return
+	}
+	if r.Method == http.MethodPost && len(parts) == 2 && parts[1] == "cancel" {
+		a.cancelDataSyncJob(w, parts[0])
+		return
+	}
+	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"status": "FAILED", "error": "METHOD_NOT_ALLOWED"})
+}
+
 // handle 统一完成鉴权、请求限制、参数验证和结果脱敏。
 func (a *agent) handle(w http.ResponseWriter, r *http.Request, execute bool) {
 	if r.Method != http.MethodPost {
@@ -199,7 +285,7 @@ func (a *agent) handle(w http.ResponseWriter, r *http.Request, execute bool) {
 // decodeRequest 限制请求体大小并拒绝未知字段和多余 JSON 内容。
 func decodeRequest(w http.ResponseWriter, r *http.Request) (request, bool) {
 	var input request
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128*1024))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024*1024))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&input); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"status": "FAILED", "error": "INVALID_REQUEST"})
@@ -249,6 +335,102 @@ func (a *agent) createAndStartJob(input request) string {
 	return "RUNNING"
 }
 
+// createAndStartDataSyncJob 创建带取消上下文的远程同步任务，重复请求只返回原状态。
+func (a *agent) createAndStartDataSyncJob(input request) string {
+	a.mu.Lock()
+	a.cleanupJobsLocked(time.Now())
+	if a.jobs == nil {
+		a.jobs = make(map[string]*deploymentJob)
+	}
+	if job, exists := a.jobs[input.JobID]; exists {
+		status := job.status
+		a.mu.Unlock()
+		return status
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	inputCopy := input
+	a.jobs[input.JobID] = &deploymentJob{status: "RUNNING", createdAt: time.Now(), cancel: cancel, dataSync: &inputCopy}
+	a.mu.Unlock()
+	go a.runDataSyncJob(ctx, input.JobID, inputCopy)
+	return "RUNNING"
+}
+
+// runDataSyncJob 读取 Worker 的 NDJSON 进度并保存最新的无敏感结果。
+func (a *agent) runDataSyncJob(ctx context.Context, jobID string, input request) {
+	result, errorOutput, err := runDataSync(ctx, input, jobID, func(progress json.RawMessage) {
+		a.mu.Lock()
+		if job, exists := a.jobs[jobID]; exists && job.status == "RUNNING" {
+			job.result = append(json.RawMessage(nil), progress...)
+		}
+		a.mu.Unlock()
+	})
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	job, exists := a.jobs[jobID]
+	if !exists || job.status == "CANCELLED" {
+		return
+	}
+	job.finishedAt = time.Now()
+	job.cancel = nil
+	job.dataSync = nil
+	if len(result) > 0 {
+		job.result = append(json.RawMessage(nil), result...)
+	}
+	if err != nil {
+		job.status = "FAILED"
+		job.error = trimOutput(errorOutput)
+		if job.error == "" {
+			job.error = "DATA_SYNC_EXECUTION_FAILED"
+		}
+		return
+	}
+	var final struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	if len(job.result) == 0 || json.Unmarshal(job.result, &final) != nil || (final.Status != "SUCCESS" && final.Status != "FAILED") {
+		job.status = "FAILED"
+		job.error = "DATA_SYNC_RESULT_INVALID"
+		return
+	}
+	if final.Status == "FAILED" {
+		job.status = "FAILED"
+		job.error = trimOutput(final.Error)
+		return
+	}
+	job.status = "SUCCEEDED"
+}
+
+// cancelDataSyncJob 终止本地进程并强制清理命名 Worker 容器。
+func (a *agent) cancelDataSyncJob(w http.ResponseWriter, jobID string) {
+	a.mu.Lock()
+	job, exists := a.jobs[jobID]
+	if !exists || job.dataSync == nil {
+		a.mu.Unlock()
+		if exists {
+			a.writeJob(w, jobID)
+			return
+		}
+		writeJSON(w, http.StatusNotFound, map[string]string{"status": "FAILED", "error": "JOB_NOT_FOUND"})
+		return
+	}
+	input := *job.dataSync
+	cancel := job.cancel
+	job.status = "CANCELLED"
+	job.error = "cancelled"
+	job.finishedAt = time.Now()
+	job.cancel = nil
+	job.dataSync = nil
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	ctx, stop := context.WithTimeout(context.Background(), 20*time.Second)
+	defer stop()
+	_ = stopDataSyncContainer(ctx, input, jobID)
+	a.writeJob(w, jobID)
+}
+
 // runJob 在独立超时上下文中执行 Compose，调用方重启不会中断任务。
 func (a *agent) runJob(jobID string, input request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
@@ -288,12 +470,15 @@ func (a *agent) writeJob(w http.ResponseWriter, jobID string) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"status": "FAILED", "error": "JOB_NOT_FOUND"})
 		return
 	}
-	result := map[string]string{"status": job.status, "jobId": jobID}
+	result := map[string]any{"status": job.status, "jobId": jobID}
 	if job.output != "" {
 		result["output"] = job.output
 	}
 	if job.error != "" {
 		result["error"] = job.error
+	}
+	if len(job.result) > 0 {
+		result["result"] = json.RawMessage(job.result)
 	}
 	a.mu.RUnlock()
 	writeJSON(w, http.StatusOK, result)
@@ -365,6 +550,200 @@ func validateMonitor(input request) error {
 		return validateSSH(input)
 	}
 	return nil
+}
+
+// validateDataSync 限制执行目标、固定 Worker 镜像、任务编号和 JSON 载荷。
+func validateDataSync(input request, execute bool) error {
+	if input.Mode != "LOCAL" && input.Mode != "SSH" {
+		return errors.New("MODE_INVALID")
+	}
+	if input.Mode == "SSH" {
+		if err := validateSSH(input); err != nil {
+			return err
+		}
+	}
+	if !workerImagePattern.MatchString(input.WorkerImage) || strings.Contains(input.WorkerImage, "..") {
+		return errors.New("WORKER_IMAGE_INVALID")
+	}
+	if execute && !jobIDPattern.MatchString(input.JobID) {
+		return errors.New("JOB_ID_INVALID")
+	}
+	if len(input.Task) == 0 || len(input.Task) > 768*1024 || !json.Valid(input.Task) {
+		return errors.New("DATA_SYNC_TASK_INVALID")
+	}
+	var task struct {
+		Action string `json:"action"`
+	}
+	if json.Unmarshal(input.Task, &task) != nil {
+		return errors.New("DATA_SYNC_TASK_INVALID")
+	}
+	if execute && task.Action != "RUN" {
+		return errors.New("DATA_SYNC_ACTION_INVALID")
+	}
+	if !execute && task.Action != "TABLES" && task.Action != "PREVIEW" {
+		return errors.New("DATA_SYNC_ACTION_INVALID")
+	}
+	return nil
+}
+
+// runDataSync 使用固定 Docker 参数启动一次性 Worker，并增量读取结构化进度。
+func runDataSync(ctx context.Context, input request, jobID string,
+	progress func(json.RawMessage)) (json.RawMessage, string, error) {
+	args := dataSyncDockerArgs(input.WorkerImage, jobID)
+	var command *exec.Cmd
+	cleanup := func() {}
+	if input.Mode == "LOCAL" {
+		command = exec.CommandContext(ctx, "docker", args...)
+	} else {
+		remoteCommand := "docker"
+		for _, arg := range args {
+			remoteCommand += " " + shellQuote(arg)
+		}
+		var err error
+		command, cleanup, err = dataSyncRemoteCommand(ctx, input, remoteCommand)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	defer cleanup()
+	return runDataSyncProcess(command, input.Task, progress)
+}
+
+// dataSyncDockerArgs 返回不可由请求改变的容器隔离参数和 Java 入口。
+func dataSyncDockerArgs(workerImage string, jobID string) []string {
+	args := []string{"run", "--rm", "-i", "--network", "host", "--read-only", "--cap-drop", "ALL",
+		"--security-opt", "no-new-privileges", "--pids-limit", "128", "--memory", "1g", "--cpus", "1.0",
+		"--tmpfs", "/tmp:size=32m,mode=1700,uid=10001"}
+	if jobID != "" {
+		args = append(args, "--name", dataSyncContainerName(jobID))
+	}
+	return append(args, workerImage, "java", "-Xms32m", "-Xmx768m",
+		"-Dloader.main=com.baseai.platform.datasync.DataSyncRemoteWorker", "-cp", "/app/app.jar",
+		"org.springframework.boot.loader.launch.PropertiesLauncher")
+}
+
+// runDataSyncProcess 通过标准输入传递凭据，只保留 Worker 输出的最后一份合法 JSON。
+func runDataSyncProcess(command *exec.Cmd, task json.RawMessage,
+	progress func(json.RawMessage)) (json.RawMessage, string, error) {
+	command.Stdin = bytes.NewReader(task)
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return nil, "", err
+	}
+	stderr := &boundedBuffer{limit: 4096}
+	command.Stderr = stderr
+	if err := command.Start(); err != nil {
+		return nil, stderr.String(), err
+	}
+	var latest json.RawMessage
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 4096), 256*1024)
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 || !json.Valid(line) {
+			continue
+		}
+		latest = append(json.RawMessage(nil), line...)
+		if progress != nil {
+			progress(latest)
+		}
+	}
+	scanErr := scanner.Err()
+	waitErr := command.Wait()
+	if scanErr != nil {
+		return latest, stderr.String(), scanErr
+	}
+	return latest, stderr.String(), waitErr
+}
+
+// dataSyncRemoteCommand 构造通过严格 Host Key 校验的 SSH 进程，并把临时密钥限制在私有目录。
+func dataSyncRemoteCommand(ctx context.Context, input request, remoteCommand string) (*exec.Cmd, func(), error) {
+	tempDir, err := os.MkdirTemp("", "deployment-agent-")
+	if err != nil {
+		return nil, func() {}, err
+	}
+	cleanup := func() { _ = os.RemoveAll(tempDir) }
+	knownHosts := filepath.Join(tempDir, "known_hosts")
+	scanContext, cancelScan := context.WithTimeout(ctx, 10*time.Second)
+	scan := exec.CommandContext(scanContext, "ssh-keyscan", "-T", "5", "-p", fmt.Sprint(input.Port), input.Host)
+	keyData, err := scan.Output()
+	cancelScan()
+	if err != nil {
+		cleanup()
+		return nil, func() {}, errors.New("SSH_HOST_KEY_SCAN_FAILED")
+	}
+	candidate := filepath.Join(tempDir, "candidate_host_key")
+	trustedKeys, err := matchingHostKeys(keyData, input.HostKey, func(line string) (string, error) {
+		if writeErr := os.WriteFile(candidate, []byte(line+"\n"), 0600); writeErr != nil {
+			return "", writeErr
+		}
+		output, commandErr := exec.CommandContext(ctx, "ssh-keygen", "-lf", candidate, "-E", "sha256").Output()
+		return string(output), commandErr
+	})
+	if err != nil || os.WriteFile(knownHosts, trustedKeys, 0600) != nil {
+		cleanup()
+		return nil, func() {}, errors.New("SSH_HOST_KEY_MISMATCH")
+	}
+	args := []string{"-F", "/dev/null", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + knownHosts,
+		"-o", "GlobalKnownHostsFile=/dev/null", "-o", "CanonicalizeHostname=no", "-o", "ConnectTimeout=10",
+		"-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-p", fmt.Sprint(input.Port)}
+	if input.AuthType == "KEY" {
+		privateKey := filepath.Join(tempDir, "id_key")
+		if err := os.WriteFile(privateKey, []byte(input.PrivateKey), 0600); err != nil {
+			cleanup()
+			return nil, func() {}, err
+		}
+		args = append(args, "-o", "IdentitiesOnly=yes", "-o", "PasswordAuthentication=no", "-i", privateKey)
+		if input.Passphrase == "" {
+			args = append(args, "-o", "BatchMode=yes")
+		}
+	} else {
+		args = append(args, "-o", "BatchMode=no", "-o", "PubkeyAuthentication=no",
+			"-o", "PreferredAuthentications=password,keyboard-interactive")
+	}
+	args = append(args, input.Username+"@"+input.Host, remoteCommand)
+	command := exec.CommandContext(ctx, "ssh", args...)
+	if input.AuthType == "PASSWORD" {
+		command = exec.CommandContext(ctx, "sshpass", append([]string{"-e", "ssh"}, args...)...)
+		command.Env = append(os.Environ(), "SSHPASS="+input.Password)
+	}
+	if input.AuthType == "KEY" && input.Passphrase != "" {
+		command = exec.CommandContext(ctx, "sshpass", append([]string{"-e", "-P", "Enter passphrase", "ssh"}, args...)...)
+		command.Env = append(os.Environ(), "SSHPASS="+input.Passphrase)
+	}
+	return command, cleanup, nil
+}
+
+// stopDataSyncContainer 强制终止固定名称的本地或远端 Worker 容器。
+func stopDataSyncContainer(ctx context.Context, input request, jobID string) error {
+	name := dataSyncContainerName(jobID)
+	if input.Mode == "LOCAL" {
+		return exec.CommandContext(ctx, "docker", "rm", "-f", name).Run()
+	}
+	_, err := runRemoteCommand(ctx, input, "docker rm -f "+shellQuote(name)+" >/dev/null 2>&1 || true")
+	return err
+}
+
+// dataSyncContainerName 将已验证的十六进制任务编号映射为固定容器名。
+func dataSyncContainerName(jobID string) string { return "base-ai-data-sync-" + jobID }
+
+// boundedBuffer 截断外部进程错误，避免异常输出耗尽 Agent 内存。
+type boundedBuffer struct {
+	bytes.Buffer
+	limit int
+}
+
+// Write 只保存上限以内的错误字节，同时向调用方报告原始长度。
+func (buffer *boundedBuffer) Write(value []byte) (int, error) {
+	original := len(value)
+	remaining := buffer.limit - buffer.Len()
+	if remaining > 0 {
+		if len(value) > remaining {
+			value = value[:remaining]
+		}
+		_, _ = buffer.Buffer.Write(value)
+	}
+	return original, nil
 }
 
 // validateSSH 统一验证 SSH 目标、主机指纹和认证凭据。

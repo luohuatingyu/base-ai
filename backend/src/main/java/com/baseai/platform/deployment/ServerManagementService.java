@@ -93,6 +93,28 @@ public class ServerManagementService {
         return user.roles().contains("ADMIN") ? jdbcTemplate.query(sql, (rs, row) -> map(rs)) : jdbcTemplate.query(sql, (rs, row) -> map(rs), user.id());
     }
 
+    /** 查询当前用户拥有且可供数据同步选择的服务器。 */
+    public List<ServerModels.DataSyncServerOption> dataSyncServers() {
+        Long ownerId = AuthContext.require().id();
+        return jdbcTemplate.query("SELECT id,name,mode,enabled FROM managed_server WHERE voided=false AND owner_user_id=? ORDER BY id DESC",
+            (rs, row) -> new ServerModels.DataSyncServerOption(rs.getLong("id"), rs.getString("name"),
+                rs.getString("mode"), rs.getBoolean("enabled")), ownerId);
+    }
+
+    /** 读取数据同步执行目标，并在返回解密配置前校验所有权和启用状态。 */
+    public ServerModels.DataSyncExecutionTarget requireDataSyncTarget(Long id, Long ownerId) {
+        if (id == null) return new ServerModels.DataSyncExecutionTarget(null, "Platform local", "LOCAL", "", null,
+            "", "", "", "", "", "", ownerId);
+        ServerRecord server = require(id);
+        if (!server.ownerUserId().equals(ownerId)) throw BusinessException.forbidden("dataSync.serverForbidden");
+        if (!server.enabled()) throw new BusinessException("dataSync.serverDisabled");
+        JsonNode config = server.config();
+        return new ServerModels.DataSyncExecutionTarget(server.id(), server.name(), server.mode(), value(config, "host"),
+            number(config, "port", 22), value(config, "username"), value(config, "authType"),
+            value(config, "privateKey"), value(config, "password"), value(config, "passphrase"),
+            value(config, "hostKey"), server.ownerUserId());
+    }
+
     /** 创建本地或 SSH 服务器配置。 */
     @Transactional
     public ServerModels.ServerView create(ServerModels.ServerCommand command) {
@@ -123,6 +145,9 @@ public class ServerManagementService {
         ServerRecord existing = require(id);
         requireOwner(existing.ownerUserId());
         if (running.containsKey(id) || hasActiveDeployment(id)) throw new BusinessException("server.running");
+        Integer referenced = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM data_sync_plan WHERE server_id=? AND voided=false", Integer.class, id);
+        if (referenced != null && referenced > 0) throw new BusinessException("server.inUse");
         jdbcTemplate.update("UPDATE managed_server SET voided=true,enabled=false,updated_at=NOW() WHERE id=?", id);
     }
 

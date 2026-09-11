@@ -1,5 +1,6 @@
 package com.baseai.platform.datasync;
 
+import com.baseai.platform.deployment.ServerModels;
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.trace.TraceIgnored;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,6 +34,11 @@ public class DataSyncController {
     @RequiredPermission("operations:data-sync:list")
     public List<DataSyncModels.ConnectionOption> connections() { return service.connections(); }
 
+    /** 查询当前用户可用于执行数据同步的服务器。 */
+    @GetMapping("/servers")
+    @RequiredPermission("operations:data-sync:list")
+    public List<ServerModels.DataSyncServerOption> servers() { return service.servers(); }
+
     /** 创建同步计划。 */
     @PostMapping("/plans")
     @RequiredPermission("operations:data-sync:create")
@@ -51,7 +57,11 @@ public class DataSyncController {
     /** 查询数据库表元数据。 */
     @GetMapping("/connections/{connectionId}/tables")
     @RequiredPermission("operations:data-sync:preview")
-    public List<DataSyncModels.TableView> tables(@PathVariable Long connectionId, @RequestParam(defaultValue = "") String schema) { return service.tables(connectionId, schema); }
+    public List<DataSyncModels.TableView> tables(@PathVariable Long connectionId,
+                                                 @RequestParam(defaultValue = "") String schema,
+                                                 @RequestParam(required = false) Long serverId) {
+        return service.tables(connectionId, schema, serverId);
+    }
 
     /** 预览源目标表结构和行数。 */
     @PostMapping("/preview")
