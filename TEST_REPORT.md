@@ -1,5 +1,52 @@
 # 最近分支覆盖测试报告
 
+## 凭据类型修复与管理界面完善（2026-09-11）
+
+### Git 基准点
+
+Commit: d559cdcf4af42b02e181a9f0d850588299e89bcf
+- 提交信息：Fix credential type lifecycle and improve management interface
+- 分支：master；测试日期：2026-09-11。
+- 相对已验证基准 f1d1cde80ba6c1a9768fb532c8821dad71a93579，业务变更集中于 ServerCredentialService；执行定向和完整测试。以下历史章节的失败与旧基准保留作为过程记录，以本节为最新验收记录。
+
+### 实现与影响范围
+
+- KEY 与 PASSWORD 严格互斥，编辑持久化 credential_type；未引用记录切换类型清除另一类型的旧密文，已引用记录禁止切换。私钥、密码和口令继续 AES-GCM 加密，列表不返回秘密。
+- RSA 历史单一私钥或纯账号密码记录在读取时识别为对应类型；历史组合及其他材料记录仍标记为历史凭据，继续服务原有连接，转换时要求解除引用。不执行批量迁移、不删除历史数据。
+- Vue 3 / Element Plus 管理弹窗新增顶部说明区、搜索与类型筛选、认证卡片、滚动分组表单、状态标签、历史提示、中英文文案及移动端布局；类型切换清理不适用的临时输入，保存前检查必填材料，明文弹窗仅展示已设置字段。
+- 服务器新增界面只提供两种认证选项，历史组合服务器保留兼容展示；原服务器引用权限、连接和监控流程保留。公钥和证书仅在私钥类型作为可选存档，未新增 SSH 证书认证支持。
+- 未新增依赖、修改运行配置或数据库迁移。回滚需评估新类型记录兼容性后回退应用镜像；显式切换类型清除的旧秘密不能靠代码回滚恢复，应通过凭据重新配置恢复。
+
+### 实际测试命令与结果
+
+1. 先补充切换类型、混合输入失败用例，再执行 Docker Maven 定向测试：ServerCredentialServiceTest 20 项，失败断言 2、错误 8；稳定复现缺少消息资源和切换残留秘密问题。没有跳过或删除失败用例。
+2. 项目根目录执行：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp -Dtest=ServerCredentialServiceTest,ServerManagementValidationTest,ServerManagementControllerTest,ServerManagementMonitorTest test && mvn -B -ntp test'`。定向 76/76 通过；完整 851/851 通过，通过率 100%，失败 0、错误 0、跳过 0。关键模块：凭据 24、服务器校验 22、监控 28、Controller 2。
+3. `node --test frontend/test/server-credentials.test.mjs frontend/test/servers.test.mjs`：18/18 通过；随后新增搜索组合测试，由最终完整前端套件覆盖。
+4. frontend 工作目录执行 `npm run lint && npm run typecheck && npm run test:coverage && node --test e2e/*.test.mjs`：退出 0，完整前端 369/369 通过、失败 0、跳过 0；生产服务 E2E 1/1 通过。工具函数覆盖率：行 98.40%、分支 80.95%、函数 95.27%，均通过既有门槛。该覆盖率不代表 Vue 组件或后端行覆盖率。
+5. `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：成功退出 0，构建内 `mvn -B -ntp package` 再次验证 851/851 通过。通过 set -o pipefail 保留 Compose 真实失败状态；没有跳过测试。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与前置条件 | 输入与预期结果 | 用例与场景 |
+| --- | --- | --- | --- |
+| 两种类型互斥且必填有效 | Service / 独立 H2、真实加密、已登录用户 | 两类混合材料、空值、掩码新建均拒绝且不落库；正常分别创建成功 | rejectsMixedMaterials、rejectsMissingSecrets、rejectsInvalidFields；正常/边界/异常/恶意账号 |
+| 编辑持久化类型并清理旧秘密 | Service / 未引用记录 | PASSWORD→KEY→PASSWORD 后类型正确且另一类密文为空；空更新保留现有秘密 | switchesTypeAndClearsOldSecrets、storesEncryptedMaterialsAndPreservesSecretsOnEdit；分支/回归 |
+| 历史数据与服务器引用兼容 | Service / SQL 构造真实历史 RSA 数据及服务器引用 | 历史组合仍可解析两类材料；引用中转换拒绝；纯密码记录可保留密文更新类型 | preservesLegacyCombinedCredentials、protectsReferencedTypeAndNormalizesLegacyAccount、switchesReferencesAndUsesServerUsernameForKeyOnly；兼容/状态冲突 |
+| 轮换与访问安全保持有效 | Service / 多服务器共享引用、不同用户、回环 HTTP Agent | 密码与私钥轮换分别生效；外部响应不含秘密；越权访问、删除和管理员明文权限按原规则处理 | sharesCredentialsAndResolvesLatestValues、passesRotatedCredentialsToAgentWithoutExposingThem、enforcesOwnershipAndAdminSecretAccess；权限/回归 |
+| 前端校验及字段清理 | 组件真实函数 / 隔离 HTTP 与消息框 | 两种类型的新建、空编辑、缺账号、掩码和切换；验证实际提交字段与清理副作用 | 两类凭据的必填校验与秘密保留、切换类型清理临时输入且保留账号、凭据创建编辑保留材料并在成功后清除敏感输入；正常/边界/异常 |
+| 搜索和类型筛选 | 组件真实 computed / 不同类型元数据 | 大小写、首尾空白、空账号、历史记录及无匹配输入返回正确记录集合 | 凭据搜索和类型筛选返回匹配记录；正常/边界 |
+| 新界面实际部署 | Compose / 六个服务与 HTTPS 入口 | 新镜像健康，网页 JS/CSS 与容器文件哈希一致且包含新组件标记 | 实际资源核验；部署回归 |
+
+### 部署核验与限制
+
+- `docker ps --filter name=ai- --format '{{.Names}} {{.Image}} {{.Status}}'`：caddy、frontend、backend、deployment-agent、document-parser、python-worker 六个运行容器均使用 d559cdcf4af42b02e181a9f0d850588299e89bcf 且 healthy。未发生端口冲突。
+- HTTPS 实际页面从旧 index-Bf4E_5sC.js / index-dvKesZJx.css 更新为 index-DM0gXP7q.js / index-CAAdJsNO.css。使用 curl 与 docker exec cat 读取两端文件，在内存中比较 SHA-256：JS 为 37e45297aa314cf21a8585451261e6388d85c8ba7706c019f78d4b443bf37670，CSS 为 11665562d51f9ed37db0d635aae678bf884bca298d500342dd6b66a4fe4e8fe2，均相同。实际脚本包含 credential-hero，样式包含 credential-filters。
+- 资源核验首次受 Node execFileSync 默认缓冲上限影响报 ENOBUFS；将仅内存缓冲提高至 20 MiB 后校验退出 0，不涉及应用修改。curl -k 仅用于本机自签名证书。
+- `curl -ksS -o /dev/null -w '%{http_code}' https://localhost/api/server-credentials`：未登录返回 401。
+- 浏览器预览停在 HTTP→HTTPS 跳转限制，工具拒绝跨预览来源导航。因此没有完成登录后的真实浏览器操作、窄屏视觉验收与真实 SSH 远程连接验证；不能将资源哈希验证等同于这些验收。建议在本机 HTTPS 页面登录验证两类凭据增改、搜索筛选及服务器连接；自动化服务测试使用回环 Agent 隔离外部依赖。
+- 未创建调试文件或临时测试文件；Maven 源码副本随 --rm 测试容器清除；未留下额外服务进程。git diff --check 通过，仅提交当前任务文件。
+- 下次修改业务代码、实体、Repository、Service、Controller 或核心业务配置时，必须相对本节 Git 基准点检查差异并重跑完整测试、更新报告；真实 SSH 与浏览器布局验证仍建议补充。
+
 ## 容器未更新排查（2026-09-11）
 
 - 待验证提交：3ad5ee0c95b52b073fedb46752e2018318f29a14。该提交未通过验收，不更新已通过测试的基准点。
