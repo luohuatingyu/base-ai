@@ -18,4 +18,18 @@ class ServerManagementControllerTest {
         assertArrayEquals(new String[]{"/{id}/monitor"}, monitor.getAnnotation(GetMapping.class).value());
         assertEquals("operations:server:test", monitor.getAnnotation(RequiredPermission.class).value());
     }
+
+    /** 凭据写入和明文查看都有权限检查且禁止记录请求快照。 */
+    @Test
+    void protectsCredentialEndpointsAndDisablesSecretSnapshots() throws Exception {
+        for (String name : new String[]{"create", "update", "reveal"}) {
+            Method method = java.util.Arrays.stream(ServerCredentialController.class.getMethods())
+                .filter(candidate -> candidate.getName().equals(name)).findFirst().orElseThrow();
+            assertEquals(false, method.getAnnotation(com.baseai.platform.trace.TraceType.class).captureRequest());
+            assertEquals("operations:server:" + switch (name) { case "create" -> "create"; case "update" -> "update"; default -> "list"; },
+                method.getAnnotation(RequiredPermission.class).value());
+        }
+        assertEquals("operations:server:delete", ServerCredentialController.class.getMethod("delete", Long.class)
+            .getAnnotation(RequiredPermission.class).value());
+    }
 }

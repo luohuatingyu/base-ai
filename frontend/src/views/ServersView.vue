@@ -6,6 +6,7 @@
         <p>{{ t('servers.description') }}</p>
       </div>
       <div class="table-actions">
+        <el-button @click="credentialsVisible = true">{{ t('serverCredentials.title') }}</el-button>
         <el-button @click="load">{{ t('common.refresh') }}</el-button>
         <el-button
           v-if="auth.hasPermission('operations:server:create')"
@@ -17,6 +18,7 @@
       </div>
     </div>
     <el-alert :title="t('servers.securityNotice')" type="warning" show-icon :closable="false" />
+    <ServerCredentialManager v-model="credentialsVisible" @changed="loadCredentials" />
     <el-table :data="rows" v-loading="loading" class="servers-table">
       <el-table-column prop="name" :label="t('servers.name')" min-width="180" />
       <el-table-column prop="mode" :label="t('servers.mode')" width="110" />
@@ -184,7 +186,7 @@
                 <div class="field-help">{{ t('servers.portHelp') }}</div>
               </el-form-item>
               <el-form-item :label="t('servers.username')">
-                <el-input v-model="form.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" />
+                <el-input v-model="form.username" :disabled="!!selectedCredential?.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" />
                 <div class="field-help">{{ t('servers.usernameHelp') }}</div>
               </el-form-item>
             </div>
@@ -242,6 +244,14 @@
               </div>
             </el-form-item>
 
+            <el-form-item :label="t('serverCredentials.select')">
+              <el-select v-model="form.credentialId" clearable filterable :loading="credentialsLoading" @change="selectCredential">
+                <el-option v-for="credential in selectableCredentials" :key="credential.id" :value="credential.id" :label="`${credential.label} (${credential.username || credential.type})`" />
+              </el-select>
+              <el-button link type="primary" @click="credentialsVisible = true">{{ t('serverCredentials.title') }}</el-button>
+              <div class="field-help">{{ t('serverCredentials.selectionHint') }}</div>
+            </el-form-item>
+            <template v-if="!form.credentialId && form.id">
             <div v-if="['KEY', 'KEY_PASSWORD'].includes(form.authType)" class="credential-panel">
               <el-form-item :label="t('servers.privateKey')">
                 <div class="private-key-editor">
@@ -285,6 +295,7 @@
                 <div class="field-help">{{ form.id ? t('servers.savedCredentialHint') : t('servers.passwordHelp') }}</div>
               </el-form-item>
             </div>
+            </template>
           </section>
         </template>
 
@@ -392,6 +403,7 @@ import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { readPrivateKeyFile } from '../utils/serverCredentials'
+import ServerCredentialManager from '../components/ServerCredentialManager.vue'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -408,6 +420,29 @@ const originalAuthType = ref('KEY')
 const privateKeyFileInput = ref(null)
 const privateKeyFileName = ref('')
 const form = reactive(emptyForm())
+const credentialsVisible = ref(false)
+const credentialsLoading = ref(false)
+const credentials = ref([])
+const selectedCredential = computed(() => credentials.value.find(credential => credential.id === form.credentialId))
+const selectableCredentials = computed(() => credentials.value.filter(credential => credential.enabled
+  && credential.ownerUserId === (form.ownerUserId || auth.user?.id)
+  && (!['KEY', 'KEY_PASSWORD'].includes(form.authType) || credential.hasPrivateKey)
+  && (!['PASSWORD', 'KEY_PASSWORD'].includes(form.authType) || credential.hasPassword)))
+
+// 加载可复用凭据元数据，绝不读取下拉选项的秘密。
+async function loadCredentials() {
+  credentialsLoading.value = true
+  try { credentials.value = (await http.get('/server-credentials')).data || [] }
+  catch (error) { credentials.value = []; showHttpError(error) }
+  finally { credentialsLoading.value = false }
+}
+
+// 选择凭据时带入账号，清除旧的临时秘密输入。
+function selectCredential(id) {
+  const credential = credentials.value.find(item => item.id === id)
+  if (credential?.username) form.username = credential.username
+  form.privateKey = ''; form.password = ''; form.passphrase = ''
+}
 
 // 组合当前监控服务器的连接地址，避免在本地模式展示无意义端口。
 const monitorServerAddress = computed(() => {
@@ -418,7 +453,7 @@ const monitorServerAddress = computed(() => {
 
 // 创建不携带敏感值且默认使用 SSH 的服务器表单。
 function emptyForm() {
-  return { id: null, name: '', mode: 'SSH', host: '', port: 22, username: '', authType: 'KEY', privateKey: '', password: '', passphrase: '', hostKey: '', workingDir: '', composeFile: '', enabled: true }
+  return { id: null, name: '', mode: 'SSH', host: '', port: 22, username: '', authType: 'KEY', credentialId: null, privateKey: '', password: '', passphrase: '', hostKey: '', workingDir: '', composeFile: '', enabled: true }
 }
 
 // 加载当前用户可见的服务器配置。
@@ -440,6 +475,7 @@ function open(row) {
   originalAuthType.value = form.authType
   privateKeyFileName.value = ''
   visible.value = true
+  loadCredentials()
 }
 
 // 打开系统文件选择器，让用户从本机选择 SSH 私钥文件。
@@ -474,6 +510,8 @@ function validateForm() {
   if (!form.name.trim()) return false
   if (form.mode !== 'SSH') return true
   if (!form.host.trim() || !form.username.trim() || !form.port) return false
+  if (form.credentialId) return selectableCredentials.value.some(credential => credential.id === form.credentialId)
+  if (!form.id) return false
   const requiresCredential = !form.id || form.authType !== originalAuthType.value
   if (requiresCredential && ['KEY', 'KEY_PASSWORD'].includes(form.authType) && !form.privateKey.trim()) return false
   if (requiresCredential && ['PASSWORD', 'KEY_PASSWORD'].includes(form.authType) && !form.password.trim()) return false
@@ -485,7 +523,7 @@ async function save() {
   if (!validateForm()) return ElMessage.warning(t('servers.formRequired'))
   saving.value = true
   try {
-    const body = { ...form }
+    const body = { ...form, credentialId: form.credentialId || null }
     if (form.id) await http.put(`/servers/${form.id}`, body)
     else await http.post('/servers', body)
     visible.value = false

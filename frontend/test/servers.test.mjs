@@ -114,10 +114,26 @@ test('服务器认证表单不要求指纹且组合登录要求两项凭据', ()
     { id: 1, original: 'KEY', authType: 'KEY_PASSWORD', privateKey: '', password: 'secret', valid: false },
   ]
   for (const scenario of scenarios) {
-    const form = { name: 'server', mode: 'SSH', host: 'localhost', port: 22, username: 'deploy', hostKey: '', ...scenario }
-    const validate = runInNewContext(`(${source})`, { form, originalAuthType: { value: scenario.original || scenario.authType } })
+    const form = { id: 1, name: 'server', mode: 'SSH', host: 'localhost', port: 22, username: 'deploy', hostKey: '', ...scenario }
+    const validate = runInNewContext(`(${source})`, { form, originalAuthType: { value: scenario.original || (scenario.id ? scenario.authType : 'NONE') } })
     assert.equal(validate(), scenario.valid, JSON.stringify(scenario))
   }
+})
+
+// 验证新服务器强制选择有效凭据，停用或认证类型不匹配的引用不可提交。
+test('服务器选择凭据并自动复用账号', () => {
+  const source = viewSource.match(/function validateForm\(\) \{[\s\S]*?\n\}/)[0]
+  for (const [credentialId, options, expected] of [[null, [], false], [1, [{ id: 1 }], true], [2, [{ id: 1 }], false]]) {
+    const form = { id: null, credentialId, name: 'server', mode: 'SSH', host: 'host', username: 'deploy', port: 22 }
+    const validate = runInNewContext(`(${source})`, { form, selectableCredentials: { value: options } })
+    assert.equal(validate(), expected)
+  }
+  const selectSource = viewSource.match(/function selectCredential\(id\) \{[\s\S]*?\n\}/)[0]
+  const form = { username: 'old', privateKey: 'old-key', password: 'old-password', passphrase: 'old-phrase' }
+  const select = runInNewContext(`(${selectSource})`, { form, credentials: { value: [{ id: 7, username: 'deploy' }] } })
+  select(7)
+  assert.deepEqual(form, { username: 'deploy', privateKey: '', password: '', passphrase: '' })
+  for (const locale of [zhCN, enUS]) assert.ok(locale.serverCredentials.title)
 })
 
 test('服务器页面移除部署与历史并保留连接和监控操作', () => {

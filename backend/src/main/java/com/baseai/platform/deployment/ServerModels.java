@@ -10,13 +10,20 @@ public final class ServerModels {
 
     public record ServerCommand(String name, String mode, String host, Integer port, String username,
                                 String authType, String privateKey, String password, String passphrase,
-                                String hostKey, String workingDir, String composeFile, Boolean enabled) { }
+                                String hostKey, String workingDir, String composeFile, Boolean enabled, Long credentialId) {
+        /** 兼容已有内部调用和旧接口的直接凭据模式。 */
+        public ServerCommand(String name, String mode, String host, Integer port, String username, String authType,
+                             String privateKey, String password, String passphrase, String hostKey,
+                             String workingDir, String composeFile, Boolean enabled) {
+            this(name, mode, host, port, username, authType, privateKey, password, passphrase, hostKey, workingDir, composeFile, enabled, null);
+        }
+    }
 
     public record ServerView(Long id, String name, String mode, String host, Integer port,
                              String username, String authType, String hostKey, String workingDir,
                              String composeFile, boolean enabled, String lastTestStatus,
                              String lastTestError, LocalDateTime lastTestAt, Long ownerUserId,
-                             LocalDateTime createdAt, LocalDateTime updatedAt, SystemInfoView systemInfo) { }
+                             LocalDateTime createdAt, LocalDateTime updatedAt, SystemInfoView systemInfo, Long credentialId) { }
 
     public record SystemInfoView(String family, String id, String name, String version,
                                  String kernel, String architecture, Instant detectedAt) { }
