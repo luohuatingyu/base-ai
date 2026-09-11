@@ -462,6 +462,10 @@ export default {
     title: '数据同步', description: '选择执行服务器及源、目标数据库中的表，按批次安全同步数据。', securityNotice: '表查询、预检和同步均在所选服务器的一次性 Worker 中执行且不会记录行内容；目标连接必须显式开启允许写入。全量替换会清空目标表。', name: '计划名称', server: '执行服务器', platformLocal: '平台本机（历史计划）', source: '源连接', target: '目标连接', strategy: '同步策略', schedule: 'Cron 调度', schedulePlaceholder: '留空表示仅手动执行，例如 0 0/10 * * * *', tables: '同步表', sourceTable: '源表', targetTable: '目标表', sourceRows: '源行数', readRows: '读取行数', writtenRows: '写入行数', warnings: '预检提示', noWarnings: '未发现问题', lastStatus: '最近状态', preview: '预检', run: '执行', retry: '重试', cancel: '取消', details: '运行明细', traceId: 'Trace ID', error: '错误', confirmDestructive: '我确认全量替换会清空目标表', strategies: { UPSERT: '按主键更新/插入', FULL_REPLACE: '全量替换', APPEND: '仅追加' }, warningCodes: { sourceTableNotFound: '源表不存在', targetTableWillBeCreated: '目标表将自动创建', unsupportedColumnType: '字段 {column} 类型不受支持', missingTargetColumn: '目标表缺少字段 {column}', columnTypeMismatch: '字段 {column} 类型不兼容', primaryKeyRequired: 'UPSERT 必须包含主键', columnMismatch: '字段配置不匹配' }, formRequired: '请填写计划、选择执行服务器和连接，并至少选择一张表', loadFailed: '数据同步数据加载失败', previewFailed: '数据同步预检失败', saveFailed: '数据同步计划保存失败', runAccepted: '同步任务已启动', runFailed: '同步任务启动失败', cancelFailed: '同步任务取消失败'
   },
   serverCredentials: {
+    importHint: '拖拽私钥文件到此处，或点击选择文件', localFileHint: '仅在本地读取 · 最大 32 KiB · 导入后可继续编辑',
+    reading: '正在读取…', imported: '已导入', emptyFile: '文件为空，请选择包含私钥的文件',
+    readFailed: '文件读取失败，已有内容保持不变', tooLarge: '内容超过 32 KiB，请缩短后保存；输入不会被截断',
+    expand: '展开编辑', collapse: '收起编辑', originalText: '自动折行仅影响显示；原始内容和换行保持不变',
     total: '条凭据', search: '搜索标签或账号', allTypes: '全部类型', empty: '暂无匹配凭据',
     passwordType: '账号密码', keyType: '秘钥', legacyType: '历史凭据',
     passwordHint: '使用账号和登录密码认证', keyHint: '仅维护私钥和可选口令；SSH 用户在服务器中填写',

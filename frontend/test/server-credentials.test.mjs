@@ -2,6 +2,80 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import test from 'node:test'
+import { readPrivateKeyFile } from '../src/utils/serverCredentials.js'
+
+const byteLength = value => new TextEncoder().encode(value || '').length
+
+/** 创建文件导入上下文，使用真实读取函数，只隔离组件响应式容器。 */
+function importContext() {
+  return { fileReadVersion: 0, form: { type: 'KEY', privateKey: 'existing' },
+    editing: { value: true }, readingFile: { value: false }, fileError: { value: '' },
+    fileName: { value: '' }, fileBytes: { value: 0 }, expandedField: { value: 'privateKey' },
+    readPrivateKeyFile, byteLength, t: key => key }
+}
+
+// 拖拽和文件选择保留完整原文，读取结果可见，错误不能覆盖已有内容。
+test('本地文件导入保留原文并区分空文件超限及读取失败', async () => {
+  const contents = ['  BEGIN\nprivate\nEND\n', 'x'.repeat(32768), '', ' ', 'x'.repeat(32769), '密'.repeat(10923), null]
+  for (const content of contents) {
+    for (const drop of [false, true]) {
+      const context = importContext()
+      const file = { name: 'test.pem', size: content === null ? 1 : byteLength(content),
+        async text() { if (content === null) throw new Error('read'); return content } }
+      const event = drop ? { dataTransfer: { files: [file] } } : { target: { files: [file], value: 'selected' } }
+      await method('readKey', context)(event)
+      const valid = content !== null && !!content.trim() && byteLength(content) <= 32768
+      assert.equal(context.form.privateKey, valid ? content : 'existing')
+      assert.equal(context.readingFile.value, false)
+      assert.equal(context.fileName.value, valid ? 'test.pem' : '')
+      if (valid) assert.equal(context.fileBytes.value, byteLength(content))
+      else assert.equal(context.fileError.value, content === null ? 'serverCredentials.readFailed'
+        : byteLength(content) > 32768 ? 'serverCredentials.tooLarge' : 'serverCredentials.emptyFile')
+      if (!drop) assert.equal(event.target.value, '')
+    }
+  }
+})
+
+// 关闭、切换或手动修改后，异步文件结果不能重新填入已清理的秘密。
+test('过期文件读取不会覆盖关闭或修改后的表单', async () => {
+  for (const action of ['close', 'edit', 'switch']) {
+    const context = importContext()
+    let finish
+    const file = { name: 'slow.pem', size: 7, text: () => new Promise(resolve => { finish = resolve }) }
+    const pending = method('readKey', context)({ target: { files: [file], value: '' } })
+    assert.equal(context.readingFile.value, true)
+    if (action === 'edit') method('invalidateFileRead', context)('privateKey')
+    else method('resetMaterialState', context)()
+    context.form.privateKey = action === 'edit' ? 'manual edit' : ''
+    finish('private')
+    await pending
+    assert.equal(context.form.privateKey, action === 'edit' ? 'manual edit' : '')
+    assert.equal(context.readingFile.value, false)
+    assert.equal(context.fileName.value, '')
+  }
+})
+
+// 字节上限按 UTF-8 计算，超限时保留完整输入并阻止请求；边界和多行原样保存。
+test('长文本不截断且超限阻止保存', async () => {
+  for (const field of ['privateKey', 'publicKey', 'certificate']) {
+    for (const content of ['line 1\nline 2\n', 'x'.repeat(32768), 'x'.repeat(32769), '密'.repeat(10923)]) {
+      const form = { label: 'key', type: 'KEY', username: '', privateKey: 'private', publicKey: '', certificate: '', password: '', passphrase: '', [field]: content }
+      const calls = []
+      await method('save', { form, byteLength, readingFile: { value: false },
+        saving: { value: false }, editing: { value: true }, http: { post: async (url, body) => calls.push(body) },
+        clearForm() {}, async load() {}, emit() {}, ElMessage: { warning() {} }, t: key => key,
+        showHttpError(error) { throw error },
+      })()
+      assert.equal(calls.length, byteLength(content) > 32768 ? 0 : 1)
+      assert.equal(form[field], content)
+      if (calls.length) assert.equal(calls[0][field], content)
+    }
+  }
+  assert.doesNotMatch(source, /maxlength="32768"/)
+  assert.match(source, /v-model="form\[expandedField\]"/)
+  assert.match(source, /v-model="form\[field.name\]"/)
+  assert.match(source, /wrap="soft"/)
+})
 
 const source = readFileSync(new URL('../src/components/ServerCredentialManager.vue', import.meta.url), 'utf8')
 
@@ -36,7 +110,7 @@ test('凭据创建编辑保留材料并在成功后清除敏感输入', async ()
     const saving = { value: false }
     const editing = { value: true }
     const context = {
-      form, saving, editing, http: { post: send, put: send },
+      form, saving, editing, readingFile: { value: false }, byteLength, http: { post: send, put: send },
       clearForm: () => calls.push('clear'), load: async () => calls.push('load'), emit: name => calls.push(name),
       showHttpError: () => calls.push('error'), ElMessage: { warning: () => calls.push('warning') }, t: key => key,
     }
@@ -65,7 +139,7 @@ test('两类凭据的必填校验与秘密保留', async () => {
       privateKey: type === 'KEY' ? secret : '', password: type === 'PASSWORD' ? secret : '',
       publicKey: '', certificate: '', passphrase: '', hasPrivateKey: saved, hasPassword: saved }
     const send = async (url, body) => calls.push(body)
-    await method('save', { form, saving: { value: false }, editing: { value: true },
+    await method('save', { form, saving: { value: false }, editing: { value: true }, readingFile: { value: false }, byteLength,
       http: { post: send, put: send }, clearForm() {}, async load() {}, emit() {},
       t: key => key, ElMessage: { warning() {} }, showHttpError(error) { throw error },
     })()
@@ -78,11 +152,11 @@ test('两类凭据的必填校验与秘密保留', async () => {
 // 类型切换清理不适用的输入，不把隐藏的秘密提交到另一种类型。
 test('切换私钥类型清理账号与不适用的临时输入', () => {
   const form = { type: 'PASSWORD', username: 'deploy', password: 'secret', privateKey: 'private', publicKey: 'public', certificate: 'certificate', passphrase: 'phrase' }
-  method('changeType', { form })('KEY')
+  method('changeType', { form, resetMaterialState() {} })('KEY')
   assert.equal(form.password, '')
   assert.equal(form.username, '')
   assert.equal(form.privateKey, 'private')
-  method('changeType', { form })('PASSWORD')
+  method('changeType', { form, resetMaterialState() {} })('PASSWORD')
   for (const field of ['privateKey', 'publicKey', 'certificate', 'passphrase']) assert.equal(form[field], '')
   assert.equal(form.username, '')
 })
@@ -97,7 +171,7 @@ test('私钥表单和列表不展示凭据账号', () => {
 test('凭据无效输入和重复保存不写入接口', async () => {
   for (const [label, username, saving] of [[' ', 'deploy', false], ['label', '', false], ['label', 'deploy', true]]) {
     let warnings = 0
-    await method('save', { form: { label, username, password: 'secret' }, saving: { value: saving },
+    await method('save', { form: { label, username, password: 'secret' }, saving: { value: saving }, readingFile: { value: false },
       ElMessage: { warning: () => warnings++ }, t: key => key })()
     assert.equal(warnings, saving ? 0 : 1)
   }
