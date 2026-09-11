@@ -1,5 +1,48 @@
 # 最近分支覆盖测试报告
 
+## 数据同步界面样式优化（2026-09-11）
+
+### 自动化测试基准与范围
+
+Commit: 5cc7605f3bfe02bfcb697048aa5da395d98d5176
+- 提交信息：Improve data synchronization workspace layout；分支：master；测试日期：2026-09-11。
+- 本次仅修改 DataSyncView.vue、中英文语言资源与现有 data-sync-remote.test.mjs，使用 Vue 3、Element Plus、现有图标库及 scoped CSS；没有新增依赖、修改后端、运行配置或数据库。
+- 页头和计划概览、编号配置分区、来源到目标的数据流布局、表选择卡片及空状态、已选数量、计划列表、语义状态标签、手动调度提示和弹窗排版统一优化；窄屏使用单列配置及可横向滚动表格，避免固定操作列遮挡内容。
+- 保留原有服务器选择、接口参数、权限判断、预检、保存、执行、取消、重试、删除和全量替换确认逻辑。状态格式化兼容空值及未知状态，中英文均提供文案。
+- 任务开始时已有的凭据修改由其他工作单独提交，本次没有纳入。最初检查 d559cdc 到 HEAD 发现凭据业务代码差异，因此额外执行后端完整测试；最终检查 `git diff abbb8cbb33283b6e27d65ff6a3721b6f04f71643 HEAD -- backend/src/main/java/` 无输出。
+- 自动化与部署检查通过；浏览器视觉和交互验收受预览环境限制，尚未完成，不能据此认定全部验收完成。
+
+### 实际执行命令与结果
+
+- 根目录执行 `node --test frontend/test/data-sync-remote.test.mjs`：13/13 通过，失败 0、错误 0、跳过 0；最后补充未知状态原型键安全回退后再次通过。
+- frontend 工作目录执行 `npm run lint && npm run typecheck && npm run test:coverage`：退出 0，380/380 通过，失败 0、跳过 0；最终代码重新执行并通过。工具函数行覆盖率 98.40%、分支 80.95%、函数 95.27%，达到现有门槛；此指标不代表 Vue 页面或 Java 代码行覆盖率。
+- frontend 工作目录执行 `node --test e2e/*.test.mjs`：1/1 通过，失败 0、跳过 0。该套件验证生产 Node 前端服务的运行配置、SPA、API 代理及畸形路径，不是浏览器 UI 测试。没有单独执行 npm run build；Vite 编译在 Compose 内完成。
+- 根目录执行 `docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp test'`：854/854 通过，通过率 100%，失败 0、错误 0、跳过 0，BUILD SUCCESS。包含数据同步、Domain、Service、Repository、Controller 等现有套件；凭据 27/27、服务器校验 22/22、服务器监控 28/28 通过。本次没有新增 Java 业务逻辑。
+- 根目录执行 `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：最终退出 0；镜像版本为本节基准提交。首次工作树构建成功后，按最终提交版本再次构建成功，确保状态回退修正也已部署。运行时依赖下载约两分钟，无端口冲突。
+- `docker ps --filter name=ai- --format '{{.Names}} {{.Status}} {{.Image}}'`：frontend、backend、caddy、deployment-agent、document-parser、python-worker 六个服务均 healthy，镜像均为本节基准版本。
+- 使用 `node --input-type=module` 内存脚本调用 `docker exec ai-frontend cat /app/dist/index.html` 与 `curl -kfsS --retry 3 https://localhost/data-sync`，以及入口中的 JS/CSS 资源，逐项比较 SHA-256：页面和 2 个资源均与运行镜像一致，CSS 包含 sync-workspace 与 sync-flow。脚本未写入文件，curl -k 仅用于本机证书验证。资源匹配不能代替页面视觉和交互验收。
+- `git diff --check` 与 `git diff --cached --check` 通过；代码提交只包含本次四个文件，测试报告单独提交。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入、预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 页头、配置、计划列表层次清晰，桌面和窄屏无页面溢出 | 浏览器；有权限用户访问数据同步页面 | 1440px/390px，空计划、长计划名及大量长表名；分区清晰、控件可操作、表格局部滚动；正常/边界 | 未执行；预览来源限制 |
+| 服务器、表查询、预检和历史计划行为兼容 | 现有前端定向契约测试；读取实际页面源码 | 启用服务器约束、查询和预检携带 serverId、历史本机回退及编辑回填；正常/兼容/回归 | 原有 3 项通过；浏览器编辑、预检流程待验收 |
+| 状态颜色和中英文文案完整 | 执行实际页面 statusType/statusLabel 方法；注入真实语言资源 | 参数化 PENDING、RUNNING、SUCCEEDED、SUCCESS、FAILED、CANCEL_REQUESTED、CANCELLED、SKIPPED；应返回对应语义颜色与文案；正常/分支 | 8 项通过 |
+| 缺失或未知状态兼容且安全回退 | 执行实际状态格式化方法 | null、undefined、空字符串、未来状态、__proto__、toString、脚本文本；缺失值显示尚未运行，其余保留文本并使用 info；边界/兼容/恶意输入 | 1 项通过；文本转义依赖 Vue 插值，未声称验证浏览器 XSS |
+| 权限及危险操作确认保留 | 页面契约测试；读取实际模板与绑定 | 创建/更新切换、各操作权限、FULL_REPLACE 确认、selectedTables 绑定、执行/取消禁用条件；权限/安全/回归 | 1 项通过；真实不同权限用户和点击流程待验收 |
+| 服务与已有功能无自动化回归 | 前端完整测试、Node 生产服务 E2E、后端完整测试 | 全部现有测试、覆盖率门槛及统一构建；兼容/异常/回归 | 380/380、1/1、854/854，构建部署成功 |
+
+### 已知限制、清理与下次验证
+
+- 内置浏览器将 http://localhost:5173 自动转到 HTTPS，HTTP Vite 服务出现 ERR_SSL_PROTOCOL_ERROR；临时在内存中复用本机 Caddy 证书启动 HTTPS Vite 后，工具仍以“离开预览应用来源”为由拒绝访问；127.0.0.1 同样被来源限制拒绝。Vite 原有 API 代理指向未暴露的 localhost:8080，还出现 ECONNREFUSED。没有改动项目代理或 TLS 配置。
+- 查找已有隔离浏览器时仅找到 Playwright 包，没有可用浏览器二进制；未新增浏览器依赖。因此没有完成有数据/空数据、长名称、多表、窄屏、中英文切换、不同权限、编辑预检和详情弹窗的真实浏览器验收，也没有发起真实数据同步或覆盖写入。
+- 建议登录 https://localhost/data-sync，在桌面与窄屏逐项执行上述浏览器用例，再补充验收结果；本次视觉效果仍需人工确认。
+- 临时 HTTP/HTTPS Vite 进程均已停止；没有保存调试文件、截图或临时测试代码。Maven 副本位于自动删除测试容器的 /tmp/backend，容器退出后清除；证书仅在内存中读取，没有输出或保存。
+- 下次修改后端业务代码、Domain、Repository、Service、Controller 或核心业务配置时，比较本节基准并重跑完整测试；修改本页面需重跑前端定向、完整检查及浏览器验收。
+- 回滚方式：撤销本次独立界面提交并统一重建部署；无数据迁移或配置回滚需求。
+
 ## 私钥凭据不维护 SSH 用户（2026-09-11）
 
 ### Git 基准点
