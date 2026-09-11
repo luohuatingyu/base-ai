@@ -275,7 +275,7 @@ class DataInitializerTest {
         assertFalse(permissions.contains("system:menu:manage"));
     }
 
-    /** 内置运维角色默认获得数据、服务器和设备 Agent 权限，但不获得系统权限。 */
+    /** 内置运维角色保留设备 Agent 权限，并获得承载该页面的自动化目录权限。 */
     @Test
     void seedsOperationsRoleWithSynchronizationAndDeploymentPermissions() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
@@ -287,12 +287,13 @@ class DataInitializerTest {
         Role operations = captor.getAllValues().stream().filter(role -> "OPS".equals(role.getCode())).findFirst().orElseThrow();
         Set<String> permissions = operations.getMenus().stream().map(Menu::getPermission).collect(Collectors.toSet());
         assertEquals("SELF", operations.getDataScope());
-        assertTrue(permissions.containsAll(Set.of("operations:catalog", "operations:data-source:list",
+        assertTrue(permissions.containsAll(Set.of("operations:catalog", "automation:catalog",
+            "operations:data-source:list",
             "operations:data-source:create", "operations:data-source:test", "operations:data-sync:list",
             "operations:data-sync:run", "operations:server:list", "operations:server:deploy",
-            "operations:server:rollback", "operations:device-agent:list",
-            "operations:device-agent:create", "operations:device-agent:update",
-            "operations:device-agent:delete", "operations:device-agent:execute")));
+            "operations:server:rollback", "automation:device-agent:list",
+            "automation:device-agent:create", "automation:device-agent:update",
+            "automation:device-agent:delete", "automation:device-agent:execute")));
         assertFalse(permissions.contains("operations:monitoring:catalog"));
         assertFalse(permissions.contains("system:user:list"));
     }
@@ -332,7 +333,7 @@ class DataInitializerTest {
         assertEquals(operations.getId(), menusByPermission.get("operations:data-source:list").getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:data-sync:list").getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:server:list").getParentId());
-        assertEquals(operations.getId(), menusByPermission.get("operations:device-agent:list").getParentId());
+        assertEquals(automation.getId(), menusByPermission.get("automation:device-agent:list").getParentId());
         assertEquals(monitoring.getId(), menusByPermission.get("operations:session:list").getParentId());
         assertEquals(monitoring.getId(), menusByPermission.get("operations:audit:operation:list").getParentId());
         assertEquals(monitoring.getId(), menusByPermission.get("operations:task:view").getParentId());

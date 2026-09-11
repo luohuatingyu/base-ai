@@ -151,7 +151,7 @@ class WdaRuntime:
             "wdaStatus": "READY", "wdaRunning": False,
             "wdaPortErrorCode": None, "lastErrorCode": None,
         })
-        return "WebDriverAgent 已完成构建、签名、安装和连接验证"
+        return "IDA 已完成构建、签名、安装和连接验证"
 
     def start(self, device_id: str, config: WdaConfig) -> str:
         """启动或复用预装 WDA，并保留 Appium 会话维持运行。"""
@@ -163,7 +163,7 @@ class WdaRuntime:
             "wdaStatus": "READY", "wdaRunning": True,
             "wdaPortErrorCode": None, "lastErrorCode": None,
         })
-        return "WebDriverAgent 已启动并通过 Appium 会话验证"
+        return "IDA 已启动并通过 Appium 会话验证"
 
     def fail(self, device_id: str, code: str) -> None:
         """记录单设备稳定错误码，避免泄漏 Appium 或 Xcode 原始输出。"""

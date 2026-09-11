@@ -29,6 +29,18 @@ class DeviceAgentScopeContractTest {
             DeviceAgentModels.VALID_COMMAND_TYPES);
     }
 
+    /** 面向用户的本地化消息必须使用 IDA 产品简称，同时保留底层协议键。 */
+    @Test
+    void userMessagesUseIdaProductName() throws Exception {
+        String chinese = readResource("messages_zh_CN.properties");
+        String english = readResource("messages_en_US.properties");
+
+        assertTrue(chinese.contains("IDA"));
+        assertTrue(english.contains("IDA"));
+        assertFalse(chinese.matches("(?s).*=[^\\r\\n]*\\bWDA\\b.*"));
+        assertFalse(english.matches("(?s).*=[^\\r\\n]*\\bWDA\\b.*"));
+    }
+
     /** MySQL 迁移只创建 Agent、配对、状态、命令、设备和审计表。 */
     @Test
     void mysqlSchemaContainsOnlyGenericDeviceManagementTables() throws Exception {
@@ -63,5 +75,12 @@ class DeviceAgentScopeContractTest {
         assertTrue(migration.contains("'slow', 'standard', 'fast'"));
         assertTrue(migration.contains("automation_device_agent_wda_config"));
         assertFalse(migration.contains("wecom"));
+    }
+
+    /** 读取 UTF-8 类路径资源供产品命名契约复用。 */
+    private static String readResource(String path) throws Exception {
+        try (var input = new ClassPathResource(path).getInputStream()) {
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 }

@@ -67,9 +67,9 @@ const router = createRouter({
         { path: 'api-keys', component: ApiKeysView, meta: { permission: 'system:api-key:list', navigable: true, desc: 'apiKeys.description' } },
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
         { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } },
-        { path: 'automation/device-agents', component: DeviceAgentsView, meta: { permission: 'operations:device-agent:list', navigable: true, desc: 'deviceAgents.description' } },
-        { path: 'automation/device-agents/config-guide', component: DeviceAgentGuideView, meta: { permission: 'operations:device-agent:list', desc: 'deviceAgentGuide.description' } },
-        { path: 'automation/device-agents/onboarding', component: DeviceAgentOnboardingView, meta: { permission: 'operations:device-agent:list', desc: 'deviceAgentOnboarding.title' } },
+        { path: 'automation/device-agents', component: DeviceAgentsView, meta: { permission: 'automation:device-agent:list', navigable: true, desc: 'deviceAgents.description' } },
+        { path: 'automation/device-agents/config-guide', component: DeviceAgentGuideView, meta: { permission: 'automation:device-agent:list', desc: 'deviceAgentGuide.description' } },
+        { path: 'automation/device-agents/onboarding', component: DeviceAgentOnboardingView, meta: { permission: 'automation:device-agent:list', desc: 'deviceAgentOnboarding.title' } },
         { path: 'workflow/nodes', component: WorkflowNodesView, meta: { permission: 'automation:workflow:node:list', navigable: true, desc: 'workflowNodes.description' } },
         { path: 'workflow/node-docs', component: WorkflowNodeDocsView, meta: { permission: 'automation:workflow:node:docs', navigable: true, desc: 'workflowNodeDocs.description' } },
         { path: 'workflow/canvases', component: WorkflowCanvasView, meta: { permission: 'automation:workflow:canvas:list', navigable: true, desc: 'workflowCanvas.description' } }

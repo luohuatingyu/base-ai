@@ -280,7 +280,7 @@ import { useAuthStore } from '../stores/auth'
 const { t } = useI18n()
 const auth = useAuthStore()
 // 向导内的命令下发与配置保存都需要操作权限，只读账号应看到明确提示而不是后端 403
-const can = (action) => auth.hasPermission(`operations:device-agent:${action}`)
+const can = (action) => auth.hasPermission(`automation:device-agent:${action}`)
 // Agent 默认地址来自平台公开配置；缺省时仍保留当前前端的子路径挂载前缀。
 const platformBaseUrl = resolvePlatformBaseUrl(window.location.origin, appConfig)
 

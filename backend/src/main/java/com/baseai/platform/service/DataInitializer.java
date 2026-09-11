@@ -193,7 +193,7 @@ public class DataInitializer implements ApplicationRunner {
         systemSettingCacheService.applyAll(systemSettingRepository.findAll());
     }
 
-    /** 初始化只管理本人数据源、同步计划、服务器和设备 Agent 的运维角色。 */
+    /** 初始化只管理本人数据源、同步计划、服务器和自动化设备 Agent 的运维角色。 */
     private void seedOperationsRole(List<Menu> menus) {
         Role operations = roleRepository.findByCode("OPS").orElseGet(() -> {
             Role role = new Role();
@@ -203,12 +203,13 @@ public class DataInitializer implements ApplicationRunner {
         });
         LinkedHashSet<Menu> permissions = new LinkedHashSet<>(operations.getMenus());
         menus.stream().filter(menu -> "operations:catalog".equals(menu.getPermission())
+            || "automation:catalog".equals(menu.getPermission())
             || menu.getPermission() != null && (menu.getPermission().startsWith("operations:data-source:")
             || menu.getPermission().startsWith("operations:data-sync:")
             || menu.getPermission().startsWith("operations:server:")
-            || menu.getPermission().startsWith("operations:device-agent:"))).forEach(permissions::add);
+            || menu.getPermission().startsWith("automation:device-agent:"))).forEach(permissions::add);
         operations.setMenus(permissions);
-        operations.setDescription("系统内置数据源、数据同步、服务器与设备 Agent 运维角色");
+        operations.setDescription("系统内置数据源、数据同步、服务器与自动化设备 Agent 运维角色");
         operations.setDataScope("SELF");
         operations.setSortOrder(20);
         operations.setEnabled(true);
@@ -367,9 +368,9 @@ public class DataInitializer implements ApplicationRunner {
      * <p>该方法创建系统的所有菜单项，包括：
      * <ul>
      *   <li>系统管理模块：访问控制、组织、字典和参数</li>
-     *   <li>运维管理模块：数据源、数据同步、服务器、设备 Agent、邮件和监控审计</li>
+     *   <li>运维管理模块：数据源、数据同步、服务器、邮件和监控审计</li>
      *   <li>AI 能力模块：AI 对话、模型和知识库</li>
-     *   <li>自动化模块：接口触发和工作流</li>
+     *   <li>自动化模块：接口触发、设备 Agent 和工作流</li>
      * </ul>
      *
      * <p>菜单类型包括：
@@ -413,6 +414,17 @@ public class DataInitializer implements ApplicationRunner {
             "ApiTriggerSecurityView", "Lock", "automation:api-trigger-security:view", 12, true);
         menu(triggerSecurity.getId(), "更新接口触发安全配置", "BUTTON", null, null, null,
             "automation:api-trigger-security:update", 121, false);
+        // 设备 Agent 的高权限自动化动作与查看、配置和删除权限分离。
+        Menu deviceAgents = menu(automation.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
+            "DeviceAgentsView", "Iphone", "automation:device-agent:list", 13, true);
+        menu(deviceAgents.getId(), "新增设备 Agent", "BUTTON", null, null, null,
+            "automation:device-agent:create", 131, false);
+        menu(deviceAgents.getId(), "修改设备 Agent", "BUTTON", null, null, null,
+            "automation:device-agent:update", 132, false);
+        menu(deviceAgents.getId(), "删除设备 Agent", "BUTTON", null, null, null,
+            "automation:device-agent:delete", 133, false);
+        menu(deviceAgents.getId(), "执行设备自动化", "BUTTON", null, null, null,
+            "automation:device-agent:execute", 134, false);
         Menu workflow = menu(automation.getId(), "工作流", "CATALOG", "/workflow", null, "Operation",
             "automation:workflow:catalog", 20, true);
         Menu node = menu(workflow.getId(), "节点管理", "MENU", "/workflow/nodes", "WorkflowNodesView", "List",
@@ -473,17 +485,6 @@ public class DataInitializer implements ApplicationRunner {
             "operations:server:rollback", 136, false);
         menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null,
             "operations:server:logs", 137, false);
-        // 设备 Agent 的高权限自动化动作与查看、配置和删除权限分离。
-        Menu deviceAgents = menu(operations.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
-            "DeviceAgentsView", "Iphone", "operations:device-agent:list", 14, true);
-        menu(deviceAgents.getId(), "新增设备 Agent", "BUTTON", null, null, null,
-            "operations:device-agent:create", 141, false);
-        menu(deviceAgents.getId(), "修改设备 Agent", "BUTTON", null, null, null,
-            "operations:device-agent:update", 142, false);
-        menu(deviceAgents.getId(), "删除设备 Agent", "BUTTON", null, null, null,
-            "operations:device-agent:delete", 143, false);
-        menu(deviceAgents.getId(), "执行设备自动化", "BUTTON", null, null, null,
-            "operations:device-agent:execute", 144, false);
         // 邮件属于运维范畴，归入运维管理并排在服务器管理之后、监控审计之前。
         Menu mail = menu(operations.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
             "system:mail:catalog", 15, true);

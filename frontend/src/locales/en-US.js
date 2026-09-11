@@ -492,7 +492,7 @@ export default {
     "devicePool": {
       "title": "Device Pool",
       "dialogTitle": "iOS Device Pool for {agentId}",
-      "hint": "The Agent completed real-time detection. Each device uses its own WDA port, while Appium and Registry ports are shared by the Agent.",
+      "hint": "The Agent completed real-time detection. Each device uses its own IDA port, while Appium and Registry ports are shared by the Agent.",
       "device": "Device",
       "system": "System",
       "connection": "Connection",
@@ -508,40 +508,40 @@ export default {
         "wireless": "Wireless",
         "unknown": "Unknown"
       },
-      "wdaControl": "WDA Control Link",
+      "wdaControl": "IDA Control Link",
       "wdaControlStates": {
         "running": "Available",
         "stopped": "Unavailable"
       },
-      "wdaPort": "WDA Port",
+      "wdaPort": "IDA Port",
       "wdaPortEdit": "Edit Port",
       "wdaPortConfigured": "Configured",
       "wdaPortObserved": "Observed",
       "wdaPortApplied": "Applied",
       "wdaPortPending": "Pending",
       "wdaPortFailed": "Failed",
-      "wdaPortDialogTitle": "Edit the WDA port for {device}",
+      "wdaPortDialogTitle": "Edit the IDA port for {device}",
       "wdaPortHint": "Allowed range: 1024–65535. Device ports under one Agent must be unique and cannot match the Appium or Registry port. Saving during a task waits until the device is idle.",
-      "wdaPortSaved": "WDA port configuration saved. The Agent will apply it on its next sync.",
-      "wdaPortSaveError": "Failed to save the WDA port",
+      "wdaPortSaved": "IDA port configuration saved. The Agent will apply it on its next sync.",
+      "wdaPortSaveError": "Failed to save the IDA port",
       "wdaPortInvalid": "Enter an integer port from 1024 to 65535",
       "wdaPortConflict": "This port conflicts with another device resource on the Agent. Choose another port.",
       "wdaPortInUse": "Another program on the Mac is using this port. Choose another port.",
       "wdaPortConfigInvalid": "The Agent rejected an invalid port configuration. Save it again.",
       "lastDetected": "Last Detected",
       "unnamed": "Unnamed Device",
-      "setupWda": "Install WDA",
-      "startWda": "Start WDA",
+      "setupWda": "Install IDA",
+      "startWda": "Start IDA",
       "empty": "No device snapshot has been received. Connect and unlock an iOS device, then refresh.",
       "loadError": "Failed to load the iOS device pool",
-      "setupCompleted": "WDA was built and installed on {device}",
-      "setupFailed": "WDA build failed: {reason}",
-      "setupTimeout": "Timed out waiting for WDA. Check the target Mac logs.",
-      "setupError": "Failed to dispatch the WDA build",
-      "startCompleted": "WDA started on {device}",
-      "startFailed": "Failed to start WDA: {reason}",
-      "startTimeout": "Timed out waiting for WDA. Upgrade the Mac Agent and check its logs.",
-      "startError": "Failed to dispatch WDA startup",
+      "setupCompleted": "IDA was built and installed on {device}",
+      "setupFailed": "IDA build failed: {reason}",
+      "setupTimeout": "Timed out waiting for IDA. Check the target Mac logs.",
+      "setupError": "Failed to dispatch the IDA build",
+      "startCompleted": "IDA started on {device}",
+      "startFailed": "Failed to start IDA: {reason}",
+      "startTimeout": "Timed out waiting for IDA. Upgrade the Mac Agent and check its logs.",
+      "startError": "Failed to dispatch IDA startup",
       "detectNow": "Detect Now",
       "detecting": "The Agent is checking connected devices now.",
       "detectUnknown": "Real-time detection did not complete. The devices below are historical and do not indicate current availability.",
@@ -589,7 +589,7 @@ export default {
       "delivered": "Delivered",
       "resend": "Resend configuration",
       "resendDispatched": "Notified the Agent to re-fetch its configuration. Refresh shortly to see the updated status.",
-      "advice": "Verify the settings under WDA Configuration, then click Resend configuration so the Agent re-fetches them.",
+      "advice": "Verify the settings under IDA Configuration, then click Resend configuration so the Agent re-fetches them.",
       "otherError": "Attention",
       "otherErrorDetail": "The Agent reported error code {code}. Check the Agent log on that Mac.",
       "WDA_CONFIG_REJECTED": "Rejected",
@@ -651,7 +651,7 @@ export default {
     },
     "featureNames": {
       "READ_ONLY_DIAGNOSTICS": "Diagnostics",
-      "APPIUM_WDA_AUTOMATION": "WDA",
+      "APPIUM_WDA_AUTOMATION": "IDA",
       "AUTOSTART": "Autostart"
     },
     "reissuePairing": "Re-issue Pairing Code",
@@ -709,7 +709,7 @@ export default {
     "diagnostics": "Diagnostics",
     "autostart": "Autostart",
     "lastOnline": "Last Online",
-    "configWda": "Config WDA",
+    "configWda": "Config IDA",
     "revoke": "Revoke",
     "selectFeatures": "Select Features",
     "pairingCode": "Pairing Code",
@@ -744,7 +744,7 @@ export default {
     "generate": "Generate",
     "pairingCodeCreated": "Pairing code created",
     "pairingCodeError": "Failed to create pairing code",
-    "wdaConfig": "WDA Configuration",
+    "wdaConfig": "IDA Configuration",
     "wdaSigningConfig": "Signing Configuration",
     "detectSigning": "One-Click Detect",
     "detectSigningButton": "Detect Signing Identity",
@@ -760,7 +760,7 @@ export default {
     "signingIdentity": "Signing Identity",
     "signingIdentityHint": "Defaults to Apple Development when empty; requires the Xcode organization ID when set",
     "allowDeviceRegistration": "Allow Device Registration",
-    "allowDeviceRegistrationHint": "Lets the WDA build register an unlisted device with the developer account; enable only for a new device first build",
+    "allowDeviceRegistrationHint": "Lets the IDA build register an unlisted device with the developer account; enable only for a new device first build",
     "updatedBundleId": "Custom Bundle ID",
     "deviceConfig": "Device Configuration",
     "detectDevice": "One-Click Detect",
@@ -784,7 +784,7 @@ export default {
     "deviceOsVersion": "OS Version",
     "appiumConfig": "Appium Configuration",
     "appiumServerUrl": "Appium Server URL",
-    "appiumWdaLocalPort": "WDA Local Port",
+    "appiumWdaLocalPort": "IDA Local Port",
     "updateFeatures": "Update Features",
     "loadError": "Failed to load Agent list",
     "loadConfigError": "Failed to load configuration",
@@ -800,7 +800,7 @@ export default {
     "setDefaultConfirm": "Set {agentId} as the default Mac for diagnostics and readiness checks?",
     "setDefaultSuccess": "Default Agent updated",
     "setDefaultError": "Failed to set the default Agent",
-    "deleteConfirm": "Deleting removes Agent \"{agentId}\" along with its pairing codes, commands and WDA configuration permanently. Only audit logs are kept. Delete it?",
+    "deleteConfirm": "Deleting removes Agent \"{agentId}\" along with its pairing codes, commands and IDA configuration permanently. Only audit logs are kept. Delete it?",
     "deleteActiveConfirm": "Agent \"{agentId}\" has not been revoked. Deleting it immediately removes its platform access and a running Agent will keep failing authentication. This cannot be undone and only audit logs are kept. Delete it?",
     "deleted": "Agent record deleted",
     "deleteError": "Failed to delete Agent"
@@ -808,7 +808,7 @@ export default {
   "deviceAgentGuide": {
     "entry": "Agent Configuration Guide",
     "title": "Agent Configuration Guide",
-    "description": "Pair the Mac Agent, prepare its runtime and run read-only health checks before configuring WDA.",
+    "description": "Pair the Mac Agent, prepare its runtime and run read-only health checks before configuring IDA.",
     "backToAgents": "Back to Agent Management",
     "readOnly": "Diagnostics report sanitized status only",
     "openOnboarding": "Open Onboarding Wizard",
@@ -834,9 +834,9 @@ export default {
       "title": "Dependency checks and recovery",
       "description": "The one-click installer is preferred. Use these commands to verify Xcode or repair Appium/XCUITest.",
       "xcodeTitle": "Full Xcode",
-      "xcodeDescription": "The developer directory must point inside Xcode.app. Command Line Tools alone cannot build WDA.",
+      "xcodeDescription": "The developer directory must point inside Xcode.app. Command Line Tools alone cannot build IDA.",
       "appiumTitle": "Appium and XCUITest Driver",
-      "appiumDescription": "Check driver installation and Doctor output. Resolve required items before WDA configuration.",
+      "appiumDescription": "Check driver installation and Doctor output. Resolve required items before IDA configuration.",
       "fallbackTitle": "Run only on the target Mac",
       "fallbackDescription": "These commands are for environment checks or recovery, not for the backend Docker container. Re-run the onboarding one-click installer when the Agent install or Python version is invalid."
     },
@@ -861,7 +861,7 @@ export default {
         "UNKNOWN": "Unknown"
       },
       "summary": {
-        "PASS": "The Mac meets WDA PoC prerequisites",
+        "PASS": "The Mac meets IDA PoC prerequisites",
         "WARN": "Some environment items need confirmation; review the checks below",
         "FAIL": "The Mac is not ready; complete the failed checks",
         "UNKNOWN": "No usable Mac readiness diagnostic has been received"
@@ -876,7 +876,7 @@ export default {
         "SIGNING": "Code-signing identity",
         "TARGET_DEVICE": "Target iOS device",
         "APPIUM_SERVER": "Local Appium server",
-        "WDA": "Signed WDA"
+        "WDA": "Signed IDA"
       },
       "hints": {
         "MACOS": "Reads system version",
@@ -888,13 +888,13 @@ export default {
         "SIGNING": "Only verifies a valid identity exists",
         "TARGET_DEVICE": "Only verifies the configured device is connected",
         "APPIUM_SERVER": "Loopback /status",
-        "WDA": "Checks whether the configured Bundle ID is installed"
+        "WDA": "Checks whether the configured Bundle ID is installed for IDA"
       },
       "reasons": {
         "PROBE_FAILED": "Failed to read the system version; the Agent cannot confirm the macOS environment",
         "VERSION_MISMATCH": "Local Python is not 3.12, so the Agent runtime does not meet requirements",
         "XCODE_NOT_FOUND": "No usable Xcode developer directory was detected",
-        "COMMAND_LINE_TOOLS_ONLY": "Only Command Line Tools are installed, which cannot build WDA",
+        "COMMAND_LINE_TOOLS_ONLY": "Only Command Line Tools are installed, which cannot build IDA",
         "NOT_EXECUTABLE": "No executable Appium was found on this Mac",
         "DRIVER_NOT_INSTALLED": "The XCUITest Driver is not installed yet",
         "DOCTOR_WARNING": "The driver is installed, but Doctor reported open items",
@@ -905,7 +905,7 @@ export default {
         "NOT_REACHABLE": "The local Appium server did not respond",
         "BUNDLE_ID_NOT_CONFIGURED": "No Bundle ID is configured, so installation cannot be determined",
         "DEVICE_QUERY_FAILED": "The device is visible but the installed-app list could not be read; this is a connection problem, not a missing app",
-        "DEVICE_NOT_CONNECTED": "The target iOS device is not connected, so the Agent cannot tell whether WDA is installed",
+        "DEVICE_NOT_CONNECTED": "The target iOS device is not connected, so the Agent cannot tell whether IDA is installed",
         "APP_NOT_INSTALLED": "No app with that Bundle ID is installed on the device"
       },
       "actions": {
@@ -917,18 +917,18 @@ export default {
         "DRIVER_NOT_INSTALLED": "Run appium driver install xcuitest on the Mac",
         "DOCTOR_WARNING": "Run appium driver doctor xcuitest on the Mac and resolve the reported items",
         "NO_VALID_IDENTITY": "Sign in with your Apple ID in Xcode on that Mac and create a development certificate",
-        "DEVICE_NOT_CONFIGURED": "Pick the target iOS device under WDA Configuration",
+        "DEVICE_NOT_CONFIGURED": "Pick the target iOS device under IDA Configuration",
         "DEVICE_NOT_FOUND": "Check the direct cable connection, unlock the iOS device, trust this computer, then detect devices again",
         "DEVICE_PAIRED_UNREACHABLE": "Reconnect the cable and unlock the iOS device, then check again",
         "NOT_REACHABLE": "Re-run the one-click install command on the target Mac to restore the resident Appium service",
-        "BUNDLE_ID_NOT_CONFIGURED": "Set a unique Custom Bundle ID under WDA Configuration",
+        "BUNDLE_ID_NOT_CONFIGURED": "Set a unique Custom Bundle ID under IDA Configuration",
         "DEVICE_QUERY_FAILED": "Fix the iOS device connection first; revisit this check once Target iOS device passes",
-        "DEVICE_NOT_CONNECTED": "Connect and unlock the iOS device and confirm Target iOS device passes before building; pick the target device under WDA Configuration if none is set",
-        "APP_NOT_INSTALLED_WDA": "Run One-Click WDA Build to install the signed WDA on the iOS device"
+        "DEVICE_NOT_CONNECTED": "Connect and unlock the iOS device and confirm Target iOS device passes before building; pick the target device under IDA Configuration if none is set",
+        "APP_NOT_INSTALLED_WDA": "Run One-Click IDA Build to install the signed IDA on the iOS device"
       },
       "actionLabels": {
-        "GOTO_WDA_CONFIG": "Go to WDA configuration",
-        "GOTO_BUILD_WDA": "Go to one-click WDA build",
+        "GOTO_WDA_CONFIG": "Go to IDA configuration",
+        "GOTO_BUILD_WDA": "Go to one-click IDA build",
         "GOTO_AGENT_LIST": "Go to Agent management"
       },
       "defaultAgentMissing": "No paired, non-revoked default Agent was found. Pair an instance and set it as default in Agent Management."
@@ -945,7 +945,7 @@ export default {
       "command": "Install Command",
       "online": "Waiting Online",
       "config": "Auto Config",
-      "setup": "Build WDA",
+      "setup": "Build IDA",
       "verify": "iOS device Verify",
       "finish": "Enable Features"
     },
@@ -994,19 +994,19 @@ export default {
       "noSigning": "No signing identity detected; sign in to Apple ID in Xcode on that Mac and create a development certificate, then retry"
     },
     "setup": {
-      "title": "One-Click WDA Build",
+      "title": "One-Click IDA Build",
       "hint": "Drives xcodebuild on the Mac to build WebDriverAgent and install it on the iOS device; the first build takes a few minutes",
       "run": "Start Build",
-      "running": "Building and installing WDA…",
+      "running": "Building and installing IDA…",
       "runningHint": "The first build compiles and installs a test app on the iOS device; allow up to 20 minutes and keep the iOS device unlocked",
-      "success": "WDA built and installed on every connected device",
-      "failed": "WDA build failed",
+      "success": "IDA built and installed on every connected device",
+      "failed": "IDA build failed",
       "unsupported": "The Agent is outdated and does not support one-click build; re-run the one-click install on the target Mac and retry",
-      "signingMissing": "No development signing identity is available in that Mac's keychain, so WDA cannot be signed. Sign in to Apple ID in Xcode, create a development certificate, then retry.",
-      "signingAmbiguous": "That Mac has multiple development signing identities, so the right one cannot be chosen automatically. Select the identity to sign WDA with below.",
-      "signingDetectFailed": "Reading signing identities from that Mac failed, so WDA signing cannot be confirmed. Run diagnostics in the next step to check certificate state, then retry.",
+      "signingMissing": "No development signing identity is available in that Mac's keychain, so IDA cannot be signed. Sign in to Apple ID in Xcode, create a development certificate, then retry.",
+      "signingAmbiguous": "That Mac has multiple development signing identities, so the right one cannot be chosen automatically. Select the identity to sign IDA with below.",
+      "signingDetectFailed": "Reading signing identities from that Mac failed, so IDA signing cannot be confirmed. Run diagnostics in the next step to check certificate state, then retry.",
       "signingRemedy": "On that Mac open Xcode, go to Settings → Accounts and sign in to your Apple ID, pick the team, then click Manage Certificates to add an Apple Development certificate. Return here and retry.",
-      "selectSigning": "Select the development identity to sign WDA",
+      "selectSigning": "Select the development identity to sign IDA",
       "applySigning": "Use this identity and retry the build"
     },
     "verify": {
@@ -1019,7 +1019,7 @@ export default {
       },
       "hints": {
         "developer": "iOS device Settings → Privacy & Security → Developer Mode; restart the device when prompted",
-        "trustCert": "iOS device Settings → General → VPN & Device Management; trust the developer certificate used by WDA"
+        "trustCert": "iOS device Settings → General → VPN & Device Management; trust the developer certificate used by IDA"
       }
     },
     "finish": {

@@ -36,14 +36,14 @@ public class DeviceAgentDeviceController {
 
     /** 查询一台 Mac Agent 下的 iOS 设备池。 */
     @GetMapping("/automation/device-agents/{agentId:" + AGENT_ID_PATTERN + "}/devices")
-    @RequiredPermission("operations:device-agent:execute")
+    @RequiredPermission("automation:device-agent:execute")
     public List<DeviceAgentModels.AgentDeviceView> devices(@PathVariable String agentId) {
         return deviceService.list(agentId);
     }
 
     /** 下发只读设备检测命令并返回 202。 */
     @PostMapping("/automation/device-agents/{agentId:" + AGENT_ID_PATTERN + "}/devices/detect")
-    @RequiredPermission("operations:device-agent:list")
+    @RequiredPermission("automation:device-agent:list")
     public ResponseEntity<DeviceAgentModels.AgentCommandView> detect(@PathVariable String agentId) {
         return ResponseEntity.accepted().body(deviceService.detect(agentId, AuthContext.require().id()));
     }
@@ -51,7 +51,7 @@ public class DeviceAgentDeviceController {
     /** 更新一台设备的 WDA 本地端口，空值表示自动重新分配。 */
     @PutMapping("/automation/device-agents/{agentId:" + AGENT_ID_PATTERN
         + "}/devices/{deviceId:[a-f0-9]{64}}/wda-port")
-    @RequiredPermission("operations:device-agent:update")
+    @RequiredPermission("automation:device-agent:update")
     public DeviceAgentModels.AgentDeviceView updateWdaPort(
         @PathVariable String agentId, @PathVariable String deviceId,
         @RequestBody DeviceAgentModels.UpdateAgentDeviceWdaPortRequest body) {

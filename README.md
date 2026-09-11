@@ -15,7 +15,7 @@ The platform provides identity and access management, OpenAI-compatible model ro
 - HttpOnly-cookie browser sessions with signed CSRF protection, compatible Bearer-token clients, and scoped `X-API-Key` credentials with expiry, revocation, IP allowlists, and rate limits.
 - Cross-service task tracing, cancellation, recovery, operation logs, and login logs.
 - Manual and Cron-based HTTP automation with encrypted request configuration and outbound-host controls.
-- MySQL-backed macOS Device Agent pairing, anonymous iOS device pools, WDA/Appium automation, Remote XPC Registry, and health diagnostics.
+- MySQL-backed macOS Device Agent pairing, anonymous iOS device pools, IDA/Appium automation, Remote XPC Registry, and health diagnostics.
 - Versioned visual workflows with reusable node templates, conditional branches, iteration, loops, tool-calling agents, manual runs, and API-key invocation.
 - Runtime platform branding and language configuration.
 
@@ -63,7 +63,7 @@ MySQL is the primary platform database. It contains:
 - Model providers, encrypted provider credentials, models, and capability routes.
 - External API key metadata, HMAC-SHA256 digests, and encrypted copies for administrator-only reveal.
 - Workflow node templates, definitions, immutable published versions, workflow runs, and per-node execution logs.
-- Device Agent registrations, one-time pairings, health, device-scoped WDA commands, anonymous device pools, Registry status, and audits.
+- Device Agent registrations, one-time pairings, health, device-scoped IDA commands, anonymous device pools, Registry status, and audits.
 - System tasks, Java/Python trace records, operation logs, and login logs.
 
 Flyway manages the complete MySQL schema through the immutable V1-V31 migration chain, including JPA platform entities, task traces, logs, built-in workflow node templates, and Device Agent automation management. Existing non-empty databases are baselined at version 0 before migrations run; Hibernate runs in `validate` mode and never mutates tables. Create the target database before starting the application. `MYSQL_MIGRATION_*` may use a DDL-capable migration account while `MYSQL_*` uses a least-privilege runtime account; omitted migration values fall back to the runtime connection for compatibility.
@@ -321,9 +321,9 @@ The default profile starts the core platform without plugin adapters. To enable 
 
 The **Automation / Device Agent Management** page creates a 15-minute one-time pairing code and an installation command for a target Mac. Caddy distributes self-contained Python 3.12 and Node.js 22 runtimes for Apple Silicon and Intel; the installer pins Appium 3.7 and XCUITest Driver 12.11 and configures a login-level Appium LaunchAgent plus a root-owned Remote XPC Registry LaunchDaemon. The target Mac needs full Xcode, and each iPhone/iPad must trust the Mac and enable Developer Mode. For an internal Caddy CA, transfer and install the exported public root certificate described below; never distribute the CA private key.
 
-The management page dispatches device-scoped `SETUP_WDA` and `START_WDA` commands, supports stable per-device ports and conflict detection, encrypts WDA signing metadata, manages Registry online/offline/recreate actions, and cancels active commands. Raw UDIDs never enter the backend, logs, or UI; they are used only in Agent memory and restricted local Unix Socket requests to the root helper. WeCom accounts, friends, and business tasks remain out of scope.
+The management page dispatches device-scoped `SETUP_WDA` and `START_WDA` commands, supports stable per-device ports and conflict detection, encrypts IDA signing metadata, manages Registry online/offline/recreate actions, and cancels active commands. Raw UDIDs never enter the backend, logs, or UI; they are used only in Agent memory and restricted local Unix Socket requests to the root helper. WeCom accounts, friends, and business tasks remain out of scope.
 
-The Agent executes only the documented fixed command set: device discovery, diagnostics, WDA setup/start, Registry lifecycle, configuration refresh, relocation, and signed self-upgrade. Device selection uses Agent-scoped SHA-256 identifiers while raw iOS UDIDs stay on the target Mac. Before starting WDA, operators must ensure the selected device is not controlled by another automation process.
+The Agent executes only the documented fixed command set: device discovery, diagnostics, IDA setup/start, Registry lifecycle, configuration refresh, relocation, and signed self-upgrade. Device selection uses Agent-scoped SHA-256 identifiers while raw iOS UDIDs stay on the target Mac. Before starting IDA, operators must ensure the selected device is not controlled by another automation process.
 
 ### Data synchronization and server management
 

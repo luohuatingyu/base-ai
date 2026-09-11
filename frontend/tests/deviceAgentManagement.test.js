@@ -113,7 +113,7 @@ test('WDA 配置读取仅把 404 解释为尚未配置', async () => {
 test('管理页和路由包含完整通用 Agent 入口且不含企业微信业务', () => {
   assert.match(router, /automation\/device-agents\/config-guide/)
   assert.match(router, /automation\/device-agents\/onboarding/)
-  assert.match(agentView, /operations:device-agent:\$\{action\}/)
+  assert.match(agentView, /automation:device-agent:\$\{action\}/)
   assert.match(agentView, /pairingPagination/)
   assert.match(agentView, /operationSpeed/)
   assert.doesNotMatch(agentView, /wecom|accountCode|TASK_EXECUTION/i)

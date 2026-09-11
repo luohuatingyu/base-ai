@@ -102,7 +102,7 @@ const menuKeysByPermission = Object.freeze({
   'automation:api-trigger:logs': 'menus.buttons.triggerLogs',
   'automation:api-trigger-security:view': 'nav.items.apiTriggerSecurity',
   'automation:api-trigger-security:update': 'menus.buttons.updateTriggerSecurity',
-  'operations:device-agent:list': 'nav.items.deviceAgents',
+  'automation:device-agent:list': 'nav.items.deviceAgents',
   'automation:workflow:node:list': 'nav.items.workflowNodes',
   'automation:workflow:node:create': 'workflowNodes.add',
   'automation:workflow:node:import': 'workflowNodes.add',

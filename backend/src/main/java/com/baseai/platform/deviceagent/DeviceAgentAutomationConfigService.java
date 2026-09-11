@@ -180,7 +180,7 @@ public class DeviceAgentAutomationConfigService {
                 signing = objectMapper.readValue(cryptoService.decrypt(encrypted),
                     DeviceAgentModels.WdaSigningConfig.class);
             } catch (Exception exception) {
-                throw new IllegalStateException("设备 Agent WDA 配置解密失败", exception);
+                throw new IllegalStateException("设备 Agent IDA 配置解密失败", exception);
             }
         }
         Timestamp updatedAt = resultSet.getTimestamp("updated_at");
@@ -294,7 +294,7 @@ public class DeviceAgentAutomationConfigService {
     /** 将配置序列化为稳定 JSON。 */
     private String writeJson(Object value) {
         try { return objectMapper.writeValueAsString(value); }
-        catch (Exception exception) { throw new IllegalStateException("设备 Agent WDA 配置序列化失败", exception); }
+        catch (Exception exception) { throw new IllegalStateException("设备 Agent IDA 配置序列化失败", exception); }
     }
 
     /** 计算配置变更摘要。 */
@@ -303,7 +303,7 @@ public class DeviceAgentAutomationConfigService {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) {
-            throw new IllegalStateException("设备 Agent WDA 配置摘要失败", exception);
+            throw new IllegalStateException("设备 Agent IDA 配置摘要失败", exception);
         }
     }
 

@@ -19,7 +19,7 @@ import java.util.List;
 /** 提供设备 Agent 配对、配置、只读诊断和自维护命令管理接口。 */
 @RestController
 @RequestMapping("/api/automation/device-agents")
-@RequiredPermission("operations:device-agent:list")
+@RequiredPermission("automation:device-agent:list")
 public class DeviceAgentManagementController {
     private static final String AGENT_ID_PATTERN = "[A-Za-z0-9][A-Za-z0-9._-]{0,63}";
     private final DeviceAgentRegistrationService registrationService;
@@ -49,7 +49,7 @@ public class DeviceAgentManagementController {
 
     /** 创建一次性配对码。 */
     @PostMapping("/pairing")
-    @RequiredPermission("operations:device-agent:create")
+    @RequiredPermission("automation:device-agent:create")
     public DeviceAgentModels.CreatePairingResponse createPairing(HttpServletRequest request,
                                                                   @RequestBody DeviceAgentModels.CreatePairingRequest body) {
         return registrationService.createPairing(body, userId(), clientIpResolver.resolve(request));
@@ -73,21 +73,21 @@ public class DeviceAgentManagementController {
 
     /** 撤销尚未使用的配对码。 */
     @DeleteMapping("/pairing/{pairingId}")
-    @RequiredPermission("operations:device-agent:delete")
+    @RequiredPermission("automation:device-agent:delete")
     public void revokePairing(HttpServletRequest request, @PathVariable Long pairingId) {
         registrationService.revokePairing(pairingId, userId(), clientIpResolver.resolve(request));
     }
 
     /** 删除已经失效的配对记录。 */
     @DeleteMapping("/pairing/{pairingId}/record")
-    @RequiredPermission("operations:device-agent:delete")
+    @RequiredPermission("automation:device-agent:delete")
     public void deletePairingRecord(@PathVariable Long pairingId) {
         registrationService.deletePairingRecord(pairingId);
     }
 
     /** 为已有 Agent 补发配对码。 */
     @PostMapping("/{agentId:" + AGENT_ID_PATTERN + "}/pairing")
-    @RequiredPermission("operations:device-agent:create")
+    @RequiredPermission("automation:device-agent:create")
     public DeviceAgentModels.CreatePairingResponse reissuePairing(HttpServletRequest request,
                                                                    @PathVariable String agentId) {
         DeviceAgentModels.AgentRegistrationView current = registrationService.registration(agentId);
@@ -108,12 +108,12 @@ public class DeviceAgentManagementController {
 
     /** 将已配对 Agent 设为唯一默认实例。 */
     @PostMapping("/{agentId:" + AGENT_ID_PATTERN + "}/default")
-    @RequiredPermission("operations:device-agent:update")
+    @RequiredPermission("automation:device-agent:update")
     public void setDefault(@PathVariable String agentId) { registrationService.setDefault(agentId); }
 
     /** 更新回连地址，并在已配对时下发原子改址命令。 */
     @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/backend-url")
-    @RequiredPermission("operations:device-agent:update")
+    @RequiredPermission("automation:device-agent:update")
     public DeviceAgentModels.UpdateAgentBackendUrlResult updateBackendUrl(
         @PathVariable String agentId, @RequestBody DeviceAgentModels.UpdateAgentBackendUrlRequest body) {
         boolean paired = registrationService.updateBackendUrl(agentId, body == null ? null : body.backendUrl());
@@ -130,7 +130,7 @@ public class DeviceAgentManagementController {
 
     /** 更新设备 Agent 可读名称。 */
     @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/device-name")
-    @RequiredPermission("operations:device-agent:update")
+    @RequiredPermission("automation:device-agent:update")
     public void updateDeviceName(@PathVariable String agentId,
                                  @RequestBody DeviceAgentModels.UpdateAgentDeviceNameRequest body) {
         registrationService.updateDeviceName(agentId, body == null ? null : body.deviceName());
@@ -144,7 +144,7 @@ public class DeviceAgentManagementController {
 
     /** 更新设备管理功能开关。 */
     @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/features")
-    @RequiredPermission("operations:device-agent:update")
+    @RequiredPermission("automation:device-agent:update")
     public void updateFeatures(@PathVariable String agentId,
                                @RequestBody DeviceAgentModels.UpdateFeaturesRequest body) {
         registrationService.updateFeatures(agentId, body);
@@ -152,7 +152,7 @@ public class DeviceAgentManagementController {
 
     /** 撤销 Agent 和全部未完成命令。 */
     @PostMapping("/{agentId:" + AGENT_ID_PATTERN + "}/revoke")
-    @RequiredPermission("operations:device-agent:delete")
+    @RequiredPermission("automation:device-agent:delete")
     public void revoke(HttpServletRequest request, @PathVariable String agentId,
                        @RequestBody(required = false) DeviceAgentModels.RevokeAgentRequest body) {
         registrationService.revoke(agentId, body == null ? null : body.reason(), userId(),
@@ -161,14 +161,14 @@ public class DeviceAgentManagementController {
 
     /** 删除 Agent 注册与设备配置，审计记录保留。 */
     @DeleteMapping("/{agentId:" + AGENT_ID_PATTERN + "}")
-    @RequiredPermission("operations:device-agent:delete")
+    @RequiredPermission("automation:device-agent:delete")
     public void delete(HttpServletRequest request, @PathVariable String agentId) {
         registrationService.delete(agentId, userId(), clientIpResolver.resolve(request));
     }
 
     /** 创建白名单内管理命令。 */
     @PostMapping("/commands")
-    @RequiredPermission("operations:device-agent:execute")
+    @RequiredPermission("automation:device-agent:execute")
     public DeviceAgentModels.AgentCommandView createCommand(
         @RequestBody DeviceAgentModels.CreateCommandRequest body) {
         return commandService.create(body, userId());
@@ -188,7 +188,7 @@ public class DeviceAgentManagementController {
 
     /** 取消未完成命令。 */
     @PostMapping("/commands/{commandId}/cancel")
-    @RequiredPermission("operations:device-agent:execute")
+    @RequiredPermission("automation:device-agent:execute")
     public void cancel(@PathVariable Long commandId) { commandService.cancel(commandId); }
 
     /** 查询已解密但不含私钥材料的 WDA 配置。 */
@@ -199,7 +199,7 @@ public class DeviceAgentManagementController {
 
     /** 加密保存 WDA 签名和本地服务配置。 */
     @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/wda-config")
-    @RequiredPermission("operations:device-agent:update")
+    @RequiredPermission("automation:device-agent:update")
     public DeviceAgentModels.AgentWdaConfigView updateWdaConfig(
         @PathVariable String agentId, @RequestBody DeviceAgentModels.UpdateAgentWdaConfigRequest body) {
         return automationConfigService.update(agentId, body, userId());
@@ -213,7 +213,7 @@ public class DeviceAgentManagementController {
 
     /** 保存通用设备操作速度档位并通知 Agent 热加载。 */
     @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/operation-speed")
-    @RequiredPermission("operations:device-agent:update")
+    @RequiredPermission("automation:device-agent:update")
     public DeviceAgentModels.AgentOperationSpeedView updateOperationSpeed(
         @PathVariable String agentId, @RequestBody DeviceAgentModels.UpdateAgentOperationSpeedRequest body) {
         return automationConfigService.updateOperationSpeed(agentId, body, userId());
@@ -221,7 +221,7 @@ public class DeviceAgentManagementController {
 
     /** 删除 WDA 配置并恢复安全默认值。 */
     @DeleteMapping("/{agentId:" + AGENT_ID_PATTERN + "}/wda-config")
-    @RequiredPermission("operations:device-agent:delete")
+    @RequiredPermission("automation:device-agent:delete")
     public void deleteWdaConfig(@PathVariable String agentId) {
         automationConfigService.delete(agentId, userId());
     }
@@ -234,7 +234,7 @@ public class DeviceAgentManagementController {
 
     /** 更新 Remote XPC Registry 端口覆盖值。 */
     @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/registry")
-    @RequiredPermission("operations:device-agent:update")
+    @RequiredPermission("automation:device-agent:update")
     public DeviceAgentModels.AgentRegistryView updateRegistry(
         @PathVariable String agentId, @RequestBody DeviceAgentModels.UpdateAgentRegistryRequest body) {
         return registryService.update(agentId, body, userId());
@@ -242,7 +242,7 @@ public class DeviceAgentManagementController {
 
     /** 下发 Registry 上线、下线或重建动作。 */
     @PostMapping("/{agentId:" + AGENT_ID_PATTERN + "}/registry/actions")
-    @RequiredPermission("operations:device-agent:execute")
+    @RequiredPermission("automation:device-agent:execute")
     public DeviceAgentModels.AgentCommandView registryAction(
         @PathVariable String agentId, @RequestBody DeviceAgentModels.AgentRegistryActionRequest body) {
         return registryService.action(agentId, body, userId());

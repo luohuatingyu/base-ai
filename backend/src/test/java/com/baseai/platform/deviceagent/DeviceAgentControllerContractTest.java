@@ -17,18 +17,18 @@ class DeviceAgentControllerContractTest {
         Map<Method, String> methods = Map.of(
             DeviceAgentManagementController.class.getMethod("createPairing",
                 HttpServletRequest.class, DeviceAgentModels.CreatePairingRequest.class),
-            "operations:device-agent:create",
+            "automation:device-agent:create",
             DeviceAgentManagementController.class.getMethod("updateWdaConfig", String.class,
                 DeviceAgentModels.UpdateAgentWdaConfigRequest.class),
-            "operations:device-agent:update",
+            "automation:device-agent:update",
             DeviceAgentManagementController.class.getMethod("registryAction", String.class,
                 DeviceAgentModels.AgentRegistryActionRequest.class),
-            "operations:device-agent:execute",
+            "automation:device-agent:execute",
             DeviceAgentManagementController.class.getMethod("deleteWdaConfig", String.class),
-            "operations:device-agent:delete",
+            "automation:device-agent:delete",
             DeviceAgentDeviceController.class.getMethod("updateWdaPort", String.class, String.class,
                 DeviceAgentModels.UpdateAgentDeviceWdaPortRequest.class),
-            "operations:device-agent:update"
+            "automation:device-agent:update"
         );
 
         for (Map.Entry<Method, String> entry : methods.entrySet()) {
@@ -39,7 +39,7 @@ class DeviceAgentControllerContractTest {
     /** 列表和详情默认继承控制器的只读权限。 */
     @Test
     void keepsReadOperationsUnderListPermission() {
-        assertEquals("operations:device-agent:list",
+        assertEquals("automation:device-agent:list",
             DeviceAgentManagementController.class.getAnnotation(RequiredPermission.class).value());
     }
 }

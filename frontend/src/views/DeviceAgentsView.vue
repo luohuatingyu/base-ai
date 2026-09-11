@@ -172,7 +172,7 @@
                   size="small"
                   style="margin-right: 5px"
                 >
-                  WDA
+                  IDA
                 </el-tag>
                 <el-tag
                   v-if="row.featureDiagnostics === 'ENABLED'"
@@ -399,7 +399,7 @@
         <el-form-item v-if="pairingMode === 'create'" :label="$t('deviceAgents.selectFeatures')">
           <el-checkbox-group v-model="pairingForm.features">
             <el-checkbox :label="PAIRING_FEATURES.diagnostics">{{ $t('deviceAgents.diagnostics') }}</el-checkbox>
-            <el-checkbox :label="PAIRING_FEATURES.appiumWda">WDA</el-checkbox>
+            <el-checkbox :label="PAIRING_FEATURES.appiumWda">IDA</el-checkbox>
             <el-checkbox :label="PAIRING_FEATURES.autostart">{{ $t('deviceAgents.autostart') }}</el-checkbox>
           </el-checkbox-group>
         </el-form-item>
@@ -761,7 +761,7 @@
             {{ $t(`deviceAgents.devicePool.connectionTypes.${deviceConnectionType(row).toLowerCase()}`) }}
           </template>
         </el-table-column>
-        <el-table-column label="WDA" width="110">
+        <el-table-column label="IDA" width="110">
           <template #default="{ row }"><el-tag :type="deviceReadinessType(row.wdaStatus)">{{ row.wdaStatus }}</el-tag></template>
         </el-table-column>
         <el-table-column :label="$t('deviceAgents.devicePool.wdaControl')" width="120">
@@ -1020,7 +1020,7 @@
           <el-switch v-model="featuresForm.diagnostics" />
         </el-form-item>
 
-        <el-form-item label="WDA">
+        <el-form-item label="IDA">
           <el-switch v-model="featuresForm.appiumWda" />
         </el-form-item>
 
@@ -1056,7 +1056,7 @@ import { createRegistryStatusPoller } from '../utils/deviceAgentRegistryPoller'
 const { t } = useI18n()
 const auth = useAuthStore()
 // 将页面操作映射到设备 Agent 的细粒度权限。
-const can = (action) => auth.hasPermission(`operations:device-agent:${action}`)
+const can = (action) => auth.hasPermission(`automation:device-agent:${action}`)
 // 页面卸载标记：所有命令轮询循环在每次等待后检查，避免离开页面仍在后台请求
 let pageAlive = true
 // Agent 默认地址来自平台公开配置；缺省时仍保留当前前端的子路径挂载前缀。

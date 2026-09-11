@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import enUS from '../src/locales/en-US.js'
+import zhCN from '../src/locales/zh-CN.js'
 
 const view = readFileSync(new URL('../src/views/DeviceAgentsView.vue', import.meta.url), 'utf8')
 const router = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const navigation = readFileSync(new URL('../src/utils/navigation.js', import.meta.url), 'utf8')
-const zhLocale = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
+const zhLocaleSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8')
 const caddyDockerfile = readFileSync(new URL('../../caddy/Dockerfile', import.meta.url), 'utf8')
 const caddyfile = readFileSync(new URL('../../Caddyfile', import.meta.url), 'utf8')
@@ -13,8 +15,9 @@ const agentProject = readFileSync(new URL('../../device-agent/pyproject.toml', i
 
 test('device Agent route is protected by its dedicated permission', () => {
   assert.match(router, /path:\s*['"]automation\/device-agents['"]/)
-  assert.match(router, /permission:\s*['"]operations:device-agent:list['"]/)
-  assert.match(navigation, /operations:device-agent:list/)
+  assert.match(router, /permission:\s*['"]automation:device-agent:list['"]/)
+  assert.match(navigation, /automation:device-agent:list/)
+  assert.doesNotMatch(router, /operations:device-agent:/)
 })
 
 test('device Agent page exposes complete generic automation management actions', () => {
@@ -31,7 +34,31 @@ test('device Agent page exposes complete generic automation management actions',
   assert.match(view, /:min="1024"/)
   assert.match(view, /:max="65535"/)
   // 隐私承诺文案随页面重构迁移到环境检测与指南文案，语义等价：UDID 等敏感数据不出 Mac
-  assert.match(zhLocale, /不回传证书、UDID、账号或密钥/)
+  assert.match(zhLocaleSource, /不回传证书、UDID、账号或密钥/)
+})
+
+/** 递归收集本地化对象中的用户可见字符串。 */
+function collectStrings(value) {
+  if (typeof value === 'string') return [value]
+  if (!value || typeof value !== 'object') return []
+  return Object.values(value).flatMap(collectStrings)
+}
+
+test('device Agent UI uses IDA as the iOS Device Automation abbreviation', () => {
+  assert.equal(zhCN.deviceAgents.featureNames.APPIUM_WDA_AUTOMATION, 'IDA')
+  assert.equal(enUS.deviceAgents.featureNames.APPIUM_WDA_AUTOMATION, 'IDA')
+  assert.equal(zhCN.deviceAgents.devicePool.wdaPort, 'IDA 端口')
+  assert.equal(enUS.deviceAgents.devicePool.wdaPort, 'IDA Port')
+
+  const visibleMessages = [
+    ...collectStrings(zhCN.deviceAgents),
+    ...collectStrings(zhCN.deviceAgentGuide),
+    ...collectStrings(zhCN.deviceAgentOnboarding),
+    ...collectStrings(enUS.deviceAgents),
+    ...collectStrings(enUS.deviceAgentGuide),
+    ...collectStrings(enUS.deviceAgentOnboarding)
+  ]
+  for (const message of visibleMessages) assert.doesNotMatch(message, /\bWDA\b/)
 })
 
 test('device Agent page contains no business automation endpoints', () => {

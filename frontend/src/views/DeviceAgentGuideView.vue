@@ -168,7 +168,7 @@ const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 // 诊断命令下发需要执行权限，只读账号只看最近一次上报结果
-const can = (action) => auth.hasPermission(`operations:device-agent:${action}`)
+const can = (action) => auth.hasPermission(`automation:device-agent:${action}`)
 const readinessLoading = ref(false)
 const triggeringDiagnostics = ref(false)
 const defaultAgentId = ref('')

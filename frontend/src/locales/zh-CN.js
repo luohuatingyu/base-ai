@@ -518,7 +518,7 @@ export default {
     "devicePool": {
       "title": "设备池",
       "dialogTitle": "{agentId} 的 iOS 设备池",
-      "hint": "Agent 已完成本轮实时检测；每台设备使用独立 WDA 端口，Appium 与 Registry 端口由同一 Agent 共享。",
+      "hint": "Agent 已完成本轮实时检测；每台设备使用独立 IDA 端口，Appium 与 Registry 端口由同一 Agent 共享。",
       "device": "设备",
       "system": "系统",
       "connection": "连接",
@@ -534,40 +534,40 @@ export default {
         "wireless": "无线",
         "unknown": "未知"
       },
-      "wdaControl": "WDA 控制链路",
+      "wdaControl": "IDA 控制链路",
       "wdaControlStates": {
         "running": "控制可用",
         "stopped": "控制不可用"
       },
-      "wdaPort": "WDA 端口",
+      "wdaPort": "IDA 端口",
       "wdaPortEdit": "编辑端口",
       "wdaPortConfigured": "配置",
       "wdaPortObserved": "实际",
       "wdaPortApplied": "已生效",
       "wdaPortPending": "待生效",
       "wdaPortFailed": "应用失败",
-      "wdaPortDialogTitle": "编辑 {device} 的 WDA 端口",
+      "wdaPortDialogTitle": "编辑 {device} 的 IDA 端口",
       "wdaPortHint": "允许 1024–65535；同一 Agent 的设备端口必须不同，也不能与 Appium 或 Registry 端口相同。自动化执行中保存不会中断任务，将在设备空闲后生效。",
-      "wdaPortSaved": "WDA 端口配置已保存，Agent 将在下一轮同步时应用",
-      "wdaPortSaveError": "保存 WDA 端口失败",
+      "wdaPortSaved": "IDA 端口配置已保存，Agent 将在下一轮同步时应用",
+      "wdaPortSaveError": "保存 IDA 端口失败",
       "wdaPortInvalid": "请输入 1024–65535 之间的整数端口",
       "wdaPortConflict": "该端口与当前 Agent 的其他设备资源冲突，请更换端口。",
       "wdaPortInUse": "该端口已被 Mac 上的其他程序占用，请更换端口。",
       "wdaPortConfigInvalid": "Agent 拒绝了无效的端口配置，请重新保存。",
       "lastDetected": "最近检测",
       "unnamed": "未命名设备",
-      "setupWda": "安装 WDA",
-      "startWda": "启动 WDA",
+      "setupWda": "安装 IDA",
+      "startWda": "启动 IDA",
       "empty": "尚未收到设备快照，请连接并解锁 iOS 设备后刷新。",
       "loadError": "加载 iOS 设备池失败",
-      "setupCompleted": "{device} 的 WDA 已构建并安装",
-      "setupFailed": "WDA 构建失败：{reason}",
-      "setupTimeout": "WDA 构建等待超时，请检查目标 Mac 日志。",
-      "setupError": "下发 WDA 构建失败",
-      "startCompleted": "{device} 的 WDA 已启动",
-      "startFailed": "WDA 启动失败：{reason}",
-      "startTimeout": "WDA 启动等待超时，请确认 Mac Agent 已升级并检查目标 Mac 日志。",
-      "startError": "下发 WDA 启动失败",
+      "setupCompleted": "{device} 的 IDA 已构建并安装",
+      "setupFailed": "IDA 构建失败：{reason}",
+      "setupTimeout": "IDA 构建等待超时，请检查目标 Mac 日志。",
+      "setupError": "下发 IDA 构建失败",
+      "startCompleted": "{device} 的 IDA 已启动",
+      "startFailed": "IDA 启动失败：{reason}",
+      "startTimeout": "IDA 启动等待超时，请确认 Mac Agent 已升级并检查目标 Mac 日志。",
+      "startError": "下发 IDA 启动失败",
       "detectNow": "实时检测",
       "detecting": "正在通过 Agent 实时检测设备，请稍候。",
       "detectUnknown": "实时检测未完成，以下设备状态仅供历史识别，不代表当前在线。",
@@ -615,7 +615,7 @@ export default {
       "delivered": "已下发",
       "resend": "重新下发配置",
       "resendDispatched": "已通知 Agent 重新拉取配置，稍后刷新查看配置状态",
-      "advice": "在「WDA 配置」确认配置无误后，点击「重新下发配置」让 Agent 重新拉取。",
+      "advice": "在「IDA 配置」确认配置无误后，点击「重新下发配置」让 Agent 重新拉取。",
       "otherError": "需注意",
       "otherErrorDetail": "Agent 上报了错误码 {code}，请查看该 Mac 上的 Agent 日志。",
       "WDA_CONFIG_REJECTED": "配置被拒绝",
@@ -677,7 +677,7 @@ export default {
     },
     "featureNames": {
       "READ_ONLY_DIAGNOSTICS": "诊断",
-      "APPIUM_WDA_AUTOMATION": "WDA",
+      "APPIUM_WDA_AUTOMATION": "IDA",
       "AUTOSTART": "自启动"
     },
     "reissuePairing": "重新颁发配对码",
@@ -735,7 +735,7 @@ export default {
     "diagnostics": "诊断",
     "autostart": "自启动",
     "lastOnline": "最后在线",
-    "configWda": "配置 WDA",
+    "configWda": "配置 IDA",
     "revoke": "撤销",
     "selectFeatures": "选择功能",
     "pairingCode": "配对码",
@@ -770,7 +770,7 @@ export default {
     "generate": "生成",
     "pairingCodeCreated": "配对码已创建",
     "pairingCodeError": "创建配对码失败",
-    "wdaConfig": "WDA 配置",
+    "wdaConfig": "IDA 配置",
     "wdaSigningConfig": "签名配置",
     "detectSigning": "一键检测",
     "detectSigningButton": "检测本机签名身份",
@@ -786,7 +786,7 @@ export default {
     "signingIdentity": "签名身份",
     "signingIdentityHint": "留空时 Agent 使用 Apple Development；填写时必须同时配置 Xcode 组织 ID",
     "allowDeviceRegistration": "允许注册新设备",
-    "allowDeviceRegistrationHint": "开启后构建 WDA 时可向开发者账号注册尚未登记的设备，仅在新设备首次构建时开启",
+    "allowDeviceRegistrationHint": "开启后构建 IDA 时可向开发者账号注册尚未登记的设备，仅在新设备首次构建时开启",
     "updatedBundleId": "自定义 Bundle ID",
     "deviceConfig": "设备配置",
     "detectDevice": "一键检测",
@@ -810,7 +810,7 @@ export default {
     "deviceOsVersion": "系统版本",
     "appiumConfig": "Appium 配置",
     "appiumServerUrl": "Appium 服务地址",
-    "appiumWdaLocalPort": "WDA 本地端口",
+    "appiumWdaLocalPort": "IDA 本地端口",
     "updateFeatures": "更新功能",
     "loadError": "加载 Agent 列表失败",
     "loadConfigError": "加载配置失败",
@@ -826,7 +826,7 @@ export default {
     "setDefaultConfirm": "将 Agent「{agentId}」设为默认后，环境检测和诊断下发将改用这台 Mac，确认切换？",
     "setDefaultSuccess": "已设为默认 Agent",
     "setDefaultError": "设置默认 Agent 失败",
-    "deleteConfirm": "删除后 Agent「{agentId}」及其配对码、下发命令、WDA 配置将被永久移除，仅保留审计日志。确认删除？",
+    "deleteConfirm": "删除后 Agent「{agentId}」及其配对码、下发命令、IDA 配置将被永久移除，仅保留审计日志。确认删除？",
     "deleteActiveConfirm": "Agent「{agentId}」尚未撤销，删除后它将立即失去平台访问权限，仍在运行的 Agent 会持续认证失败。该操作不可恢复，仅保留审计日志。确认删除？",
     "deleted": "Agent 记录已删除",
     "deleteError": "删除 Agent 失败"
@@ -834,7 +834,7 @@ export default {
   "deviceAgentGuide": {
     "entry": "Agent 配置指南",
     "title": "Agent 配置指南",
-    "description": "完成 Mac Agent 配对、运行环境准备和只读健康检测，确认自动化基础设施可用后再配置 WDA。",
+    "description": "完成 Mac Agent 配对、运行环境准备和只读健康检测，确认自动化基础设施可用后再配置 IDA。",
     "backToAgents": "返回 Agent 管理",
     "readOnly": "检测仅上报脱敏状态",
     "openOnboarding": "打开接入向导",
@@ -860,9 +860,9 @@ export default {
       "title": "依赖检查与修复",
       "description": "一键安装是首选路径；以下命令用于确认 Xcode 和修复 Appium/XCUITest 环境。",
       "xcodeTitle": "完整 Xcode",
-      "xcodeDescription": "开发目录必须指向 Xcode.app；仅安装 Command Line Tools 无法构建 WDA。",
+      "xcodeDescription": "开发目录必须指向 Xcode.app；仅安装 Command Line Tools 无法构建 IDA。",
       "appiumTitle": "Appium 与 XCUITest Driver",
-      "appiumDescription": "检查 Driver 安装和 Doctor 结果，必需项错误处理完后再进入 WDA 配置。",
+      "appiumDescription": "检查 Driver 安装和 Doctor 结果，必需项错误处理完后再进入 IDA 配置。",
       "fallbackTitle": "只在目标 Mac 执行",
       "fallbackDescription": "这些命令用于环境检查或异常修复，不要在后端 Docker 容器中执行；Agent 安装或 Python 版本异常时重新运行接入向导的一键安装命令。"
     },
@@ -887,7 +887,7 @@ export default {
         "UNKNOWN": "未检测"
       },
       "summary": {
-        "PASS": "Mac 环境已满足 WDA PoC 前置条件",
+        "PASS": "Mac 环境已满足 IDA PoC 前置条件",
         "WARN": "环境存在待确认项，请查看下方检查结果",
         "FAIL": "环境未就绪，请按失败项完成配置",
         "UNKNOWN": "尚未收到可用的 Mac 环境诊断"
@@ -902,7 +902,7 @@ export default {
         "SIGNING": "代码签名身份",
         "TARGET_DEVICE": "目标 iOS 设备",
         "APPIUM_SERVER": "本机 Appium 服务",
-        "WDA": "已签名 WDA"
+        "WDA": "已签名 IDA"
       },
       "hints": {
         "MACOS": "读取系统版本",
@@ -914,13 +914,13 @@ export default {
         "SIGNING": "只确认存在有效身份",
         "TARGET_DEVICE": "仅确认配置设备已连接",
         "APPIUM_SERVER": "回环地址 /status",
-        "WDA": "检查指定 Bundle ID 是否安装"
+        "WDA": "检查指定 Bundle ID 是否安装 IDA"
       },
       "reasons": {
         "PROBE_FAILED": "读取系统版本失败，Agent 无法确认 macOS 环境",
         "VERSION_MISMATCH": "本机 Python 不是 3.12，Agent 运行环境不符合要求",
         "XCODE_NOT_FOUND": "未检测到可用的 Xcode 开发目录",
-        "COMMAND_LINE_TOOLS_ONLY": "当前只装了命令行工具，无法构建 WDA",
+        "COMMAND_LINE_TOOLS_ONLY": "当前只装了命令行工具，无法构建 IDA",
         "NOT_EXECUTABLE": "本机找不到可执行的 Appium",
         "DRIVER_NOT_INSTALLED": "XCUITest Driver 尚未安装",
         "DOCTOR_WARNING": "Driver 已安装，但 Doctor 报出待处理项",
@@ -931,7 +931,7 @@ export default {
         "NOT_REACHABLE": "本机 Appium 服务未响应",
         "BUNDLE_ID_NOT_CONFIGURED": "尚未配置 Bundle ID，无法判断应用是否安装",
         "DEVICE_QUERY_FAILED": "设备可见但读取已装应用清单失败，这是连接问题而非应用缺失",
-        "DEVICE_NOT_CONNECTED": "目标 iOS 设备未连接，Agent 无法确认 WDA 是否已安装",
+        "DEVICE_NOT_CONNECTED": "目标 iOS 设备未连接，Agent 无法确认 IDA 是否已安装",
         "APP_NOT_INSTALLED": "设备上没有安装该 Bundle ID 对应的应用"
       },
       "actions": {
@@ -943,18 +943,18 @@ export default {
         "DRIVER_NOT_INSTALLED": "在 Mac 上执行 appium driver install xcuitest",
         "DOCTOR_WARNING": "在 Mac 上执行 appium driver doctor xcuitest 并按提示处理",
         "NO_VALID_IDENTITY": "在该 Mac 的 Xcode 中登录 Apple ID 并创建开发证书",
-        "DEVICE_NOT_CONFIGURED": "在「WDA 配置」中选择目标 iOS 设备",
+        "DEVICE_NOT_CONFIGURED": "在「IDA 配置」中选择目标 iOS 设备",
         "DEVICE_NOT_FOUND": "检查数据线直连、iOS 设备解锁并已信任此电脑，然后重新探测设备",
         "DEVICE_PAIRED_UNREACHABLE": "重新插拔数据线并解锁 iOS 设备，然后重新检测",
         "NOT_REACHABLE": "在目标 Mac 重新执行一键安装命令以恢复常驻 Appium 服务",
-        "BUNDLE_ID_NOT_CONFIGURED": "在「WDA 配置」中填写唯一的自定义 Bundle ID",
+        "BUNDLE_ID_NOT_CONFIGURED": "在「IDA 配置」中填写唯一的自定义 Bundle ID",
         "DEVICE_QUERY_FAILED": "先修复 iOS 设备连接，确认「目标 iOS 设备」通过后再看本项",
-        "DEVICE_NOT_CONNECTED": "先用数据线接好并解锁 iOS 设备，确认「目标 iOS 设备」通过后再构建；尚未选定目标设备时先在「WDA 配置」中指定",
-        "APP_NOT_INSTALLED_WDA": "执行「一键构建 WDA」把已签名的 WDA 装到 iOS 设备"
+        "DEVICE_NOT_CONNECTED": "先用数据线接好并解锁 iOS 设备，确认「目标 iOS 设备」通过后再构建；尚未选定目标设备时先在「IDA 配置」中指定",
+        "APP_NOT_INSTALLED_WDA": "执行「一键构建 IDA」把已签名的 IDA 装到 iOS 设备"
       },
       "actionLabels": {
-        "GOTO_WDA_CONFIG": "前往 WDA 配置",
-        "GOTO_BUILD_WDA": "前往一键构建 WDA",
+        "GOTO_WDA_CONFIG": "前往 IDA 配置",
+        "GOTO_BUILD_WDA": "前往一键构建 IDA",
         "GOTO_AGENT_LIST": "前往 Agent 管理"
       },
       "defaultAgentMissing": "尚未找到已配对且未撤销的默认 Agent；请先完成配对并在 Agent 列表中设为默认。"
@@ -971,7 +971,7 @@ export default {
       "command": "安装命令",
       "online": "等待上线",
       "config": "自动配置",
-      "setup": "构建 WDA",
+      "setup": "构建 IDA",
       "verify": "iOS 设备复验",
       "finish": "启用功能"
     },
@@ -1020,19 +1020,19 @@ export default {
       "noSigning": "未检测到签名身份，请在该 Mac 的 Xcode 中登录 Apple ID 并创建开发证书后重试"
     },
     "setup": {
-      "title": "一键构建 WDA",
+      "title": "一键构建 IDA",
       "hint": "将在 Mac 上驱动 xcodebuild 构建 WebDriverAgent 并安装到 iOS 设备，首次构建约需数分钟",
       "run": "开始构建",
-      "running": "正在构建并安装 WDA…",
+      "running": "正在构建并安装 IDA…",
       "runningHint": "首次构建需要编译并向 iOS 设备安装测试应用，最长等待 20 分钟，请保持 iOS 设备解锁",
-      "success": "WDA 已构建并安装到全部已连接设备",
-      "failed": "WDA 构建失败",
+      "success": "IDA 已构建并安装到全部已连接设备",
+      "failed": "IDA 构建失败",
       "unsupported": "Agent 版本过旧，不支持一键构建，请在目标 Mac 上重新执行一键安装后重试",
-      "signingMissing": "该 Mac 的钥匙串中没有可用的开发签名身份，无法为 WDA 签名。请在 Xcode 中登录 Apple ID 并创建开发证书后重试。",
-      "signingAmbiguous": "该 Mac 存在多个开发签名身份，无法自动确定使用哪一个。请在下方选择要用于 WDA 签名的身份。",
-      "signingDetectFailed": "读取该 Mac 的签名身份失败，无法确认能否为 WDA 签名。请在下一步运行诊断确认证书状态后重试。",
+      "signingMissing": "该 Mac 的钥匙串中没有可用的开发签名身份，无法为 IDA 签名。请在 Xcode 中登录 Apple ID 并创建开发证书后重试。",
+      "signingAmbiguous": "该 Mac 存在多个开发签名身份，无法自动确定使用哪一个。请在下方选择要用于 IDA 签名的身份。",
+      "signingDetectFailed": "读取该 Mac 的签名身份失败，无法确认能否为 IDA 签名。请在下一步运行诊断确认证书状态后重试。",
       "signingRemedy": "在该 Mac 上打开 Xcode，进入 Settings → Accounts 登录 Apple ID，选择团队后点击 Manage Certificates 添加 Apple Development 证书；完成后回到本页重试。",
-      "selectSigning": "选择用于 WDA 签名的开发身份",
+      "selectSigning": "选择用于 IDA 签名的开发身份",
       "applySigning": "使用该身份并重试构建"
     },
     "verify": {
@@ -1045,7 +1045,7 @@ export default {
       },
       "hints": {
         "developer": "iOS 设备设置 → 隐私与安全性 → 开发者模式，开启后按提示重启设备",
-        "trustCert": "iOS 设备设置 → 通用 → VPN 与设备管理，信任 WDA 使用的开发者证书"
+        "trustCert": "iOS 设备设置 → 通用 → VPN 与设备管理，信任 IDA 使用的开发者证书"
       }
     },
     "finish": {
