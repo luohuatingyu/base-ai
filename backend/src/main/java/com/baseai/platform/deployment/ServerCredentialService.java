@@ -43,6 +43,7 @@ public class ServerCredentialService {
         boolean enabled = !Boolean.FALSE.equals(command.enabled());
         if (existing != null && !enabled) requireUnused(id);
         boolean keyMode = "KEY".equals(command.type());
+        String username = keyMode ? "" : text(command.username());
         if (existing != null && !command.type().equals(existing.view().type())) requireUnused(id);
         String privateKey = keyMode ? secret(command.privateKey(), existing == null ? "" : existing.privateKey()) : "";
         String password = keyMode ? "" : secret(command.password(), existing == null ? "" : existing.password());
@@ -64,7 +65,7 @@ public class ServerCredentialService {
                 statement.setLong(1, actorId);
                 statement.setString(2, text(command.label()));
                 statement.setString(3, command.type());
-                statement.setString(4, text(command.username()));
+                statement.setString(4, username);
                 statement.setString(5, text(command.publicKey()));
                 statement.setString(6, privateKey);
                 statement.setString(7, text(command.certificate()));
@@ -78,7 +79,7 @@ public class ServerCredentialService {
             jdbc.update("""
                 UPDATE server_credential SET credential_type=?,label=?,username=?,public_key=?,private_key_encrypted=?,
                     certificate=?,password_encrypted=?,passphrase_encrypted=?,enabled=?,updated_at=NOW() WHERE id=?
-                """, command.type(), text(command.label()), text(command.username()), text(command.publicKey()), privateKey,
+                """, command.type(), text(command.label()), username, text(command.publicKey()), privateKey,
                 text(command.certificate()), password, passphrase, enabled, id);
         }
         return require(id, false).view();
@@ -136,7 +137,7 @@ public class ServerCredentialService {
             || "PASSWORD".equals(command.type()) && (!text(command.privateKey()).isEmpty()
                 || !text(command.publicKey()).isEmpty() || !text(command.certificate()).isEmpty()
                 || !text(command.passphrase()).isEmpty())) throw new BusinessException("server.credentialTypeConflict");
-        if (!text(command.username()).isBlank() && !text(command.username()).matches("[A-Za-z_][A-Za-z0-9._-]{0,63}")) throw new BusinessException("server.sshRequired");
+        if ("PASSWORD".equals(command.type()) && !text(command.username()).matches("[A-Za-z_][A-Za-z0-9._-]{0,63}")) throw new BusinessException("server.sshRequired");
         for (String value : new String[]{command.publicKey(), command.privateKey(), command.certificate()}) {
             if (value != null && value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 32768) throw new BusinessException("server.invalid");
         }
@@ -160,7 +161,7 @@ public class ServerCredentialService {
         }
     }
 
-    /** 映射列表元数据，敏感字段仅返回是否设置。 */
+    /** 映射脱敏元数据；私钥不携带账号，历史私钥亦使用服务器自身的 SSH 用户。 */
     private CredentialModels.View view(ResultSet result) throws SQLException {
         String type = result.getString("credential_type");
         if ("RSA".equals(type)) {
@@ -172,7 +173,7 @@ public class ServerCredentialService {
                 && text(result.getString("passphrase_encrypted")).isBlank()) type = "PASSWORD";
         }
         return new CredentialModels.View(result.getLong("id"), result.getString("label"), type,
-            result.getString("username"), result.getString("public_key"), result.getString("certificate"),
+            "KEY".equals(type) ? "" : result.getString("username"), result.getString("public_key"), result.getString("certificate"),
             !text(result.getString("private_key_encrypted")).isBlank(), !text(result.getString("password_encrypted")).isBlank(),
             result.getBoolean("enabled"), result.getTimestamp("created_at").toLocalDateTime(), result.getTimestamp("updated_at").toLocalDateTime(),
             result.getLong("owner_user_id"), !text(result.getString("passphrase_encrypted")).isBlank());

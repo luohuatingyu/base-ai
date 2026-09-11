@@ -54,7 +54,7 @@ test('凭据创建编辑保留材料并在成功后清除敏感输入', async ()
 // 私钥和密码各自验证必填、保留秘密和掩码边界，历史类型必须显式转换。
 test('两类凭据的必填校验与秘密保留', async () => {
   for (const [type, secret, saved, username, allowed] of [
-    ['KEY', 'private', false, '', true], ['KEY', '', false, '', false],
+    ['KEY', 'private', false, '', true], ['KEY', 'private', false, 'old-user', true], ['KEY', '', false, '', false],
     ['KEY', '', true, '', true], ['KEY', '******', false, '', false],
     ['PASSWORD', 'secret', false, 'deploy', true], ['PASSWORD', '', false, 'deploy', false],
     ['PASSWORD', '', true, 'deploy', true], ['PASSWORD', '******', false, 'deploy', false],
@@ -71,18 +71,26 @@ test('两类凭据的必填校验与秘密保留', async () => {
     })()
     assert.equal(calls.length, allowed ? 1 : 0, JSON.stringify([type, secret, saved, username]))
     if (allowed) assert.equal(type === 'KEY' ? calls[0].password : calls[0].privateKey, '')
+    if (allowed) assert.equal(calls[0].username, type === 'KEY' ? '' : username)
   }
 })
 
 // 类型切换清理不适用的输入，不把隐藏的秘密提交到另一种类型。
-test('切换类型清理临时输入且保留账号', () => {
+test('切换私钥类型清理账号与不适用的临时输入', () => {
   const form = { type: 'PASSWORD', username: 'deploy', password: 'secret', privateKey: 'private', publicKey: 'public', certificate: 'certificate', passphrase: 'phrase' }
   method('changeType', { form })('KEY')
   assert.equal(form.password, '')
+  assert.equal(form.username, '')
   assert.equal(form.privateKey, 'private')
   method('changeType', { form })('PASSWORD')
   for (const field of ['privateKey', 'publicKey', 'certificate', 'passphrase']) assert.equal(form[field], '')
-  assert.equal(form.username, 'deploy')
+  assert.equal(form.username, '')
+})
+
+// 私钥界面不维护 SSH 用户，只有账号密码类型显示必填账号。
+test('私钥表单和列表不展示凭据账号', () => {
+  assert.match(source, /<el-form-item v-if="form.type === 'PASSWORD'" :label="t\('servers.username'\)" required>/)
+  assert.match(source, /row.type === 'KEY' \? '—' : row.username/)
 })
 
 // 校验空标签、缺失账号以及重复点击不发送写请求。

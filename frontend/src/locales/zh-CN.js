@@ -463,14 +463,14 @@ export default {
   serverCredentials: {
     total: '条凭据', search: '搜索标签或账号', allTypes: '全部类型', empty: '暂无匹配凭据',
     passwordType: '账号密码', keyType: '秘钥', legacyType: '历史凭据',
-    passwordHint: '使用账号和登录密码认证', keyHint: '使用 SSH 私钥和可选口令认证',
+    passwordHint: '使用账号和登录密码认证', keyHint: '仅维护私钥和可选口令；SSH 用户在服务器中填写',
     labelHint: '例如：生产环境跳板机', details: '认证信息',
     switchHint: '切换类型将清除另一类型的认证材料；被服务器引用时不可切换。',
     legacyHint: '这是历史凭据。现有连接保持可用；转换前请先解除服务器引用，并明确选择一种类型。',
     certificateHint: '公钥和证书为可选存档内容；SSH 连接使用私钥，不支持证书认证。',
     title: '秘钥管理', description: '统一维护秘钥与账号密码两类凭据，供服务器安全复用。选择一种认证方式，集中管理与轮换。',
     add: '新增凭据', edit: '编辑凭据', label: '标签', type: '认证类型', materials: '已保存内容', publicKey: '公钥', certificate: '证书',
-    select: '选择凭据', selectionHint: '请选择当前服务器所有者的可用凭据；账号自动带入，空账号可在服务器填写。历史服务器可保留原认证配置。',
+    select: '选择凭据', selectionHint: '请选择当前服务器所有者的可用凭据。私钥认证的 SSH 用户在服务器中填写；账号密码凭据自动带入账号。历史服务器可保留原认证配置。',
     rotationHint: '更新账号或秘密后，所有引用服务器的后续连接立即使用新值。敏感字段留空保留原值；如需移除秘密，请新建凭据再切换引用。',
     reveal: '查看秘密', secretHint: '仅系统管理员可查看明文，关闭弹窗后清除。', fileInvalid: '读取失败或文件超过 32 KiB',
     required: '请填写标签并选择类型：账号密码需要账号和密码，秘钥需要私钥；已保存的秘密可留空保留。', deleteConfirm: '确认删除凭据“{label}”？被服务器引用的凭据不能删除。'

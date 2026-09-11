@@ -437,14 +437,14 @@ export default {
   serverCredentials: {
     total: 'credentials', search: 'Search label or username', allTypes: 'All types', empty: 'No matching credentials',
     passwordType: 'Account & password', keyType: 'SSH key', legacyType: 'Legacy credential',
-    passwordHint: 'Authenticate with a username and password', keyHint: 'Authenticate with a private key and optional passphrase',
+    passwordHint: 'Authenticate with a username and password', keyHint: 'Store a private key and optional passphrase; set the SSH user on the server',
     labelHint: 'e.g. Production bastion', details: 'Authentication details',
     switchHint: 'Changing type clears the other authentication materials. Referenced credentials cannot change type.',
     legacyHint: 'Existing connections can still use this legacy credential. Remove server references and explicitly choose a type before converting.',
     certificateHint: 'Public keys and certificates are optional stored metadata. SSH uses the private key; certificate authentication is not supported.',
     title: 'Credential Management', description: 'Manage SSH keys and account passwords as two separate credential types. Reuse and rotate credentials across servers.',
     add: 'Add Credential', edit: 'Edit Credential', label: 'Label', type: 'Authentication Type', materials: 'Saved Materials', publicKey: 'Public Key', certificate: 'Certificate',
-    select: 'Select Credential', selectionHint: 'Select an available credential owned by this server’s owner. Its account is filled automatically; enter a server account if the credential has none. Existing servers may keep their original configuration.',
+    select: 'Select Credential', selectionHint: 'Select an available credential owned by this server’s owner. Set the SSH user on the server for private keys; password credentials fill their account automatically. Existing servers may keep their original configuration.',
     rotationHint: 'Changes apply to subsequent connections on every referencing server. Blank secret fields preserve saved values; create and select a new credential to remove a secret.',
     reveal: 'View Secrets', secretHint: 'Only system administrators may view secrets. Values are cleared when closed.', fileInvalid: 'Cannot read file or file exceeds 32 KiB',
     required: 'Enter a label and an account when setting a password.', deleteConfirm: 'Delete credential “{label}”? Referenced credentials cannot be deleted.'

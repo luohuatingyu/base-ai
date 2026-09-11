@@ -21,7 +21,7 @@
     <el-table :data="filteredRows" v-loading="loading" class="credential-table" :empty-text="t('serverCredentials.empty')" max-height="440">
       <el-table-column prop="label" :label="t('serverCredentials.label')" min-width="160" />
       <el-table-column :label="t('serverCredentials.type')" width="150"><template #default="{ row }"><el-tag :type="row.type === 'KEY' ? 'primary' : row.type === 'PASSWORD' ? 'success' : 'warning'" effect="light">{{ typeLabel(row.type) }}</el-tag></template></el-table-column>
-      <el-table-column prop="username" :label="t('servers.username')" min-width="120" />
+      <el-table-column :label="t('servers.username')" min-width="120"><template #default="{ row }">{{ row.type === 'KEY' ? '—' : row.username || '—' }}</template></el-table-column>
       <el-table-column :label="t('serverCredentials.materials')" min-width="170">
         <template #default="{ row }">
           <el-tag v-if="row.hasPrivateKey">{{ t('servers.privateKey') }}</el-tag>
@@ -55,7 +55,7 @@
         </div>
         <div class="form-section">
         <div class="section-title">{{ t('serverCredentials.details') }}</div>
-        <el-form-item :label="t('servers.username')" :required="form.type === 'PASSWORD'"><el-input v-model="form.username" maxlength="64" autocomplete="off" /></el-form-item>
+        <el-form-item v-if="form.type === 'PASSWORD'" :label="t('servers.username')" required><el-input v-model="form.username" maxlength="64" autocomplete="off" /></el-form-item>
         <el-form-item v-if="form.type === 'PASSWORD'" :label="t('servers.password')" required><el-input v-model="form.password" type="password" show-password maxlength="1024" autocomplete="new-password" :placeholder="keepHint" /></el-form-item>
         <el-form-item v-if="form.type === 'KEY'" :label="t('servers.privateKey')" required>
           <label class="key-upload">{{ t('servers.selectPrivateKeyFile') }}<input type="file" :aria-label="t('servers.selectPrivateKeyFile')" @change="readKey" /></label>
@@ -121,7 +121,7 @@ function emptyForm() {
 function clearForm() { Object.assign(form, emptyForm(), { hasPrivateKey: false, hasPassword: false }); originalType.value = '' }
 
 /** 打开表单，列表数据不包含任何秘密。 */
-function open(row) { clearForm(); Object.assign(form, row || {}); originalType.value = row?.type || ''; editing.value = true }
+function open(row) { clearForm(); Object.assign(form, row || {}); if (form.type === 'KEY') form.username = ''; originalType.value = row?.type || ''; editing.value = true }
 
 /** 展示明确的认证类型，历史材料不会被误标为账号密码。 */
 function typeLabel(type) {
@@ -131,7 +131,7 @@ function typeLabel(type) {
 /** 切换类型时丢弃不适用的临时字段，旧密文由后端在引用校验后处理。 */
 function changeType(type) {
   form.type = type
-  if (type === 'KEY') form.password = ''
+  if (type === 'KEY') { form.password = ''; form.username = '' }
   else { form.privateKey = ''; form.publicKey = ''; form.certificate = ''; form.passphrase = '' }
 }
 
@@ -158,13 +158,13 @@ async function readKey(event) {
 /** 保存完成后通知服务器刷新下拉选项。 */
 async function save() {
   if (saving.value) return
-  if (!form.label.trim() || (form.password && !form.username.trim())) return ElMessage.warning(t('serverCredentials.required'))
+  if (!form.label.trim()) return ElMessage.warning(t('serverCredentials.required'))
   if (!['KEY', 'PASSWORD'].includes(form.type)
     || (form.type === 'PASSWORD' && (!form.username.trim() || ((!form.password.trim() || form.password === '******') && !form.hasPassword)))
     || (form.type === 'KEY' && ((!form.privateKey.trim() || form.privateKey === '******') && !form.hasPrivateKey))) return ElMessage.warning(t('serverCredentials.required'))
   saving.value = true
   try {
-    const body = { ...form, password: form.type === 'PASSWORD' ? form.password : '',
+    const body = { ...form, username: form.type === 'PASSWORD' ? form.username : '', password: form.type === 'PASSWORD' ? form.password : '',
       privateKey: form.type === 'KEY' ? form.privateKey : '', publicKey: form.type === 'KEY' ? form.publicKey : '',
       certificate: form.type === 'KEY' ? form.certificate : '', passphrase: form.type === 'KEY' ? form.passphrase : '' }
     if (form.id) await http.put(`/server-credentials/${form.id}`, body)

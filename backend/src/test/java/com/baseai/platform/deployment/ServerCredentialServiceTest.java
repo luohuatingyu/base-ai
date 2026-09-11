@@ -186,7 +186,7 @@ class ServerCredentialServiceTest {
             var connected = new ServerManagementService(jdbc, new ObjectMapper(), crypto, mock(TaskTraceService.class),
                 mock(ThreadPoolTaskExecutor.class), "http://127.0.0.1:" + agent.getAddress().getPort(), "internal-test-token");
             var credential = credentials.save(null, command("shared", "first-private", "", "phrase"));
-            var server = connected.create(server(credential.id(), "KEY"));
+            var server = connected.create(new ServerModels.ServerCommand("server", "SSH", "host", 22, "deploy", "KEY", "", "", "", "", "", "", true, credential.id()));
             credentials.save(credential.id(), command("shared", "rotated-private", "", ""));
             assertEquals("CONNECTION_SUCCEEDED", connected.test(server.id()).get("output"));
             connected.monitor(server.id());
@@ -295,6 +295,37 @@ class ServerCredentialServiceTest {
             assertThrows(BusinessException.class, () -> credentials.save(null, command));
             assertTrue(credentials.list().isEmpty());
         }
+    }
+
+    /** 私钥账号输入不落库，同一私钥可由不同服务器账号使用。 */
+    @Test
+    void keyCredentialsUseEachServersUsername() {
+        var key = credentials.save(null, new CredentialModels.Command("key", "KEY", "ignored;user", "", "private", "", "", true, ""));
+        assertEquals("", key.username());
+        assertEquals("", jdbc.queryForObject("SELECT username FROM server_credential WHERE id=?", String.class, key.id()));
+        for (String username : new String[]{"deploy", "root"}) {
+            var server = servers.create(new ServerModels.ServerCommand("server", "SSH", "host", 22, username, "KEY", "", "", "", "", "", "", true, key.id()));
+            assertEquals(username, server.username());
+            assertEquals(username, servers.requireDataSyncTarget(server.id(), 7L).username());
+            assertEquals("private", servers.requireDataSyncTarget(server.id(), 7L).privateKey());
+        }
+        assertThrows(BusinessException.class, () -> servers.create(server(key.id(), "KEY")));
+    }
+
+    /** 历史私钥账号不再覆盖服务器，编辑时清除历史账号并保留密文。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"KEY", "RSA"})
+    void ignoresLegacyKeyUsername(String type) {
+        var key = credentials.save(null, new CredentialModels.Command("key", "KEY", "", "", "private", "", "", true, ""));
+        jdbc.update("UPDATE server_credential SET credential_type=?,username='old-user' WHERE id=?", type, key.id());
+        assertEquals("", credentials.list().get(0).username());
+        assertEquals("", credentials.resolve(key.id(), 7L, false).username());
+        var server = servers.create(new ServerModels.ServerCommand("server", "SSH", "host", 22, "server-user", "KEY", "", "", "", "", "", "", true, key.id()));
+        assertEquals("server-user", servers.requireDataSyncTarget(server.id(), 7L).username());
+        credentials.save(key.id(), new CredentialModels.Command("renamed", "KEY", "another-user", "", "", "", "", true, ""));
+        assertEquals("", jdbc.queryForObject("SELECT username FROM server_credential WHERE id=?", String.class, key.id()));
+        assertEquals("private", credentials.resolve(key.id(), 7L, false).privateKey());
+        assertEquals("server-user", servers.requireDataSyncTarget(server.id(), 7L).username());
     }
 
     /** 按认证材料构造互斥类型，测试不隐藏任何混合输入。 */
