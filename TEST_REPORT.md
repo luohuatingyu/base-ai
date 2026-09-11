@@ -34,10 +34,10 @@ Commit: 8688e17dbd7dc9e884ca8809a8e19d53304c6bfe
 ### 测试执行结果
 
 - Backend 完整 Maven 测试：775/775 通过，通过率 100%，失败 0、错误 0、跳过 0；数据同步定向测试 23/23 通过。
-- Frontend `npm test`：Lint、类型检查、350/350 单元与契约测试、覆盖率、生产构建及 1/1 E2E 全部通过；覆盖率行 98.30%、分支 81.00%、函数 95.80%。
+- Frontend `npm test`：Lint、类型检查、354/354 单元与契约测试、覆盖率、生产构建及 1/1 E2E 全部通过；覆盖率行 98.39%、分支 80.95%、函数 95.27%。
 - Deployment Agent Go 1.26.6：25/25 测试通过，`go vet ./...` 通过，Dockerfile 镜像构建测试通过。
 - 干净功能提交 worktree 执行 Compose 重建成功；Backend、Frontend、Python Worker、Document Parser、Caddy 五个默认服务均 healthy。Deployment Agent `deployment` profile 镜像构建成功。
-- 已验证自动化用例合计 1,151 个（Backend 775、Frontend 350、E2E 1、Agent 25），全部通过。
+- 已验证自动化用例合计 1,155 个（Backend 775、Frontend 354、E2E 1、Agent 25），全部通过。
 
 ### 关键模块测试
 
@@ -51,7 +51,7 @@ Commit: 8688e17dbd7dc9e884ca8809a8e19d53304c6bfe
 | 范围 | 执行命令或方式 | 结果 |
 | --- | --- | --- |
 | Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn test -B -ntp` | 775/775 通过 |
-| Frontend 完整质量门 | `cd frontend && npm test` | Lint、类型检查、350/350、覆盖率、构建、1/1 E2E 通过 |
+| Frontend 完整质量门 | `cd frontend && npm test` | Lint、类型检查、354/354、覆盖率、构建、1/1 E2E 通过 |
 | Deployment Agent 回归 | Go 1.26.6 容器执行 `gofmt -l`、`go test ./...`、`go vet ./...` | 25/25 通过，格式和静态检查通过 |
 | 共享工作区 Compose 尝试 | `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` | 受其他任务未提交的 `DeviceAgentPermissionMigrationTest` 断言失败阻断，未纳入验收结果 |
 | 干净 worktree Compose 重建 | `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose --env-file /Users/xyzc/github/base-ai/.env up --build -d` | 五个默认服务构建、启动并健康 |
