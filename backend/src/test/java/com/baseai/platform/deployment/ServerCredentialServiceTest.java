@@ -46,7 +46,8 @@ class ServerCredentialServiceTest {
                 last_test_at TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
             """);
         new ResourceDatabasePopulator(new ClassPathResource("db/migration/mysql/V35__add_server_credentials.sql"),
-            new ClassPathResource("db/migration/mysql/V36__add_server_credential_passphrase.sql")).execute(source);
+            new ClassPathResource("db/migration/mysql/V36__add_server_credential_passphrase.sql"),
+            new ClassPathResource("db/migration/mysql/V37__add_server_auth_references.sql")).execute(source);
         doAnswer(invocation -> jdbc.queryForObject("SELECT MAX(id) FROM managed_server", Long.class))
             .when(jdbc).queryForObject("SELECT LAST_INSERT_ID()", Long.class);
         PlatformProperties properties = new PlatformProperties();
@@ -55,6 +56,62 @@ class ServerCredentialServiceTest {
         credentials = new ServerCredentialService(jdbc, crypto);
         servers = new ServerManagementService(jdbc, new ObjectMapper(), crypto, mock(TaskTraceService.class), mock(ThreadPoolTaskExecutor.class), "", "");
         authenticate(7L, false);
+    }
+
+    /** 验证独立来源的四种组合、账号继承、密文与删除保护。 */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3})
+    void independentCredentialCombinations(int combination) throws Exception {
+        var key = credentials.save(null, new CredentialModels.Command("key", "KEY", "", "", "private", "", "", true, "phrase"));
+        var account = credentials.save(null, new CredentialModels.Command("account", "PASSWORD", "deploy", "", "", "", "secret", true, ""));
+        Long keyId = (combination & 1) != 0 ? key.id() : null;
+        Long accountId = (combination & 2) != 0 ? account.id() : null;
+        var command = new ServerModels.ServerCommand("combined", "SSH", "host", 22,
+            accountId == null ? "manual" : "", "KEY_PASSWORD", keyId == null ? "manual-key" : "",
+            accountId == null ? "manual-password" : "", "", "", "", "", true, null, keyId, accountId);
+        var created = servers.create(command);
+        assertEquals(accountId == null ? "manual" : "deploy", created.username());
+        assertEquals(keyId, created.keyCredentialId());
+        assertEquals(accountId, created.passwordCredentialId());
+        var target = servers.requireDataSyncTarget(created.id(), 7L);
+        assertEquals(keyId == null ? "manual-key" : "private", target.privateKey());
+        assertEquals(accountId == null ? "manual-password" : "secret", target.password());
+        assertEquals(accountId == null ? "manual" : "deploy", target.username());
+        var config = new ObjectMapper().readTree(crypto.decrypt(jdbc.queryForObject(
+            "SELECT config_encrypted FROM managed_server WHERE id=?", String.class, created.id())));
+        assertEquals(keyId == null ? "manual-key" : "", config.path("privateKey").asText());
+        assertEquals(accountId == null ? "manual-password" : "", config.path("password").asText());
+        if (keyId != null) assertEquals(409, assertThrows(BusinessException.class, () -> credentials.delete(keyId)).getStatus());
+        if (accountId != null) assertEquals(409, assertThrows(BusinessException.class, () -> credentials.delete(accountId)).getStatus());
+        servers.update(created.id(), command);
+        assertEquals(created.username(), servers.servers().get(0).username());
+        if (accountId != null) {
+            credentials.save(accountId, new CredentialModels.Command("account", "PASSWORD", "nextuser", "", "", "", "nextsecret", true, ""));
+            assertEquals("nextsecret", servers.requireDataSyncTarget(created.id(), 7L).password());
+            assertEquals("nextuser", servers.requireDataSyncTarget(created.id(), 7L).username());
+        }
+        servers.update(created.id(), new ServerModels.ServerCommand("manual", "SSH", "host", 22, "manual", "PASSWORD",
+            "", "new-password", "", "", "", "", true));
+        assertNull(servers.servers().get(0).keyCredentialId());
+        assertNull(servers.servers().get(0).passwordCredentialId());
+        assertEquals("", servers.requireDataSyncTarget(created.id(), 7L).privateKey());
+        credentials.delete(key.id());
+        credentials.delete(account.id());
+    }
+
+    /** 独立引用不能跨用户、引用停用记录或混淆凭据类型。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"owner", "disabled", "type", "missing"})
+    void rejectsInvalidIndependentReference(String scenario) {
+        var account = credentials.save(null, new CredentialModels.Command("account", "PASSWORD", "deploy", "", "", "", "secret", true, ""));
+        if ("owner".equals(scenario)) authenticate(8L, false);
+        if ("disabled".equals(scenario)) jdbc.update("UPDATE server_credential SET enabled=false WHERE id=?", account.id());
+        Long referenceId = "missing".equals(scenario) ? 999L : account.id();
+        var command = new ServerModels.ServerCommand("server", "SSH", "host", 22, "deploy",
+            "type".equals(scenario) ? "KEY" : "PASSWORD", "", "", "", "", "", "", true, null,
+            "type".equals(scenario) ? referenceId : null, "type".equals(scenario) ? null : referenceId);
+        assertThrows(BusinessException.class, () -> servers.create(command));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM managed_server", Integer.class));
     }
 
     /** 清除请求身份，防止影响其他用例。 */

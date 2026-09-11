@@ -123,7 +123,7 @@ public class ServerManagementService {
     /** 创建本地或 SSH 服务器配置。 */
     @Transactional
     public ServerModels.ServerView create(ServerModels.ServerCommand command) {
-        if (command == null || command.credentialId() == null) validate(command, false);
+        if (command == null || !hasReferences(command)) validate(command, false);
         Long ownerId = AuthContext.require().id();
         command = bindCredential(command, ownerId);
         validate(command, false);
@@ -131,6 +131,7 @@ public class ServerManagementService {
             text(command.name()), mode(command.mode()), blank(command.host()), command.port(), blank(command.username()),
             encrypt(configuration(command)), ownerId, !Boolean.FALSE.equals(command.enabled()));
         Long id = jdbcTemplate.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        saveIndependentReferences(id, command, false);
         if (command.credentialId() != null && "SSH".equals(mode(command.mode()))) {
             jdbcTemplate.update("UPDATE managed_server SET credential_id=? WHERE id=?", command.credentialId(), id);
         }
@@ -146,6 +147,8 @@ public class ServerManagementService {
         validate(command, true);
         ObjectNode merged = merge(existing.config(), command);
         validateMergedCredential(command, merged);
+        saveIndependentReferences(id, command, existing.config().path("keyCredentialId").isNumber()
+            || existing.config().path("passwordCredentialId").isNumber());
         if (command.credentialId() != null || existing.config().path("credentialId").isNumber()) {
             jdbcTemplate.update("UPDATE managed_server SET credential_id=? WHERE id=?",
                 "SSH".equals(mode(command.mode())) ? command.credentialId() : null, id);
@@ -496,8 +499,10 @@ public class ServerManagementService {
     /** 更新时基于合并后的密文配置验证实际认证凭据。 */
     void validateMergedCredential(ServerModels.ServerCommand command, JsonNode merged) {
         if (!"SSH".equals(mode(command.mode()))) return;
-        if (command.credentialId() != null) {
-            validateCredential(authType(command.authType()), command.privateKey(), command.password());
+        if (hasReferences(command)) {
+            validateCredential(authType(command.authType()),
+                command.credentialId() != null || command.keyCredentialId() != null ? command.privateKey() : value(merged, "privateKey"),
+                command.credentialId() != null || command.passwordCredentialId() != null ? command.password() : value(merged, "password"));
             return;
         }
         validateCredential(authType(value(merged, "authType")), value(merged, "privateKey"), value(merged, "password"));
@@ -589,7 +594,7 @@ public class ServerManagementService {
     /** 校验资源所有者。 */
     private void requireOwner(Long ownerId) { AuthUser user = AuthContext.require(); if (!user.roles().contains("ADMIN") && !user.id().equals(ownerId)) throw BusinessException.forbidden("server.accessForbidden"); }
     /** 映射脱敏服务器视图。 */
-    private ServerModels.ServerView map(ResultSet rs) throws SQLException { ServerRecord record = mapRecord(rs); JsonNode config = record.config(); return new ServerModels.ServerView(record.id(), record.name(), record.mode(), rs.getString("host"), rs.getObject("port", Integer.class), rs.getString("username"), value(config, "authType"), mask(value(config, "hostKey")), value(config, "workingDir"), value(config, "composeFile"), record.enabled(), rs.getString("last_test_status"), rs.getString("last_test_error"), timestamp(rs, "last_test_at"), record.ownerUserId(), timestamp(rs, "created_at"), timestamp(rs, "updated_at"), normalizeSystemInfo(config.get("systemInfo")), config.path("credentialId").isNumber() ? config.path("credentialId").longValue() : null); }
+    private ServerModels.ServerView map(ResultSet rs) throws SQLException { ServerRecord record = mapRecord(rs); JsonNode config = record.config(); return new ServerModels.ServerView(record.id(), record.name(), record.mode(), rs.getString("host"), rs.getObject("port", Integer.class), rs.getString("username"), value(config, "authType"), mask(value(config, "hostKey")), value(config, "workingDir"), value(config, "composeFile"), record.enabled(), rs.getString("last_test_status"), rs.getString("last_test_error"), timestamp(rs, "last_test_at"), record.ownerUserId(), timestamp(rs, "created_at"), timestamp(rs, "updated_at"), normalizeSystemInfo(config.get("systemInfo")), reference(config, "credentialId"), reference(config, "keyCredentialId"), reference(config, "passwordCredentialId")); }
     /** 映射内部服务器记录并解密配置。 */
     private ServerRecord mapRecord(ResultSet rs) throws SQLException { return new ServerRecord(rs.getLong("id"), rs.getString("name"), rs.getString("mode"), rs.getLong("owner_user_id"), rs.getBoolean("enabled"), decrypt(rs.getString("config_encrypted")), rs.getString("config_encrypted")); }
     /** 查询服务器视图。 */
@@ -614,6 +619,20 @@ public class ServerManagementService {
             for (String field : List.of("privateKey", "password", "passphrase")) object.put(field, "");
         }
         if ("LOCAL".equals(mode(command.mode()))) object.putNull("credentialId");
+        if (command.keyCredentialId() != null || "LOCAL".equals(mode(command.mode()))) {
+            object.put("privateKey", "");
+            object.put("passphrase", "");
+        }
+        if (command.passwordCredentialId() != null || "LOCAL".equals(mode(command.mode()))) object.put("password", "");
+        if ("PASSWORD".equals(command.authType())) {
+            object.put("privateKey", "");
+            object.put("passphrase", "");
+        }
+        if ("KEY".equals(command.authType())) object.put("password", "");
+        if ("LOCAL".equals(mode(command.mode()))) {
+            object.putNull("keyCredentialId");
+            object.putNull("passwordCredentialId");
+        }
         return object;
     }
     /** 更新时保留未重新输入的脱敏凭据。 */
@@ -628,6 +647,8 @@ public class ServerManagementService {
         boolean sameAuthType = value(old, "authType").equalsIgnoreCase(value(object, "authType"));
         List<String> preserved = sameAuthType ? List.of("privateKey", "password", "passphrase", "hostKey") : List.of("hostKey");
         for (String field : preserved) {
+            if ((field.equals("privateKey") || field.equals("passphrase")) && command.keyCredentialId() != null
+                || field.equals("password") && command.passwordCredentialId() != null) continue;
             if ("******".equals(object.path(field).asText())
                 || object.path(field).asText().isBlank() && !old.path(field).asText().isBlank()) {
                 object.set(field, old.path(field));
@@ -637,6 +658,22 @@ public class ServerManagementService {
     }
     /** 绑定时锁定凭据并校验所有者，账号优先使用凭据中的账号。 */
     private ServerModels.ServerCommand bindCredential(ServerModels.ServerCommand command, Long ownerId) {
+        if (command != null && (command.keyCredentialId() != null || command.passwordCredentialId() != null)) {
+            if (command.credentialId() != null) throw new BusinessException("server.credentialTypeConflict");
+            if (!"SSH".equals(mode(command.mode()))) return command;
+            String auth = authType(command.authType());
+            if (command.keyCredentialId() != null && "PASSWORD".equals(auth)
+                || command.passwordCredentialId() != null && "KEY".equals(auth)) throw new BusinessException("server.credentialTypeConflict");
+            CredentialModels.Secrets key = command.keyCredentialId() == null ? null
+                : credentialService.resolveTyped(command.keyCredentialId(), ownerId, true, "KEY");
+            CredentialModels.Secrets account = command.passwordCredentialId() == null ? null
+                : credentialService.resolveTyped(command.passwordCredentialId(), ownerId, true, "PASSWORD");
+            return new ServerModels.ServerCommand(command.name(), command.mode(), command.host(), command.port(),
+                account == null ? command.username() : account.username(), auth,
+                key == null ? command.privateKey() : key.privateKey(), account == null ? command.password() : account.password(),
+                key == null ? command.passphrase() : key.passphrase(), command.hostKey(), command.workingDir(),
+                command.composeFile(), command.enabled(), null, command.keyCredentialId(), command.passwordCredentialId());
+        }
         if (command == null || command.credentialId() == null || !"SSH".equals(mode(command.mode()))) return command;
         CredentialModels.Secrets secrets = credentialService.resolve(command.credentialId(), ownerId, true);
         String username = secrets.username().isBlank() ? command.username() : secrets.username();
@@ -647,6 +684,23 @@ public class ServerManagementService {
 
     /** 每次执行重新解析凭据，避免复制秘密到服务器配置或覆盖并发编辑。 */
     private JsonNode executionConfig(ServerRecord server) {
+        if ("SSH".equals(server.mode()) && (server.config().path("keyCredentialId").isNumber()
+            || server.config().path("passwordCredentialId").isNumber())) {
+            ObjectNode config = server.config().deepCopy();
+            if (config.path("keyCredentialId").isNumber()) {
+                var key = credentialService.resolveTyped(config.path("keyCredentialId").longValue(), server.ownerUserId(), false, "KEY");
+                config.put("privateKey", key.privateKey());
+                config.put("passphrase", key.passphrase());
+            }
+            if (config.path("passwordCredentialId").isNumber()) {
+                var account = credentialService.resolveTyped(config.path("passwordCredentialId").longValue(), server.ownerUserId(), false, "PASSWORD");
+                config.put("username", account.username());
+                config.put("password", account.password());
+            }
+            validateCredential(authType(value(config, "authType")), value(config, "privateKey"), value(config, "password"));
+            if (!USERNAME_PATTERN.matcher(value(config, "username")).matches()) throw new BusinessException("server.sshRequired");
+            return config;
+        }
         if (!"SSH".equals(server.mode()) || !server.config().path("credentialId").isNumber()) return server.config();
         CredentialModels.Secrets secrets = credentialService.resolve(server.config().path("credentialId").longValue(), server.ownerUserId(), false);
         ObjectNode config = server.config().deepCopy();
@@ -658,6 +712,24 @@ public class ServerManagementService {
         if (!USERNAME_PATTERN.matcher(value(config, "username")).matches()) throw new BusinessException("server.sshRequired");
         return config;
     }
+    /** 判断是否需要先解析引用再校验认证材料。 */
+    private boolean hasReferences(ServerModels.ServerCommand command) {
+        return command.credentialId() != null || command.keyCredentialId() != null || command.passwordCredentialId() != null;
+    }
+
+    /** 同步独立引用，保证外键与凭据删除保护覆盖停用的服务器。 */
+    private void saveIndependentReferences(Long id, ServerModels.ServerCommand command, boolean previouslyReferenced) {
+        if (command.keyCredentialId() == null && command.passwordCredentialId() == null && !previouslyReferenced) return;
+        boolean ssh = "SSH".equals(mode(command.mode()));
+        jdbcTemplate.update("UPDATE managed_server SET key_credential_id=?,password_credential_id=? WHERE id=?",
+            ssh ? command.keyCredentialId() : null, ssh ? command.passwordCredentialId() : null, id);
+    }
+
+    /** 读取可选引用，兼容历史加密配置。 */
+    private Long reference(JsonNode config, String field) {
+        return config.path(field).isNumber() ? config.path(field).longValue() : null;
+    }
+
     /** 解密服务器配置。 */
     private JsonNode decrypt(String value) { try { return objectMapper.readTree(cryptoService.decrypt(value)); } catch (Exception exception) { throw new BusinessException("server.invalid"); } }
     /** 读取 JSON 文本。 */

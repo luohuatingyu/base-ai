@@ -10,7 +10,15 @@ public final class ServerModels {
 
     public record ServerCommand(String name, String mode, String host, Integer port, String username,
                                 String authType, String privateKey, String password, String passphrase,
-                                String hostKey, String workingDir, String composeFile, Boolean enabled, Long credentialId) {
+                                String hostKey, String workingDir, String composeFile, Boolean enabled, Long credentialId,
+                                Long keyCredentialId, Long passwordCredentialId) {
+        /** 兼容历史单凭据调用。 */
+        public ServerCommand(String name, String mode, String host, Integer port, String username, String authType,
+                             String privateKey, String password, String passphrase, String hostKey,
+                             String workingDir, String composeFile, Boolean enabled, Long credentialId) {
+            this(name, mode, host, port, username, authType, privateKey, password, passphrase, hostKey,
+                workingDir, composeFile, enabled, credentialId, null, null);
+        }
         /** 兼容已有内部调用和旧接口的直接凭据模式。 */
         public ServerCommand(String name, String mode, String host, Integer port, String username, String authType,
                              String privateKey, String password, String passphrase, String hostKey,
@@ -23,7 +31,8 @@ public final class ServerModels {
                              String username, String authType, String hostKey, String workingDir,
                              String composeFile, boolean enabled, String lastTestStatus,
                              String lastTestError, LocalDateTime lastTestAt, Long ownerUserId,
-                             LocalDateTime createdAt, LocalDateTime updatedAt, SystemInfoView systemInfo, Long credentialId) { }
+                             LocalDateTime createdAt, LocalDateTime updatedAt, SystemInfoView systemInfo, Long credentialId,
+                             Long keyCredentialId, Long passwordCredentialId) { }
 
     public record SystemInfoView(String family, String id, String name, String version,
                                  String kernel, String architecture, Instant detectedAt) { }

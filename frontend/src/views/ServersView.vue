@@ -185,8 +185,8 @@
                 <el-input-number v-model="form.port" :min="1" :max="65535" class="full" />
                 <div class="field-help">{{ t('servers.portHelp') }}</div>
               </el-form-item>
-              <el-form-item :label="t('servers.username')">
-                <el-input v-model="form.username" :disabled="!!selectedCredential?.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" />
+              <el-form-item v-if="form.authType === 'KEY'" :label="t('servers.username')">
+                <el-input v-model="form.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" />
                 <div class="field-help">{{ t('servers.usernameHelp') }}</div>
               </el-form-item>
             </div>
@@ -206,7 +206,7 @@
                   type="button"
                   class="selection-card"
                   :class="{ 'is-active': form.authType === 'KEY' }"
-                  @click="form.authType = 'KEY'"
+                  @click="changeAuthType('KEY')"
                 >
                   <span class="selection-card-icon"><el-icon><Key /></el-icon></span>
                   <span>
@@ -219,7 +219,7 @@
                   type="button"
                   class="selection-card"
                   :class="{ 'is-active': form.authType === 'PASSWORD' }"
-                  @click="form.authType = 'PASSWORD'"
+                  @click="changeAuthType('PASSWORD')"
                 >
                   <span class="selection-card-icon"><el-icon><Unlock /></el-icon></span>
                   <span>
@@ -231,9 +231,8 @@
                 <button
                   type="button"
                   class="selection-card"
-                  v-if="form.id && form.authType === 'KEY_PASSWORD'"
                   :class="{ 'is-active': form.authType === 'KEY_PASSWORD' }"
-                  @click="form.authType = 'KEY_PASSWORD'"
+                  @click="changeAuthType('KEY_PASSWORD')"
                 >
                   <span class="selection-card-icon"><el-icon><Key /></el-icon></span>
                   <span>
@@ -245,15 +244,22 @@
               </div>
             </el-form-item>
 
-            <el-form-item :label="t('serverCredentials.select')">
+            <el-form-item v-if="form.credentialId" :label="t('serverCredentials.select')">
               <el-select v-model="form.credentialId" clearable filterable :loading="credentialsLoading" @change="selectCredential">
                 <el-option v-for="credential in selectableCredentials" :key="credential.id" :value="credential.id" :label="`${credential.label} (${credential.username || credential.type})`" />
               </el-select>
               <el-button link type="primary" @click="credentialsVisible = true">{{ t('serverCredentials.title') }}</el-button>
               <div class="field-help">{{ t('serverCredentials.selectionHint') }}</div>
             </el-form-item>
-            <template v-if="!form.credentialId && form.id">
+            <template v-if="!form.credentialId">
             <div v-if="['KEY', 'KEY_PASSWORD'].includes(form.authType)" class="credential-panel">
+              <el-form-item :label="t('servers.keySource')">
+                <el-select v-model="form.keyCredentialId" clearable filterable :placeholder="t('servers.manualCredential')" @change="changeCredential('KEY')">
+                  <el-option v-for="credential in availableCredentials('KEY')" :key="credential.id" :value="credential.id" :label="credential.label" />
+                </el-select>
+                <div class="field-help">{{ t('servers.credentialSourceHelp') }}</div>
+              </el-form-item>
+              <template v-if="!form.keyCredentialId">
               <el-form-item :label="t('servers.privateKey')">
                 <div class="private-key-editor">
                   <div class="private-key-toolbar">
@@ -287,14 +293,26 @@
                 </el-input>
                 <div class="field-help">{{ t('servers.passphraseHelp') }}</div>
               </el-form-item>
+              </template>
             </div>
             <div v-if="['PASSWORD', 'KEY_PASSWORD'].includes(form.authType)" class="credential-panel">
+              <el-form-item :label="t('servers.accountSource')">
+                <el-select v-model="form.passwordCredentialId" clearable filterable :placeholder="t('servers.manualCredential')" @change="changeCredential('PASSWORD')">
+                  <el-option v-for="credential in availableCredentials('PASSWORD')" :key="credential.id" :value="credential.id" :label="`${credential.label} (${credential.username})`" />
+                </el-select>
+                <div class="field-help">{{ t('servers.credentialSourceHelp') }}</div>
+              </el-form-item>
+              <template v-if="!form.passwordCredentialId">
+              <el-form-item :label="t('servers.username')">
+                <el-input v-model="form.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" />
+              </el-form-item>
               <el-form-item :label="t('servers.password')" class="section-last-field">
                 <el-input v-model="form.password" type="password" show-password autocomplete="off" :placeholder="t('servers.passwordPlaceholder')">
                   <template #prefix><el-icon><Lock /></el-icon></template>
                 </el-input>
                 <div class="field-help">{{ form.id ? t('servers.savedCredentialHint') : t('servers.passwordHelp') }}</div>
               </el-form-item>
+              </template>
             </div>
             </template>
           </section>
@@ -424,7 +442,6 @@ const form = reactive(emptyForm())
 const credentialsVisible = ref(false)
 const credentialsLoading = ref(false)
 const credentials = ref([])
-const selectedCredential = computed(() => credentials.value.find(credential => credential.id === form.credentialId))
 const selectableCredentials = computed(() => credentials.value.filter(credential => credential.enabled
   && credential.ownerUserId === (form.ownerUserId || auth.user?.id)
   && (!['KEY', 'KEY_PASSWORD'].includes(form.authType) || credential.hasPrivateKey)
@@ -445,6 +462,31 @@ function selectCredential(id) {
   form.privateKey = ''; form.password = ''; form.passphrase = ''
 }
 
+// 每项独立筛选同一所有者的可用凭据，不加载秘密。
+function availableCredentials(type) {
+  return credentials.value.filter(credential => credential.enabled && credential.type === type
+    && credential.ownerUserId === (form.ownerUserId || auth.user?.id))
+}
+
+// 来源切换后清除该项秘密，账密账号由凭据提供。
+function changeCredential(type) {
+  if (type === 'KEY') {
+    form.privateKey = ''; form.passphrase = ''; privateKeyFileName.value = ''
+  } else {
+    form.password = ''
+    form.username = availableCredentials('PASSWORD').find(item => item.id === form.passwordCredentialId)?.username || ''
+  }
+}
+
+// 认证方式切换清除旧来源与秘密，避免误用隐藏材料。
+function changeAuthType(type) {
+  if (form.authType === type) return
+  form.authType = type
+  form.credentialId = null; form.keyCredentialId = null; form.passwordCredentialId = null
+  form.privateKey = ''; form.password = ''; form.passphrase = ''; form.username = ''
+  privateKeyFileName.value = ''
+}
+
 // 组合当前监控服务器的连接地址，避免在本地模式展示无意义端口。
 const monitorServerAddress = computed(() => {
   if (!monitorServer.value) return '-'
@@ -454,7 +496,7 @@ const monitorServerAddress = computed(() => {
 
 // 创建不携带敏感值且默认使用 SSH 的服务器表单。
 function emptyForm() {
-  return { id: null, name: '', mode: 'SSH', host: '', port: 22, username: '', authType: 'KEY', credentialId: null, privateKey: '', password: '', passphrase: '', hostKey: '', workingDir: '', composeFile: '', enabled: true }
+  return { id: null, name: '', mode: 'SSH', host: '', port: 22, username: '', authType: 'KEY', credentialId: null, keyCredentialId: null, passwordCredentialId: null, privateKey: '', password: '', passphrase: '', hostKey: '', workingDir: '', composeFile: '', enabled: true }
 }
 
 // 加载当前用户可见的服务器配置。
@@ -510,12 +552,15 @@ function privateKeyFileErrorKey(error) {
 function validateForm() {
   if (!form.name.trim()) return false
   if (form.mode !== 'SSH') return true
-  if (!form.host.trim() || !form.username.trim() || !form.port) return false
+  if (!form.host.trim() || !form.port) return false
   if (form.credentialId) return selectableCredentials.value.some(credential => credential.id === form.credentialId)
-  if (!form.id) return false
+  if (!['KEY', 'PASSWORD', 'KEY_PASSWORD'].includes(form.authType)) return false
+  if (!form.passwordCredentialId && !form.username.trim()) return false
+  if (form.keyCredentialId && !availableCredentials('KEY').some(item => item.id === form.keyCredentialId)) return false
+  if (form.passwordCredentialId && !availableCredentials('PASSWORD').some(item => item.id === form.passwordCredentialId)) return false
   const requiresCredential = !form.id || form.authType !== originalAuthType.value
-  if (requiresCredential && ['KEY', 'KEY_PASSWORD'].includes(form.authType) && !form.privateKey.trim()) return false
-  if (requiresCredential && ['PASSWORD', 'KEY_PASSWORD'].includes(form.authType) && !form.password.trim()) return false
+  if (requiresCredential && ['KEY', 'KEY_PASSWORD'].includes(form.authType) && !form.keyCredentialId && !form.privateKey.trim()) return false
+  if (requiresCredential && ['PASSWORD', 'KEY_PASSWORD'].includes(form.authType) && !form.passwordCredentialId && !form.password.trim()) return false
   return true
 }
 

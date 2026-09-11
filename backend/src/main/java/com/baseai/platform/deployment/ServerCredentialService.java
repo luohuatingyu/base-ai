@@ -108,6 +108,13 @@ public class ServerCredentialService {
         return decrypt(stored);
     }
 
+    /** 独立引用仅接受对应类型，避免将历史混合材料误作单项凭据。 */
+    CredentialModels.Secrets resolveTyped(Long id, Long ownerId, boolean lock, String type) {
+        CredentialModels.Secrets secrets = resolve(id, ownerId, lock);
+        if (!type.equals(require(id, false).view().type())) throw new BusinessException("server.credentialTypeConflict");
+        return secrets;
+    }
+
     /** 读取凭据并在变更或绑定期间锁定同一行。 */
     private Stored require(Long id, boolean lock) {
         List<Stored> rows = jdbc.query("SELECT * FROM server_credential WHERE id=? AND voided=false" + (lock ? " FOR UPDATE" : ""),
@@ -125,7 +132,7 @@ public class ServerCredentialService {
 
     /** 检查所有未删除服务器的引用，包括停用的服务器。 */
     private void requireUnused(Long id) {
-        Long count = jdbc.queryForObject("SELECT COUNT(*) FROM managed_server WHERE credential_id=? AND voided=false", Long.class, id);
+        Long count = jdbc.queryForObject("SELECT COUNT(*) FROM managed_server WHERE (credential_id=? OR key_credential_id=? OR password_credential_id=?) AND voided=false", Long.class, id, id, id);
         if (count != null && count > 0) throw new BusinessException(409, "server.credentialInUse");
     }
 

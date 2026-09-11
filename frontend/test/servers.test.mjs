@@ -93,9 +93,9 @@ test('服务器相关弹窗使用卡片分区并保留认证条件分支', () =>
   assert.match(viewSource, /v-if="form\.mode === 'SSH'"/)
   assert.match(viewSource, /v-if="\['KEY', 'KEY_PASSWORD'\]\.includes\(form\.authType\)"/)
   assert.match(viewSource, /v-if="\['PASSWORD', 'KEY_PASSWORD'\]\.includes\(form\.authType\)"/)
-  assert.match(viewSource, /@click="form\.authType = 'KEY'"/)
-  assert.match(viewSource, /@click="form\.authType = 'PASSWORD'"/)
-  assert.match(viewSource, /@click="form\.authType = 'KEY_PASSWORD'"/)
+  assert.match(viewSource, /@click="changeAuthType\('KEY'\)"/)
+  assert.match(viewSource, /@click="changeAuthType\('PASSWORD'\)"/)
+  assert.match(viewSource, /@click="changeAuthType\('KEY_PASSWORD'\)"/)
   assert.doesNotMatch(viewSource, /v-model="form\.hostKey"/)
   assert.match(zhCN.servers.passphraseHelp, /不是服务器登录密码/)
   assert.match(enUS.servers.passphraseHelp, /not the server login password/)
@@ -134,6 +134,46 @@ test('服务器选择凭据并自动复用账号', () => {
   select(7)
   assert.deepEqual(form, { username: 'deploy', privateKey: '', password: '', passphrase: '' })
   for (const locale of [zhCN, enUS]) assert.ok(locale.serverCredentials.title)
+})
+
+test('独立凭据支持全部混搭且已有账密无需填写账号', () => {
+  const source = viewSource.match(/function validateForm\(\) \{[\s\S]*?\n\}/)[0]
+  for (const authType of ['KEY', 'PASSWORD', 'KEY_PASSWORD']) {
+    for (const keyReference of [false, true]) {
+      for (const accountReference of [false, true]) {
+        const form = { id: null, name: 'server', mode: 'SSH', host: 'host', port: 22, authType,
+          username: accountReference && authType !== 'KEY' ? '' : 'manual',
+          keyCredentialId: keyReference && authType !== 'PASSWORD' ? 1 : null,
+          passwordCredentialId: accountReference && authType !== 'KEY' ? 2 : null,
+          privateKey: keyReference ? '' : 'private', password: accountReference ? '' : 'secret' }
+        const availableCredentials = type => [{ id: type === 'KEY' ? 1 : 2 }]
+        const validate = runInNewContext(`(${source})`, { form, availableCredentials })
+        assert.equal(validate(), true, JSON.stringify(form))
+        if (form.keyCredentialId || form.passwordCredentialId) {
+          const invalid = runInNewContext(`(${source})`, { form, availableCredentials: () => [] })
+          assert.equal(invalid(), false)
+        }
+      }
+    }
+  }
+  assert.match(viewSource, /v-if="form\.authType === 'KEY'" :label="t\('servers.username'\)"/)
+  assert.match(viewSource, /<template v-if="!form.passwordCredentialId">/)
+  assert.doesNotMatch(viewSource, /v-if="form.id && form.authType === 'KEY_PASSWORD'"/)
+})
+
+test('切换来源仅清理对应秘密且账密带入账号', () => {
+  const source = viewSource.match(/function changeCredential\(type\) \{[\s\S]*?\n\}/)[0]
+  const form = { username: '', passwordCredentialId: 2, privateKey: 'key', password: 'password', passphrase: 'phrase' }
+  const change = runInNewContext(`(${source})`, { form, privateKeyFileName: { value: 'key.pem' },
+    availableCredentials: () => [{ id: 2, username: 'deploy' }] })
+  change('PASSWORD')
+  assert.equal(form.username, 'deploy')
+  assert.equal(form.password, '')
+  assert.equal(form.privateKey, 'key')
+  change('KEY')
+  assert.equal(form.privateKey, '')
+  assert.equal(form.passphrase, '')
+  assert.equal(form.username, 'deploy')
 })
 
 test('服务器页面移除部署与历史并保留连接和监控操作', () => {
