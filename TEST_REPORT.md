@@ -1,5 +1,49 @@
 # 最近分支覆盖测试报告
 
+## SSH 自动信任与组合认证（2026-09-11）
+
+### Git 基准点
+
+Commit: a6be07dc36dc7004f9950a2390cd7472fd5a1899
+- 提交信息：Support SSH prompts with noexec temporary storage；分支：master；测试日期：2026-09-11。
+- 功能提交：c62948c78d9f2f512fec8f674587d06d2d2c5d42（Support combined SSH authentication and automatic host trust）。
+- 技术栈：Vue、Java/Spring、Go/OpenSSH。前端取消指纹输入，后端和 Agent 忽略历史指纹；新增 KEY_PASSWORD，保留独立私钥口令。SSH 执行统一入口，使用 Agent 自身响应口令，兼容 /tmp 的 noexec 挂载，凭据不进入命令参数。
+- 影响连接、监控、部署及数据同步的 SSH 通道；不修改数据库、部署配置或新增运行依赖。并行任务的监控移除已独立提交，本节完整回归包含该基线。
+
+### 执行命令与结果
+
+- 后端相关测试：`mvn -B -ntp -Dtest=ServerManagementValidationTest,ServerManagementControllerTest,ServerManagementMonitorTest test`，28/28 通过。
+- 后端完整测试：`mvn -B -ntp test`，803/803 通过，失败 0、错误 0、跳过 0，通过率 100%。最终 Compose 构建中 `mvn -B -ntp package` 再次运行 803 项全部通过。
+- Maven 执行环境：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp test'`。相关套件使用相同环境替换 Maven 参数。
+- 前端相关测试：`node --test frontend/test/servers.test.mjs`，9/9 通过。完整 `cd frontend && npm test`：lint、typecheck、359 项单元测试、1 项生产服务测试通过，失败 0。工具函数行覆盖率 98.40%、分支 80.95%、函数 95.27%。
+- Agent 完整真实 SSH 验证：`docker run --rm --name base-ai-ssh-noexec-tests --tmpfs /tmp:rw,noexec,nosuid,nodev -e GOTMPDIR=/build -v "$PWD/deployment-agent:/source:ro" -w /workspace golang:1.26.6-alpine sh -c 'apk add --no-cache openssh >/dev/null && mkdir -p /run/sshd /build && cp /source/*.go /source/go.mod . && go test -tags integration -cover -v ./...'`。28 个顶层测试及其参数子用例通过，失败 0，语句覆盖率 51.5%。随后新增提示参数和输出异常用例，最终 Compose 构建的 `go test ./...` 完整通过（28 个顶层非集成用例）。
+- 集成测试为正式保留用例，使用 integration 构建标签，要求一次性 root Docker 环境；使用真实 sshd，不 Mock SSH 核心认证。普通构建不执行需要安装 sshd 的集成用例，本轮已单独执行。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：最终退出 0；镜像标签为执行时 HEAD `542cbbb6a348cb18e2586e520f6e58ab28b84b63`，构建输入含本节已提交代码。Backend、Frontend、Caddy、Deployment Agent、Document Parser、Python Worker 六个服务均 healthy。
+- 运行检查：`docker exec ai-backend curl -fsS http://localhost:8080/api/open/health/ready` 返回 UP；通过 `docker exec` 向运行中 Agent 的口令模式注入非敏感测试值，响应正确。确认实际 /tmp 为 noexec；未修改挂载权限。
+- `git diff --check` 通过。临时源码、sshd 配置、测试密钥均在自动删除的测试容器内；所有本次测试容器已退出清理，无宿主机调试文件。
+
+### 验收标准—可执行测试映射
+
+| 验收标准 | 层级、前置条件和输入 | 预期结果与场景 |
+| --- | --- | --- |
+| 指纹无需维护 | 表单、Java、Go 测试；空或旧指纹；临时 sshd 在同地址更换密钥 | 正常连接，无手工指纹要求；边界、兼容、回归 |
+| 三种认证可用 | TestSSHIntegration；真实 sshd 分别要求 publickey、password、publickey,password | 认证成功，远端输出 AUTHENTICATED；正常 |
+| 加密私钥组合登录 | 同一集成测试；加密私钥、独立口令及账户密码，包含引号与美元字符 | 成功；错误私钥、密码或口令均拒绝；正常、异常、安全 |
+| 凭据完整与编辑兼容 | validatesAuthenticationCombinations、preservesCombinedCredentialsOnlyForSameAuthentication、表单函数测试 | 缺失或掩码凭据拒绝，同认证编辑保留，切换要求重新输入；边界、兼容 |
+| 凭据隔离与清理 | TestSSHCredentialIsolation、TestSSHPromptErrors；恶意字符、未知提示、关闭输出 | 原样返回正确口令，未知提示拒绝，权限 0700/0600，参数无秘密，清理目录；安全、异常 |
+| noexec 与流传输 | noexec 容器内真实 SSH；cat 标准输入、sleep 超时 | 数据完整返回、超时终止，口令响应无需执行临时脚本；兼容、回归、异常 |
+| 权限与调用链回归 | 完整后端权限、服务器、数据同步套件及 Agent 内部令牌测试 | 未授权操作拒绝，既有调用链断言通过；安全、回归 |
+
+### 问题、限制及后续建议
+
+- 首次失败测试稳定复现指纹必填与 KEY_PASSWORD 不支持；实现后通过。并行监控编辑的中间状态曾导致 Go 编译与前端断言失败，待其独立修改稳定后完整复验通过，未删除或跳过有效测试。
+- 首次 Compose 启动与另一任务同时重建导致容器名冲突；待其结束后重新完整执行成功，无端口冲突，无额外停止其他项目容器。
+- 实际挂载发现 noexec 后，将临时口令脚本改为 Agent 可执行文件自身响应；真实 noexec 集成测试通过，并单独提交兼容修复。
+- 每次自动信任不会固定校验服务器身份。是否强制私钥和密码两项均成功由远端 SSH 策略决定。现有 hostKey API 字段及旧指纹工具函数保留兼容，连接路径不再使用。
+- 未执行用户实际远程服务器的登录态浏览器验收、真实跨数据库数据同步或生产远程部署；本轮使用受控真实 sshd 验证认证和标准输入通道。建议在目标服务器执行页面连接测试与业务同步验收。
+- Java 未配置或执行 JaCoCo，本报告不提供未经测量的 Java 覆盖率；Go 覆盖率包含整个 Agent，不能理解为全部业务分支已覆盖。前端构建仍有既有大包及依赖注释警告。
+- SSH 认证、凭据合并、权限、核心配置、业务代码或 Agent 执行逻辑变更时需重跑相关及完整套件并更新基准点；回滚可撤销本节两个代码提交后重建服务。
+
 ## 移除 Docker 容器监控（2026-09-11）
 
 ### Git 基准点与范围
