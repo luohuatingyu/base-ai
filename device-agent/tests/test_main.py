@@ -6,9 +6,31 @@ from types import SimpleNamespace
 
 import pytest
 
+from device_agent import main as module
 from device_agent.device_detect import DeviceCandidate
 from device_agent.main import AgentRuntime
 from device_agent.wda import WdaError
+
+
+def test_health_reports_active_release_version(monkeypatch) -> None:
+    """健康心跳必须上报 current 指向的发布版本而非固定包版本。"""
+    reports: list[dict[str, object]] = []
+    runtime = AgentRuntime.__new__(AgentRuntime)
+    runtime.backend = SimpleNamespace(health=lambda payload: reports.append(payload))
+    monkeypatch.setattr(module, "active_version", lambda fallback: "20260911.0123+abcdef123456")
+    monkeypatch.setattr(module, "available_versions", lambda: ["20260911.0123+abcdef123456"])
+    monkeypatch.setattr(module, "xcuitest_driver_version", lambda: "12.11.1")
+
+    runtime.report_health()
+
+    assert reports == [{
+        "status": "ONLINE",
+        "agentVersion": "20260911.0123+abcdef123456",
+        "iosVersion": None,
+        "xcuitestDriverVersion": "12.11.1",
+        "lastErrorCode": None,
+        "availableVersions": ["20260911.0123+abcdef123456"],
+    }]
 
 
 def test_successful_upgrade_stops_loop_after_reporting(monkeypatch) -> None:

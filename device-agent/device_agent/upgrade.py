@@ -56,6 +56,19 @@ def upgrade(
     return version
 
 
+def active_version(fallback: str) -> str:
+    """返回 current 指向的可信发布版本，不可用时回退静态包版本。"""
+    try:
+        versions = VERSIONS_DIR.resolve(strict=True)
+        target = CURRENT_LINK.resolve(strict=True)
+        if target.parent != versions or not target.is_dir():
+            return fallback
+        _validate_version(target.name)
+        return target.name
+    except (OSError, RuntimeError):
+        return fallback
+
+
 def available_versions() -> list[str]:
     """返回本机实际保留且名称合法的 Agent 版本。"""
     if not VERSIONS_DIR.is_dir():

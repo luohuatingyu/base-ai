@@ -13,6 +13,45 @@ import pytest
 from device_agent import upgrade as module
 
 
+def test_active_version_uses_current_release_directory(tmp_path, monkeypatch) -> None:
+    """健康上报版本必须来自 current 实际指向的已保留发布目录。"""
+    support = tmp_path / "support"
+    versions = support / "versions"
+    target = versions / "20260911.0123+abcdef123456"
+    target.mkdir(parents=True)
+    current = support / "current"
+    current.symlink_to(target)
+    monkeypatch.setattr(module, "VERSIONS_DIR", versions)
+    monkeypatch.setattr(module, "CURRENT_LINK", current)
+
+    assert module.active_version("1.0.0") == target.name
+
+
+@pytest.mark.parametrize("link_state", ["missing", "broken", "outside", "invalid"])
+def test_active_version_falls_back_for_untrusted_current_link(
+    tmp_path, monkeypatch, link_state: str,
+) -> None:
+    """current 不可信或不可用时必须安全回退静态包版本。"""
+    support = tmp_path / "support"
+    versions = support / "versions"
+    versions.mkdir(parents=True)
+    current = support / "current"
+    if link_state == "broken":
+        current.symlink_to(versions / "missing")
+    elif link_state == "outside":
+        target = tmp_path / "outside" / "20260911.0123+abcdef123456"
+        target.mkdir(parents=True)
+        current.symlink_to(target)
+    elif link_state == "invalid":
+        target = versions / "invalid..version"
+        target.mkdir()
+        current.symlink_to(target)
+    monkeypatch.setattr(module, "VERSIONS_DIR", versions)
+    monkeypatch.setattr(module, "CURRENT_LINK", current)
+
+    assert module.active_version("1.0.0") == "1.0.0"
+
+
 def test_upgrade_installs_verified_package_before_switching(tmp_path, monkeypatch) -> None:
     """校验后的新包必须先装入当前虚拟环境，再切换版本链接。"""
     support = tmp_path / "support"

@@ -15,7 +15,7 @@ from .device_detect import detect_devices
 from .diagnostics import collect_diagnostics
 from .registry import RegistryClient, RegistryConfig, RegistryError
 from .signing_detect import detect_signing_candidates
-from .upgrade import available_versions, upgrade
+from .upgrade import active_version, available_versions, upgrade
 from .wda import WdaConfig, WdaError, WdaRuntime, xcuitest_driver_version
 
 
@@ -62,7 +62,7 @@ class AgentRuntime:
     def report_health(self) -> None:
         """上报 Agent 与 Python 运行版本。"""
         self.backend.health({
-            "status": "ONLINE", "agentVersion": __version__, "iosVersion": None,
+            "status": "ONLINE", "agentVersion": active_version(__version__), "iosVersion": None,
             "xcuitestDriverVersion": xcuitest_driver_version(),
             "lastErrorCode": None, "availableVersions": available_versions(),
         })
