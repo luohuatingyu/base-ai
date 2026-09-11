@@ -534,30 +534,30 @@ export default {
         "wireless": "无线",
         "unknown": "未知"
       },
-      "wdaControl": "IDA 控制链路",
-      "wdaControlStates": {
+      "idaControl": "IDA 控制链路",
+      "idaControlStates": {
         "running": "控制可用",
         "stopped": "控制不可用"
       },
-      "wdaPort": "IDA 端口",
-      "wdaPortEdit": "编辑端口",
-      "wdaPortConfigured": "配置",
-      "wdaPortObserved": "实际",
-      "wdaPortApplied": "已生效",
-      "wdaPortPending": "待生效",
-      "wdaPortFailed": "应用失败",
-      "wdaPortDialogTitle": "编辑 {device} 的 IDA 端口",
-      "wdaPortHint": "允许 1024–65535；同一 Agent 的设备端口必须不同，也不能与 Appium 或 Registry 端口相同。自动化执行中保存不会中断任务，将在设备空闲后生效。",
-      "wdaPortSaved": "IDA 端口配置已保存，Agent 将在下一轮同步时应用",
-      "wdaPortSaveError": "保存 IDA 端口失败",
-      "wdaPortInvalid": "请输入 1024–65535 之间的整数端口",
-      "wdaPortConflict": "该端口与当前 Agent 的其他设备资源冲突，请更换端口。",
-      "wdaPortInUse": "该端口已被 Mac 上的其他程序占用，请更换端口。",
-      "wdaPortConfigInvalid": "Agent 拒绝了无效的端口配置，请重新保存。",
+      "idaPort": "IDA 端口",
+      "idaPortEdit": "编辑端口",
+      "idaPortConfigured": "配置",
+      "idaPortObserved": "实际",
+      "idaPortApplied": "已生效",
+      "idaPortPending": "待生效",
+      "idaPortFailed": "应用失败",
+      "idaPortDialogTitle": "编辑 {device} 的 IDA 端口",
+      "idaPortHint": "允许 1024–65535；同一 Agent 的设备端口必须不同，也不能与 Appium 或 Registry 端口相同。自动化执行中保存不会中断任务，将在设备空闲后生效。",
+      "idaPortSaved": "IDA 端口配置已保存，Agent 将在下一轮同步时应用",
+      "idaPortSaveError": "保存 IDA 端口失败",
+      "idaPortInvalid": "请输入 1024–65535 之间的整数端口",
+      "idaPortConflict": "该端口与当前 Agent 的其他设备资源冲突，请更换端口。",
+      "idaPortInUse": "该端口已被 Mac 上的其他程序占用，请更换端口。",
+      "idaPortConfigInvalid": "Agent 拒绝了无效的端口配置，请重新保存。",
       "lastDetected": "最近检测",
       "unnamed": "未命名设备",
-      "setupWda": "安装 IDA",
-      "startWda": "启动 IDA",
+      "setupIda": "安装 IDA",
+      "startIda": "启动 IDA",
       "empty": "尚未收到设备快照，请连接并解锁 iOS 设备后刷新。",
       "loadError": "加载 iOS 设备池失败",
       "setupCompleted": "{device} 的 IDA 已构建并安装",
@@ -618,12 +618,12 @@ export default {
       "advice": "在「IDA 配置」确认配置无误后，点击「重新下发配置」让 Agent 重新拉取。",
       "otherError": "需注意",
       "otherErrorDetail": "Agent 上报了错误码 {code}，请查看该 Mac 上的 Agent 日志。",
-      "WDA_CONFIG_REJECTED": "配置被拒绝",
-      "WDA_CONFIG_REJECTEDDetail": "Agent 校验后台下发的配置未通过，当前使用的是本机环境变量取值，页面上的配置未生效。",
-      "WDA_CONFIG_NOT_DELIVERED": "未下发",
-      "WDA_CONFIG_NOT_DELIVEREDDetail": "Agent 没能从后台取到配置，也没有本地缓存，当前只按本机环境变量运行，页面上的配置未生效。",
-      "WDA_CONFIG_FROM_CACHE": "使用本地缓存",
-      "WDA_CONFIG_FROM_CACHEDetail": "Agent 没能从后台取到配置，正在使用上一次缓存的配置，实际生效的设备与 Bundle ID 可能与页面显示的不一致。"
+      "IDA_CONFIG_REJECTED": "配置被拒绝",
+      "IDA_CONFIG_REJECTEDDetail": "Agent 校验后台下发的配置未通过，当前使用的是本机环境变量取值，页面上的配置未生效。",
+      "IDA_CONFIG_NOT_DELIVERED": "未下发",
+      "IDA_CONFIG_NOT_DELIVEREDDetail": "Agent 没能从后台取到配置，也没有本地缓存，当前只按本机环境变量运行，页面上的配置未生效。",
+      "IDA_CONFIG_FROM_CACHE": "使用本地缓存",
+      "IDA_CONFIG_FROM_CACHEDetail": "Agent 没能从后台取到配置，正在使用上一次缓存的配置，实际生效的设备与 Bundle ID 可能与页面显示的不一致。"
     },
     "description": "设备 Agent 管理",
     "title": "Agent 配置管理",
@@ -677,7 +677,7 @@ export default {
     },
     "featureNames": {
       "READ_ONLY_DIAGNOSTICS": "诊断",
-      "APPIUM_WDA_AUTOMATION": "IDA",
+      "APPIUM_IDA_AUTOMATION": "IDA",
       "AUTOSTART": "自启动"
     },
     "reissuePairing": "重新颁发配对码",
@@ -735,7 +735,7 @@ export default {
     "diagnostics": "诊断",
     "autostart": "自启动",
     "lastOnline": "最后在线",
-    "configWda": "配置 IDA",
+    "configIda": "配置 IDA",
     "revoke": "撤销",
     "selectFeatures": "选择功能",
     "pairingCode": "配对码",
@@ -770,8 +770,8 @@ export default {
     "generate": "生成",
     "pairingCodeCreated": "配对码已创建",
     "pairingCodeError": "创建配对码失败",
-    "wdaConfig": "IDA 配置",
-    "wdaSigningConfig": "签名配置",
+    "idaConfig": "IDA 配置",
+    "idaSigningConfig": "签名配置",
     "detectSigning": "一键检测",
     "detectSigningButton": "检测本机签名身份",
     "detectSigningHint": "向 Agent 下发检测命令，自动读取 Mac 钥匙串中的开发证书和团队 ID；唯一候选将自动填入并保存",
@@ -810,7 +810,7 @@ export default {
     "deviceOsVersion": "系统版本",
     "appiumConfig": "Appium 配置",
     "appiumServerUrl": "Appium 服务地址",
-    "appiumWdaLocalPort": "IDA 本地端口",
+    "appiumIdaLocalPort": "IDA 本地端口",
     "updateFeatures": "更新功能",
     "loadError": "加载 Agent 列表失败",
     "loadConfigError": "加载配置失败",
@@ -902,7 +902,7 @@ export default {
         "SIGNING": "代码签名身份",
         "TARGET_DEVICE": "目标 iOS 设备",
         "APPIUM_SERVER": "本机 Appium 服务",
-        "WDA": "已签名 IDA"
+        "IDA": "已签名 IDA"
       },
       "hints": {
         "MACOS": "读取系统版本",
@@ -914,7 +914,7 @@ export default {
         "SIGNING": "只确认存在有效身份",
         "TARGET_DEVICE": "仅确认配置设备已连接",
         "APPIUM_SERVER": "回环地址 /status",
-        "WDA": "检查指定 Bundle ID 是否安装 IDA"
+        "IDA": "检查指定 Bundle ID 是否安装 IDA"
       },
       "reasons": {
         "PROBE_FAILED": "读取系统版本失败，Agent 无法确认 macOS 环境",
@@ -950,11 +950,11 @@ export default {
         "BUNDLE_ID_NOT_CONFIGURED": "在「IDA 配置」中填写唯一的自定义 Bundle ID",
         "DEVICE_QUERY_FAILED": "先修复 iOS 设备连接，确认「目标 iOS 设备」通过后再看本项",
         "DEVICE_NOT_CONNECTED": "先用数据线接好并解锁 iOS 设备，确认「目标 iOS 设备」通过后再构建；尚未选定目标设备时先在「IDA 配置」中指定",
-        "APP_NOT_INSTALLED_WDA": "执行「一键构建 IDA」把已签名的 IDA 装到 iOS 设备"
+        "APP_NOT_INSTALLED_IDA": "执行「一键构建 IDA」把已签名的 IDA 装到 iOS 设备"
       },
       "actionLabels": {
-        "GOTO_WDA_CONFIG": "前往 IDA 配置",
-        "GOTO_BUILD_WDA": "前往一键构建 IDA",
+        "GOTO_IDA_CONFIG": "前往 IDA 配置",
+        "GOTO_BUILD_IDA": "前往一键构建 IDA",
         "GOTO_AGENT_LIST": "前往 Agent 管理"
       },
       "defaultAgentMissing": "尚未找到已配对且未撤销的默认 Agent；请先完成配对并在 Agent 列表中设为默认。"

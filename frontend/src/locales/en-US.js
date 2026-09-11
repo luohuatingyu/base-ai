@@ -508,30 +508,30 @@ export default {
         "wireless": "Wireless",
         "unknown": "Unknown"
       },
-      "wdaControl": "IDA Control Link",
-      "wdaControlStates": {
+      "idaControl": "IDA Control Link",
+      "idaControlStates": {
         "running": "Available",
         "stopped": "Unavailable"
       },
-      "wdaPort": "IDA Port",
-      "wdaPortEdit": "Edit Port",
-      "wdaPortConfigured": "Configured",
-      "wdaPortObserved": "Observed",
-      "wdaPortApplied": "Applied",
-      "wdaPortPending": "Pending",
-      "wdaPortFailed": "Failed",
-      "wdaPortDialogTitle": "Edit the IDA port for {device}",
-      "wdaPortHint": "Allowed range: 1024–65535. Device ports under one Agent must be unique and cannot match the Appium or Registry port. Saving during a task waits until the device is idle.",
-      "wdaPortSaved": "IDA port configuration saved. The Agent will apply it on its next sync.",
-      "wdaPortSaveError": "Failed to save the IDA port",
-      "wdaPortInvalid": "Enter an integer port from 1024 to 65535",
-      "wdaPortConflict": "This port conflicts with another device resource on the Agent. Choose another port.",
-      "wdaPortInUse": "Another program on the Mac is using this port. Choose another port.",
-      "wdaPortConfigInvalid": "The Agent rejected an invalid port configuration. Save it again.",
+      "idaPort": "IDA Port",
+      "idaPortEdit": "Edit Port",
+      "idaPortConfigured": "Configured",
+      "idaPortObserved": "Observed",
+      "idaPortApplied": "Applied",
+      "idaPortPending": "Pending",
+      "idaPortFailed": "Failed",
+      "idaPortDialogTitle": "Edit the IDA port for {device}",
+      "idaPortHint": "Allowed range: 1024–65535. Device ports under one Agent must be unique and cannot match the Appium or Registry port. Saving during a task waits until the device is idle.",
+      "idaPortSaved": "IDA port configuration saved. The Agent will apply it on its next sync.",
+      "idaPortSaveError": "Failed to save the IDA port",
+      "idaPortInvalid": "Enter an integer port from 1024 to 65535",
+      "idaPortConflict": "This port conflicts with another device resource on the Agent. Choose another port.",
+      "idaPortInUse": "Another program on the Mac is using this port. Choose another port.",
+      "idaPortConfigInvalid": "The Agent rejected an invalid port configuration. Save it again.",
       "lastDetected": "Last Detected",
       "unnamed": "Unnamed Device",
-      "setupWda": "Install IDA",
-      "startWda": "Start IDA",
+      "setupIda": "Install IDA",
+      "startIda": "Start IDA",
       "empty": "No device snapshot has been received. Connect and unlock an iOS device, then refresh.",
       "loadError": "Failed to load the iOS device pool",
       "setupCompleted": "IDA was built and installed on {device}",
@@ -592,12 +592,12 @@ export default {
       "advice": "Verify the settings under IDA Configuration, then click Resend configuration so the Agent re-fetches them.",
       "otherError": "Attention",
       "otherErrorDetail": "The Agent reported error code {code}. Check the Agent log on that Mac.",
-      "WDA_CONFIG_REJECTED": "Rejected",
-      "WDA_CONFIG_REJECTEDDetail": "The Agent rejected the delivered configuration and is running on local environment variables, so the settings shown here are not in effect.",
-      "WDA_CONFIG_NOT_DELIVERED": "Not delivered",
-      "WDA_CONFIG_NOT_DELIVEREDDetail": "The Agent could not fetch its configuration and has no local cache, so it runs on environment variables only and the settings shown here are not in effect.",
-      "WDA_CONFIG_FROM_CACHE": "Using local cache",
-      "WDA_CONFIG_FROM_CACHEDetail": "The Agent could not fetch its configuration and is using the last cached copy, so the effective device and Bundle ID may differ from what is shown here."
+      "IDA_CONFIG_REJECTED": "Rejected",
+      "IDA_CONFIG_REJECTEDDetail": "The Agent rejected the delivered configuration and is running on local environment variables, so the settings shown here are not in effect.",
+      "IDA_CONFIG_NOT_DELIVERED": "Not delivered",
+      "IDA_CONFIG_NOT_DELIVEREDDetail": "The Agent could not fetch its configuration and has no local cache, so it runs on environment variables only and the settings shown here are not in effect.",
+      "IDA_CONFIG_FROM_CACHE": "Using local cache",
+      "IDA_CONFIG_FROM_CACHEDetail": "The Agent could not fetch its configuration and is using the last cached copy, so the effective device and Bundle ID may differ from what is shown here."
     },
     "description": "Device Agent Management",
     "title": "Agent Configuration",
@@ -651,7 +651,7 @@ export default {
     },
     "featureNames": {
       "READ_ONLY_DIAGNOSTICS": "Diagnostics",
-      "APPIUM_WDA_AUTOMATION": "IDA",
+      "APPIUM_IDA_AUTOMATION": "IDA",
       "AUTOSTART": "Autostart"
     },
     "reissuePairing": "Re-issue Pairing Code",
@@ -709,7 +709,7 @@ export default {
     "diagnostics": "Diagnostics",
     "autostart": "Autostart",
     "lastOnline": "Last Online",
-    "configWda": "Config IDA",
+    "configIda": "Config IDA",
     "revoke": "Revoke",
     "selectFeatures": "Select Features",
     "pairingCode": "Pairing Code",
@@ -744,8 +744,8 @@ export default {
     "generate": "Generate",
     "pairingCodeCreated": "Pairing code created",
     "pairingCodeError": "Failed to create pairing code",
-    "wdaConfig": "IDA Configuration",
-    "wdaSigningConfig": "Signing Configuration",
+    "idaConfig": "IDA Configuration",
+    "idaSigningConfig": "Signing Configuration",
     "detectSigning": "One-Click Detect",
     "detectSigningButton": "Detect Signing Identity",
     "detectSigningHint": "Dispatches a detection command so the Agent reads development certificates and the team ID from the Mac keychain; a single match is applied and saved automatically",
@@ -784,7 +784,7 @@ export default {
     "deviceOsVersion": "OS Version",
     "appiumConfig": "Appium Configuration",
     "appiumServerUrl": "Appium Server URL",
-    "appiumWdaLocalPort": "IDA Local Port",
+    "appiumIdaLocalPort": "IDA Local Port",
     "updateFeatures": "Update Features",
     "loadError": "Failed to load Agent list",
     "loadConfigError": "Failed to load configuration",
@@ -876,7 +876,7 @@ export default {
         "SIGNING": "Code-signing identity",
         "TARGET_DEVICE": "Target iOS device",
         "APPIUM_SERVER": "Local Appium server",
-        "WDA": "Signed IDA"
+        "IDA": "Signed IDA"
       },
       "hints": {
         "MACOS": "Reads system version",
@@ -888,7 +888,7 @@ export default {
         "SIGNING": "Only verifies a valid identity exists",
         "TARGET_DEVICE": "Only verifies the configured device is connected",
         "APPIUM_SERVER": "Loopback /status",
-        "WDA": "Checks whether the configured Bundle ID is installed for IDA"
+        "IDA": "Checks whether the configured Bundle ID is installed for IDA"
       },
       "reasons": {
         "PROBE_FAILED": "Failed to read the system version; the Agent cannot confirm the macOS environment",
@@ -924,11 +924,11 @@ export default {
         "BUNDLE_ID_NOT_CONFIGURED": "Set a unique Custom Bundle ID under IDA Configuration",
         "DEVICE_QUERY_FAILED": "Fix the iOS device connection first; revisit this check once Target iOS device passes",
         "DEVICE_NOT_CONNECTED": "Connect and unlock the iOS device and confirm Target iOS device passes before building; pick the target device under IDA Configuration if none is set",
-        "APP_NOT_INSTALLED_WDA": "Run One-Click IDA Build to install the signed IDA on the iOS device"
+        "APP_NOT_INSTALLED_IDA": "Run One-Click IDA Build to install the signed IDA on the iOS device"
       },
       "actionLabels": {
-        "GOTO_WDA_CONFIG": "Go to IDA configuration",
-        "GOTO_BUILD_WDA": "Go to one-click IDA build",
+        "GOTO_IDA_CONFIG": "Go to IDA configuration",
+        "GOTO_BUILD_IDA": "Go to one-click IDA build",
         "GOTO_AGENT_LIST": "Go to Agent management"
       },
       "defaultAgentMissing": "No paired, non-revoked default Agent was found. Pair an instance and set it as default in Agent Management."

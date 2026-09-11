@@ -180,11 +180,11 @@ const readiness = ref({ status: 'UNKNOWN', stale: true, checkedAt: null, checks:
 let readinessRefreshTimer = null
 
 const REASON_ACTION_TARGETS = {
-  DEVICE_NOT_CONFIGURED: 'GOTO_WDA_CONFIG',
-  BUNDLE_ID_NOT_CONFIGURED: 'GOTO_WDA_CONFIG',
-  DEVICE_NOT_FOUND: 'GOTO_WDA_CONFIG',
-  DEVICE_NOT_CONNECTED: 'GOTO_WDA_CONFIG',
-  APP_NOT_INSTALLED_WDA: 'GOTO_BUILD_WDA',
+  DEVICE_NOT_CONFIGURED: 'GOTO_IDA_CONFIG',
+  BUNDLE_ID_NOT_CONFIGURED: 'GOTO_IDA_CONFIG',
+  DEVICE_NOT_FOUND: 'GOTO_IDA_CONFIG',
+  DEVICE_NOT_CONNECTED: 'GOTO_IDA_CONFIG',
+  APP_NOT_INSTALLED_IDA: 'GOTO_BUILD_IDA',
 }
 const EMPTY_GUIDANCE = { reason: '', action: '', actionLabel: '', target: '' }
 
@@ -228,8 +228,8 @@ function translateOrEmpty(key) {
 
 /** 执行诊断项对应的控制台跳转，不为 Mac 或 iOS 设备手工操作伪造按钮。 */
 function runCheckAction(target) {
-  if (target === 'GOTO_BUILD_WDA') router.push({ path: '/automation/device-agents/onboarding', query: { step: 'setup' } })
-  else if (target === 'GOTO_WDA_CONFIG') router.push({ path: '/automation/device-agents', query: { open: 'wda-config' } })
+  if (target === 'GOTO_BUILD_IDA') router.push({ path: '/automation/device-agents/onboarding', query: { step: 'setup' } })
+  else if (target === 'GOTO_IDA_CONFIG') router.push({ path: '/automation/device-agents', query: { open: 'ida-config' } })
   else if (target === 'GOTO_AGENT_LIST') router.push({ path: '/automation/device-agents' })
 }
 

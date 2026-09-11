@@ -68,8 +68,8 @@ def test_physical_usb_connection_is_online_without_developer_tunnel(
     assert report["connected"] is True
     assert report["connectionType"] == "USB"
     assert report["status"] == "AVAILABLE"
-    assert report["wdaStatus"] == "UNKNOWN"
-    assert report["wdaRunning"] is False
+    assert report["idaStatus"] == "UNKNOWN"
+    assert report["idaRunning"] is False
     assert udid not in json.dumps(report)
 
 

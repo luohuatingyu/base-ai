@@ -48,13 +48,13 @@ public class DeviceAgentDeviceController {
         return ResponseEntity.accepted().body(deviceService.detect(agentId, AuthContext.require().id()));
     }
 
-    /** 更新一台设备的 WDA 本地端口，空值表示自动重新分配。 */
+    /** 更新一台设备的 IDA 本地端口，空值表示自动重新分配。 */
     @PutMapping("/automation/device-agents/{agentId:" + AGENT_ID_PATTERN
-        + "}/devices/{deviceId:[a-f0-9]{64}}/wda-port")
+        + "}/devices/{deviceId:[a-f0-9]{64}}/ida-port")
     @RequiredPermission("automation:device-agent:update")
-    public DeviceAgentModels.AgentDeviceView updateWdaPort(
+    public DeviceAgentModels.AgentDeviceView updateIdaPort(
         @PathVariable String agentId, @PathVariable String deviceId,
-        @RequestBody DeviceAgentModels.UpdateAgentDeviceWdaPortRequest body) {
-        return deviceService.updateWdaPort(agentId, deviceId, body, AuthContext.require().id());
+        @RequestBody DeviceAgentModels.UpdateAgentDeviceIdaPortRequest body) {
+        return deviceService.updateIdaPort(agentId, deviceId, body, AuthContext.require().id());
     }
 }

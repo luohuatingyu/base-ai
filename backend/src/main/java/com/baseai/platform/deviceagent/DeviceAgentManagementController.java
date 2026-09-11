@@ -93,7 +93,7 @@ public class DeviceAgentManagementController {
         DeviceAgentModels.AgentRegistrationView current = registrationService.registration(agentId);
         List<String> features = new java.util.ArrayList<>();
         if ("ENABLED".equals(current.featureDiagnostics())) features.add("READ_ONLY_DIAGNOSTICS");
-        if ("ENABLED".equals(current.featureAutomation())) features.add("APPIUM_WDA_AUTOMATION");
+        if ("ENABLED".equals(current.featureAutomation())) features.add("APPIUM_IDA_AUTOMATION");
         if ("ENABLED".equals(current.featureAutostart())) features.add("AUTOSTART");
         return registrationService.createPairing(new DeviceAgentModels.CreatePairingRequest(
             agentId, features, current.backendUrl(), current.deviceName()), userId(),
@@ -191,17 +191,17 @@ public class DeviceAgentManagementController {
     @RequiredPermission("automation:device-agent:execute")
     public void cancel(@PathVariable Long commandId) { commandService.cancel(commandId); }
 
-    /** 查询已解密但不含私钥材料的 WDA 配置。 */
-    @GetMapping("/{agentId:" + AGENT_ID_PATTERN + "}/wda-config")
-    public DeviceAgentModels.AgentWdaConfigView wdaConfig(@PathVariable String agentId) {
+    /** 查询已解密但不含私钥材料的 IDA 配置。 */
+    @GetMapping("/{agentId:" + AGENT_ID_PATTERN + "}/ida-config")
+    public DeviceAgentModels.AgentIdaConfigView idaConfig(@PathVariable String agentId) {
         return automationConfigService.get(agentId);
     }
 
-    /** 加密保存 WDA 签名和本地服务配置。 */
-    @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/wda-config")
+    /** 加密保存 IDA 签名和本地服务配置。 */
+    @PutMapping("/{agentId:" + AGENT_ID_PATTERN + "}/ida-config")
     @RequiredPermission("automation:device-agent:update")
-    public DeviceAgentModels.AgentWdaConfigView updateWdaConfig(
-        @PathVariable String agentId, @RequestBody DeviceAgentModels.UpdateAgentWdaConfigRequest body) {
+    public DeviceAgentModels.AgentIdaConfigView updateIdaConfig(
+        @PathVariable String agentId, @RequestBody DeviceAgentModels.UpdateAgentIdaConfigRequest body) {
         return automationConfigService.update(agentId, body, userId());
     }
 
@@ -219,10 +219,10 @@ public class DeviceAgentManagementController {
         return automationConfigService.updateOperationSpeed(agentId, body, userId());
     }
 
-    /** 删除 WDA 配置并恢复安全默认值。 */
-    @DeleteMapping("/{agentId:" + AGENT_ID_PATTERN + "}/wda-config")
+    /** 删除 IDA 配置并恢复安全默认值。 */
+    @DeleteMapping("/{agentId:" + AGENT_ID_PATTERN + "}/ida-config")
     @RequiredPermission("automation:device-agent:delete")
-    public void deleteWdaConfig(@PathVariable String agentId) {
+    public void deleteIdaConfig(@PathVariable String agentId) {
         automationConfigService.delete(agentId, userId());
     }
 

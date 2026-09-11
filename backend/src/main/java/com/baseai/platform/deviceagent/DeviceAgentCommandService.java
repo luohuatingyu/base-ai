@@ -21,11 +21,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** 管理主机维护和单设备 WDA 自动化命令的租约状态。 */
+/** 管理主机维护和单设备 IDA 自动化命令的租约状态。 */
 @Service
 public class DeviceAgentCommandService {
     private static final Pattern DEVICE_ID = Pattern.compile("[a-f0-9]{64}");
-    private static final Set<String> DEVICE_COMMANDS = Set.of("SETUP_WDA", "START_WDA");
+    private static final Set<String> DEVICE_COMMANDS = Set.of("SETUP_IDA", "START_IDA");
     private static final String UPGRADE_COMMAND = "UPGRADE";
     private final JdbcTemplate db;
     private final ObjectMapper objectMapper;
@@ -141,7 +141,7 @@ public class DeviceAgentCommandService {
             """, status, truncate(request.resultSummary(), 2000), truncate(request.errorCode(), 64),
             commandId, agentId, request.leaseToken());
         if (changed == 0) throw new BusinessException(409, "deviceAgent.commandLeaseInvalid");
-        updateDeviceWdaState(command, status, request.errorCode());
+        updateDeviceIdaState(command, status, request.errorCode());
     }
 
     /** 管理端取消尚未结束的命令。 */
@@ -249,19 +249,19 @@ public class DeviceAgentCommandService {
         return null;
     }
 
-    /** 校验目标设备归属、在线状态和启动前 WDA 就绪状态。 */
+    /** 校验目标设备归属、在线状态和启动前 IDA 就绪状态。 */
     private void validateTargetDevice(String agentId, String deviceId, String commandType) {
         if (deviceId == null) return;
         List<DeviceTargetState> states = db.query("""
-            SELECT connected, wda_status FROM automation_device_agent_device
+            SELECT connected, ida_status FROM automation_device_agent_device
             WHERE agent_id=? AND device_id=?
             """, (resultSet, rowNum) -> new DeviceTargetState(
-            resultSet.getBoolean("connected"), resultSet.getString("wda_status")), agentId, deviceId);
+            resultSet.getBoolean("connected"), resultSet.getString("ida_status")), agentId, deviceId);
         if (states.isEmpty()) throw new BusinessException("deviceAgent.deviceNotFound");
         DeviceTargetState state = states.get(0);
         if (!state.connected()) throw new BusinessException(409, "deviceAgent.deviceOffline");
-        if ("START_WDA".equals(commandType) && !"READY".equals(state.wdaStatus())) {
-            throw new BusinessException(409, "deviceAgent.wdaNotReady");
+        if ("START_IDA".equals(commandType) && !"READY".equals(state.idaStatus())) {
+            throw new BusinessException(409, "deviceAgent.idaNotReady");
         }
     }
 
@@ -278,25 +278,25 @@ public class DeviceAgentCommandService {
         return commands.get(0);
     }
 
-    /** 根据 WDA 命令终态回写设备状态，供管理端展示真实执行结果。 */
-    private void updateDeviceWdaState(CommandTarget command, String status, String errorCode) {
+    /** 根据 IDA 命令终态回写设备状态，供管理端展示真实执行结果。 */
+    private void updateDeviceIdaState(CommandTarget command, String status, String errorCode) {
         if (command.targetDeviceId() == null || !DEVICE_COMMANDS.contains(command.commandType())) return;
         boolean success = "COMPLETED".equals(status);
-        String wdaStatus = success ? "READY" : "ERROR";
-        boolean running = success && "START_WDA".equals(command.commandType());
+        String idaStatus = success ? "READY" : "ERROR";
+        boolean running = success && "START_IDA".equals(command.commandType());
         db.update("""
             UPDATE automation_device_agent_device
-            SET wda_status=?, wda_running=?, wda_port_error_code=?, last_error_code=?
+            SET ida_status=?, ida_running=?, ida_port_error_code=?, last_error_code=?
             WHERE agent_id=? AND device_id=?
-            """, wdaStatus, running, success ? null : truncate(errorCode, 64),
+            """, idaStatus, running, success ? null : truncate(errorCode, 64),
             success ? null : truncate(errorCode, 64), command.agentId(), command.targetDeviceId());
     }
 
     /** 返回不同命令的合理租约时间，安装和升级允许较长执行时间。 */
     private long leaseSeconds(String commandType) {
         return switch (commandType) {
-            case "UPGRADE", "SETUP_WDA" -> 1200;
-            case "START_WDA", "REGISTRY_RECREATE" -> 600;
+            case "UPGRADE", "SETUP_IDA" -> 1200;
+            case "START_IDA", "REGISTRY_RECREATE" -> 600;
             default -> 300;
         };
     }
@@ -357,7 +357,7 @@ public class DeviceAgentCommandService {
     /** 候选租约数据库快照。 */
     private record LeaseCandidate(Long id, String targetDeviceId, String commandType, String params) {}
     /** 设备目标当前状态。 */
-    private record DeviceTargetState(boolean connected, String wdaStatus) {}
+    private record DeviceTargetState(boolean connected, String idaStatus) {}
     /** 已租赁命令的设备目标。 */
     private record CommandTarget(String agentId, String commandType, String targetDeviceId) {}
 }

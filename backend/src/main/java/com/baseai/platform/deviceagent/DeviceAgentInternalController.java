@@ -42,9 +42,9 @@ public class DeviceAgentInternalController {
         return registrationService.agentConfig(agentId(request));
     }
 
-    /** 拉取加密存储并经服务端解密的 WDA 有效配置。 */
-    @GetMapping("/wda-config")
-    public DeviceAgentModels.AgentWdaConfigView wdaConfig(HttpServletRequest request) {
+    /** 拉取加密存储并经服务端解密的 IDA 有效配置。 */
+    @GetMapping("/ida-config")
+    public DeviceAgentModels.AgentIdaConfigView idaConfig(HttpServletRequest request) {
         return automationConfigService.get(agentId(request));
     }
 

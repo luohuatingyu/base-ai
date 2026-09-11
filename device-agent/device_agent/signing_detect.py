@@ -20,7 +20,7 @@ MAX_CANDIDATES = 10
 
 @dataclass(frozen=True, slots=True)
 class SigningCandidate:
-    """一个可直接写入 WDA 配置的开发签名候选。"""
+    """一个可直接写入 IDA 配置的开发签名候选。"""
 
     signing_identity: str
     team_id: str

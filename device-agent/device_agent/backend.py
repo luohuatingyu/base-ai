@@ -77,15 +77,15 @@ class BackendClient:
         self.request("POST", "/diagnostics", payload)
 
     def synchronize_devices(self, devices: list[dict[str, Any]]) -> dict[str, Any]:
-        """同步完整匿名设备快照并接收每台设备的期望 WDA 端口。"""
+        """同步完整匿名设备快照并接收每台设备的期望 IDA 端口。"""
         result = self.request("POST", "/devices/sync", {"devices": devices})
         return result if isinstance(result, dict) else {"devices": []}
 
-    def wda_config(self) -> dict[str, Any]:
-        """拉取当前 Agent 的 WDA 签名与本地服务配置。"""
-        result = self.request("GET", "/wda-config")
+    def ida_config(self) -> dict[str, Any]:
+        """拉取当前 Agent 的 IDA 签名与本地服务配置。"""
+        result = self.request("GET", "/ida-config")
         if not isinstance(result, dict):
-            raise BackendError("WDA_CONFIG_INVALID")
+            raise BackendError("IDA_CONFIG_INVALID")
         return result
 
     def registry_config(self) -> dict[str, Any]:

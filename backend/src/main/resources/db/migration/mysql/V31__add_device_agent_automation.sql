@@ -14,26 +14,26 @@ ALTER TABLE automation_device_agent_command
         REFERENCES automation_device_agent_device (agent_id, device_id) ON DELETE CASCADE;
 
 ALTER TABLE automation_device_agent_device
-    ADD COLUMN wda_status VARCHAR(16) NOT NULL DEFAULT 'UNKNOWN' AFTER status,
-    ADD COLUMN wda_running BOOLEAN NOT NULL DEFAULT FALSE AFTER wda_status,
-    ADD COLUMN wda_local_port INT NULL AFTER wda_running,
-    ADD COLUMN observed_wda_local_port INT NULL AFTER wda_local_port,
-    ADD COLUMN wda_port_error_code VARCHAR(64) NULL AFTER observed_wda_local_port,
-    ADD UNIQUE KEY uk_device_agent_device_wda_port (agent_id, wda_local_port),
-    ADD CONSTRAINT ck_device_agent_device_wda_status
-        CHECK (wda_status IN ('UNKNOWN', 'READY', 'MISSING', 'ERROR')),
-    ADD CONSTRAINT ck_device_agent_device_wda_port
-        CHECK (wda_local_port IS NULL OR wda_local_port BETWEEN 1024 AND 65535),
-    ADD CONSTRAINT ck_device_agent_device_observed_wda_port
-        CHECK (observed_wda_local_port IS NULL OR observed_wda_local_port BETWEEN 1024 AND 65535);
+    ADD COLUMN ida_status VARCHAR(16) NOT NULL DEFAULT 'UNKNOWN' AFTER status,
+    ADD COLUMN ida_running BOOLEAN NOT NULL DEFAULT FALSE AFTER ida_status,
+    ADD COLUMN ida_local_port INT NULL AFTER ida_running,
+    ADD COLUMN observed_ida_local_port INT NULL AFTER ida_local_port,
+    ADD COLUMN ida_port_error_code VARCHAR(64) NULL AFTER observed_ida_local_port,
+    ADD UNIQUE KEY uk_device_agent_device_ida_port (agent_id, ida_local_port),
+    ADD CONSTRAINT ck_device_agent_device_ida_status
+        CHECK (ida_status IN ('UNKNOWN', 'READY', 'MISSING', 'ERROR')),
+    ADD CONSTRAINT ck_device_agent_device_ida_port
+        CHECK (ida_local_port IS NULL OR ida_local_port BETWEEN 1024 AND 65535),
+    ADD CONSTRAINT ck_device_agent_device_observed_ida_port
+        CHECK (observed_ida_local_port IS NULL OR observed_ida_local_port BETWEEN 1024 AND 65535);
 
-CREATE TABLE automation_device_agent_wda_config (
+CREATE TABLE automation_device_agent_ida_config (
     agent_id VARCHAR(64) NOT NULL,
     signing_config_encrypted TEXT NULL,
     launch_mode VARCHAR(16) NOT NULL DEFAULT 'XCODEBUILD',
-    wda_url VARCHAR(256) NULL,
+    ida_url VARCHAR(256) NULL,
     appium_server_url VARCHAR(256) NOT NULL DEFAULT 'http://127.0.0.1:4723',
-    base_wda_local_port INT NOT NULL DEFAULT 8100,
+    base_ida_local_port INT NOT NULL DEFAULT 8100,
     config_version BIGINT NOT NULL DEFAULT 1,
     config_hash CHAR(64) NOT NULL,
     created_by BIGINT NULL,
@@ -41,12 +41,12 @@ CREATE TABLE automation_device_agent_wda_config (
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (agent_id),
-    CONSTRAINT fk_device_agent_wda_config_registration FOREIGN KEY (agent_id)
+    CONSTRAINT fk_device_agent_ida_config_registration FOREIGN KEY (agent_id)
         REFERENCES automation_device_agent_registration (agent_id) ON DELETE CASCADE,
-    CONSTRAINT ck_device_agent_wda_config_launch_mode
+    CONSTRAINT ck_device_agent_ida_config_launch_mode
         CHECK (launch_mode IN ('XCODEBUILD', 'PREINSTALLED', 'URL')),
-    CONSTRAINT ck_device_agent_wda_config_base_port
-        CHECK (base_wda_local_port BETWEEN 1024 AND 65535)
+    CONSTRAINT ck_device_agent_ida_config_base_port
+        CHECK (base_ida_local_port BETWEEN 1024 AND 65535)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE automation_device_agent_registry (

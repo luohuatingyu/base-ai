@@ -207,7 +207,7 @@ public class DeviceAgentRegistrationService {
             SET feature_diagnostics_status=?, feature_automation_status=?, feature_autostart_status=?
             WHERE agent_id=?
             """, pairing.features().contains("READ_ONLY_DIAGNOSTICS") ? "ENABLED" : "DISABLED",
-            pairing.features().contains("APPIUM_WDA_AUTOMATION") ? "ENABLED" : "DISABLED",
+            pairing.features().contains("APPIUM_IDA_AUTOMATION") ? "ENABLED" : "DISABLED",
             pairing.features().contains("AUTOSTART") ? "ENABLED" : "DISABLED", pairing.agentId());
         audit(pairing.agentId(), "AGENT_PAIRING_CLAIMED", Map.of(), null, null);
         return new DeviceAgentModels.ClaimPairingResponse(pairing.agentId(), agentSecret,
@@ -284,7 +284,7 @@ public class DeviceAgentRegistrationService {
         return existing.revokedAt() == null && "PAIRED".equals(existing.pairingStatus());
     }
 
-    /** 更新诊断、WDA 自动化和自启动功能状态。 */
+    /** 更新诊断、IDA 自动化和自启动功能状态。 */
     public void updateFeatures(String agentId, DeviceAgentModels.UpdateFeaturesRequest request) {
         requireExists(agentId);
         String diagnostics = featureStatus(request == null ? null : request.featureDiagnostics());

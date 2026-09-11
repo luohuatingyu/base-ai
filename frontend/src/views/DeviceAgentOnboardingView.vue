@@ -129,7 +129,7 @@
         </div>
       </section>
 
-      <!-- 第 4 步：自动探测并保存 WDA 配置 -->
+      <!-- 第 4 步：自动探测并保存 IDA 配置 -->
       <section v-if="step === 3" class="step-pane" v-loading="configRunning">
         <el-alert v-if="configError" type="error" :closable="false" show-icon>
           <template #title>{{ configError }}</template>
@@ -168,7 +168,7 @@
         </div>
       </section>
 
-      <!-- 第 5 步：一键构建 WDA 到 iOS 设备 -->
+      <!-- 第 5 步：一键构建 IDA 到 iOS 设备 -->
       <section v-if="step === 4" class="step-pane step-pane--center">
         <el-result v-if="setupState === 'idle'" icon="info" :title="t('deviceAgentOnboarding.setup.title')">
           <template #sub-title><p>{{ t('deviceAgentOnboarding.setup.hint') }}</p></template>
@@ -198,7 +198,7 @@
         <div class="pane-actions">
           <el-button :disabled="setupState === 'running'" @click="step = 3">{{ t('common.previous') }}</el-button>
           <el-button type="primary" :loading="setupState === 'running'" :disabled="!agentReady"
-                     v-if="setupState !== 'success'" @click="runSetupWda">
+                     v-if="setupState !== 'success'" @click="runSetupIda">
             {{ t('deviceAgentOnboarding.setup.run') }}
           </el-button>
           <el-button type="primary" :disabled="setupState !== 'success'" @click="enterVerifyStep">
@@ -274,7 +274,7 @@ import { appConfig, resolvePlatformBaseUrl } from '../config'
 // 必须使用统一 http 客户端：自动附加 X-CSRF-Token 并解包统一响应信封
 import http, { showHttpError } from '../api/http'
 import { buildInstallCommand, detectSelfSignedDeployment, isPrivateOrigin } from '../utils/deviceAgentInstallCommand'
-import { buildDetectedWdaConfigPayload, loadExistingWdaConfig } from '../utils/deviceAgentWdaConfig'
+import { buildDetectedIdaConfigPayload, loadExistingIdaConfig } from '../utils/deviceAgentIdaConfig'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -291,7 +291,7 @@ const PREPARE_ITEMS = ['xcode', 'usb', 'trust']
 const IOS_DEVICE_ITEMS = ['developer', 'trustCert']
 
 const route = useRoute()
-// 支持 ?step=setup 直达指定步骤：环境检测页的失败项要能把用户直接送到「构建 WDA」，
+// 支持 ?step=setup 直达指定步骤：环境检测页的失败项要能把用户直接送到「构建 IDA」，
 // 否则引导只能落成一句"请去向导里找那一步"，用户仍要自己数到第五步
 const step = ref(Math.max(0, STEP_KEYS.indexOf(String(route.query.step || ''))))
 const prepareChecked = ref([])
@@ -426,10 +426,10 @@ const createPairing = async () => {
   }
   pairingLoading.value = true
   try {
-    // 向导默认只申请诊断 + WDA 两项基础功能，任务执行在最后一步显式开启
+    // 向导默认只申请诊断 + IDA 两项基础功能，任务执行在最后一步显式开启
     const response = await http.post('/automation/device-agents/pairing', {
       agentId: pairingForm.agentId.trim(),
-      requestedFeatures: ['READ_ONLY_DIAGNOSTICS', 'APPIUM_WDA_AUTOMATION'],
+      requestedFeatures: ['READ_ONLY_DIAGNOSTICS', 'APPIUM_IDA_AUTOMATION'],
       backendUrl: pairingForm.backendUrl.trim(),
       deviceName: pairingForm.deviceName.trim()
     })
@@ -489,7 +489,7 @@ const backToPairing = () => {
   step.value = 1
 }
 
-// —— 命令下发与轮询（探测 2 秒/60 秒；SETUP_WDA 构建 5 秒/20 分钟） ——
+// —— 命令下发与轮询（探测 2 秒/60 秒；SETUP_IDA 构建 5 秒/20 分钟） ——
 const DETECT_POLL_INTERVAL_MS = 2000
 const DETECT_POLL_TIMEOUT_MS = 60000
 const SETUP_POLL_INTERVAL_MS = 5000
@@ -518,7 +518,7 @@ const dispatchCommand = async (commandType, intervalMs, timeoutMs, targetDeviceI
   throw new Error(t('deviceAgentOnboarding.commandTimeout'))
 }
 
-// —— 自动配置 WDA ——
+// —— 自动配置 IDA ——
 const configRunning = ref(false)
 const configError = ref('')
 const configSaved = ref(false)
@@ -572,10 +572,10 @@ const runAutoConfig = async () => {
 // 只落库主机级签名；后端保存后会自动排队 UPDATE_CONFIG 通知 Agent 生效。
 // 自动配置与构建预检选择两个入口共用同一份请求体，避免字段漏填导致下发不一致。
 // PUT 是整体替换，必须先读旧值保留用户手工设置的设备注册开关。
-const persistWdaConfig = async (signing) => {
-  const existingConfig = await loadExistingWdaConfig(http, agentId.value)
-  const payload = buildDetectedWdaConfigPayload(signing, existingConfig)
-  await http.put(`/automation/device-agents/${agentId.value}/wda-config`, payload)
+const persistIdaConfig = async (signing) => {
+  const existingConfig = await loadExistingIdaConfig(http, agentId.value)
+  const payload = buildDetectedIdaConfigPayload(signing, existingConfig)
+  await http.put(`/automation/device-agents/${agentId.value}/ida-config`, payload)
   configSaved.value = true
   ElMessage.success(t('deviceAgents.configSaved'))
 }
@@ -583,7 +583,7 @@ const persistWdaConfig = async (signing) => {
 // 已发现至少一台设备且签名已确定时落库并下发 UPDATE_CONFIG。
 const saveConfigIfResolved = async () => {
   if (!devicePoolDevices.value.some(item => item.connected) || !resolvedSigning.value) return
-  await persistWdaConfig(resolvedSigning.value)
+  await persistIdaConfig(resolvedSigning.value)
 }
 
 const enterConfigStep = () => {
@@ -603,7 +603,7 @@ watch(selectedSigningTeamId, async () => {
   }
 })
 
-// —— 一键构建 WDA ——
+// —— 一键构建 IDA ——
 const setupState = ref('idle')
 const setupError = ref('')
 // 构建预检阻断状态：Agent 在发起会话前判定签名未就绪时回写稳定码与候选身份
@@ -618,7 +618,7 @@ const SETUP_BLOCK_MESSAGES = {
   SIGNING_DETECT_FAILED: 'deviceAgentOnboarding.setup.signingDetectFailed'
 }
 
-const runSetupWda = async () => {
+const runSetupIda = async () => {
   setupState.value = 'running'
   setupError.value = ''
   setupBlockCode.value = ''
@@ -630,9 +630,9 @@ const runSetupWda = async () => {
     if (!connectedDevices.length) throw new Error(t('deviceAgentOnboarding.config.noDevice'))
     for (const device of connectedDevices) {
       const result = await dispatchCommand(
-        'SETUP_WDA', SETUP_POLL_INTERVAL_MS, SETUP_POLL_TIMEOUT_MS, device.deviceId)
+        'SETUP_IDA', SETUP_POLL_INTERVAL_MS, SETUP_POLL_TIMEOUT_MS, device.deviceId)
       if (result.status === 'COMPLETED') continue
-      // 旧版 Agent 不认识 SETUP_WDA：稳定标记提示重装而不是透传原始文案
+      // 旧版 Agent 不认识 SETUP_IDA：稳定标记提示重装而不是透传原始文案
       if (/UNSUPPORTED_COMMAND/.test(result.errorCode || '')) throw new Error(t('deviceAgentOnboarding.setup.unsupported'))
       // 失败原因优先取稳定 errorCode：Agent 的 resultSummary 统一是通用中文摘要，
       // 按 code 才能给出补救指引；多身份阻断场景复用探测步骤的候选列表
@@ -653,29 +653,29 @@ const runSetupWda = async () => {
 }
 
 // 构建步骤内选定签名身份：先落库并等 UPDATE_CONFIG 排队，再自动重试构建。
-// 后端按 created_at 顺序下发命令，UPDATE_CONFIG 先于重试的 SETUP_WDA 生效
+// 后端按 created_at 顺序下发命令，UPDATE_CONFIG 先于重试的 SETUP_IDA 生效
 const applySetupSigning = async () => {
   const candidate = setupSigningCandidates.value.find(item => item.teamId === setupSigningTeamId.value)
   if (!candidate) return
   try {
-    await persistWdaConfig(candidate)
+    await persistIdaConfig(candidate)
   } catch (error) {
     showHttpError(error, 'deviceAgents.configSaveError')
     return
   }
-  await runSetupWda()
+  await runSetupIda()
 }
 
 // —— iOS 设备复验（诊断 + readiness） ——
 const verifyRunning = ref(false)
 const readinessChecks = ref([])
-// 环境诊断和全部在线设备的 WDA 状态通过后才允许完成接入。
+// 环境诊断和全部在线设备的 IDA 状态通过后才允许完成接入。
 const verifyPassed = computed(() => {
   const connectedDevices = devicePoolDevices.value.filter(item => item.connected)
   return readinessChecks.value.length > 0
     && readinessChecks.value.every(item => item.status !== 'FAIL')
     && connectedDevices.length > 0
-    && connectedDevices.every(item => item.wdaStatus === 'READY')
+    && connectedDevices.every(item => item.idaStatus === 'READY')
 })
 
 const enterVerifyStep = () => {

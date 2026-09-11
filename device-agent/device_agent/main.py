@@ -16,30 +16,30 @@ from .diagnostics import collect_diagnostics
 from .registry import RegistryClient, RegistryConfig, RegistryError
 from .signing_detect import detect_signing_candidates
 from .upgrade import active_version, available_versions, upgrade
-from .wda import WdaConfig, WdaError, WdaRuntime, xcuitest_driver_version
+from .ida import IdaConfig, IdaError, IdaRuntime, xcuitest_driver_version
 
 
 CAPABILITIES = [
     "DIAGNOSTICS", "UPDATE_CONFIG", "HEALTH_CHECK", "DETECT_SIGNING", "DETECT_DEVICE",
-    "SETUP_WDA", "START_WDA", "REGISTRY_ONLINE", "REGISTRY_OFFLINE",
+    "SETUP_IDA", "START_IDA", "REGISTRY_ONLINE", "REGISTRY_OFFLINE",
     "REGISTRY_RECREATE", "UPGRADE", "UPDATE_BACKEND_URL",
 ]
 
 
 class AgentRuntime:
-    """协调后端协议、多设备 WDA、Registry 和 Agent 自维护命令。"""
+    """协调后端协议、多设备 IDA、Registry 和 Agent 自维护命令。"""
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
         self.backend = BackendClient(config)
-        self.wda = WdaRuntime()
+        self.ida = IdaRuntime()
         self.registry = RegistryClient()
         self.running = True
 
     def stop(self, _signal: int, _frame: object) -> None:
         """在系统退出信号后结束下一轮轮询。"""
         self.running = False
-        self.wda.close_all()
+        self.ida.close_all()
 
     def run(self) -> None:
         """周期上报健康、同步设备状态并领取自动化或维护命令。"""
@@ -70,12 +70,12 @@ class AgentRuntime:
     def synchronize_devices(self) -> int:
         """发现设备、同步脱敏自动化状态并应用端口与 Registry 配置。"""
         devices = detect_devices()
-        self.wda.refresh(self.config.agent_id, devices)
+        self.ida.refresh(self.config.agent_id, devices)
         response = self.backend.synchronize_devices([
-            device.report(self.config.agent_id, self.wda.report(device.device_id(self.config.agent_id)))
+            device.report(self.config.agent_id, self.ida.report(device.device_id(self.config.agent_id)))
             for device in devices
         ])
-        self.wda.apply_assignments(response)
+        self.ida.apply_assignments(response)
         self._reconcile_registry(devices)
         return len(devices)
 
@@ -94,11 +94,11 @@ class AgentRuntime:
             code = str(exception)[:64] or "COMMAND_FAILED"
             target = str(command.get("targetDeviceId") or "")
             if target:
-                self.wda.fail(target, code)
+                self.ida.fail(target, code)
             self.backend.report_command(command_id, lease_token, "FAILED", "命令执行失败", code)
 
     def _dispatch(self, command_type: str, params: dict[str, Any], target_device_id: str = "") -> str:
-        """分派诊断、WDA、Registry、改址和 Agent 自升级命令。"""
+        """分派诊断、IDA、Registry、改址和 Agent 自升级命令。"""
         if command_type == "DIAGNOSTICS":
             self.backend.diagnostics(collect_diagnostics())
             return "只读环境诊断已上报"
@@ -112,16 +112,16 @@ class AgentRuntime:
             self.report_health()
             self.synchronize_devices()
             return "Agent 配置与健康状态已刷新"
-        if command_type == "SETUP_WDA":
-            config = WdaConfig.from_payload(self.backend.wda_config())
+        if command_type == "SETUP_IDA":
+            config = IdaConfig.from_payload(self.backend.ida_config())
             # xcodebuild 构建前先做签名预检：缺签名时回稳定错误码，
             # 控制台按码展示补救指引，而不是透传 Appium 的长日志
             if config.launch_mode == "XCODEBUILD" and not (
                 config.xcode_org_id and config.xcode_signing_id):
-                raise WdaError("SIGNING_IDENTITY_MISSING")
-            return self.wda.setup(target_device_id, config)
-        if command_type == "START_WDA":
-            return self.wda.start(target_device_id, WdaConfig.from_payload(self.backend.wda_config()))
+                raise IdaError("SIGNING_IDENTITY_MISSING")
+            return self.ida.setup(target_device_id, config)
+        if command_type == "START_IDA":
+            return self.ida.start(target_device_id, IdaConfig.from_payload(self.backend.ida_config()))
         if command_type in {"REGISTRY_ONLINE", "REGISTRY_OFFLINE", "REGISTRY_RECREATE"}:
             action = command_type.removeprefix("REGISTRY_")
             self._apply_registry_config()
@@ -151,7 +151,7 @@ class AgentRuntime:
     def _apply_registry_config(self, devices: list[Any] | None = None) -> dict[str, Any]:
         """拉取 Registry 配置并仅在本机补充所有已发现设备的原始 UDID。"""
         payload = dict(self.backend.registry_config())
-        candidates = devices if devices is not None else list(self.wda.devices.values())
+        candidates = devices if devices is not None else list(self.ida.devices.values())
         payload["agentId"] = self.config.agent_id
         payload["deviceUdids"] = [device.udid for device in candidates]
         return self.registry.apply(RegistryConfig.from_payload(payload))

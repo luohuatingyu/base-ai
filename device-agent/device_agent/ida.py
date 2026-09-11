@@ -13,16 +13,16 @@ from urllib.parse import urlsplit
 from .device_detect import DeviceCandidate
 
 
-class WdaError(RuntimeError):
-    """表示 WDA 配置、目标设备或 Appium 协议失败。"""
+class IdaError(RuntimeError):
+    """表示 IDA 配置、目标设备或 Appium 协议失败。"""
 
 
 @dataclass(frozen=True, slots=True)
-class WdaConfig:
-    """后端下发的通用 WDA 配置。"""
+class IdaConfig:
+    """后端下发的通用 IDA 配置。"""
 
     launch_mode: str
-    wda_url: str | None
+    ida_url: str | None
     appium_url: str
     base_port: int
     xcode_org_id: str | None
@@ -34,34 +34,34 @@ class WdaConfig:
     wireless_source_max_attempts: int
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> "WdaConfig":
+    def from_payload(cls, payload: dict[str, Any]) -> "IdaConfig":
         """严格解析配置，禁止把非回环服务地址传给自动化客户端。"""
         signing = payload.get("signingConfig") or {}
         launch_mode = str(payload.get("launchMode") or "XCODEBUILD").upper()
         appium_url = str(payload.get("appiumServerUrl") or "http://127.0.0.1:4723").rstrip("/")
-        wda_url = str(payload.get("wdaUrl") or "").rstrip("/") or None
+        ida_url = str(payload.get("idaUrl") or "").rstrip("/") or None
         try:
-            base_port = int(payload.get("baseWdaLocalPort") or 8100)
+            base_port = int(payload.get("baseIdaLocalPort") or 8100)
             wireless_interval = int(payload.get("wirelessSourcePollIntervalSeconds") or 10)
             wireless_attempts = int(payload.get("wirelessSourceMaxAttempts") or 12)
         except (TypeError, ValueError) as exception:
-            raise WdaError("WDA_CONFIG_INVALID") from exception
+            raise IdaError("IDA_CONFIG_INVALID") from exception
         operation_speed = str(payload.get("operationSpeed") or "STANDARD").upper()
         if launch_mode not in {"XCODEBUILD", "PREINSTALLED", "URL"}:
-            raise WdaError("WDA_CONFIG_INVALID")
+            raise IdaError("IDA_CONFIG_INVALID")
         if (not _loopback_http(appium_url) or not 1024 <= base_port <= 65535
                 or operation_speed not in OPERATION_SPEED_PROFILES):
-            raise WdaError("WDA_CONFIG_INVALID")
+            raise IdaError("IDA_CONFIG_INVALID")
         expected = OPERATION_SPEED_PROFILES[operation_speed]
         if (wireless_interval, wireless_attempts) != (
                 expected.wireless_poll_interval_seconds, expected.wireless_max_attempts):
-            raise WdaError("WDA_CONFIG_INVALID")
-        if launch_mode == "URL" and (wda_url is None or not _loopback_http(wda_url)):
-            raise WdaError("WDA_CONFIG_INVALID")
+            raise IdaError("IDA_CONFIG_INVALID")
+        if launch_mode == "URL" and (ida_url is None or not _loopback_http(ida_url)):
+            raise IdaError("IDA_CONFIG_INVALID")
         return cls(
-            launch_mode, wda_url, appium_url, base_port,
+            launch_mode, ida_url, appium_url, base_port,
             _optional(signing.get("xcodeOrgId")), _optional(signing.get("xcodeSigningId")),
-            _optional(signing.get("updatedWdaBundleId")),
+            _optional(signing.get("updatedIdaBundleId")),
             bool(signing.get("allowProvisioningDeviceRegistration", False)),
             operation_speed, wireless_interval, wireless_attempts,
         )
@@ -85,7 +85,7 @@ OPERATION_SPEED_PROFILES = {
 }
 
 
-class WdaRuntime:
+class IdaRuntime:
     """维护匿名设备到本机候选、期望端口和 Appium 会话的映射。"""
 
     def __init__(self, opener: Callable[..., Any] = urllib.request.urlopen) -> None:
@@ -100,8 +100,8 @@ class WdaRuntime:
         self.devices = {device.device_id(agent_id): device for device in devices}
         for device_id in self.devices:
             self.states.setdefault(device_id, {
-                "wdaStatus": "UNKNOWN", "wdaRunning": False,
-                "wdaLocalPort": self.ports.get(device_id), "wdaPortErrorCode": None,
+                "idaStatus": "UNKNOWN", "idaRunning": False,
+                "idaLocalPort": self.ports.get(device_id), "idaPortErrorCode": None,
                 "lastErrorCode": None,
             })
         for device_id in list(self.states):
@@ -118,7 +118,7 @@ class WdaRuntime:
                 continue
             device_id = str(item.get("deviceId") or "").lower()
             try:
-                port = int(item.get("wdaLocalPort"))
+                port = int(item.get("idaLocalPort"))
             except (TypeError, ValueError):
                 continue
             if device_id in self.devices and 1024 <= port <= 65535:
@@ -127,41 +127,41 @@ class WdaRuntime:
         for device_id, port in desired.items():
             state = self.states[device_id]
             if port in used:
-                state.update({"wdaStatus": "ERROR", "wdaRunning": False,
-                              "wdaPortErrorCode": "WDA_PORT_COLLISION"})
+                state.update({"idaStatus": "ERROR", "idaRunning": False,
+                              "idaPortErrorCode": "IDA_PORT_COLLISION"})
                 continue
             used.add(port)
             if self.ports.get(device_id) != port:
                 self.close(device_id)
             self.ports[device_id] = port
-            state["wdaLocalPort"] = port
-            state["wdaPortErrorCode"] = None
+            state["idaLocalPort"] = port
+            state["idaPortErrorCode"] = None
 
     def report(self, device_id: str) -> dict[str, object]:
-        """返回单设备可安全上报的 WDA 状态。"""
+        """返回单设备可安全上报的 IDA 状态。"""
         return dict(self.states.get(device_id, {}))
 
-    def setup(self, device_id: str, config: WdaConfig) -> str:
-        """建立一次受控 Appium 会话，以完成 WDA 构建、签名和安装验证。"""
+    def setup(self, device_id: str, config: IdaConfig) -> str:
+        """建立一次受控 Appium 会话，以完成 IDA 构建、签名和安装验证。"""
         candidate, port = self._target(device_id)
         self.close(device_id)
         session_id = self._create_session(candidate, port, config, setup=True)
         self._delete_session(config.appium_url, session_id)
         self.states[device_id].update({
-            "wdaStatus": "READY", "wdaRunning": False,
-            "wdaPortErrorCode": None, "lastErrorCode": None,
+            "idaStatus": "READY", "idaRunning": False,
+            "idaPortErrorCode": None, "lastErrorCode": None,
         })
         return "IDA 已完成构建、签名、安装和连接验证"
 
-    def start(self, device_id: str, config: WdaConfig) -> str:
-        """启动或复用预装 WDA，并保留 Appium 会话维持运行。"""
+    def start(self, device_id: str, config: IdaConfig) -> str:
+        """启动或复用预装 IDA，并保留 Appium 会话维持运行。"""
         candidate, port = self._target(device_id)
         self.close(device_id)
         session_id = self._create_session(candidate, port, config, setup=False)
         self.sessions[device_id] = (config.appium_url, session_id)
         self.states[device_id].update({
-            "wdaStatus": "READY", "wdaRunning": True,
-            "wdaPortErrorCode": None, "lastErrorCode": None,
+            "idaStatus": "READY", "idaRunning": True,
+            "idaPortErrorCode": None, "lastErrorCode": None,
         })
         return "IDA 已启动并通过 Appium 会话验证"
 
@@ -169,7 +169,7 @@ class WdaRuntime:
         """记录单设备稳定错误码，避免泄漏 Appium 或 Xcode 原始输出。"""
         if device_id in self.states:
             self.states[device_id].update({
-                "wdaStatus": "ERROR", "wdaRunning": False,
+                "idaStatus": "ERROR", "idaRunning": False,
                 "lastErrorCode": code[:64],
             })
 
@@ -179,10 +179,10 @@ class WdaRuntime:
         if session is not None:
             try:
                 self._delete_session(*session)
-            except WdaError:
+            except IdaError:
                 pass
         if device_id in self.states:
-            self.states[device_id]["wdaRunning"] = False
+            self.states[device_id]["idaRunning"] = False
 
     def close_all(self) -> None:
         """进程退出前关闭全部受管会话。"""
@@ -194,40 +194,40 @@ class WdaRuntime:
         candidate = self.devices.get(str(device_id or "").lower())
         port = self.ports.get(str(device_id or "").lower())
         if candidate is None:
-            raise WdaError("DEVICE_NOT_FOUND")
+            raise IdaError("DEVICE_NOT_FOUND")
         if not candidate.connected:
-            raise WdaError("DEVICE_OFFLINE")
+            raise IdaError("DEVICE_OFFLINE")
         if port is None:
-            raise WdaError("WDA_PORT_NOT_ASSIGNED")
+            raise IdaError("IDA_PORT_NOT_ASSIGNED")
         return candidate, port
 
     def _create_session(self, candidate: DeviceCandidate, port: int,
-                        config: WdaConfig, setup: bool) -> str:
-        """使用 W3C 能力创建只控制 WDA 本身的 XCUITest 会话。"""
+                        config: IdaConfig, setup: bool) -> str:
+        """使用 W3C 能力创建只控制 IDA 本身的 XCUITest 会话。"""
         capabilities: dict[str, object] = {
             "platformName": "iOS", "appium:automationName": "XCUITest",
             "appium:udid": candidate.udid, "appium:deviceName": candidate.name,
-            "appium:platformVersion": candidate.os_version, "appium:wdaLocalPort": port,
+            "appium:platformVersion": candidate.os_version, "appium:idaLocalPort": port,
             "appium:autoLaunch": False, "appium:newCommandTimeout": 3600,
             "appium:showXcodeLog": False,
             "appium:maxTypingFrequency":
                 OPERATION_SPEED_PROFILES[config.operation_speed].typing_frequency,
         }
         if config.launch_mode == "URL":
-            capabilities["appium:webDriverAgentUrl"] = config.wda_url
+            capabilities["appium:webDriverAgentUrl"] = config.ida_url
         elif setup and config.launch_mode == "XCODEBUILD":
             capabilities.update(_signing_capabilities(config))
-            capabilities["appium:useNewWDA"] = True
+            capabilities["appium:useNewIDA"] = True
         else:
-            capabilities["appium:usePreinstalledWDA"] = True
+            capabilities["appium:usePreinstalledIDA"] = True
             if config.bundle_id:
-                capabilities["appium:updatedWDABundleId"] = config.bundle_id
+                capabilities["appium:updatedIDABundleId"] = config.bundle_id
         response = self._json_request(config.appium_url + "/session", "POST", {
             "capabilities": {"alwaysMatch": capabilities, "firstMatch": [{}]},
         }, timeout=720 if setup else 180)
         session_id = response.get("sessionId") or (response.get("value") or {}).get("sessionId")
         if not isinstance(session_id, str) or not session_id:
-            raise WdaError("APPIUM_SESSION_INVALID")
+            raise IdaError("APPIUM_SESSION_INVALID")
         return session_id
 
     def _delete_session(self, appium_url: str, session_id: str) -> None:
@@ -245,12 +245,12 @@ class WdaRuntime:
                 raw = response.read()
                 result = {} if not raw else json.loads(raw)
         except (OSError, TimeoutError, ValueError, urllib.error.URLError) as exception:
-            raise WdaError("APPIUM_UNAVAILABLE") from exception
+            raise IdaError("APPIUM_UNAVAILABLE") from exception
         if not isinstance(result, dict):
-            raise WdaError("APPIUM_RESPONSE_INVALID")
+            raise IdaError("APPIUM_RESPONSE_INVALID")
         value = result.get("value")
         if isinstance(value, dict) and value.get("error"):
-            raise WdaError("WDA_OPERATION_FAILED")
+            raise IdaError("IDA_OPERATION_FAILED")
         return result
 
 
@@ -266,14 +266,14 @@ def xcuitest_driver_version(runner: Callable[..., Any] = subprocess.run) -> str 
         return None
 
 
-def _signing_capabilities(config: WdaConfig) -> dict[str, object]:
+def _signing_capabilities(config: IdaConfig) -> dict[str, object]:
     """生成 Appium 官方 XCUITest 签名能力。"""
     values: dict[str, object] = {}
     if config.xcode_org_id and config.xcode_signing_id:
         values["appium:xcodeOrgId"] = config.xcode_org_id
         values["appium:xcodeSigningId"] = config.xcode_signing_id
     if config.bundle_id:
-        values["appium:updatedWDABundleId"] = config.bundle_id
+        values["appium:updatedIDABundleId"] = config.bundle_id
     if config.allow_registration:
         values["appium:allowProvisioningDeviceRegistration"] = True
     return values

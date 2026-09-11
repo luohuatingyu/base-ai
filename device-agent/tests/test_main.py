@@ -13,7 +13,7 @@ from device_agent import device_detect
 from device_agent import main as module
 from device_agent.device_detect import DeviceCandidate
 from device_agent.main import AgentRuntime
-from device_agent.wda import WdaError, WdaRuntime
+from device_agent.ida import IdaError, IdaRuntime
 
 
 def test_health_reports_active_release_version(monkeypatch) -> None:
@@ -43,7 +43,7 @@ def test_successful_upgrade_stops_loop_after_reporting(monkeypatch) -> None:
     runtime = AgentRuntime.__new__(AgentRuntime)
     runtime.running = True
     runtime.backend = SimpleNamespace(report_command=lambda *values: reports.append(values))
-    runtime.wda = SimpleNamespace(fail=lambda *_values: None)
+    runtime.ida = SimpleNamespace(fail=lambda *_values: None)
     monkeypatch.setattr(runtime, "_dispatch", lambda _command, _params, _target: "upgraded")
 
     runtime.execute({
@@ -63,7 +63,7 @@ def test_failed_upgrade_keeps_current_process_running(monkeypatch) -> None:
     runtime = AgentRuntime.__new__(AgentRuntime)
     runtime.running = True
     runtime.backend = SimpleNamespace(report_command=lambda *values: reports.append(values))
-    runtime.wda = SimpleNamespace(fail=lambda *_values: None)
+    runtime.ida = SimpleNamespace(fail=lambda *_values: None)
 
     def fail(_command, _params, _target):
         raise RuntimeError("UPGRADE_INSTALL_FAILED")
@@ -80,13 +80,13 @@ def test_failed_upgrade_keeps_current_process_running(monkeypatch) -> None:
     assert runtime.running is True
 
 
-def test_setup_wda_prechecks_signing_configuration() -> None:
+def test_setup_ida_prechecks_signing_configuration() -> None:
     """XCODEBUILD 模式缺签名时必须在发起 Appium 会话前回稳定错误码。"""
     runtime = AgentRuntime.__new__(AgentRuntime)
-    runtime.backend = SimpleNamespace(wda_config=lambda: {"launchMode": "XCODEBUILD"})
+    runtime.backend = SimpleNamespace(ida_config=lambda: {"launchMode": "XCODEBUILD"})
 
-    with pytest.raises(WdaError, match="SIGNING_IDENTITY_MISSING"):
-        runtime._dispatch("SETUP_WDA", {}, "device")
+    with pytest.raises(IdaError, match="SIGNING_IDENTITY_MISSING"):
+        runtime._dispatch("SETUP_IDA", {}, "device")
 
 
 @pytest.mark.parametrize(("connected_states", "expected_udids"), [
@@ -145,13 +145,13 @@ def test_usb_online_inventory_reaches_backend_without_marking_ida_ready(
     def synchronize(devices):
         """捕获实际后端报告并返回目标设备端口分配。"""
         inventories.append(devices)
-        return {"devices": [{"deviceId": device_id, "wdaLocalPort": 8100}]}
+        return {"devices": [{"deviceId": device_id, "idaLocalPort": 8100}]}
 
     monkeypatch.setattr(device_detect, "_connected_usb_udids", lambda: {udid})
     monkeypatch.setattr(module, "detect_devices", lambda: device_detect.detect_devices(run))
     runtime = AgentRuntime.__new__(AgentRuntime)
     runtime.config = SimpleNamespace(agent_id=agent_id)
-    runtime.wda = WdaRuntime()
+    runtime.ida = IdaRuntime()
     runtime.backend = SimpleNamespace(
         synchronize_devices=synchronize,
         registry_config=lambda: {
@@ -175,9 +175,9 @@ def test_usb_online_inventory_reaches_backend_without_marking_ida_ready(
     assert report["connected"] is True
     assert report["connectionType"] == "USB"
     assert report["status"] == "AVAILABLE"
-    assert report["wdaStatus"] == "UNKNOWN"
-    assert report["wdaRunning"] is False
+    assert report["idaStatus"] == "UNKNOWN"
+    assert report["idaRunning"] is False
     assert udid not in json.dumps(inventories)
-    assert runtime.wda.ports == {device_id: 8100}
-    assert runtime.wda.sessions == {}
+    assert runtime.ida.ports == {device_id: 8100}
+    assert runtime.ida.sessions == {}
     assert registry_reports == [{"state": "OFFLINE"}]

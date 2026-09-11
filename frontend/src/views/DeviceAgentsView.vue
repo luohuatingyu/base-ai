@@ -260,8 +260,8 @@
                   <el-button link type="primary" @click="handleDevicePool(row)">
                     {{ $t('deviceAgents.devicePool.title') }}
                   </el-button>
-                  <el-button link type="primary" @click="handleConfigWda(row)">
-                    {{ $t('deviceAgents.configWda') }}
+                  <el-button link type="primary" @click="handleConfigIda(row)">
+                    {{ $t('deviceAgents.configIda') }}
                   </el-button>
                   <el-button
                     v-if="can('update') && row.pairingStatus === 'PAIRED' && !row.revokedAt"
@@ -399,7 +399,7 @@
         <el-form-item v-if="pairingMode === 'create'" :label="$t('deviceAgents.selectFeatures')">
           <el-checkbox-group v-model="pairingForm.features">
             <el-checkbox :label="PAIRING_FEATURES.diagnostics">{{ $t('deviceAgents.diagnostics') }}</el-checkbox>
-            <el-checkbox :label="PAIRING_FEATURES.appiumWda">IDA</el-checkbox>
+            <el-checkbox :label="PAIRING_FEATURES.appiumIda">IDA</el-checkbox>
             <el-checkbox :label="PAIRING_FEATURES.autostart">{{ $t('deviceAgents.autostart') }}</el-checkbox>
           </el-checkbox-group>
         </el-form-item>
@@ -762,24 +762,24 @@
           </template>
         </el-table-column>
         <el-table-column label="IDA" width="110">
-          <template #default="{ row }"><el-tag :type="deviceReadinessType(row.wdaStatus)">{{ row.wdaStatus }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="deviceReadinessType(row.idaStatus)">{{ row.idaStatus }}</el-tag></template>
         </el-table-column>
-        <el-table-column :label="$t('deviceAgents.devicePool.wdaControl')" width="120">
+        <el-table-column :label="$t('deviceAgents.devicePool.idaControl')" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.wdaRunning ? 'success' : 'info'">
-              {{ $t(`deviceAgents.devicePool.wdaControlStates.${row.wdaRunning ? 'running' : 'stopped'}`) }}
+            <el-tag :type="row.idaRunning ? 'success' : 'info'">
+              {{ $t(`deviceAgents.devicePool.idaControlStates.${row.idaRunning ? 'running' : 'stopped'}`) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="$t('deviceAgents.devicePool.wdaPort')" width="185">
+        <el-table-column :label="$t('deviceAgents.devicePool.idaPort')" width="185">
           <template #default="{ row }">
-            <div>{{ $t('deviceAgents.devicePool.wdaPortConfigured') }}: {{ row.wdaLocalPort || '-' }}</div>
-            <div>{{ $t('deviceAgents.devicePool.wdaPortObserved') }}: {{ row.observedWdaLocalPort || '-' }}</div>
-            <el-tag size="small" :type="deviceWdaPortStateType(row)">
-              {{ deviceWdaPortStateLabel(row) }}
+            <div>{{ $t('deviceAgents.devicePool.idaPortConfigured') }}: {{ row.idaLocalPort || '-' }}</div>
+            <div>{{ $t('deviceAgents.devicePool.idaPortObserved') }}: {{ row.observedIdaLocalPort || '-' }}</div>
+            <el-tag size="small" :type="deviceIdaPortStateType(row)">
+              {{ deviceIdaPortStateLabel(row) }}
             </el-tag>
-            <div v-if="row.wdaPortErrorCode" class="form-hint">
-              {{ deviceWdaPortError(row) }}
+            <div v-if="row.idaPortErrorCode" class="form-hint">
+              {{ deviceIdaPortError(row) }}
             </div>
           </template>
         </el-table-column>
@@ -788,20 +788,20 @@
         </el-table-column>
         <el-table-column :label="$t('common.actions')" width="285" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="can('update')" link type="primary" @click="openDeviceWdaPortDialog(row)">
-              {{ $t('deviceAgents.devicePool.wdaPortEdit') }}
+            <el-button v-if="can('update')" link type="primary" @click="openDeviceIdaPortDialog(row)">
+              {{ $t('deviceAgents.devicePool.idaPortEdit') }}
             </el-button>
-            <el-button v-if="can('execute') && row.wdaStatus === 'READY'" link type="success"
+            <el-button v-if="can('execute') && row.idaStatus === 'READY'" link type="success"
                        :disabled="deviceConnectionState(row) !== 'ONLINE' || row.status === 'BUSY'
-                         || Boolean(setupWdaDeviceId || startWdaDeviceId)"
-                       :loading="startWdaDeviceId === row.deviceId" @click="startDeviceWda(row)">
-              {{ $t('deviceAgents.devicePool.startWda') }}
+                         || Boolean(setupIdaDeviceId || startIdaDeviceId)"
+                       :loading="startIdaDeviceId === row.deviceId" @click="startDeviceIda(row)">
+              {{ $t('deviceAgents.devicePool.startIda') }}
             </el-button>
             <el-button v-if="can('execute')" link type="primary"
                        :disabled="deviceConnectionState(row) !== 'ONLINE' || row.status === 'BUSY'
-                         || Boolean(setupWdaDeviceId || startWdaDeviceId)"
-                       :loading="setupWdaDeviceId === row.deviceId" @click="setupDeviceWda(row)">
-              {{ $t('deviceAgents.devicePool.setupWda') }}
+                         || Boolean(setupIdaDeviceId || startIdaDeviceId)"
+                       :loading="setupIdaDeviceId === row.deviceId" @click="setupDeviceIda(row)">
+              {{ $t('deviceAgents.devicePool.setupIda') }}
             </el-button>
           </template>
         </el-table-column>
@@ -816,51 +816,51 @@
       </template>
     </el-dialog>
 
-    <!-- 每台物理设备独立保存 WDA 本地端口；实际值由 Agent 同步确认。 -->
+    <!-- 每台物理设备独立保存 IDA 本地端口；实际值由 Agent 同步确认。 -->
     <el-dialog
-      v-model="deviceWdaPortDialogVisible"
-      :title="$t('deviceAgents.devicePool.wdaPortDialogTitle', { device: deviceWdaPortForm.deviceLabel })"
+      v-model="deviceIdaPortDialogVisible"
+      :title="$t('deviceAgents.devicePool.idaPortDialogTitle', { device: deviceIdaPortForm.deviceLabel })"
       width="520px"
     >
-      <el-form :model="deviceWdaPortForm" label-width="150px">
-        <el-form-item :label="$t('deviceAgents.devicePool.wdaPort')">
+      <el-form :model="deviceIdaPortForm" label-width="150px">
+        <el-form-item :label="$t('deviceAgents.devicePool.idaPort')">
           <el-input-number
-            v-model="deviceWdaPortForm.wdaLocalPort"
+            v-model="deviceIdaPortForm.idaLocalPort"
             :min="1024"
             :max="65535"
             :step="1"
             style="width: 100%"
           />
-          <div class="form-hint">{{ $t('deviceAgents.devicePool.wdaPortHint') }}</div>
+          <div class="form-hint">{{ $t('deviceAgents.devicePool.idaPortHint') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="deviceWdaPortDialogVisible = false">{{ $t('common.cancel') }}</el-button>
-        <el-button v-if="can('update')" type="primary" :loading="deviceWdaPortSaving" @click="saveDeviceWdaPort">
+        <el-button @click="deviceIdaPortDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button v-if="can('update')" type="primary" :loading="deviceIdaPortSaving" @click="saveDeviceIdaPort">
           {{ $t('common.save') }}
         </el-button>
       </template>
     </el-dialog>
 
-    <!-- WDA 主机级签名与 Appium 基础配置对话框 -->
+    <!-- IDA 主机级签名与 Appium 基础配置对话框 -->
     <el-dialog
-      v-model="wdaConfigDialogVisible"
-      :title="$t('deviceAgents.wdaConfig')"
+      v-model="idaConfigDialogVisible"
+      :title="$t('deviceAgents.idaConfig')"
       width="700px"
     >
-      <el-form :model="wdaConfigForm" label-width="180px" v-loading="wdaConfigLoading">
+      <el-form :model="idaConfigForm" label-width="180px" v-loading="idaConfigLoading">
         <!-- 离线时给出真实原因与可执行动作，而不是笼统的「请确认进程在运行」 -->
         <el-alert
-          v-if="!wdaConfigAgentOnline"
-          :type="isAuthRejected(wdaConfigAgent) ? 'error' : 'warning'"
+          v-if="!idaConfigAgentOnline"
+          :type="isAuthRejected(idaConfigAgent) ? 'error' : 'warning'"
           :closable="false"
           show-icon
         >
           <template #title>{{ $t('deviceAgents.detectAgentOffline') }}</template>
-          <div>{{ offlineReason(wdaConfigAgent) }}</div>
-          <div class="code-hint">{{ offlineAdvice(wdaConfigAgent) }}</div>
+          <div>{{ offlineReason(idaConfigAgent) }}</div>
+          <div class="code-hint">{{ offlineAdvice(idaConfigAgent) }}</div>
           <div class="table-actions">
-            <el-button link type="primary" @click="handleReissueFromWdaDialog">
+            <el-button link type="primary" @click="handleReissueFromIdaDialog">
               {{ $t('deviceAgents.reissuePairing') }}
             </el-button>
             <el-button link type="primary" @click="copyDiagnoseCommand">
@@ -869,7 +869,7 @@
           </div>
         </el-alert>
 
-        <el-divider content-position="left">{{ $t('deviceAgents.wdaSigningConfig') }}</el-divider>
+        <el-divider content-position="left">{{ $t('deviceAgents.idaSigningConfig') }}</el-divider>
 
         <el-form-item :label="$t('deviceAgents.detectSigning')">
           <el-button v-if="can('execute')" :loading="signingDetectLoading" @click="detectSigningIdentity">
@@ -890,38 +890,38 @@
         </el-form-item>
 
         <el-form-item :label="$t('deviceAgents.xcodeOrgId')">
-          <el-input v-model="wdaConfigForm.xcodeOrgId" placeholder="5JLK47WS57" />
+          <el-input v-model="idaConfigForm.xcodeOrgId" placeholder="5JLK47WS57" />
           <div class="form-hint">{{ $t('deviceAgents.xcodeOrgIdHint') }}</div>
         </el-form-item>
 
         <el-form-item :label="$t('deviceAgents.signingIdentity')">
-          <el-input v-model="wdaConfigForm.xcodeSigningId" placeholder="Apple Development" />
+          <el-input v-model="idaConfigForm.xcodeSigningId" placeholder="Apple Development" />
           <div class="form-hint">{{ $t('deviceAgents.signingIdentityHint') }}</div>
         </el-form-item>
 
         <el-form-item :label="$t('deviceAgents.allowDeviceRegistration')">
-          <el-switch v-model="wdaConfigForm.allowProvisioningDeviceRegistration" />
+          <el-switch v-model="idaConfigForm.allowProvisioningDeviceRegistration" />
           <div class="form-hint">{{ $t('deviceAgents.allowDeviceRegistrationHint') }}</div>
         </el-form-item>
 
         <el-form-item :label="$t('deviceAgents.updatedBundleId')">
-          <el-input v-model="wdaConfigForm.updatedWdaBundleId" placeholder="com.company.wda" />
+          <el-input v-model="idaConfigForm.updatedIdaBundleId" placeholder="com.company.ida" />
         </el-form-item>
 
         <el-divider content-position="left">{{ $t('deviceAgents.appiumConfig') }}</el-divider>
 
         <el-form-item :label="$t('deviceAgents.appiumServerUrl')">
-          <el-input v-model="wdaConfigForm.appiumServerUrl" placeholder="http://localhost:4723" />
+          <el-input v-model="idaConfigForm.appiumServerUrl" placeholder="http://localhost:4723" />
         </el-form-item>
 
-        <el-form-item :label="$t('deviceAgents.appiumWdaLocalPort')">
-          <el-input-number v-model="wdaConfigForm.baseWdaLocalPort" :min="1024" :max="65535" />
+        <el-form-item :label="$t('deviceAgents.appiumIdaLocalPort')">
+          <el-input-number v-model="idaConfigForm.baseIdaLocalPort" :min="1024" :max="65535" />
         </el-form-item>
       </el-form>
 
       <template #footer>
-        <el-button @click="wdaConfigDialogVisible = false">{{ $t('common.cancel') }}</el-button>
-        <el-button v-if="can('update')" type="primary" @click="saveWdaConfig">{{ $t('common.save') }}</el-button>
+        <el-button @click="idaConfigDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button v-if="can('update')" type="primary" @click="saveIdaConfig">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -1021,7 +1021,7 @@
         </el-form-item>
 
         <el-form-item label="IDA">
-          <el-switch v-model="featuresForm.appiumWda" />
+          <el-switch v-model="featuresForm.appiumIda" />
         </el-form-item>
 
         <el-form-item :label="$t('deviceAgents.autostart')">
@@ -1315,11 +1315,11 @@ const handleTabChange = (name) => {
 // 配对码功能名必须与后端 DeviceAgentModels.VALID_FEATURES 完全一致，否则创建配对码会被后端拒绝
 const PAIRING_FEATURES = {
   diagnostics: 'READ_ONLY_DIAGNOSTICS',
-  appiumWda: 'APPIUM_WDA_AUTOMATION',
+  appiumIda: 'APPIUM_IDA_AUTOMATION',
   autostart: 'AUTOSTART'
 }
-// 新建配对码时默认申请只读诊断和 WDA 自动化两项基础功能
-const DEFAULT_PAIRING_FEATURES = [PAIRING_FEATURES.diagnostics, PAIRING_FEATURES.appiumWda]
+// 新建配对码时默认申请只读诊断和 IDA 自动化两项基础功能
+const DEFAULT_PAIRING_FEATURES = [PAIRING_FEATURES.diagnostics, PAIRING_FEATURES.appiumIda]
 
 // 配对码对话框
 const pairingDialogVisible = ref(false)
@@ -1403,21 +1403,21 @@ const devicePoolDevices = ref([])
 const devicePoolDetecting = ref(false)
 const devicePoolDetectionState = ref('IDLE')
 const devicePoolDetectionError = ref('')
-const setupWdaDeviceId = ref('')
-const startWdaDeviceId = ref('')
-const deviceWdaPortDialogVisible = ref(false)
-const deviceWdaPortSaving = ref(false)
-const deviceWdaPortForm = reactive({
+const setupIdaDeviceId = ref('')
+const startIdaDeviceId = ref('')
+const deviceIdaPortDialogVisible = ref(false)
+const deviceIdaPortSaving = ref(false)
+const deviceIdaPortForm = reactive({
   deviceId: '',
   deviceLabel: '',
-  wdaLocalPort: 8100
+  idaLocalPort: 8100
 })
 const DEVICE_POOL_DETECT_POLL_INTERVAL_MS = 2000
 const DEVICE_POOL_DETECT_TIMEOUT_MS = 120000
-const SETUP_WDA_POLL_INTERVAL_MS = 5000
-const SETUP_WDA_POLL_TIMEOUT_MS = 1200000
-const START_WDA_POLL_INTERVAL_MS = 2000
-const START_WDA_POLL_TIMEOUT_MS = 180000
+const SETUP_IDA_POLL_INTERVAL_MS = 5000
+const SETUP_IDA_POLL_TIMEOUT_MS = 1200000
+const START_IDA_POLL_INTERVAL_MS = 2000
+const START_IDA_POLL_TIMEOUT_MS = 180000
 let devicePoolDetectionGeneration = 0
 
 /** 展示设备名称与型号；没有名称时仍能靠匿名 ID 前缀区分。 */
@@ -1432,67 +1432,67 @@ const deviceReadinessType = (status) => status === 'READY' ? 'success'
   : status === 'MISSING' || status === 'ERROR' ? 'danger' : 'info'
 
 /** 根据配置值、Agent 实际值和错误码区分已生效、待生效与失败。 */
-const deviceWdaPortState = (device) => {
-  if (device.wdaPortErrorCode) return 'failed'
-  if (!Number.isInteger(device.wdaLocalPort) || !Number.isInteger(device.observedWdaLocalPort)) {
+const deviceIdaPortState = (device) => {
+  if (device.idaPortErrorCode) return 'failed'
+  if (!Number.isInteger(device.idaLocalPort) || !Number.isInteger(device.observedIdaLocalPort)) {
     return 'pending'
   }
-  return device.wdaLocalPort === device.observedWdaLocalPort ? 'applied' : 'pending'
+  return device.idaLocalPort === device.observedIdaLocalPort ? 'applied' : 'pending'
 }
 
 /** 为设备端口应用状态选择稳定颜色。 */
-const deviceWdaPortStateType = (device) => {
-  const state = deviceWdaPortState(device)
+const deviceIdaPortStateType = (device) => {
+  const state = deviceIdaPortState(device)
   return state === 'applied' ? 'success' : state === 'failed' ? 'danger' : 'warning'
 }
 
 /** 返回设备端口状态的本地化文案。 */
-const deviceWdaPortStateLabel = (device) => {
+const deviceIdaPortStateLabel = (device) => {
   const keys = {
-    applied: 'deviceAgents.devicePool.wdaPortApplied',
-    pending: 'deviceAgents.devicePool.wdaPortPending',
-    failed: 'deviceAgents.devicePool.wdaPortFailed'
+    applied: 'deviceAgents.devicePool.idaPortApplied',
+    pending: 'deviceAgents.devicePool.idaPortPending',
+    failed: 'deviceAgents.devicePool.idaPortFailed'
   }
-  return t(keys[deviceWdaPortState(device)])
+  return t(keys[deviceIdaPortState(device)])
 }
 
 /** 把 Agent 上报的稳定错误码翻译成页面可执行的排障提示。 */
-const deviceWdaPortError = (device) => {
+const deviceIdaPortError = (device) => {
   const keys = {
-    WDA_PORT_CONFLICT: 'deviceAgents.devicePool.wdaPortConflict',
-    WDA_PORT_IN_USE: 'deviceAgents.devicePool.wdaPortInUse',
-    WDA_PORT_CONFIG_INVALID: 'deviceAgents.devicePool.wdaPortConfigInvalid'
+    IDA_PORT_CONFLICT: 'deviceAgents.devicePool.idaPortConflict',
+    IDA_PORT_IN_USE: 'deviceAgents.devicePool.idaPortInUse',
+    IDA_PORT_CONFIG_INVALID: 'deviceAgents.devicePool.idaPortConfigInvalid'
   }
-  return keys[device.wdaPortErrorCode] ? t(keys[device.wdaPortErrorCode]) : device.wdaPortErrorCode
+  return keys[device.idaPortErrorCode] ? t(keys[device.idaPortErrorCode]) : device.idaPortErrorCode
 }
 
-/** 打开设备端口编辑框；旧 Agent 未上报时沿用主机级 WDA 基准端口。 */
-const openDeviceWdaPortDialog = (device) => {
-  deviceWdaPortForm.deviceId = device.deviceId
-  deviceWdaPortForm.deviceLabel = devicePoolLabel(device)
-  deviceWdaPortForm.wdaLocalPort = device.wdaLocalPort || device.observedWdaLocalPort || 8100
-  deviceWdaPortDialogVisible.value = true
+/** 打开设备端口编辑框；旧 Agent 未上报时沿用主机级 IDA 基准端口。 */
+const openDeviceIdaPortDialog = (device) => {
+  deviceIdaPortForm.deviceId = device.deviceId
+  deviceIdaPortForm.deviceLabel = devicePoolLabel(device)
+  deviceIdaPortForm.idaLocalPort = device.idaLocalPort || device.observedIdaLocalPort || 8100
+  deviceIdaPortDialogVisible.value = true
 }
 
 /** 保存设备级端口并刷新配置值，实际值等待 Agent 下一轮安全应用后更新。 */
-const saveDeviceWdaPort = async () => {
-  const port = Number(deviceWdaPortForm.wdaLocalPort)
+const saveDeviceIdaPort = async () => {
+  const port = Number(deviceIdaPortForm.idaLocalPort)
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-    ElMessage.warning(t('deviceAgents.devicePool.wdaPortInvalid'))
+    ElMessage.warning(t('deviceAgents.devicePool.idaPortInvalid'))
     return
   }
-  deviceWdaPortSaving.value = true
+  deviceIdaPortSaving.value = true
   try {
-    await http.put(`/automation/device-agents/${devicePoolAgentId.value}/devices/${deviceWdaPortForm.deviceId}/wda-port`, {
-      wdaLocalPort: port
+    await http.put(`/automation/device-agents/${devicePoolAgentId.value}/devices/${deviceIdaPortForm.deviceId}/ida-port`, {
+      idaLocalPort: port
     })
-    deviceWdaPortDialogVisible.value = false
-    ElMessage.success(t('deviceAgents.devicePool.wdaPortSaved'))
+    deviceIdaPortDialogVisible.value = false
+    ElMessage.success(t('deviceAgents.devicePool.idaPortSaved'))
     await loadDevicePool()
   } catch (error) {
-    showHttpError(error, 'deviceAgents.devicePool.wdaPortSaveError')
+    showHttpError(error, 'deviceAgents.devicePool.idaPortSaveError')
   } finally {
-    deviceWdaPortSaving.value = false
+    deviceIdaPortSaving.value = false
   }
 }
 
@@ -1615,18 +1615,18 @@ const handleDevicePool = async (agent) => {
   }
 }
 
-/** 向选定物理设备下发 WDA 构建，不允许多设备场景由 Agent 猜目标。 */
-const setupDeviceWda = async (device) => {
-  setupWdaDeviceId.value = device.deviceId
+/** 向选定物理设备下发 IDA 构建，不允许多设备场景由 Agent 猜目标。 */
+const setupDeviceIda = async (device) => {
+  setupIdaDeviceId.value = device.deviceId
   try {
     const created = await http.post('/automation/device-agents/commands', {
       agentId: devicePoolAgentId.value,
       targetDeviceId: device.deviceId,
-      commandType: 'SETUP_WDA'
+      commandType: 'SETUP_IDA'
     })
-    const deadline = Date.now() + SETUP_WDA_POLL_TIMEOUT_MS
+    const deadline = Date.now() + SETUP_IDA_POLL_TIMEOUT_MS
     while (Date.now() < deadline && devicePoolDialogVisible.value) {
-      await sleep(SETUP_WDA_POLL_INTERVAL_MS)
+      await sleep(SETUP_IDA_POLL_INTERVAL_MS)
       if (!pageAlive) return
       const response = await http.get(`/automation/device-agents/commands/${created.data.id}`)
       const command = response.data
@@ -1646,22 +1646,22 @@ const setupDeviceWda = async (device) => {
   } catch (error) {
     showHttpError(error, 'deviceAgents.devicePool.setupError')
   } finally {
-    setupWdaDeviceId.value = ''
+    setupIdaDeviceId.value = ''
   }
 }
 
-/** 向已安装 WDA 的目标设备下发纯启动命令，不复用可能触发 xcodebuild 的构建入口。 */
-const startDeviceWda = async (device) => {
-  startWdaDeviceId.value = device.deviceId
+/** 向已安装 IDA 的目标设备下发纯启动命令，不复用可能触发 xcodebuild 的构建入口。 */
+const startDeviceIda = async (device) => {
+  startIdaDeviceId.value = device.deviceId
   try {
     const created = await http.post('/automation/device-agents/commands', {
       agentId: devicePoolAgentId.value,
       targetDeviceId: device.deviceId,
-      commandType: 'START_WDA'
+      commandType: 'START_IDA'
     })
-    const deadline = Date.now() + START_WDA_POLL_TIMEOUT_MS
+    const deadline = Date.now() + START_IDA_POLL_TIMEOUT_MS
     while (Date.now() < deadline && devicePoolDialogVisible.value) {
-      await sleep(START_WDA_POLL_INTERVAL_MS)
+      await sleep(START_IDA_POLL_INTERVAL_MS)
       if (!pageAlive) return
       const response = await http.get(`/automation/device-agents/commands/${created.data.id}`)
       const command = response.data
@@ -1683,37 +1683,37 @@ const startDeviceWda = async (device) => {
   } catch (error) {
     showHttpError(error, 'deviceAgents.devicePool.startError')
   } finally {
-    startWdaDeviceId.value = ''
+    startIdaDeviceId.value = ''
   }
 }
 
-// WDA 主机级配置对话框
-const wdaConfigDialogVisible = ref(false)
-const wdaConfigLoading = ref(false)
-const wdaConfigForm = reactive({
+// IDA 主机级配置对话框
+const idaConfigDialogVisible = ref(false)
+const idaConfigLoading = ref(false)
+const idaConfigForm = reactive({
   agentId: '',
   xcodeOrgId: '',
   xcodeSigningId: '',
   allowProvisioningDeviceRegistration: false,
-  updatedWdaBundleId: '',
+  updatedIdaBundleId: '',
   appiumServerUrl: 'http://localhost:4723',
-  baseWdaLocalPort: 8100,
-  // PUT 是整体替换：必须带上已保存的启动模式和 WDA 地址，
+  baseIdaLocalPort: 8100,
+  // PUT 是整体替换：必须带上已保存的启动模式和 IDA 地址，
   // 否则每次保存签名都会把 URL/PREINSTALLED 模式静默改回 XCODEBUILD
   launchMode: 'XCODEBUILD',
-  wdaUrl: ''
+  idaUrl: ''
 })
 
-// 重置 WDA 配置表单，避免上一个 Agent 的取值残留到当前对话框
-const resetWdaConfigForm = () => {
-  wdaConfigForm.xcodeOrgId = ''
-  wdaConfigForm.xcodeSigningId = ''
-  wdaConfigForm.allowProvisioningDeviceRegistration = false
-  wdaConfigForm.updatedWdaBundleId = ''
-  wdaConfigForm.appiumServerUrl = 'http://localhost:4723'
-  wdaConfigForm.baseWdaLocalPort = 8100
-  wdaConfigForm.launchMode = 'XCODEBUILD'
-  wdaConfigForm.wdaUrl = ''
+// 重置 IDA 配置表单，避免上一个 Agent 的取值残留到当前对话框
+const resetIdaConfigForm = () => {
+  idaConfigForm.xcodeOrgId = ''
+  idaConfigForm.xcodeSigningId = ''
+  idaConfigForm.allowProvisioningDeviceRegistration = false
+  idaConfigForm.updatedIdaBundleId = ''
+  idaConfigForm.appiumServerUrl = 'http://localhost:4723'
+  idaConfigForm.baseIdaLocalPort = 8100
+  idaConfigForm.launchMode = 'XCODEBUILD'
+  idaConfigForm.idaUrl = ''
   signingCandidates.value = []
   selectedSigningCandidate.value = null
 }
@@ -1729,19 +1729,19 @@ const DETECT_POLL_TIMEOUT_MS = 60000
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 // 当前配置对话框内的 Agent 是否在线，离线时检测按钮不下发命令
-const wdaConfigAgentOnline = ref(false)
+const idaConfigAgentOnline = ref(false)
 // 保留整条 Agent 记录：离线提示要展示真实原因，只有布尔在线标记不够
-const wdaConfigAgent = ref(null)
+const idaConfigAgent = ref(null)
 
 // 下发探测命令并轮询结果；命令成功返回结果摘要，失败或超时提示后返回 null
 const dispatchDetectCommand = async (commandType, failedKey, timeoutKey) => {
   // Agent 离线时立即失败：命令会一直 PENDING，等满 60 秒超时对用户毫无意义
-  if (!wdaConfigAgentOnline.value) {
+  if (!idaConfigAgentOnline.value) {
     ElMessage.warning(t('deviceAgents.detectAgentOffline'))
     return null
   }
   const created = await http.post('/automation/device-agents/commands', {
-    agentId: wdaConfigForm.agentId,
+    agentId: idaConfigForm.agentId,
     commandType
   })
   const commandId = created.data.id
@@ -1749,7 +1749,7 @@ const dispatchDetectCommand = async (commandType, failedKey, timeoutKey) => {
   while (Date.now() < deadline) {
     await sleep(DETECT_POLL_INTERVAL_MS)
     // 对话框被关闭或页面已卸载时终止轮询，避免后台继续请求
-    if (!pageAlive || !wdaConfigDialogVisible.value) return null
+    if (!pageAlive || !idaConfigDialogVisible.value) return null
     const response = await http.get(`/automation/device-agents/commands/${commandId}`)
     const command = response.data
     if (command.status === 'COMPLETED') return command.resultSummary
@@ -1778,8 +1778,8 @@ const candidateLabel = (candidate) => {
 const applySigningCandidate = (index) => {
   const candidate = signingCandidates.value[index]
   if (!candidate) return
-  wdaConfigForm.xcodeOrgId = candidate.teamId
-  wdaConfigForm.xcodeSigningId = candidate.signingIdentity
+  idaConfigForm.xcodeOrgId = candidate.teamId
+  idaConfigForm.xcodeSigningId = candidate.signingIdentity
 }
 
 const detectSigningIdentity = async () => {
@@ -1814,7 +1814,7 @@ const handleDetectResult = async (resultSummary) => {
   if (identities.length === 1) {
     selectedSigningCandidate.value = 0
     applySigningCandidate(0)
-    await saveWdaConfig()
+    await saveIdaConfig()
     return
   }
   ElMessage.info(t('deviceAgents.detectSigningSelect'))
@@ -1825,7 +1825,7 @@ const featuresDialogVisible = ref(false)
 const featuresForm = reactive({
   agentId: '',
   diagnostics: false,
-  appiumWda: false,
+  appiumIda: false,
   autostart: false
 })
 
@@ -1904,9 +1904,9 @@ const offlineAdvice = (agent) => {
 // 配置降级错误码到展示样式的映射：配置被拒是真错误，
 // 用着缓存或只剩环境变量属于可运行的降级，但都意味着页面显示的配置未必生效
 const CONFIG_STATUS_TYPES = {
-  WDA_CONFIG_REJECTED: 'danger',
-  WDA_CONFIG_NOT_DELIVERED: 'danger',
-  WDA_CONFIG_FROM_CACHE: 'warning',
+  IDA_CONFIG_REJECTED: 'danger',
+  IDA_CONFIG_NOT_DELIVERED: 'danger',
+  IDA_CONFIG_FROM_CACHE: 'warning',
 }
 
 /** 配置状态标签：只识别已知的配置类错误码，其余错误码不占用这一列。 */
@@ -2264,10 +2264,10 @@ const confirmReissue = () => {
   handleReissuePairing(candidate || { agentId: reissueAgentId.value })
 }
 
-/** WDA 配置对话框里的直达入口：离线且凭据被拒绝时，重新颁发是唯一的修复动作。 */
-const handleReissueFromWdaDialog = () => {
-  const agentId = wdaConfigForm.agentId
-  wdaConfigDialogVisible.value = false
+/** IDA 配置对话框里的直达入口：离线且凭据被拒绝时，重新颁发是唯一的修复动作。 */
+const handleReissueFromIdaDialog = () => {
+  const agentId = idaConfigForm.agentId
+  idaConfigDialogVisible.value = false
   handleReissuePairing({ agentId })
 }
 
@@ -2337,71 +2337,71 @@ const copyPairingCode = () => {
   ElMessage.success(t('common.copied'))
 }
 
-// 配置 WDA
-const handleConfigWda = async (agent) => {
-  wdaConfigForm.agentId = agent.agentId
+// 配置 IDA
+const handleConfigIda = async (agent) => {
+  idaConfigForm.agentId = agent.agentId
   // 清除上一个 Agent 的签名探测候选，避免误选到其他机器的身份。
   signingCandidates.value = []
   selectedSigningCandidate.value = null
-  wdaConfigAgent.value = agent
-  wdaConfigAgentOnline.value = isAgentOnline(agent)
-  wdaConfigLoading.value = true
-  wdaConfigDialogVisible.value = true
+  idaConfigAgent.value = agent
+  idaConfigAgentOnline.value = isAgentOnline(agent)
+  idaConfigLoading.value = true
+  idaConfigDialogVisible.value = true
 
   try {
     // 404 表示尚未配置属于正常情况，标记 silentError 避免全局拦截器先弹错误提示
-    const response = await http.get(`/automation/device-agents/${agent.agentId}/wda-config`, { silentError: true })
+    const response = await http.get(`/automation/device-agents/${agent.agentId}/ida-config`, { silentError: true })
     const config = response.data
 
     if (config.signingConfig) {
-      wdaConfigForm.xcodeOrgId = config.signingConfig.xcodeOrgId || ''
-      wdaConfigForm.xcodeSigningId = config.signingConfig.xcodeSigningId || ''
-      wdaConfigForm.allowProvisioningDeviceRegistration =
+      idaConfigForm.xcodeOrgId = config.signingConfig.xcodeOrgId || ''
+      idaConfigForm.xcodeSigningId = config.signingConfig.xcodeSigningId || ''
+      idaConfigForm.allowProvisioningDeviceRegistration =
         config.signingConfig.allowProvisioningDeviceRegistration === true
-      wdaConfigForm.updatedWdaBundleId = config.signingConfig.updatedWdaBundleId || ''
+      idaConfigForm.updatedIdaBundleId = config.signingConfig.updatedIdaBundleId || ''
     } else {
       // 已有设备配置但未配置签名参数时，签名字段必须回到默认值
-      wdaConfigForm.xcodeOrgId = ''
-      wdaConfigForm.xcodeSigningId = ''
-      wdaConfigForm.allowProvisioningDeviceRegistration = false
-      wdaConfigForm.updatedWdaBundleId = ''
+      idaConfigForm.xcodeOrgId = ''
+      idaConfigForm.xcodeSigningId = ''
+      idaConfigForm.allowProvisioningDeviceRegistration = false
+      idaConfigForm.updatedIdaBundleId = ''
     }
-    wdaConfigForm.appiumServerUrl = config.appiumServerUrl || 'http://localhost:4723'
-    wdaConfigForm.baseWdaLocalPort = config.baseWdaLocalPort || 8100
-    wdaConfigForm.launchMode = config.launchMode || 'XCODEBUILD'
-    wdaConfigForm.wdaUrl = config.wdaUrl || ''
+    idaConfigForm.appiumServerUrl = config.appiumServerUrl || 'http://localhost:4723'
+    idaConfigForm.baseIdaLocalPort = config.baseIdaLocalPort || 8100
+    idaConfigForm.launchMode = config.launchMode || 'XCODEBUILD'
+    idaConfigForm.idaUrl = config.idaUrl || ''
   } catch (error) {
     if (error.response && error.response.status === 404) {
       // 配置不存在，使用默认值
-      resetWdaConfigForm()
+      resetIdaConfigForm()
     } else {
       showHttpError(error, 'deviceAgents.loadConfigError')
     }
   } finally {
-    wdaConfigLoading.value = false
+    idaConfigLoading.value = false
   }
 
 }
 
-const saveWdaConfig = async () => {
+const saveIdaConfig = async () => {
   try {
     const payload = {
       signingConfig: {
-        xcodeOrgId: wdaConfigForm.xcodeOrgId || null,
-        xcodeSigningId: wdaConfigForm.xcodeSigningId || null,
+        xcodeOrgId: idaConfigForm.xcodeOrgId || null,
+        xcodeSigningId: idaConfigForm.xcodeSigningId || null,
         allowProvisioningDeviceRegistration:
-          wdaConfigForm.allowProvisioningDeviceRegistration,
-        updatedWdaBundleId: wdaConfigForm.updatedWdaBundleId || null
+          idaConfigForm.allowProvisioningDeviceRegistration,
+        updatedIdaBundleId: idaConfigForm.updatedIdaBundleId || null
       },
-      launchMode: wdaConfigForm.launchMode || 'XCODEBUILD',
-      wdaUrl: wdaConfigForm.wdaUrl || null,
-      appiumServerUrl: wdaConfigForm.appiumServerUrl || null,
-      baseWdaLocalPort: wdaConfigForm.baseWdaLocalPort || null
+      launchMode: idaConfigForm.launchMode || 'XCODEBUILD',
+      idaUrl: idaConfigForm.idaUrl || null,
+      appiumServerUrl: idaConfigForm.appiumServerUrl || null,
+      baseIdaLocalPort: idaConfigForm.baseIdaLocalPort || null
     }
 
-    await http.put(`/automation/device-agents/${wdaConfigForm.agentId}/wda-config`, payload)
+    await http.put(`/automation/device-agents/${idaConfigForm.agentId}/ida-config`, payload)
     ElMessage.success(t('deviceAgents.configSaved'))
-    wdaConfigDialogVisible.value = false
+    idaConfigDialogVisible.value = false
   } catch (error) {
     showHttpError(error, 'deviceAgents.configSaveError')
   }
@@ -2414,7 +2414,7 @@ const saveWdaConfig = async () => {
 const handleUpdateFeatures = (agent) => {
   featuresForm.agentId = agent.agentId
   featuresForm.diagnostics = agent.featureDiagnostics === 'ENABLED'
-  featuresForm.appiumWda = agent.featureAutomation === 'ENABLED'
+  featuresForm.appiumIda = agent.featureAutomation === 'ENABLED'
   featuresForm.autostart = agent.featureAutostart === 'ENABLED'
   featuresDialogVisible.value = true
 }
@@ -2460,7 +2460,7 @@ const updateFeatures = async () => {
   try {
     await http.put(`/automation/device-agents/${featuresForm.agentId}/features`, {
       featureDiagnostics: toFeatureStatus(featuresForm.diagnostics),
-      featureAutomation: toFeatureStatus(featuresForm.appiumWda),
+      featureAutomation: toFeatureStatus(featuresForm.appiumIda),
       featureAutostart: toFeatureStatus(featuresForm.autostart)
     })
     ElMessage.success(t('deviceAgents.featuresUpdated'))
