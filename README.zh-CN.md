@@ -322,7 +322,7 @@ Agent 只执行已定义的固定命令集：设备发现、诊断、WDA 安装/
 
 ### 数据同步与服务器管理
 
-- 数据同步使用“工作流 / 连接管理”中的 MySQL 或 PostgreSQL 连接；目标连接必须显式启用 `allowWrite`。计划可选择表并使用 UPSERT、全量替换或追加策略，支持手动执行和 Spring 六段 Cron。全量替换必须再次确认，执行前会预检字段、类型和主键。
+- 数据同步使用“数据源管理”中的 MySQL 或 PostgreSQL 连接；目标连接必须显式启用 `allowWrite`。新计划必须选择一台本人拥有且已启用的受管服务器，表查询、结构预检、手动运行、Spring 六段 Cron 和重试都会在该服务器的一次性 Backend Worker 容器中真正执行。历史计划未绑定服务器时兼容为平台本机执行。全量替换必须再次确认，执行前会预检字段、类型和主键。
 - 管理员与内置 `OPS` 角色可使用数据同步和服务器管理；普通授权用户只能管理本人创建的计划、连接和服务器。SSH 私钥、密码、口令和 Host Key 配置使用平台 AES-GCM 密钥加密保存，列表仅返回掩码。
 - 服务器在管理页面中手工新增和维护，新增记录默认使用 SSH 模式。具有服务器测试权限的用户可打开“资源监控”弹窗实时查询 CPU、系统负载、内存、磁盘、运行时长以及最多 200 个 Docker 容器的运行与健康状态；监控快照不持久化，Docker 状态不可用时仍展示已采集的主机指标。
 - 服务器部署只接受 `docker-compose.yml` 或 `compose.yml`，只执行 Compose 校验和 `up -d --no-build`，不会执行任意 Shell。发布版本必须是合法 Docker 镜像标签，因此建议使用完整 Git Commit Hash。
@@ -334,6 +334,8 @@ docker compose --profile deployment up --build -d
 ```
 
 本地模式固定使用 Agent 内的 `/workspace`；`DEPLOYMENT_PROJECT_DIR` 决定其只读挂载来源。SSH 模式需填写远端绝对目录、SSH 账号及通过 `ssh-keygen -lf -E sha256` 核验的完整 Host Key 指纹。远端主机需预先安装 Docker Compose，并预拉取发布版本对应镜像。
+
+远程数据同步同样依赖该 Agent。`DATA_SYNC_WORKER_IMAGE` 默认使用当前 Compose 项目的 Backend 镜像；每台所选服务器都必须安装 Docker、预先拥有该镜像，并能直接访问源和目标数据库。Agent 以固定 Java 入口、只读根文件系统、非 root 用户、能力移除、资源限制和 15 分钟超时启动一次性容器；数据库凭据仅通过标准输入传递，不进入命令参数、环境变量、任务结果或日志。取消任务会终止对应的固定名称容器，Backend 重启后会通过持久化 Agent Job ID 继续对账进度和终态。
 
 所有服务进入健康状态后，可访问：
 

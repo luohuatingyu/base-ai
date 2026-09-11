@@ -327,7 +327,7 @@ The Agent executes only the documented fixed command set: device discovery, diag
 
 ### Data synchronization and server management
 
-- Data synchronization uses MySQL or PostgreSQL entries from Workflow / Connections. The target connection must explicitly enable `allowWrite`. Plans select tables and support UPSERT, full replacement, or append, with manual execution and Spring six-field Cron schedules. Full replacement requires reconfirmation, and columns, types, and keys are checked before writes.
+- Data synchronization uses MySQL or PostgreSQL entries from Data Source Management. The target connection must explicitly enable `allowWrite`. New plans must select an enabled managed server owned by the plan owner. Table lookup, preflight, manual runs, Spring six-field Cron schedules, and retries all execute in a one-time Backend worker container on that server. Legacy plans without a server remain compatible by running on the platform-local target. Full replacement requires reconfirmation, and columns, types, and keys are checked before writes.
 - Administrators and the built-in `OPS` role can use synchronization and server management. Other explicitly authorized users can only manage resources they own. SSH keys, passwords, passphrases, and host-key configuration are encrypted with the platform AES-GCM key, and list responses only contain masks.
 - Servers are added and maintained manually on the management page, with SSH as the default for new entries. Compose paths are not required. Pasted private keys and locally selected private-key files enter the same encrypted credential field; the browser never submits the local file path. The connection test verifies only Agent or SSH connectivity.
 - Users with server-test permission can open the resource-monitoring dialog to query CPU, system load, memory, disk, uptime, and the runtime and health state of up to 200 Docker containers. Snapshots are not persisted, and host metrics remain visible when Docker status is unavailable.
@@ -340,6 +340,8 @@ docker compose --profile deployment up --build -d
 ```
 
 Local mode always detects the project under `/workspace` inside the Agent; `DEPLOYMENT_PROJECT_DIR` selects its read-only source mount. SSH mode requires an SSH account and the complete host-key fingerprint verified with `ssh-keygen -lf -E sha256`. The remote host must have Docker Compose installed, expose exactly one detectable target project, and have the revision images pre-pulled.
+
+Remote data synchronization uses the same Agent. `DATA_SYNC_WORKER_IMAGE` defaults to the current Compose project's Backend image. Every selected server must have Docker installed, already contain that image, and be able to reach both source and target databases. The Agent launches a one-time container through a fixed Java entry point with a read-only root filesystem, non-root user, dropped capabilities, resource limits, and a 15-minute timeout. Database credentials travel only through standard input and never enter command arguments, environment variables, job results, or logs. Cancellation removes the fixed-name worker container, and Backend restarts resume status reconciliation through the persisted Agent job ID.
 
 After all services are healthy:
 
