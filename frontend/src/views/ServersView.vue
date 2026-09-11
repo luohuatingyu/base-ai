@@ -6,7 +6,7 @@
         <p>{{ t('servers.description') }}</p>
       </div>
       <div class="table-actions">
-        <el-button @click="credentialsVisible = true">{{ t('serverCredentials.title') }}</el-button>
+        <el-button class="credential-entry" type="success" plain @click="credentialsVisible = true"><el-icon><Key /></el-icon>{{ t('serverCredentials.title') }}<el-tag size="small" effect="dark">安全</el-tag></el-button>
         <el-button @click="load">{{ t('common.refresh') }}</el-button>
         <el-button
           v-if="auth.hasPermission('operations:server:create')"
@@ -735,6 +735,8 @@ onMounted(load)
 .dialog-footer-content > div { display: flex; gap: 10px; }
 .secure-submit-hint { display: inline-flex; align-items: center; gap: 6px; color: var(--el-text-color-secondary); font-size: 12px; }
 .full { width: 100%; }
+.credential-entry { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.credential-entry .el-tag { margin-left: 2px; border: 0; transform: scale(.9); }
 .monitor-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding: 18px; border: 1px solid #dce5f4; border-radius: 12px; background: linear-gradient(135deg, #fff, #f0f5ff); }
 .monitor-identity { display: flex; align-items: center; gap: 10px; }
 .monitor-identity strong { color: var(--el-text-color-primary); font-size: 17px; }
