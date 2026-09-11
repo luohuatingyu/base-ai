@@ -1,5 +1,83 @@
 # 最近分支覆盖测试报告
 
+## 数据同步按服务器远程执行验收（2026-09-11）
+
+### Git 基准点
+
+Commit: 8688e17dbd7dc9e884ca8809a8e19d53304c6bfe
+- 提交信息: Complete data sync server safeguards
+- 测试日期: 2026-09-11
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 数据同步计划新增执行服务器选择；服务器列表仅返回当前用户拥有且启用的受管服务器，历史未指定服务器的计划继续按平台本地目标展示。
+- 表查询、预检、执行、取消和进度恢复均携带同一服务器目标；远程服务器通过 Deployment Agent 在目标机执行，平台只负责提交任务和恢复状态。
+- 新增 V33 迁移，为计划和运行记录保存服务器、Agent 任务编号及并发槽位；删除仍被计划引用的服务器会被拒绝。
+- Deployment Agent 新增数据同步查询、预检、执行、任务状态和取消协议；Worker 通过标准输入接收任务并以 NDJSON 输出进度，凭据不写入响应或日志。
+- 前端计划表单、列表和运行明细支持中英文服务器名称；新增 `DATA_SYNC_WORKER_IMAGE` 配置用于目标机 Worker 镜像。
+- 可按逆序回滚业务提交 `dba837f`、`84ad32a`、`df6cda4`、`63ef01c` 并重新执行迁移和 Compose 构建。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 计划必须选择可用执行服务器 | Frontend 数据同步契约测试加载服务器列表，输入启用、停用和空选择 | 停用服务器不可选，空选择阻止保存；通过 | 正常、边界、异常 |
+| 查询和预检使用所选服务器 | Frontend 契约测试拦截表查询与预检请求，检查 `serverId` | 两类请求均携带当前服务器；通过 | 正常、回归 |
+| 服务器权限和状态得到隔离 | Backend Service 校验测试覆盖不存在、非拥有、停用服务器；Agent 协议测试覆盖非法响应 | 返回业务错误，不泄露目标配置；通过 | 权限、安全、异常 |
+| 任务真正远程执行并可恢复进度 | Backend Agent Client、H2 Worker 测试和 Go NDJSON 进程测试 | Agent 收到目标配置和 Worker 镜像，Worker 产生表清单、预检结果和进度，平台可恢复终态；通过 | 集成、正常、兼容 |
+| 并发、取消和失败状态正确落库 | Backend 远程执行测试及服务状态分支测试 | 活跃槽位防重复执行，取消转发到 Agent，失败/取消释放槽位；通过 | 边界、异常、回归 |
+| 数据库迁移及历史计划兼容 | Backend 资源测试检查 V33 字段、索引和约束；历史 `server_id` 为空的计划映射平台本地 | 迁移结构完整，历史计划可查看和运行；通过 | 兼容、回归 |
+| 前端和运行环境不回归 | Frontend 完整质量门、Backend 完整 Maven、Agent 完整 Go、干净 worktree Compose 构建 | 质量门、镜像构建、默认服务健康检查全部通过；通过 | 回归、构建、运行态 |
+
+### 测试执行结果
+
+- Backend 完整 Maven 测试：775/775 通过，通过率 100%，失败 0、错误 0、跳过 0；数据同步定向测试 23/23 通过。
+- Frontend `npm test`：Lint、类型检查、350/350 单元与契约测试、覆盖率、生产构建及 1/1 E2E 全部通过；覆盖率行 98.30%、分支 81.00%、函数 95.80%。
+- Deployment Agent Go 1.26.6：25/25 测试通过，`go vet ./...` 通过，Dockerfile 镜像构建测试通过。
+- 干净功能提交 worktree 执行 Compose 重建成功；Backend、Frontend、Python Worker、Document Parser、Caddy 五个默认服务均 healthy。Deployment Agent `deployment` profile 镜像构建成功。
+- 已验证自动化用例合计 1,151 个（Backend 775、Frontend 350、E2E 1、Agent 25），全部通过。
+
+### 关键模块测试
+
+- `DataSyncService`：服务器校验、迁移映射、远程查询/预检/执行、取消、轮询恢复和并发槽位共 23/23 定向测试通过。
+- `DataSyncAgentClient` 与 `DataSyncRemoteWorker`：HTTP 协议、敏感字段不回显、H2 数据复制、NDJSON 进度和终态共 2 个 Backend 测试通过。
+- `deployment-agent/main.go`：数据同步请求校验、Docker/SSH 参数、NDJSON 读取、取消进程和输出缓冲共 25/25 Go 测试通过。
+- `DataSyncView.vue`：服务器选择、停用选项、请求参数、计划/运行服务器展示和历史计划兼容契约通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn test -B -ntp` | 775/775 通过 |
+| Frontend 完整质量门 | `cd frontend && npm test` | Lint、类型检查、350/350、覆盖率、构建、1/1 E2E 通过 |
+| Deployment Agent 回归 | Go 1.26.6 容器执行 `gofmt -l`、`go test ./...`、`go vet ./...` | 25/25 通过，格式和静态检查通过 |
+| 共享工作区 Compose 尝试 | `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` | 受其他任务未提交的 `DeviceAgentPermissionMigrationTest` 断言失败阻断，未纳入验收结果 |
+| 干净 worktree Compose 重建 | `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose --env-file /Users/xyzc/github/base-ai/.env up --build -d` | 五个默认服务构建、启动并健康 |
+| Deployment Agent 镜像 | `docker compose --profile deployment build deployment-agent` | 构建成功，包含 Agent 数据同步测试文件 |
+| 运行态检查 | `docker compose ps` | Backend、Frontend、Python Worker、Document Parser、Caddy 5/5 healthy |
+
+### 重测触发条件
+
+- 修改数据同步计划字段、服务器权限、Agent 协议、远程 Worker、运行状态机或 V33 迁移时，必须重新执行 Backend 数据同步定向测试和完整 Maven 测试。
+- 修改数据同步页面、请求参数、国际化或服务器选择交互时，必须重新执行 Frontend 数据同步测试和完整质量门。
+- 修改 Deployment Agent 数据同步命令、Worker 镜像或 Compose profile 时，必须重新执行 Go 全量测试、Agent 镜像构建及干净 worktree Compose 重建。
+- 修改核心配置或镜像构建方式时，必须重新执行完整测试报告流程并更新 Git 基准点。
+
+### 已知问题
+
+- 未在真实远程 SSH 主机和真实 MySQL/PostgreSQL 实例上执行端到端复制；本次覆盖 Agent 协议、SSH/Docker 命令构造、H2 Worker 和进度恢复，真实目标机验证仍需受控环境。
+- Deployment Agent 是可选 `deployment` profile；本次构建了镜像但未挂载真实 Docker 套接字常驻运行，生产环境需配置内部令牌、目标机 Docker 权限和 `DATA_SYNC_WORKER_IMAGE`。
+- 共享工作区仍保留其他任务的未提交修改；本次功能和报告提交未纳入这些文件，Compose 验收使用干净隔离快照完成。
+- Frontend 生产构建保留既有 runtime-config 非 module、PURE 注解和大 chunk 警告，未影响构建或运行。
+
+### 下次测试建议
+
+- 准备一台受控 SSH Docker 主机，使用真实数据库执行表查询、预检、增量复制、取消和失败重试，核对 Agent 任务终态与平台运行记录一致。
+- 增加远程 Worker 镜像拉取失败、网络超时、数据库凭据错误和大表进度长轮询的容器级集成测试。
+- 在浏览器中覆盖启用/停用服务器切换、历史计划编辑、取消运行和中英文切换，确认敏感配置始终不进入前端响应和日志。
+
 ## 服务器 Compose 自动检测与私钥文件验收（2026-09-11）
 
 ### Git 基准点
