@@ -1,5 +1,75 @@
 # 最近分支覆盖测试报告
 
+## 设备 Agent 自动化域与 IDA 命名迁移验收（2026-09-11）
+
+### Git 基准点
+
+Commit: 9b35f1c9b018cf966546f9c83c63b2e979c1ba30
+- 提交信息: Move device agents into automation domain
+- 测试日期: 2026-09-11
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 设备 Agent 菜单从运维目录迁移到自动化目录，权限域统一为 `automation:device-agent:*`，路由、导航、控制器和内置运维角色保持一致。
+- 新增 V34 Flyway 迁移，原位转换既有菜单权限、父级目录和按钮排序，并为已有角色补齐自动化目录授权，保留菜单 ID 和原有页面/按钮授权。
+- 将用户可见的 WDA 产品名称统一为 IDA（iOS Device Automation），保留底层 WDA 文件、协议命令、字段和错误码以维持 Agent/Appium 兼容性。
+- 中英文界面、后端消息、Agent 构建/启动结果及 README 均使用 IDA 产品简称。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 设备 Agent 位于自动化目录 | Backend `DataInitializerTest` 与 Frontend 路由/导航契约读取菜单父级、路径和权限 | 父级为自动化目录，路径保持 `/automation/device-agents`，使用 `automation:device-agent:list`；通过 | 正常、兼容、回归 |
+| 全部管理接口使用新权限域 | Backend 控制器契约测试和 Frontend 页面权限测试覆盖列表、创建、更新、删除、执行 | 所有入口仅检查 `automation:device-agent:*`，不再检查旧运维域；通过 | 权限、安全、回归 |
+| 历史权限和角色授权完整迁移 | Backend H2 `DeviceAgentPermissionMigrationTest` 输入旧权限菜单、既有角色关系和已存在目录授权 | 菜单 ID、角色页面/按钮授权保留，权限前缀、父级、排序更新，缺失目录授权补齐；通过 | 迁移、兼容、权限 |
+| WDA 产品名替换为 IDA | Frontend 中英文 locale 契约、Backend 消息资源契约、Python Agent 构建/启动结果测试 | 用户可见文案统一为 IDA，底层协议键仍兼容；通过 | 正常、兼容、国际化 |
+| 服务构建和运行环境无回归 | Maven 全量测试、Python 3.12 Agent 全量测试、目标前端测试及 Compose 健康检查 | Backend 790/790、Agent 36/36、目标前端 13/13 通过；五个默认服务 healthy；通过 | 回归、构建、运行态 |
+
+### 测试执行结果
+
+- Backend Maven `clean test`：790/790 通过，通过率 100%，失败 0、错误 0、跳过 0；设备 Agent 迁移、控制器、初始化和命名契约均通过。
+- Frontend 设备 Agent 定向测试：13/13 通过，覆盖路由权限、导航映射、IDA 中英文文案和页面动作权限。
+- Frontend `npm test`：ESLint 和类型检查通过；覆盖测试阶段有 2 条既有 `ServersView` 旧结构断言失败，未进入 E2E，失败与本次设备 Agent 变更无关。
+- Device Agent Python 3.12：36/36 测试通过，临时测试虚拟环境已清理。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` 最终执行成功；Backend、Frontend、Python Worker、Document Parser、Caddy 5/5 healthy。
+
+### 关键模块测试
+
+- `DataInitializer`：自动化目录菜单、运维角色目录继承和新权限集合通过。
+- `DeviceAgentPermissionMigrationTest`：旧权限前缀转换、菜单父级/排序、角色授权补齐和幂等保护通过。
+- Device Agent 控制器与前端契约：列表、配对、配置、Registry、设备端口和命令动作均使用新权限域。
+- Locale/消息资源：中文和英文用户可见值不再出现独立 WDA 产品名；WDA 协议键保留。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp clean test` | 790/790 通过 |
+| Frontend 设备 Agent 定向回归 | `cd frontend && node --test test/device-agent.test.mjs tests/deviceAgentManagement.test.js` | 13/13 通过 |
+| Frontend 完整质量门 | `cd frontend && npm test` | ESLint、类型检查通过；2 条既有 ServersView 断言失败，覆盖与 E2E 未完成 |
+| Device Agent Python 回归 | Python 3.12 临时虚拟环境执行 `pytest` | 36/36 通过，临时环境已清理 |
+| 服务重建与运行态 | `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`、`docker compose ps` | 5/5 默认服务构建并 healthy |
+
+### 重测触发条件
+
+- 修改设备 Agent 菜单、权限注解、角色种子、V34 迁移或相关 API 时，必须重新执行 Backend 全量测试和权限迁移定向测试。
+- 修改设备 Agent 页面、路由、导航或 IDA 文案时，必须重新执行前端定向测试和完整质量门。
+- 修改 Agent Python WDA 运行时、协议命令或结果文案时，必须重新执行 Python 3.12 全量测试。
+- 修改核心配置、数据库迁移或镜像构建方式时，必须重新执行 Compose 重建和五服务健康检查。
+
+### 已知问题
+
+- Frontend 完整 `npm test` 仍受既有 `ServersView` 重构后的两条旧结构断言阻断；本次未修改该页面或其测试，设备 Agent 定向测试全部通过。
+- WDA 文件名、Java/Python 内部类型、Appium 能力键、协议命令和错误码保留原名，仅用户可见产品文案改为 IDA；后续若要清理内部命名需单独设计兼容迁移。
+
+### 下次测试建议
+
+- 更新 `ServersView` 旧断言后重新执行前端完整质量门和 E2E。
+- 在真实 MySQL 上验证 V34 对已有角色、菜单 ID 和重复执行的迁移结果，并核对回滚备份策略。
+- 在真实 iOS 设备上验证 IDA 构建、签名、安装和 Appium 会话提示与底层 WDA 协议兼容。
+
 ## 数据同步按服务器远程执行验收（2026-09-11）
 
 ### Git 基准点
