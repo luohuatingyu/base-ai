@@ -1,5 +1,80 @@
 # 最近分支覆盖测试报告
 
+## 新增数据源配置表单优化验收（2026-09-11）
+
+### Git 基准点
+
+Commit: 37055f09e801bf335cf89c7d5b044831d6b2c862
+- 提交信息: Improve data source configuration form
+- 测试日期: 2026-09-11
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 新增数据源表单改为紧凑双列布局，并按连接、认证、范围、行为分组；窄屏自动回退单列。
+- 为各数据源补充配置说明、字段示例、必填/选填/条件必填状态、风险提示和明确的布尔开关状态。
+- 对齐实际后端参数：Redis 增加 `allowWrite`；Webhook 不再展示后端未消费的 `secret`，但编辑历史数据时仍保留该值。
+- 增加标准字段必填校验和 Kafka SASL 条件校验；示例连接地址改为占位提示，避免误把示例值当作真实默认配置提交。
+- 补齐中英文文案。未修改后端接口、数据结构、数据库、配置或依赖；可执行 `git revert 37055f09e801bf335cf89c7d5b044831d6b2c862` 回滚并重新构建服务。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 配置项按用途紧凑展示并适配窄屏 | Frontend 契约测试读取表单分组、双列网格及响应式样式 | 四类分组存在，宽字段可跨列，窄屏切换单列；通过 | 正常、边界、兼容 |
+| 数据源参数与实际能力一致 | Frontend 单测遍历内置数据源字段，重点输入 Redis、Webhook | Redis 包含 `allowWrite`；Webhook 标准字段不含 `secret`；通过 | 正常、回归 |
+| 历史 Webhook 配置不丢失 | Frontend 单测输入含旧 `secret` 的 Webhook 配置并执行创建、合并 | 标准表单不展示该字段，保存时仍保留历史值；通过 | 兼容、数据安全 |
+| 必填与条件必填配置在提交前被识别 | Frontend 单测输入空标准字段及启用 SASL 但缺少认证信息的 Kafka 配置 | 返回准确缺失字段；未启用 SASL 时不误报；通过 | 边界、异常、安全 |
+| 示例值不会成为默认提交值 | Frontend 单测创建各类型初始配置 | 地址和 URI 默认为空，示例仅作为占位提示；通过 | 正常、兼容 |
+| 中英文界面均提供配置指导 | Frontend 契约测试检查中英文分组、状态、风险与错误文案 | 两种语言所需键值完整；通过 | 兼容、回归 |
+| 前端历史功能与生产产物不回归 | Frontend 完整测试、E2E、Lint、类型检查和 Vite 生产构建 | 347/347 单元与契约测试、1/1 E2E 通过，质量门和构建通过 | 回归、构建 |
+| 当前代码应用到运行环境 | 功能提交的隔离干净 worktree 执行完整 Compose 重建、健康检查和 HTTPS 探活 | 五个默认服务全部 healthy，HTTPS 首页返回 200；通过 | 集成、运行态 |
+
+### 测试执行结果
+
+- Frontend 定向测试：10/10 通过；完整单元与契约测试：347/347 通过；E2E：1/1 通过；失败 0、错误 0、跳过 0。
+- Frontend 覆盖率：行 98.22%、分支 80.81%、函数 95.80%；连接配置工具行覆盖率 98.89%、分支 81.40%、函数 100%。
+- ESLint、Vue 类型检查和 Vite 生产构建均通过。
+- 功能提交隔离环境执行完整 Compose 构建与启动成功；Backend、Frontend、Python Worker、Document Parser、Caddy 均使用 revision `37055f09e801bf335cf89c7d5b044831d6b2c862` 且健康；HTTP 跳转 HTTPS，HTTPS 首页返回 200。
+- 共享工作区首次重建读取到其他任务尚未提交的 Server Management 变更，Backend 测试出现 1 个与本功能无关的错误；按用户确认改用功能提交的隔离干净 worktree 重建后全部通过，未将共享工作区改动带入镜像。
+
+### 关键模块测试
+
+- `workflowConnectionConfig.js`：字段清单、安全默认值、元数据、条件必填和历史配置兼容共 10/10 定向测试通过。
+- `DataSourcesView.vue`：分组双列布局、动态扩展字段、风险开关、缺失字段提示和移动端样式契约通过。
+- Frontend 完整回归：347/347 加 1/1 E2E 通过；连接、权限、运行时配置和生产构建无回归。
+- Compose 运行态：5/5 默认服务 healthy，HTTPS 首页可访问。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Frontend 定向回归 | `cd frontend && node --test tests/workflowConnectionConfig.test.js` | 10/10 通过 |
+| 代码规范 | `cd frontend && npm run lint` | 通过 |
+| 类型检查 | `cd frontend && npm run typecheck` | 通过 |
+| Frontend 完整质量门 | `cd frontend && npm test` | 347/347 测试、1/1 E2E、生产构建全部通过 |
+| 共享工作区重建尝试 | `APP_IMAGE_REVISION=58ca841... docker compose up --build -d` | 其他任务未提交的 Server Management 代码导致 Maven 771 个测试中 1 个错误，未作为本功能验收结果 |
+| 隔离环境完整重建 | 功能提交干净 worktree 执行 `APP_IMAGE_REVISION=37055f09e801bf335cf89c7d5b044831d6b2c862 docker compose --env-file /Users/xyzc/github/base-ai/.env up --build -d` | 构建、测试和启动成功，五个默认服务全部 healthy |
+| 运行态探活 | `docker compose ps`、HTTP 和 HTTPS 首页请求 | 5/5 healthy；HTTP 返回 308；HTTPS 返回 200 |
+
+### 重测触发条件
+
+- 后续修改数据源类型、标准参数、条件必填规则、插件扩展字段或配置序列化逻辑时，必须重新执行连接配置定向测试和 Frontend 完整质量门。
+- 后续修改新增/编辑数据源表单布局、响应式断点、国际化键或风险开关交互时，必须补充相应契约测试并执行 Frontend 完整回归。
+- 后续修改后端连接参数消费逻辑时，必须同步核对前端字段定义，并执行相关 Backend 测试及完整 Compose 重建。
+
+### 已知问题
+
+- 本次未连接真实 MySQL、Kafka、Redis、Webhook 等外部服务逐项验证凭据有效性；参数清单依据现有后端消费逻辑核对，并由 Frontend 自动化测试覆盖表单行为。
+- Frontend 生产构建仍输出既有的 runtime-config 非 module、PURE 注解和大 chunk 警告；未影响构建或运行，本次未扩大范围处理。
+- 共享工作区仍有其他任务的 README、Server Management、Deployment Agent 和服务器凭据相关未提交变更；本次两个提交不包含这些文件。
+
+### 下次测试建议
+
+- 在具备测试实例时，为 MySQL、Kafka SASL、Redis 只读/写入和 Webhook 请求分别执行真实连接测试，验证提示内容与外部服务配置一致。
+- 增加登录态浏览器视觉回归，覆盖桌面双列、移动端单列、长错误文案以及中英文切换后的高度变化。
+
 ## Device Agent 升级版本上报修复验收（2026-09-11）
 
 ### Git 基准点
