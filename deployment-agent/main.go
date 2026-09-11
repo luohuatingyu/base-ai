@@ -812,48 +812,25 @@ printf 'BASEAI_LOAD\t%s\n' "$load_average"
 printf 'BASEAI_UPTIME\t%s\n' "$uptime_value"
 printf 'BASEAI_MEMORY\t%s\n' "$memory_values"
 printf 'BASEAI_DISK\t%s\n' "$disk_values"
-if container_values="$(docker ps -a --last 200 --no-trunc --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.State}}\t{{.Status}}' 2>&1)"; then
-  if [ -n "$container_values" ]; then printf '%s\n' "$container_values" | while IFS= read -r line; do printf 'BASEAI_CONTAINER\t%s\n' "$line"; done; fi
-else
-  container_error="$(printf '%s' "$container_values" | head -n 1)"
-  printf 'BASEAI_CONTAINER_ERROR\t%s\n' "$container_error"
-fi`
+`
 }
 
 // parseMonitorOutput 将固定脚本输出转换为有界结构化监控结果。
 func parseMonitorOutput(output string, diskPath string) (monitorResult, error) {
 	values := make(map[string]string)
-	containers := make([]containerStatus, 0)
-	containerError := ""
 	for _, line := range strings.Split(output, "\n") {
 		parts := strings.SplitN(line, "\t", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		switch parts[0] {
-		case "BASEAI_CONTAINER":
-			fields := strings.SplitN(parts[1], "\t", 5)
-			if len(fields) != 5 || len(containers) >= 200 {
-				continue
-			}
-			containers = append(containers, containerStatus{ID: shortID(fields[0]), Name: fields[1], Image: fields[2],
-				State: strings.ToUpper(fields[3]), Health: containerHealth(fields[4]), Status: fields[4]})
-		case "BASEAI_CONTAINER_ERROR":
-			containerError = trimOutput(parts[1])
-		default:
-			values[parts[0]] = parts[1]
-		}
+		values[parts[0]] = parts[1]
 	}
 	host, err := parseHostMetrics(values, diskPath)
 	if err != nil {
 		return monitorResult{}, err
 	}
-	status := "SUCCEEDED"
-	if containerError != "" {
-		status = "PARTIAL"
-	}
-	return monitorResult{Status: status, CollectedAt: time.Now().UTC().Format(time.RFC3339), Host: host,
-		Containers: containers, ContainerError: containerError}, nil
+	return monitorResult{Status: "SUCCEEDED", CollectedAt: time.Now().UTC().Format(time.RFC3339), Host: host,
+		Containers: []containerStatus{}}, nil
 }
 
 // parseHostMetrics 校验并计算 CPU、内存、磁盘、负载和运行时长。
@@ -963,29 +940,6 @@ func percentage(used int64, total int64) float64 {
 	value := float64(used) * 100 / float64(total)
 	value = math.Max(0, math.Min(100, value))
 	return math.Round(value*10) / 10
-}
-
-// shortID 只返回容器编号前十二位，避免无意义地扩大响应。
-func shortID(value string) string {
-	if len(value) > 12 {
-		return value[:12]
-	}
-	return value
-}
-
-// containerHealth 从 Docker 状态描述中提取标准健康状态。
-func containerHealth(status string) string {
-	normalized := strings.ToLower(status)
-	if strings.Contains(normalized, "(healthy)") {
-		return "HEALTHY"
-	}
-	if strings.Contains(normalized, "(unhealthy)") {
-		return "UNHEALTHY"
-	}
-	if strings.Contains(normalized, "(health: starting)") {
-		return "STARTING"
-	}
-	return "NONE"
 }
 
 // local 仅对只读挂载的固定工作区执行 Compose 校验或启动。

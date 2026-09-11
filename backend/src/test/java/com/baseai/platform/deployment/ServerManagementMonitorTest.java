@@ -64,15 +64,14 @@ class ServerManagementMonitorTest {
 
             assertEquals("SUCCEEDED", result.status());
             assertEquals(4, result.host().cpuCores());
-            assertEquals(1, result.containers().size());
-            assertEquals("HEALTHY", result.containers().get(0).health());
+            assertTrue(result.containers().isEmpty());
             assertNotNull(result.collectedAt());
         } finally {
             agent.stop(0);
         }
     }
 
-    /** Docker 不可用的部分成功响应仍应保留基础资源并返回受限错误。 */
+    /** 兼容旧 Agent 的 Docker 错误，主机指标有效时仍返回成功。 */
     @Test
     void keepsHostMetricsWhenContainerQueryFails() throws Exception {
         HttpServer agent = monitorAgent("""
@@ -89,8 +88,8 @@ class ServerManagementMonitorTest {
 
             ServerModels.ServerMonitorView result = service.monitor(1L);
 
-            assertEquals("PARTIAL", result.status());
-            assertEquals("Docker unavailable", result.containerError());
+            assertEquals("SUCCEEDED", result.status());
+            org.junit.jupiter.api.Assertions.assertNull(result.containerError());
             assertEquals(2, result.host().cpuCores());
         } finally {
             agent.stop(0);

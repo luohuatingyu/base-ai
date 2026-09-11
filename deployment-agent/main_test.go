@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -293,7 +294,7 @@ func TestExecuteReturnsExistingJob(t *testing.T) {
 	}
 }
 
-// TestParseMonitorOutput 验证主机资源、容器状态和健康状态能够被结构化解析。
+// TestParseMonitorOutput 验证主机资源正常解析并忽略旧容器数据。
 func TestParseMonitorOutput(t *testing.T) {
 	output := "BASEAI_CPU_FIRST\tcpu 100 0 50 850 0 0 0 0 0 0\n" +
 		"BASEAI_CPU_SECOND\tcpu 160 0 70 970 0 0 0 0 0 0\n" +
@@ -313,12 +314,12 @@ func TestParseMonitorOutput(t *testing.T) {
 	if result.Host.MemoryUsagePercent != 75 || result.Host.DiskUsagePercent != 25 || result.Host.UptimeSeconds != 7200 {
 		t.Fatalf("unexpected resource percentages: %#v", result.Host)
 	}
-	if len(result.Containers) != 2 || result.Containers[0].Health != "HEALTHY" || result.Containers[1].State != "EXITED" {
+	if len(result.Containers) != 0 {
 		t.Fatalf("unexpected containers: %#v", result.Containers)
 	}
 }
 
-// TestParseMonitorOutputAllowsContainerFailure 验证 Docker 不可用时仍返回基础资源并标记部分成功。
+// TestParseMonitorOutputAllowsContainerFailure 验证旧 Docker 错误不再影响主机监控结果。
 func TestParseMonitorOutputAllowsContainerFailure(t *testing.T) {
 	output := "BASEAI_CPU_FIRST\tcpu 10 0 10 80 0 0 0 0\n" +
 		"BASEAI_CPU_SECOND\tcpu 20 0 20 160 0 0 0 0\n" +
@@ -327,7 +328,7 @@ func TestParseMonitorOutputAllowsContainerFailure(t *testing.T) {
 
 	result, err := parseMonitorOutput(output, "/")
 
-	if err != nil || result.Status != "PARTIAL" || result.ContainerError != "Docker unavailable" || len(result.Containers) != 0 {
+	if err != nil || result.Status != "SUCCEEDED" || result.ContainerError != "" || len(result.Containers) != 0 {
 		t.Fatalf("unexpected partial result: %#v, %v", result, err)
 	}
 }
@@ -343,6 +344,9 @@ func TestParseMonitorOutputRejectsMalformedMetrics(t *testing.T) {
 
 // TestCollectMonitorReadsLiveLinuxMetrics 验证固定脚本可在最小 Linux 环境采集真实基础资源。
 func TestCollectMonitorReadsLiveLinuxMetrics(t *testing.T) {
+	if strings.Contains(monitorCommand("/"), "docker") || strings.Contains(monitorCommand("/"), "BASEAI_CONTAINER") {
+		t.Fatal("host monitoring must not query Docker")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -354,7 +358,7 @@ func TestCollectMonitorReadsLiveLinuxMetrics(t *testing.T) {
 	if result.Host.CPUCores < 1 || result.Host.MemoryTotalBytes < 1 || result.Host.DiskTotalBytes < 1 {
 		t.Fatalf("unexpected live host metrics: %#v", result.Host)
 	}
-	if result.Status != "SUCCEEDED" && result.Status != "PARTIAL" {
+	if result.Status != "SUCCEEDED" {
 		t.Fatalf("unexpected live monitor status: %s", result.Status)
 	}
 }

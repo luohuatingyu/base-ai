@@ -327,37 +327,6 @@
               <small>{{ t('servers.liveSnapshot') }}</small>
             </el-card>
           </div>
-          <el-alert
-            v-if="monitorData.containerError"
-            :title="t('servers.containerUnavailable')"
-            :description="monitorData.containerError"
-            type="warning"
-            show-icon
-            :closable="false"
-            class="container-alert"
-          />
-          <div class="container-head">
-            <div>
-              <span><el-icon><Box /></el-icon></span>
-              <div><h3>{{ t('servers.containers') }}</h3><small>{{ t('servers.containerSummary') }}</small></div>
-            </div>
-            <el-tag type="info" effect="plain">{{ t('servers.containerCount', { count: monitorData.containers?.length || 0 }) }}</el-tag>
-          </div>
-          <el-table class="container-table" :data="monitorData.containers || []" :empty-text="t('servers.noContainers')" max-height="420">
-            <el-table-column prop="name" :label="t('servers.containerName')" min-width="150" />
-            <el-table-column prop="image" :label="t('servers.containerImage')" min-width="220" show-overflow-tooltip />
-            <el-table-column :label="t('servers.containerState')" width="120">
-              <template #default="scope">
-                <el-tag :type="containerStateType(scope.row.state)">{{ scope.row.state || '-' }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('servers.containerHealth')" width="130">
-              <template #default="scope">
-                <el-tag :type="containerHealthType(scope.row.health)">{{ containerHealthText(scope.row.health) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="status" :label="t('servers.containerStatus')" min-width="220" show-overflow-tooltip />
-          </el-table>
         </template>
       </div>
     </el-dialog>
@@ -369,7 +338,6 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
   Aim,
-  Box,
   Check,
   Coin,
   Connection,
@@ -599,31 +567,6 @@ function monitorErrorText(value) {
   return messages[value] ? t(messages[value]) : String(value || t('servers.monitorFailed'))
 }
 
-// 根据容器运行状态选择标签颜色。
-function containerStateType(state) {
-  const normalized = String(state || '').toUpperCase()
-  if (normalized === 'RUNNING') return 'success'
-  if (normalized === 'EXITED' || normalized === 'DEAD') return 'danger'
-  if (normalized === 'RESTARTING' || normalized === 'PAUSED') return 'warning'
-  return 'info'
-}
-
-// 根据容器健康检查结果选择标签颜色。
-function containerHealthType(health) {
-  const normalized = String(health || '').toUpperCase()
-  if (normalized === 'HEALTHY') return 'success'
-  if (normalized === 'UNHEALTHY') return 'danger'
-  if (normalized === 'STARTING') return 'warning'
-  return 'info'
-}
-
-// 将 Agent 健康状态映射为本地化文案。
-function containerHealthText(health) {
-  const normalized = String(health || 'NONE').toUpperCase()
-  const key = ['HEALTHY', 'UNHEALTHY', 'STARTING'].includes(normalized) ? normalized : 'NONE'
-  return t(`servers.health.${key}`)
-}
-
 onMounted(load)
 </script>
 
@@ -645,8 +588,7 @@ onMounted(load)
 .config-section { padding: 20px; border: 1px solid var(--app-border); border-radius: 12px; background: #fff; box-shadow: 0 4px 14px rgba(31, 53, 91, 0.035); }
 .config-section--security { border-color: #dae4f7; }
 .config-section-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid #edf1f6; }
-.config-section-head > span,
-.container-head > div > span { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--app-primary); background: #edf3ff; font-size: 17px; }
+.config-section-head > span { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--app-primary); background: #edf3ff; font-size: 17px; }
 .config-section-head h3 { margin: 0; color: var(--el-text-color-primary); font-size: 16px; }
 .config-section-head p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.5; }
 .server-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
@@ -701,12 +643,6 @@ onMounted(load)
 .metric-card-head span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--app-primary); background: #edf3ff; font-size: 15px; }
 .metric-card small { color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.5; }
 .metric-card strong { margin-top: auto; color: var(--el-text-color-primary); font-size: 26px; font-variant-numeric: tabular-nums; }
-.container-alert { margin-top: 16px; }
-.container-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 22px 0 12px; }
-.container-head > div { display: flex; align-items: center; gap: 10px; }
-.container-head h3 { margin: 0; font-size: 17px; }
-.container-head small { color: var(--el-text-color-secondary); font-size: 12px; }
-.container-table { background: #fff; }
 @media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .server-grid, .server-grid--basic, .server-grid--connection, .metric-grid, .selection-cards { grid-template-columns: 1fr; }

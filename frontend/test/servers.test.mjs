@@ -113,18 +113,12 @@ test('资源监控复用服务器测试权限并在弹窗中实时查询', () =>
   assert.match(viewSource, /monitorData\.host\.cpuUsagePercent/)
   assert.match(viewSource, /monitorData\.host\.memoryUsagePercent/)
   assert.match(viewSource, /monitorData\.host\.diskUsagePercent/)
-  assert.match(viewSource, /monitorData\.containers/)
   assert.match(zhCN.servers.liveQueryHint, /实时查询/)
   assert.match(enUS.servers.liveQueryHint, /live data/)
 })
 
-test('监控弹窗覆盖空容器、部分失败和容器健康状态', () => {
-  assert.match(viewSource, /monitorData\.containerError/)
-  assert.match(viewSource, /containerStateType/)
-  assert.match(viewSource, /containerHealthType/)
-  assert.match(viewSource, /containerHealthText/)
-  for (const state of ['HEALTHY', 'UNHEALTHY', 'STARTING', 'NONE']) {
-    assert.ok(zhCN.servers.health[state], state)
-    assert.ok(enUS.servers.health[state], state)
-  }
+test('监控弹窗仅展示主机指标并保留采集失败提示', () => {
+  assert.doesNotMatch(viewSource, /monitorData\.containers|monitorData\.containerError|containerHealth|containerStateType|servers\.containers/)
+  assert.match(viewSource, /monitorData\.host\.uptimeSeconds/)
+  assert.match(viewSource, /servers\.monitorFailed/)
 })

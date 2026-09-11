@@ -327,28 +327,18 @@ public class ServerManagementService {
         return payload;
     }
 
-    /** 校验数值边界并限制容器文本长度和数量。 */
+    /** 校验主机指标，兼容旧 Agent 响应但不再返回容器监控。 */
     private ServerModels.ServerMonitorView normalizeMonitor(ServerModels.ServerMonitorView monitor) {
         if (monitor == null || !Set.of("SUCCEEDED", "PARTIAL", "FAILED").contains(text(monitor.status()).toUpperCase(Locale.ROOT))) {
             return failedMonitor("server.agentInvalidResponse");
         }
         String status = text(monitor.status()).toUpperCase(Locale.ROOT);
         if ("FAILED".equals(status)) return failedMonitor("server.monitorFailed");
-        if (monitor.collectedAt() == null || !validHostMetrics(monitor.host())
-            || monitor.containers() == null || monitor.containers().size() > 200) {
+        if (monitor.collectedAt() == null || !validHostMetrics(monitor.host())) {
             return failedMonitor("server.agentInvalidResponse");
         }
-        List<ServerModels.ContainerStatusView> containers = monitor.containers().stream()
-            .map(container -> new ServerModels.ContainerStatusView(
-                truncate(container == null ? "" : container.id(), 64),
-                truncate(container == null ? "" : container.name(), 255),
-                truncate(container == null ? "" : container.image(), 500),
-                truncate(container == null ? "" : container.state(), 32),
-                truncate(container == null ? "" : container.health(), 32),
-                truncate(container == null ? "" : container.status(), 500)))
-            .toList();
-        return new ServerModels.ServerMonitorView(status, monitor.collectedAt(), monitor.host(), containers,
-            safeText(monitor.containerError(), 500), null);
+        return new ServerModels.ServerMonitorView("SUCCEEDED", monitor.collectedAt(), monitor.host(), List.of(),
+            null, null);
     }
 
     /** 验证 Agent 返回的主机资源不存在负值、非有限值或越界百分比。 */
