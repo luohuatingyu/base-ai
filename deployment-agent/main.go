@@ -107,6 +107,9 @@ type agent struct {
 }
 
 func main() {
+	if os.Getenv("BASEAI_SSH_ASKPASS") == "1" {
+		os.Exit(sshPromptResponse(os.Args[1:], os.Stdout))
+	}
 	token := os.Getenv("DEPLOYMENT_AGENT_INTERNAL_TOKEN")
 	if len(token) < 24 {
 		panic("DEPLOYMENT_AGENT_INTERNAL_TOKEN must contain at least 24 characters")
@@ -125,6 +128,27 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		panic(err)
 	}
+}
+
+// sshPromptResponse 由 Agent 自身响应 SSH 提示，兼容禁止执行文件的临时目录。
+func sshPromptResponse(arguments []string, output io.Writer) int {
+	if len(arguments) != 1 {
+		return 1
+	}
+	prompt := strings.ToLower(arguments[0])
+	var secret string
+	switch {
+	case strings.Contains(prompt, "passphrase"):
+		secret = os.Getenv("BASEAI_SSH_PASSPHRASE")
+	case strings.Contains(prompt, "password"):
+		secret = os.Getenv("BASEAI_SSH_PASSWORD")
+	default:
+		return 1
+	}
+	if _, err := fmt.Fprintln(output, secret); err != nil {
+		return 1
+	}
+	return 0
 }
 
 // health 返回不包含主机信息的存活状态。
@@ -686,16 +710,15 @@ func dataSyncRemoteCommand(ctx context.Context, input request, remoteCommand str
 	case "KEY_PASSWORD":
 		args = append(args, "-o", "PreferredAuthentications=publickey,password,keyboard-interactive")
 	}
-	askpass := filepath.Join(tempDir, "askpass")
-	script := "#!/bin/sh\ncase \"$1\" in\n  *passphrase*) printf '%s\\n' \"$BASEAI_SSH_PASSPHRASE\" ;;\n  *assword*) printf '%s\\n' \"$BASEAI_SSH_PASSWORD\" ;;\n  *) exit 1 ;;\nesac\n"
-	if err := os.WriteFile(askpass, []byte(script), 0700); err != nil {
+	askpass, err := os.Executable()
+	if err != nil {
 		cleanup()
 		return nil, func() {}, err
 	}
 	args = append(args, input.Username+"@"+input.Host, remoteCommand)
 	command := exec.CommandContext(ctx, "ssh", args...)
 	command.Env = append(os.Environ(), "LC_ALL=C", "DISPLAY=baseai:0", "SSH_ASKPASS_REQUIRE=force",
-		"SSH_ASKPASS="+askpass, "BASEAI_SSH_PASSPHRASE="+input.Passphrase, "BASEAI_SSH_PASSWORD="+input.Password)
+		"SSH_ASKPASS="+askpass, "BASEAI_SSH_ASKPASS=1", "BASEAI_SSH_PASSPHRASE="+input.Passphrase, "BASEAI_SSH_PASSWORD="+input.Password)
 	return command, cleanup, nil
 }
 

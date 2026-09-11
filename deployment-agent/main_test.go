@@ -15,6 +15,34 @@ import (
 	"time"
 )
 
+// TestMain 让测试二进制复用正式口令响应入口，真实验证子进程调用。
+func TestMain(tests *testing.M) {
+	if os.Getenv("BASEAI_SSH_ASKPASS") == "1" {
+		os.Exit(sshPromptResponse(os.Args[1:], os.Stdout))
+	}
+	os.Exit(tests.Run())
+}
+
+// TestSSHPromptErrors 验证非法提示参数和输出失败均不返回成功。
+func TestSSHPromptErrors(t *testing.T) {
+	for _, arguments := range [][]string{nil, {"password", "extra"}, {"verification code"}} {
+		var output bytes.Buffer
+		if sshPromptResponse(arguments, &output) != 1 || output.Len() != 0 {
+			t.Fatal("invalid prompt must fail without output")
+		}
+	}
+	closed, err := os.CreateTemp(t.TempDir(), "closed-output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := closed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if sshPromptResponse([]string{"password"}, closed) != 1 {
+		t.Fatal("closed output must fail")
+	}
+}
+
 // TestSSHCredentialIsolation 验证口令分流、凭据权限、恶意字符和临时文件清理。
 func TestSSHCredentialIsolation(t *testing.T) {
 	input := request{Host: "localhost", Port: 22, Username: "deploy", AuthType: "KEY_PASSWORD",
@@ -33,6 +61,16 @@ func TestSSHCredentialIsolation(t *testing.T) {
 	if askpass == "" {
 		t.Fatal("missing askpass helper")
 	}
+	executable, err := os.Executable()
+	if err != nil || askpass != executable {
+		t.Fatal("askpass must reuse the executable, not a temporary script")
+	}
+	var privateKey string
+	for index, argument := range command.Args {
+		if argument == "-i" {
+			privateKey = command.Args[index+1]
+		}
+	}
 	for _, scenario := range []struct {
 		prompt, expected string
 		valid            bool
@@ -49,7 +87,7 @@ func TestSSHCredentialIsolation(t *testing.T) {
 			t.Fatalf("unexpected response for %s", scenario.prompt)
 		}
 	}
-	for path, permission := range map[string]os.FileMode{askpass: 0700, filepath.Dir(askpass): 0700, filepath.Join(filepath.Dir(askpass), "id_key"): 0600} {
+	for path, permission := range map[string]os.FileMode{filepath.Dir(privateKey): 0700, privateKey: 0600} {
 		info, err := os.Stat(path)
 		if err != nil || info.Mode().Perm() != permission {
 			t.Fatalf("unsafe credential permissions: %v", err)
@@ -61,7 +99,7 @@ func TestSSHCredentialIsolation(t *testing.T) {
 		}
 	}
 	cleanup()
-	if _, err := os.Stat(filepath.Dir(askpass)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Dir(privateKey)); !os.IsNotExist(err) {
 		t.Fatal("temporary credentials not removed")
 	}
 }
