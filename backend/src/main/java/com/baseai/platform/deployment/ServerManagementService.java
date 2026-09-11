@@ -656,7 +656,7 @@ public class ServerManagementService {
         }
         return object;
     }
-    /** 绑定时锁定凭据并校验所有者，账号优先使用凭据中的账号。 */
+    /** 绑定时锁定凭据并校验所有者及账号，禁止凭据覆盖服务器用户名。 */
     private ServerModels.ServerCommand bindCredential(ServerModels.ServerCommand command, Long ownerId) {
         if (command != null && (command.keyCredentialId() != null || command.passwordCredentialId() != null)) {
             if (command.credentialId() != null) throw new BusinessException("server.credentialTypeConflict");
@@ -668,15 +668,17 @@ public class ServerManagementService {
                 : credentialService.resolveTyped(command.keyCredentialId(), ownerId, true, "KEY");
             CredentialModels.Secrets account = command.passwordCredentialId() == null ? null
                 : credentialService.resolveTyped(command.passwordCredentialId(), ownerId, true, "PASSWORD");
+            if (account != null) requireMatchingUsername(command.username(), account.username());
             return new ServerModels.ServerCommand(command.name(), command.mode(), command.host(), command.port(),
-                account == null ? command.username() : account.username(), auth,
+                command.username(), auth,
                 key == null ? command.privateKey() : key.privateKey(), account == null ? command.password() : account.password(),
                 key == null ? command.passphrase() : key.passphrase(), command.hostKey(), command.workingDir(),
                 command.composeFile(), command.enabled(), null, command.keyCredentialId(), command.passwordCredentialId());
         }
         if (command == null || command.credentialId() == null || !"SSH".equals(mode(command.mode()))) return command;
         CredentialModels.Secrets secrets = credentialService.resolve(command.credentialId(), ownerId, true);
-        String username = secrets.username().isBlank() ? command.username() : secrets.username();
+        if (!secrets.password().isBlank()) requireMatchingUsername(command.username(), secrets.username());
+        String username = command.username();
         return new ServerModels.ServerCommand(command.name(), command.mode(), command.host(), command.port(), username,
             command.authType(), secrets.privateKey(), secrets.password(), secrets.passphrase(), command.hostKey(),
             command.workingDir(), command.composeFile(), command.enabled(), command.credentialId());
@@ -694,7 +696,7 @@ public class ServerManagementService {
             }
             if (config.path("passwordCredentialId").isNumber()) {
                 var account = credentialService.resolveTyped(config.path("passwordCredentialId").longValue(), server.ownerUserId(), false, "PASSWORD");
-                config.put("username", account.username());
+                requireMatchingUsername(value(config, "username"), account.username());
                 config.put("password", account.password());
             }
             validateCredential(authType(value(config, "authType")), value(config, "privateKey"), value(config, "password"));
@@ -704,7 +706,7 @@ public class ServerManagementService {
         if (!"SSH".equals(server.mode()) || !server.config().path("credentialId").isNumber()) return server.config();
         CredentialModels.Secrets secrets = credentialService.resolve(server.config().path("credentialId").longValue(), server.ownerUserId(), false);
         ObjectNode config = server.config().deepCopy();
-        if (!secrets.username().isBlank()) config.put("username", secrets.username());
+        if (!secrets.password().isBlank()) requireMatchingUsername(value(config, "username"), secrets.username());
         config.put("privateKey", secrets.privateKey());
         config.put("password", secrets.password());
         config.put("passphrase", secrets.passphrase());
@@ -712,6 +714,12 @@ public class ServerManagementService {
         if (!USERNAME_PATTERN.matcher(value(config, "username")).matches()) throw new BusinessException("server.sshRequired");
         return config;
     }
+    /** 账号必填且大小写精确匹配，凭据轮换不能静默改变登录身份。 */
+    private void requireMatchingUsername(String username, String credentialUsername) {
+        if (!USERNAME_PATTERN.matcher(text(username)).matches()) throw new BusinessException("server.sshRequired");
+        if (!text(username).equals(credentialUsername)) throw new BusinessException("server.credentialUsernameMismatch");
+    }
+
     /** 判断是否需要先解析引用再校验认证材料。 */
     private boolean hasReferences(ServerModels.ServerCommand command) {
         return command.credentialId() != null || command.keyCredentialId() != null || command.passwordCredentialId() != null;

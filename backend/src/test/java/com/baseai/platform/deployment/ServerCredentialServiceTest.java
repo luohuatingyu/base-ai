@@ -67,7 +67,7 @@ class ServerCredentialServiceTest {
         Long keyId = (combination & 1) != 0 ? key.id() : null;
         Long accountId = (combination & 2) != 0 ? account.id() : null;
         var command = new ServerModels.ServerCommand("combined", "SSH", "host", 22,
-            accountId == null ? "manual" : "", "KEY_PASSWORD", keyId == null ? "manual-key" : "",
+            accountId == null ? "manual" : "deploy", "KEY_PASSWORD", keyId == null ? "manual-key" : "",
             accountId == null ? "manual-password" : "", "", "", "", "", true, null, keyId, accountId);
         var created = servers.create(command);
         assertEquals(accountId == null ? "manual" : "deploy", created.username());
@@ -86,9 +86,12 @@ class ServerCredentialServiceTest {
         servers.update(created.id(), command);
         assertEquals(created.username(), servers.servers().get(0).username());
         if (accountId != null) {
-            credentials.save(accountId, new CredentialModels.Command("account", "PASSWORD", "nextuser", "", "", "", "nextsecret", true, ""));
+            credentials.save(accountId, new CredentialModels.Command("account", "PASSWORD", "deploy", "", "", "", "nextsecret", true, ""));
             assertEquals("nextsecret", servers.requireDataSyncTarget(created.id(), 7L).password());
-            assertEquals("nextuser", servers.requireDataSyncTarget(created.id(), 7L).username());
+            assertEquals("deploy", servers.requireDataSyncTarget(created.id(), 7L).username());
+            credentials.save(accountId, new CredentialModels.Command("account", "PASSWORD", "nextuser", "", "", "", "", true, ""));
+            assertEquals("server.credentialUsernameMismatch", assertThrows(BusinessException.class,
+                () -> servers.requireDataSyncTarget(created.id(), 7L)).getMessageKey());
         }
         servers.update(created.id(), new ServerModels.ServerCommand("manual", "SSH", "host", 22, "manual", "PASSWORD",
             "", "new-password", "", "", "", "", true));
@@ -366,7 +369,8 @@ class ServerCredentialServiceTest {
             assertEquals(username, servers.requireDataSyncTarget(server.id(), 7L).username());
             assertEquals("private", servers.requireDataSyncTarget(server.id(), 7L).privateKey());
         }
-        assertThrows(BusinessException.class, () -> servers.create(server(key.id(), "KEY")));
+        assertThrows(BusinessException.class, () -> servers.create(new ServerModels.ServerCommand(
+            "server", "SSH", "host", 22, "", "KEY", "", "", "", "", "", "", true, key.id())));
     }
 
     /** 历史私钥账号不再覆盖服务器，编辑时清除历史账号并保留密文。 */
@@ -390,9 +394,40 @@ class ServerCredentialServiceTest {
         return new CredentialModels.Command(label, privateKey.isEmpty() ? "PASSWORD" : "KEY", "deploy", "", privateKey, "", password, true, passphrase);
     }
 
-    /** 构造仅引用凭据且账号由凭据提供的 SSH 服务器。 */
+    /** 构造填写账号且引用匹配凭据的 SSH 服务器。 */
     private ServerModels.ServerCommand server(Long id, String authType) {
-        return new ServerModels.ServerCommand("server", "SSH", "host", 22, "", authType, "", "", "", "", "", "", true, id);
+        return new ServerModels.ServerCommand("server", "SSH", "host", 22, "deploy", authType, "", "", "", "", "", "", true, id);
+    }
+
+    /** 新旧账密引用均要求用户填写匹配账号，大小写和非法输入不能绕过。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "root", "Deploy", "root;id"})
+    void rejectsMismatchedAccountUsername(String username) {
+        var account = credentials.save(null, command("account", "", "secret", ""));
+        for (boolean legacy : new boolean[]{false, true}) {
+            for (String authType : new String[]{"PASSWORD", "KEY_PASSWORD"}) {
+                var request = new ServerModels.ServerCommand("server", "SSH", "host", 22, username,
+                    authType, "private", "", "", "", "", "", true, legacy ? account.id() : null,
+                    null, legacy ? null : account.id());
+                assertThrows(BusinessException.class, () -> servers.create(request));
+                assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM managed_server", Integer.class));
+            }
+        }
+    }
+
+    /** 修改服务器用户名或历史凭据账号后必须拒绝不匹配的引用。 */
+    @Test
+    void rejectsAccountChangeForExistingReference() {
+        var account = credentials.save(null, command("account", "", "secret", ""));
+        var created = servers.create(server(account.id(), "PASSWORD"));
+        var invalid = new ServerModels.ServerCommand("server", "SSH", "host", 22, "root", "PASSWORD",
+            "", "", "", "", "", "", true, account.id());
+        assertEquals("server.credentialUsernameMismatch", assertThrows(BusinessException.class,
+            () -> servers.update(created.id(), invalid)).getMessageKey());
+        assertEquals("deploy", servers.requireDataSyncTarget(created.id(), 7L).username());
+        credentials.save(account.id(), new CredentialModels.Command("account", "PASSWORD", "root", "", "", "", "", true, ""));
+        assertEquals("server.credentialUsernameMismatch", assertThrows(BusinessException.class,
+            () -> servers.requireDataSyncTarget(created.id(), 7L)).getMessageKey());
     }
 
     /** 设置可重复的请求身份。 */

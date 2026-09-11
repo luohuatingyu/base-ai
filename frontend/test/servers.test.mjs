@@ -121,34 +121,37 @@ test('服务器认证表单不要求指纹且组合登录要求两项凭据', ()
 })
 
 // 验证新服务器强制选择有效凭据，停用或认证类型不匹配的引用不可提交。
-test('服务器选择凭据并自动复用账号', () => {
+test('服务器选择凭据不覆盖填写的账号', () => {
   const source = viewSource.match(/function validateForm\(\) \{[\s\S]*?\n\}/)[0]
   for (const [credentialId, options, expected] of [[null, [], false], [1, [{ id: 1 }], true], [2, [{ id: 1 }], false]]) {
     const form = { id: null, credentialId, name: 'server', mode: 'SSH', host: 'host', username: 'deploy', port: 22 }
     const validate = runInNewContext(`(${source})`, { form, selectableCredentials: { value: options } })
     assert.equal(validate(), expected)
   }
-  const selectSource = viewSource.match(/function selectCredential\(id\) \{[\s\S]*?\n\}/)[0]
+  const selectSource = viewSource.match(/function selectCredential\(\) \{[\s\S]*?\n\}/)[0]
   const form = { username: 'old', privateKey: 'old-key', password: 'old-password', passphrase: 'old-phrase' }
   const select = runInNewContext(`(${selectSource})`, { form, credentials: { value: [{ id: 7, username: 'deploy' }] } })
   select(7)
-  assert.deepEqual(form, { username: 'deploy', privateKey: '', password: '', passphrase: '' })
+  assert.deepEqual(form, { username: 'old', privateKey: '', password: '', passphrase: '' })
   for (const locale of [zhCN, enUS]) assert.ok(locale.serverCredentials.title)
 })
 
-test('独立凭据支持全部混搭且已有账密无需填写账号', () => {
+test('独立凭据支持全部混搭且所有模式必须填写账号', () => {
   const source = viewSource.match(/function validateForm\(\) \{[\s\S]*?\n\}/)[0]
   for (const authType of ['KEY', 'PASSWORD', 'KEY_PASSWORD']) {
     for (const keyReference of [false, true]) {
       for (const accountReference of [false, true]) {
         const form = { id: null, name: 'server', mode: 'SSH', host: 'host', port: 22, authType,
-          username: accountReference && authType !== 'KEY' ? '' : 'manual',
+          username: 'manual',
           keyCredentialId: keyReference && authType !== 'PASSWORD' ? 1 : null,
           passwordCredentialId: accountReference && authType !== 'KEY' ? 2 : null,
           privateKey: keyReference ? '' : 'private', password: accountReference ? '' : 'secret' }
         const availableCredentials = type => [{ id: type === 'KEY' ? 1 : 2 }]
         const validate = runInNewContext(`(${source})`, { form, availableCredentials })
         assert.equal(validate(), true, JSON.stringify(form))
+        form.username = ''
+        assert.equal(validate(), false)
+        form.username = 'manual'
         if (form.keyCredentialId || form.passwordCredentialId) {
           const invalid = runInNewContext(`(${source})`, { form, availableCredentials: () => [] })
           assert.equal(invalid(), false)
@@ -156,24 +159,61 @@ test('独立凭据支持全部混搭且已有账密无需填写账号', () => {
       }
     }
   }
-  assert.match(viewSource, /v-if="form\.authType === 'KEY'" :label="t\('servers.username'\)"/)
+  assert.doesNotMatch(viewSource, /v-if="form\.authType === 'KEY'" :label="t\('servers.username'\)"/)
+  assert.equal((viewSource.match(/v-model="form.username"/g) || []).length, 1)
   assert.match(viewSource, /<template v-if="!form.passwordCredentialId">/)
   assert.doesNotMatch(viewSource, /v-if="form.id && form.authType === 'KEY_PASSWORD'"/)
 })
 
-test('切换来源仅清理对应秘密且账密带入账号', () => {
+test('切换来源仅清理对应秘密且保留填写的账号', () => {
   const source = viewSource.match(/function changeCredential\(type\) \{[\s\S]*?\n\}/)[0]
-  const form = { username: '', passwordCredentialId: 2, privateKey: 'key', password: 'password', passphrase: 'phrase' }
+  const form = { username: 'manual', passwordCredentialId: 2, privateKey: 'key', password: 'password', passphrase: 'phrase' }
   const change = runInNewContext(`(${source})`, { form, privateKeyFileName: { value: 'key.pem' },
     availableCredentials: () => [{ id: 2, username: 'deploy' }] })
   change('PASSWORD')
-  assert.equal(form.username, 'deploy')
+  assert.equal(form.username, 'manual')
   assert.equal(form.password, '')
   assert.equal(form.privateKey, 'key')
   change('KEY')
   assert.equal(form.privateKey, '')
   assert.equal(form.passphrase, '')
-  assert.equal(form.username, 'deploy')
+  assert.equal(form.username, 'manual')
+})
+
+test('账密仅提供同名同所有者的启用记录，秘钥不按账号筛选', () => {
+  const source = viewSource.match(/function availableCredentials\(type\) \{[\s\S]*?\n\}/)[0]
+  const credentials = { value: [
+    { id: 1, type: 'PASSWORD', username: 'deploy', ownerUserId: 7, enabled: true },
+    { id: 2, type: 'PASSWORD', username: 'Deploy', ownerUserId: 7, enabled: true },
+    { id: 3, type: 'PASSWORD', username: 'deploy', ownerUserId: 8, enabled: true },
+    { id: 4, type: 'PASSWORD', username: 'deploy', ownerUserId: 7, enabled: false },
+    { id: 5, type: 'KEY', username: '', ownerUserId: 7, enabled: true },
+  ] }
+  for (const [username, expected] of [['deploy', [1]], [' deploy ', [1]], ['Deploy', [2]], ['', []], ['missing', []]]) {
+    const form = { username, ownerUserId: 7 }
+    const available = runInNewContext(`(${source})`, { form, credentials, auth: { user: { id: 7 } } })
+    assert.deepEqual(Array.from(available('PASSWORD'), item => item.id), expected)
+    assert.deepEqual(Array.from(available('KEY'), item => item.id), [5])
+  }
+})
+
+test('修改用户名清除不匹配账密并保留秘钥和匹配引用', () => {
+  const source = viewSource.match(/function changeUsername\(\) \{[\s\S]*?\n\}/)[0]
+  for (const matches of [true, false]) {
+    for (const legacy of [true, false]) {
+      const form = { username: 'root', authType: 'KEY_PASSWORD', credentialId: legacy ? 2 : null,
+        passwordCredentialId: legacy ? null : 2, keyCredentialId: 1, password: 'old', privateKey: 'key', passphrase: 'phrase' }
+      const options = matches ? [{ id: 2 }] : []
+      const change = runInNewContext(`(${source})`, { form, availableCredentials: () => options,
+        selectableCredentials: { value: options } })
+      change()
+      assert.equal(form.username, 'root')
+      assert.equal(form.keyCredentialId, 1)
+      assert.equal(legacy ? form.credentialId : form.passwordCredentialId, matches ? 2 : null)
+      assert.equal(form.password, matches ? 'old' : '')
+      assert.equal(form.privateKey, legacy && !matches ? '' : 'key')
+    }
+  }
 })
 
 test('服务器页面移除部署与历史并保留连接和监控操作', () => {

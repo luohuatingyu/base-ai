@@ -185,8 +185,8 @@
                 <el-input-number v-model="form.port" :min="1" :max="65535" class="full" />
                 <div class="field-help">{{ t('servers.portHelp') }}</div>
               </el-form-item>
-              <el-form-item v-if="form.authType === 'KEY'" :label="t('servers.username')">
-                <el-input v-model="form.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" />
+              <el-form-item :label="t('servers.username')" required>
+                <el-input v-model="form.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" @input="changeUsername" />
                 <div class="field-help">{{ t('servers.usernameHelp') }}</div>
               </el-form-item>
             </div>
@@ -303,9 +303,6 @@
                 <div class="field-help">{{ t('servers.credentialSourceHelp') }}</div>
               </el-form-item>
               <template v-if="!form.passwordCredentialId">
-              <el-form-item :label="t('servers.username')">
-                <el-input v-model="form.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" />
-              </el-form-item>
               <el-form-item :label="t('servers.password')" class="section-last-field">
                 <el-input v-model="form.password" type="password" show-password autocomplete="off" :placeholder="t('servers.passwordPlaceholder')">
                   <template #prefix><el-icon><Lock /></el-icon></template>
@@ -445,7 +442,8 @@ const credentials = ref([])
 const selectableCredentials = computed(() => credentials.value.filter(credential => credential.enabled
   && credential.ownerUserId === (form.ownerUserId || auth.user?.id)
   && (!['KEY', 'KEY_PASSWORD'].includes(form.authType) || credential.hasPrivateKey)
-  && (!['PASSWORD', 'KEY_PASSWORD'].includes(form.authType) || credential.hasPassword)))
+  && (!['PASSWORD', 'KEY_PASSWORD'].includes(form.authType)
+    || credential.hasPassword && !!form.username.trim() && credential.username === form.username.trim())))
 
 // 加载可复用凭据元数据，绝不读取下拉选项的秘密。
 async function loadCredentials() {
@@ -455,26 +453,37 @@ async function loadCredentials() {
   finally { credentialsLoading.value = false }
 }
 
-// 选择凭据时带入账号，清除旧的临时秘密输入。
-function selectCredential(id) {
-  const credential = credentials.value.find(item => item.id === id)
-  if (credential?.username) form.username = credential.username
+// 选择历史凭据时保留填写的账号，仅清除临时秘密。
+function selectCredential() {
   form.privateKey = ''; form.password = ''; form.passphrase = ''
 }
 
 // 每项独立筛选同一所有者的可用凭据，不加载秘密。
 function availableCredentials(type) {
   return credentials.value.filter(credential => credential.enabled && credential.type === type
-    && credential.ownerUserId === (form.ownerUserId || auth.user?.id))
+    && credential.ownerUserId === (form.ownerUserId || auth.user?.id)
+    && (type !== 'PASSWORD' || !!form.username.trim() && credential.username === form.username.trim()))
 }
 
-// 来源切换后清除该项秘密，账密账号由凭据提供。
+// 用户名改变后解除不匹配的账密引用，保留秘钥来源。
+function changeUsername() {
+  if (form.passwordCredentialId && !availableCredentials('PASSWORD').some(item => item.id === form.passwordCredentialId)) {
+    form.passwordCredentialId = null
+    form.password = ''
+  }
+  if (form.credentialId && ['PASSWORD', 'KEY_PASSWORD'].includes(form.authType)
+    && !selectableCredentials.value.some(item => item.id === form.credentialId)) {
+    form.credentialId = null
+    form.privateKey = ''; form.password = ''; form.passphrase = ''
+  }
+}
+
+// 来源切换仅清除该项秘密，始终保留服务器账号。
 function changeCredential(type) {
   if (type === 'KEY') {
     form.privateKey = ''; form.passphrase = ''; privateKeyFileName.value = ''
   } else {
     form.password = ''
-    form.username = availableCredentials('PASSWORD').find(item => item.id === form.passwordCredentialId)?.username || ''
   }
 }
 
@@ -483,7 +492,7 @@ function changeAuthType(type) {
   if (form.authType === type) return
   form.authType = type
   form.credentialId = null; form.keyCredentialId = null; form.passwordCredentialId = null
-  form.privateKey = ''; form.password = ''; form.passphrase = ''; form.username = ''
+  form.privateKey = ''; form.password = ''; form.passphrase = ''
   privateKeyFileName.value = ''
 }
 
@@ -552,10 +561,9 @@ function privateKeyFileErrorKey(error) {
 function validateForm() {
   if (!form.name.trim()) return false
   if (form.mode !== 'SSH') return true
-  if (!form.host.trim() || !form.port) return false
+  if (!form.host.trim() || !form.port || !form.username.trim()) return false
   if (form.credentialId) return selectableCredentials.value.some(credential => credential.id === form.credentialId)
   if (!['KEY', 'PASSWORD', 'KEY_PASSWORD'].includes(form.authType)) return false
-  if (!form.passwordCredentialId && !form.username.trim()) return false
   if (form.keyCredentialId && !availableCredentials('KEY').some(item => item.id === form.keyCredentialId)) return false
   if (form.passwordCredentialId && !availableCredentials('PASSWORD').some(item => item.id === form.passwordCredentialId)) return false
   const requiresCredential = !form.id || form.authType !== originalAuthType.value
