@@ -1,5 +1,20 @@
 # 最近分支覆盖测试报告
 
+## MacAir 无线 iOS 设备在线判定（2026-09-11）
+
+### 本次变更测试结果
+
+**变更范围**：无线设备只要被 `devicectl` 枚举到，即判定为在线；开发隧道为 `connected`、`connecting`、`disconnected`、`unavailable`、空值或缺失时均保持 `AVAILABLE`。USB 与其他传输类型的既有判定不变。
+
+**测试执行结果**：设备检测定向测试 61/61 通过，失败 0、错误 0、跳过 0。`git diff --check` 通过。
+
+**构建验证**：已执行 `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`，构建因仓库既有 Backend 测试编译错误失败；错误涉及缺失的 `AgentWdaConfigView`、`UpdateAgentWdaConfigRequest`、`WdaSigningConfig` 等类型，与本次 Agent 变更无关，服务未完成启动。
+
+**Git 基准点**：98369b045a98b9eca924c5a3c8448ec4325c8be9。
+
+**验收标准—测试用例映射**：无线设备被发现即在线；Python 参数化单元测试覆盖正常、隧道异常、空值和边界状态，全部通过。
+
+
 ## WDA 业务命名统一为 IDA（2026-09-11）
 
 ### 本次变更测试结果
