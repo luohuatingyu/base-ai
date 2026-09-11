@@ -1,5 +1,52 @@
 # 最近分支覆盖测试报告
 
+## IDA 数据库存储兼容修复（2026-09-11）
+
+### Git 基准点
+
+Commit: eb4bcb57edcd95648b0d9cb7b2b307f2a65aaff3
+- 提交信息：Restore immutable migrations and preserve IDA storage compatibility
+- 分支：master；测试日期：2026-09-11。
+- 本节取代上一节中的数据库启动阻塞状态；未修改数据库存量数据或 Flyway 历史记录。
+
+### 变更范围与技术实现
+
+- V31/V32 恢复至已部署版本的原始内容，校验和分别为 1040951367、187493084。
+- Spring JDBC 设备配置、设备池和命令状态读写保留历史 WDA 表名与列名，Java 模型及对外接口继续使用 IDA。
+- Jackson `JsonAlias` 兼容旧密文里的 `updatedWdaBundleId`；读取不改写密文，序列化仍输出 `updatedIdaBundleId`。
+- 正式测试使用真实 H2 数据库执行旧表结构的读写，并增加历史迁移校验和及新旧密文参数化测试。
+
+### 测试执行结果
+
+- 定向 Maven 测试先复现：24 项，3 失败、9 错误；兼容修复后测试发现新测试的独立 ObjectMapper 未注册日期模块，补齐测试配置后最终 24/24 通过。
+- 定向命令：Docker Maven 容器内执行 `mvn -B -ntp -Dtest=DeviceAgentScopeContractTest,DeviceAgentAutomationConfigServiceTest,DeviceAgentDeviceServiceTest,DeviceAgentCommandServiceTest test`。
+- 完整命令：同一容器内执行 `mvn -B -ntp test`。总计 794 项，通过 794，失败 0、错误 0、跳过 0，通过率 100%。
+- 容器启动方式：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp -Dtest=DeviceAgentScopeContractTest,DeviceAgentAutomationConfigServiceTest,DeviceAgentDeviceServiceTest,DeviceAgentCommandServiceTest test && mvn -B -ntp test'`。
+- 关键模块：设备配置 7/7、设备池 4/4、设备命令 8/8、命名与历史迁移契约 5/5；服务器 Controller 1/1、Monitor 5/5、Validation 13/13，全部通过。
+- 独立 MySQL 8.4 集成验证：创建空库 `migration_validation`，按版本顺序通过 `docker exec -i base-ai-migration-validation mysql -uroot migration_validation` 执行全部 34 个迁移脚本；全部通过。information_schema 验证设备 5 个历史列和配置 3 个关键列齐全。
+- 新库验证执行的是完整 SQL 脚本链；已有运行库则通过应用真实 Flyway 启动验证。日志确认 `Successfully validated 34 migrations` 和 `No migration necessary`，后端正常启动。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：成功，Docker 构建内完整 Maven package 测试通过；所有服务重新启动。镜像版本标签为构建时 HEAD `f89eb95b27f54751bb422527cfa4796eefdbff18`，构建输入包含随后提交为本节基准点的已测试工作区代码。
+- `git diff --check`：通过；V31/V32 与已部署提交 `ee42649574b042d6853ffa79c39fef4f97bfc498` 的差异为空。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与前置条件 | 输入与预期结果 | 场景 |
+| --- | --- | --- | --- |
+| 历史迁移不可变 | 参数化契约测试，读取 V31/V32 | CRC32 与已部署校验和一致 | 兼容、回归 |
+| 旧表结构可正常读写 | H2 服务测试，建立历史 WDA 表列 | 更新配置、同步设备及执行 IDA 命令后，字段和副作用正确 | 正常、异常、安全、回归 |
+| 存量签名不丢失 | 参数化服务测试，真实加密配置写入历史表 | 新旧 bundle 字段均正确读取；禁止设备注册选择保留；密文和版本不变；API 仅输出 IDA | 兼容、安全、回归 |
+| 新旧数据库均可用 | 独立空 MySQL 和已有运行数据库 | 34 个脚本完整成功；运行库 Flyway 校验成功且无需迁移 | 新建、升级兼容 |
+| 服务与监控恢复 | Compose 重建和内部 HTTP 验证 | Backend 正常启动；Agent `/test` 返回 SUCCEEDED，`/monitor` 返回实时 CPU、内存及磁盘 | 正常、降级 |
+
+### 限制、清理与下次建议
+
+- LOCAL 监控仍为 PARTIAL：Docker Socket 无访问权限，主机指标正常，容器列表未验收。本次不扩大 Docker 权限；真实 SSH 服务器仍需登录后端到端验证。
+- 页面入口已返回登录认证响应；Air 预览因 HTTP 80 跳转 HTTPS 443 后的同源限制无法操作，未完成登录态页面验收。实际访问入口为 `https://localhost/`。
+- 本轮未重复运行未修改的前端及 Go 套件，前轮结果为前端 358/358、生产服务 1/1、Go 25/25，通过；后端完整测试已覆盖本轮变更。
+- 未新增测试依赖或配置，不提供未经执行的 JaCoCo 覆盖率数字。覆盖验证由上述正式测试与真实数据库验证组成。
+- Maven 临时源码和测试结果均位于自动删除的容器；独立 MySQL 验证容器已停止并自动移除，未生成宿主机调试文件。
+- 后续修改业务逻辑、存储映射、历史迁移或核心配置时必须重跑相关及完整测试，更新本报告基准点。历史迁移禁止再次重写；需要数据库演进时追加新版本迁移。
+
 ## 服务器管理简化与连接恢复（2026-09-11）
 
 ### Git 基准点
