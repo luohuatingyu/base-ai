@@ -1,5 +1,39 @@
 # 最近分支覆盖测试报告
 
+## 私钥凭据不维护 SSH 用户（2026-09-11）
+
+### Git 基准点
+
+Commit: abbb8cbb33283b6e27d65ff6a3721b6f04f71643
+- 提交信息：Keep SSH usernames on servers for key credentials；分支：master；测试日期：2026-09-11。
+- 相对上一基准 d559cdcf4af42b02e181a9f0d850588299e89bcf，业务修改仅 ServerCredentialService；技术栈仍为 Spring Boot/JDBC/AES-GCM 与 Vue 3/Element Plus，无新增依赖、配置或数据库迁移。
+- 私钥表单移除账号，列表显示“—”，切换私钥清空账号，提交不携带账号值。服务端忽略私钥请求中的账号，保存空账号；读取 KEY 或被识别为 KEY 的历史 RSA 记录时返回空账号，因此绑定与运行解析均使用服务器自身 SSH 用户。旧数据库账号不批量清理，编辑时清空。账号密码和历史组合凭据维持原规则。
+
+### 实际测试结果
+
+- 先补充失败测试：Docker 内执行 `mvn -B -ntp -Dtest=ServerCredentialServiceTest test`，27 项中通过 24、失败 2、错误 1、跳过 0；复现历史私钥账号仍返回以及私钥账号仍参与校验。
+- 修复后在根目录执行 `docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp -Dtest=ServerCredentialServiceTest,ServerManagementValidationTest,ServerManagementControllerTest,ServerManagementMonitorTest test && mvn -B -ntp test'`：定向 79/79（凭据 27、校验 22、Controller 2、监控 28）；完整 854/854，通过率 100%，失败 0、错误 0、跳过 0。
+- frontend 工作目录：`node --test test/server-credentials.test.mjs test/servers.test.mjs` 20/20；`npm run lint && npm run typecheck && npm run test:coverage && node --test e2e/*.test.mjs` 全部退出 0，完整 370/370、E2E 1/1，失败和跳过均为 0。工具函数行覆盖 98.40%、分支 80.95%、函数 95.27%，通过原门槛；不表示 Vue 组件或 Java 行覆盖率。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级/前置条件 | 输入及预期结果 | 用例/场景 |
+| --- | --- | --- | --- |
+| 私钥不保存账号且独立于账号校验 | Service，真实 H2/加密及已登录用户 | 私钥附带非法账号仍可保存，但数据库、元数据账号为空 | keyCredentialsUseEachServersUsername；正常/非法输入兼容 |
+| 同一私钥由不同服务器用户复用 | Service，已保存私钥 | deploy、root 分别绑定，执行目标保留各自账号及私钥；服务器未填用户拒绝 | keyCredentialsUseEachServersUsername；正常/边界 |
+| 历史私钥账号不覆盖服务器 | Service，参数化 KEY/RSA 历史数据 | old-user 不返回；服务器使用 server-user；编辑清空旧账号且保留密文 | ignoresLegacyKeyUsername；历史兼容/编辑/回归 |
+| 表单只在密码类型维护账号 | 前端真实函数和模板检查 | KEY 新建/编辑含旧账号提交空账号；切换清空；PASSWORD 保留账号 | 两类凭据的必填校验与秘密保留、切换私钥类型清理账号与不适用的临时输入、私钥表单和列表不展示凭据账号；正常/边界/界面 |
+| 账号密码、轮换与权限回归 | 既有 Service 及前端测试 | 密码账号自动带入、私钥轮换 Agent 使用服务器 deploy 用户、未授权访问拒绝 | sharesCredentialsAndResolvesLatestValues、passesRotatedCredentialsToAgentWithoutExposingThem、enforcesOwnershipAndAdminSecretAccess；回归/安全 |
+
+### 部署与已知限制
+
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` 配合 set -o pipefail 执行并成功退出 0，未跳过构建测试，未发生端口冲突。
+- `docker ps --filter name=ai- --format '{{.Names}} {{.Image}} {{.Status}}'` 确认六个服务均运行 abbb8cbb33283b6e27d65ff6a3721b6f04f71643 且 healthy。
+- HTTPS 首页资源更新为 index--9GQB9AL.js 和 index-DeqBoXIV.css。curl 获取内容与 docker exec 读取的容器文件逐一比较 SHA-256，均一致；实际脚本包含“SSH 用户在服务器中填写”。本机自签名 HTTPS 核验使用 curl -k。
+- 未执行登录后的浏览器视觉验收或真实远程 SSH 验证；自动化已覆盖真实服务逻辑、数据库和回环 Agent。建议通过浏览器核对私钥弹窗及两台服务器不同 SSH 用户的真实连接。
+- 无临时调试文件；测试源码仅复制到 --rm 容器中并随退出清除。git diff --check 通过，只提交本次相关文件。
+- 后续业务代码、实体、Repository、Service、Controller 或核心业务配置变化，按本节基准重新执行完整测试并更新报告。回滚代码前需评估已编辑私钥账号被清空的影响，不会自动恢复旧账号；服务器维护的 SSH 用户保持可用。
+
 ## 凭据类型修复与管理界面完善（2026-09-11）
 
 ### Git 基准点
