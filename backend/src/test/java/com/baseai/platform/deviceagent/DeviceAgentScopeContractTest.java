@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证通用设备 Agent 包含 WDA 自动化但不引入企业微信业务范围。 */
+/** 验证通用设备 Agent 包含 IDA 自动化但不引入企业微信业务范围。 */
 class DeviceAgentScopeContractTest {
     /** 命令和功能白名单包含通用自动化，但不得包含账号、好友或业务任务。 */
     @Test
@@ -18,13 +18,13 @@ class DeviceAgentScopeContractTest {
         String values = (DeviceAgentModels.VALID_FEATURES + " " + DeviceAgentModels.VALID_COMMAND_TYPES)
             .toUpperCase();
 
-        assertTrue(values.contains("WDA"));
+        assertTrue(values.contains("IDA"));
         assertTrue(values.contains("APPIUM"));
         assertFalse(values.contains("ACCOUNT"));
         assertFalse(values.contains("FRIEND"));
         assertFalse(values.contains("TASK_EXECUTION"));
         assertEquals(Set.of("DIAGNOSTICS", "UPDATE_CONFIG", "HEALTH_CHECK", "DETECT_SIGNING",
-            "DETECT_DEVICE", "SETUP_WDA", "START_WDA", "REGISTRY_ONLINE", "REGISTRY_OFFLINE",
+            "DETECT_DEVICE", "SETUP_IDA", "START_IDA", "REGISTRY_ONLINE", "REGISTRY_OFFLINE",
             "REGISTRY_RECREATE", "UPGRADE", "UPDATE_BACKEND_URL"),
             DeviceAgentModels.VALID_COMMAND_TYPES);
     }
@@ -73,7 +73,7 @@ class DeviceAgentScopeContractTest {
         }
         assertTrue(migration.contains("operation_speed"));
         assertTrue(migration.contains("'slow', 'standard', 'fast'"));
-        assertTrue(migration.contains("automation_device_agent_wda_config"));
+        assertTrue(migration.contains("automation_device_agent_ida_config"));
         assertFalse(migration.contains("wecom"));
     }
 

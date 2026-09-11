@@ -23,7 +23,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 验证 WDA 配置加密、回环地址限制和热加载命令。 */
+/** 验证 IDA 配置加密、回环地址限制和热加载命令。 */
 class DeviceAgentAutomationConfigServiceTest {
     private DeviceAgentAutomationConfigService service;
     private JdbcTemplate db;
@@ -33,14 +33,14 @@ class DeviceAgentAutomationConfigServiceTest {
     @BeforeEach
     void setUp() {
         JdbcDataSource dataSource = new JdbcDataSource();
-        dataSource.setURL("jdbc:h2:mem:device-agent-wda-" + UUID.randomUUID()
+        dataSource.setURL("jdbc:h2:mem:device-agent-ida-" + UUID.randomUUID()
             + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
         db = new JdbcTemplate(dataSource);
         db.execute("""
-            CREATE TABLE automation_device_agent_wda_config (
+            CREATE TABLE automation_device_agent_ida_config (
               agent_id VARCHAR(64) PRIMARY KEY, signing_config_encrypted TEXT,
-              launch_mode VARCHAR(16), wda_url VARCHAR(256), appium_server_url VARCHAR(256),
-              base_wda_local_port INT, operation_speed VARCHAR(16) DEFAULT 'STANDARD',
+              launch_mode VARCHAR(16), ida_url VARCHAR(256), appium_server_url VARCHAR(256),
+              base_ida_local_port INT, operation_speed VARCHAR(16) DEFAULT 'STANDARD',
               wireless_source_poll_interval_seconds INT DEFAULT 10,
               wireless_source_max_attempts INT DEFAULT 12,
               config_version BIGINT, config_hash CHAR(64),
@@ -65,16 +65,16 @@ class DeviceAgentAutomationConfigServiceTest {
     /** 签名配置必须以密文落库，并向已配对 Agent 下发配置刷新。 */
     @Test
     void encryptsSigningConfigAndDispatchesReload() {
-        DeviceAgentModels.AgentWdaConfigView view = service.update("ios-agent-test",
-            new DeviceAgentModels.UpdateAgentWdaConfigRequest(
-                new DeviceAgentModels.WdaSigningConfig("ABCDEFGHIJ", "Apple Development",
+        DeviceAgentModels.AgentIdaConfigView view = service.update("ios-agent-test",
+            new DeviceAgentModels.UpdateAgentIdaConfigRequest(
+                new DeviceAgentModels.IdaSigningConfig("ABCDEFGHIJ", "Apple Development",
                     "com.example.WebDriverAgentRunner", false),
                 "XCODEBUILD", null, "http://127.0.0.1:4723", 8200), 7L);
         String encrypted = db.queryForObject("""
-            SELECT signing_config_encrypted FROM automation_device_agent_wda_config WHERE agent_id=?
+            SELECT signing_config_encrypted FROM automation_device_agent_ida_config WHERE agent_id=?
             """, String.class, "ios-agent-test");
 
-        assertEquals(8200, view.baseWdaLocalPort());
+        assertEquals(8200, view.baseIdaLocalPort());
         assertEquals("ABCDEFGHIJ", view.signingConfig().xcodeOrgId());
         assertFalse(encrypted.contains("ABCDEFGHIJ"));
         verify(commandService).create(any(DeviceAgentModels.CreateCommandRequest.class), anyLong());
@@ -84,10 +84,10 @@ class DeviceAgentAutomationConfigServiceTest {
     @Test
     void rejectsExternalAppiumAndInvalidPort() {
         assertThrows(BusinessException.class, () -> service.update("ios-agent-test",
-            new DeviceAgentModels.UpdateAgentWdaConfigRequest(null, "XCODEBUILD", null,
+            new DeviceAgentModels.UpdateAgentIdaConfigRequest(null, "XCODEBUILD", null,
                 "https://example.com:4723", 8100), 7L));
         assertThrows(BusinessException.class, () -> service.update("ios-agent-test",
-            new DeviceAgentModels.UpdateAgentWdaConfigRequest(null, "XCODEBUILD", null,
+            new DeviceAgentModels.UpdateAgentIdaConfigRequest(null, "XCODEBUILD", null,
                 "http://localhost:4723", 80), 7L));
     }
 
@@ -101,7 +101,7 @@ class DeviceAgentAutomationConfigServiceTest {
         assertEquals(5, view.wirelessSourcePollIntervalSeconds());
         assertEquals(24, view.wirelessSourceMaxAttempts());
         assertEquals("FAST", db.queryForObject("""
-            SELECT operation_speed FROM automation_device_agent_wda_config WHERE agent_id=?
+            SELECT operation_speed FROM automation_device_agent_ida_config WHERE agent_id=?
             """, String.class, "ios-agent-test"));
         verify(commandService).create(any(DeviceAgentModels.CreateCommandRequest.class), anyLong());
     }

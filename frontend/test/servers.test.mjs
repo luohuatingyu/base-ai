@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { runInNewContext } from 'node:vm'
 import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
 import { MAX_PRIVATE_KEY_FILE_SIZE, readPrivateKeyFile } from '../src/utils/serverCredentials.js'
@@ -45,7 +46,7 @@ test('私钥支持本地文件读取并保留直接粘贴输入', async () => {
 })
 
 test('服务器相关弹窗使用卡片分区并保留认证条件分支', () => {
-  for (const className of ['server-editor-dialog', 'server-monitor-dialog', 'server-deploy-dialog', 'server-history-dialog']) {
+  for (const className of ['server-editor-dialog', 'server-monitor-dialog']) {
     assert.match(viewSource, new RegExp('class="' + className + '"'), className)
   }
   for (const sectionKey of ['basicSection', 'connectionSection', 'securitySection']) {
@@ -61,16 +62,47 @@ test('服务器相关弹窗使用卡片分区并保留认证条件分支', () =>
   assert.match(enUS.servers.passphraseHelp, /not the server login password/)
 })
 
-test('部署和历史弹窗保持权限控制并增强状态展示', () => {
-  assert.match(viewSource, /operations:server:rollback/)
-  assert.match(viewSource, /deployForm\.action === 'DEPLOY'/)
-  assert.match(viewSource, /deployForm\.action === 'ROLLBACK'/)
-  assert.match(viewSource, /deploymentActionType/)
-  assert.match(viewSource, /deploymentStatusType/)
-  assert.ok(zhCN.servers.deployRiskNotice)
-  assert.ok(enUS.servers.deployRiskNotice)
-  assert.ok(zhCN.servers.noDeploymentHistory)
-  assert.ok(enUS.servers.noDeploymentHistory)
+test('服务器页面移除部署与历史并保留连接和监控操作', () => {
+  assert.doesNotMatch(viewSource, /servers\.(deploy|history)|deployVisible|historyVisible|deployForm|deploymentRows/)
+  assert.doesNotMatch(viewSource, /operations:server:(deploy|rollback|logs)/)
+  assert.match(viewSource, /@click="test\(scope.row\)"/)
+  assert.match(viewSource, /@click="monitor\(scope.row\)"/)
+  assert.match(viewSource, /@click="open\(scope.row\)"/)
+})
+
+test('连接测试阻止重复请求并在成功与异常后释放加载状态', async () => {
+  for (const outcome of ['success', 'failure', 'exception']) {
+    const calls = []
+    const messages = []
+    const testingIds = { value: new Set() }
+    let complete
+    const response = new Promise(resolve => { complete = resolve })
+    const context = {
+      testingIds,
+      http: { post: async url => {
+        calls.push(url)
+        await response
+        if (outcome === 'exception') throw new Error('timeout')
+        return { data: outcome === 'success' ? { status: 'SUCCEEDED' } : { status: 'FAILED', error: 'server.agentNotConfigured' } }
+      } },
+      ElMessage: { success: value => messages.push(value), warning: value => messages.push(value) },
+      monitorErrorText: value => `localized:${value}`,
+      t: value => value,
+      load: async () => calls.push('reload'),
+      showHttpError: error => messages.push(error.message),
+    }
+    const source = viewSource.match(/async function test\(row\) \{[\s\S]*?\n\}/)[0]
+    const invoke = runInNewContext(`(${source})`, context)
+    const pending = invoke({ id: 42 })
+    assert.equal(testingIds.value.has(42), true)
+    await invoke({ id: 42 })
+    assert.deepEqual(calls, ['/servers/42/test'])
+    complete()
+    await pending
+    assert.equal(testingIds.value.size, 0)
+    assert.deepEqual(calls, outcome === 'exception' ? ['/servers/42/test'] : ['/servers/42/test', 'reload'])
+    assert.deepEqual(messages, [outcome === 'success' ? 'SUCCEEDED' : outcome === 'failure' ? 'localized:server.agentNotConfigured' : 'timeout'])
+  }
 })
 
 test('资源监控复用服务器测试权限并在弹窗中实时查询', () => {

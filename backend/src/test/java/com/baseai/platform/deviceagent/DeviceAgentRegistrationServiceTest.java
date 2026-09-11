@@ -59,12 +59,12 @@ class DeviceAgentRegistrationServiceTest {
             new DeviceAgentModels.ClaimPairingRequest(pairing.pairingCode())));
     }
 
-    /** 通用 WDA 自动化能力可配对，企业微信业务能力必须被拒绝。 */
+    /** 通用 IDA 自动化能力可配对，企业微信业务能力必须被拒绝。 */
     @Test
     void pairingAcceptsAutomationAndRejectsBusinessFeature() {
         DeviceAgentModels.CreatePairingResponse pairing = service.createPairing(
             new DeviceAgentModels.CreatePairingRequest("ios-agent-agent",
-                List.of("APPIUM_WDA_AUTOMATION"), null, "Test Mac"), 7L, "127.0.0.1");
+                List.of("APPIUM_IDA_AUTOMATION"), null, "Test Mac"), 7L, "127.0.0.1");
         service.claim(new DeviceAgentModels.ClaimPairingRequest(pairing.pairingCode()));
 
         assertEquals("ENABLED", db.queryForObject("""

@@ -10,9 +10,9 @@ import {
   shellQuote
 } from '../src/utils/deviceAgentInstallCommand.js'
 import {
-  buildDetectedWdaConfigPayload,
-  loadExistingWdaConfig
-} from '../src/utils/deviceAgentWdaConfig.js'
+  buildDetectedIdaConfigPayload,
+  loadExistingIdaConfig
+} from '../src/utils/deviceAgentIdaConfig.js'
 import { createRegistryStatusPoller } from '../src/utils/deviceAgentRegistryPoller.js'
 
 const agentView = readFileSync(new URL('../src/views/DeviceAgentsView.vue', import.meta.url), 'utf8')
@@ -70,17 +70,17 @@ test('私网识别、本机改址和诊断命令保持通用设备 Agent 路径'
   assert.match(buildDiagnoseCommand(), /com\.baseai\.device-agent/)
 })
 
-test('WDA 自动配置保留既有安全选择和启动参数', () => {
-  const payload = buildDetectedWdaConfigPayload({
+test('IDA 自动配置保留既有安全选择和启动参数', () => {
+  const payload = buildDetectedIdaConfigPayload({
     teamId: 'ABCDEFGHIJ',
     signingIdentity: 'Apple Development'
   }, {
     launchMode: 'URL',
-    wdaUrl: 'http://127.0.0.1:8100',
-    baseWdaLocalPort: 8200,
+    idaUrl: 'http://127.0.0.1:8100',
+    baseIdaLocalPort: 8200,
     signingConfig: {
       allowProvisioningDeviceRegistration: true,
-      updatedWdaBundleId: 'com.example.WebDriverAgentRunner'
+      updatedIdaBundleId: 'com.example.WebDriverAgentRunner'
     }
   })
 
@@ -89,23 +89,23 @@ test('WDA 自动配置保留既有安全选择和启动参数', () => {
       xcodeOrgId: 'ABCDEFGHIJ',
       xcodeSigningId: 'Apple Development',
       allowProvisioningDeviceRegistration: true,
-      updatedWdaBundleId: 'com.example.WebDriverAgentRunner'
+      updatedIdaBundleId: 'com.example.WebDriverAgentRunner'
     },
     launchMode: 'URL',
-    wdaUrl: 'http://127.0.0.1:8100',
+    idaUrl: 'http://127.0.0.1:8100',
     appiumServerUrl: 'http://127.0.0.1:4723',
-    baseWdaLocalPort: 8200
+    baseIdaLocalPort: 8200
   })
 })
 
-test('WDA 配置读取仅把 404 解释为尚未配置', async () => {
-  assert.deepEqual(await loadExistingWdaConfig({
+test('IDA 配置读取仅把 404 解释为尚未配置', async () => {
+  assert.deepEqual(await loadExistingIdaConfig({
     get: async () => ({ data: { launchMode: 'XCODEBUILD' } })
   }, 'ios-agent-one'), { launchMode: 'XCODEBUILD' })
-  assert.equal(await loadExistingWdaConfig({
+  assert.equal(await loadExistingIdaConfig({
     get: async () => { throw Object.assign(new Error('not found'), { response: { status: 404 } }) }
   }, 'ios-agent-one'), null)
-  await assert.rejects(() => loadExistingWdaConfig({
+  await assert.rejects(() => loadExistingIdaConfig({
     get: async () => { throw new Error('offline') }
   }, 'ios-agent-one'), /offline/)
 })

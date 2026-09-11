@@ -55,12 +55,12 @@ class DeviceAgentCommandServiceTest {
         db.execute("""
             CREATE TABLE automation_device_agent_device (
               agent_id VARCHAR(64), device_id CHAR(64), connected BOOLEAN,
-              wda_status VARCHAR(16), wda_running BOOLEAN, wda_port_error_code VARCHAR(64),
+              ida_status VARCHAR(16), ida_running BOOLEAN, ida_port_error_code VARCHAR(64),
               last_error_code VARCHAR(64), PRIMARY KEY (agent_id, device_id))
             """);
         db.update("""
             INSERT INTO automation_device_agent_device
-              (agent_id, device_id, connected, wda_status, wda_running)
+              (agent_id, device_id, connected, ida_status, ida_running)
             VALUES ('ios-agent-test', ?, TRUE, 'MISSING', FALSE)
             """, DEVICE_ID);
         DeviceAgentRegistrationService registration = mock(DeviceAgentRegistrationService.class);
@@ -69,46 +69,46 @@ class DeviceAgentCommandServiceTest {
         service = new DeviceAgentCommandService(db, new ObjectMapper(), registration);
     }
 
-    /** 企业微信业务命令和缺少设备目标的 WDA 命令必须被拒绝。 */
+    /** 企业微信业务命令和缺少设备目标的 IDA 命令必须被拒绝。 */
     @Test
     void rejectsBusinessAndUntargetedDeviceCommands() {
         BusinessException business = assertThrows(BusinessException.class, () -> service.create(
             new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "VERIFY_ACCOUNT", Map.of()), 7L));
         BusinessException untargeted = assertThrows(BusinessException.class, () -> service.create(
-            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "SETUP_WDA", Map.of()), 7L));
+            new DeviceAgentModels.CreateCommandRequest("ios-agent-test", "SETUP_IDA", Map.of()), 7L));
 
         assertEquals("deviceAgent.commandInvalid", business.getMessageKey());
         assertEquals("deviceAgent.commandTargetInvalid", untargeted.getMessageKey());
     }
 
-    /** WDA 安装和启动命令应绑定匿名目标，并把执行终态回写到目标设备。 */
+    /** IDA 安装和启动命令应绑定匿名目标，并把执行终态回写到目标设备。 */
     @Test
-    void executesTargetedWdaLifecycleAndUpdatesDeviceState() {
+    void executesTargetedIdaLifecycleAndUpdatesDeviceState() {
         DeviceAgentModels.AgentCommandView setup = service.create(
             new DeviceAgentModels.CreateCommandRequest("ios-agent-test", DEVICE_ID,
-                "SETUP_WDA", Map.of()), 7L);
+                "SETUP_IDA", Map.of()), 7L);
         DeviceAgentModels.LeaseCommandResponse setupLease = service.lease("ios-agent-test",
-            new DeviceAgentModels.LeaseCommandRequest(List.of("SETUP_WDA")));
+            new DeviceAgentModels.LeaseCommandRequest(List.of("SETUP_IDA")));
         service.reportResult("ios-agent-test", setup.id(), new DeviceAgentModels.ReportCommandResultRequest(
             setupLease.leaseToken(), "COMPLETED", "ready", null));
 
         assertEquals(DEVICE_ID, setup.targetDeviceId());
         assertEquals("READY", db.queryForObject("""
-            SELECT wda_status FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            SELECT ida_status FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
             """, String.class));
         assertFalse(Boolean.TRUE.equals(db.queryForObject("""
-            SELECT wda_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            SELECT ida_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
             """, Boolean.class)));
 
         DeviceAgentModels.AgentCommandView start = service.create(
             new DeviceAgentModels.CreateCommandRequest("ios-agent-test", DEVICE_ID,
-                "START_WDA", Map.of()), 7L);
+                "START_IDA", Map.of()), 7L);
         DeviceAgentModels.LeaseCommandResponse startLease = service.lease("ios-agent-test",
-            new DeviceAgentModels.LeaseCommandRequest(List.of("START_WDA")));
+            new DeviceAgentModels.LeaseCommandRequest(List.of("START_IDA")));
         service.reportResult("ios-agent-test", start.id(), new DeviceAgentModels.ReportCommandResultRequest(
             startLease.leaseToken(), "COMPLETED", "online", null));
         assertTrue(Boolean.TRUE.equals(db.queryForObject("""
-            SELECT wda_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            SELECT ida_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
             """, Boolean.class)));
     }
 

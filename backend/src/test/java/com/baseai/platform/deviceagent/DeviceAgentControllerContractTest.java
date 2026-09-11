@@ -18,16 +18,16 @@ class DeviceAgentControllerContractTest {
             DeviceAgentManagementController.class.getMethod("createPairing",
                 HttpServletRequest.class, DeviceAgentModels.CreatePairingRequest.class),
             "automation:device-agent:create",
-            DeviceAgentManagementController.class.getMethod("updateWdaConfig", String.class,
-                DeviceAgentModels.UpdateAgentWdaConfigRequest.class),
+            DeviceAgentManagementController.class.getMethod("updateIdaConfig", String.class,
+                DeviceAgentModels.UpdateAgentIdaConfigRequest.class),
             "automation:device-agent:update",
             DeviceAgentManagementController.class.getMethod("registryAction", String.class,
                 DeviceAgentModels.AgentRegistryActionRequest.class),
             "automation:device-agent:execute",
-            DeviceAgentManagementController.class.getMethod("deleteWdaConfig", String.class),
+            DeviceAgentManagementController.class.getMethod("deleteIdaConfig", String.class),
             "automation:device-agent:delete",
-            DeviceAgentDeviceController.class.getMethod("updateWdaPort", String.class, String.class,
-                DeviceAgentModels.UpdateAgentDeviceWdaPortRequest.class),
+            DeviceAgentDeviceController.class.getMethod("updateIdaPort", String.class, String.class,
+                DeviceAgentModels.UpdateAgentDeviceIdaPortRequest.class),
             "automation:device-agent:update"
         );
 

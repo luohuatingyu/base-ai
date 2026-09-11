@@ -27,7 +27,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="lastTestStatus" :label="t('servers.testStatus')" width="140" />
-      <el-table-column :label="t('common.operation')" width="470" fixed="right">
+      <el-table-column :label="t('common.operation')" width="330" fixed="right">
         <template #default="scope">
           <div class="table-actions">
             <el-button
@@ -44,6 +44,7 @@
               link
               type="success"
               :disabled="!scope.row.enabled"
+              :loading="testingIds.has(scope.row.id)"
               @click="test(scope.row)"
             >
               {{ t('servers.test') }}
@@ -55,22 +56,6 @@
               @click="open(scope.row)"
             >
               {{ t('common.edit') }}
-            </el-button>
-            <el-button
-              v-if="auth.hasPermission('operations:server:deploy')"
-              link
-              type="warning"
-              :disabled="!scope.row.enabled"
-              @click="deploy(scope.row)"
-            >
-              {{ t('servers.deploy') }}
-            </el-button>
-            <el-button
-              v-if="auth.hasPermission('operations:server:logs')"
-              link
-              @click="history(scope.row)"
-            >
-              {{ t('servers.history') }}
             </el-button>
             <el-button
               v-if="auth.hasPermission('operations:server:delete')"
@@ -377,68 +362,6 @@
       </div>
     </el-dialog>
 
-    <el-dialog v-model="deployVisible" class="server-deploy-dialog" :title="t('servers.deploy')" width="min(560px, 94vw)">
-      <div class="dialog-intro deploy-intro">
-        <span class="dialog-intro-icon"><el-icon><UploadFilled /></el-icon></span>
-        <div><strong>{{ t('servers.deploy') }}</strong><p>{{ t('servers.deployDescription') }}</p></div>
-      </div>
-      <el-alert :title="t('servers.deployRiskNotice')" type="warning" show-icon :closable="false" />
-      <el-form label-position="top" class="deploy-form">
-        <el-form-item :label="t('servers.action')">
-          <div class="selection-cards selection-cards--deploy">
-            <button type="button" class="selection-card" :class="{ 'is-active': deployForm.action === 'DEPLOY' }" @click="deployForm.action = 'DEPLOY'">
-              <span class="selection-card-icon"><el-icon><TopRight /></el-icon></span>
-              <span><strong>DEPLOY</strong><small>{{ t('servers.deployModeDescription') }}</small></span>
-              <span class="selection-card-check"><el-icon><Check /></el-icon></span>
-            </button>
-            <button
-              v-if="auth.hasPermission('operations:server:rollback')"
-              type="button"
-              class="selection-card"
-              :class="{ 'is-active': deployForm.action === 'ROLLBACK' }"
-              @click="deployForm.action = 'ROLLBACK'"
-            >
-              <span class="selection-card-icon"><el-icon><RefreshLeft /></el-icon></span>
-              <span><strong>ROLLBACK</strong><small>{{ t('servers.rollbackModeDescription') }}</small></span>
-              <span class="selection-card-check"><el-icon><Check /></el-icon></span>
-            </button>
-          </div>
-        </el-form-item>
-        <el-form-item :label="t('servers.revision')" class="section-last-field">
-          <el-input v-model="deployForm.revision" :placeholder="t('servers.revisionPlaceholder')">
-            <template #prefix><el-icon><Tickets /></el-icon></template>
-          </el-input>
-          <div class="field-help">{{ t('servers.revisionHelp') }}</div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="deployVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="submitDeploy">{{ t('servers.deploy') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="historyVisible" class="server-history-dialog" :title="t('servers.history')" width="min(1040px, 94vw)" top="6vh">
-      <div class="history-head">
-        <span><el-icon><Clock /></el-icon></span>
-        <div><strong>{{ t('servers.history') }}</strong><p>{{ t('servers.historyDescription') }}</p></div>
-        <el-tag type="info" effect="plain">{{ t('servers.historyCount', { count: deploymentRows.length }) }}</el-tag>
-      </div>
-      <el-table class="history-table" :data="deploymentRows" v-loading="historyLoading" :empty-text="t('servers.noDeploymentHistory')">
-        <el-table-column prop="revision" :label="t('servers.revision')" min-width="150" />
-        <el-table-column :label="t('servers.action')" width="130">
-          <template #default="scope"><el-tag :type="deploymentActionType(scope.row.action)" effect="plain">{{ scope.row.action }}</el-tag></template>
-        </el-table-column>
-        <el-table-column :label="t('common.status')" width="140">
-          <template #default="scope"><el-tag :type="deploymentStatusType(scope.row.status)">{{ scope.row.status }}</el-tag></template>
-        </el-table-column>
-        <el-table-column prop="startedAt" :label="t('servers.startedAt')" min-width="180" />
-        <el-table-column :label="t('servers.result')" min-width="260">
-          <template #default="scope">
-            <span class="deployment-result">{{ scope.row.errorMessage || scope.row.outputSummary || '-' }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
   </div>
 </template>
 
@@ -448,7 +371,6 @@ import {
   Aim,
   Box,
   Check,
-  Clock,
   Coin,
   Connection,
   Cpu,
@@ -460,14 +382,10 @@ import {
   Lock,
   Monitor,
   Refresh,
-  RefreshLeft,
   SetUp,
-  Tickets,
   Timer,
-  TopRight,
   Unlock,
   Upload,
-  UploadFilled,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -481,11 +399,7 @@ const rows = ref([])
 const loading = ref(false)
 const visible = ref(false)
 const saving = ref(false)
-const deployVisible = ref(false)
-const selectedId = ref(null)
-const historyVisible = ref(false)
-const historyLoading = ref(false)
-const deploymentRows = ref([])
+const testingIds = ref(new Set())
 const monitorVisible = ref(false)
 const monitorLoading = ref(false)
 const monitorServer = ref(null)
@@ -494,7 +408,6 @@ const originalAuthType = ref('KEY')
 const privateKeyFileInput = ref(null)
 const privateKeyFileName = ref('')
 const form = reactive(emptyForm())
-const deployForm = reactive({ action: 'DEPLOY', revision: '' })
 
 // 组合当前监控服务器的连接地址，避免在本地模式展示无意义端口。
 const monitorServerAddress = computed(() => {
@@ -584,14 +497,18 @@ async function save() {
   }
 }
 
-// 通过隔离 Agent 校验本地或 SSH Compose 环境。
+// 通过隔离 Agent 校验本地可用性或 SSH 登录，并阻止重复请求。
 async function test(row) {
+  if (testingIds.value.has(row.id)) return
+  testingIds.value.add(row.id)
   try {
     const { data } = await http.post(`/servers/${row.id}/test`)
-    ElMessage[data?.status === 'SUCCEEDED' ? 'success' : 'warning'](data?.error || data?.status || t('servers.testStatus'))
+    ElMessage[data?.status === 'SUCCEEDED' ? 'success' : 'warning'](data?.error ? monitorErrorText(data.error) : data?.status || t('servers.testStatus'))
     await load()
   } catch (error) {
     showHttpError(error, 'servers.testFailed')
+  } finally {
+    testingIds.value.delete(row.id)
   }
 }
 
@@ -614,41 +531,6 @@ async function refreshMonitor() {
     showHttpError(error, 'servers.monitorFailed')
   } finally {
     monitorLoading.value = false
-  }
-}
-
-// 打开指定服务器的部署弹窗。
-function deploy(row) {
-  selectedId.value = row.id
-  deployForm.action = 'DEPLOY'
-  deployForm.revision = ''
-  deployVisible.value = true
-}
-
-// 校验不可变版本标签并提交部署或回滚任务。
-async function submitDeploy() {
-  if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(deployForm.revision)) return ElMessage.warning(t('servers.revisionInvalid'))
-  try {
-    await http.post(`/servers/${selectedId.value}/deploy`, deployForm)
-    deployVisible.value = false
-    ElMessage.success(t('servers.deployAccepted'))
-  } catch (error) {
-    showHttpError(error, 'servers.deployFailed')
-  }
-}
-
-// 查询并展示服务器部署历史。
-async function history(row) {
-  historyVisible.value = true
-  historyLoading.value = true
-  deploymentRows.value = []
-  try {
-    const { data } = await http.get(`/servers/${row.id}/deployments`)
-    deploymentRows.value = data || []
-  } catch (error) {
-    showHttpError(error, 'servers.loadFailed')
-  } finally {
-    historyLoading.value = false
   }
 }
 
@@ -742,39 +624,20 @@ function containerHealthText(health) {
   return t(`servers.health.${key}`)
 }
 
-// 根据部署动作区分发布与回滚标签，方便快速浏览历史记录。
-function deploymentActionType(action) {
-  return String(action || '').toUpperCase() === 'ROLLBACK' ? 'warning' : 'primary'
-}
-
-// 根据部署状态选择明确的成功、失败或执行中标签。
-function deploymentStatusType(status) {
-  const normalized = String(status || '').toUpperCase()
-  if (normalized === 'SUCCEEDED') return 'success'
-  if (normalized === 'FAILED') return 'danger'
-  if (normalized === 'RUNNING') return 'warning'
-  return 'info'
-}
-
 onMounted(load)
 </script>
 
 <style scoped>
 .servers-table { margin-top: 20px; }
 .server-editor-dialog,
-.server-monitor-dialog,
-.server-history-dialog { max-height: 90vh; overflow: hidden; }
+.server-monitor-dialog { max-height: 90vh; overflow: hidden; }
 .server-editor-dialog :deep(.el-dialog__body),
-.server-monitor-dialog :deep(.el-dialog__body),
-.server-history-dialog :deep(.el-dialog__body) { max-height: calc(90vh - 132px); overflow: auto; background: #f7f9fc; }
+.server-monitor-dialog :deep(.el-dialog__body) { max-height: calc(90vh - 132px); overflow: auto; background: #f7f9fc; }
 .dialog-intro { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding: 16px 18px; border: 1px solid #dfe7f5; border-radius: 12px; background: linear-gradient(135deg, #fff, #f1f5ff); }
 .dialog-intro > div,
-.monitor-hero > div,
-.history-head > div { flex: 1; min-width: 0; }
-.dialog-intro strong,
-.history-head strong { color: var(--el-text-color-primary); font-size: 16px; }
+.monitor-hero > div { flex: 1; min-width: 0; }
+.dialog-intro strong { color: var(--el-text-color-primary); font-size: 16px; }
 .dialog-intro p,
-.history-head p,
 .local-mode-notice p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.55; }
 .dialog-intro-icon,
 .monitor-hero-icon { display: grid; flex: 0 0 auto; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: #fff; background: linear-gradient(135deg, var(--app-primary), #6b7bf2); box-shadow: 0 8px 18px rgba(53, 106, 230, 0.2); font-size: 20px; }
@@ -783,8 +646,7 @@ onMounted(load)
 .config-section--security { border-color: #dae4f7; }
 .config-section-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid #edf1f6; }
 .config-section-head > span,
-.container-head > div > span,
-.history-head > span { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--app-primary); background: #edf3ff; font-size: 17px; }
+.container-head > div > span { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--app-primary); background: #edf3ff; font-size: 17px; }
 .config-section-head h3 { margin: 0; color: var(--el-text-color-primary); font-size: 16px; }
 .config-section-head p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.5; }
 .server-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
@@ -825,7 +687,6 @@ onMounted(load)
 .dialog-footer-content { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; }
 .dialog-footer-content > div { display: flex; gap: 10px; }
 .secure-submit-hint { display: inline-flex; align-items: center; gap: 6px; color: var(--el-text-color-secondary); font-size: 12px; }
-.deployment-result { white-space: pre-wrap; overflow-wrap: anywhere; }
 .full { width: 100%; }
 .monitor-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding: 18px; border: 1px solid #dce5f4; border-radius: 12px; background: linear-gradient(135deg, #fff, #f0f5ff); }
 .monitor-identity { display: flex; align-items: center; gap: 10px; }
@@ -845,16 +706,11 @@ onMounted(load)
 .container-head > div { display: flex; align-items: center; gap: 10px; }
 .container-head h3 { margin: 0; font-size: 17px; }
 .container-head small { color: var(--el-text-color-secondary); font-size: 12px; }
-.container-table,
-.history-table { background: #fff; }
-.deploy-intro { margin-bottom: 14px; }
-.deploy-form { margin-top: 18px; padding: 18px; border: 1px solid var(--app-border); border-radius: 12px; background: #fff; }
-.selection-cards--deploy { grid-template-columns: 1fr; }
-.history-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 15px 16px; border: 1px solid var(--app-border); border-radius: 11px; background: #fff; }
+.container-table { background: #fff; }
 @media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .server-grid, .server-grid--basic, .server-grid--connection, .metric-grid, .selection-cards { grid-template-columns: 1fr; }
-  .dialog-intro, .monitor-hero, .history-head { align-items: flex-start; }
+  .dialog-intro, .monitor-hero { align-items: flex-start; }
   .monitor-hero { flex-wrap: wrap; }
   .monitor-hero > .el-button { width: 100%; }
   .private-key-toolbar { align-items: flex-start; flex-direction: column; }
@@ -864,7 +720,7 @@ onMounted(load)
 }
 @media (max-width: 520px) {
   .config-section { padding: 16px; }
-  .dialog-intro > .el-tag, .history-head > .el-tag { display: none; }
+  .dialog-intro > .el-tag { display: none; }
   .dialog-footer-content > div { display: grid; grid-template-columns: repeat(2, 1fr); }
 }
 </style>

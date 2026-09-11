@@ -34,14 +34,14 @@ class DeviceAgentDeviceServiceTest {
             CREATE TABLE automation_device_agent_device (
               agent_id VARCHAR(64), device_id CHAR(64), device_name VARCHAR(128), model VARCHAR(80),
               platform VARCHAR(20), os_version VARCHAR(40), connected BOOLEAN, connection_type VARCHAR(16),
-              status VARCHAR(32), wda_status VARCHAR(16), wda_running BOOLEAN, wda_local_port INT,
-              observed_wda_local_port INT, wda_port_error_code VARCHAR(64), last_error_code VARCHAR(64),
+              status VARCHAR(32), ida_status VARCHAR(16), ida_running BOOLEAN, ida_local_port INT,
+              observed_ida_local_port INT, ida_port_error_code VARCHAR(64), last_error_code VARCHAR(64),
               last_seen_at TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              PRIMARY KEY (agent_id, device_id), UNIQUE (agent_id, wda_local_port))
+              PRIMARY KEY (agent_id, device_id), UNIQUE (agent_id, ida_local_port))
             """);
         db.execute("""
-            CREATE TABLE automation_device_agent_wda_config (
-              agent_id VARCHAR(64) PRIMARY KEY, base_wda_local_port INT)
+            CREATE TABLE automation_device_agent_ida_config (
+              agent_id VARCHAR(64) PRIMARY KEY, base_ida_local_port INT)
             """);
         db.execute("""
             CREATE TABLE automation_device_agent_audit (
@@ -79,9 +79,9 @@ class DeviceAgentDeviceServiceTest {
                 report(FIRST, "Phone A", true), report(FIRST, "Phone B", true)))));
     }
 
-    /** 多设备同步必须从基准端口开始稳定分配互不冲突的 WDA 端口。 */
+    /** 多设备同步必须从基准端口开始稳定分配互不冲突的 IDA 端口。 */
     @Test
-    void assignsStableUniqueWdaPortsAndReturnsAssignments() {
+    void assignsStableUniqueIdaPortsAndReturnsAssignments() {
         DeviceAgentModels.AgentDeviceInventoryResponse first = service.synchronize("ios-agent-test",
             new DeviceAgentModels.AgentDeviceInventoryRequest(List.of(
                 report(FIRST, "Phone A", true), report(SECOND, "Phone B", true))));
@@ -90,22 +90,22 @@ class DeviceAgentDeviceServiceTest {
                 report(FIRST, "Phone A", true), report(SECOND, "Phone B", true))));
 
         assertEquals(2, first.devices().size());
-        assertNotEquals(first.devices().get(0).wdaLocalPort(), first.devices().get(1).wdaLocalPort());
+        assertNotEquals(first.devices().get(0).idaLocalPort(), first.devices().get(1).idaLocalPort());
         assertEquals(first.devices(), second.devices());
     }
 
-    /** 管理端不能把两台设备配置到相同 WDA 端口。 */
+    /** 管理端不能把两台设备配置到相同 IDA 端口。 */
     @Test
     void rejectsConflictingManagedPort() {
         service.synchronize("ios-agent-test", new DeviceAgentModels.AgentDeviceInventoryRequest(List.of(
             report(FIRST, "Phone A", true), report(SECOND, "Phone B", true))));
         Integer occupied = service.list("ios-agent-test").stream()
-            .filter(device -> FIRST.equals(device.deviceId())).findFirst().orElseThrow().wdaLocalPort();
+            .filter(device -> FIRST.equals(device.deviceId())).findFirst().orElseThrow().idaLocalPort();
 
-        BusinessException exception = assertThrows(BusinessException.class, () -> service.updateWdaPort(
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.updateIdaPort(
             "ios-agent-test", SECOND,
-            new DeviceAgentModels.UpdateAgentDeviceWdaPortRequest(occupied), 7L));
-        assertEquals("deviceAgent.wdaPortConflict", exception.getMessageKey());
+            new DeviceAgentModels.UpdateAgentDeviceIdaPortRequest(occupied), 7L));
+        assertEquals("deviceAgent.idaPortConflict", exception.getMessageKey());
     }
 
     /** 构造不含原始 UDID 和控制状态的设备上报。 */

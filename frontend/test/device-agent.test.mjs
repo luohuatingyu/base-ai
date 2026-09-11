@@ -25,10 +25,10 @@ test('device Agent page exposes complete generic automation management actions',
   assert.match(view, /DIAGNOSTICS/)
   // 设备检测由专用 REST 端点下发（/devices/detect 返回 202 命令），等价于旧的 DETECT_DEVICE 命令入口
   assert.match(view, /devices\/detect/)
-  assert.match(view, /SETUP_WDA/)
-  assert.match(view, /START_WDA/)
+  assert.match(view, /SETUP_IDA/)
+  assert.match(view, /START_IDA/)
   assert.match(view, /registry\/actions/)
-  assert.match(view, /APPIUM_WDA_AUTOMATION/)
+  assert.match(view, /APPIUM_IDA_AUTOMATION/)
   assert.match(view, /UPGRADE/)
   // 端口范围校验由 el-input-number 的 min/max 承担，等价于旧的数值断言
   assert.match(view, /:min="1024"/)
@@ -45,10 +45,10 @@ function collectStrings(value) {
 }
 
 test('device Agent UI uses IDA as the iOS Device Automation abbreviation', () => {
-  assert.equal(zhCN.deviceAgents.featureNames.APPIUM_WDA_AUTOMATION, 'IDA')
-  assert.equal(enUS.deviceAgents.featureNames.APPIUM_WDA_AUTOMATION, 'IDA')
-  assert.equal(zhCN.deviceAgents.devicePool.wdaPort, 'IDA 端口')
-  assert.equal(enUS.deviceAgents.devicePool.wdaPort, 'IDA Port')
+  assert.equal(zhCN.deviceAgents.featureNames.APPIUM_IDA_AUTOMATION, 'IDA')
+  assert.equal(enUS.deviceAgents.featureNames.APPIUM_IDA_AUTOMATION, 'IDA')
+  assert.equal(zhCN.deviceAgents.devicePool.idaPort, 'IDA 端口')
+  assert.equal(enUS.deviceAgents.devicePool.idaPort, 'IDA Port')
 
   const visibleMessages = [
     ...collectStrings(zhCN.deviceAgents),
