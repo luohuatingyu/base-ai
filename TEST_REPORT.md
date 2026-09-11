@@ -1,5 +1,19 @@
 # 最近分支覆盖测试报告
 
+## WDA 业务命名统一为 IDA（2026-09-11）
+
+### 本次变更测试结果
+
+**变更范围**：设备 Agent 业务标识、接口字段、Appium 能力字段及前端展示统一改为 IDA，并重命名相关模块文件。
+
+**测试执行结果**：未完成。`docker compose up --build -d` 因缺少 `APP_IMAGE_REVISION` 环境变量失败；`cd backend && mvn test -B` 因环境未安装 Maven（`mvn: command not found`）未执行。
+
+**静态检查**：业务代码与前端中未发现独立的 WDA 标识残留；工作流中的 `workflow` 子串误匹配已排除。
+
+**已知问题**：尚未完成运行时构建及完整测试，需在具备 Docker Compose 环境变量和 Maven 的环境中复验。
+
+**Git 基准点**：96073b1
+
 ## USB 实连设备与开发隧道状态解耦验收（2026-09-11）
 
 ### Git 基准点
