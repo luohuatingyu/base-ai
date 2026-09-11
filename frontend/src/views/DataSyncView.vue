@@ -10,6 +10,7 @@
       <div class="data-sync-grid">
         <el-form-item :label="t('dataSync.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('dataSync.strategy')"><el-select v-model="form.strategy" class="full"><el-option v-for="item in strategies" :key="item" :label="t(`dataSync.strategies.${item}`)" :value="item" /></el-select></el-form-item>
+        <el-form-item :label="t('dataSync.server')"><el-select v-model="form.serverId" class="full" @change="loadTables"><el-option v-for="item in servers" :key="item.id" :label="`${item.name} (${item.mode})`" :value="item.id" :disabled="!item.enabled" /></el-select></el-form-item>
         <el-form-item :label="t('dataSync.source')"><el-select v-model="form.sourceConnectionId" class="full" @change="loadTables"><el-option v-for="item in connections" :key="item.id" :label="`${item.name} (${item.connectionType})`" :value="item.id" /></el-select></el-form-item>
         <el-form-item :label="t('dataSync.target')"><el-select v-model="form.targetConnectionId" class="full"><el-option v-for="item in connections" :key="item.id" :label="`${item.name} (${item.connectionType})`" :value="item.id" /></el-select></el-form-item>
       </div>
@@ -31,6 +32,7 @@
 
     <el-table :data="plans" v-loading="loading" class="data-sync-table">
       <el-table-column prop="name" :label="t('dataSync.name')" min-width="180" />
+      <el-table-column :label="t('dataSync.server')" min-width="160"><template #default="scope">{{ scope.row.serverName || t('dataSync.platformLocal') }}</template></el-table-column>
       <el-table-column prop="strategy" :label="t('dataSync.strategy')" width="150"><template #default="scope">{{ t(`dataSync.strategies.${scope.row.strategy}`) }}</template></el-table-column>
       <el-table-column :label="t('dataSync.tables')" width="100"><template #default="scope">{{ scope.row.tables?.length || 0 }}</template></el-table-column>
       <el-table-column prop="scheduleCron" :label="t('dataSync.schedule')" min-width="150" />
@@ -44,6 +46,7 @@
     <el-dialog v-model="runVisible" :title="t('dataSync.details')" width="min(1040px, 94vw)">
       <el-descriptions v-if="runDetail" :column="3" border>
         <el-descriptions-item :label="t('common.status')">{{ runDetail.status }}</el-descriptions-item>
+        <el-descriptions-item :label="t('dataSync.server')">{{ runDetail.serverName || t('dataSync.platformLocal') }}</el-descriptions-item>
         <el-descriptions-item :label="t('dataSync.readRows')">{{ runDetail.readRows }}</el-descriptions-item>
         <el-descriptions-item :label="t('dataSync.writtenRows')">{{ runDetail.writtenRows }}</el-descriptions-item>
         <el-descriptions-item :label="t('dataSync.traceId')">{{ runDetail.traceId }}</el-descriptions-item>
@@ -69,22 +72,23 @@ import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n(), auth = useAuthStore()
-const connections = ref([]), plans = ref([]), sourceTables = ref([]), selectedTables = ref([])
+const connections = ref([]), servers = ref([]), plans = ref([]), sourceTables = ref([]), selectedTables = ref([])
 const loading = ref(false), saving = ref(false), previewing = ref(false), previewVisible = ref(false), previewRows = ref([])
 const runVisible = ref(false), runLoading = ref(false), runDetail = ref(null)
 const strategies = ['UPSERT', 'FULL_REPLACE', 'APPEND']
-const form = reactive({ id: null, name: '', sourceConnectionId: null, targetConnectionId: null, strategy: 'UPSERT', scheduleCron: '', enabled: true, confirmDestructive: false })
+const form = reactive({ id: null, name: '', serverId: null, sourceConnectionId: null, targetConnectionId: null, strategy: 'UPSERT', scheduleCron: '', enabled: true, confirmDestructive: false })
 
 // 加载当前用户可见的数据库连接和同步计划。
 async function load() {
   loading.value = true
-  try { const [connectionResponse, planResponse] = await Promise.all([http.get('/data-sync/connections'), http.get('/data-sync/plans')]); connections.value = connectionResponse.data || []; plans.value = planResponse.data || [] } catch (error) { showHttpError(error, 'dataSync.loadFailed') } finally { loading.value = false }
+  try { const [connectionResponse, serverResponse, planResponse] = await Promise.all([http.get('/data-sync/connections'), http.get('/data-sync/servers'), http.get('/data-sync/plans')]); connections.value = connectionResponse.data || []; servers.value = serverResponse.data || []; plans.value = planResponse.data || [] } catch (error) { showHttpError(error, 'dataSync.loadFailed') } finally { loading.value = false }
 }
 
 // 根据源连接读取可选表，并清除旧连接的选择。
 async function loadTables() {
-  if (!form.sourceConnectionId) { sourceTables.value = []; return }
-  try { const { data } = await http.get(`/data-sync/connections/${form.sourceConnectionId}/tables`); sourceTables.value = data || []; selectedTables.value = [] } catch (error) { showHttpError(error, 'dataSync.loadFailed') }
+  selectedTables.value = []
+  if (!form.serverId || !form.sourceConnectionId) { sourceTables.value = []; return }
+  try { const { data } = await http.get(`/data-sync/connections/${form.sourceConnectionId}/tables`, { params: { serverId: form.serverId } }); sourceTables.value = data || [] } catch (error) { sourceTables.value = []; showHttpError(error, 'dataSync.loadFailed') }
 }
 
 // 将界面中的表选择转换为后端使用的同名表映射。
@@ -92,14 +96,14 @@ function mappings() { return selectedTables.value.map(name => ({ sourceSchema: '
 
 // 执行只读结构预检并展示兼容性提示。
 async function preview() {
-  if (!form.sourceConnectionId || !form.targetConnectionId || !selectedTables.value.length) return ElMessage.warning(t('dataSync.formRequired'))
+  if (!form.serverId || !form.sourceConnectionId || !form.targetConnectionId || !selectedTables.value.length) return ElMessage.warning(t('dataSync.formRequired'))
   previewing.value = true
-  try { const { data } = await http.post('/data-sync/preview', { sourceConnectionId: form.sourceConnectionId, targetConnectionId: form.targetConnectionId, strategy: form.strategy, tables: mappings() }); previewRows.value = data?.tables || []; previewVisible.value = true } catch (error) { showHttpError(error, 'dataSync.previewFailed') } finally { previewing.value = false }
+  try { const { data } = await http.post('/data-sync/preview', { sourceConnectionId: form.sourceConnectionId, targetConnectionId: form.targetConnectionId, serverId: form.serverId, strategy: form.strategy, tables: mappings() }); previewRows.value = data?.tables || []; previewVisible.value = true } catch (error) { showHttpError(error, 'dataSync.previewFailed') } finally { previewing.value = false }
 }
 
 // 创建或更新同步计划。
 async function save() {
-  if (!form.name || !form.sourceConnectionId || !form.targetConnectionId || !selectedTables.value.length) return ElMessage.warning(t('dataSync.formRequired'))
+  if (!form.name || !form.serverId || !form.sourceConnectionId || !form.targetConnectionId || !selectedTables.value.length) return ElMessage.warning(t('dataSync.formRequired'))
   saving.value = true
   try { const body = { ...form, tables: mappings() }; if (form.id) await http.put(`/data-sync/plans/${form.id}`, body); else await http.post('/data-sync/plans', body); ElMessage.success(t('common.success')); await load() } catch (error) { showHttpError(error, 'dataSync.saveFailed') } finally { saving.value = false }
 }
@@ -107,7 +111,7 @@ async function save() {
 // 判断计划最近一次运行是否尚未结束。
 function running(row) { return ['RUNNING', 'CANCEL_REQUESTED'].includes(row.lastRunStatus) }
 // 将已保存计划回填到编辑表单。
-async function edit(row) { Object.assign(form, { id: row.id, name: row.name, sourceConnectionId: row.sourceConnectionId, targetConnectionId: row.targetConnectionId, strategy: row.strategy, scheduleCron: row.scheduleCron || '', enabled: row.enabled, confirmDestructive: row.strategy === 'FULL_REPLACE' }); await loadTables(); selectedTables.value = (row.tables || []).map(table => table.sourceTable) }
+async function edit(row) { Object.assign(form, { id: row.id, name: row.name, serverId: row.serverId, sourceConnectionId: row.sourceConnectionId, targetConnectionId: row.targetConnectionId, strategy: row.strategy, scheduleCron: row.scheduleCron || '', enabled: row.enabled, confirmDestructive: row.strategy === 'FULL_REPLACE' }); await loadTables(); selectedTables.value = (row.tables || []).map(table => table.sourceTable) }
 // 手动启动同步计划。
 async function run(row) { try { await http.post(`/data-sync/plans/${row.id}/run`); ElMessage.success(t('dataSync.runAccepted')); await load() } catch (error) { showHttpError(error, 'dataSync.runFailed') } }
 // 请求取消最近一次运行。
