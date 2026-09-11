@@ -1,5 +1,66 @@
 # 最近分支覆盖测试报告
 
+## 可复用服务器秘钥与账号密码管理（2026-09-11）
+
+### Git 基准点与实现范围
+
+Commit: f1d1cde80ba6c1a9768fb532c8821dad71a93579
+- 提交信息：Complete reusable server credential management；分支：master；测试日期：2026-09-11。
+- 本次基于此前未完成的凭据后端骨架继续开发。检查旧基准 cb5ee140660424ff340234a8daefe313021f8464 与 HEAD 的业务代码差异后，执行完整后端与前端验证。
+- 技术栈：Java 17 / Spring Boot / JDBC / MySQL / Flyway、Vue 3 / Element Plus、AES-GCM；未新增依赖或修改运行配置，Python 运行镜像保持 3.12。
+- “服务器管理 → 秘钥管理”支持标签、RSA 类型、公钥、私钥、证书、账号、密码和私钥口令；支持仅保存账号密码。新建 SSH 服务器选择同一所有者的启用凭据，账号自动带入；无账号的密钥可使用服务器填写的账号。
+- 服务器持久化凭据引用，不复制秘密；连接测试、监控、部署的共享 Agent 载荷及数据同步执行目标按需读取最新凭据。旧服务器原有直接凭据保留，可编辑切换引用；未执行旧凭据的批量抽取或自动迁移。
+- 私钥、密码、口令加密保存；列表仅返回设置状态，管理员显式明文查看使用 no-store 响应并在弹窗关闭后清理。创建、更新、明文查看禁止捕获请求快照。引用中的凭据不得删除或停用；绑定和删除使用相同凭据行锁。
+- V35 创建凭据表与服务器引用列，V36 补充私钥口令密文列。生产 MySQL 已从 V34 成功迁移至 V36，没有删除历史字段或数据。
+
+### 实际执行命令与结果
+
+- 后端定向：在项目根目录执行 `docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp -Dtest=ServerCredentialServiceTest,ServerManagementValidationTest,ServerManagementControllerTest,ServerManagementMonitorTest test && mvn -B -ntp test'`。定向 69/69 通过，失败 0、错误 0、跳过 0；随后完整 844/844 通过。
+- 后端最终代码完整复核：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp test'`，844/844 通过，通过率 100%，失败 0、错误 0、跳过 0。
+- 关键定向模块：ServerCredentialServiceTest 17/17、ServerManagementValidationTest 22/22、ServerManagementMonitorTest 28/28、ServerManagementControllerTest 2/2。使用真实 AES-GCM、H2 和实际 Flyway SQL；HTTP Agent 用回环测试服务器隔离外部依赖，未 Mock 凭据核心读写或加解密逻辑。
+- 前端定向：`node --test frontend/test/server-credentials.test.mjs frontend/test/servers.test.mjs`，16/16 通过，失败 0、跳过 0。
+- 前端完整检查：在 frontend 工作目录执行 `npm run lint && npm run typecheck && npm run test:coverage`，全部通过；366 项单元测试通过，失败 0、跳过 0。工具函数行覆盖率 98.40%、分支 80.95%、函数 95.27%；此统计不表示 Vue 组件或后端的代码覆盖率。
+- 前端生产服务 E2E：在 frontend 工作目录执行 `node --test e2e/*.test.mjs`，1/1 通过，失败 0、跳过 0；覆盖生产 Node 服务的 SPA、API 代理与错误路径，不等同于登录后的浏览器全流程验收。
+- 统一重建与启动：`APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`，退出 0。镜像版本为上述代码基准点；前端 Vite 编译与后端 Maven package 在 Compose 构建内执行。未单独运行后端 compile 或前端 npm run build。
+- 运行验证：`docker ps --filter name=ai- --format '{{.Names}} {{.Status}}'` 确认 backend、frontend、deployment-agent、document-parser、python-worker、caddy 六个容器全部 healthy；后端日志确认两项迁移成功，当前版本 V36，应用正常启动。未发生端口冲突。
+- 未登录接口验证：`curl -k -s -o /dev/null -w 'credential endpoint unauthenticated HTTP %{http_code}\n' https://localhost/api/server-credentials`，返回 401；本机自签名证书仅在此验证命令中使用 -k。
+- 变更检查：`git diff --check`、`git diff --cached --check` 通过。Maven 在自动删除的测试容器中复制源码，临时文件随容器销毁；工作区未创建调试文件，没有提交临时测试脚本。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期及实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 保存完整材料且秘密加密 | 服务/数据库：storesEncryptedMaterialsAndPreservesSecretsOnEdit；已认证所有者，提交全部材料与带首尾空格的密码 | 元数据完整，数据库为 enc:v1 密文，解密保留原密码，空值/掩码编辑保留已有秘密 | 正常、边界、回归 |
+| 类型与字段约束有效 | 参数化服务测试：rejectsUnsupportedType、rejectsInvalidFields；空/EC/ED25519/rsa 类型、超长标签、多字节超限材料、超长密码、恶意账号、空材料 | 拒绝非法输入，不创建记录；supportsBoundariesAndReportsUnreadableSecret 验证合法最大长度可保存 | 边界、异常、安全 |
+| 账号密码可独立复用 | 服务/数据库：rejectsUnavailableCredentialsAndSupportsAccountOnly；仅提交账号与密码 | 可保存账号凭据，无私钥时不能用于 KEY 认证，停用或删除后不能绑定 | 正常、异常 |
+| 多台服务器共享最新凭据 | 服务/数据库：sharesCredentialsAndResolvesLatestValues；两台服务器引用同一凭据后轮换密码 | 两台数据同步执行目标读取新密码，服务器配置不包含秘密副本，引用中的凭据不可删除/停用 | 正常、状态冲突、回归 |
+| 实际 Agent 请求使用轮换材料 | HTTP 集成：passesRotatedCredentialsToAgentWithoutExposingThem；回环 Agent 接收连接测试与监控请求 | 请求包含最新账号、私钥、密码、口令；用户响应隐藏 Agent 原始输出与秘密 | 正常、安全、集成 |
+| 权限与所有权隔离 | 服务与控制器契约：enforcesOwnershipAndAdminSecretAccess、protectsCredentialEndpointsAndDisablesSecretSnapshots；未登录、其他用户、管理员 | 未登录 401；普通用户越权修改/删除/绑定/明文查看 403；管理员可管理及查看，仍不能跨所有者绑定；接口权限和禁止快照元数据正确 | 权限、安全 |
+| 历史服务器与切换认证兼容 | 服务/数据库：updatesLegacyServerAndUnlinksLocalMode、switchesReferencesAndUsesServerUsernameForKeyOnly；直接密码记录切换引用、KEY 切 PASSWORD、切 LOCAL | 旧记录保持可用，引用切换生效，无账号私钥使用服务器账号，LOCAL 解除引用后可删除凭据 | 兼容、回归、分支 |
+| 依赖异常不泄露秘密 | 服务/数据库：supportsBoundariesAndReportsUnreadableSecret；损坏密文、不存在 ID；原监控异常套件 | 返回稳定错误和正确 404，不返回密文/解密内部错误；既有超时、认证失败和网络诊断回归通过 | 异常、安全、回归 |
+| 页面凭据选择与账号带入 | 前端真实函数测试：服务器选择凭据并自动复用账号；新服务器无引用、有效/无效引用、选择账号凭据 | 新服务器必须选择有效凭据，选择后带入账号并清除旧临时秘密，双语入口可用 | 正常、边界、兼容 |
+| 管理页增删改及秘密生命周期 | 前端真实函数测试：server-credentials.test.mjs；新增/编辑成功与失败、无效表单、重复提交、取消删除、引用冲突、管理员显式查看 | 材料完整提交，成功清空并刷新；失败保留输入；取消不调用接口，冲突展示错误，关闭明文弹窗清理，未使用浏览器持久存储或 v-html | 正常、异常、安全 |
+
+### 发现的问题与修复
+
+- 上一阶段骨架错误引用不存在的 BusinessException 包，编辑直接覆盖秘密为空，创建通过列表首项取 ID。现已修正错误导入，并实现带权限校验的事务写入、秘密保留和当前 INSERT 的生成键获取。
+- 首次定向执行 65 项测试出现 5 项错误：H2 的 RETURN_GENERATED_KEYS 同时返回 id 和默认时间字段，getKey 不能读取多列。改为显式请求 id 列后，新增测试及完整测试全部通过，没有删除、跳过或弱化失败用例。
+- 后端没有配置 JaCoCo 等行/分支覆盖率插件；本报告给出可执行场景与通过数量，不声称后端行覆盖率达到 100%。
+
+### 已知限制、未执行项与下次测试建议
+
+- 本次支持 RSA 类型标记的材料保存与选择，不提供密钥生成、材料算法解析或公私钥配对校验；密钥实际可加载性和认证结果由既有 SSH 链路验证。certificate 仅保存，不参与 SSH 证书认证。
+- 敏感字段留空表示保留；移除已存秘密应新建凭据并切换服务器引用。更新共享凭据影响后续连接，已经开始的 SSH 会话不会中途更换认证材料。
+- 未操作用户现有远端服务器的认证配置，也未使用真实远端凭据执行新的 SSH 登录验收；隔离 HTTP 集成已验证 Agent 请求材料，真实环境仍应在用户选择有效凭据后执行“连接测试”和“资源监控”。
+- 未执行登录后的浏览器人工全流程：本地 Air 预览从 HTTP 跳转 HTTPS 后受到预览来源限制且没有登录会话。前端正式函数测试、类型检查、生产编译和 Node 服务 E2E 已通过；下次可在已登录浏览器验证新建账号凭据、选择、轮换和删除保护。
+- 本次未变更 Go/Python/其他独立服务业务逻辑，未额外执行这些模块的完整测试套件；后端和前端完整套件已执行。
+- 回滚时不能仅回退应用镜像而忽略已绑定引用：需先安全恢复服务器直接认证配置，或恢复包含服务器与凭据的同一数据库备份；本次加法迁移应保留，避免删除共享凭据或破坏 Flyway 历史。未执行破坏性回滚演练。
+
+### 重测触发条件
+
+- 修改凭据、服务器或数据同步业务代码、DTO、数据库迁移、权限或加密相关配置时，重新执行定向与完整后端测试并更新基准；修改管理页面时执行定向、前端完整检查与统一 Compose 重建。
+- 基准差异检查使用 `git diff f1d1cde80ba6c1a9768fb532c8821dad71a93579 HEAD -- backend/src/main/java/`，未提交的业务变更也需纳入检查；测试报告本身以独立提交保存，不改变已验收业务代码版本。
+
 ## SSH 运行用户修复与操作系统探测（2026-09-11）
 
 ### Git 基准点与交付状态
