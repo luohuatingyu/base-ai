@@ -8034,3 +8034,11 @@ Commit: 474cd6a
 
 - 修改探测状态机、错误公开原因、适配器生命周期、Worker 客户端重试或最大尝试次数时，必须重跑探测定向/完整测试、两个 Worker 回归、Compose 重建和运行态健康检查。
 - 可回退提交 `474cd6a`；回退不会修改数据库结构，已有失败记录仍保留原状态。
+
+## 本次变更：凭据类型互斥（2026-09-11）
+
+- 类型改为 `PASSWORD`（账号密码）与 `KEY`（秘钥），后端拒绝混合材料。
+- 测试：`mvn test -B` 未执行，环境缺少 Maven（command not found）。
+- 重建：`docker compose up --build -d` 未完成，缺少 `APP_IMAGE_REVISION` 环境变量。
+- 已知限制：需在具备 Maven 与 Compose 环境变量的环境补跑完整测试。
+- Git 基准点：ea2e1d5。
