@@ -656,61 +656,46 @@ func runDataSyncProcess(command *exec.Cmd, task json.RawMessage,
 	return latest, stderr.String(), waitErr
 }
 
-// dataSyncRemoteCommand 构造通过严格 Host Key 校验的 SSH 进程，并把临时密钥限制在私有目录。
+// dataSyncRemoteCommand 为所有远程操作构造 SSH 进程，每次自动信任主机并隔离临时凭据。
 func dataSyncRemoteCommand(ctx context.Context, input request, remoteCommand string) (*exec.Cmd, func(), error) {
+	if err := validateSSH(input); err != nil {
+		return nil, func() {}, err
+	}
 	tempDir, err := os.MkdirTemp("", "deployment-agent-")
 	if err != nil {
 		return nil, func() {}, err
 	}
 	cleanup := func() { _ = os.RemoveAll(tempDir) }
-	knownHosts := filepath.Join(tempDir, "known_hosts")
-	scanContext, cancelScan := context.WithTimeout(ctx, 10*time.Second)
-	scan := exec.CommandContext(scanContext, "ssh-keyscan", "-T", "5", "-p", fmt.Sprint(input.Port), input.Host)
-	keyData, err := scan.Output()
-	cancelScan()
-	if err != nil {
-		cleanup()
-		return nil, func() {}, errors.New("SSH_HOST_KEY_SCAN_FAILED")
-	}
-	candidate := filepath.Join(tempDir, "candidate_host_key")
-	trustedKeys, err := matchingHostKeys(keyData, input.HostKey, func(line string) (string, error) {
-		if writeErr := os.WriteFile(candidate, []byte(line+"\n"), 0600); writeErr != nil {
-			return "", writeErr
-		}
-		output, commandErr := exec.CommandContext(ctx, "ssh-keygen", "-lf", candidate, "-E", "sha256").Output()
-		return string(output), commandErr
-	})
-	if err != nil || os.WriteFile(knownHosts, trustedKeys, 0600) != nil {
-		cleanup()
-		return nil, func() {}, errors.New("SSH_HOST_KEY_MISMATCH")
-	}
-	args := []string{"-F", "/dev/null", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + knownHosts,
+	args := []string{"-F", "/dev/null", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
 		"-o", "GlobalKnownHostsFile=/dev/null", "-o", "CanonicalizeHostname=no", "-o", "ConnectTimeout=10",
-		"-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-p", fmt.Sprint(input.Port)}
-	if input.AuthType == "KEY" {
+		"-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-o", "IdentityAgent=none",
+		"-o", "NumberOfPasswordPrompts=1", "-p", fmt.Sprint(input.Port)}
+	if input.AuthType == "KEY" || input.AuthType == "KEY_PASSWORD" {
 		privateKey := filepath.Join(tempDir, "id_key")
 		if err := os.WriteFile(privateKey, []byte(input.PrivateKey), 0600); err != nil {
 			cleanup()
 			return nil, func() {}, err
 		}
-		args = append(args, "-o", "IdentitiesOnly=yes", "-o", "PasswordAuthentication=no", "-i", privateKey)
-		if input.Passphrase == "" {
-			args = append(args, "-o", "BatchMode=yes")
-		}
-	} else {
-		args = append(args, "-o", "BatchMode=no", "-o", "PubkeyAuthentication=no",
-			"-o", "PreferredAuthentications=password,keyboard-interactive")
+		args = append(args, "-o", "IdentitiesOnly=yes", "-i", privateKey)
+	}
+	switch input.AuthType {
+	case "KEY":
+		args = append(args, "-o", "PreferredAuthentications=publickey", "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no")
+	case "PASSWORD":
+		args = append(args, "-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password,keyboard-interactive")
+	case "KEY_PASSWORD":
+		args = append(args, "-o", "PreferredAuthentications=publickey,password,keyboard-interactive")
+	}
+	askpass := filepath.Join(tempDir, "askpass")
+	script := "#!/bin/sh\ncase \"$1\" in\n  *passphrase*) printf '%s\\n' \"$BASEAI_SSH_PASSPHRASE\" ;;\n  *assword*) printf '%s\\n' \"$BASEAI_SSH_PASSWORD\" ;;\n  *) exit 1 ;;\nesac\n"
+	if err := os.WriteFile(askpass, []byte(script), 0700); err != nil {
+		cleanup()
+		return nil, func() {}, err
 	}
 	args = append(args, input.Username+"@"+input.Host, remoteCommand)
 	command := exec.CommandContext(ctx, "ssh", args...)
-	if input.AuthType == "PASSWORD" {
-		command = exec.CommandContext(ctx, "sshpass", append([]string{"-e", "ssh"}, args...)...)
-		command.Env = append(os.Environ(), "SSHPASS="+input.Password)
-	}
-	if input.AuthType == "KEY" && input.Passphrase != "" {
-		command = exec.CommandContext(ctx, "sshpass", append([]string{"-e", "-P", "Enter passphrase", "ssh"}, args...)...)
-		command.Env = append(os.Environ(), "SSHPASS="+input.Passphrase)
-	}
+	command.Env = append(os.Environ(), "LC_ALL=C", "DISPLAY=baseai:0", "SSH_ASKPASS_REQUIRE=force",
+		"SSH_ASKPASS="+askpass, "BASEAI_SSH_PASSPHRASE="+input.Passphrase, "BASEAI_SSH_PASSWORD="+input.Password)
 	return command, cleanup, nil
 }
 
@@ -746,20 +731,20 @@ func (buffer *boundedBuffer) Write(value []byte) (int, error) {
 	return original, nil
 }
 
-// validateSSH 统一验证 SSH 目标、主机指纹和认证凭据。
+// validateSSH 统一验证 SSH 目标和认证凭据，兼容忽略历史指纹字段。
 func validateSSH(input request) error {
 	invalidSSH := !hostPattern.MatchString(input.Host) || input.Port < 1 || input.Port > 65535
-	invalidSSH = invalidSSH || !usernamePattern.MatchString(input.Username) || !fingerprintPattern.MatchString(input.HostKey)
+	invalidSSH = invalidSSH || !usernamePattern.MatchString(input.Username)
 	if invalidSSH {
 		return errors.New("SSH_CONFIGURATION_INVALID")
 	}
-	if input.AuthType == "KEY" && input.PrivateKey == "" {
+	if (input.AuthType == "KEY" || input.AuthType == "KEY_PASSWORD") && strings.TrimSpace(input.PrivateKey) == "" {
 		return errors.New("SSH_PRIVATE_KEY_REQUIRED")
 	}
-	if input.AuthType == "PASSWORD" && input.Password == "" {
+	if (input.AuthType == "PASSWORD" || input.AuthType == "KEY_PASSWORD") && strings.TrimSpace(input.Password) == "" {
 		return errors.New("SSH_PASSWORD_REQUIRED")
 	}
-	if input.AuthType != "KEY" && input.AuthType != "PASSWORD" {
+	if input.AuthType != "KEY" && input.AuthType != "PASSWORD" && input.AuthType != "KEY_PASSWORD" {
 		return errors.New("SSH_AUTH_TYPE_INVALID")
 	}
 	return nil
@@ -1071,7 +1056,7 @@ for root in "$HOME" /opt /srv; do
 done | awk '!seen[$0]++' | head -n 40 | while IFS= read -r candidate; do emit_compose "$candidate"; done`
 }
 
-// remote 校验远端 Host Key 后执行由安全参数拼接的固定 Compose 命令。
+// remote 使用自动信任的 SSH 连接执行由安全参数拼接的固定 Compose 命令。
 func remote(ctx context.Context, input request, execute bool) (string, error) {
 	remoteCommand := "cd " + shellQuote(input.WorkingDir) + " && APP_IMAGE_REVISION=validation docker compose -f " + shellQuote(input.ComposeFile) + " config --quiet"
 	if execute {
@@ -1080,61 +1065,13 @@ func remote(ctx context.Context, input request, execute bool) (string, error) {
 	return runRemoteCommand(ctx, input, remoteCommand)
 }
 
-// runRemoteCommand 校验 Host Key 后执行平台内部构造的固定远端命令。
+// runRemoteCommand 复用 SSH 认证入口并在执行结束后清除临时凭据。
 func runRemoteCommand(ctx context.Context, input request, remoteCommand string) (string, error) {
-	tempDir, err := os.MkdirTemp("", "deployment-agent-")
+	command, cleanup, err := dataSyncRemoteCommand(ctx, input, remoteCommand)
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(tempDir)
-	knownHosts := filepath.Join(tempDir, "known_hosts")
-	scanContext, cancelScan := context.WithTimeout(ctx, 10*time.Second)
-	defer cancelScan()
-	scan := exec.CommandContext(scanContext, "ssh-keyscan", "-T", "5", "-p", fmt.Sprint(input.Port), input.Host)
-	keyData, err := scan.Output()
-	if err != nil {
-		return "", errors.New("SSH_HOST_KEY_SCAN_FAILED")
-	}
-	candidate := filepath.Join(tempDir, "candidate_host_key")
-	trustedKeys, err := matchingHostKeys(keyData, input.HostKey, func(line string) (string, error) {
-		if writeErr := os.WriteFile(candidate, []byte(line+"\n"), 0600); writeErr != nil {
-			return "", writeErr
-		}
-		output, commandErr := exec.CommandContext(ctx, "ssh-keygen", "-lf", candidate, "-E", "sha256").Output()
-		return string(output), commandErr
-	})
-	if err != nil {
-		return "", errors.New("SSH_HOST_KEY_MISMATCH")
-	}
-	if err := os.WriteFile(knownHosts, trustedKeys, 0600); err != nil {
-		return "", err
-	}
-	args := []string{"-F", "/dev/null", "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + knownHosts,
-		"-o", "GlobalKnownHostsFile=/dev/null", "-o", "CanonicalizeHostname=no", "-o", "ConnectTimeout=10",
-		"-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-p", fmt.Sprint(input.Port)}
-	if input.AuthType == "KEY" {
-		privateKey := filepath.Join(tempDir, "id_key")
-		if err := os.WriteFile(privateKey, []byte(input.PrivateKey), 0600); err != nil {
-			return "", err
-		}
-		args = append(args, "-o", "IdentitiesOnly=yes", "-o", "PasswordAuthentication=no", "-i", privateKey)
-		if input.Passphrase == "" {
-			args = append(args, "-o", "BatchMode=yes")
-		}
-	} else {
-		args = append(args, "-o", "BatchMode=no", "-o", "PubkeyAuthentication=no",
-			"-o", "PreferredAuthentications=password,keyboard-interactive")
-	}
-	args = append(args, input.Username+"@"+input.Host, remoteCommand)
-	command := exec.CommandContext(ctx, "ssh", args...)
-	if input.AuthType == "PASSWORD" {
-		command = exec.CommandContext(ctx, "sshpass", append([]string{"-e", "ssh"}, args...)...)
-		command.Env = append(os.Environ(), "SSHPASS="+input.Password)
-	}
-	if input.AuthType == "KEY" && input.Passphrase != "" {
-		command = exec.CommandContext(ctx, "sshpass", append([]string{"-e", "-P", "Enter passphrase", "ssh"}, args...)...)
-		command.Env = append(os.Environ(), "SSHPASS="+input.Passphrase)
-	}
+	defer cleanup()
 	return commandOutput(command)
 }
 

@@ -333,7 +333,7 @@ export DEPLOYMENT_AGENT_INTERNAL_TOKEN="$(openssl rand -hex 32)"
 docker compose --profile deployment up --build -d
 ```
 
-本地模式固定使用 Agent 内的 `/workspace`；`DEPLOYMENT_PROJECT_DIR` 决定其只读挂载来源。SSH 模式需填写远端绝对目录、SSH 账号及通过 `ssh-keygen -lf -E sha256` 核验的完整 Host Key 指纹。远端主机需预先安装 Docker Compose，并预拉取发布版本对应镜像。
+本地模式固定使用 Agent 内的 `/workspace`；`DEPLOYMENT_PROJECT_DIR` 决定其只读挂载来源。SSH 支持私钥、账户登录密码，以及私钥＋账户登录密码三种认证方式；加密私钥可另填独立的私钥口令。组合认证支持先验证私钥再验证账户密码的服务器，是否必须两项均通过由远端 SSH 策略决定。Host Key 每次连接自动信任，包括服务器更换密钥后，无需维护指纹，也不再固定校验服务器身份；历史指纹字段兼容忽略。远程部署需预先安装 Docker Compose，并预拉取发布版本对应镜像。
 
 远程数据同步同样依赖该 Agent。`DATA_SYNC_WORKER_IMAGE` 默认使用当前 Compose 项目的 Backend 镜像；每台所选服务器都必须安装 Docker、预先拥有该镜像，并能直接访问源和目标数据库。Agent 以固定 Java 入口、只读根文件系统、非 root 用户、能力移除、资源限制和 15 分钟超时启动一次性容器；数据库凭据仅通过标准输入传递，不进入命令参数、环境变量、任务结果或日志。取消任务会终止对应的固定名称容器，Backend 重启后会通过持久化 Agent Job ID 继续对账进度和终态。
 

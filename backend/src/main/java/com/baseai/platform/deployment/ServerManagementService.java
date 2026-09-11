@@ -47,11 +47,10 @@ import java.util.regex.Pattern;
 @Service
 public class ServerManagementService {
     private static final Set<String> MODES = Set.of("LOCAL", "SSH");
-    private static final Set<String> AUTH_TYPES = Set.of("KEY", "PASSWORD");
+    private static final Set<String> AUTH_TYPES = Set.of("KEY", "PASSWORD", "KEY_PASSWORD");
     private static final Set<String> ACTIONS = Set.of("DEPLOY", "ROLLBACK");
     private static final Pattern HOST_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9.:-]{0,253}");
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9._-]{0,63}");
-    private static final Pattern HOST_KEY_PATTERN = Pattern.compile("SHA256:[A-Za-z0-9+/]{43}");
     private static final Pattern REVISION_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}");
     private static final Pattern AGENT_JOB_PATTERN = Pattern.compile("[a-f0-9]{32}");
     private static final String AGENT_JOB_PREFIX = "agent-job:";
@@ -406,10 +405,7 @@ public class ServerManagementService {
             }
             String auth = authType(command.authType());
             if (!update) {
-                validateHostKey(command.hostKey());
                 validateCredential(auth, command.privateKey(), command.password());
-            } else if (!text(command.hostKey()).isBlank() && !"******".equals(text(command.hostKey()))) {
-                validateHostKey(command.hostKey());
             }
         }
         validateOptionalCompose(command.workingDir(), command.composeFile(), mode);
@@ -420,19 +416,13 @@ public class ServerManagementService {
     /** 更新时基于合并后的密文配置验证实际认证凭据。 */
     void validateMergedCredential(ServerModels.ServerCommand command, JsonNode merged) {
         if (!"SSH".equals(mode(command.mode()))) return;
-        validateHostKey(value(merged, "hostKey"));
         validateCredential(authType(value(merged, "authType")), value(merged, "privateKey"), value(merged, "password"));
-    }
-
-    /** Host Key 必须是完整 SHA-256 指纹，禁止子串匹配。 */
-    private void validateHostKey(String hostKey) {
-        if (!HOST_KEY_PATTERN.matcher(text(hostKey)).matches()) throw new BusinessException("server.hostKeyRequired");
     }
 
     /** SSH 认证方式必须具有对应凭据。 */
     private void validateCredential(String authType, String privateKey, String password) {
-        if ("KEY".equals(authType) && text(privateKey).isBlank()) throw new BusinessException("server.privateKeyRequired");
-        if ("PASSWORD".equals(authType) && text(password).isBlank()) throw new BusinessException("server.passwordRequired");
+        if (Set.of("KEY", "KEY_PASSWORD").contains(authType) && (text(privateKey).isBlank() || "******".equals(text(privateKey)))) throw new BusinessException("server.privateKeyRequired");
+        if (Set.of("PASSWORD", "KEY_PASSWORD").contains(authType) && (text(password).isBlank() || "******".equals(text(password)))) throw new BusinessException("server.passwordRequired");
     }
 
     /** 兼容旧服务器的 Compose 配置，同时允许新增服务器完全留空并交由 Agent 检测。 */

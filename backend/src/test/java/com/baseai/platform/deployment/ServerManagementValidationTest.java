@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mockito;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -46,7 +48,7 @@ class ServerManagementValidationTest {
         assertEquals("server.modeInvalid", assertThrows(BusinessException.class, () -> service.create(command)).getMessageKey());
     }
 
-    /** SSH 配置必须有主机指纹和对应认证凭据。 */
+    /** SSH 配置必须有对应认证凭据。 */
     @Test
     void rejectsIncompleteSsh() {
         ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SSH", "host", 22, "deploy", "KEY", "", "", "", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "/opt/base-ai", "docker-compose.yml", true);
@@ -82,9 +84,9 @@ class ServerManagementValidationTest {
             assertThrows(BusinessException.class, () -> service.create(command)).getMessageKey());
     }
 
-    /** 密码认证必须提供密码，且 Host Key 不允许使用部分指纹。 */
+    /** 密码认证必须提供密码，历史 Host Key 不再参与凭据校验。 */
     @Test
-    void rejectsMissingPasswordAndPartialFingerprint() {
+    void rejectsMissingPasswordAndIgnoresLegacyFingerprint() {
         ServerModels.ServerCommand password = new ServerModels.ServerCommand("server", "SSH", "host", 22,
             "deploy", "PASSWORD", "", "", "", "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             "/opt/base-ai", "docker-compose.yml", true);
@@ -92,8 +94,46 @@ class ServerManagementValidationTest {
             assertThrows(BusinessException.class, () -> service.create(password)).getMessageKey());
         ServerModels.ServerCommand fingerprint = new ServerModels.ServerCommand("server", "SSH", "host", 22,
             "deploy", "KEY", "PRIVATE", "", "", "SHA256:AAAA", "/opt/base-ai", "docker-compose.yml", true);
-        assertEquals("server.hostKeyRequired",
-            assertThrows(BusinessException.class, () -> service.create(fingerprint)).getMessageKey());
+        service.validateMergedCredential(fingerprint, new ObjectMapper().valueToTree(fingerprint));
+    }
+
+    /** 三种认证方式分别验证必需凭据，包含空白和掩码边界。 */
+    @ParameterizedTest
+    @CsvSource(value = {"KEY|PRIVATE|||", "PASSWORD||secret||", "KEY_PASSWORD|PRIVATE|secret||",
+        "KEY_PASSWORD||secret||server.privateKeyRequired", "KEY_PASSWORD|PRIVATE|||server.passwordRequired",
+        "KEY_PASSWORD|******|secret||server.privateKeyRequired", "KEY_PASSWORD|PRIVATE|******||server.passwordRequired",
+        "UNKNOWN|PRIVATE|secret||server.invalid"}, delimiter = '|')
+    void validatesAuthenticationCombinations(String auth, String key, String password, String hostKey, String error) {
+        ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+            "deploy", auth, key, password, "", hostKey, "", "", true);
+        JsonNode config = new ObjectMapper().valueToTree(command);
+        if (error == null) {
+            service.validateMergedCredential(command, config);
+        } else {
+            assertEquals(error, assertThrows(BusinessException.class,
+                () -> service.validateMergedCredential(command, config)).getMessageKey());
+        }
+    }
+
+    /** 同一组合认证编辑保留已有密文凭据，切换认证则要求重新输入。 */
+    @Test
+    void preservesCombinedCredentialsOnlyForSameAuthentication() throws Exception {
+        JsonNode old = new ObjectMapper().readTree("""
+            {"authType":"KEY_PASSWORD","privateKey":"PRIVATE","password":"secret","passphrase":"phrase"}
+            """);
+        for (String auth : new String[] {"KEY_PASSWORD", "KEY", "PASSWORD"}) {
+            ServerModels.ServerCommand command = new ServerModels.ServerCommand("server", "SSH", "host", 22,
+                "deploy", auth, "", "", "", "", "", "", true);
+            JsonNode merged = service.merge(old, command);
+            if ("KEY_PASSWORD".equals(auth)) {
+                assertEquals("PRIVATE", merged.path("privateKey").asText());
+                assertEquals("secret", merged.path("password").asText());
+                assertEquals("phrase", merged.path("passphrase").asText());
+                service.validateMergedCredential(command, merged);
+            } else {
+                assertThrows(BusinessException.class, () -> service.validateMergedCredential(command, merged));
+            }
+        }
     }
 
     /** Compose 目录不允许携带 Shell 元字符。 */

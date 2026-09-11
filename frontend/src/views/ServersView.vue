@@ -172,14 +172,8 @@
                 <p>{{ t('servers.securitySectionHelp') }}</p>
               </div>
             </div>
-            <el-form-item :label="t('servers.hostKey')">
-              <el-input v-model="form.hostKey" :placeholder="t('servers.hostKeyPlaceholder')" autocomplete="off">
-                <template #prefix><el-icon><Aim /></el-icon></template>
-              </el-input>
-              <div class="field-help">{{ t('servers.hostKeyHelp') }}</div>
-            </el-form-item>
             <el-form-item :label="t('servers.authType')">
-              <div class="selection-cards">
+              <div class="selection-cards selection-cards--auth">
                 <button
                   type="button"
                   class="selection-card"
@@ -206,10 +200,23 @@
                   </span>
                   <span class="selection-card-check"><el-icon><Check /></el-icon></span>
                 </button>
+                <button
+                  type="button"
+                  class="selection-card"
+                  :class="{ 'is-active': form.authType === 'KEY_PASSWORD' }"
+                  @click="form.authType = 'KEY_PASSWORD'"
+                >
+                  <span class="selection-card-icon"><el-icon><Key /></el-icon></span>
+                  <span>
+                    <strong>{{ t('servers.combinedAuth') }}</strong>
+                    <small>{{ t('servers.combinedAuthDescription') }}</small>
+                  </span>
+                  <span class="selection-card-check"><el-icon><Check /></el-icon></span>
+                </button>
               </div>
             </el-form-item>
 
-            <div v-if="form.authType === 'KEY'" class="credential-panel">
+            <div v-if="['KEY', 'KEY_PASSWORD'].includes(form.authType)" class="credential-panel">
               <el-form-item :label="t('servers.privateKey')">
                 <div class="private-key-editor">
                   <div class="private-key-toolbar">
@@ -244,7 +251,7 @@
                 <div class="field-help">{{ t('servers.passphraseHelp') }}</div>
               </el-form-item>
             </div>
-            <div v-else class="credential-panel">
+            <div v-if="['PASSWORD', 'KEY_PASSWORD'].includes(form.authType)" class="credential-panel">
               <el-form-item :label="t('servers.password')" class="section-last-field">
                 <el-input v-model="form.password" type="password" show-password autocomplete="off" :placeholder="t('servers.passwordPlaceholder')">
                   <template #prefix><el-icon><Lock /></el-icon></template>
@@ -337,7 +344,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  Aim,
   Check,
   Coin,
   Connection,
@@ -441,10 +447,10 @@ function privateKeyFileErrorKey(error) {
 function validateForm() {
   if (!form.name.trim()) return false
   if (form.mode !== 'SSH') return true
-  if (!form.host.trim() || !form.username.trim() || !form.hostKey.trim() || !form.port) return false
+  if (!form.host.trim() || !form.username.trim() || !form.port) return false
   const requiresCredential = !form.id || form.authType !== originalAuthType.value
-  if (requiresCredential && form.authType === 'KEY' && !form.privateKey.trim()) return false
-  if (requiresCredential && form.authType === 'PASSWORD' && !form.password) return false
+  if (requiresCredential && ['KEY', 'KEY_PASSWORD'].includes(form.authType) && !form.privateKey.trim()) return false
+  if (requiresCredential && ['PASSWORD', 'KEY_PASSWORD'].includes(form.authType) && !form.password.trim()) return false
   return true
 }
 
@@ -602,6 +608,7 @@ onMounted(load)
 .field-help { width: 100%; margin-top: 6px; }
 .section-last-field { margin-bottom: 0; }
 .selection-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%; }
+.selection-cards--auth { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .selection-card { display: grid; grid-template-columns: 38px minmax(0, 1fr) 22px; align-items: center; gap: 12px; min-height: 78px; padding: 14px; border: 1px solid var(--app-border); border-radius: 10px; color: var(--el-text-color-primary); background: #fff; cursor: pointer; text-align: left; transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
 .selection-card:hover { border-color: #aac0ef; background: #fafcff; transform: translateY(-1px); }
 .selection-card.is-active { border-color: var(--app-primary); background: #f4f7ff; box-shadow: 0 0 0 3px rgba(53, 106, 230, 0.08); }

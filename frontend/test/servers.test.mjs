@@ -15,7 +15,7 @@ test('服务器页面支持手工新增 SSH 配置并保留本地模式兼容', 
   assert.match(viewSource, /form\.mode === 'LOCAL'/)
   assert.match(viewSource, /@click="form\.mode = 'SSH'"/)
   assert.match(viewSource, /@click="form\.mode = 'LOCAL'"/)
-  for (const field of ['host', 'port', 'username', 'authType', 'hostKey', 'privateKey', 'passphrase', 'password']) {
+  for (const field of ['host', 'port', 'username', 'authType', 'privateKey', 'passphrase', 'password']) {
     assert.match(viewSource, new RegExp(`form\\.${field}`), field)
   }
   assert.match(zhCN.servers.securityNotice, /AES-GCM/)
@@ -55,11 +55,33 @@ test('服务器相关弹窗使用卡片分区并保留认证条件分支', () =>
     assert.ok(enUS.servers[sectionKey])
   }
   assert.match(viewSource, /v-if="form\.mode === 'SSH'"/)
-  assert.match(viewSource, /v-if="form\.authType === 'KEY'"/)
+  assert.match(viewSource, /v-if="\['KEY', 'KEY_PASSWORD'\]\.includes\(form\.authType\)"/)
+  assert.match(viewSource, /v-if="\['PASSWORD', 'KEY_PASSWORD'\]\.includes\(form\.authType\)"/)
   assert.match(viewSource, /@click="form\.authType = 'KEY'"/)
   assert.match(viewSource, /@click="form\.authType = 'PASSWORD'"/)
+  assert.match(viewSource, /@click="form\.authType = 'KEY_PASSWORD'"/)
+  assert.doesNotMatch(viewSource, /v-model="form\.hostKey"/)
   assert.match(zhCN.servers.passphraseHelp, /不是服务器登录密码/)
   assert.match(enUS.servers.passphraseHelp, /not the server login password/)
+})
+
+// 验证真实表单函数在三种认证、编辑保留和缺失凭据时的业务结果。
+test('服务器认证表单不要求指纹且组合登录要求两项凭据', () => {
+  const source = viewSource.match(/function validateForm\(\) \{[\s\S]*?\n\}/)[0]
+  const scenarios = [
+    { authType: 'KEY', privateKey: 'PRIVATE', password: '', valid: true },
+    { authType: 'PASSWORD', privateKey: '', password: 'secret', valid: true },
+    { authType: 'KEY_PASSWORD', privateKey: 'PRIVATE', password: 'secret', valid: true },
+    { authType: 'KEY_PASSWORD', privateKey: '', password: 'secret', valid: false },
+    { authType: 'KEY_PASSWORD', privateKey: 'PRIVATE', password: '  ', valid: false },
+    { id: 1, authType: 'KEY_PASSWORD', privateKey: '', password: '', valid: true },
+    { id: 1, original: 'KEY', authType: 'KEY_PASSWORD', privateKey: '', password: 'secret', valid: false },
+  ]
+  for (const scenario of scenarios) {
+    const form = { name: 'server', mode: 'SSH', host: 'localhost', port: 22, username: 'deploy', hostKey: '', ...scenario }
+    const validate = runInNewContext(`(${source})`, { form, originalAuthType: { value: scenario.original || scenario.authType } })
+    assert.equal(validate(), scenario.valid, JSON.stringify(scenario))
+  }
 })
 
 test('服务器页面移除部署与历史并保留连接和监控操作', () => {

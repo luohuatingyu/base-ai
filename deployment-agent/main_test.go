@@ -15,6 +15,57 @@ import (
 	"time"
 )
 
+// TestSSHCredentialIsolation 验证口令分流、凭据权限、恶意字符和临时文件清理。
+func TestSSHCredentialIsolation(t *testing.T) {
+	input := request{Host: "localhost", Port: 22, Username: "deploy", AuthType: "KEY_PASSWORD",
+		PrivateKey: "PRIVATE", Password: "password'$(false) with spaces", Passphrase: "phrase'$(false) with spaces"}
+	command, cleanup, err := dataSyncRemoteCommand(context.Background(), input, "cat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	var askpass string
+	for _, entry := range command.Env {
+		if strings.HasPrefix(entry, "SSH_ASKPASS=") {
+			askpass = strings.TrimPrefix(entry, "SSH_ASKPASS=")
+		}
+	}
+	if askpass == "" {
+		t.Fatal("missing askpass helper")
+	}
+	for _, scenario := range []struct {
+		prompt, expected string
+		valid            bool
+	}{
+		{"Enter passphrase for key:", input.Passphrase, true},
+		{"deploy@localhost's password:", input.Password, true},
+		{"Password:", input.Password, true},
+		{"Verification code:", "", false},
+	} {
+		helper := exec.Command(askpass, scenario.prompt)
+		helper.Env = command.Env
+		output, err := helper.Output()
+		if (err == nil) != scenario.valid || scenario.valid && string(output) != scenario.expected+"\n" {
+			t.Fatalf("unexpected response for %s", scenario.prompt)
+		}
+	}
+	for path, permission := range map[string]os.FileMode{askpass: 0700, filepath.Dir(askpass): 0700, filepath.Join(filepath.Dir(askpass), "id_key"): 0600} {
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != permission {
+			t.Fatalf("unsafe credential permissions: %v", err)
+		}
+	}
+	for _, argument := range command.Args {
+		if strings.Contains(argument, input.Password) || strings.Contains(argument, input.Passphrase) || strings.Contains(argument, input.PrivateKey) {
+			t.Fatal("credential exposed in command arguments")
+		}
+	}
+	cleanup()
+	if _, err := os.Stat(filepath.Dir(askpass)); !os.IsNotExist(err) {
+		t.Fatal("temporary credentials not removed")
+	}
+}
+
 // TestValidateLocal 验证固定本地工作区和发布版本能够通过校验。
 func TestValidateLocal(t *testing.T) {
 	input := request{Mode: "LOCAL", WorkingDir: "/workspace", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123", JobID: "0123456789abcdef0123456789abcdef"}
@@ -76,13 +127,13 @@ func TestValidateRejectsCommandInjection(t *testing.T) {
 	}
 }
 
-// TestValidateSSHRequiresHostKeyAndCredential 验证 SSH 模式必须提供完整指纹和凭据。
+// TestValidateSSHRequiresHostKeyAndCredential 验证 SSH 模式无需手工指纹但必须提供凭据。
 func TestValidateSSHRequiresHostKeyAndCredential(t *testing.T) {
 	input := request{Mode: "SSH", Host: "example.com", Port: 22, Username: "deploy", AuthType: "KEY", WorkingDir: "/opt/base-ai", ComposeFile: "docker-compose.yml", Action: "DEPLOY", Revision: "abc123", JobID: "0123456789abcdef0123456789abcdef"}
 	if err := validate(input, true); err == nil {
-		t.Fatal("expected host key and key validation")
+		t.Fatal("expected private key validation")
 	}
-	input.HostKey, input.PrivateKey = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "PRIVATE"
+	input.PrivateKey = "PRIVATE"
 	if err := validate(input, true); err != nil {
 		t.Fatalf("expected valid SSH request: %v", err)
 	}
@@ -105,7 +156,7 @@ func TestValidateMonitorOnlyRequiresConnection(t *testing.T) {
 	}
 }
 
-// TestValidateRejectsUnsafeSSHIdentity 验证 SSH 用户名和指纹不能携带选项注入或部分匹配值。
+// TestValidateRejectsUnsafeSSHIdentity 验证 SSH 用户名禁止选项注入，历史指纹兼容忽略。
 func TestValidateRejectsUnsafeSSHIdentity(t *testing.T) {
 	input := request{Mode: "SSH", Host: "example.com", Port: 22, Username: "-oProxyCommand=id", AuthType: "KEY",
 		PrivateKey: "PRIVATE", HostKey: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -114,8 +165,32 @@ func TestValidateRejectsUnsafeSSHIdentity(t *testing.T) {
 		t.Fatal("expected unsafe SSH username to be rejected")
 	}
 	input.Username, input.HostKey = "deploy", "SHA256:AAAA"
-	if err := validate(input, true); err == nil {
-		t.Fatal("expected partial host fingerprint to be rejected")
+	if err := validate(input, true); err != nil {
+		t.Fatalf("legacy host fingerprint must be ignored: %v", err)
+	}
+}
+
+// TestCombinedCredentials 验证组合认证、空值和非法认证类型的各个分支。
+func TestCombinedCredentials(t *testing.T) {
+	for _, scenario := range []struct {
+		name, auth, key, password string
+		valid                     bool
+	}{
+		{"combined", "KEY_PASSWORD", "PRIVATE", "secret", true},
+		{"missing key", "KEY_PASSWORD", "", "secret", false},
+		{"blank key", "KEY_PASSWORD", "  ", "secret", false},
+		{"missing password", "KEY_PASSWORD", "PRIVATE", "", false},
+		{"blank password", "KEY_PASSWORD", "PRIVATE", "  ", false},
+		{"key", "KEY", "PRIVATE", "", true},
+		{"password", "PASSWORD", "", "secret", true},
+		{"unknown", "UNKNOWN", "PRIVATE", "secret", false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			input := request{Mode: "SSH", Host: "localhost", Port: 22, Username: "deploy", AuthType: scenario.auth, PrivateKey: scenario.key, Password: scenario.password}
+			if err := validateSSH(input); (err == nil) != scenario.valid {
+				t.Fatalf("unexpected validation result: %v", err)
+			}
+		})
 	}
 }
 
