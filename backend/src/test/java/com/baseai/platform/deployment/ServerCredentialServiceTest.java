@@ -97,7 +97,7 @@ class ServerCredentialServiceTest {
         assertEquals("private", servers.requireDataSyncTarget(first.id(), 7L).privateKey());
         assertEquals("phrase", servers.requireDataSyncTarget(first.id(), 7L).passphrase());
         assertEquals(409, assertThrows(BusinessException.class, () -> credentials.delete(credential.id())).getStatus());
-        var disabled = new CredentialModels.Command("shared", "RSA", "deploy", "public", "", "certificate", "", false, "");
+        var disabled = new CredentialModels.Command("shared", "PASSWORD", "deploy", "public", "", "certificate", "", false, "");
         assertEquals(409, assertThrows(BusinessException.class, () -> credentials.save(credential.id(), disabled)).getStatus());
     }
 
@@ -132,7 +132,7 @@ class ServerCredentialServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"label", "material", "password", "username", "empty"})
     void rejectsInvalidFields(String field) {
-        var command = new CredentialModels.Command(field.equals("label") ? "a".repeat(121) : "label", "RSA",
+        var command = new CredentialModels.Command(field.equals("label") ? "a".repeat(121) : "label", "PASSWORD",
             field.equals("username") ? "root;id" : "deploy", field.equals("material") ? "密".repeat(11000) : "",
             "", "", field.equals("empty") ? "" : field.equals("password") ? "a".repeat(1025) : "secret", true, "");
         assertThrows(BusinessException.class, () -> credentials.save(null, command));
@@ -142,10 +142,10 @@ class ServerCredentialServiceTest {
     /** 停用、删除、不存在及缺少认证材料的凭据均不能绑定服务器。 */
     @Test
     void rejectsUnavailableCredentialsAndSupportsAccountOnly() {
-        var account = credentials.save(null, new CredentialModels.Command("account", "RSA", "deploy", "", "", "", "secret", true, ""));
+        var account = credentials.save(null, new CredentialModels.Command("account", "PASSWORD", "deploy", "", "", "", "secret", true, ""));
         assertFalse(account.hasPrivateKey());
         assertThrows(BusinessException.class, () -> servers.create(server(account.id(), "KEY")));
-        credentials.save(account.id(), new CredentialModels.Command("account", "RSA", "deploy", "", "", "", "", false, ""));
+        credentials.save(account.id(), new CredentialModels.Command("account", "PASSWORD", "deploy", "", "", "", "", false, ""));
         assertEquals("server.credentialDisabled", assertThrows(BusinessException.class, () -> servers.create(server(account.id(), "PASSWORD"))).getMessageKey());
         credentials.delete(account.id());
         assertEquals(404, assertThrows(BusinessException.class, () -> credentials.resolve(999L, 7L, false)).getStatus());
@@ -203,7 +203,7 @@ class ServerCredentialServiceTest {
     /** 边界长度可保存，多次新建返回自己的记录，损坏密文只返回稳定错误。 */
     @Test
     void supportsBoundariesAndReportsUnreadableSecret() {
-        var maximum = credentials.save(null, new CredentialModels.Command("a".repeat(120), "RSA", "deploy", "p".repeat(32768),
+        var maximum = credentials.save(null, new CredentialModels.Command("a".repeat(120), "PASSWORD", "deploy", "p".repeat(32768),
             "", "c".repeat(32768), "s".repeat(1024), true, ""));
         var next = credentials.save(null, command("next", "", "secret", ""));
         assertNotEquals(maximum.id(), next.id());
@@ -217,7 +217,7 @@ class ServerCredentialServiceTest {
     /** 绑定不同凭据、切换认证方式以及无账号的私钥均按服务器设置工作。 */
     @Test
     void switchesReferencesAndUsesServerUsernameForKeyOnly() {
-        var key = credentials.save(null, new CredentialModels.Command("key", "RSA", "", "", "private", "", "", true, ""));
+        var key = credentials.save(null, new CredentialModels.Command("key", "KEY", "", "", "private", "", "", true, ""));
         var command = new ServerModels.ServerCommand("server", "SSH", "host", 22, "deploy", "KEY", "", "", "", "", "", "", true, key.id());
         var server = servers.create(command);
         assertEquals("deploy", servers.requireDataSyncTarget(server.id(), 7L).username());
@@ -233,7 +233,7 @@ class ServerCredentialServiceTest {
 
     /** 构造含全部材料的标准凭据。 */
     private CredentialModels.Command command(String label, String privateKey, String password, String passphrase) {
-        return new CredentialModels.Command(label, "RSA", "deploy", "public", privateKey, "certificate", password, true, passphrase);
+        return new CredentialModels.Command(label, "PASSWORD", "deploy", "public", privateKey, "certificate", password, true, passphrase);
     }
 
     /** 构造仅引用凭据且账号由凭据提供的 SSH 服务器。 */
