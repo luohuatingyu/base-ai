@@ -1,14 +1,23 @@
-"""使用 Xcode devicectl 只读探测本机可见 iOS 设备。"""
+"""结合 Xcode devicectl 与 usbmuxd 只读探测本机可见 iOS 设备。"""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import plistlib
+import socket
+import struct
 import subprocess
 import tempfile
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
+from xml.parsers.expat import ExpatError
+
+
+USBMUX_TIMEOUT_SECONDS = 5
+USBMUX_MAX_RESPONSE_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,11 +65,15 @@ def detect_devices(runner: Callable[..., Any] = subprocess.run) -> list[DeviceCa
             payload = json.loads(output.read_text(encoding="utf-8"))
         except (OSError, ValueError, subprocess.SubprocessError) as exception:
             raise RuntimeError("DEVICE_DETECTION_FAILED") from exception
+    usb_udids = _connected_usb_udids()
     devices: dict[str, DeviceCandidate] = {}
     for item in payload.get("result", {}).get("devices", []):
         candidate = _parse(item)
         if candidate is None:
             continue
+        # 开发隧道可在 USB 持续连接时断开，只有本轮物理枚举可覆盖其离线结论。
+        if candidate.udid in usb_udids:
+            candidate = replace(candidate, connected=True, connection_type="USB")
         previous = devices.get(candidate.udid)
         if previous is None or (candidate.connected, candidate.connection_type == "USB") > (
             previous.connected, previous.connection_type == "USB"):
@@ -88,3 +101,50 @@ def _parse(item: Any) -> DeviceCandidate | None:
         connected=tunnel not in {"", "unavailable", "disconnected"},
         connection_type={"wired": "USB", "localnetwork": "WIRELESS"}.get(transport, "UNKNOWN"),
     )
+
+
+def _connected_usb_udids() -> set[str]:
+    """只读查询本机 USB 实连标识；失败时不提供额外在线证据，保留原有判定。"""
+    request = plistlib.dumps({
+        "MessageType": "ListDevices", "ClientVersionString": "base-ai-device-agent",
+        "ProgName": "base-ai-device-agent", "kLibUSBMuxVersion": 3,
+    })
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(USBMUX_TIMEOUT_SECONDS)
+            connection.connect("/var/run/usbmuxd")
+            connection.sendall(struct.pack("<IIII", len(request) + 16, 1, 8, 1) + request)
+            deadline = time.monotonic() + USBMUX_TIMEOUT_SECONDS
+            header = _receive_exact(connection, 16, deadline)
+            length, version, message, tag = struct.unpack("<IIII", header)
+            if not 16 < length <= USBMUX_MAX_RESPONSE_BYTES or (version, message, tag) != (1, 8, 1):
+                return set()
+            payload = plistlib.loads(_receive_exact(connection, length - 16, deadline))
+    except (OSError, ValueError, ExpatError):
+        return set()
+    if not isinstance(payload, dict) or not isinstance(payload.get("DeviceList"), list):
+        return set()
+    devices: set[str] = set()
+    for item in payload["DeviceList"]:
+        properties = item.get("Properties") if isinstance(item, dict) else None
+        if not isinstance(properties, dict) or properties.get("ConnectionType") != "USB":
+            continue
+        udid = properties.get("SerialNumber")
+        if isinstance(udid, str) and 0 < len(udid.strip()) <= 128:
+            devices.add(udid.strip())
+    return devices
+
+
+def _receive_exact(connection: socket.socket, length: int, deadline: float) -> bytes:
+    """在同一个响应截止时间内收齐分片，拒绝提前断开及持续慢速响应。"""
+    result = bytearray()
+    while len(result) < length:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("USBMUX_RESPONSE_TIMEOUT")
+        connection.settimeout(remaining)
+        block = connection.recv(length - len(result))
+        if not block:
+            raise ValueError("USBMUX_RESPONSE_TRUNCATED")
+        result.extend(block)
+    return bytes(result)
