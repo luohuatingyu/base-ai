@@ -1,5 +1,52 @@
 # 最近分支覆盖测试报告
 
+## 服务器三种认证与独立凭据来源（2026-09-12）
+
+### Git 基准与实现范围
+
+Commit: a3b317a67c7a7fd33c9a98a4497669114a6ec854
+- 提交信息：Support independent server password and key credentials；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
+- Vue 3 / Element Plus / Java 17 / Spring JDBC / AES-GCM / MySQL Flyway；新增 V37 的两个可空引用列及外键，无新增依赖。
+- 新增和编辑支持账号＋秘钥、账密、账密＋秘钥。密码和秘钥分别选择已有凭据或手工配置，可混搭。只有纯秘钥模式独立显示账号；账密模式从已选账密继承账号，手工账密在账密区域填写账号。
+- 后端按类型和所有者解析引用、检查启用状态，执行时读取最新秘密；手工秘密加密存储，引用秘密不复制至服务器配置。新引用纳入删除保护，切换为手工或本地配置后解除引用；旧 credentialId 接口与记录继续兼容。
+- 原报告基准 fd31496e 到实施前 HEAD 的业务代码无差异；本次业务变更已触发完整重测。本节基准不包含随后出现的其他任务终端功能改动。
+
+### 实际执行命令与结果
+
+- 根目录：`node --test frontend/test/servers.test.mjs frontend/test/server-credentials.test.mjs`，最终 25/25 通过，失败 0、跳过 0。
+- frontend 工作目录：`npm run lint && npm run typecheck && npm run test:coverage`，退出 0，385/385 通过，失败 0、跳过 0。工具函数覆盖率：行 98.40%、分支 80.95%、函数 95.27%；不代表 Vue 组件覆盖率。
+- frontend 工作目录：`node --test e2e/*.test.mjs`，1/1 通过，失败 0、跳过 0；覆盖生产 Node 服务、SPA、API 代理和畸形路径，不是浏览器 UI 测试。
+- 本机 `mvn -B -ntp -Dtest=ServerCredentialServiceTest,ServerManagementValidationTest,ServerManagementControllerTest test` 与 `go test ./...` 因未安装 Maven/Go 返回 127，改用容器执行。
+- 后端定向：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp -Dtest=ServerCredentialServiceTest,ServerManagementValidationTest,ServerManagementControllerTest test'`，59/59 通过。随后增加执行时解析、凭据轮换和解除引用断言，由完整套件验证。
+- 后端完整：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp test'`，862/862 通过，通过率 100%，失败 0、错误 0、跳过 0，BUILD SUCCESS。
+- 关键模块：凭据服务 35/35、服务器校验 22/22、服务器 Controller 2/2、服务器监控 28/28；完整套件包含既有 Domain、Service、Repository、Controller、安全、数据同步等回归。后端未配置 JaCoCo，本次不声称 Java 行覆盖率。
+- Go 普通回归：`docker run --rm -v "$PWD/deployment-agent:/source:ro" -w /tmp/agent golang:1.26.6-alpine sh -c 'cp /source/go.mod /source/main.go /source/main_test.go /source/data_sync_test.go . && go test -count=1 ./...'`，退出 0。
+- Go 真实 SSH 集成：`docker run --rm --tmpfs /tmp:rw,noexec,nosuid,nodev -e GOTMPDIR=/build -v "$PWD/deployment-agent:/source:ro" -w /workspace golang:1.26.6-alpine sh -c 'apk add --no-cache openssh >/dev/null && mkdir -p /run/sshd /build && cp /source/*.go /source/go.mod . && go test -tags integration -cover -v ./...'`，31 个顶层测试及参数场景全部通过，失败 0、跳过 0，语句覆盖率 56.4%。包含实际 sshd 的秘钥、密码、组合认证及加密秘钥场景。
+- 首次前端定向出现 2 项失败：旧模板断言匹配直接赋值事件、缺少认证类型的表单未拒绝；已更新事件契约并补充类型校验，保留原测试目的后全部通过。首次后端测试编译因新增测试调用私有方法失败，改为通过公开列表接口验证后通过。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与前置条件 | 输入与预期结果 | 场景 |
+| --- | --- | --- | --- |
+| 三种方式、选择与手填可混搭 | 前端真实函数；后端真实 H2、实际迁移及加密 | 三种方式全部来源组合通过校验；组合模式四种来源保存并解析正确材料 | 正常、兼容 |
+| 账密无需重复填写账号 | 前端真实函数及模板契约；后端服务 | 选账密且 username 为空仍成功，服务端继承 deploy；仅纯秘钥模式显示独立账号 | 正常、边界 |
+| 引用不复制秘密且动态解析 | 后端 independentCredentialCombinations 参数测试 | 加密配置中引用秘密为空，执行目标返回正确材料；轮换账密后使用新账号和密码 | 安全、回归 |
+| 切换来源清理与解除保护 | 前端来源切换函数；后端真实数据库 | 切换账密不清除秘钥；切换秘钥清理口令；服务器改为手工密码后清除双引用、移除旧秘钥并允许删除凭据 | 边界、回归 |
+| 非法引用拒绝且不创建记录 | 后端 rejectsInvalidIndependentReference 参数测试 | 跨用户、停用、类型不符、不存在四种引用均拒绝且数据库无新增服务器；前端失效引用不可提交 | 异常、权限 |
+| 既有安全与旧接口保持 | 完整后端与前端既有测试 | 空材料、长度边界、恶意身份、未登录、删除冲突、旧单凭据和监控用例通过 | 安全、兼容、回归 |
+| SSH 能实际完成三种认证 | Go 真实 sshd 集成测试 | 公钥、密码、组合及带口令私钥分别完成认证，错误与超时按预期处理 | 正常、异常 |
+
+### 构建、运行与限制
+
+- 首次裸 `docker compose up --build -d` 因缺少必填 APP_IMAGE_REVISION 失败；按项目已有用法执行 `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` 后退出 0。构建中后端 package 再次执行 862 项测试全部通过，未跳过测试；未单独运行前端 build 或后端 compile。
+- 构建启动于代码提交前，镜像标签为当时 HEAD 1cbe5c41d42b82daa9d5af3d68fae8b039b1d7e0，但构建上下文包含本节 a3b317a 的变更。后续出现其他任务未提交改动，未把它们纳入本次重建或提交。
+- MySQL 日志确认 V36→V37 迁移成功；六个容器 caddy、frontend、backend、deployment-agent、document-parser、python-worker 均 healthy。无端口冲突。
+- 内存中比较 HTTPS 返回的 JS/CSS 与运行容器资源 SHA-256，一致；JS 包含 passwordCredentialId 和“账密＋秘钥”。curl -k 仅用于本机自签名证书，未保存调试文件。
+- 浏览器最初 5173 预览服务未运行；改开运行中的 80 端口后跳转 HTTPS，预览工具因来源变化拒绝继续操作。浏览器实际点击、下拉选择及窄屏视觉验收未完成，自动化函数与模板断言不替代这些验收。建议在浏览器打开服务器新增页，逐一核验三种模式和选择/手填混搭。
+- Go 集成及 Maven 使用 --rm 容器，所有临时源副本、构建产物和 SSH 测试材料随容器清除；未创建工作区临时文件。正式测试保留；git diff --check 通过。
+- 回滚时先将双引用服务器改为旧版支持的配置，再回退本次代码；可保留新增可空数据库列。未经数据确认不要删除列。
+- 下次修改认证来源、账号继承、引用解析/删除保护或相关业务配置时，重跑本节定向与完整套件并更新基准；其他任务的后续业务改动需独立验证。
+
 ## 凭据文件导入与长文本编辑（2026-09-11）
 
 ### Git 基准与范围
