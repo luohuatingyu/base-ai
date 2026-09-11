@@ -1,5 +1,49 @@
 # 最近分支覆盖测试报告
 
+## 服务器用户名必填与账密匹配（2026-09-12）
+
+### Git 基准与范围
+
+Commit: 86bfcb63fe9bce45d7f56d281b8e0bec8ef1690d
+- 提交信息：Match server password credentials to entered username；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
+- Vue 3 / Element Plus / Java 17 / Spring JDBC。修改服务器表单、服务器认证服务、中英文文案及正式测试，无新增依赖、数据库迁移或持久配置变更。
+- 三种 SSH 认证方式均必填用户名。选择账密、秘钥或切换认证方式不覆盖用户名。账密按用户名去除首尾空白后精确匹配（区分大小写），同时检查类型、所有者及启用状态；未填写用户名时没有账密选项，秘钥不按用户名过滤。
+- 修改用户名后解除不匹配的账密引用。后端新旧引用在保存、更新及执行时均校验账号匹配；凭据账号轮换不再静默改变服务器登录身份，不匹配返回 server.credentialUsernameMismatch。
+- 本次从前一基准 a3b317a 继续，业务变更触发完整重测。共享工作区有正在开发的终端与数据同步改动，通过独立 Git index 与临时源码副本隔离；提交仅含上述八个文件中的本任务改动。
+
+### 实际命令与结果
+
+- 前端定向：根目录执行 `node --test frontend/test/servers.test.mjs frontend/test/server-credentials.test.mjs`，27/27 通过，失败 0、跳过 0。
+- 在隔离副本的 frontend 执行 `npm run lint && npm run typecheck && npm run test:coverage`：退出 0，387/387 通过，失败 0、跳过 0；工具函数行覆盖率 98.40%、分支 80.95%、函数 95.27%，达到现有门槛，不代表 Vue 组件覆盖率。
+- 隔离副本 frontend 执行 `node --test e2e/*.test.mjs`：1/1 通过，失败 0、跳过 0。复用已有 dist 验证生产 Node 服务、SPA、代理和畸形路径；新前端资源另由 Compose 构建并核验。
+- 工作区后端定向容器命令：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp -Dtest=ServerCredentialServiceTest,ServerManagementValidationTest,ServerManagementControllerTest test'`，66/66 通过（包括并行任务新增的一个校验用例）。
+- 权威完整验证使用隔离源码：`docker run --rm -v /tmp/base-ai-username.4i0Qas/source/backend:/source:ro -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp test'`，868/868 通过，通过率 100%，失败 0、错误 0、跳过 0，BUILD SUCCESS。
+- 关键模块：凭据服务 41/41、服务器校验 22/22、服务器 Controller 2/2、服务器监控 28/28；完整套件覆盖原有 Domain、Service、Repository、Controller、安全、工作流和数据同步回归。项目没有配置 Java 行覆盖率工具，本次不声称 Java 行覆盖率。
+- 先更新前端回归断言并执行，旧实现的账号覆盖、允许空用户名和未按账号筛选按预期失败；实现后原断言目的均保留且全部通过。第一次隔离副本生成时零上下文补丁偏移导致 Java 编译失败，修正副本生成位置后重新运行完整测试通过，不涉及削弱测试。
+- 工作区前端完整检查也通过，但包含并行任务测试；本报告以前述隔离副本 387 项作为本次提交的验收基准。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与前置条件 | 输入与预期结果 | 场景 |
+| --- | --- | --- | --- |
+| 所有模式必填用户名 | 前端真实表单函数；三种模式与全部来源组合 | 有账号通过，账号清空拒绝；模板仅一个始终显示的账号输入 | 正常、边界、回归 |
+| 账密仅展示可用匹配项 | 前端真实 availableCredentials；混合凭据列表 | deploy、Deploy、首尾空白、空值、不存在账号；仅同名同所有者启用 PASSWORD 返回，KEY 不按账号过滤 | 正常、边界、权限 |
+| 用户名不被选择操作覆盖 | 前端真实来源切换与旧引用选择函数 | 切换账密或秘钥只清理相应秘密，手填账号保持 | 回归、兼容 |
+| 修改用户名清除不匹配引用 | 前端真实 changeUsername；新旧两类引用 | 不匹配解除引用并清除秘密；匹配引用保留，独立秘钥不变 | 分支、边界、安全 |
+| 后端阻止不匹配账号 | 参数化真实 H2 服务测试；新旧引用与密码/组合模式 | 空值、空白、root、Deploy、恶意账号均拒绝且数据库不新增服务器 | 异常、权限、安全 |
+| 更新与执行维持账号一致 | 真实数据库、加密和服务 | 服务器修改为不匹配用户名失败且原账号不变；密码轮换继续可用，凭据改账号后执行报错 | 回归、兼容、状态冲突 |
+| 旧安全边界保留 | 完整后端测试 | 失效/越权引用、类型错误、未登录、缺失材料、长度限制、秘密不回传与引用删除保护继续通过 | 安全、兼容、异常 |
+
+### 部署与限制
+
+- 使用本节代码基准作为 APP_IMAGE_REVISION，通过 Node 在内存读取隔离副本的 Compose 配置，将 build.context 与 additional_contexts 指向隔离源码，保留原项目 ai、环境、端口和卷，执行 `docker compose --project-directory /Users/xyzc/github/base-ai -p ai -f - up --build -d`；未写入额外配置文件，未把其他任务的未提交源码纳入构建。
+- Compose 后端 package 再次运行 868/868 测试通过，未跳过测试；前端仅在 Compose 中编译，没有单独执行 npm run build 或 mvnw compile。
+- Compose 命令退出 0；六个服务 caddy、frontend、backend、deployment-agent、document-parser、python-worker 均 healthy，镜像版本均为 86bfcb63fe9bce45d7f56d281b8e0bec8ef1690d，无端口冲突。内存比较 HTTPS 返回的 index-CncOwIDI.js、index-CBaMr6ME.css 与容器内资源 SHA-256 一致，JS 包含用户名匹配文案；curl -k 仅用于本机自签名证书。
+- 环境已被并行任务应用 V38；本次不新增或回退迁移，Flyway 提示数据库版本高于本次源码 V37，但后端启动成功。并行任务的功能需由其后续构建重新部署。
+- 浏览器真实交互、窄屏视觉和真实服务器账号连接未在本轮验证；已有预览有 HTTP→HTTPS 来源限制。建议浏览器验证三种模式、同名筛选、改用户名清除选择，再使用有效目标测试连接。前一节 SSH Agent 集成基准保留，本次未修改 Agent。
+- 临时源码与独立索引 /tmp/base-ai-username.4i0Qas 已清理；Maven --rm 容器自动清除测试副本。正式测试保留，未新增 Markdown 文件。本任务改动均提交，工作区保留其他任务的未提交文件。
+- 回滚仅需回退本次用户名匹配提交并重建，无数据迁移。下次修改认证、账号匹配、凭据解析或权限时重跑本节定向与完整套件并更新基准。
+
 ## 服务器三种认证与独立凭据来源（2026-09-12）
 
 ### Git 基准与实现范围
