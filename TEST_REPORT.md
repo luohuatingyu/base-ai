@@ -1,5 +1,66 @@
 # 最近分支覆盖测试报告
 
+## 阿里云 OSS 对象存储数据源类型验收（2026-09-11）
+
+### Git 基准点
+
+Commit: fa50f51
+- 提交信息: Add Alibaba Cloud OSS as object storage data source type
+- 测试日期: 2026-09-11
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 新增阿里云 OSS 作为对象存储数据源类型，与 S3 并列支持工作流连接。
+- 新增 `ObjectStorageService` 统一处理 S3 和 OSS 的上传、下载、删除和预签名操作，含 Key 前缀校验和删除权限校验。
+- `DataSourceController` 新增 4 个对象存储 REST 端点（upload、download、delete、presign）。
+- `WorkflowConnectionService` 在支持类型集合中新增 OSS；`WorkflowConnectionTester` 新增 OSS Bucket 存在性验证；`WorkflowConnectionTargetParser` 新增 OSS Endpoint 协议解析。
+- 后端国际化新增 `objectStorage.operationInvalid` 消息；前端新增 OSS 类型图标、配置字段、分类映射和中英文文案。
+- `pom.xml` 新增 `aliyun-sdk-oss 3.17.4` 依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| OSS 连接可创建并脱敏保存凭据 | Backend `WorkflowConnectionServiceTest.createsAndMasksOssConnection` | 类型为 OSS，accessKey/secretKey 脱敏，resolved 返回明文；通过 | 正常、安全 |
+| OSS 连接测试失败时留存检测结果 | Backend `WorkflowConnectionTesterTest.recordsFailedTestResultForUnreachableOssConnection` | 不可达 Endpoint 抛出异常并记录 recordTestResult(false)；通过 | 异常、回归 |
+| OSS Endpoint 按协议解析且空值不返回目标 | Backend `WorkflowNetworkPolicyTest.parserExtractsOssEndpoint` | HTTPS 正常解析，FTP 拒绝，空 Endpoint 返回空列表；通过 | 正常、边界、安全 |
+| 对象存储服务安全校验 | Backend `ObjectStorageServiceTest`（10 个用例） | 删除权限关闭时拒绝、Key 超出前缀拒绝、非对象存储类型拒绝、预签名操作校验、空键拒绝；通过 | 权限、安全、边界、异常 |
+| 前端连接配置覆盖 OSS | Frontend `workflowConnectionConfig.test.js`（17 个用例） | 13 类连接含 OSS，字段/默认值/分类/颜色/图标断言完整；通过 | 正常、兼容、回归 |
+| 数据源管理页面覆盖全部受管连接 | Frontend `data-sources.test.mjs` | 页面覆盖安全占位符和连接入口；通过 | 正常、兼容 |
+| 服务构建和运行环境无回归 | Maven 全量测试、前端全量测试、Compose 健康检查 | Backend 790/790、Frontend 357/357 通过；5/5 服务 healthy；通过 | 回归、构建、运行态 |
+
+### 测试执行结果
+
+- Backend Maven `clean test`：790/790 通过，通过率 100%，失败 0、错误 0、跳过 0。
+- Frontend `node --test test/*.mjs tests/*.js`：357/357 通过，通过率 100%，失败 0、错误 0、跳过 0。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` 执行成功；Backend、Frontend、Python Worker、Document Parser、Caddy 5/5 healthy。
+
+### 关键模块测试
+
+- `ObjectStorageService`：10/10 通过，覆盖 S3/OSS 上传下载删除预签名、Key 前缀校验、删除权限、非对象存储类型拒绝和预签名操作校验。
+- `WorkflowConnectionService`：OSS 连接创建、脱敏和 resolved 解密通过。
+- `WorkflowConnectionTester`：OSS 不可达连接测试失败并留存结果通过。
+- `WorkflowNetworkPolicy`：OSS Endpoint HTTP/HTTPS 解析和空值处理通过。
+- Frontend `workflowConnectionConfig`：13 类连接字段、默认值、分类归属、品牌色和图标断言全部通过。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp clean test` | 790/790 通过 |
+| Frontend 完整回归 | `node --test test/*.mjs tests/*.js` | 357/357 通过 |
+| 服务重建 | `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d` | 5/5 healthy |
+
+### 已知问题
+
+- `device-agent/tests/test_device_detect.py` 存在未提交的独立变更（设备检测 USB 在线判定测试），与本次 OSS 功能无关，未纳入本次提交。
+
+### Git 基准点（历史）
+
+---
+
 ## 设备 Agent 自动化域与 IDA 命名迁移验收（2026-09-11）
 
 ### Git 基准点
