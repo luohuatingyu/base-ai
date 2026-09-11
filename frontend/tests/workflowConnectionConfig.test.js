@@ -16,8 +16,12 @@ import {
   connectionTypeStyle,
   createConnectionConfig,
   extraConnectionConfigKeys,
+  hasAdvancedConnectionConfig,
+  hasMeaningfulConnectionConfig,
   isConnectionConfigFieldRequired,
-  missingConnectionConfigFields
+  isConnectionConfigValueEmpty,
+  missingConnectionConfigFields,
+  saveConnectionWithOptionalTest
 } from '../src/utils/workflowConnectionConfig.js'
 
 const viewSource = readFileSync(new URL('../src/views/DataSourcesView.vue', import.meta.url), 'utf8')
@@ -71,6 +75,74 @@ test('标准参数校验覆盖空值、正常值和 Kafka SASL 条件分支', ()
   assert.deepEqual(missingConnectionConfigFields('KAFKA', {
     bootstrapServers: 'broker:9092', securityProtocol: 'SASL_SSL', saslMechanism: 'PLAIN', username: 'client', password: '******'
   }), [])
+})
+
+test('类型切换保护区分安全默认值、实际输入和历史敏感配置', () => {
+  assert.equal(isConnectionConfigValueEmpty('  '), true)
+  assert.equal(isConnectionConfigValueEmpty(false), false)
+  assert.equal(hasMeaningfulConnectionConfig('MYSQL', createConnectionConfig('MYSQL')), false)
+  assert.equal(hasMeaningfulConnectionConfig('MYSQL', createConnectionConfig('MYSQL', { url: 'jdbc:mysql://db/app' })), true)
+  assert.equal(hasMeaningfulConnectionConfig('WEBHOOK', createConnectionConfig('WEBHOOK', { secret: '******' })), true)
+  assert.equal(hasMeaningfulConnectionConfig('PLUGIN', { pluginComponentId: null, credentials: {} }), false)
+  assert.equal(hasMeaningfulConnectionConfig('PLUGIN', { pluginComponentId: 8, credentials: {} }), true)
+})
+
+test('高级选项仅在偏离默认值或存在自定义参数时自动展开', () => {
+  assert.equal(hasAdvancedConnectionConfig('MYSQL', createConnectionConfig('MYSQL')), false)
+  assert.equal(hasAdvancedConnectionConfig('MYSQL', createConnectionConfig('MYSQL', { allowWrite: true })), true)
+  assert.equal(hasAdvancedConnectionConfig('S3', createConnectionConfig('S3')), false)
+  assert.equal(hasAdvancedConnectionConfig('S3', createConnectionConfig('S3', { pathStyle: false })), true)
+  assert.equal(hasAdvancedConnectionConfig('MYSQL', createConnectionConfig('MYSQL', { vendorOption: 'enabled' })), true)
+})
+
+test('保存并检测按权限执行且检测失败不会丢失已保存结果', async () => {
+  const calls = []
+  const command = { code: 'MAIN_DB' }
+  const success = await saveConnectionWithOptionalTest({
+    connectionId: null,
+    command,
+    shouldTest: true,
+    persist: async (id, payload) => { calls.push(['save', id, payload]); return { id: 42 } },
+    testConnection: async id => { calls.push(['test', id]); return { connected: true } }
+  })
+  assert.deepEqual(calls, [['save', null, command], ['test', 42]])
+  assert.deepEqual(success, { saved: { id: 42 }, tested: true, testResult: { connected: true }, testError: null })
+
+  let testedWithoutPermission = false
+  const savedOnly = await saveConnectionWithOptionalTest({
+    connectionId: 42,
+    command,
+    shouldTest: false,
+    persist: async () => ({ id: 42 }),
+    testConnection: async () => { testedWithoutPermission = true }
+  })
+  assert.equal(testedWithoutPermission, false)
+  assert.equal(savedOnly.tested, false)
+
+  const testError = new Error('unreachable')
+  const partialSuccess = await saveConnectionWithOptionalTest({
+    connectionId: 42,
+    command,
+    shouldTest: true,
+    persist: async () => ({ id: 42 }),
+    testConnection: async () => { throw testError }
+  })
+  assert.equal(partialSuccess.saved.id, 42)
+  assert.equal(partialSuccess.tested, true)
+  assert.equal(partialSuccess.testError, testError)
+})
+
+test('持久化失败时不执行检测并向调用方传播错误', async () => {
+  let tested = false
+  const saveError = new Error('conflict')
+  await assert.rejects(saveConnectionWithOptionalTest({
+    connectionId: null,
+    command: { code: 'DUPLICATE' },
+    shouldTest: true,
+    persist: async () => { throw saveError },
+    testConnection: async () => { tested = true }
+  }), saveError)
+  assert.equal(tested, false)
 })
 
 test('七类连接完整覆盖全部类型并允许 PostgreSQL 双重归属', () => {
@@ -152,30 +224,39 @@ test('旧 Webhook 签名密钥继续透传但不再作为有效标准或自定�
   assert.deepEqual(extraConnectionConfigKeys(config, 'WEBHOOK'), ['custom'])
 })
 
-test('数据源页面使用左侧分类类型导航和紧凑参数表单并由结构化配置直接保存', () => {
-  assert.match(viewSource, /class="connection-editor-layout"/)
-  assert.match(viewSource, /class="connection-picker"/)
-  assert.match(viewSource, /class="connection-category-nav"/)
-  assert.match(viewSource, /class="connection-category-option"/)
-  assert.match(viewSource, /class="connection-type-option"/)
+test('数据源页面使用两步向导、配置助手和高级选项形成明显的新填写流程', () => {
+  assert.match(viewSource, /class="connection-wizard-steps"/)
+  assert.match(viewSource, /editorStep === 'TYPE'/)
+  assert.match(viewSource, /class="connection-type-stage"/)
+  assert.match(viewSource, /class="connection-category-tabs"/)
+  assert.match(viewSource, /class="connection-type-card-grid"/)
+  assert.match(viewSource, /class="connection-type-card"/)
   assert.match(viewSource, /@click="selectCategory\(category\.key\)"/)
   assert.match(viewSource, /@click="selectConnectionType\(type\)"/)
-  assert.match(viewSource, /class="connection-config-groups"/)
-  assert.match(viewSource, /class="connection-config-group"/)
+  assert.match(viewSource, /@click="applyTypeSelection"/)
+  assert.match(viewSource, /hasMeaningfulConnectionConfig\(form\.connectionType, form\.config\)/)
+  assert.match(viewSource, /changeTypeWarning/)
+  assert.match(viewSource, /class="connection-config-layout"/)
+  assert.match(viewSource, /class="connection-config-assistant"/)
+  assert.match(viewSource, /class="connection-assistant-progress"/)
+  assert.match(viewSource, /class="connection-assistant-checklist"/)
+  assert.match(viewSource, /class="connection-advanced-toggle"/)
+  assert.match(viewSource, /advancedOpen\.value \? groups\.filter/)
   assert.match(viewSource, /class="connection-config-grid"/)
   assert.match(viewSource, /class="connection-config-field"/)
   assert.match(viewSource, /class="connection-field-requirement"/)
-  assert.match(viewSource, /class="connection-field-help"/)
+  assert.match(viewSource, /class="connection-inline-error"/)
   assert.match(viewSource, /class="connection-boolean-control"/)
   assert.match(viewSource, /connectionTypeGuide\(form\.connectionType\)/)
   assert.match(viewSource, /fieldPlaceholder\(field\)/)
   assert.match(viewSource, /missingConnectionConfigFields\(form\.connectionType, form\.config\)/)
-  assert.doesNotMatch(viewSource, /class="connection-card-head"/)
-  assert.doesNotMatch(viewSource, /class="connection-config-surface"/)
   assert.match(viewSource, /class="connection-custom-card"/)
   assert.match(viewSource, /WorkflowConfigValueEditor/)
   assert.match(viewSource, /class="connection-key-value"/)
   assert.match(viewSource, /config: cloneConnectionConfig\(form\.config\)/)
+  assert.match(viewSource, /saveConnectionWithOptionalTest/)
+  assert.match(viewSource, /savedTestFailedTitle/)
+  assert.match(viewSource, /testConnection: async id => \(await http\.post/)
   assert.doesNotMatch(viewSource, /configText|JSON\.parse|type="textarea"/)
   assert.doesNotMatch(zhCN.workflowConnections.config, /JSON/i)
   assert.doesNotMatch(enUS.workflowConnections.config, /JSON/i)
@@ -190,19 +271,21 @@ test('数据源页面使用左侧分类类型导航和紧凑参数表单并由�
   assert.doesNotMatch(viewSource, /@change="selectCategory"/)
   assert.match(viewSource, /preferredCategory\(connectionType\)/)
   assert.match(viewSource, /connectionCategory: '', connectionType: '', config: \{\}/)
-  assert.match(viewSource, /v-if="form\.connectionType" class="connection-form-section connection-config-section"/)
   assert.match(viewSource, /categoryStyle/)
   assert.match(viewSource, /typeStyle/)
-  assert.match(viewSource, /if \(form\.connectionCategory === category\) return/)
-  assert.match(viewSource, /if \(form\.connectionType === type\) return/)
-  assert.match(viewSource, /@media \(max-width: 900px\)[\s\S]*\.connection-editor-layout \{ grid-template-columns: 1fr; \}/)
+  assert.doesNotMatch(viewSource, /class="connection-picker"/)
+  assert.doesNotMatch(viewSource, /class="connection-editor-layout"/)
+  assert.match(viewSource, /@media \(max-width: 1040px\)[\s\S]*\.connection-config-layout \{ grid-template-columns: 1fr; \}/)
   assert.match(viewSource, /@media \(max-width: 720px\)[\s\S]*\.connection-config-grid[^{]*\{ grid-template-columns: 1fr; \}/)
 })
 
-test('中英文资源覆盖紧凑参数表单、类型指引和校验提示', () => {
+test('中英文资源覆盖向导、配置助手、保存检测和校验提示', () => {
   const keys = ['configHelp', 'customTitle', 'customHelp', 'customKey', 'customValue', 'addCustom', 'invalidCustomKey',
     'duplicateCustomKey', 'category', 'connectionType', 'selectCategory', 'selectConnectionType', 'codePlaceholder',
-    'codeHelp', 'codeInvalid', 'configRequired', 'requiredField', 'optionalField', 'conditionalRequired', 'sensitiveOption']
+    'codeHelp', 'codeInvalid', 'configRequired', 'requiredField', 'optionalField', 'conditionalRequired', 'sensitiveOption',
+    'wizardProgress', 'chooseStep', 'configureStep', 'chooseTitle', 'parameterSummary', 'identityTitle', 'configAssistant',
+    'requiredProgress', 'fieldGuide', 'formatExample', 'parameterChecklist', 'advancedTitle', 'changeTypeWarning',
+    'continueConfigure', 'saveAndTest', 'savedAndTested', 'savedTestFailedTitle', 'savedTestFailedDescription']
   for (const key of keys) {
     assert.ok(zhCN.workflowConnections[key], `zh-CN ${key}`)
     assert.ok(enUS.workflowConnections[key], `en-US ${key}`)
