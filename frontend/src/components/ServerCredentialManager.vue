@@ -11,8 +11,7 @@
       <el-table-column prop="username" :label="t('servers.username')" min-width="120" />
       <el-table-column :label="t('serverCredentials.materials')" min-width="170">
         <template #default="{ row }">
-          <el-tag v-if="row.hasPrivateKey">{{ t('servers.privateKey') }}</el-tag>
-          <el-tag v-if="row.hasPassword">{{ t('servers.password') }}</el-tag>
+          <el-tag>{{ row.type === 'KEY' ? t('servers.privateKey') : t('servers.password') }}</el-tag>
           <el-tag v-if="row.publicKey">{{ t('serverCredentials.publicKey') }}</el-tag>
           <el-tag v-if="row.certificate">{{ t('serverCredentials.certificate') }}</el-tag>
         </template>
@@ -29,16 +28,14 @@
     <el-dialog v-model="editing" append-to-body :title="t(form.id ? 'serverCredentials.edit' : 'serverCredentials.add')" width="min(760px, 94vw)" @closed="clearForm">
       <el-form label-position="top" @submit.prevent="save">
         <el-form-item :label="t('serverCredentials.label')" required><el-input v-model="form.label" maxlength="120" /></el-form-item>
-        <el-form-item :label="t('serverCredentials.type')"><el-select v-model="form.type"><el-option label="RSA" value="RSA" /></el-select></el-form-item>
+        <el-form-item :label="t('serverCredentials.type')"><el-select v-model="form.type"><el-option label="账号密码" value="PASSWORD" /><el-option label="秘钥" value="KEY" /></el-select></el-form-item>
         <el-form-item :label="t('servers.username')"><el-input v-model="form.username" maxlength="64" autocomplete="off" /></el-form-item>
-        <el-form-item :label="t('servers.password')"><el-input v-model="form.password" type="password" show-password maxlength="1024" autocomplete="new-password" :placeholder="keepHint" /></el-form-item>
-        <el-form-item :label="t('serverCredentials.publicKey')"><el-input v-model="form.publicKey" type="textarea" :rows="3" maxlength="32768" /></el-form-item>
-        <el-form-item :label="t('servers.privateKey')">
+        <el-form-item v-if="form.type === 'PASSWORD'" :label="t('servers.password')"><el-input v-model="form.password" type="password" show-password maxlength="1024" autocomplete="new-password" :placeholder="keepHint" /></el-form-item>
+        <el-form-item v-if="form.type === 'KEY'" :label="t('servers.privateKey')">
           <input type="file" :aria-label="t('servers.selectPrivateKeyFile')" @change="readKey" />
           <el-input v-model="form.privateKey" type="textarea" :rows="4" maxlength="32768" autocomplete="off" :placeholder="keepHint" />
         </el-form-item>
-        <el-form-item :label="t('servers.passphrase')"><el-input v-model="form.passphrase" type="password" show-password maxlength="1024" autocomplete="new-password" :placeholder="keepHint" /></el-form-item>
-        <el-form-item :label="t('serverCredentials.certificate')"><el-input v-model="form.certificate" type="textarea" :rows="4" maxlength="32768" /></el-form-item>
+        <el-form-item v-if="form.type === 'KEY'" :label="t('servers.passphrase')"><el-input v-model="form.passphrase" type="password" show-password maxlength="1024" autocomplete="new-password" :placeholder="keepHint" /></el-form-item>
         <el-form-item :label="t('common.status')"><el-switch v-model="form.enabled" /></el-form-item>
         <el-alert v-if="form.id" :title="t('serverCredentials.rotationHint')" type="warning" :closable="false" />
       </el-form>
@@ -79,7 +76,7 @@ const keepHint = computed(() => form.id ? t('servers.savedCredentialHint') : '')
 
 /** 创建只在内存中保存敏感输入的凭据表单。 */
 function emptyForm() {
-  return { id: null, label: '', type: 'RSA', username: '', publicKey: '', privateKey: '', certificate: '', password: '', passphrase: '', enabled: true }
+  return { id: null, label: '', type: 'PASSWORD', username: '', publicKey: '', privateKey: '', certificate: '', password: '', passphrase: '', enabled: true }
 }
 
 /** 关闭编辑弹窗后清除敏感输入。 */

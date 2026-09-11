@@ -45,6 +45,11 @@ public class ServerCredentialService {
         String privateKey = secret(command.privateKey(), existing == null ? "" : existing.privateKey());
         String password = secret(command.password(), existing == null ? "" : existing.password());
         String passphrase = secret(command.passphrase(), existing == null ? "" : existing.passphrase());
+        boolean keyMode = "KEY".equals(command.type());
+        if (keyMode && privateKey.isBlank()) throw new BusinessException("server.privateKeyRequired");
+        if (!keyMode && password.isBlank()) throw new BusinessException("server.passwordRequired");
+        if (keyMode && (!password.isBlank() || !text(command.certificate()).isBlank())) throw new BusinessException("server.credentialTypeConflict");
+        if (!keyMode && (!privateKey.isBlank() || !text(command.publicKey()).isBlank() || !text(command.certificate()).isBlank() || !passphrase.isBlank())) throw new BusinessException("server.credentialTypeConflict");
         if (privateKey.isBlank() && password.isBlank() && text(command.publicKey()).isBlank() && text(command.certificate()).isBlank()) {
             throw new BusinessException("server.credentialEmpty");
         }
@@ -59,7 +64,7 @@ public class ServerCredentialService {
                     """, new String[]{"id"});
                 statement.setLong(1, actorId);
                 statement.setString(2, text(command.label()));
-                statement.setString(3, "RSA");
+                statement.setString(3, command.type());
                 statement.setString(4, text(command.username()));
                 statement.setString(5, text(command.publicKey()));
                 statement.setString(6, privateKey);
@@ -127,7 +132,7 @@ public class ServerCredentialService {
     /** 校验支持的类型、标签、账号和字段长度，避免数据库错误包含原始凭据。 */
     private void validate(CredentialModels.Command command) {
         if (command == null || text(command.label()).isBlank() || text(command.label()).length() > 120) throw new BusinessException("server.credentialLabelRequired");
-        if (!"RSA".equals(command.type())) throw new BusinessException("server.credentialTypeInvalid");
+        if (!"KEY".equals(command.type()) && !"PASSWORD".equals(command.type())) throw new BusinessException("server.credentialTypeInvalid");
         if (!text(command.username()).isBlank() && !text(command.username()).matches("[A-Za-z_][A-Za-z0-9._-]{0,63}")) throw new BusinessException("server.sshRequired");
         for (String value : new String[]{command.publicKey(), command.privateKey(), command.certificate()}) {
             if (value != null && value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 32768) throw new BusinessException("server.invalid");
