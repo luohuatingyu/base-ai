@@ -127,7 +127,11 @@
               <span class="connection-selection-icon" :style="typeStyle(form.connectionType)">
                 <DataSourceTypeIcon :type="form.connectionType" />
               </span>
-              <div><small>{{ categoryLabel(form.connectionCategory) }}</small><strong>{{ typeLabel(form.connectionType) }}</strong></div>
+              <div class="connection-selection-copy">
+                <small>{{ categoryLabel(form.connectionCategory) }}</small>
+                <strong>{{ typeLabel(form.connectionType) }}</strong>
+                <p>{{ connectionTypeGuide(form.connectionType) }}</p>
+              </div>
             </div>
             <div v-else class="connection-selection-empty">
               <strong>{{ t('workflowConnections.selectCategory') }}</strong>
@@ -136,8 +140,15 @@
 
             <section class="connection-form-section connection-identity-section">
               <div class="connection-grid connection-grid--identity">
-                <el-form-item :label="t('common.code')"><el-input v-model="form.code" /></el-form-item>
-                <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
+                <el-form-item :label="t('common.code')">
+                  <div class="connection-input-stack">
+                    <el-input v-model="form.code" :placeholder="t('workflowConnections.codePlaceholder')" @blur="normalizeCode" />
+                    <small>{{ t('workflowConnections.codeHelp') }}</small>
+                  </div>
+                </el-form-item>
+                <el-form-item :label="t('common.name')">
+                  <el-input v-model="form.name" :placeholder="t('workflowConnections.namePlaceholder')" />
+                </el-form-item>
                 <el-form-item :label="t('common.status')">
                   <div class="connection-status-control"><el-switch v-model="form.enabled" /><span>{{ t(form.enabled ? 'common.enabled' : 'common.disabled') }}</span></div>
                 </el-form-item>
@@ -151,38 +162,55 @@
                   <el-option v-for="component in pluginComponents" :key="component.id" :value="component.id" :label="pluginComponentLabel(component)" />
                 </el-select>
               </el-form-item>
-              <div v-if="configFields.length" class="connection-config-surface">
-                <div v-for="field in configFields" :key="field.key" class="connection-config-field"
-                     :class="{ 'connection-config-field--wide': field.editor === 'keyValue' }">
-                  <div class="connection-card-head"><strong>{{ fieldLabel(field.key) }} <span v-if="field.required" class="connection-required">*</span></strong><small>{{ fieldDescription(field.key) }}</small></div>
-                  <div class="connection-card-body">
-                    <el-input v-if="['text', 'password'].includes(field.editor)" :model-value="configFieldValue(field.key)"
-                              :type="field.editor" :show-password="field.editor === 'password'" autocomplete="off"
-                              @update:model-value="setConfigField(field.key, $event)" />
-                    <el-switch v-else-if="field.editor === 'boolean'" :model-value="configFieldValue(field.key)"
-                               @update:model-value="setConfigField(field.key, $event)" />
-                    <el-select v-else-if="field.editor === 'select'" :model-value="configFieldValue(field.key)" class="full"
-                               @update:model-value="setConfigField(field.key, $event)">
-                      <el-option v-for="option in field.options" :key="metadataOptionValue(option) || '__empty'"
-                                 :label="pluginOptionLabel(option)" :value="metadataOptionValue(option)" />
-                    </el-select>
-                    <template v-else-if="field.editor === 'keyValue'">
-                      <div class="connection-key-values">
-                        <div v-for="([key, value]) in mapEntries(field.key)" :key="key" class="connection-key-value">
-                          <strong>{{ key }}</strong>
-                          <el-input :model-value="value" @update:model-value="setMapValue(field.key, key, $event)" />
-                          <el-button link type="danger" @click="removeMapValue(field.key, key)">{{ t('common.delete') }}</el-button>
-                        </div>
-                        <div class="connection-key-value connection-key-value--add">
-                          <el-input v-model="mapDraft.key" :placeholder="t('workflowConnections.customKey')" />
-                          <el-input v-model="mapDraft.value" :placeholder="t('workflowConnections.customValue')" @keyup.enter="addMapValue(field.key)" />
-                          <el-button type="primary" plain @click="addMapValue(field.key)">{{ t('common.add') }}</el-button>
-                        </div>
-                        <small v-if="mapError" class="connection-error">{{ mapError }}</small>
-                      </div>
-                    </template>
+              <div v-if="configFieldGroups.length" class="connection-config-groups">
+                <section v-for="group in configFieldGroups" :key="group.key" class="connection-config-group">
+                  <div class="connection-config-group-head">
+                    <strong>{{ configGroupLabel(group.key) }}</strong>
+                    <small>{{ configGroupDescription(group.key) }}</small>
                   </div>
-                </div>
+                  <div class="connection-config-grid">
+                    <div v-for="field in group.fields" :key="field.key" class="connection-config-field"
+                         :class="{ 'connection-config-field--wide': field.wide || field.editor === 'keyValue' }">
+                      <div class="connection-field-label">
+                        <strong>{{ fieldLabel(field.key) }}</strong>
+                        <span class="connection-field-requirement" :class="{ required: fieldRequired(field) }">
+                          {{ fieldRequirementLabel(field) }}
+                        </span>
+                      </div>
+                      <div class="connection-card-body">
+                        <el-input v-if="['text', 'password'].includes(field.editor)" :model-value="configFieldValue(field.key)"
+                                  :type="field.editor" :show-password="field.editor === 'password'" autocomplete="off"
+                                  :placeholder="fieldPlaceholder(field)" @update:model-value="setConfigField(field.key, $event)" />
+                        <div v-else-if="field.editor === 'boolean'" class="connection-boolean-control" :class="{ 'connection-boolean-control--risk': field.risk }">
+                          <el-switch :model-value="configFieldValue(field.key)" @update:model-value="setConfigField(field.key, $event)" />
+                          <span>{{ t(configFieldValue(field.key) ? 'common.enabled' : 'common.disabled') }}</span>
+                          <small v-if="field.risk">{{ t('workflowConnections.sensitiveOption') }}</small>
+                        </div>
+                        <el-select v-else-if="field.editor === 'select'" :model-value="configFieldValue(field.key)" class="full"
+                                   @update:model-value="setConfigField(field.key, $event)">
+                          <el-option v-for="option in field.options" :key="metadataOptionValue(option) || '__empty'"
+                                     :label="connectionOptionLabel(option)" :value="metadataOptionValue(option)" />
+                        </el-select>
+                        <template v-else-if="field.editor === 'keyValue'">
+                          <div class="connection-key-values">
+                            <div v-for="([key, value]) in mapEntries(field.key)" :key="key" class="connection-key-value">
+                              <strong>{{ key }}</strong>
+                              <el-input :model-value="value" @update:model-value="setMapValue(field.key, key, $event)" />
+                              <el-button link type="danger" @click="removeMapValue(field.key, key)">{{ t('common.delete') }}</el-button>
+                            </div>
+                            <div class="connection-key-value connection-key-value--add">
+                              <el-input v-model="mapDraft.key" :placeholder="t('workflowConnections.customKey')" />
+                              <el-input v-model="mapDraft.value" :placeholder="t('workflowConnections.customValue')" @keyup.enter="addMapValue(field.key)" />
+                              <el-button type="primary" plain @click="addMapValue(field.key)">{{ t('common.add') }}</el-button>
+                            </div>
+                            <small v-if="mapError" class="connection-error">{{ mapError }}</small>
+                          </div>
+                        </template>
+                      </div>
+                      <small class="connection-field-help">{{ fieldDescription(field.key) }}</small>
+                    </div>
+                  </div>
+                </section>
               </div>
               <div class="form-help">{{ t('workflowConnections.maskHelp') }}</div>
             </section>
@@ -220,9 +248,10 @@ import WorkflowConfigValueEditor from '../components/WorkflowConfigValueEditor.v
 import { useAuthStore } from '../stores/auth'
 import { CONFIG_VALUE_TYPES, createConfigValue, isSafeConfigKey } from '../utils/workflowNodeConfig'
 import { localizedMetadataOptionText, localizedMetadataText, metadataOptionValue } from '../utils/workflowTemplateCatalog'
-import { cloneConnectionConfig, CONNECTION_CATEGORIES, connectionCategoriesForType, connectionCategoryStyle,
-  connectionConfigFields, connectionTypesForCategory, connectionTypeStyle, createConnectionConfig,
-  extraConnectionConfigKeys } from '../utils/workflowConnectionConfig'
+import { cloneConnectionConfig, CONNECTION_CATEGORIES, CONNECTION_CONFIG_GROUPS, connectionCategoriesForType,
+  connectionCategoryStyle, connectionConfigFields, connectionTypesForCategory, connectionTypeStyle,
+  createConnectionConfig, extraConnectionConfigKeys, isConnectionConfigFieldRequired,
+  missingConnectionConfigFields } from '../utils/workflowConnectionConfig'
 
 const { t, te, locale } = useI18n()
 const auth = useAuthStore()
@@ -243,6 +272,10 @@ let autoDetectTimer = null
 const selectedPluginComponent = computed(() => pluginComponents.value.find(item => item.id === Number(form.config.pluginComponentId)))
 const configFields = computed(() => form.connectionType === 'PLUGIN' ? pluginCredentialFields(selectedPluginComponent.value)
   : connectionConfigFields(form.connectionType))
+/** 按固定语义顺序整理参数字段，空分组不占据表单空间。 */
+const configFieldGroups = computed(() => CONNECTION_CONFIG_GROUPS.map(key => ({
+  key, fields: configFields.value.filter(field => (field.group || 'AUTH') === key)
+})).filter(group => group.fields.length))
 const customKeys = computed(() => extraConnectionConfigKeys(form.config, form.connectionType))
 const availableConnectionTypes = computed(() => connectionTypesForCategory(form.connectionCategory))
 /** 按首选分类分组并保持分类定义顺序，空分类不展示。 */
@@ -294,12 +327,16 @@ function selectConnectionType(type) {
 function resetConfig(type) { form.config = type === 'PLUGIN' ? { pluginComponentId: null, credentials: {} } : createConnectionConfig(type); clearDrafts() }
 /** 创建或更新结构化连接配置。 */
 async function save() {
-  if (!form.code.trim() || !form.name.trim() || !form.connectionCategory || !form.connectionType
+  normalizeCode()
+  if (!form.code || !form.name.trim() || !form.connectionCategory || !form.connectionType
     || form.connectionType === 'PLUGIN' && !selectedPluginComponent.value) return ElMessage.warning(t('workflowConnections.required'))
-  if (form.connectionType === 'PLUGIN' && configFields.value.some(field => field.required
-    && (configFieldValue(field.key) === undefined || configFieldValue(field.key) === null || String(configFieldValue(field.key)).trim() === ''))) {
-    return ElMessage.warning(t('workflowConnections.required'))
-  }
+  if (!form.code.match(/^[A-Z][A-Z0-9_-]{1,79}$/)) return ElMessage.warning(t('workflowConnections.codeInvalid'))
+  const missingFields = form.connectionType === 'PLUGIN'
+    ? configFields.value.filter(field => field.required && emptyConfigValue(configFieldValue(field.key))).map(field => field.key)
+    : missingConnectionConfigFields(form.connectionType, form.config)
+  if (missingFields.length) return ElMessage.warning(t('workflowConnections.configRequired', {
+    fields: missingFields.map(fieldLabel).join(t('workflowConnections.fieldSeparator'))
+  }))
   const command = { code: form.code, name: form.name, connectionType: form.connectionType, config: cloneConnectionConfig(form.config), enabled: form.enabled }
   try {
     if (form.id) await http.put(`/data-sources/${form.id}`, command)
@@ -388,6 +425,12 @@ function preferredCategory(connectionType) { return connectionCategoriesForType(
 function categoryLabel(category) { return t(`workflowConnections.categories.${category || 'OTHER'}`) }
 /** 返回本地化连接类型名称。 */
 function typeLabel(type) { return t(`workflowConnections.types.${type || 'PLUGIN'}`) }
+/** 返回当前连接类型的用途和关键配置提示。 */
+function connectionTypeGuide(type) { return t(`workflowConnections.typeGuides.${type || 'PLUGIN'}`) }
+/** 返回参数分组标题。 */
+function configGroupLabel(group) { return t(`workflowConnections.configGroups.${group}.label`) }
+/** 返回参数分组说明。 */
+function configGroupDescription(group) { return t(`workflowConnections.configGroups.${group}.description`) }
 /** 返回分类标签色板。 */
 function categoryStyle(category) { return connectionCategoryStyle(category) }
 /** 返回连接类型独立于分类的常规品牌样式。 */
@@ -405,6 +448,25 @@ function fieldDescription(key) {
   const dynamic = configFields.value.find(field => field.key === key)?.description
   if (dynamic) return dynamic
   const path = `workflowConnections.fieldDescriptions.${key}`; return te(path) ? t(path) : key
+}
+/** 返回字段的示例占位，不把示例值写入实际配置。 */
+function fieldPlaceholder(field) {
+  return field.placeholder || t('workflowConnections.fieldPlaceholder', { field: fieldLabel(field.key) })
+}
+/** 判断标准字段或插件动态字段在当前状态下是否必填。 */
+function fieldRequired(field) {
+  return form.connectionType === 'PLUGIN' ? Boolean(field.required) : isConnectionConfigFieldRequired(field, form.config)
+}
+/** 返回必填、条件必填或选填标识。 */
+function fieldRequirementLabel(field) {
+  if (field.requiredWhen) return t('workflowConnections.conditionalRequired')
+  return t(fieldRequired(field) ? 'workflowConnections.requiredField' : 'workflowConnections.optionalField')
+}
+/** 返回内置枚举选项的可读名称，空值统一展示为不设置。 */
+function connectionOptionLabel(option) {
+  if (form.connectionType === 'PLUGIN') return pluginOptionLabel(option)
+  const value = metadataOptionValue(option)
+  return value === '' ? t('workflowConnections.notSet') : value
 }
 /** 更新一个标准或自定义配置字段。 */
 function setConfigField(key, value) {
@@ -427,7 +489,7 @@ function pluginCredentialFields(component) {
     .map(item => ({ key: item.name, label: localizedMetadataText(item, 'label', locale.value, item.label || item.name), required: Boolean(item.required),
     description: localizedMetadataText(item, 'description', locale.value, item.description), editor: item.secret ? 'password' : item.type === 'boolean' ? 'boolean'
       : ['select', 'options'].includes(String(item.type || '').toLowerCase()) ? 'select' : 'text',
-    options: Array.isArray(item.options) ? item.options : [] }))
+    options: Array.isArray(item.options) ? item.options : [], group: 'AUTH', wide: true }))
 }
 /** 返回插件凭据枚举项的当前语言名称，同时保持提交值不变。 */
 function pluginOptionLabel(option) {
@@ -436,6 +498,10 @@ function pluginOptionLabel(option) {
 }
 /** 生成包含来源、包和版本的插件组件标签。 */
 function pluginComponentLabel(component) { return `${localizedMetadataText(component, 'name', locale.value, component.name)} · ${component.source}/${component.packageKey}@${component.packageVersion}` }
+/** 保存前将编码规范为后端接受的大写格式。 */
+function normalizeCode() { form.code = form.code.trim().toUpperCase() }
+/** 判断动态插件字段是否缺少可提交值。 */
+function emptyConfigValue(value) { return value === undefined || value === null || typeof value === 'string' && value.trim() === '' }
 /** 返回对象型配置的键值列表。 */
 function mapEntries(key) { return Object.entries(form.config[key] || {}) }
 /** 更新对象型配置中的值。 */
@@ -526,9 +592,10 @@ onMounted(async () => { await completeOAuthCallback(); await load() })
 .connection-type-option .connection-nav-icon { width: 30px; height: 30px; }
 .connection-form-pane { min-width: 0; }
 .connection-selection-head, .connection-selection-empty { display: flex; min-height: 56px; align-items: center; gap: 12px; margin-bottom: 18px; padding: 13px 15px; border: 1px solid #dbe6f4; border-radius: 14px; background: linear-gradient(135deg, #f8fbff, #f8fafc); }
-.connection-selection-head > div { display: grid; gap: 2px; }
+.connection-selection-copy { display: grid; min-width: 0; gap: 2px; }
 .connection-selection-head small, .connection-selection-empty small { color: var(--app-muted); }
 .connection-selection-head strong { font-size: 16px; }
+.connection-selection-copy p { margin: 3px 0 0; color: var(--app-muted); font-size: 12px; line-height: 1.45; }
 .connection-selection-icon { display: inline-flex; width: 42px; height: 42px; flex: none; align-items: center; justify-content: center; border: 1px solid; border-radius: 12px; }
 .connection-selection-icon svg { width: 23px; height: 23px; }
 .connection-selection-empty { align-items: flex-start; flex-direction: column; justify-content: center; gap: 4px; border-style: dashed; }
@@ -537,6 +604,8 @@ onMounted(async () => { await completeOAuthCallback(); await load() })
 .connection-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .connection-grid--identity { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 132px; }
 .connection-grid :deep(.el-form-item) { margin-bottom: 0; }
+.connection-input-stack { display: grid; width: 100%; gap: 5px; }
+.connection-input-stack small { color: var(--app-muted); font-size: 11px; line-height: 1.4; }
 .connection-status-control { display: flex; min-height: 32px; align-items: center; gap: 9px; color: var(--app-muted); font-size: 13px; }
 .form-help { padding: 10px 12px; border-radius: 9px; background: #f8fafc; color: var(--app-muted); font-size: 12px; line-height: 1.5; }
 .connection-config-section { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; border-bottom: 1px solid #e7edf5; }
@@ -545,12 +614,23 @@ onMounted(async () => { await completeOAuthCallback(); await load() })
 .connection-config-head h3, .connection-config-head p { margin: 0; }
 .connection-config-head p { margin-top: 4px; color: var(--app-muted); font-size: 13px; }
 .connection-plugin-select { margin-bottom: 0; }
-.connection-config-surface { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid #e2e8f0; border-radius: 13px; background: #e2e8f0; }
-.connection-config-field { min-width: 0; padding: 15px 16px; background: #fff; }
+.connection-config-groups { display: grid; gap: 12px; }
+.connection-config-group { display: grid; gap: 12px; padding: 13px 14px 14px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fbfdff; }
+.connection-config-group-head { display: flex; align-items: baseline; gap: 9px; padding-bottom: 9px; border-bottom: 1px solid #edf2f7; }
+.connection-config-group-head strong { color: #334155; font-size: 13px; }
+.connection-config-group-head small { color: var(--app-muted); font-size: 11px; }
+.connection-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px 16px; }
+.connection-config-field { display: grid; min-width: 0; align-content: start; gap: 6px; }
 .connection-config-field--wide { grid-column: 1 / -1; }
-.connection-card-head { display: flex; min-height: 50px; flex-direction: column; gap: 3px; margin-bottom: 9px; }
-.connection-card-head small { color: var(--app-muted); line-height: 1.45; }
+.connection-field-label { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
+.connection-field-label strong { overflow: hidden; color: #334155; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.connection-field-requirement { flex: none; color: #94a3b8; font-size: 10px; }
+.connection-field-requirement.required { color: var(--el-color-danger); }
 .connection-card-body { display: flex; min-width: 0; min-height: 32px; align-items: center; }
+.connection-field-help { color: var(--app-muted); font-size: 11px; line-height: 1.4; }
+.connection-boolean-control { display: flex; width: 100%; min-height: 32px; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #dcdfe6; border-radius: 4px; background: #fff; color: var(--app-muted); font-size: 12px; }
+.connection-boolean-control--risk { border-color: #f1d8a8; background: #fffcf5; }
+.connection-boolean-control small { margin-left: auto; color: #b7791f; font-size: 10px; }
 .connection-key-values, .connection-custom-list { display: flex; flex-direction: column; gap: 10px; }
 .connection-key-values { width: 100%; }
 .connection-key-value { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(160px, 1.2fr) auto; align-items: center; gap: 8px; }
@@ -575,7 +655,7 @@ onMounted(async () => { await completeOAuthCallback(); await load() })
 }
 @media (max-width: 720px) {
   .data-source-editor { max-height: none; overflow: visible; }
-  .connection-grid, .connection-config-surface, .connection-key-value, .connection-custom-add { grid-template-columns: 1fr; }
+  .connection-grid, .connection-config-grid, .connection-key-value, .connection-custom-add { grid-template-columns: 1fr; }
   .connection-grid { gap: 0; }
   .connection-grid--identity { gap: 14px; }
   .connection-config-field--wide { grid-column: auto; }
@@ -586,5 +666,6 @@ onMounted(async () => { await completeOAuthCallback(); await load() })
   .connection-category-nav, .connection-type-options { grid-template-columns: 1fr; }
   .connection-editor-layout { gap: 18px; }
   .connection-picker { padding: 11px; }
+  .connection-config-group-head { align-items: flex-start; flex-direction: column; gap: 3px; }
 }
 </style>

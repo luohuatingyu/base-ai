@@ -5,6 +5,7 @@ import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
 import {
   CONNECTION_CATEGORIES,
+  CONNECTION_CONFIG_GROUPS,
   CONNECTION_TYPES,
   cloneConnectionConfig,
   connectionCategoriesForType,
@@ -14,7 +15,9 @@ import {
   connectionTypesForCategory,
   connectionTypeStyle,
   createConnectionConfig,
-  extraConnectionConfigKeys
+  extraConnectionConfigKeys,
+  isConnectionConfigFieldRequired,
+  missingConnectionConfigFields
 } from '../src/utils/workflowConnectionConfig.js'
 
 const viewSource = readFileSync(new URL('../src/views/DataSourcesView.vue', import.meta.url), 'utf8')
@@ -23,15 +26,51 @@ const iconSource = readFileSync(new URL('../src/components/DataSourceTypeIcon.vu
 test('十二类连接均提供类型化标准字段和安全默认值', () => {
   assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH', 'PLUGIN'])
   assert.deepEqual(connectionConfigFields('MYSQL').map(field => field.key), ['url', 'username', 'password', 'allowWrite'])
-  assert.deepEqual(connectionConfigFields('WEBHOOK').map(field => field.key), ['url', 'method', 'testMethod', 'headers', 'secret'])
+  assert.deepEqual(connectionConfigFields('REDIS').map(field => field.key), ['uri', 'keyPrefix', 'allowWrite'])
+  assert.deepEqual(connectionConfigFields('WEBHOOK').map(field => field.key), ['url', 'method', 'testMethod', 'headers'])
   assert.deepEqual(connectionConfigFields('TAVILY').map(field => field.key), ['apiKey'])
   assert.deepEqual(connectionConfigFields('QDRANT').map(field => field.key), ['url', 'apiKey'])
-  assert.deepEqual(connectionConfigFields('MILVUS').map(field => field.key), ['url', 'token', 'database'])
-  assert.deepEqual(connectionConfigFields('ELASTICSEARCH').map(field => field.key), ['url', 'username', 'password', 'apiKey', 'product'])
+  assert.deepEqual(connectionConfigFields('MILVUS').map(field => field.key), ['url', 'database', 'token'])
+  assert.deepEqual(connectionConfigFields('ELASTICSEARCH').map(field => field.key), ['url', 'product', 'username', 'password', 'apiKey'])
+  assert.equal(connectionConfigDefaults('MYSQL').url, '')
+  assert.equal(connectionConfigDefaults('REDIS').uri, '')
   assert.equal(connectionConfigDefaults('MYSQL').allowWrite, false)
+  assert.equal(connectionConfigDefaults('REDIS').allowWrite, false)
   assert.equal(connectionConfigDefaults('S3').pathStyle, true)
   assert.deepEqual(connectionConfigDefaults('WEBHOOK').headers, {})
   assert.deepEqual(connectionConfigFields('PLUGIN'), [])
+})
+
+test('连接字段按用途分组并提供必填、条件必填和示例元数据', () => {
+  assert.deepEqual(CONNECTION_CONFIG_GROUPS, ['CONNECTION', 'AUTH', 'SCOPE', 'BEHAVIOR'])
+  const mysqlUrl = connectionConfigFields('MYSQL').find(field => field.key === 'url')
+  const redisWrite = connectionConfigFields('REDIS').find(field => field.key === 'allowWrite')
+  const kafkaMechanism = connectionConfigFields('KAFKA').find(field => field.key === 'saslMechanism')
+
+  assert.equal(mysqlUrl.required, true)
+  assert.equal(mysqlUrl.wide, true)
+  assert.match(mysqlUrl.placeholder, /^jdbc:mysql:/)
+  assert.deepEqual({ group: redisWrite.group, defaultValue: redisWrite.defaultValue, risk: redisWrite.risk },
+    { group: 'SCOPE', defaultValue: false, risk: true })
+  assert.equal(isConnectionConfigFieldRequired(kafkaMechanism, { securityProtocol: 'PLAINTEXT' }), false)
+  assert.equal(isConnectionConfigFieldRequired(kafkaMechanism, { securityProtocol: 'SASL_SSL' }), true)
+})
+
+test('标准参数校验覆盖空值、正常值和 Kafka SASL 条件分支', () => {
+  assert.deepEqual(missingConnectionConfigFields('MYSQL', { url: '  ' }), ['url'])
+  assert.deepEqual(missingConnectionConfigFields('MYSQL', { url: 'jdbc:mysql://db/app', allowWrite: false }), [])
+  assert.deepEqual(missingConnectionConfigFields('S3', {
+    endpoint: '', region: 'us-east-1', bucket: 'files', accessKey: 'key', secretKey: 'secret', pathStyle: false
+  }), [])
+  assert.deepEqual(missingConnectionConfigFields('KAFKA', {
+    bootstrapServers: 'broker:9092', securityProtocol: 'PLAINTEXT'
+  }), [])
+  assert.deepEqual(missingConnectionConfigFields('KAFKA', {
+    bootstrapServers: 'broker:9092', securityProtocol: 'SASL_SSL', saslMechanism: '', username: '', password: ''
+  }), ['saslMechanism', 'username', 'password'])
+  assert.deepEqual(missingConnectionConfigFields('KAFKA', {
+    bootstrapServers: 'broker:9092', securityProtocol: 'SASL_SSL', saslMechanism: 'PLAIN', username: 'client', password: '******'
+  }), [])
 })
 
 test('七类连接完整覆盖全部类型并允许 PostgreSQL 双重归属', () => {
@@ -106,6 +145,13 @@ test('编辑配置时保留脱敏密钥、嵌套值和未知自定义字段', ()
   assert.notEqual(cloneConnectionConfig(config), config)
 })
 
+test('旧 Webhook 签名密钥继续透传但不再作为有效标准或自定义参数展示', () => {
+  const config = createConnectionConfig('WEBHOOK', { url: 'https://hooks.example.com', secret: '******', custom: true })
+
+  assert.equal(config.secret, '******')
+  assert.deepEqual(extraConnectionConfigKeys(config, 'WEBHOOK'), ['custom'])
+})
+
 test('数据源页面使用左侧分类类型导航和紧凑参数表单并由结构化配置直接保存', () => {
   assert.match(viewSource, /class="connection-editor-layout"/)
   assert.match(viewSource, /class="connection-picker"/)
@@ -114,8 +160,18 @@ test('数据源页面使用左侧分类类型导航和紧凑参数表单并由�
   assert.match(viewSource, /class="connection-type-option"/)
   assert.match(viewSource, /@click="selectCategory\(category\.key\)"/)
   assert.match(viewSource, /@click="selectConnectionType\(type\)"/)
-  assert.match(viewSource, /class="connection-config-surface"/)
+  assert.match(viewSource, /class="connection-config-groups"/)
+  assert.match(viewSource, /class="connection-config-group"/)
+  assert.match(viewSource, /class="connection-config-grid"/)
   assert.match(viewSource, /class="connection-config-field"/)
+  assert.match(viewSource, /class="connection-field-requirement"/)
+  assert.match(viewSource, /class="connection-field-help"/)
+  assert.match(viewSource, /class="connection-boolean-control"/)
+  assert.match(viewSource, /connectionTypeGuide\(form\.connectionType\)/)
+  assert.match(viewSource, /fieldPlaceholder\(field\)/)
+  assert.match(viewSource, /missingConnectionConfigFields\(form\.connectionType, form\.config\)/)
+  assert.doesNotMatch(viewSource, /class="connection-card-head"/)
+  assert.doesNotMatch(viewSource, /class="connection-config-surface"/)
   assert.match(viewSource, /class="connection-custom-card"/)
   assert.match(viewSource, /WorkflowConfigValueEditor/)
   assert.match(viewSource, /class="connection-key-value"/)
@@ -126,7 +182,7 @@ test('数据源页面使用左侧分类类型导航和紧凑参数表单并由�
   assert.match(viewSource, /plugin-component-options/)
   assert.match(viewSource, /pluginCredentialFields/)
   assert.match(viewSource, /field\.required/)
-  assert.match(viewSource, /configFields\.value\.some\(field => field\.required/)
+  assert.match(viewSource, /configFields\.value\.filter\(field => field\.required/)
   assert.match(viewSource, /oauth\/authorize/)
   assert.match(viewSource, /plugin-oauth\/callback/)
   assert.match(viewSource, /availableConnectionTypes/)
@@ -140,11 +196,13 @@ test('数据源页面使用左侧分类类型导航和紧凑参数表单并由�
   assert.match(viewSource, /if \(form\.connectionCategory === category\) return/)
   assert.match(viewSource, /if \(form\.connectionType === type\) return/)
   assert.match(viewSource, /@media \(max-width: 900px\)[\s\S]*\.connection-editor-layout \{ grid-template-columns: 1fr; \}/)
+  assert.match(viewSource, /@media \(max-width: 720px\)[\s\S]*\.connection-config-grid[^{]*\{ grid-template-columns: 1fr; \}/)
 })
 
-test('中英文资源覆盖标准卡片、自定义卡片和校验提示', () => {
+test('中英文资源覆盖紧凑参数表单、类型指引和校验提示', () => {
   const keys = ['configHelp', 'customTitle', 'customHelp', 'customKey', 'customValue', 'addCustom', 'invalidCustomKey',
-    'duplicateCustomKey', 'category', 'connectionType', 'selectCategory', 'selectConnectionType']
+    'duplicateCustomKey', 'category', 'connectionType', 'selectCategory', 'selectConnectionType', 'codePlaceholder',
+    'codeHelp', 'codeInvalid', 'configRequired', 'requiredField', 'optionalField', 'conditionalRequired', 'sensitiveOption']
   for (const key of keys) {
     assert.ok(zhCN.workflowConnections[key], `zh-CN ${key}`)
     assert.ok(enUS.workflowConnections[key], `en-US ${key}`)
@@ -160,5 +218,11 @@ test('中英文资源覆盖标准卡片、自定义卡片和校验提示', () =>
   for (const type of CONNECTION_TYPES) {
     assert.ok(zhCN.workflowConnections.types[type], `zh-CN ${type}`)
     assert.ok(enUS.workflowConnections.types[type], `en-US ${type}`)
+    assert.ok(zhCN.workflowConnections.typeGuides[type], `zh-CN guide ${type}`)
+    assert.ok(enUS.workflowConnections.typeGuides[type], `en-US guide ${type}`)
+  }
+  for (const group of CONNECTION_CONFIG_GROUPS) {
+    assert.ok(zhCN.workflowConnections.configGroups[group]?.label, `zh-CN group ${group}`)
+    assert.ok(enUS.workflowConnections.configGroups[group]?.label, `en-US group ${group}`)
   }
 })

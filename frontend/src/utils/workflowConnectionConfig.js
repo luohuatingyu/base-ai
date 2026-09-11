@@ -1,77 +1,80 @@
-/** 创建连接配置字段定义。 */
-function field(key, editor, defaultValue, options = []) {
-  return { key, editor, defaultValue, options }
+/** 创建带分组、校验和填写提示的连接配置字段定义。 */
+function field(key, editor, defaultValue, metadata = {}) {
+  return { key, editor, defaultValue, options: [], group: 'CONNECTION', required: false, wide: false, ...metadata }
 }
 
 export const CONNECTION_CONFIG_FIELDS = {
   MYSQL: [
-    field('url', 'text', 'jdbc:mysql://host:3306/database'),
-    field('username', 'text', ''),
-    field('password', 'password', ''),
-    field('allowWrite', 'boolean', false)
+    field('url', 'text', '', { required: true, wide: true, placeholder: 'jdbc:mysql://db.example.com:3306/app' }),
+    field('username', 'text', '', { group: 'AUTH', placeholder: 'app_reader' }),
+    field('password', 'password', '', { group: 'AUTH' }),
+    field('allowWrite', 'boolean', false, { group: 'SCOPE', risk: true })
   ],
   POSTGRESQL: [
-    field('url', 'text', 'jdbc:postgresql://host:5432/database'),
-    field('username', 'text', ''),
-    field('password', 'password', ''),
-    field('allowWrite', 'boolean', false)
+    field('url', 'text', '', { required: true, wide: true, placeholder: 'jdbc:postgresql://db.example.com:5432/app' }),
+    field('username', 'text', '', { group: 'AUTH', placeholder: 'app_reader' }),
+    field('password', 'password', '', { group: 'AUTH' }),
+    field('allowWrite', 'boolean', false, { group: 'SCOPE', risk: true })
   ],
   REDIS: [
-    field('uri', 'password', 'redis://host:6379/0'),
-    field('keyPrefix', 'text', ''),
-    field('allowWrite', 'boolean', false)
+    field('uri', 'password', '', { required: true, wide: true, placeholder: 'redis://user:password@redis.example.com:6379/0' }),
+    field('keyPrefix', 'text', '', { group: 'SCOPE', placeholder: 'workflow:' }),
+    field('allowWrite', 'boolean', false, { group: 'SCOPE', risk: true })
   ],
   S3: [
-    field('endpoint', 'text', ''),
-    field('region', 'text', 'us-east-1'),
-    field('accessKey', 'password', ''),
-    field('secretKey', 'password', ''),
-    field('bucket', 'text', ''),
-    field('keyPrefix', 'text', ''),
-    field('pathStyle', 'boolean', true),
-    field('allowDelete', 'boolean', false)
+    field('endpoint', 'text', '', { wide: true, placeholder: 'https://s3.example.com' }),
+    field('region', 'text', 'us-east-1', { required: true, placeholder: 'us-east-1' }),
+    field('bucket', 'text', '', { required: true, placeholder: 'workflow-files' }),
+    field('accessKey', 'password', '', { group: 'AUTH', required: true }),
+    field('secretKey', 'password', '', { group: 'AUTH', required: true }),
+    field('keyPrefix', 'text', '', { group: 'SCOPE', placeholder: 'workflows/' }),
+    field('allowDelete', 'boolean', false, { group: 'SCOPE', risk: true }),
+    field('pathStyle', 'boolean', true, { group: 'BEHAVIOR' })
   ],
   KAFKA: [
-    field('bootstrapServers', 'text', ''),
-    field('topicPrefix', 'text', ''),
-    field('securityProtocol', 'select', '', ['', 'PLAINTEXT', 'SSL', 'SASL_PLAINTEXT', 'SASL_SSL']),
-    field('saslMechanism', 'select', '', ['', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512']),
-    field('username', 'text', ''),
-    field('password', 'password', '')
+    field('bootstrapServers', 'text', '', { required: true, wide: true, placeholder: 'broker-1.example.com:9092,broker-2.example.com:9092' }),
+    field('securityProtocol', 'select', '', { group: 'AUTH', options: ['', 'PLAINTEXT', 'SSL', 'SASL_PLAINTEXT', 'SASL_SSL'] }),
+    field('saslMechanism', 'select', '', { group: 'AUTH', options: ['', 'PLAIN', 'SCRAM-SHA-256', 'SCRAM-SHA-512'], requiredWhen: { key: 'securityProtocol', values: ['SASL_PLAINTEXT', 'SASL_SSL'] } }),
+    field('username', 'text', '', { group: 'AUTH', placeholder: 'workflow-client', requiredWhen: { key: 'securityProtocol', values: ['SASL_PLAINTEXT', 'SASL_SSL'] } }),
+    field('password', 'password', '', { group: 'AUTH', requiredWhen: { key: 'securityProtocol', values: ['SASL_PLAINTEXT', 'SASL_SSL'] } }),
+    field('topicPrefix', 'text', '', { group: 'SCOPE', placeholder: 'workflow.' })
   ],
   RABBITMQ: [
-    field('uri', 'password', 'amqp://user:password@host:5672/vhost'),
-    field('exchangePrefix', 'text', ''),
-    field('queuePrefix', 'text', '')
+    field('uri', 'password', '', { required: true, wide: true, placeholder: 'amqps://user:password@rabbit.example.com:5671/vhost' }),
+    field('exchangePrefix', 'text', '', { group: 'SCOPE', placeholder: 'workflow.' }),
+    field('queuePrefix', 'text', '', { group: 'SCOPE', placeholder: 'workflow.' })
   ],
   WEBHOOK: [
-    field('url', 'text', ''),
-    field('method', 'select', 'POST', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-    field('testMethod', 'select', 'GET', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-    field('headers', 'keyValue', {}),
-    field('secret', 'password', '')
+    field('url', 'text', '', { required: true, wide: true, placeholder: 'https://hooks.example.com/events' }),
+    field('method', 'select', 'POST', { group: 'BEHAVIOR', required: true, options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }),
+    field('testMethod', 'select', 'GET', { group: 'BEHAVIOR', required: true, options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }),
+    field('headers', 'keyValue', {}, { group: 'AUTH', wide: true })
   ],
   TAVILY: [
-    field('apiKey', 'password', '')
+    field('apiKey', 'password', '', { group: 'AUTH', required: true, wide: true })
   ],
   QDRANT: [
-    field('url', 'text', 'https://host:6333'),
-    field('apiKey', 'password', '')
+    field('url', 'text', '', { required: true, wide: true, placeholder: 'https://qdrant.example.com:6333' }),
+    field('apiKey', 'password', '', { group: 'AUTH', wide: true })
   ],
   MILVUS: [
-    field('url', 'text', 'https://host:19530'),
-    field('token', 'password', ''),
-    field('database', 'text', 'default')
+    field('url', 'text', '', { required: true, wide: true, placeholder: 'https://milvus.example.com:19530' }),
+    field('database', 'text', 'default', { required: true, placeholder: 'default' }),
+    field('token', 'password', '', { group: 'AUTH', required: true, wide: true, placeholder: 'username:password' })
   ],
   ELASTICSEARCH: [
-    field('url', 'text', 'https://host:9200'),
-    field('username', 'text', ''),
-    field('password', 'password', ''),
-    field('apiKey', 'password', ''),
-    field('product', 'text', 'ELASTICSEARCH')
+    field('url', 'text', '', { required: true, wide: true, placeholder: 'https://elasticsearch.example.com:9200' }),
+    field('product', 'select', 'ELASTICSEARCH', { required: true, options: ['ELASTICSEARCH'] }),
+    field('username', 'text', '', { group: 'AUTH', placeholder: 'elastic' }),
+    field('password', 'password', '', { group: 'AUTH' }),
+    field('apiKey', 'password', '', { group: 'AUTH' })
   ],
   PLUGIN: []
 }
+
+export const CONNECTION_CONFIG_GROUPS = ['CONNECTION', 'AUTH', 'SCOPE', 'BEHAVIOR']
+
+const LEGACY_CONNECTION_CONFIG_FIELDS = { WEBHOOK: ['secret'] }
 
 export const CONNECTION_TYPES = Object.keys(CONNECTION_CONFIG_FIELDS)
 
@@ -101,6 +104,20 @@ const CONNECTION_TYPE_COLORS = {
 /** 返回指定连接类型的标准字段。 */
 export function connectionConfigFields(connectionType) {
   return CONNECTION_CONFIG_FIELDS[String(connectionType || '').toUpperCase()] || []
+}
+
+/** 判断字段在当前配置下是否必填，覆盖固定必填和条件必填。 */
+export function isConnectionConfigFieldRequired(fieldDefinition, config = {}) {
+  if (fieldDefinition?.required) return true
+  const condition = fieldDefinition?.requiredWhen
+  return Boolean(condition && condition.values.includes(config?.[condition.key]))
+}
+
+/** 返回当前配置缺少的必填字段，供保存前提示使用。 */
+export function missingConnectionConfigFields(connectionType, config = {}) {
+  return connectionConfigFields(connectionType)
+    .filter(item => isConnectionConfigFieldRequired(item, config) && isEmptyConfigValue(config?.[item.key]))
+    .map(item => item.key)
 }
 
 /** 返回分类下的可选连接类型，未知分类返回空数组。 */
@@ -143,11 +160,18 @@ export function createConnectionConfig(connectionType, value = {}) {
 
 /** 列出不属于当前连接类型标准字段的自定义配置键。 */
 export function extraConnectionConfigKeys(config, connectionType) {
-  const standardKeys = new Set(connectionConfigFields(connectionType).map(item => item.key))
-  if (String(connectionType || '').toUpperCase() === 'PLUGIN') {
+  const normalizedType = String(connectionType || '').toUpperCase()
+  const standardKeys = new Set(connectionConfigFields(normalizedType).map(item => item.key))
+  for (const key of LEGACY_CONNECTION_CONFIG_FIELDS[normalizedType] || []) standardKeys.add(key)
+  if (normalizedType === 'PLUGIN') {
     standardKeys.add('pluginComponentId'); standardKeys.add('credentials')
   }
   return Object.keys(config || {}).filter(key => !standardKeys.has(key))
+}
+
+/** 判断必填校验中的值是否为空，布尔 false 和数字零均视为有效。 */
+function isEmptyConfigValue(value) {
+  return value === undefined || value === null || typeof value === 'string' && value.trim() === ''
 }
 
 /** 深复制单个默认字段值。 */
