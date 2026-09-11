@@ -1,5 +1,86 @@
 # 最近分支覆盖测试报告
 
+## 服务器 Compose 自动检测与私钥文件验收（2026-09-11）
+
+### Git 基准点
+
+Commit: aa13c4a5a09cb22e1900dbcace5f92474721a0b0
+- 提交信息: Auto-detect server Compose projects
+- 测试日期: 2026-09-11
+- 分支: master
+- 未执行 git push。
+
+### 变更范围
+
+- 新增或编辑服务器时不再展示、要求或提交 Compose 目录和 Compose 文件；连接测试只验证本机可用或 SSH 可连通。
+- 部署任务在未保存旧版 Compose 配置时自动发现项目：本机固定检查 `/workspace`，远程优先读取 Docker Compose 容器标签，再以最大深度 4 扫描 `$HOME`、`/opt`、`/srv`，最多处理 40 个候选。
+- 仅接受 `docker-compose.yml` 或 `compose.yml`，并通过 `backend`、`frontend`、`caddy` 服务组合识别 Base AI；没有匹配或存在多个匹配时明确失败，不猜测部署目标。
+- SSH 私钥既可直接粘贴，也可由浏览器选择本地文件后读取文本；只显示本地文件名，提交的仍是私钥内容，并沿用后端加密保存流程。
+- 保留历史服务器已保存 Compose 目录和文件的兼容行为；未新增依赖、配置、数据迁移或删除文件。可执行 `git revert aa13c4a5a09cb22e1900dbcace5f92474721a0b0` 回滚并重新构建服务。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件与输入 | 预期与实际结果 | 场景类型 |
+| --- | --- | --- | --- |
+| 新增服务器无需 Compose 配置 | Backend H2 Service 测试提交空目录和空文件；Frontend 契约测试检查表单与请求模型 | 服务器创建成功，界面无 Compose 输入项，请求保持空值；通过 | 正常、边界、兼容 |
+| 连接测试不依赖 Compose | Go 单测输入空 Compose 配置并调用本机 `/test` 处理器 | 校验与连接测试成功，不执行 Compose；通过 | 正常、回归 |
+| 部署时自动发现唯一 Base AI 项目 | Go 单元与 Shell 集成测试提供标签候选、扫描候选及唯一有效服务组合 | 标签优先、候选去重，并选择唯一 `backend/frontend/caddy` 项目；通过 | 正常、兼容、集成 |
+| 不安全或不确定目标不得部署 | Go 参数化测试覆盖零候选、多个 Base AI、多个普通候选、非法路径及超过 40 个候选 | 返回未找到、歧义或非法配置错误，不执行部署；通过 | 边界、异常、安全 |
+| 本机发现遵循固定挂载目录 | Go 单测在临时 `/workspace` 等价根目录创建零个、一个或两个 Compose 文件 | 唯一文件成功；零个和多个均失败；通过 | 正常、边界、异常 |
+| 私钥文件与粘贴输入均可用 | Frontend 单测输入普通文件、空文件、64 KiB 临界文件、超限元数据、UTF-8 超限内容和读取异常 | 合法内容回填同一私钥字段；空值、超限和读取失败均提示；通过 | 正常、边界、异常 |
+| 私钥文件路径不会上传 | Frontend 契约测试检查文件选择器、读取工具和提交模型 | 仅本地显示文件名，请求仅携带私钥文本；后端继续加密保存；通过 | 权限、安全、隐私 |
+| 历史 Compose 配置保持兼容 | Backend 与 Go 测试输入成对的旧目录和文件，并覆盖缺一项、非法文件名和目录穿越 | 合法旧配置直接使用；部分或不安全配置被拒绝；通过 | 兼容、安全、回归 |
+| 完整质量门及运行环境无回归 | Backend、Frontend、Deployment Agent 完整测试和精确提交 Compose 镜像构建、健康检查 | 772/772 Backend、347/347 Frontend、1/1 E2E、21/21 Go 通过；五个默认服务及代理探活通过 | 回归、构建、运行态 |
+
+### 测试执行结果
+
+- 缺陷复现：修复前 Backend 新增服务器测试因 Compose 必填校验失败；Go 空 Compose 校验和本机连接处理器 2 个测试失败；Frontend 因缺少私钥文件读取模块失败，均稳定复现需求缺口。
+- Backend 定向测试：18/18 通过；完整 Maven 测试：772/772 通过，通过率 100%，失败 0、错误 0、跳过 0。
+- Frontend 私钥文件与服务器表单定向测试：5/5 通过；完整单元与契约测试：347/347 通过；E2E：1/1 通过，失败 0、错误 0、跳过 0。
+- Frontend 覆盖率：行 98.30%、分支 81.00%、函数 95.80%；新增私钥文件读取工具行、分支、函数均为 100%。
+- Deployment Agent：21/21 Go 测试通过，失败 0；Shell 发现测试通过伪 Docker 输出验证标签优先、目录扫描、服务识别和安全过滤。
+- 总计 1,141 个不重复自动化用例通过；ESLint、Vue 类型检查、Vite 生产构建以及全部精确提交镜像构建均通过。
+- 最终 Backend、Frontend、Python Worker、Document Parser、Caddy 均运行 revision `aa13c4a5a09cb22e1900dbcace5f92474721a0b0` 且为 healthy；网关就绪接口返回 `UP`。
+
+### 关键模块测试
+
+- `ServerManagementService`：无 Compose 创建、旧配置兼容、部分配置拒绝、非法目录和文件名校验，以及凭据加密路径共 18/18 定向测试通过。
+- `ServersView.vue` 与 `serverCredentials.js`：文件读取、64 KiB 上限、UTF-8 字节长度、异常提示、仅文件名本地展示及粘贴输入兼容通过。
+- `deployment-agent/main.go`：连接测试解耦、候选发现、Base AI 服务识别、唯一性选择、安全校验、旧配置优先和部署失败记录共 21/21 通过。
+- 完整回归：Backend 772/772、Frontend 347/347 加 1/1 E2E、Deployment Agent 21/21 通过；Compose 运行态 5/5 默认服务 healthy。
+
+### 实际执行记录
+
+| 范围 | 执行命令或方式 | 结果 |
+| --- | --- | --- |
+| Backend 定向回归 | Maven 执行 `ServerManagementValidationTest,ServerManagementMonitorTest` | 18/18 通过 |
+| Backend 完整回归 | Maven 3.9.9 / Java 17 容器执行 `mvn -B -ntp test` | 772/772 通过 |
+| Frontend 定向回归 | `node --test test/servers.test.mjs` | 5/5 通过 |
+| Frontend 完整质量门 | `npm test` | Lint、类型检查、347/347 测试、覆盖率、生产构建及 1/1 E2E 全部通过 |
+| Deployment Agent 完整回归 | Go 1.26.6 容器执行 `go test ./...` | 21/21 通过 |
+| 统一重建 | `docker compose up --build -d` | 功能工作区内容构建并启动成功；发现初次传入的长 revision 值有误后未将其作为最终版本验收 |
+| 精确提交重建与切换 | 提交 `aa13c4a5a09cb22e1900dbcace5f92474721a0b0` 的隔离干净 worktree 构建全部默认镜像和 Deployment Agent 镜像，再以 `--no-build` 切换默认服务 | 镜像构建成功，避免纳入共享工作区并发改动；五个默认服务 revision 精确一致且 healthy |
+| 运行态探活 | `docker compose ps`、HTTPS 就绪接口、无 Docker 套接字的临时 Deployment Agent 容器 `/health` | 5/5 默认服务 healthy；网关与代理均返回 `UP`；临时容器已清理 |
+
+### 重测触发条件
+
+- 后续修改服务器创建/编辑字段、连接测试语义、凭据加密或私钥输入处理时，必须执行 Backend 服务器管理定向测试、Frontend 服务器测试及完整回归。
+- 后续修改 Compose 候选来源、扫描边界、服务识别、路径安全校验或唯一性策略时，必须执行 Deployment Agent 完整测试，并在受控目标机复验真实部署。
+- 后续修改 Compose 挂载路径、Deployment Agent 运行配置或镜像构建方式时，必须重新执行精确提交 Compose 重建、默认服务健康检查和代理健康检查。
+
+### 已知问题
+
+- 未对真实远程 SSH 主机执行部署、升级或重启；该验证需要独立目标机及受控 Docker 权限。本次以 SSH 命令生成测试、伪 Docker Shell 集成测试和完整 Go 单测覆盖发现逻辑。
+- Deployment Agent 属于可选 profile，当前环境未配置真实内部令牌及 rootless Docker 套接字，因此未作为常驻服务启动；已构建精确 revision 镜像，并在不挂载 Docker 套接字的临时容器中确认 `/health` 返回 `UP`，临时容器已清理。
+- Frontend 生产构建仍输出既有 runtime-config 非 module、PURE 注解和大 chunk 警告；未影响构建或运行，本次未扩大范围处理。
+- 共享工作区存在其他任务并发修改；功能与报告提交均只纳入本任务文件，精确镜像从功能提交的隔离干净 worktree 构建。
+
+### 下次测试建议
+
+- 准备两台受控 SSH 测试机，分别放置唯一 Base AI Compose 项目和两个 Base AI Compose 项目，验证真实 Docker 标签、目录扫描、唯一部署和歧义阻断。
+- 在浏览器中选择 OpenSSH、RSA、ED25519 私钥文件并完成真实 SSH 连接，确认本地文件名不进入网络请求、数据库和日志。
+- 后续可增加浏览器端请求拦截 E2E，以及 Deployment Agent 与 rootless Docker 套接字的容器级集成测试。
+
 ## 新增数据源配置表单优化验收（2026-09-11）
 
 ### Git 基准点
