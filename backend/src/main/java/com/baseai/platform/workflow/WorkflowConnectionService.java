@@ -27,7 +27,7 @@ import java.util.Set;
 @Service
 public class WorkflowConnectionService {
     private static final String MASK = "******";
-    private static final Set<String> TYPES = Set.of("MYSQL", "POSTGRESQL", "REDIS", "S3", "KAFKA", "RABBITMQ", "WEBHOOK", "TAVILY",
+    private static final Set<String> TYPES = Set.of("MYSQL", "POSTGRESQL", "REDIS", "S3", "OSS", "KAFKA", "RABBITMQ", "WEBHOOK", "TAVILY",
         "QDRANT", "MILVUS", "ELASTICSEARCH", "PLUGIN");
     private static final Set<String> SECRET_FIELDS = Set.of(
         "password", "secret", "secretkey", "accesskey", "token", "apikey", "saslpassword", "privatekey"

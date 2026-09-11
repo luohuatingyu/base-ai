@@ -80,6 +80,17 @@ class WorkflowNetworkPolicyTest {
         }
     }
 
+    /** OSS Endpoint 必须按 HTTP/HTTPS 协议解析，空 Endpoint 不返回目标。 */
+    @Test
+    void parserExtractsOssEndpoint() throws Exception {
+        assertDoesNotThrow(() -> parser.parse("OSS",
+            new ObjectMapper().readTree("{\"endpoint\":\"https://oss-cn-hangzhou.aliyuncs.com\",\"bucket\":\"b\"}")));
+        assertThrows(BusinessException.class, () -> parser.parse("OSS",
+            new ObjectMapper().readTree("{\"endpoint\":\"ftp://oss.example.com\",\"bucket\":\"b\"}")));
+        assertDoesNotThrow(() -> parser.parse("OSS",
+            new ObjectMapper().readTree("{\"bucket\":\"b\"}")));
+    }
+
     /** 实际建连解析若切换为私网地址，必须再次执行 CIDR 策略并拒绝。 */
     @Test
     void rejectsAddressThatRebindsBeforeConnection() throws Exception {

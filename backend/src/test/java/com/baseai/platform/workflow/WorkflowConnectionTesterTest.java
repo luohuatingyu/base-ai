@@ -130,4 +130,18 @@ class WorkflowConnectionTesterTest {
 
         verify(connectionService, never()).recordVectorCapability(anyLong(), anyString(), anyString(), anyString(), anyString());
     }
+
+    /** OSS 连接测试失败时必须留存最近检测结果。 */
+    @Test
+    void recordsFailedTestResultForUnreachableOssConnection() {
+        JsonNode config = objectMapper.createObjectNode()
+            .put("endpoint", "http://localhost:1")
+            .put("bucket", "test-bucket")
+            .put("accessKey", "ak")
+            .put("secretKey", "sk");
+        when(connectionService.ownedForTest(9L)).thenReturn(connection("OSS", config));
+
+        assertThrows(BusinessException.class, () -> tester.test(9L));
+        verify(connectionService).recordTestResult(eq(9L), eq(false), anyInt(), anyString());
+    }
 }

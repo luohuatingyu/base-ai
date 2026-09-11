@@ -6,6 +6,8 @@ import com.baseai.platform.common.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.ConnectionFactory;
+import com.aliyun.oss.OSS;
+import com.aliyun.oss.OSSClientBuilder;
 import io.lettuce.core.RedisClient;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -59,6 +61,7 @@ public class WorkflowConnectionTester {
                 case "MYSQL", "POSTGRESQL" -> info.putAll(probeJdbc(connection.config()));
                 case "REDIS" -> info.putAll(probeRedis(connection.config()));
                 case "S3" -> testS3(connection.config());
+                case "OSS" -> testOss(connection.config());
                 case "KAFKA" -> testKafka(connection.config());
                 case "RABBITMQ" -> testRabbit(connection.config());
                 case "WEBHOOK" -> testWebhook(connection.config());
@@ -163,6 +166,16 @@ public class WorkflowConnectionTester {
             .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(config.path("pathStyle").asBoolean(true)).build());
         if (config.hasNonNull("endpoint")) builder.endpointOverride(URI.create(config.path("endpoint").asText()));
         try (S3Client client = builder.build()) { client.headBucket(request -> request.bucket(config.path("bucket").asText())); }
+    }
+
+    /** 使用 ListBuckets 验证 OSS 凭据，并确认限定 Bucket 存在。 */
+    private void testOss(JsonNode config) {
+        String endpoint = config.path("endpoint").asText();
+        OSS client = new OSSClientBuilder().build(endpoint, config.path("accessKey").asText(), config.path("secretKey").asText());
+        try {
+            String bucket = config.path("bucket").asText();
+            if (!client.doesBucketExist(bucket)) throw new BusinessException("workflow.connectionTestFailed");
+        } finally { client.shutdown(); }
     }
 
     /** 读取 Topic 名称验证 Kafka 认证。 */

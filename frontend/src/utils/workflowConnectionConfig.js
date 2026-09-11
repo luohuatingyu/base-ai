@@ -31,6 +31,15 @@ export const CONNECTION_CONFIG_FIELDS = {
     field('allowDelete', 'boolean', false, { group: 'SCOPE', risk: true }),
     field('pathStyle', 'boolean', true, { group: 'BEHAVIOR' })
   ],
+  OSS: [
+    field('endpoint', 'text', '', { required: true, wide: true, placeholder: 'https://oss-cn-hangzhou.aliyuncs.com' }),
+    field('bucket', 'text', '', { required: true, placeholder: 'workflow-files' }),
+    field('accessKey', 'password', '', { group: 'AUTH', required: true }),
+    field('secretKey', 'password', '', { group: 'AUTH', required: true }),
+    field('region', 'text', '', { group: 'BEHAVIOR', placeholder: 'cn-hangzhou' }),
+    field('keyPrefix', 'text', '', { group: 'SCOPE', placeholder: 'workflows/' }),
+    field('allowDelete', 'boolean', false, { group: 'SCOPE', risk: true })
+  ],
   KAFKA: [
     field('bootstrapServers', 'text', '', { required: true, wide: true, placeholder: 'broker-1.example.com:9092,broker-2.example.com:9092' }),
     field('securityProtocol', 'select', '', { group: 'AUTH', options: ['', 'PLAINTEXT', 'SSL', 'SASL_PLAINTEXT', 'SASL_SSL'] }),
@@ -86,7 +95,7 @@ export const CONNECTION_CATEGORIES = [
   { key: 'DATABASE', types: ['MYSQL', 'POSTGRESQL'] },
   { key: 'VECTOR_DATABASE', types: ['POSTGRESQL', 'QDRANT', 'MILVUS', 'ELASTICSEARCH'] },
   { key: 'CACHE', types: ['REDIS'] },
-  { key: 'OBJECT_STORAGE', types: ['S3'] },
+  { key: 'OBJECT_STORAGE', types: ['S3', 'OSS'] },
   { key: 'MESSAGE_QUEUE', types: ['KAFKA', 'RABBITMQ'] },
   { key: 'WEBHOOK', types: ['WEBHOOK'] },
   { key: 'OTHER', types: ['TAVILY', 'PLUGIN'] }
@@ -96,7 +105,7 @@ const CONNECTION_CATEGORY_STYLE = { backgroundColor: '#f8fafc', borderColor: '#c
 const CONNECTION_TYPE_SURFACE = { backgroundColor: '#ffffff', borderColor: '#dbe3ee' }
 /** 连接产品采用主流品牌图标库使用的品牌主色，通用类型保持中性。 */
 const CONNECTION_TYPE_COLORS = {
-  MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31',
+  MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31', OSS: '#FF6A00',
   KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00B3FF',
   ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
 }

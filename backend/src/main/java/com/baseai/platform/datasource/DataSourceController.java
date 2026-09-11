@@ -6,6 +6,11 @@ import com.baseai.platform.workflow.WorkflowConnectionTester;
 import com.baseai.platform.workflow.WorkflowModels;
 import com.baseai.platform.workflow.WorkflowNodeMarketplaceService;
 import com.baseai.platform.workflow.WorkflowPluginOAuthService;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,8 +18,15 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -26,16 +38,19 @@ public class DataSourceController {
     private final WorkflowConnectionTester connectionTester;
     private final WorkflowNodeMarketplaceService marketplaceService;
     private final WorkflowPluginOAuthService pluginOAuthService;
+    private final ObjectStorageService objectStorageService;
 
-    /** 注入受管连接、连通性测试、插件目录和 OAuth 服务。 */
+    /** 注入受管连接、连通性测试、插件目录、OAuth 和对象存储服务。 */
     public DataSourceController(WorkflowConnectionService connectionService,
                                 WorkflowConnectionTester connectionTester,
                                 WorkflowNodeMarketplaceService marketplaceService,
-                                WorkflowPluginOAuthService pluginOAuthService) {
+                                WorkflowPluginOAuthService pluginOAuthService,
+                                ObjectStorageService objectStorageService) {
         this.connectionService = connectionService;
         this.connectionTester = connectionTester;
         this.marketplaceService = marketplaceService;
         this.pluginOAuthService = pluginOAuthService;
+        this.objectStorageService = objectStorageService;
     }
 
     /** 查询当前用户可见的脱敏数据源。 */
@@ -94,5 +109,63 @@ public class DataSourceController {
     public WorkflowModels.PluginOAuthCallbackResult pluginOAuthCallback(
         @RequestBody WorkflowModels.PluginOAuthCallbackCommand command) {
         return pluginOAuthService.callback(command);
+    }
+
+    /** 上传对象到对象存储数据源。 */
+    @PostMapping(value = "/{id}/object-storage/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequiredPermission("operations:data-source:update")
+    public Map<String, Object> uploadObject(@PathVariable Long id,
+                                              @RequestParam String key,
+                                              @RequestParam(required = false) String contentType,
+                                              @RequestPart MultipartFile file) throws IOException {
+        String type = contentType == null || contentType.isBlank() ? file.getContentType() : contentType;
+        try (InputStream stream = file.getInputStream()) {
+            ObjectStorageService.UploadResult result = objectStorageService.upload(id, key, type, file.getSize(), stream);
+            return Map.of("bucket", result.bucket(), "key", result.key());
+        }
+    }
+
+    /** 从对象存储数据源下载对象。 */
+    @GetMapping("/{id}/object-storage/download")
+    @RequiredPermission("operations:data-source:list")
+    public ResponseEntity<StreamingResponseBody> downloadObject(@PathVariable Long id,
+                                                                @RequestParam String key,
+                                                                @RequestParam(required = false) String downloadName) {
+        ObjectStorageService.DownloadResult result = objectStorageService.download(id, key);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(result.contentType() == null ? "application/octet-stream" : result.contentType()));
+        if (result.contentLength() > 0) headers.setContentLength(result.contentLength());
+        String filename = downloadName == null || downloadName.isBlank() ? key.substring(key.lastIndexOf('/') + 1) : downloadName;
+        headers.setContentDispositionFormData("attachment", encodeFilename(filename));
+        StreamingResponseBody body = out -> {
+            try (InputStream in = result.content(); java.io.Closeable cleanup = result.cleanup()) {
+                in.transferTo(out);
+            }
+        };
+        return new ResponseEntity<>(body, headers, org.springframework.http.HttpStatus.OK);
+    }
+
+    /** 从对象存储数据源删除对象。 */
+    @DeleteMapping("/{id}/object-storage")
+    @RequiredPermission("operations:data-source:update")
+    public Map<String, Object> deleteObject(@PathVariable Long id, @RequestParam String key) {
+        objectStorageService.delete(id, key);
+        return Map.of("deleted", true);
+    }
+
+    /** 为对象存储数据源生成预签名 URL。 */
+    @PostMapping("/{id}/object-storage/presign")
+    @RequiredPermission("operations:data-source:list")
+    public Map<String, Object> presignObject(@PathVariable Long id, @RequestBody Map<String, Object> command) {
+        String key = command.get("key") == null ? "" : command.get("key").toString();
+        String operation = command.get("operation") == null ? "GET" : command.get("operation").toString();
+        Long expiresInSeconds = command.get("expiresInSeconds") instanceof Number number ? number.longValue() : null;
+        ObjectStorageService.PresignResult result = objectStorageService.presign(id, key, operation, expiresInSeconds);
+        return Map.of("url", result.url(), "expiresAt", result.expiresAt().toString());
+    }
+
+    /** 对下载文件名进行 URL 编码，避免中文或特殊字符导致头信息异常。 */
+    private String encodeFilename(String filename) {
+        return URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
     }
 }

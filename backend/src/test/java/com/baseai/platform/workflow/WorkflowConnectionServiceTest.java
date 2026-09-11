@@ -141,6 +141,19 @@ class WorkflowConnectionServiceTest {
             () -> service.delete(created.id())).getMessageKey());
     }
 
+    /** OSS 连接可以正常创建、脱敏保存凭据并按对象存储类型解析。 */
+    @Test
+    void createsAndMasksOssConnection() throws Exception {
+        WorkflowModels.ConnectionView created = service.create(new WorkflowModels.ConnectionCommand(
+            "oss", "OSS", "OSS", new ObjectMapper().readTree(
+                "{\"endpoint\":\"https://oss-cn-hangzhou.aliyuncs.com\",\"bucket\":\"workflow-files\",\"accessKey\":\"ak\",\"secretKey\":\"sk\"}"), true));
+
+        assertEquals("OSS", created.connectionType());
+        assertEquals("******", created.config().path("accessKey").asText());
+        assertEquals("******", created.config().path("secretKey").asText());
+        assertEquals("sk", service.resolved(created.id(), Set.of("OSS")).config().path("secretKey").asText());
+    }
+
     /** 向量能力结果可展示，任何安全相关配置变更都会重置为未验证。 */
     @Test
     void recordsAndResetsVectorCapability() throws Exception {

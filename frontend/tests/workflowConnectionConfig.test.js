@@ -27,10 +27,12 @@ import {
 const viewSource = readFileSync(new URL('../src/views/DataSourcesView.vue', import.meta.url), 'utf8')
 const iconSource = readFileSync(new URL('../src/components/DataSourceTypeIcon.vue', import.meta.url), 'utf8')
 
-test('十二类连接均提供类型化标准字段和安全默认值', () => {
-  assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH', 'PLUGIN'])
+test('十三类连接均提供类型化标准字段和安全默认值', () => {
+  assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'OSS', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH', 'PLUGIN'])
   assert.deepEqual(connectionConfigFields('MYSQL').map(field => field.key), ['url', 'username', 'password', 'allowWrite'])
   assert.deepEqual(connectionConfigFields('REDIS').map(field => field.key), ['uri', 'keyPrefix', 'allowWrite'])
+  assert.deepEqual(connectionConfigFields('S3').map(field => field.key), ['endpoint', 'region', 'bucket', 'accessKey', 'secretKey', 'keyPrefix', 'allowDelete', 'pathStyle'])
+  assert.deepEqual(connectionConfigFields('OSS').map(field => field.key), ['endpoint', 'bucket', 'accessKey', 'secretKey', 'region', 'keyPrefix', 'allowDelete'])
   assert.deepEqual(connectionConfigFields('WEBHOOK').map(field => field.key), ['url', 'method', 'testMethod', 'headers'])
   assert.deepEqual(connectionConfigFields('TAVILY').map(field => field.key), ['apiKey'])
   assert.deepEqual(connectionConfigFields('QDRANT').map(field => field.key), ['url', 'apiKey'])
@@ -41,6 +43,7 @@ test('十二类连接均提供类型化标准字段和安全默认值', () => {
   assert.equal(connectionConfigDefaults('MYSQL').allowWrite, false)
   assert.equal(connectionConfigDefaults('REDIS').allowWrite, false)
   assert.equal(connectionConfigDefaults('S3').pathStyle, true)
+  assert.equal(connectionConfigDefaults('OSS').allowDelete, false)
   assert.deepEqual(connectionConfigDefaults('WEBHOOK').headers, {})
   assert.deepEqual(connectionConfigFields('PLUGIN'), [])
 })
@@ -151,7 +154,9 @@ test('七类连接完整覆盖全部类型并允许 PostgreSQL 双重归属', ()
   ])
   assert.deepEqual(connectionTypesForCategory('DATABASE'), ['MYSQL', 'POSTGRESQL'])
   assert.deepEqual(connectionTypesForCategory('VECTOR_DATABASE'), ['POSTGRESQL', 'QDRANT', 'MILVUS', 'ELASTICSEARCH'])
+  assert.deepEqual(connectionTypesForCategory('OBJECT_STORAGE'), ['S3', 'OSS'])
   assert.deepEqual(connectionCategoriesForType('POSTGRESQL'), ['DATABASE', 'VECTOR_DATABASE'])
+  assert.deepEqual(connectionCategoriesForType('OSS'), ['OBJECT_STORAGE'])
   assert.deepEqual(connectionCategoriesForType('WEBHOOK'), ['WEBHOOK'])
   assert.deepEqual(connectionTypesForCategory('UNKNOWN'), [])
   assert.deepEqual(connectionCategoriesForType('UNKNOWN'), [])
@@ -163,7 +168,7 @@ test('七类连接完整覆盖全部类型并允许 PostgreSQL 双重归属', ()
 test('分类使用中性色且连接类型遵循外部常规品牌色', () => {
   const neutralCategoryStyle = { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#475569' }
   const expectedTypeColors = {
-    MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31',
+    MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31', OSS: '#FF6A00',
     KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00B3FF',
     ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
   }
@@ -184,7 +189,7 @@ test('分类使用中性色且连接类型遵循外部常规品牌色', () => {
 
 test('分类图标使用独立语义且连接产品使用官方或明确的语义图形', () => {
   assert.match(iconSource, /const CATEGORY_ICONS = \{ DATABASE, VECTOR_DATABASE, CACHE, OBJECT_STORAGE, MESSAGE_QUEUE, WEBHOOK, OTHER \}/)
-  assert.match(iconSource, /const TYPE_ICONS = \{ MYSQL, POSTGRESQL, REDIS, S3, KAFKA, RABBITMQ,/)
+  assert.match(iconSource, /const TYPE_ICONS = \{ MYSQL, POSTGRESQL, REDIS, S3, OSS, KAFKA, RABBITMQ,/)
   assert.match(iconSource, /if \(category\) return CATEGORY_ICONS\[category\] \|\| OTHER/)
   assert.match(iconSource, /M117\.688 98\.242c-6\.973-.191/)
   assert.match(iconSource, /M23\.5594 14\.7228a\.5269\.5269/)
