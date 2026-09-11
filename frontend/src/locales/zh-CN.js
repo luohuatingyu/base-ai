@@ -461,7 +461,34 @@ export default {
     title: '数据同步', description: '选择执行服务器及源、目标数据库中的表，按批次安全同步数据。', securityNotice: '表查询、预检和同步均在所选服务器的一次性 Worker 中执行且不会记录行内容；目标连接必须显式开启允许写入。全量替换会清空目标表。', name: '计划名称', server: '执行服务器', platformLocal: '平台本机（历史计划）', source: '源连接', target: '目标连接', strategy: '同步策略', schedule: 'Cron 调度', schedulePlaceholder: '留空表示仅手动执行，例如 0 0/10 * * * *', tables: '同步表', sourceTable: '源表', targetTable: '目标表', sourceRows: '源行数', readRows: '读取行数', writtenRows: '写入行数', warnings: '预检提示', noWarnings: '未发现问题', lastStatus: '最近状态', preview: '预检', run: '执行', retry: '重试', cancel: '取消', details: '运行明细', traceId: 'Trace ID', error: '错误', confirmDestructive: '我确认全量替换会清空目标表', strategies: { UPSERT: '按主键更新/插入', FULL_REPLACE: '全量替换', APPEND: '仅追加' }, warningCodes: { sourceTableNotFound: '源表不存在', targetTableWillBeCreated: '目标表将自动创建', unsupportedColumnType: '字段 {column} 类型不受支持', missingTargetColumn: '目标表缺少字段 {column}', columnTypeMismatch: '字段 {column} 类型不兼容', primaryKeyRequired: 'UPSERT 必须包含主键', columnMismatch: '字段配置不匹配' }, formRequired: '请填写计划、选择执行服务器和连接，并至少选择一张表', loadFailed: '数据同步数据加载失败', previewFailed: '数据同步预检失败', saveFailed: '数据同步计划保存失败', runAccepted: '同步任务已启动', runFailed: '同步任务启动失败', cancelFailed: '同步任务取消失败'
   },
   servers: {
-    title: '服务器管理', description: '在页面手工维护本地或 SSH 服务器，并实时查看基础资源与容器状态。', securityNotice: 'SSH 凭据使用 AES-GCM 加密保存且仅返回掩码；私钥文件仅在浏览器本地读取，部署时由受控 Agent 自动检测 Compose 项目。', add: '新增服务器', edit: '编辑服务器', name: '名称', mode: '模式', host: '主机地址', port: 'SSH 端口', username: 'SSH 用户', authType: '认证方式', hostKey: 'Host Key 指纹', hostKeyPlaceholder: '完整 SHA256 指纹', privateKey: '私钥', selectPrivateKeyFile: '选择私钥文件', privateKeyFileLoaded: '已读取私钥文件：{name}', privateKeyFileEmpty: '私钥文件不能为空', privateKeyFileTooLarge: '私钥文件不能超过 64 KiB', privateKeyFileReadFailed: '私钥文件读取失败', passphrase: '私钥口令', password: '密码', workingDir: 'Compose 目录', composeFile: 'Compose 文件', testStatus: '测试状态', test: '测试连接', monitor: '资源监控', monitorTitle: '{name} · 资源监控', liveQueryHint: '打开弹窗或点击刷新时实时查询，不保存历史监控数据', collectedAt: '采集时间：{time}', liveSnapshot: '当前实时快照', cpu: 'CPU 使用率', cpuDetail: '{cores} 核 · 负载 {load}', memory: '内存使用率', disk: '磁盘使用率', uptime: '运行时长', containers: '容器状态', containerCount: '共 {count} 个容器', containerName: '容器名称', containerImage: '镜像', containerState: '运行状态', containerHealth: '健康状态', containerStatus: '状态描述', noContainers: '当前没有容器', containerUnavailable: '容器状态暂不可用', durationDays: '{days} 天 {hours} 小时', durationHours: '{hours} 小时 {minutes} 分钟', durationMinutes: '{minutes} 分钟', health: { HEALTHY: '健康', UNHEALTHY: '不健康', STARTING: '检查中', NONE: '无检查' }, deploy: '部署', history: '部署历史', action: '动作', revision: '发布版本', revisionPlaceholder: 'Git Commit 或合法镜像标签', revisionInvalid: '请输入合法的镜像标签版本', startedAt: '开始时间', result: '结果', deployAccepted: '部署任务已启动', formRequired: '请完整填写服务器名称和 SSH 必填信息', loadFailed: '服务器列表加载失败', saveFailed: '服务器保存失败', testFailed: '服务器测试失败', agentNotConfigured: '部署 Agent 尚未启用或内部令牌未配置', agentInvalidResponse: '部署 Agent 返回了无效的监控数据', monitorFailed: '服务器资源监控查询失败', deployFailed: '部署失败'
+    title: '服务器管理', description: '在页面手工维护本地或 SSH 服务器，并实时查看基础资源与容器状态。',
+    securityNotice: 'SSH 凭据使用 AES-GCM 加密保存且仅返回掩码；私钥文件仅在浏览器本地读取，部署时由受控 Agent 自动检测 Compose 项目。',
+    add: '新增服务器', edit: '编辑服务器', editorDescription: '配置服务器身份、连接地址与安全认证信息。',
+    basicSection: '基础信息', basicSectionHelp: '用于识别服务器并决定 Agent 的连接方式。',
+    connectionSection: '连接地址', connectionSectionHelp: '填写可由部署 Agent 访问的 SSH 地址。',
+    securitySection: '安全认证', securitySectionHelp: 'Host Key 用于校验服务器身份，凭据用于完成登录。',
+    name: '名称', mode: '连接方式', enabledHelp: '停用后不可测试、监控或部署',
+    sshModeDescription: '通过 SSH 连接远程 Linux 服务器', localModeDescription: '使用平台本机隔离 Agent 执行任务',
+    host: '主机地址', hostPlaceholder: 'IP 地址或域名', hostHelp: '例如 111.228.33.161 或 server.example.com',
+    port: 'SSH 端口', portHelp: '默认端口为 22',
+    username: 'SSH 用户', usernamePlaceholder: '例如 root 或 deploy', usernameHelp: '该用户需具备目标 Compose 项目的操作权限',
+    authType: '认证方式', keyAuth: 'SSH 私钥', keyAuthDescription: '推荐使用密钥认证，避免传输登录密码', passwordAuth: '登录密码', passwordAuthDescription: '使用 SSH 账户密码完成认证',
+    hostKey: 'Host Key 指纹', hostKeyPlaceholder: 'SHA256:完整指纹', hostKeyHelp: '用于确认目标服务器身份，防止连接到被冒充的主机。',
+    privateKey: '私钥', privateKeySource: '私钥内容', privateKeyHelp: '选择本地 PEM/OpenSSH 文件，或在下方直接粘贴。', privateKeyPlaceholder: '粘贴以 -----BEGIN 开头的私钥内容',
+    selectPrivateKeyFile: '选择私钥文件', privateKeyFileLoaded: '已读取私钥文件：{name}', privateKeyFileEmpty: '私钥文件不能为空', privateKeyFileTooLarge: '私钥文件不能超过 64 KiB', privateKeyFileReadFailed: '私钥文件读取失败',
+    passphrase: '私钥口令（可选）', passphrasePlaceholder: '仅在私钥已加密时填写', passphraseHelp: '这是解锁私钥的口令，不是服务器登录密码。',
+    password: '登录密码', passwordPlaceholder: '输入 SSH 账户密码', passwordHelp: '密码将加密保存，后续页面仅显示掩码。', savedCredentialHint: '留空将继续使用已保存的加密凭据。', secureSaveHint: '敏感凭据加密保存', secureSaveHintShort: '加密保存',
+    workingDir: 'Compose 目录', composeFile: 'Compose 文件', testStatus: '测试状态', test: '测试连接',
+    monitor: '资源监控', monitorTitle: '{name} · 资源监控', liveStatus: '实时', liveQueryHint: '打开弹窗或点击刷新时实时查询，不保存历史监控数据', collectedAt: '采集时间：{time}', liveSnapshot: '当前实时快照',
+    cpu: 'CPU 使用率', cpuDetail: '{cores} 核 · 负载 {load}', memory: '内存使用率', disk: '磁盘使用率', uptime: '运行时长',
+    containers: '容器状态', containerSummary: '当前 Docker Compose 运行快照', containerCount: '共 {count} 个容器', containerName: '容器名称', containerImage: '镜像', containerState: '运行状态', containerHealth: '健康状态', containerStatus: '状态描述', noContainers: '当前没有容器', containerUnavailable: '容器状态暂不可用',
+    durationDays: '{days} 天 {hours} 小时', durationHours: '{hours} 小时 {minutes} 分钟', durationMinutes: '{minutes} 分钟',
+    health: { HEALTHY: '健康', UNHEALTHY: '不健康', STARTING: '检查中', NONE: '无检查' },
+    deploy: '部署', deployDescription: '向目标服务器提交固定版本的部署或回滚任务。', deployRiskNotice: '部署会更新目标 Compose 项目的运行容器，请确认版本已在目标环境准备就绪。',
+    action: '执行动作', deployModeDescription: '切换到指定的新版本', rollbackModeDescription: '恢复到指定的历史版本',
+    revision: '发布版本', revisionPlaceholder: 'Git Commit 或合法镜像标签', revisionHelp: '建议使用完整 Git Commit Hash，便于审计和回滚。', revisionInvalid: '请输入合法的镜像标签版本',
+    history: '部署历史', historyDescription: '查看该服务器近期的发布、回滚状态与执行结果。', historyCount: '共 {count} 条记录', noDeploymentHistory: '暂无部署记录',
+    startedAt: '开始时间', result: '结果', deployAccepted: '部署任务已启动', formRequired: '请完整填写服务器名称和 SSH 必填信息', loadFailed: '服务器列表加载失败', saveFailed: '服务器保存失败', testFailed: '服务器测试失败', agentNotConfigured: '部署 Agent 尚未启用或内部令牌未配置', agentInvalidResponse: '部署 Agent 返回了无效的监控数据', monitorFailed: '服务器资源监控查询失败', deployFailed: '部署失败'
   },
   "deviceAgents": {
     "operationSpeed": {

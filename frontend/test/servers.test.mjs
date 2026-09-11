@@ -10,8 +10,10 @@ const viewSource = readFileSync(new URL('../src/views/ServersView.vue', import.m
 test('服务器页面支持手工新增 SSH 配置并保留本地模式兼容', () => {
   assert.match(viewSource, /mode: 'SSH'/)
   assert.match(viewSource, /operations:server:create/)
-  assert.match(viewSource, /<el-option label="SSH" value="SSH"/)
-  assert.match(viewSource, /<el-option label="LOCAL" value="LOCAL"/)
+  assert.match(viewSource, /form\.mode === 'SSH'/)
+  assert.match(viewSource, /form\.mode === 'LOCAL'/)
+  assert.match(viewSource, /@click="form\.mode = 'SSH'"/)
+  assert.match(viewSource, /@click="form\.mode = 'LOCAL'"/)
   for (const field of ['host', 'port', 'username', 'authType', 'hostKey', 'privateKey', 'passphrase', 'password']) {
     assert.match(viewSource, new RegExp(`form\\.${field}`), field)
   }
@@ -39,7 +41,36 @@ test('私钥支持本地文件读取并保留直接粘贴输入', async () => {
   await assert.rejects(readPrivateKeyFile({ size: 1, text: async () => { throw new Error('disk failure') } }), /PRIVATE_KEY_FILE_READ_FAILED/)
   assert.match(viewSource, /type="file"/)
   assert.match(viewSource, /readPrivateKeyFile/)
-  assert.match(viewSource, /v-model="form\.privateKey" type="textarea"/)
+  assert.match(viewSource, /v-model="form\.privateKey"[\s\S]*?type="textarea"/)
+})
+
+test('服务器相关弹窗使用卡片分区并保留认证条件分支', () => {
+  for (const className of ['server-editor-dialog', 'server-monitor-dialog', 'server-deploy-dialog', 'server-history-dialog']) {
+    assert.match(viewSource, new RegExp('class="' + className + '"'), className)
+  }
+  for (const sectionKey of ['basicSection', 'connectionSection', 'securitySection']) {
+    assert.match(viewSource, new RegExp('servers\\.' + sectionKey), sectionKey)
+    assert.ok(zhCN.servers[sectionKey])
+    assert.ok(enUS.servers[sectionKey])
+  }
+  assert.match(viewSource, /v-if="form\.mode === 'SSH'"/)
+  assert.match(viewSource, /v-if="form\.authType === 'KEY'"/)
+  assert.match(viewSource, /@click="form\.authType = 'KEY'"/)
+  assert.match(viewSource, /@click="form\.authType = 'PASSWORD'"/)
+  assert.match(zhCN.servers.passphraseHelp, /不是服务器登录密码/)
+  assert.match(enUS.servers.passphraseHelp, /not the server login password/)
+})
+
+test('部署和历史弹窗保持权限控制并增强状态展示', () => {
+  assert.match(viewSource, /operations:server:rollback/)
+  assert.match(viewSource, /deployForm\.action === 'DEPLOY'/)
+  assert.match(viewSource, /deployForm\.action === 'ROLLBACK'/)
+  assert.match(viewSource, /deploymentActionType/)
+  assert.match(viewSource, /deploymentStatusType/)
+  assert.ok(zhCN.servers.deployRiskNotice)
+  assert.ok(enUS.servers.deployRiskNotice)
+  assert.ok(zhCN.servers.noDeploymentHistory)
+  assert.ok(enUS.servers.noDeploymentHistory)
 })
 
 test('资源监控复用服务器测试权限并在弹窗中实时查询', () => {

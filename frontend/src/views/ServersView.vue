@@ -85,75 +85,230 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="visible" :title="form.id ? t('servers.edit') : t('servers.add')" width="min(860px, 94vw)">
-      <el-form label-position="top">
-        <div class="server-grid">
-          <el-form-item :label="t('servers.name')">
-            <el-input v-model="form.name" maxlength="120" />
-          </el-form-item>
-          <el-form-item :label="t('servers.mode')">
-            <el-select v-model="form.mode" class="full">
-              <el-option label="SSH" value="SSH" />
-              <el-option label="LOCAL" value="LOCAL" />
-            </el-select>
-          </el-form-item>
+    <el-dialog
+      v-model="visible"
+      class="server-editor-dialog"
+      :title="form.id ? t('servers.edit') : t('servers.add')"
+      width="min(920px, 94vw)"
+      top="5vh"
+    >
+      <div class="dialog-intro server-editor-intro">
+        <span class="dialog-intro-icon"><el-icon><Connection /></el-icon></span>
+        <div>
+          <strong>{{ form.id ? t('servers.edit') : t('servers.add') }}</strong>
+          <p>{{ t('servers.editorDescription') }}</p>
         </div>
-        <div v-if="form.mode === 'SSH'">
-          <div class="server-grid">
-            <el-form-item :label="t('servers.host')">
-              <el-input v-model="form.host" />
-            </el-form-item>
-            <el-form-item :label="t('servers.port')">
-              <el-input-number v-model="form.port" :min="1" :max="65535" class="full" />
-            </el-form-item>
-            <el-form-item :label="t('servers.username')">
-              <el-input v-model="form.username" autocomplete="off" />
-            </el-form-item>
-            <el-form-item :label="t('servers.authType')">
-              <el-select v-model="form.authType" class="full">
-                <el-option label="KEY" value="KEY" />
-                <el-option label="PASSWORD" value="PASSWORD" />
-              </el-select>
-            </el-form-item>
+        <el-tag effect="plain">{{ form.mode }}</el-tag>
+      </div>
+
+      <el-form label-position="top" class="server-editor-form">
+        <section class="config-section">
+          <div class="config-section-head">
+            <span><el-icon><SetUp /></el-icon></span>
+            <div>
+              <h3>{{ t('servers.basicSection') }}</h3>
+              <p>{{ t('servers.basicSectionHelp') }}</p>
+            </div>
           </div>
-          <el-form-item :label="t('servers.hostKey')">
-            <el-input v-model="form.hostKey" :placeholder="t('servers.hostKeyPlaceholder')" autocomplete="off" />
-          </el-form-item>
-          <el-form-item v-if="form.authType === 'KEY'" :label="t('servers.privateKey')">
-            <el-input v-model="form.privateKey" type="textarea" :rows="4" autocomplete="off" />
-            <div class="private-key-file-row">
-              <input ref="privateKeyFileInput" class="hidden-file-input" type="file" @change="onPrivateKeyFileSelected" />
-              <el-button @click="openPrivateKeyFilePicker">{{ t('servers.selectPrivateKeyFile') }}</el-button>
-              <span v-if="privateKeyFileName" class="private-key-file-name">{{ privateKeyFileName }}</span>
+          <div class="server-grid server-grid--basic">
+            <el-form-item :label="t('servers.name')">
+              <el-input v-model="form.name" maxlength="120" />
+            </el-form-item>
+            <div class="status-setting">
+              <div>
+                <strong>{{ t('common.status') }}</strong>
+                <small>{{ t('servers.enabledHelp') }}</small>
+              </div>
+              <el-switch v-model="form.enabled" />
+            </div>
+          </div>
+          <el-form-item :label="t('servers.mode')" class="section-last-field">
+            <div class="selection-cards selection-cards--mode">
+              <button
+                type="button"
+                class="selection-card"
+                :class="{ 'is-active': form.mode === 'SSH' }"
+                @click="form.mode = 'SSH'"
+              >
+                <span class="selection-card-icon"><el-icon><Connection /></el-icon></span>
+                <span>
+                  <strong>SSH</strong>
+                  <small>{{ t('servers.sshModeDescription') }}</small>
+                </span>
+                <span class="selection-card-check"><el-icon><Check /></el-icon></span>
+              </button>
+              <button
+                type="button"
+                class="selection-card"
+                :class="{ 'is-active': form.mode === 'LOCAL' }"
+                @click="form.mode = 'LOCAL'"
+              >
+                <span class="selection-card-icon"><el-icon><Monitor /></el-icon></span>
+                <span>
+                  <strong>LOCAL</strong>
+                  <small>{{ t('servers.localModeDescription') }}</small>
+                </span>
+                <span class="selection-card-check"><el-icon><Check /></el-icon></span>
+              </button>
             </div>
           </el-form-item>
-          <el-form-item v-if="form.authType === 'KEY'" :label="t('servers.passphrase')">
-            <el-input v-model="form.passphrase" type="password" show-password autocomplete="off" />
-          </el-form-item>
-          <el-form-item v-else :label="t('servers.password')">
-            <el-input v-model="form.password" type="password" show-password autocomplete="off" />
-          </el-form-item>
+        </section>
+
+        <template v-if="form.mode === 'SSH'">
+          <section class="config-section">
+            <div class="config-section-head">
+              <span><el-icon><Location /></el-icon></span>
+              <div>
+                <h3>{{ t('servers.connectionSection') }}</h3>
+                <p>{{ t('servers.connectionSectionHelp') }}</p>
+              </div>
+            </div>
+            <div class="server-grid server-grid--connection">
+              <el-form-item :label="t('servers.host')">
+                <el-input v-model="form.host" :placeholder="t('servers.hostPlaceholder')" />
+                <div class="field-help">{{ t('servers.hostHelp') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('servers.port')">
+                <el-input-number v-model="form.port" :min="1" :max="65535" class="full" />
+                <div class="field-help">{{ t('servers.portHelp') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('servers.username')">
+                <el-input v-model="form.username" autocomplete="off" :placeholder="t('servers.usernamePlaceholder')" />
+                <div class="field-help">{{ t('servers.usernameHelp') }}</div>
+              </el-form-item>
+            </div>
+          </section>
+
+          <section class="config-section config-section--security">
+            <div class="config-section-head">
+              <span><el-icon><Lock /></el-icon></span>
+              <div>
+                <h3>{{ t('servers.securitySection') }}</h3>
+                <p>{{ t('servers.securitySectionHelp') }}</p>
+              </div>
+            </div>
+            <el-form-item :label="t('servers.hostKey')">
+              <el-input v-model="form.hostKey" :placeholder="t('servers.hostKeyPlaceholder')" autocomplete="off">
+                <template #prefix><el-icon><Aim /></el-icon></template>
+              </el-input>
+              <div class="field-help">{{ t('servers.hostKeyHelp') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('servers.authType')">
+              <div class="selection-cards">
+                <button
+                  type="button"
+                  class="selection-card"
+                  :class="{ 'is-active': form.authType === 'KEY' }"
+                  @click="form.authType = 'KEY'"
+                >
+                  <span class="selection-card-icon"><el-icon><Key /></el-icon></span>
+                  <span>
+                    <strong>{{ t('servers.keyAuth') }}</strong>
+                    <small>{{ t('servers.keyAuthDescription') }}</small>
+                  </span>
+                  <span class="selection-card-check"><el-icon><Check /></el-icon></span>
+                </button>
+                <button
+                  type="button"
+                  class="selection-card"
+                  :class="{ 'is-active': form.authType === 'PASSWORD' }"
+                  @click="form.authType = 'PASSWORD'"
+                >
+                  <span class="selection-card-icon"><el-icon><Unlock /></el-icon></span>
+                  <span>
+                    <strong>{{ t('servers.passwordAuth') }}</strong>
+                    <small>{{ t('servers.passwordAuthDescription') }}</small>
+                  </span>
+                  <span class="selection-card-check"><el-icon><Check /></el-icon></span>
+                </button>
+              </div>
+            </el-form-item>
+
+            <div v-if="form.authType === 'KEY'" class="credential-panel">
+              <el-form-item :label="t('servers.privateKey')">
+                <div class="private-key-editor">
+                  <div class="private-key-toolbar">
+                    <div>
+                      <span class="private-key-toolbar-icon"><el-icon><Document /></el-icon></span>
+                      <span>
+                        <strong>{{ privateKeyFileName || t('servers.privateKeySource') }}</strong>
+                        <small>{{ form.id ? t('servers.savedCredentialHint') : t('servers.privateKeyHelp') }}</small>
+                      </span>
+                    </div>
+                    <div class="private-key-file-row">
+                      <input ref="privateKeyFileInput" class="hidden-file-input" type="file" @change="onPrivateKeyFileSelected" />
+                      <el-button plain type="primary" @click="openPrivateKeyFilePicker">
+                        <el-icon><Upload /></el-icon>
+                        {{ t('servers.selectPrivateKeyFile') }}
+                      </el-button>
+                    </div>
+                  </div>
+                  <el-input
+                    v-model="form.privateKey"
+                    type="textarea"
+                    :rows="5"
+                    :placeholder="t('servers.privateKeyPlaceholder')"
+                    autocomplete="off"
+                  />
+                </div>
+              </el-form-item>
+              <el-form-item :label="t('servers.passphrase')" class="section-last-field">
+                <el-input v-model="form.passphrase" type="password" show-password autocomplete="off" :placeholder="t('servers.passphrasePlaceholder')">
+                  <template #prefix><el-icon><Lock /></el-icon></template>
+                </el-input>
+                <div class="field-help">{{ t('servers.passphraseHelp') }}</div>
+              </el-form-item>
+            </div>
+            <div v-else class="credential-panel">
+              <el-form-item :label="t('servers.password')" class="section-last-field">
+                <el-input v-model="form.password" type="password" show-password autocomplete="off" :placeholder="t('servers.passwordPlaceholder')">
+                  <template #prefix><el-icon><Lock /></el-icon></template>
+                </el-input>
+                <div class="field-help">{{ form.id ? t('servers.savedCredentialHint') : t('servers.passwordHelp') }}</div>
+              </el-form-item>
+            </div>
+          </section>
+        </template>
+
+        <div v-else class="local-mode-notice">
+          <span><el-icon><Monitor /></el-icon></span>
+          <div><strong>LOCAL</strong><p>{{ t('servers.localModeDescription') }}</p></div>
         </div>
-        <el-form-item :label="t('common.status')">
-          <el-switch v-model="form.enabled" />
-        </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="visible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
+        <div class="dialog-footer-content">
+          <span class="secure-submit-hint"><el-icon><Lock /></el-icon>{{ t('servers.secureSaveHint') }}</span>
+          <div>
+            <el-button @click="visible = false">{{ t('common.cancel') }}</el-button>
+            <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="monitorVisible"
       :title="t('servers.monitorTitle', { name: monitorServer?.name || '' })"
+      class="server-monitor-dialog"
       width="min(1080px, 96vw)"
+      top="5vh"
     >
-      <div class="monitor-head">
-        <span class="monitor-time">
-          {{ monitorData?.collectedAt ? t('servers.collectedAt', { time: formatCollectedAt(monitorData.collectedAt) }) : t('servers.liveQueryHint') }}
-        </span>
-        <el-button :loading="monitorLoading" @click="refreshMonitor">{{ t('common.refresh') }}</el-button>
+      <div class="monitor-hero">
+        <span class="monitor-hero-icon"><el-icon><DataLine /></el-icon></span>
+        <div>
+          <div class="monitor-identity">
+            <strong>{{ monitorServer?.name || '-' }}</strong>
+            <el-tag size="small" type="success" effect="light">{{ t('servers.liveStatus') }}</el-tag>
+          </div>
+          <p>{{ monitorServerAddress }}</p>
+          <small>
+            {{ monitorData?.collectedAt ? t('servers.collectedAt', { time: formatCollectedAt(monitorData.collectedAt) }) : t('servers.liveQueryHint') }}
+          </small>
+        </div>
+        <el-button :loading="monitorLoading" @click="refreshMonitor">
+          <el-icon><Refresh /></el-icon>
+          {{ t('common.refresh') }}
+        </el-button>
       </div>
       <div v-loading="monitorLoading" class="monitor-content">
         <el-alert
@@ -167,22 +322,22 @@
         <template v-if="monitorData?.host">
           <div class="metric-grid">
             <el-card shadow="never" class="metric-card">
-              <span>{{ t('servers.cpu') }}</span>
+              <div class="metric-card-head"><span><el-icon><Cpu /></el-icon></span>{{ t('servers.cpu') }}</div>
               <strong>{{ formatPercent(monitorData.host.cpuUsagePercent) }}</strong>
               <small>{{ t('servers.cpuDetail', { cores: monitorData.host.cpuCores, load: formatLoad(monitorData.host) }) }}</small>
             </el-card>
             <el-card shadow="never" class="metric-card">
-              <span>{{ t('servers.memory') }}</span>
+              <div class="metric-card-head"><span><el-icon><Coin /></el-icon></span>{{ t('servers.memory') }}</div>
               <strong>{{ formatPercent(monitorData.host.memoryUsagePercent) }}</strong>
               <small>{{ formatUsage(monitorData.host.memoryUsedBytes, monitorData.host.memoryTotalBytes) }}</small>
             </el-card>
             <el-card shadow="never" class="metric-card">
-              <span>{{ t('servers.disk') }} · {{ monitorData.host.diskPath }}</span>
+              <div class="metric-card-head"><span><el-icon><Folder /></el-icon></span>{{ t('servers.disk') }} · {{ monitorData.host.diskPath }}</div>
               <strong>{{ formatPercent(monitorData.host.diskUsagePercent) }}</strong>
               <small>{{ formatUsage(monitorData.host.diskUsedBytes, monitorData.host.diskTotalBytes) }}</small>
             </el-card>
             <el-card shadow="never" class="metric-card">
-              <span>{{ t('servers.uptime') }}</span>
+              <div class="metric-card-head"><span><el-icon><Timer /></el-icon></span>{{ t('servers.uptime') }}</div>
               <strong>{{ formatDuration(monitorData.host.uptimeSeconds) }}</strong>
               <small>{{ t('servers.liveSnapshot') }}</small>
             </el-card>
@@ -197,10 +352,13 @@
             class="container-alert"
           />
           <div class="container-head">
-            <h3>{{ t('servers.containers') }}</h3>
-            <span>{{ t('servers.containerCount', { count: monitorData.containers?.length || 0 }) }}</span>
+            <div>
+              <span><el-icon><Box /></el-icon></span>
+              <div><h3>{{ t('servers.containers') }}</h3><small>{{ t('servers.containerSummary') }}</small></div>
+            </div>
+            <el-tag type="info" effect="plain">{{ t('servers.containerCount', { count: monitorData.containers?.length || 0 }) }}</el-tag>
           </div>
-          <el-table :data="monitorData.containers || []" :empty-text="t('servers.noContainers')" max-height="420">
+          <el-table class="container-table" :data="monitorData.containers || []" :empty-text="t('servers.noContainers')" max-height="420">
             <el-table-column prop="name" :label="t('servers.containerName')" min-width="150" />
             <el-table-column prop="image" :label="t('servers.containerImage')" min-width="220" show-overflow-tooltip />
             <el-table-column :label="t('servers.containerState')" width="120">
@@ -219,16 +377,38 @@
       </div>
     </el-dialog>
 
-    <el-dialog v-model="deployVisible" :title="t('servers.deploy')" width="420px">
-      <el-form label-position="top">
+    <el-dialog v-model="deployVisible" class="server-deploy-dialog" :title="t('servers.deploy')" width="min(560px, 94vw)">
+      <div class="dialog-intro deploy-intro">
+        <span class="dialog-intro-icon"><el-icon><UploadFilled /></el-icon></span>
+        <div><strong>{{ t('servers.deploy') }}</strong><p>{{ t('servers.deployDescription') }}</p></div>
+      </div>
+      <el-alert :title="t('servers.deployRiskNotice')" type="warning" show-icon :closable="false" />
+      <el-form label-position="top" class="deploy-form">
         <el-form-item :label="t('servers.action')">
-          <el-select v-model="deployForm.action" class="full">
-            <el-option label="DEPLOY" value="DEPLOY" />
-            <el-option v-if="auth.hasPermission('operations:server:rollback')" label="ROLLBACK" value="ROLLBACK" />
-          </el-select>
+          <div class="selection-cards selection-cards--deploy">
+            <button type="button" class="selection-card" :class="{ 'is-active': deployForm.action === 'DEPLOY' }" @click="deployForm.action = 'DEPLOY'">
+              <span class="selection-card-icon"><el-icon><TopRight /></el-icon></span>
+              <span><strong>DEPLOY</strong><small>{{ t('servers.deployModeDescription') }}</small></span>
+              <span class="selection-card-check"><el-icon><Check /></el-icon></span>
+            </button>
+            <button
+              v-if="auth.hasPermission('operations:server:rollback')"
+              type="button"
+              class="selection-card"
+              :class="{ 'is-active': deployForm.action === 'ROLLBACK' }"
+              @click="deployForm.action = 'ROLLBACK'"
+            >
+              <span class="selection-card-icon"><el-icon><RefreshLeft /></el-icon></span>
+              <span><strong>ROLLBACK</strong><small>{{ t('servers.rollbackModeDescription') }}</small></span>
+              <span class="selection-card-check"><el-icon><Check /></el-icon></span>
+            </button>
+          </div>
         </el-form-item>
-        <el-form-item :label="t('servers.revision')">
-          <el-input v-model="deployForm.revision" :placeholder="t('servers.revisionPlaceholder')" />
+        <el-form-item :label="t('servers.revision')" class="section-last-field">
+          <el-input v-model="deployForm.revision" :placeholder="t('servers.revisionPlaceholder')">
+            <template #prefix><el-icon><Tickets /></el-icon></template>
+          </el-input>
+          <div class="field-help">{{ t('servers.revisionHelp') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -237,11 +417,20 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="historyVisible" :title="t('servers.history')" width="min(1040px, 94vw)">
-      <el-table :data="deploymentRows" v-loading="historyLoading">
+    <el-dialog v-model="historyVisible" class="server-history-dialog" :title="t('servers.history')" width="min(1040px, 94vw)" top="6vh">
+      <div class="history-head">
+        <span><el-icon><Clock /></el-icon></span>
+        <div><strong>{{ t('servers.history') }}</strong><p>{{ t('servers.historyDescription') }}</p></div>
+        <el-tag type="info" effect="plain">{{ t('servers.historyCount', { count: deploymentRows.length }) }}</el-tag>
+      </div>
+      <el-table class="history-table" :data="deploymentRows" v-loading="historyLoading" :empty-text="t('servers.noDeploymentHistory')">
         <el-table-column prop="revision" :label="t('servers.revision')" min-width="150" />
-        <el-table-column prop="action" :label="t('servers.action')" width="120" />
-        <el-table-column prop="status" :label="t('common.status')" width="130" />
+        <el-table-column :label="t('servers.action')" width="130">
+          <template #default="scope"><el-tag :type="deploymentActionType(scope.row.action)" effect="plain">{{ scope.row.action }}</el-tag></template>
+        </el-table-column>
+        <el-table-column :label="t('common.status')" width="140">
+          <template #default="scope"><el-tag :type="deploymentStatusType(scope.row.status)">{{ scope.row.status }}</el-tag></template>
+        </el-table-column>
         <el-table-column prop="startedAt" :label="t('servers.startedAt')" min-width="180" />
         <el-table-column :label="t('servers.result')" min-width="260">
           <template #default="scope">
@@ -254,7 +443,32 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import {
+  Aim,
+  Box,
+  Check,
+  Clock,
+  Coin,
+  Connection,
+  Cpu,
+  DataLine,
+  Document,
+  Folder,
+  Key,
+  Location,
+  Lock,
+  Monitor,
+  Refresh,
+  RefreshLeft,
+  SetUp,
+  Tickets,
+  Timer,
+  TopRight,
+  Unlock,
+  Upload,
+  UploadFilled,
+} from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
@@ -281,6 +495,13 @@ const privateKeyFileInput = ref(null)
 const privateKeyFileName = ref('')
 const form = reactive(emptyForm())
 const deployForm = reactive({ action: 'DEPLOY', revision: '' })
+
+// 组合当前监控服务器的连接地址，避免在本地模式展示无意义端口。
+const monitorServerAddress = computed(() => {
+  if (!monitorServer.value) return '-'
+  if (monitorServer.value.mode === 'LOCAL') return 'LOCAL'
+  return `${monitorServer.value.username || '-'}@${monitorServer.value.host || '-'}:${monitorServer.value.port || 22}`
+})
 
 // 创建不携带敏感值且默认使用 SSH 的服务器表单。
 function emptyForm() {
@@ -521,31 +742,129 @@ function containerHealthText(health) {
   return t(`servers.health.${key}`)
 }
 
+// 根据部署动作区分发布与回滚标签，方便快速浏览历史记录。
+function deploymentActionType(action) {
+  return String(action || '').toUpperCase() === 'ROLLBACK' ? 'warning' : 'primary'
+}
+
+// 根据部署状态选择明确的成功、失败或执行中标签。
+function deploymentStatusType(status) {
+  const normalized = String(status || '').toUpperCase()
+  if (normalized === 'SUCCEEDED') return 'success'
+  if (normalized === 'FAILED') return 'danger'
+  if (normalized === 'RUNNING') return 'warning'
+  return 'info'
+}
+
 onMounted(load)
 </script>
 
 <style scoped>
 .servers-table { margin-top: 20px; }
-.server-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.private-key-file-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-.private-key-file-name { min-width: 0; overflow: hidden; color: var(--el-text-color-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.server-editor-dialog,
+.server-monitor-dialog,
+.server-history-dialog { max-height: 90vh; overflow: hidden; }
+.server-editor-dialog :deep(.el-dialog__body),
+.server-monitor-dialog :deep(.el-dialog__body),
+.server-history-dialog :deep(.el-dialog__body) { max-height: calc(90vh - 132px); overflow: auto; background: #f7f9fc; }
+.dialog-intro { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding: 16px 18px; border: 1px solid #dfe7f5; border-radius: 12px; background: linear-gradient(135deg, #fff, #f1f5ff); }
+.dialog-intro > div,
+.monitor-hero > div,
+.history-head > div { flex: 1; min-width: 0; }
+.dialog-intro strong,
+.history-head strong { color: var(--el-text-color-primary); font-size: 16px; }
+.dialog-intro p,
+.history-head p,
+.local-mode-notice p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.55; }
+.dialog-intro-icon,
+.monitor-hero-icon { display: grid; flex: 0 0 auto; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: #fff; background: linear-gradient(135deg, var(--app-primary), #6b7bf2); box-shadow: 0 8px 18px rgba(53, 106, 230, 0.2); font-size: 20px; }
+.server-editor-form { display: grid; gap: 16px; }
+.config-section { padding: 20px; border: 1px solid var(--app-border); border-radius: 12px; background: #fff; box-shadow: 0 4px 14px rgba(31, 53, 91, 0.035); }
+.config-section--security { border-color: #dae4f7; }
+.config-section-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid #edf1f6; }
+.config-section-head > span,
+.container-head > div > span,
+.history-head > span { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--app-primary); background: #edf3ff; font-size: 17px; }
+.config-section-head h3 { margin: 0; color: var(--el-text-color-primary); font-size: 16px; }
+.config-section-head p { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.5; }
+.server-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.server-grid--basic { grid-template-columns: minmax(0, 1fr) minmax(250px, 0.7fr); }
+.server-grid--connection { grid-template-columns: minmax(0, 1.4fr) minmax(140px, 0.55fr) minmax(0, 1fr); }
+.status-setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; margin-bottom: 20px; padding: 0 16px; border: 1px solid var(--app-border); border-radius: 9px; background: #fafbfe; }
+.status-setting div { display: flex; flex-direction: column; gap: 3px; }
+.status-setting strong { color: var(--el-text-color-primary); font-size: 14px; }
+.status-setting small,
+.field-help { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.field-help { width: 100%; margin-top: 6px; }
+.section-last-field { margin-bottom: 0; }
+.selection-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%; }
+.selection-card { display: grid; grid-template-columns: 38px minmax(0, 1fr) 22px; align-items: center; gap: 12px; min-height: 78px; padding: 14px; border: 1px solid var(--app-border); border-radius: 10px; color: var(--el-text-color-primary); background: #fff; cursor: pointer; text-align: left; transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
+.selection-card:hover { border-color: #aac0ef; background: #fafcff; transform: translateY(-1px); }
+.selection-card.is-active { border-color: var(--app-primary); background: #f4f7ff; box-shadow: 0 0 0 3px rgba(53, 106, 230, 0.08); }
+.selection-card-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: #637188; background: #f0f3f8; font-size: 18px; }
+.selection-card.is-active .selection-card-icon { color: var(--app-primary); background: #e4ecff; }
+.selection-card > span:nth-child(2) { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.selection-card strong { font-family: inherit; font-size: 14px; }
+.selection-card small { overflow-wrap: anywhere; color: var(--el-text-color-secondary); font-family: inherit; font-size: 12px; line-height: 1.4; }
+.selection-card-check { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid #cbd4e2; border-radius: 50%; color: transparent; font-size: 12px; }
+.selection-card.is-active .selection-card-check { border-color: var(--app-primary); color: #fff; background: var(--app-primary); }
+.credential-panel { margin-top: 4px; padding: 16px; border: 1px solid #e3e9f3; border-radius: 10px; background: #fafbfe; }
+.private-key-editor { width: 100%; overflow: hidden; border: 1px solid var(--app-border); border-radius: 10px; background: #fff; }
+.private-key-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--app-border); background: #f7f9fd; }
+.private-key-toolbar > div:first-child { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.private-key-toolbar > div:first-child > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.private-key-toolbar strong { overflow: hidden; color: var(--el-text-color-primary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.private-key-toolbar small { color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.4; }
+.private-key-toolbar-icon { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--app-primary); background: #e8efff; }
+.private-key-editor :deep(.el-textarea__inner) { border: 0; border-radius: 0; box-shadow: none; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; line-height: 1.55; }
+.private-key-file-row { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
 .hidden-file-input { display: none; }
+.local-mode-notice { display: flex; align-items: center; gap: 14px; padding: 20px; border: 1px solid #cfe8dc; border-radius: 12px; background: #f1fbf6; }
+.local-mode-notice > span { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: #16875d; background: #dff4e9; font-size: 18px; }
+.local-mode-notice p { color: #547267; }
+.dialog-footer-content { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; }
+.dialog-footer-content > div { display: flex; gap: 10px; }
+.secure-submit-hint { display: inline-flex; align-items: center; gap: 6px; color: var(--el-text-color-secondary); font-size: 12px; }
 .deployment-result { white-space: pre-wrap; overflow-wrap: anywhere; }
 .full { width: 100%; }
-.monitor-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-.monitor-time { color: var(--el-text-color-secondary); font-size: 13px; }
+.monitor-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding: 18px; border: 1px solid #dce5f4; border-radius: 12px; background: linear-gradient(135deg, #fff, #f0f5ff); }
+.monitor-identity { display: flex; align-items: center; gap: 10px; }
+.monitor-identity strong { color: var(--el-text-color-primary); font-size: 17px; }
+.monitor-hero p { margin: 4px 0; color: #40516d; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
+.monitor-hero small { color: var(--el-text-color-secondary); font-size: 12px; }
 .monitor-content { min-height: 220px; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-.metric-card :deep(.el-card__body) { display: flex; flex-direction: column; gap: 9px; }
-.metric-card span, .metric-card small { color: var(--el-text-color-secondary); }
-.metric-card strong { color: var(--el-text-color-primary); font-size: 25px; font-variant-numeric: tabular-nums; }
+.metric-card { border-color: var(--app-border); border-radius: 11px; }
+.metric-card :deep(.el-card__body) { display: flex; min-height: 132px; flex-direction: column; gap: 10px; padding: 17px; }
+.metric-card-head { display: flex; align-items: center; gap: 8px; color: var(--el-text-color-secondary); font-size: 12px; font-weight: 600; }
+.metric-card-head span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--app-primary); background: #edf3ff; font-size: 15px; }
+.metric-card small { color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.5; }
+.metric-card strong { margin-top: auto; color: var(--el-text-color-primary); font-size: 26px; font-variant-numeric: tabular-nums; }
 .container-alert { margin-top: 16px; }
-.container-head { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 10px; }
+.container-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 22px 0 12px; }
+.container-head > div { display: flex; align-items: center; gap: 10px; }
 .container-head h3 { margin: 0; font-size: 17px; }
-.container-head span { color: var(--el-text-color-secondary); font-size: 13px; }
+.container-head small { color: var(--el-text-color-secondary); font-size: 12px; }
+.container-table,
+.history-table { background: #fff; }
+.deploy-intro { margin-bottom: 14px; }
+.deploy-form { margin-top: 18px; padding: 18px; border: 1px solid var(--app-border); border-radius: 12px; background: #fff; }
+.selection-cards--deploy { grid-template-columns: 1fr; }
+.history-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 15px 16px; border: 1px solid var(--app-border); border-radius: 11px; background: #fff; }
 @media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
-  .server-grid, .metric-grid { grid-template-columns: 1fr; }
-  .monitor-head { align-items: flex-start; }
+  .server-grid, .server-grid--basic, .server-grid--connection, .metric-grid, .selection-cards { grid-template-columns: 1fr; }
+  .dialog-intro, .monitor-hero, .history-head { align-items: flex-start; }
+  .monitor-hero { flex-wrap: wrap; }
+  .monitor-hero > .el-button { width: 100%; }
+  .private-key-toolbar { align-items: flex-start; flex-direction: column; }
+  .private-key-file-row, .private-key-file-row .el-button { width: 100%; }
+  .dialog-footer-content { align-items: stretch; flex-direction: column; }
+  .dialog-footer-content > div { justify-content: flex-end; }
+}
+@media (max-width: 520px) {
+  .config-section { padding: 16px; }
+  .dialog-intro > .el-tag, .history-head > .el-tag { display: none; }
+  .dialog-footer-content > div { display: grid; grid-template-columns: repeat(2, 1fr); }
 }
 </style>
