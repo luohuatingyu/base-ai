@@ -28,6 +28,7 @@ class DeviceAgentAutomationConfigServiceTest {
     private DeviceAgentAutomationConfigService service;
     private JdbcTemplate db;
     private DeviceAgentCommandService commandService;
+    private ConfigCryptoService cryptoService;
 
     /** 建立每测试独立数据库并模拟已配对 Agent。 */
     @BeforeEach
@@ -37,10 +38,10 @@ class DeviceAgentAutomationConfigServiceTest {
             + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
         db = new JdbcTemplate(dataSource);
         db.execute("""
-            CREATE TABLE automation_device_agent_ida_config (
+            CREATE TABLE automation_device_agent_wda_config (
               agent_id VARCHAR(64) PRIMARY KEY, signing_config_encrypted TEXT,
-              launch_mode VARCHAR(16), ida_url VARCHAR(256), appium_server_url VARCHAR(256),
-              base_ida_local_port INT, operation_speed VARCHAR(16) DEFAULT 'STANDARD',
+              launch_mode VARCHAR(16), wda_url VARCHAR(256), appium_server_url VARCHAR(256),
+              base_wda_local_port INT, operation_speed VARCHAR(16) DEFAULT 'STANDARD',
               wireless_source_poll_interval_seconds INT DEFAULT 10,
               wireless_source_max_attempts INT DEFAULT 12,
               config_version BIGINT, config_hash CHAR(64),
@@ -58,8 +59,35 @@ class DeviceAgentAutomationConfigServiceTest {
         when(registration.requireExists("ios-agent-test")).thenReturn(
             new DeviceAgentRegistrationService.ExistingRegistration("PAIRED", null));
         commandService = mock(DeviceAgentCommandService.class);
+        cryptoService = new ConfigCryptoService(properties);
         service = new DeviceAgentAutomationConfigService(db, new ObjectMapper(),
-            new ConfigCryptoService(properties), registration, commandService);
+            cryptoService, registration, commandService);
+    }
+
+    /** 旧密文和新密文都保留签名配置，对外仅序列化 IDA 字段。 */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"updatedWdaBundleId", "updatedIdaBundleId"})
+    void readsStoredSigningConfigWithoutRewritingCiphertext(String bundleField) throws Exception {
+        String encrypted = cryptoService.encrypt("{\"xcodeOrgId\":\"ABCDEFGHIJ\",\"" + bundleField
+            + "\":\"com.example.Runner\",\"allowProvisioningDeviceRegistration\":false}");
+        db.update("""
+            INSERT INTO automation_device_agent_wda_config
+              (agent_id, signing_config_encrypted, launch_mode, wda_url, appium_server_url,
+               base_wda_local_port, config_version, config_hash)
+            VALUES (?, ?, 'URL', 'http://127.0.0.1:8200', 'http://127.0.0.1:4723', 8200, 9, 'unchanged')
+            """, "ios-agent-test", encrypted);
+        var view = service.get("ios-agent-test");
+        assertEquals("com.example.Runner", view.signingConfig().updatedIdaBundleId());
+        assertEquals(false, view.signingConfig().allowProvisioningDeviceRegistration());
+        assertEquals("http://127.0.0.1:8200", view.idaUrl());
+        assertEquals(8200, view.baseIdaLocalPort());
+        assertEquals(9, view.configVersion());
+        assertEquals(encrypted, db.queryForObject(
+            "SELECT signing_config_encrypted FROM automation_device_agent_wda_config WHERE agent_id=?",
+            String.class, "ios-agent-test"));
+        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(view);
+        assertFalse(json.contains("updatedWdaBundleId"));
+        org.junit.jupiter.api.Assertions.assertTrue(json.contains("updatedIdaBundleId"));
     }
 
     /** 签名配置必须以密文落库，并向已配对 Agent 下发配置刷新。 */
@@ -71,7 +99,7 @@ class DeviceAgentAutomationConfigServiceTest {
                     "com.example.WebDriverAgentRunner", false),
                 "XCODEBUILD", null, "http://127.0.0.1:4723", 8200), 7L);
         String encrypted = db.queryForObject("""
-            SELECT signing_config_encrypted FROM automation_device_agent_ida_config WHERE agent_id=?
+            SELECT signing_config_encrypted FROM automation_device_agent_wda_config WHERE agent_id=?
             """, String.class, "ios-agent-test");
 
         assertEquals(8200, view.baseIdaLocalPort());
@@ -101,7 +129,7 @@ class DeviceAgentAutomationConfigServiceTest {
         assertEquals(5, view.wirelessSourcePollIntervalSeconds());
         assertEquals(24, view.wirelessSourceMaxAttempts());
         assertEquals("FAST", db.queryForObject("""
-            SELECT operation_speed FROM automation_device_agent_ida_config WHERE agent_id=?
+            SELECT operation_speed FROM automation_device_agent_wda_config WHERE agent_id=?
             """, String.class, "ios-agent-test"));
         verify(commandService).create(any(DeviceAgentModels.CreateCommandRequest.class), anyLong());
     }

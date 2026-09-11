@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** 管理主机维护和单设备 IDA 自动化命令的租约状态。 */
+/** 管理 IDA 自动化命令租约，设备状态仍写入历史 WDA 列。 */
 @Service
 public class DeviceAgentCommandService {
     private static final Pattern DEVICE_ID = Pattern.compile("[a-f0-9]{64}");
@@ -253,10 +253,10 @@ public class DeviceAgentCommandService {
     private void validateTargetDevice(String agentId, String deviceId, String commandType) {
         if (deviceId == null) return;
         List<DeviceTargetState> states = db.query("""
-            SELECT connected, ida_status FROM automation_device_agent_device
+            SELECT connected, wda_status FROM automation_device_agent_device
             WHERE agent_id=? AND device_id=?
             """, (resultSet, rowNum) -> new DeviceTargetState(
-            resultSet.getBoolean("connected"), resultSet.getString("ida_status")), agentId, deviceId);
+            resultSet.getBoolean("connected"), resultSet.getString("wda_status")), agentId, deviceId);
         if (states.isEmpty()) throw new BusinessException("deviceAgent.deviceNotFound");
         DeviceTargetState state = states.get(0);
         if (!state.connected()) throw new BusinessException(409, "deviceAgent.deviceOffline");
@@ -286,7 +286,7 @@ public class DeviceAgentCommandService {
         boolean running = success && "START_IDA".equals(command.commandType());
         db.update("""
             UPDATE automation_device_agent_device
-            SET ida_status=?, ida_running=?, ida_port_error_code=?, last_error_code=?
+            SET wda_status=?, wda_running=?, wda_port_error_code=?, last_error_code=?
             WHERE agent_id=? AND device_id=?
             """, idaStatus, running, success ? null : truncate(errorCode, 64),
             success ? null : truncate(errorCode, 64), command.agentId(), command.targetDeviceId());

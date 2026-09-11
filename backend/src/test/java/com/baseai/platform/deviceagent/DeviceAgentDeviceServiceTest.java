@@ -34,14 +34,14 @@ class DeviceAgentDeviceServiceTest {
             CREATE TABLE automation_device_agent_device (
               agent_id VARCHAR(64), device_id CHAR(64), device_name VARCHAR(128), model VARCHAR(80),
               platform VARCHAR(20), os_version VARCHAR(40), connected BOOLEAN, connection_type VARCHAR(16),
-              status VARCHAR(32), ida_status VARCHAR(16), ida_running BOOLEAN, ida_local_port INT,
-              observed_ida_local_port INT, ida_port_error_code VARCHAR(64), last_error_code VARCHAR(64),
+              status VARCHAR(32), wda_status VARCHAR(16), wda_running BOOLEAN, wda_local_port INT,
+              observed_wda_local_port INT, wda_port_error_code VARCHAR(64), last_error_code VARCHAR(64),
               last_seen_at TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              PRIMARY KEY (agent_id, device_id), UNIQUE (agent_id, ida_local_port))
+              PRIMARY KEY (agent_id, device_id), UNIQUE (agent_id, wda_local_port))
             """);
         db.execute("""
-            CREATE TABLE automation_device_agent_ida_config (
-              agent_id VARCHAR(64) PRIMARY KEY, base_ida_local_port INT)
+            CREATE TABLE automation_device_agent_wda_config (
+              agent_id VARCHAR(64) PRIMARY KEY, base_wda_local_port INT)
             """);
         db.execute("""
             CREATE TABLE automation_device_agent_audit (

@@ -55,12 +55,12 @@ class DeviceAgentCommandServiceTest {
         db.execute("""
             CREATE TABLE automation_device_agent_device (
               agent_id VARCHAR(64), device_id CHAR(64), connected BOOLEAN,
-              ida_status VARCHAR(16), ida_running BOOLEAN, ida_port_error_code VARCHAR(64),
+              wda_status VARCHAR(16), wda_running BOOLEAN, wda_port_error_code VARCHAR(64),
               last_error_code VARCHAR(64), PRIMARY KEY (agent_id, device_id))
             """);
         db.update("""
             INSERT INTO automation_device_agent_device
-              (agent_id, device_id, connected, ida_status, ida_running)
+              (agent_id, device_id, connected, wda_status, wda_running)
             VALUES ('ios-agent-test', ?, TRUE, 'MISSING', FALSE)
             """, DEVICE_ID);
         DeviceAgentRegistrationService registration = mock(DeviceAgentRegistrationService.class);
@@ -94,10 +94,10 @@ class DeviceAgentCommandServiceTest {
 
         assertEquals(DEVICE_ID, setup.targetDeviceId());
         assertEquals("READY", db.queryForObject("""
-            SELECT ida_status FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            SELECT wda_status FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
             """, String.class));
         assertFalse(Boolean.TRUE.equals(db.queryForObject("""
-            SELECT ida_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            SELECT wda_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
             """, Boolean.class)));
 
         DeviceAgentModels.AgentCommandView start = service.create(
@@ -108,7 +108,7 @@ class DeviceAgentCommandServiceTest {
         service.reportResult("ios-agent-test", start.id(), new DeviceAgentModels.ReportCommandResultRequest(
             startLease.leaseToken(), "COMPLETED", "online", null));
         assertTrue(Boolean.TRUE.equals(db.queryForObject("""
-            SELECT ida_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
+            SELECT wda_running FROM automation_device_agent_device WHERE agent_id='ios-agent-test'
             """, Boolean.class)));
     }
 

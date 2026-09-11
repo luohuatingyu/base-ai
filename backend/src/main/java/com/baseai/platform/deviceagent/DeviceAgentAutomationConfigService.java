@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** 管理设备 Agent 的加密 IDA 签名参数和回环 Appium 配置。 */
+/** 管理设备 Agent 的 IDA 配置，数据库保留历史 WDA 表和列以兼容存量数据。 */
 @Service
 public class DeviceAgentAutomationConfigService {
     private static final Pattern TEAM_ID = Pattern.compile("[A-Za-z0-9]{10}");
@@ -58,11 +58,11 @@ public class DeviceAgentAutomationConfigService {
         registrationService.requireExists(agentId);
         try {
             return db.queryForObject("""
-                SELECT agent_id, signing_config_encrypted, launch_mode, ida_url,
-                       appium_server_url, base_ida_local_port, operation_speed,
+                SELECT agent_id, signing_config_encrypted, launch_mode, wda_url,
+                       appium_server_url, base_wda_local_port, operation_speed,
                        wireless_source_poll_interval_seconds, wireless_source_max_attempts,
                        config_version, updated_at
-                FROM automation_device_agent_ida_config WHERE agent_id=?
+                FROM automation_device_agent_wda_config WHERE agent_id=?
                 """, (resultSet, rowNum) -> view(resultSet), agentId);
         } catch (EmptyResultDataAccessException exception) {
             return defaults(agentId);
@@ -80,14 +80,14 @@ public class DeviceAgentAutomationConfigService {
         String encrypted = normalized.signingConfig() == null ? null : cryptoService.encrypt(signingJson);
         String hash = sha256(writeJson(normalized));
         db.update("""
-            INSERT INTO automation_device_agent_ida_config
-                (agent_id, signing_config_encrypted, launch_mode, ida_url, appium_server_url,
-                 base_ida_local_port, config_version, config_hash, created_by, updated_by)
+            INSERT INTO automation_device_agent_wda_config
+                (agent_id, signing_config_encrypted, launch_mode, wda_url, appium_server_url,
+                 base_wda_local_port, config_version, config_hash, created_by, updated_by)
             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
             ON DUPLICATE KEY UPDATE signing_config_encrypted=VALUES(signing_config_encrypted),
-                launch_mode=VALUES(launch_mode), ida_url=VALUES(ida_url),
+                launch_mode=VALUES(launch_mode), wda_url=VALUES(wda_url),
                 appium_server_url=VALUES(appium_server_url),
-                base_ida_local_port=VALUES(base_ida_local_port), config_version=config_version+1,
+                base_wda_local_port=VALUES(base_wda_local_port), config_version=config_version+1,
                 config_hash=VALUES(config_hash), updated_by=VALUES(updated_by),
                 updated_at=CURRENT_TIMESTAMP(6)
             """, agentId, encrypted, normalized.launchMode(), normalized.idaUrl(),
@@ -108,7 +108,7 @@ public class DeviceAgentAutomationConfigService {
             return db.queryForObject("""
                 SELECT agent_id, operation_speed, wireless_source_poll_interval_seconds,
                        wireless_source_max_attempts, config_version, updated_at
-                FROM automation_device_agent_ida_config WHERE agent_id=?
+                FROM automation_device_agent_wda_config WHERE agent_id=?
                 """, (resultSet, rowNum) -> operationSpeedView(resultSet), agentId);
         } catch (EmptyResultDataAccessException exception) {
             OperationSpeedProfile profile = OPERATION_SPEED_PROFILES.get(DEFAULT_OPERATION_SPEED);
@@ -131,16 +131,16 @@ public class DeviceAgentAutomationConfigService {
         String currentSpeed;
         try {
             currentSpeed = db.queryForObject(
-                "SELECT operation_speed FROM automation_device_agent_ida_config WHERE agent_id=?",
+                "SELECT operation_speed FROM automation_device_agent_wda_config WHERE agent_id=?",
                 String.class, agentId);
         } catch (EmptyResultDataAccessException exception) {
             currentSpeed = null;
         }
         if (speed.equals(currentSpeed)) return getOperationSpeed(agentId);
         db.update("""
-            INSERT INTO automation_device_agent_ida_config
+            INSERT INTO automation_device_agent_wda_config
                 (agent_id, signing_config_encrypted, launch_mode, appium_server_url,
-                 base_ida_local_port, operation_speed, wireless_source_poll_interval_seconds,
+                 base_wda_local_port, operation_speed, wireless_source_poll_interval_seconds,
                  wireless_source_max_attempts, config_version, config_hash, created_by, updated_by)
             VALUES (?, NULL, 'XCODEBUILD', 'http://127.0.0.1:4723', 8100, ?, ?, ?, 1, ?, ?, ?)
             ON DUPLICATE KEY UPDATE operation_speed=VALUES(operation_speed),
@@ -163,7 +163,7 @@ public class DeviceAgentAutomationConfigService {
     public void delete(String agentId, Long userId) {
         DeviceAgentRegistrationService.ExistingRegistration registration =
             registrationService.requireExists(agentId);
-        db.update("DELETE FROM automation_device_agent_ida_config WHERE agent_id=?", agentId);
+        db.update("DELETE FROM automation_device_agent_wda_config WHERE agent_id=?", agentId);
         audit(agentId, "AGENT_IDA_CONFIG_DELETED", Map.of(), userId);
         if (registration.revokedAt() == null && "PAIRED".equals(registration.pairingStatus())) {
             commandService.create(new DeviceAgentModels.CreateCommandRequest(
@@ -186,8 +186,8 @@ public class DeviceAgentAutomationConfigService {
         Timestamp updatedAt = resultSet.getTimestamp("updated_at");
         return new DeviceAgentModels.AgentIdaConfigView(
             resultSet.getString("agent_id"), signing, resultSet.getString("launch_mode"),
-            resultSet.getString("ida_url"), resultSet.getString("appium_server_url"),
-            resultSet.getInt("base_ida_local_port"), resultSet.getString("operation_speed"),
+            resultSet.getString("wda_url"), resultSet.getString("appium_server_url"),
+            resultSet.getInt("base_wda_local_port"), resultSet.getString("operation_speed"),
             resultSet.getInt("wireless_source_poll_interval_seconds"),
             resultSet.getInt("wireless_source_max_attempts"), resultSet.getLong("config_version"),
             updatedAt == null ? null : updatedAt.toInstant());

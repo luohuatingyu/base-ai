@@ -17,7 +17,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** 持久化匿名 iOS 设备池并协调每台设备独占的 IDA 本地端口。 */
+/** 协调设备 IDA 端口，持久化使用历史 WDA 列以兼容存量设备数据。 */
 @Service
 public class DeviceAgentDeviceService {
     private static final Pattern DEVICE_ID = Pattern.compile("[a-f0-9]{64}");
@@ -52,7 +52,7 @@ public class DeviceAgentDeviceService {
         }
         db.update("""
             UPDATE automation_device_agent_device
-            SET connected=FALSE, status='OFFLINE', ida_running=FALSE WHERE agent_id=?
+            SET connected=FALSE, status='OFFLINE', wda_running=FALSE WHERE agent_id=?
             """, agentId);
         for (NormalizedDevice device : normalized) upsert(agentId, device);
         assignMissingPorts(agentId, normalized);
@@ -89,7 +89,7 @@ public class DeviceAgentDeviceService {
         try {
             int changed = db.update("""
                 UPDATE automation_device_agent_device
-                SET ida_local_port=?, ida_port_error_code=NULL
+                SET wda_local_port=?, wda_port_error_code=NULL
                 WHERE agent_id=? AND device_id=?
                 """, port, agentId, normalizedDeviceId);
             if (changed == 0) throw BusinessException.notFound("deviceAgent.deviceNotFound");
@@ -106,15 +106,15 @@ public class DeviceAgentDeviceService {
         db.update("""
             INSERT INTO automation_device_agent_device
                 (agent_id, device_id, device_name, model, platform, os_version, connected,
-                 connection_type, status, ida_status, ida_running, observed_ida_local_port,
-                 ida_port_error_code, last_error_code, last_seen_at)
+                 connection_type, status, wda_status, wda_running, observed_wda_local_port,
+                 wda_port_error_code, last_error_code, last_seen_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(6))
             ON DUPLICATE KEY UPDATE device_name=VALUES(device_name), model=VALUES(model),
                 platform=VALUES(platform), os_version=VALUES(os_version), connected=VALUES(connected),
                 connection_type=VALUES(connection_type), status=VALUES(status),
-                ida_status=VALUES(ida_status), ida_running=VALUES(ida_running),
-                observed_ida_local_port=VALUES(observed_ida_local_port),
-                ida_port_error_code=VALUES(ida_port_error_code),
+                wda_status=VALUES(wda_status), wda_running=VALUES(wda_running),
+                observed_wda_local_port=VALUES(observed_wda_local_port),
+                wda_port_error_code=VALUES(wda_port_error_code),
                 last_error_code=VALUES(last_error_code), last_seen_at=CURRENT_TIMESTAMP(6)
             """, agentId, device.deviceId(), device.deviceName(), device.model(), device.platform(),
             device.osVersion(), device.connected(), device.connectionType(), device.status(),
@@ -167,17 +167,17 @@ public class DeviceAgentDeviceService {
     /** 为新设备从配置基准端口开始分配尚未占用的端口。 */
     private void assignMissingPorts(String agentId, List<NormalizedDevice> devices) {
         Set<Integer> used = new HashSet<>(db.query("""
-            SELECT ida_local_port FROM automation_device_agent_device
-            WHERE agent_id=? AND ida_local_port IS NOT NULL
-            """, (resultSet, rowNum) -> resultSet.getInt("ida_local_port"), agentId));
+            SELECT wda_local_port FROM automation_device_agent_device
+            WHERE agent_id=? AND wda_local_port IS NOT NULL
+            """, (resultSet, rowNum) -> resultSet.getInt("wda_local_port"), agentId));
         int candidate = basePort(agentId);
         for (NormalizedDevice device : devices) {
             if (desiredPort(agentId, device.deviceId()) != null) continue;
             while (used.contains(candidate) && candidate <= 65535) candidate++;
             if (candidate > 65535) throw new BusinessException("deviceAgent.idaPortUnavailable");
             db.update("""
-                UPDATE automation_device_agent_device SET ida_local_port=?
-                WHERE agent_id=? AND device_id=? AND ida_local_port IS NULL
+                UPDATE automation_device_agent_device SET wda_local_port=?
+                WHERE agent_id=? AND device_id=? AND wda_local_port IS NULL
                 """, candidate, agentId, device.deviceId());
             used.add(candidate++);
         }
@@ -195,7 +195,7 @@ public class DeviceAgentDeviceService {
             else if (actual != null && !actual.equals(desired)) error = "IDA_PORT_MISMATCH";
             if (error != null) db.update("""
                 UPDATE automation_device_agent_device
-                SET ida_status='ERROR', ida_running=FALSE, ida_port_error_code=?
+                SET wda_status='ERROR', wda_running=FALSE, wda_port_error_code=?
                 WHERE agent_id=? AND device_id=?
                 """, error, agentId, device.deviceId());
         }
@@ -204,17 +204,17 @@ public class DeviceAgentDeviceService {
     /** 查询 Agent 配置的 IDA 基准端口，未配置时使用安全默认值。 */
     private int basePort(String agentId) {
         List<Integer> values = db.query("""
-            SELECT base_ida_local_port FROM automation_device_agent_ida_config WHERE agent_id=?
-            """, (resultSet, rowNum) -> resultSet.getInt("base_ida_local_port"), agentId);
+            SELECT base_wda_local_port FROM automation_device_agent_wda_config WHERE agent_id=?
+            """, (resultSet, rowNum) -> resultSet.getInt("base_wda_local_port"), agentId);
         return values.isEmpty() ? 8100 : values.get(0);
     }
 
     /** 查询单设备当前期望 IDA 端口。 */
     private Integer desiredPort(String agentId, String deviceId) {
         List<Integer> values = db.query("""
-            SELECT ida_local_port FROM automation_device_agent_device
-            WHERE agent_id=? AND device_id=? AND ida_local_port IS NOT NULL
-            """, (resultSet, rowNum) -> resultSet.getInt("ida_local_port"), agentId, deviceId);
+            SELECT wda_local_port FROM automation_device_agent_device
+            WHERE agent_id=? AND device_id=? AND wda_local_port IS NOT NULL
+            """, (resultSet, rowNum) -> resultSet.getInt("wda_local_port"), agentId, deviceId);
         return values.isEmpty() ? null : values.get(0);
     }
 
@@ -226,10 +226,10 @@ public class DeviceAgentDeviceService {
             resultSet.getString("device_name"), resultSet.getString("model"),
             resultSet.getString("platform"), resultSet.getString("os_version"),
             resultSet.getBoolean("connected"), resultSet.getString("connection_type"),
-            resultSet.getString("status"), resultSet.getString("ida_status"),
-            resultSet.getBoolean("ida_running"),
-            (Integer) resultSet.getObject("observed_ida_local_port"),
-            resultSet.getString("ida_port_error_code"), resultSet.getString("last_error_code")),
+            resultSet.getString("status"), resultSet.getString("wda_status"),
+            resultSet.getBoolean("wda_running"),
+            (Integer) resultSet.getObject("observed_wda_local_port"),
+            resultSet.getString("wda_port_error_code"), resultSet.getString("last_error_code")),
             agentId, deviceId);
         if (devices.isEmpty()) throw BusinessException.notFound("deviceAgent.deviceNotFound");
         return devices.get(0);
@@ -267,10 +267,10 @@ public class DeviceAgentDeviceService {
             resultSet.getString("model"), resultSet.getString("platform"),
             resultSet.getString("os_version"), resultSet.getBoolean("connected"),
             resultSet.getString("connection_type"), resultSet.getString("status"),
-            resultSet.getString("ida_status"), resultSet.getBoolean("ida_running"),
-            (Integer) resultSet.getObject("ida_local_port"),
-            (Integer) resultSet.getObject("observed_ida_local_port"),
-            resultSet.getString("ida_port_error_code"), resultSet.getString("last_error_code"),
+            resultSet.getString("wda_status"), resultSet.getBoolean("wda_running"),
+            (Integer) resultSet.getObject("wda_local_port"),
+            (Integer) resultSet.getObject("observed_wda_local_port"),
+            resultSet.getString("wda_port_error_code"), resultSet.getString("last_error_code"),
             instant(resultSet, "last_seen_at"));
     }
 

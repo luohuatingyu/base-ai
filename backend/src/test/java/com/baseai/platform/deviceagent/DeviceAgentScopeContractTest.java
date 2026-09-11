@@ -12,6 +12,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 验证通用设备 Agent 包含 IDA 自动化但不引入企业微信业务范围。 */
 class DeviceAgentScopeContractTest {
+    /** 历史迁移的校验和必须与已部署数据库一致，禁止随产品改名重写。 */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "V31__add_device_agent_automation.sql,1040951367",
+        "V32__add_device_agent_operation_speed.sql,187493084"
+    })
+    void historicalMigrationChecksumsRemainUnchanged(String filename, int expected) throws Exception {
+        java.util.zip.CRC32 checksum = new java.util.zip.CRC32();
+        for (String line : readResource("db/migration/mysql/" + filename).split("\\R")) {
+            checksum.update(line.getBytes(StandardCharsets.UTF_8));
+        }
+        assertEquals(expected, (int) checksum.getValue());
+    }
+
     /** 命令和功能白名单包含通用自动化，但不得包含账号、好友或业务任务。 */
     @Test
     void protocolExcludesAutomationAndBusinessCommands() {
@@ -73,7 +87,7 @@ class DeviceAgentScopeContractTest {
         }
         assertTrue(migration.contains("operation_speed"));
         assertTrue(migration.contains("'slow', 'standard', 'fast'"));
-        assertTrue(migration.contains("automation_device_agent_ida_config"));
+        assertTrue(migration.contains("automation_device_agent_wda_config"));
         assertFalse(migration.contains("wecom"));
     }
 

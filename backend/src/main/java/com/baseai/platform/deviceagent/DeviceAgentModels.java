@@ -1,5 +1,6 @@
 package com.baseai.platform.deviceagent;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -125,9 +126,9 @@ public final class DeviceAgentModels {
                                   boolean idaRunning, Integer idaLocalPort,
                                   Integer observedIdaLocalPort, String idaPortErrorCode,
                                   String lastErrorCode, Instant lastSeenAt) {}
-    /** IDA 签名参数，私钥和证书内容不进入协议。 */
+    /** IDA 签名参数兼容旧密文中的 WDA 字段，对外仍使用 IDA 命名。 */
     public record IdaSigningConfig(String xcodeOrgId, String xcodeSigningId,
-                                   String updatedIdaBundleId,
+                                   @JsonAlias("updatedWdaBundleId") String updatedIdaBundleId,
                                    Boolean allowProvisioningDeviceRegistration) {}
     /** 管理端和 Agent 共同使用的 IDA 配置。 */
     public record AgentIdaConfigView(String agentId, IdaSigningConfig signingConfig,
