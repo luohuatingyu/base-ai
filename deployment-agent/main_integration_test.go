@@ -98,6 +98,15 @@ func TestSSHIntegration(t *testing.T) {
 			if err != nil || !strings.HasSuffix(output, "AUTHENTICATED") {
 				t.Fatalf("real SSH authentication: %v: %s", err, output)
 			}
+			connectionOutput, err := testConnection(ctx, input)
+			identity := parseSystemInfo(connectionOutput)
+			if err != nil || identity == nil || identity.Family != "Linux" || identity.ID != "alpine" {
+				t.Fatalf("real SSH system detection: %v: %+v", err, identity)
+			}
+			metrics, err := collectMonitor(ctx, input)
+			if err != nil || metrics.Status != "SUCCEEDED" || metrics.Host.MemoryTotalBytes <= 0 || metrics.SystemInfo == nil {
+				t.Fatalf("real SSH resource collection: %v: %+v", err, metrics)
+			}
 			stream, cleanup, err := dataSyncRemoteCommand(ctx, input, "cat")
 			if err != nil {
 				t.Fatal(err)
@@ -111,7 +120,7 @@ func TestSSHIntegration(t *testing.T) {
 			if index >= 2 {
 				invalid := input
 				invalid.Password = "wrong"
-				if output, err := runRemoteCommand(ctx, invalid, "printf UNEXPECTED"); err == nil || strings.Contains(output, "UNEXPECTED") {
+				if output, err := runRemoteCommand(ctx, invalid, "printf UNEXPECTED"); err == nil || err.Error() != "SSH_AUTHENTICATION_FAILED" || strings.Contains(output, "UNEXPECTED") {
 					t.Fatal("wrong password authenticated")
 				}
 				invalid = input

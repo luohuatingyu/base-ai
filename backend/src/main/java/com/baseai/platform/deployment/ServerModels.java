@@ -16,7 +16,10 @@ public final class ServerModels {
                              String username, String authType, String hostKey, String workingDir,
                              String composeFile, boolean enabled, String lastTestStatus,
                              String lastTestError, LocalDateTime lastTestAt, Long ownerUserId,
-                             LocalDateTime createdAt, LocalDateTime updatedAt) { }
+                             LocalDateTime createdAt, LocalDateTime updatedAt, SystemInfoView systemInfo) { }
+
+    public record SystemInfoView(String family, String id, String name, String version,
+                                 String kernel, String architecture, Instant detectedAt) { }
 
     public record DataSyncServerOption(Long id, String name, String mode, boolean enabled) { }
 
@@ -44,5 +47,5 @@ public final class ServerModels {
     public record ServerMonitorView(String status, Instant collectedAt,
                                     HostResourceView host,
                                     List<ContainerStatusView> containers,
-                                    String containerError, String error) { }
+                                    String containerError, String error, SystemInfoView systemInfo) { }
 }

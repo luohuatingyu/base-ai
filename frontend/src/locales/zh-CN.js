@@ -461,6 +461,13 @@ export default {
     title: '数据同步', description: '选择执行服务器及源、目标数据库中的表，按批次安全同步数据。', securityNotice: '表查询、预检和同步均在所选服务器的一次性 Worker 中执行且不会记录行内容；目标连接必须显式开启允许写入。全量替换会清空目标表。', name: '计划名称', server: '执行服务器', platformLocal: '平台本机（历史计划）', source: '源连接', target: '目标连接', strategy: '同步策略', schedule: 'Cron 调度', schedulePlaceholder: '留空表示仅手动执行，例如 0 0/10 * * * *', tables: '同步表', sourceTable: '源表', targetTable: '目标表', sourceRows: '源行数', readRows: '读取行数', writtenRows: '写入行数', warnings: '预检提示', noWarnings: '未发现问题', lastStatus: '最近状态', preview: '预检', run: '执行', retry: '重试', cancel: '取消', details: '运行明细', traceId: 'Trace ID', error: '错误', confirmDestructive: '我确认全量替换会清空目标表', strategies: { UPSERT: '按主键更新/插入', FULL_REPLACE: '全量替换', APPEND: '仅追加' }, warningCodes: { sourceTableNotFound: '源表不存在', targetTableWillBeCreated: '目标表将自动创建', unsupportedColumnType: '字段 {column} 类型不受支持', missingTargetColumn: '目标表缺少字段 {column}', columnTypeMismatch: '字段 {column} 类型不兼容', primaryKeyRequired: 'UPSERT 必须包含主键', columnMismatch: '字段配置不匹配' }, formRequired: '请填写计划、选择执行服务器和连接，并至少选择一张表', loadFailed: '数据同步数据加载失败', previewFailed: '数据同步预检失败', saveFailed: '数据同步计划保存失败', runAccepted: '同步任务已启动', runFailed: '同步任务启动失败', cancelFailed: '同步任务取消失败'
   },
   servers: {
+    operatingSystem: '操作系统', osVersion: '版本', osKernel: '内核', osArchitecture: '架构', osDetectedAt: '最近探测', osNotDetected: '未探测 · 请测试连接或打开监控',
+    agentUnavailable: '无法访问部署 Agent，请检查 Agent 服务及网络', agentUnauthorized: '部署 Agent 内部认证失败，请检查令牌配置',
+    sshLocalUserMissing: 'Agent 运行用户不存在，请重新构建部署 Agent 镜像', sshAuthenticationFailed: 'SSH 认证失败，请检查用户名、密码、私钥及远端认证策略',
+    sshConnectionTimeout: 'SSH 连接超时，请检查服务器地址、安全组、端口及网络', sshConnectionRefused: 'SSH 连接被拒绝，请检查 SSH 服务及端口',
+    sshHostUnresolved: '无法解析服务器地址，请检查主机名和 DNS', sshNetworkUnreachable: '无法到达服务器，请检查路由及网络',
+    sshPrivateKeyInvalid: 'SSH 私钥加载失败，请检查私钥格式和独立私钥口令', sshCommandFailed: 'SSH 命令执行失败，请检查远端账户的命令执行权限',
+    monitorOsUnsupported: '已连接服务器，但资源监控目前仅支持 Linux', monitorOutputInvalid: '资源采集数据不完整或格式不兼容，请检查 Linux 系统指标和基础命令',
     title: '服务器管理', description: '在页面手工维护本地或 SSH 服务器，并实时查看基础资源与容器状态。',
     securityNotice: 'SSH 凭据使用 AES-GCM 加密保存且仅返回掩码；私钥文件仅在浏览器本地读取，部署时由受控 Agent 自动检测 Compose 项目。',
     add: '新增服务器', edit: '编辑服务器', editorDescription: '配置服务器身份、连接地址与安全认证信息。',

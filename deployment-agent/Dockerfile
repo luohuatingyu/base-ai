@@ -8,7 +8,9 @@ RUN go test ./... && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/d
 FROM docker:29.7.2-cli@sha256:3f4743208d2338c934d7b8bcfbe1bb54c0b2355c510ad5e0f31c0c4a54bd704e
 ARG APP_IMAGE_REVISION
 LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
-RUN apk add --no-cache openssh-client sshpass
+RUN apk add --no-cache openssh-client sshpass \
+    && adduser -D -u 10001 -h /home/agent agent \
+    && su agent -s /bin/sh -c 'ssh -V'
 COPY --from=build /out/deployment-agent /usr/local/bin/deployment-agent
 USER 10001
 EXPOSE 8091

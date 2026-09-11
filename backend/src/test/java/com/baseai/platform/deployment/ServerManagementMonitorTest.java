@@ -12,6 +12,8 @@ import com.sun.net.httpserver.HttpServer;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -23,11 +25,157 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 覆盖服务器监控的实时代理、所有权和异常响应边界。 */
 class ServerManagementMonitorTest {
+    private static final String SYSTEM_INFO = """
+        {"family":"Linux","id":"alinux","name":"Alibaba Cloud Linux 3","version":"3",
+         "kernel":"5.10.134","architecture":"aarch64","detectedAt":"2026-09-11T08:00:00Z"}
+        """;
+
+    /** 白名单错误保留具体诊断，未知远端文本继续被隐藏。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"SSH_LOCAL_USER_MISSING", "SSH_AUTHENTICATION_FAILED", "SSH_CONNECTION_TIMEOUT",
+        "SSH_CONNECTION_REFUSED", "SSH_HOST_UNRESOLVED", "SSH_NETWORK_UNREACHABLE", "SSH_PRIVATE_KEY_INVALID",
+        "SSH_COMMAND_FAILED", "MONITOR_OS_UNSUPPORTED", "MONITOR_OUTPUT_INVALID"})
+    void preservesSafeDiagnostics(String code) throws Exception {
+        HttpServer agent = monitorAgent("{\"status\":\"FAILED\",\"error\":\"" + code + "\"}");
+        try {
+            ServerManagementService service = service(serverDatabase("diagnostic-" + code, true), address(agent));
+            authenticate(7L);
+            assertEquals(code, service.monitor(1L).error());
+            assertEquals(code, service.test(1L).get("error"));
+            assertEquals(code, service.servers().get(0).lastTestError());
+        } finally { agent.stop(0); }
+    }
+
+    /** 连接探测后列表持久展示系统信息，重新编辑目标时清理旧系统身份。 */
+    @Test
+    void persistsSystemIdentityAndInvalidatesChangedTarget() throws Exception {
+        HttpServer agent = monitorAgent("{\"status\":\"SUCCEEDED\",\"systemInfo\":" + SYSTEM_INFO + "}");
+        try {
+            JdbcTemplate database = serverDatabase("system-persist", true);
+            ServerManagementService service = service(database, address(agent));
+            authenticate(7L);
+            assertNull(service.servers().get(0).systemInfo());
+            java.util.Map<String, Object> connection = service.test(1L);
+            assertNotNull(connection.get("systemInfo"));
+            assertEquals("CONNECTION_SUCCEEDED", connection.get("output"));
+            ServerModels.ServerView saved = service.servers().get(0);
+            assertEquals("Alibaba Cloud Linux 3", saved.systemInfo().name());
+            assertEquals("aarch64", saved.systemInfo().architecture());
+            assertEquals("SUCCEEDED", saved.lastTestStatus());
+            String encrypted = database.queryForObject("SELECT config_encrypted FROM managed_server WHERE id=1", String.class);
+            assertTrue(!encrypted.contains("Alibaba") && !encrypted.contains("PRIVATE"));
+            assertEquals("PRIVATE", new ObjectMapper().readTree(new ConfigCryptoService(properties()).decrypt(encrypted)).path("privateKey").asText());
+            service.update(1L, serverCommand("host"));
+            assertNotNull(service.servers().get(0).systemInfo());
+            service.update(1L, serverCommand("other-host"));
+            assertNull(service.servers().get(0).systemInfo());
+        } finally { agent.stop(0); }
+    }
+
+    /** 资源不支持或采集失败时仍保存有效系统身份，同时不伪造资源指标。 */
+    @Test
+    void persistsIdentityWhenMonitoringUnsupported() throws Exception {
+        HttpServer agent = monitorAgent("{\"status\":\"FAILED\",\"error\":\"MONITOR_OS_UNSUPPORTED\",\"systemInfo\":"
+            + SYSTEM_INFO.replace("Linux", "Darwin") + "}");
+        try {
+            ServerManagementService service = service(serverDatabase("system-unsupported", true), address(agent));
+            authenticate(7L);
+            ServerModels.ServerMonitorView result = service.monitor(1L);
+            assertEquals("MONITOR_OS_UNSUPPORTED", result.error());
+            assertNull(result.host());
+            assertEquals("Darwin", service.servers().get(0).systemInfo().family());
+        } finally { agent.stop(0); }
+    }
+
+    /** 系统信息异常不得影响已成功的连接，且不得污染列表。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "{}", "{\"family\":\"Linux\"}", "{\"detectedAt\":\"invalid\"}"})
+    void ignoresMalformedIdentity(String identity) throws Exception {
+        HttpServer agent = monitorAgent("{\"status\":\"SUCCEEDED\",\"systemInfo\":" + identity + "}");
+        try {
+            ServerManagementService service = service(serverDatabase("system-invalid-" + identity.hashCode(), true), address(agent));
+            authenticate(7L);
+            assertEquals("SUCCEEDED", service.test(1L).get("status"));
+            assertNull(service.servers().get(0).systemInfo());
+        } finally { agent.stop(0); }
+    }
+
+    /** 合法 SSH 成功响应中的超长、控制字符和伪造标识均不能保存。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"oversized", "control", "invalid-id", "invalid-date", "null-field"})
+    void rejectsUnsafeIdentityFields(String scenario) throws Exception {
+        String identity = switch (scenario) {
+            case "oversized" -> SYSTEM_INFO.replace("5.10.134", "a".repeat(257));
+            case "control" -> SYSTEM_INFO.replace("5.10.134", "bad\\u001bvalue");
+            case "invalid-id" -> SYSTEM_INFO.replace("alinux", "<script>");
+            case "invalid-date" -> SYSTEM_INFO.replace("2026-09-11T08:00:00Z", "bad-date");
+            default -> SYSTEM_INFO.replace("\"aarch64\"", "null");
+        };
+        HttpServer agent = monitorAgent("{\"status\":\"SUCCEEDED\",\"systemInfo\":" + identity + "}");
+        try {
+            ServerManagementService service = service(serverDatabase("unsafe-system-" + scenario, true), address(agent));
+            authenticate(7L);
+            assertEquals("SUCCEEDED", service.test(1L).get("status"));
+            assertNull(service.servers().get(0).systemInfo());
+        } finally { agent.stop(0); }
+    }
+
+    /** Agent HTTP 认证失败必须与内部通信故障区分，且不暴露响应体。 */
+    @Test
+    void distinguishesAgentAuthorizationAndTransportFailure() throws Exception {
+        HttpServer agent = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        agent.createContext("/monitor", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.sendResponseHeaders(401, -1);
+            exchange.close();
+        });
+        agent.start();
+        ServerManagementService service = service(serverDatabase("agent-transport", true), address(agent));
+        authenticate(7L);
+        try { assertEquals("server.agentUnauthorized", service.monitor(1L).error()); }
+        finally { agent.stop(0); }
+        assertEquals("server.agentUnavailable", service.monitor(1L).error());
+    }
+
+    /** 长时间探测返回后不能覆盖期间已经更新的连接配置。 */
+    @Test
+    void doesNotOverwriteConcurrentCredentialEdit() throws Exception {
+        JdbcTemplate database = serverDatabase("system-concurrent", true);
+        ConfigCryptoService crypto = new ConfigCryptoService(properties());
+        String replacement = crypto.encrypt("{\"host\":\"new-host\",\"privateKey\":\"NEW_PRIVATE\"}");
+        HttpServer agent = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        agent.createContext("/test", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            database.update("UPDATE managed_server SET config_encrypted=? WHERE id=1", replacement);
+            byte[] body = ("{\"status\":\"SUCCEEDED\",\"systemInfo\":" + SYSTEM_INFO + "}").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        agent.start();
+        try {
+            authenticate(7L);
+            service(database, address(agent)).test(1L);
+            assertEquals(replacement, database.queryForObject("SELECT config_encrypted FROM managed_server WHERE id=1", String.class));
+            assertNull(database.queryForObject("SELECT last_test_status FROM managed_server WHERE id=1", String.class));
+        } finally { agent.stop(0); }
+    }
+
+    /** 返回本地测试 Agent 地址。 */
+    private String address(HttpServer agent) { return "http://127.0.0.1:" + agent.getAddress().getPort(); }
+
+    /** 构造保留现有凭据的合法服务器编辑命令。 */
+    private ServerModels.ServerCommand serverCommand(String host) {
+        return new ServerModels.ServerCommand("renamed", "SSH", host, 22, "deploy", "KEY", "", "", "", "", "", "", true);
+    }
+
     /** 每个测试结束后清除线程级认证信息。 */
     @AfterEach
     void tearDown() { AuthContext.clear(); }
@@ -159,14 +307,16 @@ class ServerManagementMonitorTest {
     /** 创建返回固定 JSON 的监控 Agent 替身。 */
     private HttpServer monitorAgent(String json) throws Exception {
         HttpServer agent = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        agent.createContext("/monitor", exchange -> {
+        com.sun.net.httpserver.HttpHandler handler = exchange -> {
             exchange.getRequestBody().readAllBytes();
             byte[] response = json.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, response.length);
             exchange.getResponseBody().write(response);
             exchange.close();
-        });
+        };
+        agent.createContext("/monitor", handler);
+        agent.createContext("/test", handler);
         agent.start();
         return agent;
     }
@@ -179,15 +329,17 @@ class ServerManagementMonitorTest {
         database.execute("""
             CREATE TABLE managed_server(
               id BIGINT PRIMARY KEY,name VARCHAR(120),mode VARCHAR(12),owner_user_id BIGINT,
-              enabled BOOLEAN,voided BOOLEAN,config_encrypted CLOB)
+              enabled BOOLEAN,voided BOOLEAN,config_encrypted CLOB,host VARCHAR(255),port INT,username VARCHAR(64),
+              last_test_status VARCHAR(32),last_test_error VARCHAR(500),last_test_at TIMESTAMP,
+              created_at TIMESTAMP,updated_at TIMESTAMP)
             """);
         ConfigCryptoService crypto = new ConfigCryptoService(properties());
         String config = crypto.encrypt("""
-            {"host":"host","port":22,"username":"deploy","authType":"KEY","privateKey":"PRIVATE",
+            {"mode":"SSH","host":"host","port":22,"username":"deploy","authType":"KEY","privateKey":"PRIVATE",
              "password":"","passphrase":"","hostKey":"SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
              "workingDir":"/opt/base-ai","composeFile":"docker-compose.yml"}
             """);
-        database.update("INSERT INTO managed_server VALUES (1,'server','SSH',7,?,false,?)", enabled, config);
+        database.update("INSERT INTO managed_server(id,name,mode,owner_user_id,enabled,voided,config_encrypted,host,port,username) VALUES (1,'server','SSH',7,?,false,?,'host',22,'deploy')", enabled, config);
         return database;
     }
 

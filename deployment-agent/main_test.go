@@ -23,6 +23,72 @@ func TestMain(tests *testing.M) {
 	os.Exit(tests.Run())
 }
 
+// TestRemoteDiagnostics 验证 SSH 失败原因被分类且不会透传原始敏感输出。
+func TestRemoteDiagnostics(t *testing.T) {
+	for _, scenario := range []struct{ name, output, expected string }{
+		{"runtime user", "No user exists for uid 10001", "SSH_LOCAL_USER_MISSING"},
+		{"authentication", "Permission denied (publickey,password). password=secret", "SSH_AUTHENTICATION_FAILED"},
+		{"timeout", "connect to host hidden port 22: Connection timed out", "SSH_CONNECTION_TIMEOUT"},
+		{"refused", "connect to host hidden port 22: Connection refused", "SSH_CONNECTION_REFUSED"},
+		{"dns", "Could not resolve hostname hidden", "SSH_HOST_UNRESOLVED"},
+		{"network", "No route to host", "SSH_NETWORK_UNREACHABLE"},
+		{"key", "Load key hidden: error in libcrypto", "SSH_PRIVATE_KEY_INVALID"},
+		{"unknown", "password=secret unexpected failure", "SSH_COMMAND_FAILED"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			directory := t.TempDir()
+			if err := os.WriteFile(filepath.Join(directory, "ssh"), []byte("#!/bin/sh\nprintf '%s\\n' "+shellQuote(scenario.output)+" >&2\nexit 255\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", directory)
+			input := request{Mode: "SSH", Host: "localhost", Port: 22, Username: "deploy", AuthType: "PASSWORD", Password: "secret"}
+			_, err := runRemoteCommand(context.Background(), input, "true")
+			if err == nil || err.Error() != scenario.expected {
+				t.Fatalf("expected %s, got %v", scenario.expected, err)
+			}
+		})
+	}
+}
+
+// TestSystemInfoParsing 参数化覆盖常见发行版、缺失信息和不可信输入。
+func TestSystemInfoParsing(t *testing.T) {
+	for _, scenario := range []struct{ name, release, expectedName, expectedID string }{
+		{"aliyun", "ID=alinux\nPRETTY_NAME=\"Alibaba Cloud Linux 3\"\nVERSION_ID=\"3\"", "Alibaba Cloud Linux 3", "alinux"},
+		{"ubuntu", "ID=ubuntu\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"", "Ubuntu", "ubuntu"},
+		{"centos", "ID=centos\nPRETTY_NAME='CentOS Linux 7'", "CentOS Linux 7", "centos"},
+		{"missing", "", "Linux", ""},
+		{"oversized", "PRETTY_NAME=" + strings.Repeat("a", 257), "Linux", ""},
+		{"control", "PRETTY_NAME=bad\x1b[0m", "Linux", ""},
+		{"malicious", "ID=$(touch /tmp/forbidden)\nPRETTY_NAME=$(echo untrusted)", "$(echo untrusted)", ""},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			identity := parseSystemInfo("login banner\nBASEAI_OS_FAMILY\tLinux\nBASEAI_OS_KERNEL\t6.1\nBASEAI_OS_ARCH\taarch64\nBASEAI_OS_RELEASE_BEGIN\n" + scenario.release + "\nBASEAI_OS_RELEASE_END\n")
+			if identity == nil || identity.Name != scenario.expectedName || identity.ID != scenario.expectedID || identity.Kernel != "6.1" || identity.Architecture != "aarch64" {
+				t.Fatalf("unexpected system info: %+v", identity)
+			}
+			if _, err := time.Parse(time.RFC3339, identity.DetectedAt); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	if parseSystemInfo("legacy connection success") != nil {
+		t.Fatal("old responses must not invent an OS")
+	}
+	identity := parseSystemInfo("BASEAI_OS_FAMILY\tDarwin\nBASEAI_OS_KERNEL\t24.0\n")
+	if identity == nil || identity.Name != "Darwin" {
+		t.Fatal("non-Linux family must remain visible")
+	}
+	result, err := parseMonitorOutput("BASEAI_OS_FAMILY\tDarwin\nBASEAI_MONITOR_ERROR\tMONITOR_OS_UNSUPPORTED\n", "/")
+	if err == nil || err.Error() != "MONITOR_OS_UNSUPPORTED" || result.SystemInfo == nil {
+		t.Fatal("unsupported monitoring must retain OS identity")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if sshErrorCode(ctx, "") != "SSH_CONNECTION_TIMEOUT" {
+		t.Fatal("canceled SSH must report timeout")
+	}
+}
+
 // TestSSHPromptErrors 验证非法提示参数和输出失败均不返回成功。
 func TestSSHPromptErrors(t *testing.T) {
 	for _, arguments := range [][]string{nil, {"password", "extra"}, {"verification code"}} {

@@ -97,6 +97,17 @@ type monitorResult struct {
 	Host           hostMetrics       `json:"host"`
 	Containers     []containerStatus `json:"containers"`
 	ContainerError string            `json:"containerError,omitempty"`
+	SystemInfo     *systemInfo       `json:"systemInfo,omitempty"`
+}
+
+type systemInfo struct {
+	Family       string `json:"family"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+	Kernel       string `json:"kernel"`
+	Architecture string `json:"architecture"`
+	DetectedAt   string `json:"detectedAt"`
 }
 
 type agent struct {
@@ -192,7 +203,7 @@ func (a *agent) monitor(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := runner(ctx, input)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "FAILED", "error": trimOutput(err.Error())})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "FAILED", "error": err.Error(), "systemInfo": result.SystemInfo})
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -303,7 +314,7 @@ func (a *agent) handle(w http.ResponseWriter, r *http.Request, execute bool) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "FAILED", "error": trimOutput(err.Error())})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "SUCCEEDED", "output": trimOutput(output)})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "SUCCEEDED", "output": "CONNECTION_SUCCEEDED", "systemInfo": parseSystemInfo(output)})
 }
 
 // decodeRequest 限制请求体大小并拒绝未知字段和多余 JSON 内容。
@@ -776,12 +787,13 @@ func validateSSH(input request) error {
 // testConnection 仅验证 Agent 本地可用性或 SSH 登录，不依赖 Compose 项目。
 func testConnection(ctx context.Context, input request) (string, error) {
 	if input.Mode == "LOCAL" {
-		return "CONNECTION_SUCCEEDED", nil
+		output, _ := commandOutput(exec.CommandContext(ctx, "sh", "-c", systemInfoCommand()))
+		return output, nil
 	}
-	return runRemoteCommand(ctx, input, "printf 'BASEAI_CONNECTION_SUCCEEDED\\n'")
+	return runRemoteCommand(ctx, input, systemInfoCommand()+"\nprintf 'BASEAI_CONNECTION_SUCCEEDED\\n'")
 }
 
-// collectMonitor 使用固定脚本采集资源快照，SSH 模式仍执行严格主机指纹校验。
+// collectMonitor 使用固定只读脚本采集系统身份和资源快照。
 func collectMonitor(ctx context.Context, input request) (monitorResult, error) {
 	diskPath := "/workspace"
 	var output string
@@ -797,14 +809,19 @@ func collectMonitor(ctx context.Context, input request) (monitorResult, error) {
 		output, err = commandOutput(command)
 	}
 	if err != nil {
-		return monitorResult{}, errors.New(trimOutput(err.Error()))
+		return monitorResult{SystemInfo: parseSystemInfo(output)}, err
 	}
 	return parseMonitorOutput(output, diskPath)
 }
 
 // monitorCommand 返回不含用户输入的固定只读采集脚本。
 func monitorCommand(diskPath string) string {
-	return `set -eu
+	return systemInfoCommand() + `
+if [ "$(uname -s 2>/dev/null)" != Linux ]; then
+  printf 'BASEAI_MONITOR_ERROR\tMONITOR_OS_UNSUPPORTED\n'
+  exit 0
+fi
+set -eu
 cpu_first="$(head -n 1 /proc/stat)"
 sleep 1
 cpu_second="$(head -n 1 /proc/stat)"
@@ -825,6 +842,7 @@ printf 'BASEAI_DISK\t%s\n' "$disk_values"
 
 // parseMonitorOutput 将固定脚本输出转换为有界结构化监控结果。
 func parseMonitorOutput(output string, diskPath string) (monitorResult, error) {
+	identity := parseSystemInfo(output)
 	values := make(map[string]string)
 	for _, line := range strings.Split(output, "\n") {
 		parts := strings.SplitN(line, "\t", 2)
@@ -833,12 +851,102 @@ func parseMonitorOutput(output string, diskPath string) (monitorResult, error) {
 		}
 		values[parts[0]] = parts[1]
 	}
+	if values["BASEAI_MONITOR_ERROR"] == "MONITOR_OS_UNSUPPORTED" {
+		return monitorResult{SystemInfo: identity}, errors.New("MONITOR_OS_UNSUPPORTED")
+	}
 	host, err := parseHostMetrics(values, diskPath)
 	if err != nil {
-		return monitorResult{}, err
+		return monitorResult{SystemInfo: identity}, err
 	}
 	return monitorResult{Status: "SUCCEEDED", CollectedAt: time.Now().UTC().Format(time.RFC3339), Host: host,
-		Containers: []containerStatus{}}, nil
+		Containers: []containerStatus{}, SystemInfo: identity}, nil
+}
+
+// systemInfoCommand 只读取系统标识文件，不通过 source 或 eval 执行其内容。
+func systemInfoCommand() string {
+	return `printf 'BASEAI_OS_FAMILY\t%s\n' "$(uname -s 2>/dev/null || printf Unknown)"
+printf 'BASEAI_OS_KERNEL\t%s\n' "$(uname -r 2>/dev/null || true)"
+printf 'BASEAI_OS_ARCH\t%s\n' "$(uname -m 2>/dev/null || true)"
+printf 'BASEAI_OS_RELEASE_BEGIN\n'
+if [ -r /etc/os-release ]; then head -c 16384 /etc/os-release 2>/dev/null || true
+elif [ -r /usr/lib/os-release ]; then head -c 16384 /usr/lib/os-release 2>/dev/null || true
+fi
+printf '\nBASEAI_OS_RELEASE_END\n'
+`
+}
+
+// parseSystemInfo 解析有界系统文本，对缺失发行版保留内核家族信息。
+func parseSystemInfo(output string) *systemInfo {
+	identity := &systemInfo{DetectedAt: time.Now().UTC().Format(time.RFC3339)}
+	var name, pretty string
+	inRelease := false
+	for _, line := range strings.Split(output, "\n") {
+		if line == "BASEAI_OS_RELEASE_BEGIN" {
+			inRelease = true
+			continue
+		}
+		if line == "BASEAI_OS_RELEASE_END" {
+			inRelease = false
+			continue
+		}
+		if inRelease {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			value := strings.TrimSpace(parts[1])
+			if len(value) >= 2 && (value[0] == '"' && value[len(value)-1] == '"' || value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+			value = systemText(value)
+			switch parts[0] {
+			case "ID":
+				identity.ID = value
+			case "NAME":
+				name = value
+			case "PRETTY_NAME":
+				pretty = value
+			case "VERSION_ID":
+				identity.Version = value
+			}
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		switch parts[0] {
+		case "BASEAI_OS_FAMILY":
+			identity.Family = systemText(parts[1])
+		case "BASEAI_OS_KERNEL":
+			identity.Kernel = systemText(parts[1])
+		case "BASEAI_OS_ARCH":
+			identity.Architecture = systemText(parts[1])
+		}
+	}
+	if identity.Family == "" {
+		return nil
+	}
+	identity.Name = pretty
+	if identity.Name == "" {
+		identity.Name = name
+	}
+	if identity.Name == "" {
+		identity.Name = identity.Family
+	}
+	if !regexp.MustCompile(`^[a-z0-9._-]{1,64}$`).MatchString(identity.ID) {
+		identity.ID = ""
+	}
+	return identity
+}
+
+// systemText 拒绝过长或带控制字符的系统字段，避免污染页面和日志。
+func systemText(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 256 || strings.ContainsFunc(value, func(character rune) bool { return character < 32 || character >= 127 && character <= 159 }) {
+		return ""
+	}
+	return value
 }
 
 // parseHostMetrics 校验并计算 CPU、内存、磁盘、负载和运行时长。
@@ -1095,7 +1203,36 @@ func runRemoteCommand(ctx context.Context, input request, remoteCommand string) 
 		return "", err
 	}
 	defer cleanup()
-	return commandOutput(command)
+	var output, diagnostic boundedBuffer
+	output.limit, diagnostic.limit = 32768, 8192
+	command.Stdout, command.Stderr = &output, &diagnostic
+	if err := command.Run(); err != nil {
+		return output.String(), errors.New(sshErrorCode(ctx, diagnostic.String()))
+	}
+	return output.String(), nil
+}
+
+// sshErrorCode 仅暴露固定错误码，原始 SSH 输出和凭据不返回给调用方。
+func sshErrorCode(ctx context.Context, diagnostic string) string {
+	if ctx.Err() != nil {
+		return "SSH_CONNECTION_TIMEOUT"
+	}
+	diagnostic = strings.ToLower(diagnostic)
+	for _, category := range []struct{ fragment, code string }{
+		{"no user exists for uid", "SSH_LOCAL_USER_MISSING"},
+		{"load key", "SSH_PRIVATE_KEY_INVALID"},
+		{"permission denied", "SSH_AUTHENTICATION_FAILED"},
+		{"connection timed out", "SSH_CONNECTION_TIMEOUT"},
+		{"connection refused", "SSH_CONNECTION_REFUSED"},
+		{"could not resolve hostname", "SSH_HOST_UNRESOLVED"},
+		{"no route to host", "SSH_NETWORK_UNREACHABLE"},
+		{"network is unreachable", "SSH_NETWORK_UNREACHABLE"},
+	} {
+		if strings.Contains(diagnostic, category.fragment) {
+			return category.code
+		}
+	}
+	return "SSH_COMMAND_FAILED"
 }
 
 // containsFingerprint 精确匹配 ssh-keygen 输出中的 SHA-256 指纹字段。

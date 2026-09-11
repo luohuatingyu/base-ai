@@ -21,12 +21,38 @@
       <el-table-column prop="name" :label="t('servers.name')" min-width="180" />
       <el-table-column prop="mode" :label="t('servers.mode')" width="110" />
       <el-table-column prop="host" :label="t('servers.host')" min-width="180" />
+      <el-table-column :label="t('servers.operatingSystem')" min-width="260">
+        <template #default="scope">
+          <div v-if="scope.row.systemInfo" class="server-system">
+            <span class="system-icon" :data-system="systemIcon(scope.row.systemInfo)" role="img" :aria-label="scope.row.systemInfo.family">
+              <svg v-if="systemIcon(scope.row.systemInfo) === 'aliyun'" viewBox="0 0 32 32" aria-hidden="true"><path d="M12 7H6L2 11v10l4 4h6v-4H7V11h5zm8 0h6l4 4v10l-4 4h-6v-4h5V11h-5zM11 14h10v4H11z" fill="#ff6a00" /></svg>
+              <svg v-else-if="systemIcon(scope.row.systemInfo) === 'ubuntu'" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#e95420" /><circle cx="16" cy="16" r="7" fill="none" stroke="white" stroke-width="3" /><g fill="white" stroke="#e95420" stroke-width="2"><circle cx="7" cy="16" r="4" /><circle cx="21" cy="8" r="4" /><circle cx="21" cy="24" r="4" /></g></svg>
+              <span v-else-if="systemIcon(scope.row.systemInfo) === 'linux'" aria-hidden="true">🐧</span>
+              <span v-else-if="systemIcon(scope.row.systemInfo) === 'macos'" aria-hidden="true">🍎</span>
+              <span v-else-if="systemIcon(scope.row.systemInfo) === 'windows'" aria-hidden="true">🪟</span>
+              <el-icon v-else><Monitor /></el-icon>
+            </span>
+            <details class="system-details">
+              <summary>{{ scope.row.systemInfo.name }}<small v-if="scope.row.systemInfo.version">{{ t('servers.osVersion') }} {{ scope.row.systemInfo.version }}</small></summary>
+              <div>{{ t('servers.osKernel') }}: {{ scope.row.systemInfo.kernel || '-' }}</div>
+              <div>{{ t('servers.osArchitecture') }}: {{ scope.row.systemInfo.architecture || '-' }}</div>
+              <div>{{ t('servers.osDetectedAt') }}: {{ formatCollectedAt(scope.row.systemInfo.detectedAt) }}</div>
+            </details>
+          </div>
+          <span v-else class="system-unknown">{{ t('servers.osNotDetected') }}</span>
+        </template>
+      </el-table-column>
       <el-table-column :label="t('common.status')" width="100">
         <template #default="scope">
           {{ scope.row.enabled ? t('common.enabled') : t('common.disabled') }}
         </template>
       </el-table-column>
-      <el-table-column prop="lastTestStatus" :label="t('servers.testStatus')" width="140" />
+      <el-table-column :label="t('servers.testStatus')" min-width="160">
+        <template #default="scope">
+          <div>{{ scope.row.lastTestStatus || '-' }}</div>
+          <small v-if="scope.row.lastTestError" class="server-test-error">{{ monitorErrorText(scope.row.lastTestError) }}</small>
+        </template>
+      </el-table-column>
       <el-table-column :label="t('common.operation')" width="330" fixed="right">
         <template #default="scope">
           <div class="table-actions">
@@ -501,6 +527,7 @@ async function refreshMonitor() {
   try {
     const { data } = await http.get(`/servers/${monitorServer.value.id}/monitor`)
     monitorData.value = data
+    if (data?.systemInfo) monitorServer.value.systemInfo = data.systemInfo
   } catch (error) {
     showHttpError(error, 'servers.monitorFailed')
   } finally {
@@ -563,12 +590,37 @@ function formatCollectedAt(value) {
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
 }
 
+// 根据探测结果选择本地图标，未知发行版回退到系统家族图标。
+function systemIcon(identity) {
+  if (identity?.family === 'Linux') {
+    if (['alinux', 'alios', 'anolis'].includes(identity.id)) return 'aliyun'
+    if (identity.id === 'ubuntu') return 'ubuntu'
+    return 'linux'
+  }
+  if (identity?.family === 'Darwin') return 'macos'
+  if (/^(Windows|MINGW|MSYS|CYGWIN)/i.test(identity?.family || '')) return 'windows'
+  return 'unknown'
+}
+
 // 将 Backend 监控错误键转换为当前语言的安全提示。
 function monitorErrorText(value) {
   const messages = {
     'server.agentNotConfigured': 'servers.agentNotConfigured',
     'server.agentInvalidResponse': 'servers.agentInvalidResponse',
     'server.monitorFailed': 'servers.monitorFailed',
+    'server.testFailed': 'servers.testFailed',
+    'server.agentUnavailable': 'servers.agentUnavailable',
+    'server.agentUnauthorized': 'servers.agentUnauthorized',
+    SSH_LOCAL_USER_MISSING: 'servers.sshLocalUserMissing',
+    SSH_AUTHENTICATION_FAILED: 'servers.sshAuthenticationFailed',
+    SSH_CONNECTION_TIMEOUT: 'servers.sshConnectionTimeout',
+    SSH_CONNECTION_REFUSED: 'servers.sshConnectionRefused',
+    SSH_HOST_UNRESOLVED: 'servers.sshHostUnresolved',
+    SSH_NETWORK_UNREACHABLE: 'servers.sshNetworkUnreachable',
+    SSH_PRIVATE_KEY_INVALID: 'servers.sshPrivateKeyInvalid',
+    SSH_COMMAND_FAILED: 'servers.sshCommandFailed',
+    MONITOR_OS_UNSUPPORTED: 'servers.monitorOsUnsupported',
+    MONITOR_OUTPUT_INVALID: 'servers.monitorOutputInvalid',
   }
   return messages[value] ? t(messages[value]) : String(value || t('servers.monitorFailed'))
 }
@@ -578,6 +630,14 @@ onMounted(load)
 
 <style scoped>
 .servers-table { margin-top: 20px; }
+.server-system { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; }
+.system-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; height: 30px; font-size: 26px; }
+.system-icon svg { width: 30px; height: 30px; }
+.system-details { min-width: 0; overflow-wrap: anywhere; }
+.system-details summary { cursor: pointer; color: var(--el-text-color-primary); }
+.system-details small { display: block; }
+.system-details div, .system-details small, .system-unknown { color: var(--el-text-color-secondary); font-size: 12px; }
+.server-test-error { color: var(--el-color-danger); overflow-wrap: anywhere; }
 .server-editor-dialog,
 .server-monitor-dialog { max-height: 90vh; overflow: hidden; }
 .server-editor-dialog :deep(.el-dialog__body),

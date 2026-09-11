@@ -8,6 +8,42 @@ import { MAX_PRIVATE_KEY_FILE_SIZE, readPrivateKeyFile } from '../src/utils/serv
 
 const viewSource = readFileSync(new URL('../src/views/ServersView.vue', import.meta.url), 'utf8')
 
+// 验证操作系统识别结果对应图标，并用文本插值安全展示完整系统信息。
+test('服务器列表展示系统图标、版本、内核、架构和探测时间', () => {
+  const source = viewSource.match(/function systemIcon\(identity\) \{[\s\S]*?\n\}/)[0]
+  const icon = runInNewContext(`(${source})`)
+  for (const [identity, expected] of [
+    [{ family: 'Linux', id: 'alinux' }, 'aliyun'],
+    [{ family: 'Linux', id: 'ubuntu' }, 'ubuntu'],
+    [{ family: 'Linux', id: 'centos' }, 'linux'],
+    [{ family: 'Linux', id: '<script>' }, 'linux'],
+    [{ family: 'Darwin' }, 'macos'],
+    [{ family: 'Windows_NT' }, 'windows'],
+    [{ family: 'Unknown' }, 'unknown'],
+    [null, 'unknown'],
+  ]) assert.equal(icon(identity), expected)
+  for (const field of ['name', 'version', 'kernel', 'architecture', 'detectedAt']) {
+    assert.ok(viewSource.includes(`scope.row.systemInfo.${field}`))
+  }
+  assert.doesNotMatch(viewSource, /v-html/)
+  for (const key of ['operatingSystem', 'osNotDetected', 'osKernel', 'osArchitecture', 'osDetectedAt']) {
+    assert.ok(zhCN.servers[key])
+    assert.ok(enUS.servers[key])
+  }
+})
+
+// 验证安全错误码在两种语言中均有具体故障解释。
+test('连接与监控错误映射保留可操作的故障原因', () => {
+  const source = viewSource.match(/function monitorErrorText\(value\) \{[\s\S]*?\n\}/)[0]
+  for (const locale of [zhCN, enUS]) {
+    const translate = runInNewContext(`(${source})`, { t: key => locale.servers[key.split('.')[1]] })
+    for (const code of ['SSH_LOCAL_USER_MISSING', 'SSH_AUTHENTICATION_FAILED', 'SSH_CONNECTION_TIMEOUT', 'SSH_CONNECTION_REFUSED', 'SSH_HOST_UNRESOLVED', 'SSH_NETWORK_UNREACHABLE', 'SSH_PRIVATE_KEY_INVALID', 'SSH_COMMAND_FAILED', 'MONITOR_OS_UNSUPPORTED', 'MONITOR_OUTPUT_INVALID', 'server.agentUnavailable', 'server.agentUnauthorized']) {
+      const message = translate(code)
+      assert.ok(message && message !== code, code)
+    }
+  }
+})
+
 test('服务器页面支持手工新增 SSH 配置并保留本地模式兼容', () => {
   assert.match(viewSource, /mode: 'SSH'/)
   assert.match(viewSource, /operations:server:create/)

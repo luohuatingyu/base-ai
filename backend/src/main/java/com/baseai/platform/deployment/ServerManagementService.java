@@ -54,6 +54,10 @@ public class ServerManagementService {
     private static final Pattern REVISION_PATTERN = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}");
     private static final Pattern AGENT_JOB_PATTERN = Pattern.compile("[a-f0-9]{32}");
     private static final String AGENT_JOB_PREFIX = "agent-job:";
+    private static final Set<String> DIAGNOSTIC_CODES = Set.of("SSH_LOCAL_USER_MISSING", "SSH_AUTHENTICATION_FAILED",
+        "SSH_CONNECTION_TIMEOUT", "SSH_CONNECTION_REFUSED", "SSH_HOST_UNRESOLVED", "SSH_NETWORK_UNREACHABLE",
+        "SSH_PRIVATE_KEY_INVALID", "SSH_COMMAND_FAILED", "MONITOR_OS_UNSUPPORTED", "MONITOR_OUTPUT_INVALID",
+        "server.agentNotConfigured", "server.agentInvalidResponse", "server.agentUnavailable", "server.agentUnauthorized");
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ConfigCryptoService cryptoService;
@@ -157,9 +161,17 @@ public class ServerManagementService {
         requireEnabled(server);
         Map<String, Object> result = callAgent("test", server, "STATUS", "", "");
         String status = agentStatus(result);
-        String error = result.get("error") == null ? null : safeText(String.valueOf(result.get("error")), 500);
-        jdbcTemplate.update("UPDATE managed_server SET last_test_status=?,last_test_error=?,last_test_at=NOW(),updated_at=NOW() WHERE id=?", status, error, id);
-        return result;
+        String error = "SUCCEEDED".equals(status) ? null : diagnosticCode(result.get("error"), "server.testFailed");
+        jdbcTemplate.update("UPDATE managed_server SET last_test_status=?,last_test_error=?,last_test_at=NOW(),updated_at=NOW() WHERE id=? AND voided=false AND config_encrypted=?",
+            status, error, id, server.encryptedConfig());
+        ServerModels.SystemInfoView identity = "SUCCEEDED".equals(status) ? normalizeSystemInfo(result.get("systemInfo")) : null;
+        persistSystemInfo(server, identity);
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("status", status);
+        if ("SUCCEEDED".equals(status)) response.put("output", "CONNECTION_SUCCEEDED");
+        if (error != null) response.put("error", error);
+        if (identity != null) response.put("systemInfo", identity);
+        return response;
     }
 
     /** 通过隔离 Agent 实时查询服务器资源，不持久化监控快照。 */
@@ -167,7 +179,9 @@ public class ServerManagementService {
         ServerRecord server = require(id);
         requireOwner(server.ownerUserId());
         requireEnabled(server);
-        return callAgentMonitor(server);
+        ServerModels.ServerMonitorView result = callAgentMonitor(server);
+        persistSystemInfo(server, result.systemInfo());
+        return result;
     }
 
     /** 异步执行固定的部署或回滚动作。 */
@@ -294,7 +308,7 @@ public class ServerManagementService {
             return result == null ? Map.of("status", "FAILED", "error", "server.agentInvalidResponse") : result;
         } catch (Exception exception) {
             if ("execute".equals(path)) return Map.of("status", "UNKNOWN", "jobId", jobId);
-            return Map.of("status", "FAILED", "error", safeText(exception.getMessage() == null ? "server.testFailed" : exception.getMessage(), 500));
+            return Map.of("status", "FAILED", "error", agentTransportError(exception));
         }
     }
 
@@ -307,10 +321,12 @@ public class ServerManagementService {
                 .body(agentPayload(server, "", "", "")).retrieve()
                 .body(new ParameterizedTypeReference<>() { });
             if (result == null) return failedMonitor("server.agentInvalidResponse");
+            result = new java.util.LinkedHashMap<>(result);
+            result.put("systemInfo", normalizeSystemInfo(result.get("systemInfo")));
             ServerModels.ServerMonitorView monitor = objectMapper.convertValue(result, ServerModels.ServerMonitorView.class);
             return normalizeMonitor(monitor);
         } catch (Exception exception) {
-            return failedMonitor("server.monitorFailed");
+            return failedMonitor(agentTransportError(exception));
         }
     }
 
@@ -332,12 +348,14 @@ public class ServerManagementService {
             return failedMonitor("server.agentInvalidResponse");
         }
         String status = text(monitor.status()).toUpperCase(Locale.ROOT);
-        if ("FAILED".equals(status)) return failedMonitor("server.monitorFailed");
+        ServerModels.SystemInfoView identity = normalizeSystemInfo(monitor.systemInfo());
+        if ("FAILED".equals(status)) return new ServerModels.ServerMonitorView("FAILED", Instant.now(), null,
+            List.of(), null, diagnosticCode(monitor.error(), "server.monitorFailed"), identity);
         if (monitor.collectedAt() == null || !validHostMetrics(monitor.host())) {
             return failedMonitor("server.agentInvalidResponse");
         }
         return new ServerModels.ServerMonitorView("SUCCEEDED", monitor.collectedAt(), monitor.host(), List.of(),
-            null, null);
+            null, null, identity);
     }
 
     /** 验证 Agent 返回的主机资源不存在负值、非有限值或越界百分比。 */
@@ -356,7 +374,55 @@ public class ServerManagementService {
         String normalized = text(error);
         if (normalized.isBlank()) normalized = "server.monitorFailed";
         return new ServerModels.ServerMonitorView("FAILED", Instant.now(), null, List.of(), null,
-            safeText(normalized, 500));
+            safeText(normalized, 500), null);
+    }
+
+    /** 仅允许固定诊断码跨越 Agent 信任边界，隐藏任意远端文本。 */
+    private String diagnosticCode(Object error, String fallback) {
+        String code = error instanceof String value ? value : "";
+        return DIAGNOSTIC_CODES.contains(code) ? code : fallback;
+    }
+
+    /** 区分 Agent 身份校验与通信故障，不将内部 URL 和异常详情返回页面。 */
+    private String agentTransportError(Exception exception) {
+        if (exception instanceof IllegalArgumentException) return "server.agentInvalidResponse";
+        if (exception instanceof org.springframework.web.client.RestClientResponseException response
+            && (response.getStatusCode().value() == 401 || response.getStatusCode().value() == 403)) {
+            return "server.agentUnauthorized";
+        }
+        return "server.agentUnavailable";
+    }
+
+    /** 校验系统信息各字段长度及控制字符，兼容没有系统信息的旧 Agent。 */
+    private ServerModels.SystemInfoView normalizeSystemInfo(Object value) {
+        if (value == null) return null;
+        try {
+            ServerModels.SystemInfoView identity = objectMapper.convertValue(value, ServerModels.SystemInfoView.class);
+            if (identity == null || identity.detectedAt() == null || text(identity.family()).isBlank()
+                || text(identity.name()).isBlank()) return null;
+            for (String field : new String[]{identity.family(), identity.id(), identity.name(), identity.version(), identity.kernel(), identity.architecture()}) {
+                if (field == null || field.length() > 256 || field.chars().anyMatch(Character::isISOControl)) return null;
+            }
+            if (!identity.id().isEmpty() && !identity.id().matches("[a-z0-9._-]{1,64}")) return null;
+            return identity;
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    /** 以密文乐观锁保存系统信息，防止慢探测覆盖并发编辑的新目标或凭据。 */
+    private void persistSystemInfo(ServerRecord server, ServerModels.SystemInfoView identity) {
+        if (identity == null) return;
+        ObjectNode config = server.config().deepCopy();
+        config.set("systemInfo", objectMapper.valueToTree(identity));
+        jdbcTemplate.update("UPDATE managed_server SET config_encrypted=? WHERE id=? AND voided=false AND config_encrypted=?",
+            encrypt(config), server.id(), server.encryptedConfig());
+    }
+
+    /** 比较实际连接目标，仅在目标未变化时保留最近一次系统探测信息。 */
+    private boolean sameTarget(JsonNode old, JsonNode current) {
+        return List.of("mode", "host", "port", "username").stream()
+            .allMatch(field -> old.path(field).equals(current.path(field)));
     }
 
     /** 判断整数资源字段为正数。 */
@@ -505,9 +571,9 @@ public class ServerManagementService {
     /** 校验资源所有者。 */
     private void requireOwner(Long ownerId) { AuthUser user = AuthContext.require(); if (!user.roles().contains("ADMIN") && !user.id().equals(ownerId)) throw BusinessException.forbidden("server.accessForbidden"); }
     /** 映射脱敏服务器视图。 */
-    private ServerModels.ServerView map(ResultSet rs) throws SQLException { ServerRecord record = mapRecord(rs); JsonNode config = record.config(); return new ServerModels.ServerView(record.id(), record.name(), record.mode(), rs.getString("host"), rs.getObject("port", Integer.class), rs.getString("username"), value(config, "authType"), mask(value(config, "hostKey")), value(config, "workingDir"), value(config, "composeFile"), record.enabled(), rs.getString("last_test_status"), rs.getString("last_test_error"), timestamp(rs, "last_test_at"), record.ownerUserId(), timestamp(rs, "created_at"), timestamp(rs, "updated_at")); }
+    private ServerModels.ServerView map(ResultSet rs) throws SQLException { ServerRecord record = mapRecord(rs); JsonNode config = record.config(); return new ServerModels.ServerView(record.id(), record.name(), record.mode(), rs.getString("host"), rs.getObject("port", Integer.class), rs.getString("username"), value(config, "authType"), mask(value(config, "hostKey")), value(config, "workingDir"), value(config, "composeFile"), record.enabled(), rs.getString("last_test_status"), rs.getString("last_test_error"), timestamp(rs, "last_test_at"), record.ownerUserId(), timestamp(rs, "created_at"), timestamp(rs, "updated_at"), normalizeSystemInfo(config.get("systemInfo"))); }
     /** 映射内部服务器记录并解密配置。 */
-    private ServerRecord mapRecord(ResultSet rs) throws SQLException { return new ServerRecord(rs.getLong("id"), rs.getString("name"), rs.getString("mode"), rs.getLong("owner_user_id"), rs.getBoolean("enabled"), decrypt(rs.getString("config_encrypted"))); }
+    private ServerRecord mapRecord(ResultSet rs) throws SQLException { return new ServerRecord(rs.getLong("id"), rs.getString("name"), rs.getString("mode"), rs.getLong("owner_user_id"), rs.getBoolean("enabled"), decrypt(rs.getString("config_encrypted")), rs.getString("config_encrypted")); }
     /** 查询服务器视图。 */
     private ServerModels.ServerView server(Long id) { return jdbcTemplate.query("SELECT * FROM managed_server WHERE id=? AND voided=false", (rs, row) -> map(rs), id).stream().findFirst().orElseThrow(() -> BusinessException.notFound("server.notFound")); }
     /** 查询部署视图。 */
@@ -531,6 +597,7 @@ public class ServerManagementService {
     /** 更新时保留未重新输入的脱敏凭据。 */
     ObjectNode merge(JsonNode old, ServerModels.ServerCommand command) {
         ObjectNode object = configuration(command);
+        if (sameTarget(old, object) && old.has("systemInfo")) object.set("systemInfo", old.get("systemInfo"));
         if ("LOCAL".equals(mode(command.mode()))) {
             for (String field : List.of("privateKey", "password", "passphrase", "hostKey")) object.put(field, "");
             return object;
@@ -571,7 +638,7 @@ public class ServerManagementService {
     private String safeText(String value, int max) { return truncate(text(value).replaceAll("(?i)(password|secret|token|passphrase)(?:=|\\\"\\s*:\\s*\\\")[^\\s,}\"]+", "$1=******"), max); }
     /** 转换 SQL 时间。 */
     private LocalDateTime timestamp(ResultSet rs, String name) throws SQLException { java.sql.Timestamp value = rs.getTimestamp(name); return value == null ? null : value.toLocalDateTime(); }
-    private record ServerRecord(Long id, String name, String mode, Long ownerUserId, boolean enabled, JsonNode config) { }
+    private record ServerRecord(Long id, String name, String mode, Long ownerUserId, boolean enabled, JsonNode config, String encryptedConfig) { }
     private record DeploymentRecord(Long id, Long serverId, Long ownerUserId) { }
     private record PendingDeployment(Long id, String traceId, String jobId, LocalDateTime startedAt) { }
 }
