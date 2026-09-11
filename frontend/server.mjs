@@ -71,7 +71,7 @@ function serve(request, response) {
   fs.createReadStream(safePath).pipe(response)
 }
 
-http.createServer((request, response) => {
+const server = http.createServer((request, response) => {
   if (request.url === '/runtime-config.js') {
     response.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store' })
     return response.end(`window.__APP_CONFIG__=${JSON.stringify(platformConfig)};`)
@@ -82,3 +82,32 @@ http.createServer((request, response) => {
   }
   return request.url.startsWith('/api/') ? proxy(request, response) : serve(request, response)
 }).listen(port, '0.0.0.0')
+
+/** 仅代理终端升级请求，保留原始 Host 供后端验证浏览器同源。 */
+server.on('upgrade', (request, socket, head) => {
+  if (request.url !== '/api/servers/terminal/socket') { socket.destroy(); return }
+  const upstream = http.request({
+    hostname: backend.hostname,
+    port: backend.port || 80,
+    path: request.url,
+    method: 'GET',
+    headers: request.headers
+  })
+  upstream.setTimeout(15000, () => upstream.destroy())
+  upstream.on('upgrade', (response, remote, remoteHead) => {
+    upstream.setTimeout(0)
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\n${Object.entries(response.headers).map(([name, value]) => `${name}: ${value}\r\n`).join('')}\r\n`)
+    if (remoteHead.length) socket.write(remoteHead)
+    if (head.length) remote.write(head)
+    remote.pipe(socket)
+    socket.pipe(remote)
+    remote.on('error', () => socket.destroy())
+    remote.on('close', () => socket.destroy())
+    socket.on('close', () => remote.destroy())
+  })
+  upstream.on('response', response => { response.resume(); socket.destroy() })
+  upstream.on('error', () => socket.destroy())
+  socket.on('error', () => upstream.destroy())
+  socket.on('close', () => upstream.destroy())
+  upstream.end()
+})

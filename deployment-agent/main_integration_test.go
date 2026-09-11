@@ -59,7 +59,7 @@ func TestSSHIntegration(t *testing.T) {
 		t.Run(fmt.Sprintf("server-%d-%s", index, method), func(t *testing.T) {
 			hostKey := generate(fmt.Sprintf("host-%d", index), "")
 			config := filepath.Join(root, fmt.Sprintf("sshd-%d", index))
-			contents := fmt.Sprintf("Port 2222\nListenAddress 127.0.0.1\nHostKey %s\nPidFile %s\nAuthorizedKeysFile %s\nStrictModes no\nPermitRootLogin yes\nPasswordAuthentication yes\nPubkeyAuthentication yes\nAuthenticationMethods %s\nUsePAM no\n", hostKey, filepath.Join(root, "sshd.pid"), authorized, method)
+			contents := fmt.Sprintf("Port 2222\nListenAddress 127.0.0.1\nHostKey %s\nPidFile %s\nAuthorizedKeysFile %s\nStrictModes no\nPermitRootLogin yes\nPasswordAuthentication yes\nPubkeyAuthentication yes\nAuthenticationMethods %s\nUsePAM no\nPerSourcePenalties no\n", hostKey, filepath.Join(root, "sshd.pid"), authorized, method)
 			if err := os.WriteFile(config, []byte(contents), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -99,6 +99,7 @@ func TestSSHIntegration(t *testing.T) {
 				t.Fatalf("real SSH authentication: %v: %s", err, output)
 			}
 			connectionOutput, err := testConnection(ctx, input)
+			exerciseTerminal(t, input, hostKey)
 			identity := parseSystemInfo(connectionOutput)
 			if err != nil || identity == nil || identity.Family != "Linux" || identity.ID != "alpine" {
 				t.Fatalf("real SSH system detection: %v: %+v", err, identity)
@@ -133,7 +134,7 @@ func TestSSHIntegration(t *testing.T) {
 				timeoutContext, stop := context.WithTimeout(context.Background(), time.Second)
 				defer stop()
 				if _, err := runRemoteCommand(timeoutContext, input, "sleep 30"); err == nil || timeoutContext.Err() != context.DeadlineExceeded {
-					t.Fatal("SSH execution did not stop at its deadline")
+					t.Fatalf("SSH execution did not stop at its deadline: execution=%v context=%v", err, timeoutContext.Err())
 				}
 				input.Passphrase = "wrong"
 				if _, err := runRemoteCommand(ctx, input, "true"); err == nil {

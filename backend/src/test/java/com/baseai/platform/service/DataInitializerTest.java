@@ -295,6 +295,7 @@ class DataInitializerTest {
             "automation:device-agent:create", "automation:device-agent:update",
             "automation:device-agent:delete", "automation:device-agent:execute")));
         assertFalse(permissions.contains("operations:monitoring:catalog"));
+        assertFalse(permissions.contains("operations:server:shell"));
         assertFalse(permissions.contains("system:user:list"));
     }
 

@@ -120,6 +120,21 @@ public class ServerManagementService {
             value(config, "hostKey"), server.ownerUserId());
     }
 
+    /** 为终端解析凭据，强制检查独立权限、所有权和 SSH 启用状态。 */
+    public ObjectNode shellTarget(Long id) {
+        AuthUser user = AuthContext.require();
+        if (!(user.roles().contains("ADMIN") || user.permissions().contains("operations:server:shell"))) {
+            throw BusinessException.forbidden("auth.permissionDenied");
+        }
+        ServerRecord server = require(id);
+        requireOwner(server.ownerUserId());
+        requireEnabled(server);
+        if (!"SSH".equals(server.mode())) throw new BusinessException("server.invalid");
+        ObjectNode config = executionConfig(server).deepCopy();
+        config.put("mode", server.mode());
+        return config;
+    }
+
     /** 创建本地或 SSH 服务器配置。 */
     @Transactional
     public ServerModels.ServerView create(ServerModels.ServerCommand command) {

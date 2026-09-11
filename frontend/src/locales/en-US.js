@@ -456,6 +456,15 @@ export default {
     required: 'Enter a label and an account when setting a password.', deleteConfirm: 'Delete credential “{label}”? Referenced credentials cannot be deleted.'
   },
   servers: {
+    terminal: 'Terminal',
+    terminalConnecting: 'Connecting…',
+    terminalConnected: 'Connected',
+    terminalDisconnected: 'Disconnected. You can start a new session.',
+    terminalFailed: 'Connection failed or session expired. Check access and SSH connectivity.',
+    terminalReconnect: 'Reconnect',
+    terminalDisconnect: 'Disconnect',
+    terminalFullscreen: 'Toggle fullscreen',
+    terminalHint: 'SSH session · Ctrl+C interrupts · Closing disconnects · 5 min idle / 30 min maximum',
     operatingSystem: 'Operating System', osVersion: 'Version', osKernel: 'Kernel', osArchitecture: 'Architecture', osDetectedAt: 'Last detected', osNotDetected: 'Not detected · Test connection or open monitoring',
     agentUnavailable: 'Cannot reach the deployment Agent. Check its service and network.', agentUnauthorized: 'Deployment Agent authentication failed. Check the internal token.',
     sshLocalUserMissing: 'The Agent runtime user does not exist. Rebuild the deployment Agent image.', sshAuthenticationFailed: 'SSH authentication failed. Check the username, password, key and remote authentication policy.',

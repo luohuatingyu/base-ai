@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import http from 'node:http'
 import test from 'node:test'
+import { createHash } from 'node:crypto'
 
 /** 在回环地址获取一个临时端口并立即释放给被测进程。 */
 async function availablePort() {
@@ -11,6 +12,60 @@ async function availablePort() {
   await new Promise(resolve => server.close(resolve))
   return port
 }
+
+/** 验证生产代理保持 Host、双向终端字节和断连清理。 */
+test('frontend proxies terminal WebSocket upgrade and binary output', async () => {
+  const backendPort = await availablePort()
+  const frontendPort = await availablePort()
+  const backend = http.createServer()
+  let upstreamSocket
+  let resolveInput
+  const input = new Promise(resolve => { resolveInput = resolve })
+  backend.on('upgrade', (request, socket) => {
+    upstreamSocket = socket
+    assert.equal(request.headers.host, `127.0.0.1:${frontendPort}`)
+    assert.equal(request.url, '/api/servers/terminal/socket')
+    const accept = createHash('sha1').update(request.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
+    socket.write(Buffer.from([0x82, 3, 0x53, 0x53, 0x48]))
+    let buffered = Buffer.alloc(0)
+    socket.on('data', chunk => {
+      buffered = Buffer.concat([buffered, chunk])
+      if (buffered.length < 6) return
+      const length = buffered[1] & 127
+      if (buffered.length < 6 + length) return
+      const payload = Buffer.from(buffered.subarray(6, 6 + length))
+      for (let index = 0; index < length; index++) payload[index] ^= buffered[2 + index % 4]
+      resolveInput(payload.toString())
+    })
+  })
+  await new Promise(resolve => backend.listen(backendPort, '127.0.0.1', resolve))
+  const diagnostics = []
+  const child = spawn(process.execPath, ['server.mjs'], {
+    env: { ...process.env, PORT: String(frontendPort), BACKEND_URL: `http://127.0.0.1:${backendPort}` },
+    stdio: ['ignore', 'ignore', 'pipe']
+  })
+  child.stderr.on('data', chunk => diagnostics.push(chunk.toString()))
+  let socket
+  try {
+    await waitForHealth(`http://127.0.0.1:${frontendPort}`, child, diagnostics)
+    socket = new WebSocket(`ws://127.0.0.1:${frontendPort}/api/servers/terminal/socket`)
+    socket.binaryType = 'arraybuffer'
+    const output = new Promise((resolve, reject) => {
+      socket.onmessage = event => resolve(Buffer.from(event.data).toString())
+      socket.onerror = reject
+    })
+    await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
+    socket.send('pwd\r')
+    assert.equal(await output, 'SSH')
+    assert.equal(await input, 'pwd\r')
+  } finally {
+    socket?.close()
+    upstreamSocket?.destroy()
+    await stop(child)
+    await new Promise(resolve => backend.close(resolve))
+  }
+})
 
 /** 等待 Frontend 健康端点可用，超时后保留子进程诊断信息。 */
 async function waitForHealth(origin, child, diagnostics) {

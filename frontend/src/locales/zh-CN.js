@@ -482,6 +482,15 @@ export default {
     required: '请填写标签并选择类型：账号密码需要账号和密码，秘钥需要私钥；已保存的秘密可留空保留。', deleteConfirm: '确认删除凭据“{label}”？被服务器引用的凭据不能删除。'
   },
   servers: {
+    terminal: '终端',
+    terminalConnecting: '正在连接…',
+    terminalConnected: '已连接',
+    terminalDisconnected: '连接已断开，可以重新建立会话。',
+    terminalFailed: '连接失败或会话已过期，请检查权限及 SSH 连通性。',
+    terminalReconnect: '重新连接',
+    terminalDisconnect: '断开连接',
+    terminalFullscreen: '切换全屏',
+    terminalHint: 'SSH 会话 · Ctrl+C 中断 · 关闭窗口即断开 · 空闲 5 分钟 / 最长 30 分钟',
     operatingSystem: '操作系统', osVersion: '版本', osKernel: '内核', osArchitecture: '架构', osDetectedAt: '最近探测', osNotDetected: '未探测 · 请测试连接或打开监控',
     agentUnavailable: '无法访问部署 Agent，请检查 Agent 服务及网络', agentUnauthorized: '部署 Agent 内部认证失败，请检查令牌配置',
     sshLocalUserMissing: 'Agent 运行用户不存在，请重新构建部署 Agent 镜像', sshAuthenticationFailed: 'SSH 认证失败，请检查用户名、密码、私钥及远端认证策略',

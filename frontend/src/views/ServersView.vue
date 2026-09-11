@@ -19,6 +19,7 @@
     </div>
     <el-alert :title="t('servers.securityNotice')" type="warning" show-icon :closable="false" />
     <ServerCredentialManager v-model="credentialsVisible" @changed="loadCredentials" />
+    <ServerTerminal v-if="terminalServer" :server="terminalServer" @close="terminalServer = null" />
     <el-table :data="rows" v-loading="loading" class="servers-table">
       <el-table-column prop="name" :label="t('servers.name')" min-width="180" />
       <el-table-column prop="mode" :label="t('servers.mode')" width="110" />
@@ -55,9 +56,16 @@
           <small v-if="scope.row.lastTestError" class="server-test-error">{{ monitorErrorText(scope.row.lastTestError) }}</small>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.operation')" width="330" fixed="right">
+      <el-table-column :label="t('common.operation')" width="390" fixed="right">
         <template #default="scope">
           <div class="table-actions">
+            <el-button
+              v-if="auth.isAdmin || auth.user?.permissions?.includes('operations:server:shell')"
+              link
+              type="primary"
+              :disabled="!scope.row.enabled || scope.row.mode !== 'SSH'"
+              @click="terminalServer = scope.row"
+            >{{ t('servers.terminal') }}</el-button>
             <el-button
               v-if="auth.hasPermission('operations:server:test')"
               link
@@ -420,10 +428,12 @@ import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { readPrivateKeyFile } from '../utils/serverCredentials'
 import ServerCredentialManager from '../components/ServerCredentialManager.vue'
+import ServerTerminal from '../components/ServerTerminal.vue'
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
+const terminalServer = ref(null)
 const loading = ref(false)
 const visible = ref(false)
 const saving = ref(false)

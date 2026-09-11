@@ -128,6 +128,7 @@ func main() {
 	a := &agent{token: token, jobs: make(map[string]*deploymentJob)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", a.health)
+	mux.HandleFunc("/terminal", a.terminal)
 	mux.HandleFunc("/test", a.test)
 	mux.HandleFunc("/monitor", a.monitor)
 	mux.HandleFunc("/execute", a.execute)

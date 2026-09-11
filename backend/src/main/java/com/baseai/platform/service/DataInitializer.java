@@ -206,7 +206,7 @@ public class DataInitializer implements ApplicationRunner {
             || "automation:catalog".equals(menu.getPermission())
             || menu.getPermission() != null && (menu.getPermission().startsWith("operations:data-source:")
             || menu.getPermission().startsWith("operations:data-sync:")
-            || menu.getPermission().startsWith("operations:server:")
+            || (menu.getPermission().startsWith("operations:server:") && !"operations:server:shell".equals(menu.getPermission()))
             || menu.getPermission().startsWith("automation:device-agent:"))).forEach(permissions::add);
         operations.setMenus(permissions);
         operations.setDescription("系统内置数据源、数据同步、服务器与自动化设备 Agent 运维角色");
@@ -485,6 +485,8 @@ public class DataInitializer implements ApplicationRunner {
             "operations:server:rollback", 136, false);
         menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null,
             "operations:server:logs", 137, false);
+        menu(servers.getId(), "SSH 终端", "BUTTON", null, null, null,
+            "operations:server:shell", 138, false);
         // 邮件属于运维范畴，归入运维管理并排在服务器管理之后、监控审计之前。
         Menu mail = menu(operations.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
             "system:mail:catalog", 15, true);

@@ -256,6 +256,32 @@ class ServerManagementValidationTest {
         Mockito.verify(traceService).markFailed("trace-timeout", "server.deployTimeout");
     }
 
+    /** Shell 独立权限、所有权、启用状态与 SSH 模式必须同时满足。 */
+    @Test
+    void protectsShellTargetAndResolvesCredentials() throws Exception {
+        JdbcTemplate database = Mockito.spy(serverDatabase("shell-target"));
+        Mockito.doReturn(1L).when(database).queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        ServerManagementService target = serverService(database, Mockito.mock(TaskTraceService.class), "");
+        AuthContext.set(new AuthUser(7L, "owner", Set.of("USER"), Set.of("operations:server:shell"), AuthenticationType.TOKEN, null, null));
+        target.create(new ServerModels.ServerCommand("server", "SSH", "host", 22, "deploy", "PASSWORD", "", "secret", "", "", "", "", true));
+        assertEquals("secret", target.shellTarget(1L).path("password").asText());
+        assertEquals("SSH", target.shellTarget(1L).path("mode").asText());
+        for (String permission : new String[]{"operations:server:test", "operations:server:manage"}) {
+            AuthContext.set(new AuthUser(7L, "owner", Set.of("USER"), Set.of(permission), AuthenticationType.TOKEN, null, null));
+            assertThrows(BusinessException.class, () -> target.shellTarget(1L));
+        }
+        AuthContext.set(new AuthUser(8L, "other", Set.of("USER"), Set.of("operations:server:shell"), AuthenticationType.TOKEN, null, null));
+        assertThrows(BusinessException.class, () -> target.shellTarget(1L));
+        AuthContext.set(new AuthUser(7L, "owner", Set.of("USER"), Set.of("operations:server:shell"), AuthenticationType.TOKEN, null, null));
+        database.update("UPDATE managed_server SET enabled=false WHERE id=1");
+        assertThrows(BusinessException.class, () -> target.shellTarget(1L));
+        database.update("UPDATE managed_server SET enabled=true,mode='LOCAL' WHERE id=1");
+        assertThrows(BusinessException.class, () -> target.shellTarget(1L));
+        assertThrows(BusinessException.class, () -> target.shellTarget(999L));
+        AuthContext.clear();
+        assertThrows(BusinessException.class, () -> target.shellTarget(1L));
+    }
+
     /** 创建部署恢复测试使用的最小 H2 表。 */
     private JdbcTemplate deploymentDatabase(String name) {
         JdbcDataSource dataSource = new JdbcDataSource();
