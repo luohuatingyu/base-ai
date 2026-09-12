@@ -1,5 +1,73 @@
 # 最近分支覆盖测试报告
 
+## 持久会话与 SSE 流式回答（2026-09-12）
+
+### Git 基准与范围
+
+Commit: dc062e4638e00fceee548b7cc4dbeac6c1601a25
+- 功能提交：496f21b99557da3e5c256aee6ec4218e72c0a621，Add persistent user conversations and streaming chat。
+- 基准提交说明：Correct verification baseline；其与前一提交仅调整其他任务的测试记录，业务代码与功能提交一致。分支 master；测试日期 2026-09-12（Asia/Shanghai）。保留其报告内容。
+- 技术栈：Vue 3 / Element Plus / Spring MVC / JPA / MySQL / Python 3.12 / FastAPI / httpx；无新增项目依赖或运行配置。
+- 新增 V41 两张表，按登录用户隔离会话与消息，支持创建、分页列表、读取、删除和续聊；保存系统提示词、模型设置、图片内容、追踪标识、生成状态和统计。
+- 新增 POST /api/ai/conversations/{id}/messages/stream 与内部 /llm/chat/stream；保留原 POST /api/ai/chat。前端 fetch 复用 Cookie/CSRF，逐帧展示回答。禁止提问正文进入新流式接口的任务快照。
+- 行锁与请求标识防重复轮次，45 秒租约恢复异常进程的生成状态；定期保存部分回答，失败轮次不进入下一次完整上下文。生成中禁止删除；首个正文增量之后禁止供应商故障切换。
+- 检查原报告基准 724fec3eee679eab80d0c32db7056baebe01a9e1 至当前业务代码差异后，执行完整后端回归；本报告不将用例通过率作为 Java/Python 代码行覆盖率。
+
+### 实际执行结果
+
+| 范围 | 实际命令 | 通过 | 失败 / 错误 / 跳过 |
+| --- | --- | --- | --- |
+| 后端全套 | docker run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v /Users/xyzc/github/base-ai/.m2:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test | 931/931，100% | 0 / 0 / 0 |
+| Python Worker 全套 | docker exec base-ai-chat-python-tests python -m pytest -p no:cacheprovider tests -q | 86/86，100% | 0 / 0 / 0 |
+| 前端静态验证 | frontend 内 npm run lint && npm run typecheck | 退出 0 | 0 |
+| 前端完整覆盖测试 | frontend 内 npm run test:coverage | 416/416，100% | 0 / 0 / 0 |
+| 生产前端 E2E | frontend 内 node --test e2e/*.test.mjs | 3/3，100% | 0 / 0 / 0 |
+
+- 后端先执行 AiChatClientTest、ChatConversationServiceTest、ChatStreamClientTest、ChatConversationSecurityTest 定向验证，再执行完整套件。最终会话存储/Controller 集成 21、鉴权 5、真实 HTTP 流读取 2，共 28 项新增用例全部通过；既有 AiChatClientTest 8 项通过。其余完整回归覆盖 Domain、Service、Controller、数据源、工作流、部署、设备等历史功能。
+- 前端先执行 node --test test/chat-stream.test.mjs test/chat-response.test.mjs：18/18，通过后再执行完整检查。工具函数总覆盖率：行 98.43%、分支 81.52%、函数 95.10%；chatStream.js 行 100%、分支 100%、函数 90%。范围仅为 src/utils，不代表 Vue 组件行覆盖率。
+- Python 测试使用临时 python:3.12-slim 容器，按 requirements-dev.txt 执行 pip install --require-hashes -r requirements-dev.txt，未改依赖文件。外部模型 HTTP 使用 MockTransport，核心流式生成、解析、并发额度及 ASGI/HMAC 中间件使用真实代码。
+- 使用 docker cp ai-frontend:/app/dist/. frontend/dist/ 获取统一构建产物后执行生产 E2E，未单独运行 npm run build 或 mvnw compile。
+- 真实 Chromium 加载 Vite 页面，仅隔离外部业务 API：验证自动创建、回答展示、页面刷新恢复、继续提问、新建空会话、切换历史、确认删除；实际发送两次，删除后只剩新空会话，页面异常 0。中英文分别验证 1440/768/390 像素，六组均无横向溢出。浏览器脚本通过 node --input-type=module 内存执行，没有生成临时测试文件。
+
+### 验收标准与可执行用例映射
+
+| 验收标准 | 测试层级 / 前置条件 | 输入、预期结果及用例 | 场景 |
+| --- | --- | --- | --- |
+| 持久管理与续聊 | H2/JPA 真实事务，登录用户 | persistsRestoresContinuesAndDeletes：创建、重读、继续、删除；消息顺序、元数据、关联清理正确 | 正常、回归 |
+| 用户隔离及鉴权 | Service + 真实 AuthInterceptor | isolatesOwners；SecurityTest：他人 ID、未登录、无权限、缺 CSRF；拒绝且不泄漏存在性，新端点不公开 API Key | 安全、异常 |
+| 防重与租约 | 两个数据库事务 / 活动消息 | rejectsConflictsAndDuplicates、concurrentRequestsCreateOneTurn、recoversExpiredLeaseAndExcludesPartialTurns：并发仅一个轮次，过期恢复且旧结果不覆盖新生成 | 冲突、恢复 |
+| 输入和历史边界 | 参数化 Service 测试 | rejectsInvalidText、rejectsInvalidContent、enforcesContextBoundary、paginates：空白、空集合、非法图片、100000 字符及 100 条上游消息边界；拒绝前无新增副作用 | 边界、安全 |
+| 图片和设置恢复 | 数据库真实读写 | restoresVisionContentAndSettings：Data URL、模型 ID、系统提示词原样恢复 | 兼容 |
+| 真增量和异常终态 | Java HTTP Server + Worker MockTransport + Controller/JPA | deliversBeforeCompletion、controllerPersistsStreamOutcome、test_does_not_fail_over_after_first_delta：完成前收到首段、错误保存部分内容、不混合供应商回答 | 正常、异常 |
+| 流式协议与签名 | Python ASGI/真实中间件 + Node ReadableStream | 中文跨字节、CRLF、多个事件、统计、缺完成帧、无效 JSON、大小限制；test_signed_asgi_stream_survives_middleware_and_rejects_unsigned 验证完整响应生命周期 | 协议、鉴权 |
+| 代理资源回收 | 生产 server.mjs + 可控 HTTP 上游 | frontend forwards SSE incrementally and closes upstream on disconnect：首段立即到达，取消后上游关闭 | 断连、回归 |
+| 页面完整操作 | Chromium 真实 Vue / 模拟业务 API | 创建、刷新、续聊、切换、确认删除；双语三档视口无溢出 | 交互、兼容 |
+
+### 部署及实际环境验证
+
+- 已执行 APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d。首次运行前 Docker 未启动，使用 open -a Docker 启动后继续；无端口占用失败。
+- 首次部署 Flyway 从 V40 成功升级至 V41，实际 MySQL 会话创建、读取及删除成功。最终使用镜像标记 ee7389da3236e035ad79d503f5ee8f5944d153f3 重新构建部署，后续基准提交仅变更文档，应用源代码一致；六个核心服务均通过健康检查。
+- 经 https://localhost 的实际 Caddy → Node → Java 链路，使用现有登录流程及真实 CSRF 校验验证创建、读取、删除、退出登录。没有输出密码、Cookie 或令牌。
+- 实际查询 routes 仅包含 DEFAULT 且 supportedModelTypes 为空，providers 返回空列表。未修改模型配置或凭据。
+- 在无可用模型配置下发送真实 SSE 请求，收到 start、error 两个事件；数据库保留两条消息，助手状态 INTERRUPTED，活动租约释放。测试会话已删除，临时登录已退出。
+- 临时 Python 测试容器 base-ai-chat-python-tests 与本次启动的 Vite 进程已清理。调试与浏览器脚本均在内存执行，未保存调试文件；正式测试代码保留。
+
+### 问题、限制和待验证内容
+
+- **真实供应商成功回答尚未验收**：当前没有启用的模型供应商和可用路由，不能将已通过的模拟上游测试等同于真实供应商验收。待配置支持流式 Chat Completions 的模型后，验证首段实时出现、完整回答落库、刷新续聊、图片输入和中断。
+- 真实供应商超时、不同模型的 stream_options 支持及缺 usage 的行为仍需现场验证。缺 usage 时显示未知统计，不伪造 Token 用量；不接受非 SSE 的伪流式响应。
+- 每实例最多 16 条活动流，单次生成总时限 10 分钟，上游连接/响应头和空闲读取有超时；租约 45 秒。没有执行十分钟真实等待或大规模并发压力测试。
+- 上游上下文最多 100 条、UTF-8 JSON 最多 16 MiB；存储历史最多 200 条，文本/助手回答最多 100000 字符；图片仍遵循现有数量与大小限制。超限需新建会话，不自动删除历史。
+- 正常断流尽力保存已接收内容；进程硬退出时只能恢复最近周期落库的部分文本。没有断点续传、共享会话或导出功能。
+- 初次宿主 Python 命令因未安装 pytest 无法启动；切换到隔离的 Python 3.12 测试容器后完整通过。初次浏览器验证脚本的 URL 匹配误拦截源模块，修正测试夹具后通过；Air 内嵌预览另有 HTTPS 升级限制，因此使用现有 Playwright Chromium 验证。
+- 最终没有失败或跳过的自动测试。代码与自动验证通过，但真实模型成功路径的环境验收仍待完成。
+
+### 重测与回滚建议
+
+- 修改会话实体、Repository、Service、Controller、Worker 流协议、鉴权/追踪、代理或影响业务的配置后，重跑定向与完整测试并更新本报告。
+- 下一轮优先启用受控模型，验证真实供应商完整链路、长回答与思考模式、断连资源回收和多实例租约恢复。
+- 回退功能提交并重新统一部署可回滚应用；保留 V41 数据表及迁移历史以避免丢失会话，删表需另行确认。
+
 ## 自行验证：插件边界与实际环境缺口（2026-09-12）
 
 ### Git 基准与范围
