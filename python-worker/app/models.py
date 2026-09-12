@@ -234,45 +234,6 @@ class SmtpConfig(BaseModel):
         return normalized
 
 
-class ImapConfig(BaseModel):
-    """独立收件配置，仅允许经过证书校验的加密连接。"""
-
-    host: str = Field(min_length=1, max_length=255)
-    port: int = Field(ge=1, le=65535)
-    username: str = Field(min_length=1, max_length=255)
-    tlsMode: str = Field(pattern="^(STARTTLS|SSL)$")
-    password: str = Field(min_length=1, max_length=4096, repr=False)
-
-    @field_validator("host", "username")
-    @classmethod
-    def validate_connection_field(cls, value: str, info: ValidationInfo) -> str:
-        """阻断控制字符与私网地址输入。"""
-        if not value.strip() or any(ord(character) < 32 or ord(character) == 127 for character in value):
-            raise ValueError("invalid imap field")
-        if info.field_name == "host":
-            reject_unsafe_literal(value)
-        return value.strip()
-
-
-class EmailInboxRequest(BaseModel):
-    """分页读取或根据 UID 与邮箱版本读取正文。"""
-
-    imap: ImapConfig
-    page: int = Field(default=1, ge=1, le=1000000)
-    size: int = Field(default=20, ge=1, le=50)
-    uid: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,9}$")
-    uidValidity: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,9}$")
-
-    @model_validator(mode="after")
-    def validate_identity(self):
-        """详情请求必须携带完整且有效的 IMAP 标识。"""
-        if self.uid is not None and self.uidValidity is None:
-            raise ValueError("missing mailbox version")
-        if any(value is not None and int(value) > 4294967295 for value in (self.uid, self.uidValidity)):
-            raise ValueError("invalid imap identity")
-        return self
-
-
 class EmailSendRequest(BaseModel):
     """内部邮件发送请求，密码只在本次调用内使用。"""
 

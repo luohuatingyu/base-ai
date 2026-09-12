@@ -30,7 +30,7 @@ test('邮箱编辑不自动回读密码，并在弹窗关闭后清除输入内�
   assert.match(accountSource, /function open\(row\)[\s\S]*password: ''/)
   assert.match(accountSource, /autocomplete="new-password"/)
   assert.match(accountSource, /@closed="clearPassword"/)
-  assert.match(accountSource, /function clearPassword\(\) \{ form\.password = ''; form\.imapPassword = '' \}/)
+  assert.match(accountSource, /function clearPassword\(\) \{ form\.password = '' \}/)
 })
 
 test('邮件菜单和页面名称支持中英文权限本地化', () => {

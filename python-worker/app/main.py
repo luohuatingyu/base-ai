@@ -12,8 +12,6 @@ from app.middleware import InternalAuthMiddleware, RequestSizeLimitMiddleware
 from app.models import (AgentStepRequest, AgentStepResponse, ChatRequest, ChatResponse,
                         EmailSendRequest, EmbeddingRequest, EmbeddingResponse, LlmTestRequest)
 from app.services.email_delivery import MailDeliveryError, send_email
-from app.models import EmailInboxRequest
-from app.services.email_inbox import InboxError, read_inbox
 from app.trace_runtime import JavaTraceReporter, TraceRuntimeRegistry
 
 settings = load_settings()
@@ -71,15 +69,6 @@ async def email_send(request: EmailSendRequest):
     try:
         return await send_email(request)
     except MailDeliveryError as exception:
-        raise HTTPException(status_code=exception.status_code, detail=exception.detail) from exception
-
-
-@app.post("/email/inbox")
-async def email_inbox(request: EmailInboxRequest):
-    """通过内部认证读取已获授权的邮箱，不记录凭证或正文。"""
-    try:
-        return await read_inbox(request)
-    except InboxError as exception:
         raise HTTPException(status_code=exception.status_code, detail=exception.detail) from exception
 
 
