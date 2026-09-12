@@ -1,58 +1,5 @@
 # 最近分支覆盖测试报告
 
-## IMAP 收件与邮箱角色授权（2026-09-12）
-
-### Git 基准与范围
-
-Commit: 52306ce24c38b0ba17196e882d444add65d44bb3
-- 提交信息：Add role-based IMAP inbox and receiving configuration；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
-- 技术栈：Java 17 / Spring Boot / JPA / Flyway / MySQL，Python 3.12 标准库 IMAP/MIME，Vue 3 / Element Plus；无新增运行依赖。
-- 独立 IMAP 配置与 AES-GCM 密码，邮箱与角色多对多关联；ADMIN 可见全部邮箱，普通用户须同时具备收件菜单权限和匹配的启用角色。角色绑定仅管理员维护，未绑定邮箱仅管理员可见。
-- 实时只读 INBOX：分页摘要、UID/UIDVALIDITY 校验、安全文本正文；不持久化正文、不改变已读状态。仅 SSL/STARTTLS，复用公网地址策略。V39 新增字段和角色关联表，旧账户默认关闭收件，SMTP 和旧配置请求保持兼容。
-- 其他任务原有改动均由原任务独立提交；本次代码提交仅包含邮件功能。报告保留其他任务记录。构建与测试期间另一任务提交了 d95033d（移除数据同步重复空状态按钮），邮件代码不受影响；最终再次运行前端完整验证。
-
-### 实际执行命令与结果
-
-- 后端定向（仓库根目录）：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp -Dtest=MailInboxServiceTest,MailInboxMigrationTest,MailManagementServiceTest,MailManagementControllerContractTest test'`：48/48 通过，失败 0、错误 0、跳过 0。
-- 后端完整（仓库根目录）：`docker run --rm -v "$PWD/backend:/source:ro" -v "$HOME/.m2:/root/.m2" -w /tmp/backend maven:3.9.9-eclipse-temurin-17 sh -c 'cp /source/pom.xml . && cp -R /source/src . && mvn -B -ntp test'`：924/924 通过，通过率 100%，失败 0、错误 0、跳过 0；BUILD SUCCESS。
-- 关键后端模块：MailInboxServiceTest 18/18、MailInboxMigrationTest 1/1、MailInboxControllerTest 2/2、MailManagementServiceTest 27/27、MailManagementControllerContractTest 2/2。完整套件包含邮件投递、路由初始化、权限、Domain、Service、Controller 和其他历史功能；用例通过率不代表 Java 行覆盖率。
-- Python 定向：使用已有 Worker 镜像的自动删除容器复制当前 app/tests，安装临时 pytest 后执行 `python -m pytest tests/test_email_inbox.py tests/test_email_delivery.py -q`：31/31 通过。
-- Python 最终完整（仓库根目录）：`docker run --rm -u root -v "$PWD/python-worker:/source:ro" -w /tmp/worker ai-python-worker:0f740b5be9577f1d9998bc1e098720c694cc8f72 sh -c 'cp -R /source/app /source/tests . && pip install -q pytest pytest-cov && python -m pytest tests --cov=app.services.email_inbox --cov-report=term-missing -q'`：Python 3.12.14，108/108 通过，失败 0、跳过 0。收件模块语句覆盖率 94%（143 条，未覆盖 8 条），未覆盖主要为 PublicImap 初始化与实际 socket 读取包装；固定 IP、TLS 域名及证书失败有单独测试，真实 TCP 协议测试使用标准 IMAP4 连接受控服务。
-- 前端定向（frontend 目录）：`node --test test/mail-inbox.test.mjs test/mail-management.test.mjs test/mail-routes-contract.test.mjs && npm run lint && npm run typecheck`：10/10 通过，lint/类型检查退出 0。
-- 前端完整（frontend 目录）：`npm run test:coverage && node --test e2e/*.test.mjs`：单元测试全部通过，E2E 2/2 通过，失败 0、跳过 0。工具函数行覆盖率 98.42%、分支 81.23%、函数 95.33%，原门槛全部通过；mailInbox.js 行、分支、函数均 100%，不代表 Vue 组件行覆盖率。
-- 最终前端复核：`npm run lint && npm run typecheck && npm run test:coverage`，覆盖其他任务新提交的单行模板变化；lint/类型检查退出 0，408/408 通过，失败 0、跳过 0，覆盖率与上述结果一致。
-- 实际构建产物 E2E（仓库根目录）：`docker run --rm -v "$PWD/frontend:/source:ro" --entrypoint sh ai-frontend:eac558aeeab96cb9e1faa41ce81fda98b059624f -c 'mkdir /tmp/inbox-e2e && cp /source/server.mjs /tmp/inbox-e2e/ && cp -R /source/e2e /tmp/inbox-e2e/ && cp -R /app/dist /tmp/inbox-e2e/ && cd /tmp/inbox-e2e && node --test e2e/*.test.mjs'`：2/2 通过。
-
-### 验收标准—可执行用例映射
-
-| 验收标准 | 层级、前置条件、输入与测试 | 预期业务结果及场景 |
-| --- | --- | --- |
-| 配置独立加密、兼容旧 SMTP | 后端真实 AES-GCM，已有 SMTP 账户；savesAndPreservesReceivingConfiguration、validatesReceivingFields；新密码、留空、旧请求、关闭收件、非法字段 | 独立密码加密、留空保留、SMTP 密码不变、非法输入拒绝；正常、边界、兼容 |
-| 邮箱与邮件按角色隔离 | 后端权限逻辑；ADMIN、SALES、OTHER、停用角色；filtersAccountsAndHonorsDisabledRoles、rejectsUnauthorizedReadsBeforeCallingWorker、enforcesRoleBindingAdministration | 管理员全量、角色交集可见、未登录 401、无菜单 403、越权邮件 404、普通用户不能改绑定；权限、安全 |
-| 正确分页与 MIME 正文 | Worker 真实受控 TCP IMAP 服务及外部连接替身；test_real_imap_protocol_readonly、test_lists_and_reads_without_marking_seen、test_parses_mime_without_active_content | EXAMINE/PEEK 只读、UID 倒序、空页、中文头和正文正确；正常、边界、回归 |
-| 邮箱变化不串信 | 后端标识、Worker 版本及前端可控异步请求；rejectsInvalidUid、rejectsInvalidPagesAndDisabledAccount、test_errors_release_connection_and_hide_secrets、mail-inbox.test.mjs | 非法标识拒绝、版本变化 409、邮件消失 404、切换邮箱和快速点选丢弃旧响应；边界、异常、安全 |
-| 失败与恶意内容受控 | TLS、固定 IP、资源边界、HTML-only、未知字符集、大正文；test_connects_to_pinned_address_with_original_tls_name、test_limits_response_allocation_and_session_time、test_rejects_private_resolution、test_rejects_inconsistent_server_responses | 证书失败拒绝、公网 IP 固定、超限 413、连接释放、无脚本/远程图片执行、无秘密透传；异常、安全 |
-| 迁移与响应契约正确 | H2 执行真实 V39 SQL；MockMvc 真实服务；migratesLegacyAccountsAndCascadesBindings、returnsSafeAccountOptionsWithoutCaching、declaresReadPermissionForAllInboxEndpoints | 旧数据保留、收件默认禁用、拒绝无效外键、级联清理、无秘密/连接配置返回、no-store；兼容、回归、安全 |
-| 实际环境保存与访问正常 | Compose、已有管理员、内存 Python 3.12 HTTPS smoke；账户 POST/PUT、收件和角色选项 GET、临时账户 DELETE、登出 | MySQL 保存 IMAP 与角色关联；空密码保留；列表可见且禁缓存；测试数据及会话清理；集成、回归 |
-
-### 构建、运行、问题及限制
-
-- 执行 `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`，退出 0；package 阶段再次执行 924 项后端测试全部通过。未单独执行后端 compile 或前端 build。镜像标签为构建时 HEAD eac558a，构建上下文包含本次最终邮件业务代码；之后仅补充正式测试及报告。
-- 运行中 MySQL schema 为 39，Flyway 成功校验 39 个迁移；backend、document-parser、python-worker、frontend、deployment-agent、caddy 六个服务均 healthy，无端口冲突。
-- 真实 HTTPS smoke：匿名收件列表 401；ADMIN 收件列表/角色选项 200；收件菜单存在；创建并更新临时 IMAP/角色配置，密码返回已配置标记但不返回内容，收件列表可见且 no-store。临时账户及关联已删除，测试会话已注销，没有向真实邮件服务器收发邮件。
-- 首次 smoke 成功注销后把空响应当 JSON 解析，报 JSONDecodeError；修正临时脚本后配置全流程重跑通过。该失败是验证脚本问题，无产品修复或测试弱化。
-- 本机 Python 3.12 缺少 pytest，改用已有 Worker 镜像的 --rm 容器；pytest/pytest-cov 只安装在临时容器内，无项目依赖变更。
-- 浏览器原预览跳转到 https://localhost:443 后工具拒绝操作；临时 5173 HTTP 预览又被升级至 HTTPS，报 ERR_CONNECTION_CLOSED。base-ai-mail-preview 容器已停止并自动删除。实际浏览器点击、布局和窄屏验收未完成，自动化函数及模板测试不能替代视觉验收。
-- 原环境没有邮箱配置。真实供应商 IMAP 认证、正文及网络连通性未验证；需填写实际 IMAP 主机、SSL/STARTTLS、账号/授权码、绑定角色并授予收件菜单权限后，在页面刷新验证。受控 TCP 测试不能等同真实邮箱验收。
-- 首期不含 POP3、私网邮件服务器、附件下载、回复/转发、远端删除、已读修改、搜索或定时同步。整封邮件超过 2 MiB 拒绝读取；文本超过 200000 字符明确提示截断。远端新增/删除邮件会改变实时分页位置，可刷新重新读取。
-- 临时测试副本、覆盖数据和测试安装项在自动删除容器的 /tmp 或容器层，退出后清除；没有创建工作区调试文件。正式测试保留。提交前 git diff --check 通过，代码仅提交本次相关文件。
-
-### 重测触发、下次建议与回滚
-
-- 邮箱实体、角色授权、配置校验、接口、Worker 解析/网络策略或核心业务配置变化时重跑定向及完整套件并更新报告；检查 `git diff 52306ce24c38b0ba17196e882d444add65d44bb3 HEAD -- backend/src/main/java/`，并检查未提交业务变更。
-- 下次优先补充真实供应商 SSL/STARTTLS 联调、管理员/普通角色页面验收和 socket 包装层剩余覆盖；新增协议或同步方式需重新确认范围与测试方案。
-- 回滚撤销本次代码提交，保留新增收件字段和关联表，未经数据确认不删列或表。报告单独提交，不推送。
-
 ## 数据同步工作台布局（2026-09-12）
 
 ### Git 基准与范围
