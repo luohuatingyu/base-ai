@@ -281,7 +281,7 @@ services:
       - app-network
 
   adapter-docker-broker:
-    profiles: ["plugin-adapters"]
+    profiles: ["legacy-plugin-adapters"]
     build:
       context: ./adapter-manager
       target: broker
@@ -350,7 +350,7 @@ services:
     network_mode: none
 
   adapter-supervisor:
-    profiles: ["plugin-adapters"]
+    profiles: ["legacy-plugin-adapters"]
     build:
       context: ./adapter-manager
       target: supervisor
@@ -390,7 +390,7 @@ services:
     profiles: ["plugin-adapters"]
     build:
       context: ./adapter-manager
-      target: manager
+      target: broker
       args:
         APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
@@ -407,13 +407,28 @@ services:
       - no-new-privileges:true
     logging: *default-logging
     environment:
+      ADAPTER_MANAGER_MODE: combined
       ADAPTER_MANAGER_INTERNAL_TOKEN: ${ADAPTER_MANAGER_INTERNAL_TOKEN:?Set ADAPTER_MANAGER_INTERNAL_TOKEN}
       ADAPTER_SUPERVISOR_SOCKET: /run/adapter-control/supervisor.sock
+      ADAPTER_BROKER_SOCKET: /run/adapter-broker/broker.sock
+      DIFY_SANDBOX_BROKER_SOCKET: /run/dify-sandbox/broker.sock
+      N8N_SANDBOX_BROKER_SOCKET: /run/n8n-sandbox/broker.sock
+      PLUGIN_SANDBOX_EGRESS_SIGNING_KEY: ${PLUGIN_SANDBOX_EGRESS_SIGNING_KEY:-}
+      PLUGIN_PACKAGE_ALLOWED_DOMAINS: ${PLUGIN_PACKAGE_ALLOWED_DOMAINS:-mirrors.aliyun.com,registry.npmjs.org}
+      PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+      NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}
+      APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
+      COMPOSE_PROJECT_DIR: /workspace
+      COMPOSE_FILE: /workspace/adapter-compose.yml
+      DOCKER_CONFIG: /tmp/docker-config
     volumes:
-      - adapter-control:/run/adapter-control:ro
-    depends_on:
-      adapter-supervisor:
-        condition: service_healthy
+      - ./adapter-manager/adapter-compose.yml:/workspace/adapter-compose.yml:ro
+      - ${ADAPTER_DOCKER_SOCKET:-/run/base-ai-disabled-docker.sock}:/var/run/docker.sock
+      - adapter-control:/run/adapter-control
+      - adapter-broker-control:/run/adapter-broker
+      - dify-sandbox-control:/run/dify-sandbox
+      - n8n-sandbox-control:/run/n8n-sandbox
     healthcheck:
       test: ["CMD", "/usr/local/bin/adapter-manager", "manager-healthcheck"]
       interval: 10s
@@ -480,7 +495,7 @@ services:
     depends_on:
       outbound-gateway:
         condition: service_healthy
-      adapter-docker-broker:
+      adapter-manager:
         condition: service_healthy
     environment:
       PORT: 8101
@@ -527,7 +542,7 @@ services:
     depends_on:
       outbound-gateway:
         condition: service_healthy
-      adapter-docker-broker:
+      adapter-manager:
         condition: service_healthy
     environment:
       PORT: 8102

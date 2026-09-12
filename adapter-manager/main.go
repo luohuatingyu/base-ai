@@ -1114,6 +1114,31 @@ func runManager() {
 	log.Fatal(httpServer.ListenAndServe())
 }
 
+// runCombined 在同一容器内启动 Broker、Supervisor 和 Manager，减少控制平面的容器数量。
+// 三个子进程仍通过 Unix Socket 隔离，保留原有权限边界和故障传播语义。
+func runCombined() {
+	modes := []string{"broker", "supervisor", "manager"}
+	processes := make([]*exec.Cmd, 0, len(modes))
+	for _, mode := range modes {
+		cmd := exec.Command(os.Args[0], mode)
+		cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
+		if err := cmd.Start(); err != nil {
+			for _, process := range processes { _ = process.Process.Kill() }
+			log.Fatalf("start adapter %s: %v", mode, err)
+		}
+		processes = append(processes, cmd)
+	}
+	errCh := make(chan error, len(processes))
+	for _, process := range processes {
+		go func(command *exec.Cmd) { errCh <- command.Wait() }(process)
+	}
+	if err := <-errCh; err != nil { log.Printf("adapter runtime stopped: %v", err) }
+	for _, process := range processes {
+		if process.ProcessState == nil || process.ProcessState.Exited() { continue }
+		_ = process.Process.Kill()
+	}
+}
+
 // runSupervisor 启动无网络、无 Docker Socket 的异步策略控制层。
 func runSupervisor() {
 	socketPath := required("ADAPTER_SUPERVISOR_SOCKET")
@@ -1297,6 +1322,8 @@ func main() {
 		return
 	}
 	switch os.Getenv("ADAPTER_MANAGER_MODE") {
+	case "combined":
+		runCombined()
 	case "supervisor":
 		runSupervisor()
 	case "broker":
