@@ -32,6 +32,19 @@
         <el-form-item :label="t('mailAccounts.tlsMode')"><el-select v-model="form.tlsMode" class="full"><el-option v-for="mode in tlsModes" :key="mode" :label="mode" :value="mode" /></el-select></el-form-item>
         <el-form-item :label="t('mailAccounts.password')"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" :placeholder="form.id ? t('mailAccounts.keepPassword') : ''" /></el-form-item>
         <el-form-item :label="t('common.status')"><el-switch v-model="form.enabled" /></el-form-item>
+        <el-divider>{{ t('mailInbox.receiving') }}</el-divider>
+        <el-form-item :label="t('mailInbox.enable')"><el-switch v-model="form.imapEnabled" /></el-form-item>
+        <template v-if="form.imapEnabled">
+          <el-form-item :label="t('mailInbox.host')"><el-input v-model="form.imapHost" maxlength="255" /></el-form-item>
+          <el-form-item :label="t('mailAccounts.port')"><el-input-number v-model="form.imapPort" :min="1" :max="65535" /></el-form-item>
+          <el-form-item :label="t('mailAccounts.username')"><el-input v-model="form.imapUsername" maxlength="255" /></el-form-item>
+          <el-form-item :label="t('mailAccounts.tlsMode')"><el-select v-model="form.imapTlsMode"><el-option label="SSL" value="SSL" /><el-option label="STARTTLS" value="STARTTLS" /></el-select></el-form-item>
+          <el-form-item :label="t('mailAccounts.password')"><el-input v-model="form.imapPassword" type="password" show-password autocomplete="new-password" :placeholder="form.imapPasswordConfigured ? t('mailAccounts.keepPassword') : ''" /></el-form-item>
+        </template>
+        <el-form-item v-if="auth.isAdmin" :label="t('mailInbox.roles')">
+          <el-select v-model="form.roleIds" multiple class="full"><el-option v-for="role in roles" :key="role.id" :label="role.name" :value="role.id" :disabled="!role.enabled" /></el-select>
+          <small>{{ t('mailInbox.rolesHint') }}</small>
+        </el-form-item>
       </el-form>
       <template #footer><el-button @click="visible=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="save">{{ t('common.save') }}</el-button></template>
     </el-dialog>
@@ -49,6 +62,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
 const visible = ref(false)
+const roles = ref([])
 const tlsModes = ['NONE', 'STARTTLS', 'SSL']
 const form = reactive(defaultForm())
 
@@ -56,19 +70,23 @@ const form = reactive(defaultForm())
 async function load() { rows.value = (await http.get('/mail/accounts')).data || [] }
 /** 打开新增或编辑窗口；编辑时永不自动回读已保存的 SMTP 密码。 */
 function open(row) {
-  Object.assign(form, defaultForm(), row || {}, { password: '' })
+  Object.assign(form, defaultForm(), row || {}, { password: '', imapPassword: '', roleIds: [...(row?.roleIds || [])] })
   visible.value = true
 }
 /** 关闭编辑窗口后清除浏览器内存中的邮箱密码。 */
-function clearPassword() { form.password = '' }
+function clearPassword() { form.password = ''; form.imapPassword = '' }
 /** 保存邮箱账户，新建要求密码，编辑留空保留已有密码。 */
 async function save() {
   if (!form.code.trim() || !form.name.trim() || !form.host.trim() || !form.username.trim() || !form.fromAddress.trim() || (!form.id && !form.password)) {
     ElMessage.warning(t('mailAccounts.required')); return
   }
   try {
-    if (form.id) await http.put(`/mail/accounts/${form.id}`, form)
-    else await http.post('/mail/accounts', form)
+    if (form.imapEnabled && (!form.imapHost?.trim() || !form.imapUsername?.trim() || (!form.imapPasswordConfigured && !form.imapPassword))) {
+      ElMessage.warning(t('mailAccounts.required')); return
+    }
+    const payload = { ...form, roleIds: auth.isAdmin ? form.roleIds : null }
+    if (form.id) await http.put(`/mail/accounts/${form.id}`, payload)
+    else await http.post('/mail/accounts', payload)
     visible.value = false; await load(); ElMessage.success(t('common.successSaved'))
   } catch (error) { showHttpError(error, 'common.saveFailed') }
 }
@@ -80,6 +98,10 @@ async function remove(row) {
   } catch (error) { if (error !== 'cancel' && error !== 'close') showHttpError(error) }
 }
 /** 创建不包含任何已保存密码的空表单。 */
-function defaultForm() { return { id: null, code: '', name: '', host: '', port: 587, username: '', fromAddress: '', tlsMode: 'STARTTLS', password: '', enabled: true } }
-onMounted(load)
+function defaultForm() { return { id: null, code: '', name: '', host: '', port: 587, username: '', fromAddress: '', tlsMode: 'STARTTLS', password: '', enabled: true, imapEnabled: false, imapHost: '', imapPort: 993, imapUsername: '', imapTlsMode: 'SSL', imapPassword: '', imapPasswordConfigured: false, roleIds: [] } }
+/** 加载配置及管理员可用的授权角色。 */
+onMounted(async () => {
+  await load()
+  if (auth.isAdmin) roles.value = (await http.get('/mail/accounts/role-options')).data || []
+})
 </script>

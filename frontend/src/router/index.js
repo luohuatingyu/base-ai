@@ -24,6 +24,7 @@ import ApiKeysView from '../views/ApiKeysView.vue'
 import OpenPlatformView from '../views/OpenPlatformView.vue'
 import MailAccountsView from '../views/MailAccountsView.vue'
 import MailRoutesView from '../views/MailRoutesView.vue'
+import MailInboxView from '../views/MailInboxView.vue'
 import WorkflowNodesView from '../views/WorkflowNodesView.vue'
 import WorkflowCanvasView from '../views/WorkflowCanvasView.vue'
 import DataSourcesView from '../views/DataSourcesView.vue'
@@ -56,6 +57,7 @@ const router = createRouter({
         { path: 'login-logs', component: LoginLogsView, meta: { permission: 'operations:audit:login:list', navigable: true, desc: 'logs.loginDescription' } },
         { path: 'mail/accounts', component: MailAccountsView, meta: { permission: 'system:mail:account:list', navigable: true, desc: 'mailAccounts.description' } },
         { path: 'mail/routes', component: MailRoutesView, meta: { permission: 'system:mail:route:list', navigable: true, desc: 'mailRoutes.description' } },
+        { path: 'mail/inbox', component: MailInboxView, meta: { permission: 'system:mail:inbox:list', navigable: true, desc: 'mailInbox.description' } },
         { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'ai:model:provider:list', navigable: true, desc: 'providers.description' } },
         { path: 'models', component: ModelsView, meta: { permission: 'ai:model:model:list', navigable: true, desc: 'models.description' } },
         { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'ai:model:route:list', navigable: true, desc: 'routes.description' } },

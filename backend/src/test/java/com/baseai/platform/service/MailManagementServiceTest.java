@@ -45,7 +45,8 @@ class MailManagementServiceTest {
         PlatformProperties properties = new PlatformProperties();
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString(new byte[32]));
         cryptoService = new ConfigCryptoService(properties);
-        service = new MailManagementService(accountRepository, routeRepository, cryptoService);
+        service = new MailManagementService(accountRepository, routeRepository, cryptoService,
+            mock(com.baseai.platform.repository.RoleRepository.class));
         AuthContext.set(new AuthUser(1L, "admin", Set.of("ADMIN"), Set.of(),
             AuthenticationType.TOKEN, null, null));
         when(accountRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));

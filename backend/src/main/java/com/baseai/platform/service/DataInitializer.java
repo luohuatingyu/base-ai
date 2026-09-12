@@ -494,6 +494,8 @@ public class DataInitializer implements ApplicationRunner {
             "system:mail:account", 41);
         seedCrud(mail, "邮件路由", "/mail/routes", "MailRoutesView", "Promotion",
             "system:mail:route", 42);
+        menu(mail.getId(), "收件箱", "MENU", "/mail/inbox", "MailInboxView", "MessageBox",
+            "system:mail:inbox:list", 43, true);
         Menu monitoring = menu(operations.getId(), "监控审计", "CATALOG", "/operations/monitoring",
             null, "DataAnalysis", "operations:monitoring:catalog", 20, true);
         Menu onlineUsers = menu(monitoring.getId(), "在线用户", "MENU", "/online-users",

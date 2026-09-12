@@ -6,6 +6,10 @@ import com.baseai.platform.domain.MailAccount;
 import com.baseai.platform.domain.MailRoute;
 import com.baseai.platform.repository.MailAccountRepository;
 import com.baseai.platform.repository.MailRouteRepository;
+import com.baseai.platform.repository.RoleRepository;
+import com.baseai.platform.domain.Role;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import com.baseai.platform.security.AuthContext;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -30,13 +34,15 @@ public class MailManagementService {
     private final MailAccountRepository accountRepository;
     private final MailRouteRepository routeRepository;
     private final ConfigCryptoService cryptoService;
+    private final RoleRepository roleRepository;
 
     /** 注入邮箱账户、邮件路由仓储和配置加密服务。 */
     public MailManagementService(MailAccountRepository accountRepository, MailRouteRepository routeRepository,
-                                 ConfigCryptoService cryptoService) {
+                                 ConfigCryptoService cryptoService, RoleRepository roleRepository) {
         this.accountRepository = accountRepository;
         this.routeRepository = routeRepository;
         this.cryptoService = cryptoService;
+        this.roleRepository = roleRepository;
     }
 
     /** 查询全部邮箱账户，响应不包含密码密文或明文。 */
@@ -219,11 +225,56 @@ public class MailManagementService {
             account.setPasswordEncrypted(cryptoService.encrypt(required(command.password(), "mail.account.passwordRequired")));
         }
         account.setEnabled(command.enabled() == null || command.enabled());
+        saveReceiving(account, command);
         try {
             return accountRepository.save(account);
         } catch (DataIntegrityViolationException exception) {
             throw new BusinessException("mail.account.codeExists");
         }
+    }
+
+    /** 校验收件配置并仅允许管理员改变邮箱角色授权；旧请求保留原配置。 */
+    private void saveReceiving(MailAccount account, AccountCommand command) {
+        if (command.roleIds() != null) {
+            Set<Long> requested = new LinkedHashSet<>(command.roleIds());
+            Set<Long> existing = account.getRoles().stream().map(Role::getId).collect(java.util.stream.Collectors.toSet());
+            if (!requested.equals(existing)) {
+                AuthContext.requireAdmin();
+                if (requested.contains(null) || requested.size() > 500) throw new BusinessException("mail.imap.invalidRoles");
+                List<Role> roles = roleRepository.findAllById(requested);
+                if (roles.size() != requested.size() || roles.stream().anyMatch(role -> !Boolean.TRUE.equals(role.getEnabled()))) {
+                    throw new BusinessException("mail.imap.invalidRoles");
+                }
+                account.setRoles(new LinkedHashSet<>(roles));
+            }
+        }
+        if (command.imapEnabled() == null) return;
+        account.setImapEnabled(command.imapEnabled());
+        if (!command.imapEnabled()) return;
+        account.setImapHost(imapField(command.imapHost()));
+        account.setImapUsername(imapField(command.imapUsername()));
+        if (command.imapPort() == null || command.imapPort() < 1 || command.imapPort() > 65535) {
+            throw new BusinessException("mail.imap.invalidConfig");
+        }
+        account.setImapPort(command.imapPort());
+        if (!List.of("SSL", "STARTTLS").contains(command.imapTlsMode() == null ? "" : command.imapTlsMode())) {
+            throw new BusinessException("mail.imap.invalidConfig");
+        }
+        account.setImapTlsMode(command.imapTlsMode());
+        if (!blank(command.imapPassword())) {
+            if (command.imapPassword().length() > 4096) throw new BusinessException("mail.imap.invalidConfig");
+            account.setImapPasswordEncrypted(cryptoService.encrypt(command.imapPassword()));
+        }
+        if (blank(account.getImapPasswordEncrypted())) throw new BusinessException("mail.imap.passwordRequired");
+    }
+
+    /** 限制收件连接字段长度并拒绝控制字符。 */
+    private String imapField(String value) {
+        String normalized = required(value, "mail.imap.invalidConfig");
+        if (normalized.length() > 255 || normalized.chars().anyMatch(Character::isISOControl)) {
+            throw new BusinessException("mail.imap.invalidConfig");
+        }
+        return normalized;
     }
 
     /** 校验并保存业务邮件路由字段。 */
@@ -250,7 +301,9 @@ public class MailManagementService {
     private AccountView accountView(MailAccount account) {
         return new AccountView(account.getId(), account.getCode(), account.getName(), account.getHost(),
             account.getPort(), account.getUsername(), account.getFromAddress(), account.getTlsMode(),
-            !blank(account.getPasswordEncrypted()), account.getEnabled());
+            !blank(account.getPasswordEncrypted()), account.getEnabled(), account.getImapEnabled(),
+            account.getImapHost(), account.getImapPort(), account.getImapUsername(), account.getImapTlsMode(),
+            !blank(account.getImapPasswordEncrypted()), account.getRoles().stream().map(Role::getId).sorted().toList());
     }
 
     /** 构造包含邮箱展示名称但不包含密码的路由页面视图。 */
@@ -314,9 +367,20 @@ public class MailManagementService {
     }
 
     public record AccountCommand(String code, String name, String host, Integer port, String username,
-                                 String fromAddress, String tlsMode, String password, Boolean enabled) { }
+                                 String fromAddress, String tlsMode, String password, Boolean enabled,
+                                 Boolean imapEnabled, String imapHost, Integer imapPort, String imapUsername,
+                                 String imapTlsMode, String imapPassword, List<Long> roleIds) {
+        /** 保留既有 SMTP 调用构造方式。 */
+        public AccountCommand(String code, String name, String host, Integer port, String username,
+                              String fromAddress, String tlsMode, String password, Boolean enabled) {
+            this(code, name, host, port, username, fromAddress, tlsMode, password, enabled,
+                null, null, null, null, null, null, null);
+        }
+    }
     public record AccountView(Long id, String code, String name, String host, Integer port, String username,
-                              String fromAddress, String tlsMode, boolean passwordConfigured, Boolean enabled) { }
+                              String fromAddress, String tlsMode, boolean passwordConfigured, Boolean enabled,
+                              Boolean imapEnabled, String imapHost, Integer imapPort, String imapUsername,
+                              String imapTlsMode, boolean imapPasswordConfigured, List<Long> roleIds) { }
     public record AccountPasswordView(Long id, String password) { }
     public record AccountOption(Long id, String code, String name) { }
     public record RouteCommand(String businessCode, String name, Long accountId, List<String> toAddresses,
