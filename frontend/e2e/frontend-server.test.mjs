@@ -13,6 +13,47 @@ async function availablePort() {
   return port
 }
 
+/** 生产代理必须在回答完成前转发增量，浏览器断开后关闭上游。 */
+test('frontend forwards SSE incrementally and closes upstream on disconnect', async () => {
+  const frontendPort = await availablePort()
+  let upstreamClosed
+  const closed = new Promise(resolve => { upstreamClosed = resolve })
+  const backend = http.createServer((request, response) => {
+    assert.equal(request.method, 'POST')
+    assert.equal(request.headers['x-csrf-token'], 'test-csrf')
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    response.write('data: {"type":"delta","content":"你好"}\n\n')
+    response.on('close', upstreamClosed)
+  })
+  await new Promise(resolve => backend.listen(0, '127.0.0.1', resolve))
+  const child = spawn(process.execPath, ['server.mjs'], {
+    env: { ...process.env, PORT: String(frontendPort), BACKEND_URL: `http://127.0.0.1:${backend.address().port}` },
+    stdio: ['ignore', 'ignore', 'pipe']
+  })
+  const diagnostics = []
+  child.stderr.on('data', chunk => diagnostics.push(chunk.toString()))
+  const controller = new AbortController()
+  try {
+    await waitForHealth(`http://127.0.0.1:${frontendPort}`, child, diagnostics)
+    const response = await fetch(`http://127.0.0.1:${frontendPort}/api/ai/conversations/1/messages/stream`, {
+      method: 'POST', headers: { 'X-CSRF-Token': 'test-csrf' }, body: '{}', signal: controller.signal
+    })
+    const reader = response.body.getReader()
+    const chunk = await reader.read()
+    assert.match(new TextDecoder().decode(chunk.value), /你好/)
+    controller.abort()
+    let timeout
+    try {
+      await Promise.race([closed, new Promise((resolve, reject) => { timeout = setTimeout(() => reject(new Error('upstream stayed open')), 3000) })])
+    } finally { clearTimeout(timeout) }
+  } finally {
+    controller.abort()
+    await stop(child)
+    backend.closeAllConnections()
+    await new Promise(resolve => backend.close(resolve))
+  }
+})
+
 /** 验证生产代理保持 Host、双向终端字节和断连清理。 */
 test('frontend proxies terminal WebSocket upgrade and binary output', async () => {
   const backendPort = await availablePort()

@@ -3,11 +3,22 @@
   <div class="panel chat-panel">
     <div class="section-head"><div><h2>{{ t('chat.title') }}</h2><p>{{ t('chat.description') }}</p></div><el-tag type="success">OpenAI Compatible</el-tag></div>
 
+    <div class="chat-workspace">
+    <aside class="chat-history">
+      <el-button type="primary" :disabled="loading" @click="newConversation">{{ t('chat.newConversation') }}</el-button>
+      <el-button :disabled="loading" @click="refreshHistory">{{ t('chat.refreshHistory') }}</el-button>
+      <p v-if="!conversations.length">{{ t('chat.noConversations') }}</p>
+      <div v-for="conversation in conversations" :key="conversation.id" class="history-item" :class="{ selected: conversation.id === conversationId }">
+        <button class="history-title" :disabled="loading" @click="selectConversation(conversation.id)">{{ conversation.title || t('chat.untitled') }}</button>
+        <el-button text type="danger" :disabled="loading || conversation.generating" @click="deleteConversation(conversation.id)">{{ t('common.delete') }}</el-button>
+      </div>
+      <el-pagination v-if="historyTotal > 20" small layout="prev, pager, next" :page-size="20" :total="historyTotal" :current-page="historyPage + 1" @current-change="changeHistoryPage" />
+    </aside>
     <el-tabs v-model="activeTab" class="chat-tabs">
       <el-tab-pane :label="t('chat.conversationTab')" name="conversation">
         <!-- 模型配置选择器 -->
         <div class="model-config">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" :disabled="loading">
         <el-form-item :label="t('chat.modelType')">
           <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-radio-button></el-radio-group>
         </el-form-item>
@@ -52,6 +63,7 @@
         <div class="messages">
       <div v-for="(item, index) in messages" :key="index" :class="['message', item.role]">
         <div class="message-content">{{ item.content }}</div>
+        <small v-if="item.status && item.status !== 'COMPLETED'">{{ t(item.status === 'GENERATING' ? 'chat.generating' : 'chat.streamInterrupted') }}</small>
         <div v-if="item.images?.length" class="message-images">
           <img v-for="image in item.images" :key="image.name + image.dataUrl" :src="image.dataUrl" :alt="image.name" />
         </div>
@@ -102,22 +114,31 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import http, { showHttpError } from '../api/http'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import http, { showHttpError, chatStreamHeaders } from '../api/http'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
-import { createAssistantMessage, hasChatResponseMetadata } from '../utils/chatResponse'
+import { useRouter, useRoute } from 'vue-router'
+import { hasChatResponseMetadata } from '../utils/chatResponse'
+import { readChatStream, restoreChatMessage } from '../utils/chatStream'
 import { localizeModelType } from '../utils/localization'
-import { isPromptFile, readPromptFile, withSystemPrompt } from '../utils/prompt'
+import { isPromptFile, readPromptFile } from '../utils/prompt'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
+const conversationId = ref(null)
+const conversations = ref([])
+const historyPage = ref(0)
+const historyTotal = ref(0)
+let streamController = null
+let unmounted = false
 const auth = useAuthStore()
 const prompt = ref('')
 const systemPrompt = ref('')
@@ -271,12 +292,93 @@ onMounted(async () => {
     providers.value = providersRes.data
     modelTypes.value = typesRes.data
     if (!modelTypes.value.some(type => type.value === modelType.value)) modelType.value = modelTypes.value[0]?.value || 'text_model'
+    await refreshHistory()
+    const selected = Number(route.query.conversation)
+    if (Number.isSafeInteger(selected) && selected > 0) await selectConversation(selected)
   } catch (error) {
     console.error('Failed to load chat options:', error)
   }
 })
 
-/** 将当前对话发送到受权限保护的模型代理接口。 */
+/** 分页读取摘要，不缓存其他用户的会话正文。 */
+async function refreshHistory() {
+  const response = await http.get('/ai/conversations', { params: { page: historyPage.value } })
+  conversations.value = response.data.items
+  historyTotal.value = response.data.total
+}
+
+/** 切换历史页并读取数据。 */
+async function changeHistoryPage(page) {
+  if (loading.value) return
+  historyPage.value = page - 1
+  await refreshHistory()
+}
+
+/** 新建持久会话并保留当前模型设置。 */
+async function newConversation() {
+  if (loading.value) return
+  loading.value = true
+  try {
+  const response = await http.post('/ai/conversations')
+  conversationId.value = response.data.id
+  messages.value = []
+  prompt.value = ''
+  pendingImages.value = []
+  historyPage.value = 0
+  await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
+  await refreshHistory()
+  } finally { loading.value = false }
+}
+
+/** 恢复会话历史和模型配置，刷新页面后仍可继续对话。 */
+async function selectConversation(id) {
+  if (loading.value) return
+  loading.value = true
+  try {
+    const response = await http.get(`/ai/conversations/${id}`)
+    conversationId.value = id
+    messages.value = response.data.messages.map(restoreChatMessage)
+    const settings = response.data.settings
+    modelType.value = settings.modelType || 'text_model'
+    featureCode.value = settings.featureCode || ''
+    modelId.value = settings.modelId || null
+    mode.value = modelId.value ? 'single' : 'multi'
+    providerId.value = providers.value.find(provider => provider.models.some(model => model.id === modelId.value))?.id || null
+    enableThinking.value = Boolean(settings.enableThinking)
+    thinkingLevel.value = settings.thinkingLevel || 'MEDIUM'
+    systemPrompt.value = settings.systemPrompt || ''
+    promptFileName.value = ''
+    prompt.value = ''
+    pendingImages.value = []
+    await router.replace({ query: { ...route.query, conversation: String(id) } })
+  } finally { loading.value = false }
+}
+
+/** 用户确认后删除会话及历史消息。 */
+async function deleteConversation(id) {
+  if (loading.value) return
+  try { await ElMessageBox.confirm(t('chat.deleteConversationConfirm'), t('common.delete'), { type: 'warning' }) }
+  catch { return }
+  loading.value = true
+  try {
+  await http.delete(`/ai/conversations/${id}`)
+  if (conversationId.value === id) {
+    conversationId.value = null
+    messages.value = []
+    await router.replace({ query: { ...route.query, conversation: undefined } })
+  }
+  if (conversations.value.length === 1 && historyPage.value > 0) historyPage.value--
+  await refreshHistory()
+  } finally { loading.value = false }
+}
+
+/** 离开页面取消网络读取，上游随代理断连释放生成资源。 */
+onBeforeUnmount(() => {
+  unmounted = true
+  streamController?.abort()
+})
+
+/** 只发送新问题，由服务端读取历史并通过 SSE 返回增量文本。 */
 async function send() {
   const content = prompt.value.trim()
   if (!content || loading.value) return
@@ -286,37 +388,63 @@ async function send() {
   }
   if (mode.value === 'single' && !modelId.value) { ElMessage.warning(t('chat.selectModel')); return }
   if (mode.value === 'multi' && !defaultRouteSupportsType.value && !filteredRoutes.value.some(route => route.featureCode === featureCode.value)) { ElMessage.warning(t('chat.selectModelPool')); return }
-  messages.value.push({ role: 'user', content, images: pendingImages.value })
-  prompt.value = ''
-  pendingImages.value = []
+  const userMessage = { role: 'user', content, images: pendingImages.value }
   loading.value = true
   try {
-    const payload = {
-      messages: withSystemPrompt(messages.value.map(toApiMessage), systemPrompt.value),
-      temperature: 0,
-      model_type: modelType.value
+    if (!conversationId.value) {
+      const created = await http.post('/ai/conversations')
+      conversationId.value = created.data.id
+      historyPage.value = 0
+      await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
     }
-
-    // 单模型模式：直连所选模型；否则走能力路由(模型池)
-    if (mode.value === 'single' && modelId.value) {
-      payload.modelId = modelId.value
-    } else if (featureCode.value && featureCode.value.trim()) {
-      payload.featureCode = featureCode.value.trim()
+    messages.value.push(userMessage)
+    messages.value.push({ role: 'assistant', content: '', status: 'GENERATING' })
+    const assistant = messages.value[messages.value.length - 1]
+    streamController = new AbortController()
+    const response = await fetch(`/api/ai/conversations/${conversationId.value}/messages/stream`, {
+      method: 'POST', credentials: 'same-origin', headers: chatStreamHeaders(), signal: streamController.signal,
+      body: JSON.stringify({
+        requestId: crypto.randomUUID(),
+        content: toApiMessage(userMessage).content,
+        settings: { modelType: modelType.value, featureCode: featureCode.value.trim() || null,
+          modelId: mode.value === 'single' ? modelId.value : null,
+          enableThinking: enableThinking.value, thinkingLevel: thinkingLevel.value, systemPrompt: systemPrompt.value }
+      })
+    })
+    await readChatStream(response, event => {
+      if (event.type === 'start') { assistant.id = event.messageId; assistant.traceId = event.traceId; prompt.value = ''; pendingImages.value = [] }
+      if (event.type === 'delta') assistant.content += event.content
+      if (event.type === 'done') Object.assign(assistant, event, { status: 'COMPLETED' })
+    })
+  } catch (error) {
+    if (!unmounted) {
+      if (error.response?.status === 401) await router.push({ path: '/login', query: { redirect: route.fullPath } })
+      else showHttpError(error, 'chat.callFailed')
     }
-
-    if (enableThinking.value) {
-      payload.enableThinking = true
-      payload.thinkingLevel = thinkingLevel.value
+  } finally {
+    loading.value = false
+    streamController = null
+    if (!unmounted && conversationId.value) {
+      const draft = prompt.value
+      const images = pendingImages.value
+      await selectConversation(conversationId.value)
+      prompt.value = draft
+      pendingImages.value = images
+      await refreshHistory()
     }
-
-    const response = await http.post('/ai/chat', payload)
-    messages.value.push(createAssistantMessage(response.data, response.traceId))
-  } catch (error) { showHttpError(error, 'chat.callFailed') }
-  finally { loading.value = false }
+  }
 }
 </script>
 
 <style scoped>
+.chat-workspace { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; }
+.chat-history { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.chat-history > .el-button { margin-left: 0; }
+.history-item { display: flex; align-items: center; border-radius: 6px; padding: 4px; }
+.history-item.selected { background: var(--el-color-primary-light-9); }
+.history-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: none; text-align: left; cursor: pointer; padding: 8px; color: inherit; }
+.chat-tabs { min-width: 0; }
+@media (max-width: 768px) { .chat-workspace { grid-template-columns: minmax(0, 1fr); } .chat-history { max-height: 240px; overflow-y: auto; } }
 .model-config {
   margin-bottom: 20px;
   padding: 16px;

@@ -58,7 +58,7 @@ class RequestSizeLimitMiddleware:
 
         async def replay_receive():
             """依次重放已验证的 ASGI 消息供下游正常解析。"""
-            return messages.pop(0) if messages else {"type": "http.disconnect"}
+            return messages.pop(0) if messages else await receive()
 
         await self.app(scope, replay_receive, send)
 
@@ -86,7 +86,7 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
         parent_trace_id = self._identifier(request.headers.get("X-Parent-Trace-Id"), "")
         python_trace_id = self._identifier(request.headers.get("X-Python-Trace-Id"), uuid.uuid4().hex)
         context_token = set_context(RequestContext(request_id, parent_trace_id, python_trace_id))
-        tracked = request_path.startswith("/llm/")
+        tracked = request_path.startswith("/llm/") and request_path != "/llm/chat/stream"
         heartbeat_task = None
         status_code = 500
         try:

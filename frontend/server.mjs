@@ -35,7 +35,10 @@ function proxy(request, response) {
     response.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers)
     upstreamResponse.pipe(response)
   })
+  response.on('close', () => upstream.destroy())
   upstream.on('error', () => {
+    if (response.destroyed) return
+    if (response.headersSent) { response.destroy(); return }
     response.writeHead(502, { 'content-type': 'application/json; charset=utf-8' })
     response.end(JSON.stringify({ message: '后端服务不可用' }))
   })

@@ -52,3 +52,14 @@ export function showHttpError(error, fallbackKey = 'common.failed') {
 }
 
 export default http
+
+/** 为 fetch 流式请求复用现有 Cookie CSRF 和界面语言协议。 */
+export function chatStreamHeaders() {
+  const csrfToken = document.cookie.split(';').map(value => value.trim())
+    .find(value => value.startsWith(`${csrfCookieName}=`))?.slice(csrfCookieName.length + 1)
+  return {
+    'Content-Type': 'application/json',
+    'Accept-Language': i18n.global.locale.value,
+    ...(csrfToken ? { 'X-CSRF-Token': decodeURIComponent(csrfToken) } : {})
+  }
+}

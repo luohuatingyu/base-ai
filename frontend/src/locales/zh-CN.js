@@ -174,6 +174,13 @@ export default {
     }
   },
   chat: {
+    newConversation: '新建会话',
+    refreshHistory: '刷新历史',
+    noConversations: '暂无历史会话',
+    untitled: '新会话',
+    deleteConversationConfirm: '删除此会话及全部消息？此操作无法撤销。',
+    generating: '正在生成…',
+    streamInterrupted: '回答已中断，部分内容已保存',
     title: '通用 AI 对话',
     description: '请求经 Java 权限和任务层转发至 Python Worker。',
     user: '你', assistant: 'AI', empty: '输入问题开始对话',

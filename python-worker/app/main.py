@@ -4,9 +4,12 @@ import logging
 import os
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.config import load_settings, validate_settings
 from app.llm import LlmClient
+from app.llm_stream import stream_events
+from app.context import current_context
 from app.logging_config import setup_logging
 from app.middleware import InternalAuthMiddleware, RequestSizeLimitMiddleware
 from app.models import (AgentStepRequest, AgentStepResponse, ChatRequest, ChatResponse,
@@ -39,6 +42,14 @@ async def chat(request: ChatRequest):
     logger.info("event=worker_chat_started message_count=%d", len(request.messages))
     return await llm_client.chat(request.messages, request.temperature, request.candidates,
                                  request.enableThinking, request.model_type, request.routeConfigured)
+
+
+@app.post("/llm/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """在内部签名验证后返回真实增量事件，追踪覆盖整个生成过程。"""
+    return StreamingResponse(stream_events(llm_client, request, current_context().python_trace_id,
+                                           trace_registry, trace_reporter),
+                             media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/llm/test")

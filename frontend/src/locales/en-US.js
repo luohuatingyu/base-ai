@@ -149,6 +149,13 @@ export default {
     }
   },
   chat: {
+    newConversation: 'New conversation',
+    refreshHistory: 'Refresh history',
+    noConversations: 'No conversations yet',
+    untitled: 'New conversation',
+    deleteConversationConfirm: 'Delete this conversation and all messages? This cannot be undone.',
+    generating: 'Generating…',
+    streamInterrupted: 'Answer interrupted; partial content saved',
     title: 'General AI Chat', description: 'Requests are routed through Java authorization and task layers to the Python Worker.',
     user: 'You', assistant: 'AI', empty: 'Enter a question to start chatting',
     placeholder: 'Enter a question, then press Ctrl/Cmd + Enter to send', traceId: 'Trace ID', send: 'Send',
