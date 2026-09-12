@@ -28,6 +28,7 @@ import WorkflowNodesView from '../views/WorkflowNodesView.vue'
 import WorkflowCanvasView from '../views/WorkflowCanvasView.vue'
 import DataSourcesView from '../views/DataSourcesView.vue'
 import KnowledgeBasesView from '../views/KnowledgeBasesView.vue'
+import RagRetrievalDebugView from '../views/RagRetrievalDebugView.vue'
 import WorkflowNodeDocsView from '../views/WorkflowNodeDocsView.vue'
 import DataSyncView from '../views/DataSyncView.vue'
 import ServersView from '../views/ServersView.vue'
@@ -60,6 +61,7 @@ const router = createRouter({
         { path: 'models', component: ModelsView, meta: { permission: 'ai:model:model:list', navigable: true, desc: 'models.description' } },
         { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'ai:model:route:list', navigable: true, desc: 'routes.description' } },
         { path: 'knowledge-bases', component: KnowledgeBasesView, meta: { permission: 'ai:model:knowledge-base:list', navigable: true, desc: 'knowledgeBases.description' } },
+        { path: 'knowledge-bases/:knowledgeBaseId/debug', component: RagRetrievalDebugView, props: true, meta: { permission: 'ai:model:knowledge-base:list', desc: 'RAG 检索调试台' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'operations:task:view', navigable: true, desc: 'tasks.description' } },
         { path: 'data-sources', component: DataSourcesView, meta: { permission: 'operations:data-source:list', navigable: true, desc: 'dataSources.description' } },
         { path: 'data-sync', component: DataSyncView, meta: { permission: 'operations:data-sync:list', navigable: true, desc: 'dataSync.description' } },

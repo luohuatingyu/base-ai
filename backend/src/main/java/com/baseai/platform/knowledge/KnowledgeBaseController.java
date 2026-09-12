@@ -50,4 +50,7 @@ public class KnowledgeBaseController {
     /** 批量删除文档并返回逐项处理结果。 */
     @PostMapping("/{id}/documents/batch-delete") @RequiredPermission("ai:model:knowledge-base:update")
     public KnowledgeBaseService.BatchDeleteResult deleteDocuments(@PathVariable Long id,@RequestBody KnowledgeBaseService.BatchDeleteCommand command){return service.deleteDocuments(id,command);}
+    /** 检索调试接口，返回候选片段及各阶段参数。 */
+    @PostMapping("/{id}/retrieve/debug") @RequiredPermission("ai:model:knowledge-base:list")
+    public KnowledgeBaseService.DebugRetrieval debug(@PathVariable Long id,@RequestBody KnowledgeBaseService.DebugCommand command){return service.debugRetrieve(id,command);}
 }

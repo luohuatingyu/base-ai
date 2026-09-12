@@ -225,6 +225,19 @@ public class KnowledgeBaseService {
         return new Retrieval(base.id(),base.name(),List.copyOf(output));
     }
 
+    /** 执行可观测的检索调试流程；当前以向量召回为基线并保留扩展字段。 */
+    public DebugRetrieval debugRetrieve(Long knowledgeBaseId,DebugCommand command) {
+        if(command==null) throw new BusinessException("knowledge.searchParametersInvalid");
+        long started=System.currentTimeMillis(); int topK=command.topK()==null?5:command.topK();
+        Retrieval result=retrieve(knowledgeBaseId,command.query(),topK,command.threshold()==null?0:command.threshold(),AuthContext.require().id());
+        return new DebugRetrieval(result,List.of(),result.matches(),System.currentTimeMillis()-started,command.mode()==null?"VECTOR":command.mode());
+    }
+
+    /** 调试检索请求。 */
+    public record DebugCommand(String query,Integer topK,Double threshold,String mode,Integer candidateK,Double vectorWeight,Double keywordWeight,String rerankModel) {}
+    /** 调试检索响应，字段为后续混合召回和重排序保留兼容性。 */
+    public record DebugRetrieval(Retrieval retrieval,List<RetrievedChunk> keywordMatches,List<RetrievedChunk> finalMatches,long elapsedMillis,String mode) {}
+
     /** 校验命令、向量模型和已探测连接能力。 */
     private Validated validate(Command command,View existing) {
         if(command==null||text(command.code()).isBlank()||text(command.name()).isBlank()||command.connectionId()==null||command.embeddingModelId()==null)throw new BusinessException("knowledge.invalid");

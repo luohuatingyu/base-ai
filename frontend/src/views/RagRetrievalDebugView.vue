@@ -1,0 +1,8 @@
+<template><main class="panel"><h2>RAG 检索调试台</h2><el-form inline><el-input v-model="query" placeholder="输入查询" style="width:360px"/><el-input-number v-model="topK" :min="1" :max="50"/><el-select v-model="mode" style="width:140px"><el-option label="向量" value="VECTOR"/><el-option label="混合" value="HYBRID"/><el-option label="关键词" value="KEYWORD"/></el-select><el-button type="primary" :loading="loading" @click="run">检索</el-button></el-form><el-alert v-if="error" :title="error" type="error"/><el-descriptions v-if="result" :column="3" border><el-descriptions-item label="模式">{{ result.mode }}</el-descriptions-item><el-descriptions-item label="耗时">{{ result.elapsedMillis }} ms</el-descriptions-item><el-descriptions-item label="结果数">{{ result.finalMatches?.length || 0 }}</el-descriptions-item></el-descriptions><el-table v-if="result" :data="result.finalMatches" style="margin-top:16px"><el-table-column prop="fileName" label="来源"/><el-table-column prop="score" label="分数" width="120"/><el-table-column prop="content" label="内容" show-overflow-tooltip/></el-table></main></template>
+<script setup>
+import { ref } from 'vue'
+import http from '../api/http'
+const props = defineProps({ knowledgeBaseId: { type: [String, Number], required: true } })
+const query = ref(''); const topK = ref(5); const mode = ref('VECTOR'); const loading = ref(false); const result = ref(null); const error = ref('')
+async function run () { loading.value = true; error.value = ''; try { const { data } = await http.post(`/knowledge-bases/${props.knowledgeBaseId}/retrieve/debug`, { query: query.value, topK: topK.value, mode: mode.value }); result.value = data } catch (e) { error.value = e?.response?.data?.message || e.message } finally { loading.value = false } }
+</script>
