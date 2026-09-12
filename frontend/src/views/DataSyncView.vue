@@ -22,7 +22,7 @@
             <div class="sync-plan-meta"><span><el-icon><Monitor /></el-icon>{{ plan.serverName || t('dataSync.platformLocal') }}</span><span>{{ t(`dataSync.strategies.${plan.strategy}`) }}</span><span>{{ t('dataSync.selectedCount', { count: plan.tables?.length || 0 }) }}</span></div>
             <div class="sync-plan-footer"><span><el-icon><Clock /></el-icon>{{ plan.scheduleCron || t('dataSync.manual') }}</span><span :class="{ 'sync-enabled': plan.enabled }"><i />{{ t(plan.enabled ? 'common.enabled' : 'common.disabled') }}</span></div>
           </button>
-          <el-empty v-if="!loading && !filteredPlans.length" :image-size="80" :description="t(plans.length ? 'dataSync.noMatches' : 'dataSync.emptyPlans')"><el-button v-if="plans.length" @click="resetFilters">{{ t('dataSync.clearFilters') }}</el-button><el-button v-else-if="auth.hasPermission('operations:data-sync:create')" type="primary" :icon="Plus" @click="createPlan">{{ t('dataSync.newPlan') }}</el-button></el-empty>
+          <el-empty v-if="!loading && !filteredPlans.length" :image-size="80" :description="t(plans.length ? 'dataSync.noMatches' : 'dataSync.emptyPlans')"><el-button v-if="plans.length" @click="resetFilters">{{ t('dataSync.clearFilters') }}</el-button></el-empty>
         </div>
       </section>
       <aside class="sync-inspector" :aria-label="t('dataSync.planSummary')">
