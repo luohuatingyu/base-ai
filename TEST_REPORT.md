@@ -1,5 +1,36 @@
 # 最近分支覆盖测试报告
 
+## 自行验证：插件边界与实际环境缺口（2026-09-12）
+
+### Git 基准与范围
+
+Commit: 724fec3eee679eab80d0c32db7056baebe01a9e1
+- 提交信息：对当前工作区插件兼容边界、跨库同步和 SSH 浏览器验收缺口进行独立复核；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
+- 本轮仅执行验证和更新测试报告，未修改业务代码、配置、数据库迁移或测试用例；工作区原有未提交改动未纳入本轮提交。
+
+### 验收结论
+
+- n8n/Dify 不是全量兼容：n8n Worker 仅解释受控 `requestDefaults`、`routing.request/send`、认证及有限输出 hook；Dify 使用自研 ABI，不加载 Dify SDK。Backend 对 ABI 或声明式路由超出边界的包返回 `PLUGIN_ABI_UNSUPPORTED` 或 `ROUTING_UNSUPPORTED`，市场层保留 `PARTIAL/UNSUPPORTED` 分级。
+- 当前自动化验证未改变上述结论：n8n Worker 16/16、Dify Worker 25/25、Backend 插件探测/市场/ABI 相关 40/40 全部通过。测试验证的是受控兼容子集、拒绝边界和安全行为，不等价于第三方插件全量语义兼容。
+- 数据同步 H2/兼容模式与远程 Worker 模拟链路已通过，但当前环境没有可安全使用的独立真实 MySQL/PostgreSQL 测试对，因此未执行真实跨库写入、双向同步或断线重试验收。
+- SSH 终端 Backend 定向测试 34/34、前端契约/生命周期测试 30/30 通过；当前没有可用真实 SSH 主机，也没有系统浏览器或 Playwright 浏览器运行时，因此未完成登录后真实浏览器的全屏/窄屏、Tab、vim/top、关闭重连交互验收。
+
+### 本轮实际测试结果
+
+- `cd n8n-plugin-worker && npm test`：16/16 通过，失败 0、错误 0、跳过 0；当前宿主 Node.js v26，满足 Worker `>=24` 要求。
+- `cd dify-plugin-worker && PYTHONPATH=. python3.12 -m unittest discover -s tests -v`：25/25 通过，失败 0、错误 0、跳过 0。
+- Docker Maven/Temurin 17 执行 `WorkflowPluginWorkerClientTest,WorkflowPluginProbeServiceTest,WorkflowNodeMarketplaceServiceTest,WorkflowMarketplacePackageParserTest`：40/40 通过，失败 0、错误 0、跳过 0。
+- Docker Maven/Temurin 17 执行数据同步与终端定向套件：49/49 通过，失败 0、错误 0、跳过 0；其中 DataSyncCopy/RemoteExecution 使用 H2 或模拟 Worker，ServerTerminalBridge 使用回环 Tomcat/WebSocket。
+- `cd frontend && node --test test/server-terminal.test.mjs test/data-sync-remote.test.mjs`：30/30 通过，失败 0、错误 0、跳过 0。
+- Deployment Agent 本轮未执行 Go 测试：宿主无 `go` 命令；历史报告中的容器化 Go 结果仍不能替代本轮执行记录。
+- 当前 Compose 核心服务 `ai-backend`、`ai-frontend`、`ai-python-worker`、`ai-deployment-agent`、`ai-document-parser`、`ai-caddy` 均为 healthy；插件适配器 profile 未启动。未执行带写入副作用的同步或远程 SSH 操作。
+
+### 后续验收建议
+
+- 准备隔离的真实 MySQL 与 PostgreSQL，建立专用账号和可回滚数据集，覆盖三种同步策略、大表分页、字符集/时区/Decimal/二进制字段及断线重试。
+- 准备受控 SSH 测试主机和已登录 HTTPS 浏览器，逐项验证终端尺寸、中文输出、Tab、Ctrl+C、vim/top、关闭重连及权限撤销。
+- 修改 Worker ABI、声明式路由解释器、插件探测状态机、数据同步执行器或终端 WebSocket 后，重新执行本节定向测试并更新本报告。
+
 ## 数据同步工作台布局（2026-09-12）
 
 ### Git 基准与范围
