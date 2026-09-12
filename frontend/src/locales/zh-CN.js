@@ -147,6 +147,7 @@ export default {
     userNotFound: '登录用户不存在'
   },
   dashboard: {
+    tasks24h: '近24小时任务', success24h: '近24小时成功', failed24h: '近24小时失败', running: '运行中任务',
     eyebrow: 'AI PLATFORM READY',
     title: '模型能力，统一接入。',
     description: '系统数据存储于 MySQL，业务数据归属 PostgreSQL，Redis 提供缓存与令牌撤销能力。',

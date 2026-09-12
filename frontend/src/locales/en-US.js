@@ -125,6 +125,7 @@ export default {
     userNotFound: 'The authenticated user does not exist'
   },
   dashboard: {
+    tasks24h: 'Tasks (24h)', success24h: 'Succeeded (24h)', failed24h: 'Failed (24h)', running: 'Running tasks',
     eyebrow: 'AI PLATFORM READY', title: 'Unified access to model capabilities.',
     description: 'System data is stored in MySQL, business data belongs to PostgreSQL, and Redis provides caching and token revocation.',
     systemPermissions: 'System permissions and task logs', businessDatabase: 'Business database',
