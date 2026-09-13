@@ -41,14 +41,15 @@ test('提示词设置区域铺满 Tab 可用宽度', () => {
   assert.doesNotMatch(declarations, /max-width\s*:/)
 })
 
-test('问题和提示词输入框使用固定行数且禁止调整高度', () => {
+test('问题输入框按内容增长至六行，提示词保持大编辑区且禁止手动调整高度', () => {
   const questionInput = chatViewSource.match(/<el-input[^>]*class="chat-question-input"[^>]*\/>/)?.[0]
   const promptInput = chatViewSource.match(/<el-input[^>]*class="prompt-input"[^>]*\/>/)?.[0]
 
   assert.ok(questionInput, '缺少问题输入框')
-  assert.match(questionInput, /:rows="6"/)
+  assert.match(questionInput, /:autosize="\{ minRows: 2, maxRows: 6 \}"/)
   assert.match(questionInput, /resize="none"/)
-  assert.doesNotMatch(questionInput, /autosize/)
+  assert.match(questionInput, /@keydown\.meta\.enter="send"/)
+  assert.match(questionInput, /@keydown\.ctrl\.enter="send"/)
 
   assert.ok(promptInput, '缺少提示词输入框')
   assert.match(promptInput, /:rows="22"/)

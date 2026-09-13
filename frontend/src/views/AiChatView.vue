@@ -1,23 +1,29 @@
 <!-- AI 对话页面：提交请求并展示模型响应、Trace 标识和 Token 统计。 -->
 <template>
   <div class="panel chat-panel">
-    <div class="section-head"><div><h2>{{ t('chat.title') }}</h2><p>{{ t('chat.description') }}</p></div><el-tag type="success">OpenAI Compatible</el-tag></div>
+    <div class="section-head"><div><h2>{{ t('chat.title') }}</h2></div></div>
 
     <div class="chat-workspace">
-    <aside class="chat-history">
-      <el-button type="primary" :disabled="loading" @click="newConversation">{{ t('chat.newConversation') }}</el-button>
-      <el-button :disabled="loading" @click="refreshHistory">{{ t('chat.refreshHistory') }}</el-button>
-      <p v-if="!conversations.length">{{ t('chat.noConversations') }}</p>
-      <div v-for="conversation in conversations" :key="conversation.id" class="history-item" :class="{ selected: conversation.id === conversationId }">
-        <button class="history-title" :disabled="loading" @click="selectConversation(conversation.id)">{{ conversation.title || t('chat.untitled') }}</button>
-        <el-button text type="danger" :disabled="loading || conversation.generating" @click="deleteConversation(conversation.id)">{{ t('common.delete') }}</el-button>
+    <details class="chat-history" :open="historyInitiallyOpen">
+      <summary class="history-heading">{{ t('chat.conversationTab') }} <span>{{ historyTotal }}</span><el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
+      <div class="history-toolbar">
+        <el-button type="primary" plain :icon="Plus" :disabled="loading" @click="newConversation">{{ t('chat.newConversation') }}</el-button>
+        <el-button class="history-refresh" text :icon="Refresh" :aria-label="t('chat.refreshHistory')" :title="t('chat.refreshHistory')" :disabled="loading" @click="refreshHistory" />
       </div>
-      <el-pagination v-if="historyTotal > 20" small layout="prev, pager, next" :page-size="20" :total="historyTotal" :current-page="historyPage + 1" @current-change="changeHistoryPage" />
-    </aside>
+      <div class="history-list">
+      <p v-if="!conversations.length" class="history-empty">{{ t('chat.noConversations') }}</p>
+      <div v-for="conversation in conversations" :key="conversation.id" class="history-item" :class="{ selected: conversation.id === conversationId }">
+        <button class="history-title" :aria-current="conversation.id === conversationId ? 'true' : undefined" :title="conversation.title || t('chat.untitled')" :disabled="loading" @click="selectConversation(conversation.id)"><el-icon><ChatLineRound /></el-icon><span>{{ conversation.title || t('chat.untitled') }}</span></button>
+        <el-button class="history-delete" text :icon="Delete" :aria-label="t('common.delete')" :title="t('common.delete')" :disabled="loading || conversation.generating" @click="deleteConversation(conversation.id)" />
+      </div>
+      </div>
+      <el-pagination v-if="historyTotal > 20" small layout="prev, pager, next" :pager-count="5" :page-size="20" :total="historyTotal" :current-page="historyPage + 1" @current-change="changeHistoryPage" />
+    </details>
     <el-tabs v-model="activeTab" class="chat-tabs">
       <el-tab-pane :label="t('chat.conversationTab')" name="conversation">
         <!-- 模型配置选择器 -->
-        <div class="model-config">
+        <details class="model-config">
+          <summary class="model-summary"><el-icon><Setting /></el-icon><span>{{ localizeModelType(modelType, modelTypes, t) }}</span><span class="model-summary-value">{{ mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) }}</span><el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
       <el-form :inline="true" size="small" :disabled="loading">
         <el-form-item :label="t('chat.modelType')">
           <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-radio-button></el-radio-group>
@@ -58,10 +64,11 @@
           </el-select>
         </el-form-item>
       </el-form>
-        </div>
+        </details>
 
         <div class="messages">
       <div v-for="(item, index) in messages" :key="index" :class="['message', item.role]">
+        <div class="message-author">{{ t(item.role === 'user' ? 'chat.user' : 'chat.assistant') }}</div>
         <div class="message-content">{{ item.content }}</div>
         <small v-if="item.status && item.status !== 'COMPLETED'">{{ t(item.status === 'GENERATING' ? 'chat.generating' : 'chat.streamInterrupted') }}</small>
         <div v-if="item.images?.length" class="message-images">
@@ -80,21 +87,23 @@
           <span v-else-if="item.traceId">{{ t('chat.traceId') }}: {{ item.traceId }}</span>
         </div>
       </div>
-      <el-empty v-if="!messages.length" :description="t('chat.empty')" />
+      <div v-if="!messages.length" class="chat-empty"><div class="chat-empty-icon"><el-icon><ChatLineRound /></el-icon></div><h3>{{ t('chat.empty') }}</h3><p>{{ t('chat.placeholder') }}</p></div>
         </div>
+        <div class="chat-composer">
         <div v-if="pendingImages.length" class="pending-images">
       <div v-for="image in pendingImages" :key="image.name + image.dataUrl" class="pending-image">
         <img :src="image.dataUrl" :alt="image.name" />
         <el-button circle size="small" type="danger" @click="removeImage(image)">×</el-button>
       </div>
         </div>
-        <el-input v-model="prompt" class="chat-question-input" type="textarea" :rows="6" resize="none" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
+        <el-input v-model="prompt" class="chat-question-input" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" resize="none" :aria-label="t('chat.placeholder')" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
         <div class="chat-actions">
           <div class="chat-action-buttons">
             <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
-            <el-button :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
-            <el-button type="primary" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
+            <el-button text :icon="Picture" :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
+            <el-button type="primary" :icon="Top" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
           </div>
+        </div>
         </div>
       </el-tab-pane>
       <el-tab-pane :label="t('chat.promptTab')" name="prompt">
@@ -121,6 +130,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown, ChatLineRound, Delete, Picture, Plus, Refresh, Setting, Top } from '@element-plus/icons-vue'
 import http, { showHttpError, chatStreamHeaders } from '../api/http'
 import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
@@ -137,6 +147,8 @@ const conversationId = ref(null)
 const conversations = ref([])
 const historyPage = ref(0)
 const historyTotal = ref(0)
+// 窄屏初次进入时收起历史，后续展开状态交由原生 details 保留。
+const historyInitiallyOpen = window.matchMedia('(min-width: 769px)').matches
 let streamController = null
 let unmounted = false
 const auth = useAuthStore()
@@ -437,29 +449,52 @@ async function send() {
 </script>
 
 <style scoped>
-.chat-workspace { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; }
-.chat-history { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.chat-history > .el-button { margin-left: 0; }
-.history-item { display: flex; align-items: center; border-radius: 6px; padding: 4px; }
-.history-item.selected { background: var(--el-color-primary-light-9); }
-.history-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: none; text-align: left; cursor: pointer; padding: 8px; color: inherit; }
+.chat-workspace { display: grid; flex: 1; min-height: 0; overflow: hidden; grid-template-columns: 224px minmax(0, 1fr); gap: 28px; }
+.chat-history { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--app-canvas); border: 1px solid var(--app-border); border-radius: 12px; padding: 12px; }
+.chat-history::details-content { min-height: 0; display: flex; flex: 1; flex-direction: column; overflow: hidden; }
+.history-heading { display: flex; align-items: center; gap: 8px; padding: 4px 4px 12px; color: var(--app-muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.history-heading span { font-variant-numeric: tabular-nums; }
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
+.disclosure-icon { margin-left: auto; flex-shrink: 0; transition: transform .15s; }
+details[open] > summary > .disclosure-icon { transform: rotate(180deg); }
+summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; border-radius: 6px; }
+.history-toolbar { display: flex; align-items: center; gap: 4px; padding-bottom: 12px; }
+.history-toolbar > .el-button:first-child { flex: 1; min-width: 0; padding-inline: 8px; }
+.history-refresh.el-button { margin-left: 0; padding: 8px; }
+.history-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.history-empty { color: var(--app-muted); font-size: 12px; text-align: center; margin: 24px 0; }
+.history-item { display: flex; align-items: center; border-radius: 8px; padding: 2px; margin-bottom: 4px; }
+.history-item:hover { background: #edf1f7; }
+.history-item.selected { background: var(--el-color-primary-light-9); color: var(--app-primary); }
+.history-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; border: 0; background: none; text-align: left; cursor: pointer; padding: 10px 6px; color: inherit; font: inherit; font-size: 13px; }
+.history-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-title .el-icon { flex-shrink: 0; color: var(--app-muted); }
+.history-delete.el-button { margin: 0; padding: 6px; color: var(--app-muted); }
+.history-delete.el-button:hover { color: var(--el-color-danger); }
+.chat-history :deep(.el-pagination) { padding-top: 8px; gap: 2px; flex-wrap: nowrap; }
+.chat-history :deep(.el-pager li), .chat-history :deep(.el-pagination button) { min-width: 24px; }
 .chat-tabs { min-width: 0; }
-@media (max-width: 768px) { .chat-workspace { grid-template-columns: minmax(0, 1fr); } .chat-history { max-height: 240px; overflow-y: auto; } }
 .model-config {
-  margin-bottom: 20px;
-  padding: 16px;
-  background-color: #f5f7fa;
+  margin-bottom: 4px;
+  padding: 0 12px;
+  max-height: 38%;
+  overflow-y: auto;
+  background-color: var(--app-canvas);
   border-radius: 8px;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--app-border);
 }
-
-.chat-tabs :deep(.el-tabs__content) {
-  overflow: visible;
-}
+.model-summary { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 12px; cursor: pointer; }
+.model-summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-summary-value { color: var(--app-muted); }
+.model-config[open] .model-summary { margin-bottom: 12px; border-bottom: 1px solid var(--app-border); }
 
 .prompt-settings {
   width: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 2px 16px;
 }
 
 .prompt-settings-head {
@@ -496,13 +531,33 @@ async function send() {
 }
 
 .model-config .el-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 16px;
   margin-bottom: 0;
+  padding-bottom: 14px;
 }
 
 .model-config .el-form-item {
+  display: flex;
+  flex-direction: column;
   margin-bottom: 0;
-  margin-right: 16px;
+  margin-right: 0;
 }
+.model-config :deep(.el-form-item__label) { justify-content: flex-start; height: auto; min-height: 24px; font-size: 12px; color: var(--app-muted); }
+.model-config :deep(.el-form-item__content) { width: 100%; }
+.model-config :deep(.el-select) { width: 100% !important; }
+.model-config :deep(.el-radio-group) { flex-wrap: wrap; gap: 4px 0; }
+.model-config :deep(.el-radio-button__inner) { padding: 8px 10px; }
+.message-author { font-size: 12px; font-weight: 600; color: var(--app-muted); margin-bottom: 6px; }
+.chat-empty { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px 12px; }
+.chat-empty-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; color: var(--app-primary); background: var(--el-color-primary-light-9); font-size: 26px; }
+.chat-empty h3 { font-size: 20px; font-weight: 600; margin: 20px 0 8px; }
+.chat-empty p { color: var(--app-muted); font-size: 13px; margin: 0; }
+.chat-composer { min-width: 0; border: 1px solid var(--app-border); border-radius: 14px; padding: 12px; background: var(--app-surface); box-shadow: 0 4px 16px rgb(31 53 91 / 4%); }
+.chat-composer:focus-within { border-color: var(--el-color-primary-light-5); box-shadow: 0 0 0 3px var(--el-color-primary-light-9); }
+.chat-question-input :deep(.el-textarea__inner) { padding: 4px; background: transparent; box-shadow: none; line-height: 1.65; }
+.chat-composer .chat-actions { margin-top: 8px; }
 
 .message-metadata {
   display: flex;
@@ -511,7 +566,10 @@ async function send() {
   margin-top: 8px;
   color: #909399;
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
+.message-metadata > * { min-width: 0; }
+.message-metadata :deep(.el-link) { font-size: inherit; }
 
 .message-images,
 .pending-images {
@@ -542,6 +600,26 @@ async function send() {
 
 .chat-action-buttons {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
   gap: 8px;
+}
+.chat-composer .pending-images { margin: 0 0 12px; padding: 6px; max-height: 110px; overflow-y: auto; }
+.chat-composer .pending-image img { width: 64px; height: 64px; }
+@media (max-width: 768px) {
+  .chat-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+  .chat-history { max-height: 176px; padding: 8px 10px; }
+  .history-heading { padding-bottom: 4px; }
+  .history-toolbar { padding-bottom: 4px; }
+  .history-toolbar > .el-button:first-child { flex: 0 1 auto; }
+  .history-list { min-height: 40px; }
+  .history-empty { margin: 8px 0; }
+  .model-config .el-form { grid-template-columns: minmax(0, 1fr); }
+  .chat-composer { padding: 8px; }
+  .chat-composer .chat-actions { flex-direction: row; }
+  .chat-composer .el-button { width: auto; }
+  .chat-empty h3 { font-size: 16px; }
+  .chat-empty { padding: 12px 8px; }
 }
 </style>

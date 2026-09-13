@@ -60,16 +60,17 @@ test('Trace ID 在有任务权限时可直达链路日志', () => {
   assert.equal(chatView.match(/t\('chat\.traceId'\)/g)?.length, 2)
 })
 
-test('助手回答使用内容自适应背景并缩小字体', () => {
+test('助手回答使用自适应宽度和舒适行距，长文本允许换行', () => {
   assert.match(chatView, /<div class="message-content">\{\{ item\.content \}\}<\/div>/)
   assert.match(chatStyles, /\.message-content\s*\{[\s\S]*?display:\s*inline-block[\s\S]*?max-width:\s*100%[\s\S]*?overflow-wrap:\s*anywhere/)
-  assert.match(chatStyles, /\.message\.assistant \.message-content\s*\{\s*font-size:\s*14px;\s*\}/)
+  assert.match(chatStyles, /\.message\.assistant \.message-content\s*\{[^}]*font-size:\s*14px;[^}]*background:\s*transparent;[^}]*line-height:\s*1\.85/)
   assert.doesNotMatch(chatStyles, /\.message div\s*\{/)
 })
 
-test('消息不展示角色标签且用户问题贴齐右侧', () => {
+test('消息显示本地化角色，用户气泡靠右且正文左对齐', () => {
+  assert.match(chatView, /class="message-author">\{\{ t\(item\.role === 'user' \? 'chat\.user' : 'chat\.assistant'\) \}\}/)
   assert.doesNotMatch(chatView, /<small>\{\{ item\.role === 'user'/)
   assert.doesNotMatch(chatStyles, /\.message small\s*\{/)
   assert.match(chatStyles, /\.message\.user\s*\{\s*margin-left:\s*auto;\s*text-align:\s*right;\s*\}/)
-  assert.match(chatStyles, /\.message\.user \.message-content\s*\{\s*color:\s*#fff;\s*background:\s*var\(--app-primary\);\s*\}/)
+  assert.match(chatStyles, /\.message\.user \.message-content\s*\{[^}]*color:\s*var\(--app-text\);[^}]*background:\s*var\(--el-color-primary-light-9\);[^}]*text-align:\s*left/)
 })

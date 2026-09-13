@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+const chatViewSource = readFileSync(new URL('../src/views/AiChatView.vue', import.meta.url), 'utf8')
 const automationStyles = readFileSync(new URL('../src/automation.css', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
 const adminLayoutSource = readFileSync(new URL('../src/views/AdminLayout.vue', import.meta.url), 'utf8')
@@ -99,9 +100,24 @@ test('AI 对话仅滚动消息区域并固定上下操作区域', () => {
   assertDeclarations(globalStyles, '.messages', [/flex:\s*1/, /min-height:\s*0/, /overflow-y:\s*auto/])
   assertDeclarations(
     globalStyles,
-    '.chat-tabs .el-tab-pane > .pending-images,\n.chat-tabs .el-tab-pane > .el-textarea,\n.chat-tabs .el-tab-pane > .chat-actions',
+    '.chat-tabs .el-tab-pane > .chat-composer',
     [/flex:\s*0\s+0\s+auto/]
   )
+})
+
+test('会话双栏继承剩余高度且历史列表独立滚动', () => {
+  assertDeclarations(chatViewSource, '.chat-workspace', [/flex:\s*1/, /min-height:\s*0/, /overflow:\s*hidden/])
+  assertDeclarations(chatViewSource, '.chat-history', [/min-height:\s*0/, /overflow:\s*hidden/])
+  assertDeclarations(chatViewSource, '.history-list', [/flex:\s*1/, /min-height:\s*0/, /overflow-y:\s*auto/])
+  assert.doesNotMatch(chatViewSource, /\.chat-tabs\s*:deep\(\.el-tabs__content\)\s*\{[^}]*overflow:\s*visible/)
+})
+
+test('窄屏配置和历史可收拢且长消息元信息可以换行', () => {
+  assert.match(chatViewSource, /<details class="model-config"/)
+  assert.match(chatViewSource, /<details class="chat-history"/)
+  assert.match(chatViewSource, /@media\s*\(max-width:\s*768px\)/)
+  assertDeclarations(chatViewSource, '.message-metadata', [/overflow-wrap:\s*anywhere/])
+  assertDeclarations(chatViewSource, '.chat-composer', [/min-width:\s*0/])
 })
 
 test('收缩侧边栏的菜单宽度适配内层可用空间，图标保持居中', () => {
