@@ -426,7 +426,11 @@ test('自建镜像使用必填 Git revision 标签并写入 OCI 元数据', asyn
   assert.equal(imageLines.length, 12)
   imageLines.forEach(line => assert.match(line, /:\$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/))
   assert.doesNotMatch(`${compose}\n${adapterCompose}`, /image:[^\n]*:latest/)
-  assert.equal((compose.match(/APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}/g) ?? []).length, 13)
+  assert.equal((compose.match(/^        APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/gm) ?? []).length, imageLines.length)
+  for (const name of ['adapter-manager', 'adapter-docker-broker']) {
+    const block = compose.split(`\n  ${name}:\n`)[1].split(/\n  [a-z][a-z-]+:\n/)[0]
+    assert.match(block, /^      APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/m)
+  }
   dockerfiles.forEach(source => assert.match(source, /LABEL org\.opencontainers\.image\.revision=\$\{APP_IMAGE_REVISION\}/))
   assert.match(testWorkflow, /APP_IMAGE_REVISION: \$\{\{ github\.sha \}\}/)
   assert.match(scanWorkflow, /APP_IMAGE_REVISION: \$\{\{ github\.sha \}\}/)

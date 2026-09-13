@@ -18,11 +18,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -1115,27 +1117,59 @@ func runManager() {
 }
 
 // runCombined 在同一容器内启动 Broker、Supervisor 和 Manager，减少控制平面的容器数量。
-// 三个子进程仍通过 Unix Socket 隔离，保留原有权限边界和故障传播语义。
+// 子进程共享容器权限，通过 Unix Socket 通信；任一退出时关闭整个控制平面。
 func runCombined() {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
 	modes := []string{"broker", "supervisor", "manager"}
 	processes := make([]*exec.Cmd, 0, len(modes))
 	for _, mode := range modes {
-		cmd := exec.Command(os.Args[0], mode)
-		cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
-		if err := cmd.Start(); err != nil {
-			for _, process := range processes { _ = process.Process.Kill() }
-			log.Fatalf("start adapter %s: %v", mode, err)
+		command := exec.Command(os.Args[0])
+		command.Env = adapterModeEnvironment(os.Environ(), mode)
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		processes = append(processes, command)
+	}
+	if err := superviseProcesses(ctx, processes); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// adapterModeEnvironment 替换父进程组合模式，避免递归启动或传入不支持的命令参数。
+func adapterModeEnvironment(environment []string, mode string) []string {
+	result := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, "ADAPTER_MANAGER_MODE=") {
+			result = append(result, entry)
 		}
-		processes = append(processes, cmd)
 	}
-	errCh := make(chan error, len(processes))
+	return append(result, "ADAPTER_MANAGER_MODE="+mode)
+}
+
+// superviseProcesses 统一回收已启动子进程，并将启动失败或意外退出传播到容器状态。
+func superviseProcesses(ctx context.Context, processes []*exec.Cmd) error {
+	started := make([]*exec.Cmd, 0, len(processes))
+	results := make(chan error, len(processes))
+	defer func() {
+		for _, process := range started {
+			_ = process.Process.Kill()
+		}
+		for range started {
+			<-results
+		}
+	}()
 	for _, process := range processes {
-		go func(command *exec.Cmd) { errCh <- command.Wait() }(process)
+		if err := process.Start(); err != nil {
+			return fmt.Errorf("start adapter process: %w", err)
+		}
+		started = append(started, process)
+		go func(command *exec.Cmd) { results <- command.Wait() }(process)
 	}
-	if err := <-errCh; err != nil { log.Printf("adapter runtime stopped: %v", err) }
-	for _, process := range processes {
-		if process.ProcessState == nil || process.ProcessState.Exited() { continue }
-		_ = process.Process.Kill()
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-results:
+		results <- err
+		return fmt.Errorf("adapter process exited unexpectedly: %v", err)
 	}
 }
 

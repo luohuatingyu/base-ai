@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,6 +19,46 @@ import (
 	"testing"
 	"time"
 )
+
+// TestAdapterModeEnvironment 验证组合模式只被替换一次且其他配置保持完整。
+func TestAdapterModeEnvironment(t *testing.T) {
+	for _, mode := range []string{"broker", "supervisor", "manager"} {
+		environment := adapterModeEnvironment([]string{"ADAPTER_MANAGER_MODE=combined", "TOKEN=value"}, mode)
+		if strings.Join(environment, ",") != "TOKEN=value,ADAPTER_MANAGER_MODE="+mode {
+			t.Fatalf("unexpected environment: %v", environment)
+		}
+	}
+}
+
+// TestSuperviseProcesses 验证正常退出、异常退出、启动失败和取消均回收全部子进程。
+func TestSuperviseProcesses(t *testing.T) {
+	for _, scenario := range []string{"exit", "failure", "start-failure", "cancel"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			commands := []*exec.Cmd{exec.Command("sleep", "30")}
+			switch scenario {
+			case "exit":
+				commands = append(commands, exec.Command("sh", "-c", "exit 0"))
+			case "failure":
+				commands = append(commands, exec.Command("sh", "-c", "exit 1"))
+			case "start-failure":
+				commands = append(commands, exec.Command("/nonexistent-adapter-command"))
+			case "cancel":
+				cancel()
+			}
+			err := superviseProcesses(ctx, commands)
+			if (err == nil) != (scenario == "cancel") {
+				t.Fatalf("unexpected result: %v", err)
+			}
+			for _, command := range commands {
+				if command.Process != nil && command.ProcessState == nil {
+					t.Fatal("child process not reaped")
+				}
+			}
+		})
+	}
+}
 
 type fakeRunner struct {
 	mu      sync.Mutex
