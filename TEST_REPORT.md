@@ -1,5 +1,19 @@
 # 最近分支覆盖测试报告
 
+## 适配器组合启动修复（2026-09-13）
+
+- 验证提交：4dba0be（Fix combined adapter startup and process supervision），分支 master。本次未修改 Java 业务代码，不替换下方 Java 测试基准。
+- 范围：修复 combined 子进程使用不支持命令参数、子进程未回收、异常退出未传播的问题；补齐组合容器 Worker Token、沙箱配置、Docker Socket 组和可写临时目录。没有修改默认 Profile，自动启动全栈与六容器上限的优先级仍待确认。
+- 验收映射：Go TestAdapterModeEnvironment 验证 broker/supervisor/manager 模式替换和其他配置保留；TestSuperviseProcesses 验证正常退出、异常退出、启动失败、取消时回收进程；Node workflowAdapterLifecycle 验证两个 Worker 对控制服务及网关的依赖、鉴权和沙箱配置；security-deployment 验证每个镜像构建及两个 Broker 入口传入 Git revision。
+- Go 命令：`docker run --rm -v "$PWD/adapter-manager:/workspace" -w /workspace golang:1.26.6-alpine sh -c 'gofmt -w main.go main_test.go && go test -v ./...'`。14 个顶层测试全部通过，新增进程测试包含 4 个子场景；无失败或跳过。
+- 定向前端命令：`node --test frontend/tests/workflowAdapterLifecycle.test.js`，5/5 通过。
+- 全量前端命令：`node --test frontend/test/*.test.mjs frontend/tests/*.test.js`，首次 415/416 通过，旧测试硬编码 revision 出现次数与合并后的环境不符；改为逐构建参数和控制入口断言后，416/416 通过，无跳过。
+- Compose 校验：`APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose --profile plugin-adapters --profile deployment config --quiet` 通过。
+- 镜像构建：`docker build --target broker -t base-ai-workflow-adapter-runtime:test adapter-manager` 通过，镜像构建中再次执行 Go 全套测试。
+- 实际重建：`APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`，六个核心/部署镜像构建完成，但命令最终失败：backend 不健康。日志显示 OperationsDashboardController 注入 JdbcTemplate 时同时匹配 mysqlJdbcTemplate、auditJdbcTemplate；本次没有改动该 Java 类。前端和 Caddy 依赖后端，尚未启动。
+- 环境限制：当前 Docker context 为 desktop-linux，SecurityOptions 不包含 name=rootless；插件 Broker 要求 rootless Docker。当前还未提供插件沙箱签名密钥和 rootless Socket，未执行真实插件容器启停、插件调用、页面 E2E 或完整 Java/Python 套件，不能判定“一条 Compose 命令启动所有页面能力”完成。
+- 下次验证：明确六容器上限与自动启动优先级，解决后端启动冲突和插件 Docker 环境，再从未创建 Worker 的状态执行页面启停、探测、调用以及重启恢复。测试容器使用 --rm 已清理，没有保存临时调试文件。
+
 ## 持久会话与 SSE 流式回答（2026-09-12）
 
 ### Git 基准与范围
