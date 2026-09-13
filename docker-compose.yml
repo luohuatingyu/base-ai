@@ -630,7 +630,7 @@ services:
         APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
         CADDY_IMAGE: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
-        ALPINE_MIRROR: ${ALPINE_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/alpine}
+        ALPINE_MIRROR: ${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}
         AGENT_RUNTIME_BUNDLE: ${AGENT_RUNTIME_BUNDLE:-true}
         AGENT_PYTHON_VERSION: ${AGENT_PYTHON_VERSION:-3.12.8}
         AGENT_PYTHON_TAG: ${AGENT_PYTHON_TAG:-20250106}
