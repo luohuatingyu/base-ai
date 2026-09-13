@@ -1,5 +1,46 @@
 # 最近分支覆盖测试报告
 
+## AI 对话页面布局优化（2026-09-13）
+
+### Git 基准与范围
+
+- 前端验收基准：745c7b65eefbadd86fde4f7eed7179972c44fa76（Align deployment tests with current configuration）；分支 master，测试日期 2026-09-13（Asia/Shanghai）。页面提交：068d380（Refine AI chat layout and responsive composer）。
+- 技术栈：Vue 3、Element Plus、原生 details、CSS Grid/Flex；实现历史与消息独立滚动、可展开模型配置、浅色消息与角色标识、2–6 行输入区、窄屏默认收起历史及紧凑分页。未新增依赖、接口或运行配置。
+- 经用户补充确认，745c7b6 同步 Compose 当前官方 Alpine 源断言，并用等价的空格量词修复 4 处 ESLint 错误；保留 Dockerfile 和示例环境中的原有镜像源断言及安全检查。
+- 本次没有修改 Java 业务代码，不推进下方 Java 测试基准。已检查 `git diff dc062e4638e00fceee548b7cc4dbeac6c1601a25 HEAD -- backend/src/main/java/`；差异属于此前 Dashboard 和知识库变更，本次未重新验收后端。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级 / 前置条件 | 输入与用例 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 双栏占满剩余高度 | Node 布局契约，读取真实源码 | layout-alignment：工作区高度、历史滚动、内容溢出、固定输入区 | 历史与消息独立滚动，容器可收缩，输入区保持可见 | 缺陷回归 |
+| 输入和消息易读 | Node 契约与 Chromium | prompt / chat-response：2–6 行输入、角色、长文本；浏览器输入 20 行问题 | 输入达到上限后内部滚动，快捷键保留，气泡靠右且正文左对齐 | 正常、边界、兼容 |
+| 中英文响应式无溢出 | Chromium，内存 API 夹具，真实组件 | 中英文各 1440×900、768×844、390×844、320×844；空会话、长消息、展开配置、多行输入、收起历史 | 页面无横向溢出，工作区无纵向溢出，输入区在面板内，消息保留可用高度 | 响应式、长文本、回归 |
+| 历史与提示词可用 | Chromium | 20 条长标题、500 条分页总数；历史展开/收起，8 组屏宽语言中编辑长提示词 | 标题截断、分页不撑破侧栏；桌面初始展开、窄屏收起，编辑器可用 | 大集合、边界、兼容 |
+| 模型与附件设置生效 | Chromium，模拟供应商 API | 单模型、供应商、模型、思考、视觉模型、PNG 上传、TXT 提示词导入 | 请求含 modelId=7、vision_model、enableThinking=true、系统提示词和 image_url | 正常、设置分支 |
+| 会话生命周期保留 | Chromium，内存会话 API/SSE | 空发送、缺少模型、Ctrl+Enter、刷新、新建、切换、确认删除 | 无效输入不发请求，回答和 Token=15 显示，刷新恢复图片与历史，删除同步列表 | 异常、恢复、回归 |
+| 权限与错误处理不退化 | Node chat-stream/chat-response 与普通用户浏览器夹具 | 401/403、非法/中断 SSE、外部图片、无任务查看权限的 Trace | 正确识别错误，不恢复外部图片，无权限时没有日志链接 | 权限安全、异常 |
+| 完整前端与生产代理正常 | ESLint、vue-tsc、Node；Compose 生产产物 | 覆盖率套件、e2e/frontend-server.test.mjs | SSE 增量及断开清理、WebSocket、SPA、配置和畸形路径通过 | 全量回归 |
+
+### 实际执行结果
+
+- 定向：`node --test frontend/test/layout-alignment.test.mjs frontend/test/prompt.test.mjs frontend/test/chat-response.test.mjs frontend/test/chat-stream.test.mjs`，42/42 通过，失败、错误、跳过均为 0。
+- 在 frontend 执行 `npm run lint && npm run typecheck && npm run test:coverage`：lint、类型检查通过，428/428 测试通过（100%），失败 0、错误 0、跳过 0。
+- 工具函数覆盖率：行 98.43%、分支 81.52%、函数 95.10%，超过门槛 95% / 75% / 90%。chatResponse.js：100% / 94.44% / 100%；chatStream.js：100% / 100% / 90%；prompt.js 三项均 100%。仅覆盖 src/utils，不代表 Vue 组件行覆盖率。
+- 在 frontend 执行 `docker cp ai-frontend:/app/dist/. dist/ && node --test e2e/*.test.mjs`，3/3 通过，失败、错误、跳过均为 0；使用最终 Compose 重建的产物，没有单独执行 npm run build。
+- 正式前端套件合计 431/431 通过（428 个单元/契约测试和 3 个生产服务器测试）。定向 42 项已包含在 428 项中，不重复计数。
+- 使用环境已有 Playwright/Chromium，通过 `node --input-type=module` 内存执行浏览器验证：8 组屏宽/语言、40 项聊天布局状态、8 个提示词编辑器通过；模型、图片、提示词、SSE 请求体、元数据、权限、新建/切换/恢复/删除交互通过，页面异常 0。未引入项目依赖。
+- 最终代码变更后 `docker compose up --build -d` 成功；`docker compose ps --format '{{.Service}} {{.Health}}'` 确认 10 个服务 healthy。未发生端口冲突。镜像沿用现有环境 revision 标签，实际前端内容已重新构建。
+- `git diff --check` 通过。保留共享工作区原有三处 Dockerfile 修改并排除在本次提交外。浏览器脚本及截图未落盘，没有临时调试文件。
+
+### 失败记录、限制与下次建议
+
+- 修复前定向布局/输入测试 20/24 通过、4 项失败；修复后全部通过。两项旧消息视觉断言随已确认的新布局同步更新，保留业务与权限断言。
+- 首次 lint 有既有部署测试的 4 处 no-regex-spaces；首次覆盖测试 427/428，通过之外唯一失败是 Caddy 测试仍要求 Compose 默认清华源。经用户确认修正后全部通过；未删除、跳过或降低有效测试要求。
+- 浏览器脚本最初误匹配 Vite 的 src/api 模块，并尝试点击 Element Plus 隐藏原生输入导致超时；改用准确 API 路径和可见控件后通过，未因此修改产品逻辑。
+- 浏览器使用真实组件和 SSE 解析，只隔离外部 API；未调用收费模型或修改真实会话。未重跑 Java/Python 套件，未验证真实供应商连通性、Safari/Firefox、手机软键盘。夹具验证不代表真实供应商端到端结果。
+- 本次为前端验收，保留其他任务测试记录与后端基准。后续聊天结构、断点或设置入口变更应重跑本节前端套件和浏览器矩阵；Java/Worker/API 变更应执行完整业务测试。建议补充其他浏览器及真机软键盘检查。
+
 ## 知识库新增入口去重（2026-09-13）
 
 - 验证提交：3f7af8e8ceb71cc27f87f2ed2657e8a6c5e85ad9（Remove duplicate knowledge base creation entry）；分支 master。仅修改 Vue 3 / Element Plus 知识库页模板及正式 Node/Vue SSR 回归测试，保留右上角新增入口，移除目录空状态重复按钮；不改变 Java 测试基准。
