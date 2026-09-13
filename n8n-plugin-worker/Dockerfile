@@ -3,8 +3,7 @@ FROM ${NODE_IMAGE}
 ARG APP_IMAGE_REVISION
 LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 WORKDIR /app
-RUN apk upgrade --no-cache \
-    && npm install --global --ignore-scripts npm@12.0.2 \
+RUN npm install --global --ignore-scripts npm@12.0.2 \
     && cp /usr/local/lib/node_modules/npm/package.json /tmp/npm-package.json \
     && node -e 'const fs = require("node:fs"); const path = "/usr/local/lib/node_modules/npm/package.json"; const config = require(path); delete config.devDependencies; delete config.workspaces; config.dependencies.tar = "7.5.21"; config.overrides = {"brace-expansion": "5.0.9", "ip-address": "10.3.1"}; fs.writeFileSync(path, JSON.stringify(config))' \
     && npm install --prefix /usr/local/lib/node_modules/npm --ignore-scripts --omit=dev --package-lock=false --no-audit --no-fund \
