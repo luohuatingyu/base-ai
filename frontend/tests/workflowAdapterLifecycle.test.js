@@ -17,7 +17,7 @@ test('节点管理页为 n8n 与 Dify 展示独立容器开关并只在运行后
 
 test('合并控制平面保留鉴权、沙箱参数和 Worker 页面启停依赖', async () => {
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
-  const block = name => compose.split('\n  ' + name + ':\n')[1].split(/\n  [a-z][a-z-]+:\n/)[0]
+  const block = name => compose.split('\n  ' + name + ':\n')[1].split(/\n {2}[a-z][a-z-]+:\n/)[0]
   const manager = block('adapter-manager')
   for (const name of ['deployment-agent', 'adapter-manager', 'outbound-gateway', 'dify-plugin-worker', 'n8n-plugin-worker']) {
     assert.doesNotMatch(block(name), /profiles:/)

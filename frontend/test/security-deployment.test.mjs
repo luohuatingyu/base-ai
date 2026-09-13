@@ -288,7 +288,7 @@ test('Caddy 构建使用可配置的 Go 模块代理和 Alpine 镜像', async ()
   assert.match(caddyDockerfile, /dl-cdn\.alpinelinux\.org\/alpine#\$\{ALPINE_MIRROR\}/)
   assert.match(caddyDockerfile, /apk upgrade --no-cache\s*\\/)
   assert.match(compose, /^\s+GOPROXY: \$\{GOPROXY:-https:\/\/goproxy\.cn,direct\}$/m)
-  assert.match(compose, /^\s+ALPINE_MIRROR: \$\{ALPINE_MIRROR:-https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine\}$/m)
+  assert.match(compose, /^\s+ALPINE_MIRROR: \$\{ALPINE_MIRROR:-https:\/\/dl-cdn\.alpinelinux\.org\/alpine\}$/m)
   assert.match(environmentExample, /^GOPROXY=https:\/\/goproxy\.cn,direct$/m)
   assert.match(environmentExample, /^ALPINE_MIRROR=https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/alpine$/m)
 })
@@ -426,10 +426,10 @@ test('自建镜像使用必填 Git revision 标签并写入 OCI 元数据', asyn
   assert.equal(imageLines.length, 12)
   imageLines.forEach(line => assert.match(line, /:\$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/))
   assert.doesNotMatch(`${compose}\n${adapterCompose}`, /image:[^\n]*:latest/)
-  assert.equal((compose.match(/^        APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/gm) ?? []).length, imageLines.length)
+  assert.equal((compose.match(/^ {8}APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/gm) ?? []).length, imageLines.length)
   for (const name of ['adapter-manager', 'adapter-docker-broker']) {
-    const block = compose.split(`\n  ${name}:\n`)[1].split(/\n  [a-z][a-z-]+:\n/)[0]
-    assert.match(block, /^      APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/m)
+    const block = compose.split(`\n  ${name}:\n`)[1].split(/\n {2}[a-z][a-z-]+:\n/)[0]
+    assert.match(block, /^ {6}APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/m)
   }
   dockerfiles.forEach(source => assert.match(source, /LABEL org\.opencontainers\.image\.revision=\$\{APP_IMAGE_REVISION\}/))
   assert.match(testWorkflow, /APP_IMAGE_REVISION: \$\{\{ github\.sha \}\}/)
