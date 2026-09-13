@@ -205,7 +205,6 @@ services:
       - app-network
 
   deployment-agent:
-    profiles: ["deployment"]
     build:
       context: ./deployment-agent
       args:
@@ -387,7 +386,6 @@ services:
     network_mode: none
 
   adapter-manager:
-    profiles: ["plugin-adapters"]
     build:
       context: ./adapter-manager
       target: broker
@@ -460,7 +458,6 @@ services:
       - app-network
 
   outbound-gateway:
-    profiles: ["plugin-adapters"]
     build:
       context: ./outbound-gateway
       args:
@@ -492,7 +489,6 @@ services:
       - outbound-network
 
   dify-plugin-worker:
-    profiles: ["plugin-adapters"]
     build:
       context: ./dify-plugin-worker
       args:
@@ -540,7 +536,6 @@ services:
       - outbound-network
 
   n8n-plugin-worker:
-    profiles: ["plugin-adapters"]
     build:
       context: ./n8n-plugin-worker
       args:

@@ -1,6 +1,7 @@
 package com.baseai.platform.controller;
 
 import com.baseai.platform.security.RequiredPermission;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,7 +17,7 @@ public class OperationsDashboardController {
     private final JdbcTemplate mysql;
 
     /** 注入系统数据库查询模板。 */
-    public OperationsDashboardController(JdbcTemplate mysql) { this.mysql = mysql; }
+    public OperationsDashboardController(@Qualifier("mysqlJdbcTemplate") JdbcTemplate mysql) { this.mysql = mysql; }
 
     /** 返回最近 24 小时任务汇总，查询失败时由统一异常处理器处理。 */
     @GetMapping

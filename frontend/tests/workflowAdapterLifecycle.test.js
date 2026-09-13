@@ -19,6 +19,9 @@ test('合并控制平面保留鉴权、沙箱参数和 Worker 页面启停依赖
   const compose = await readFile(new URL('docker-compose.yml', root), 'utf8')
   const block = name => compose.split('\n  ' + name + ':\n')[1].split(/\n  [a-z][a-z-]+:\n/)[0]
   const manager = block('adapter-manager')
+  for (const name of ['deployment-agent', 'adapter-manager', 'outbound-gateway', 'dify-plugin-worker', 'n8n-plugin-worker']) {
+    assert.doesNotMatch(block(name), /profiles:/)
+  }
   assert.match(manager, /target: broker/)
   assert.match(manager, /ADAPTER_MANAGER_MODE: combined/)
   assert.match(manager, /ADAPTER_MANAGER_INTERNAL_TOKEN:/)

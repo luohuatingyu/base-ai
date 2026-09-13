@@ -315,7 +315,9 @@ docker compose ps
 ```
 
 IP learning and renewal run entirely inside the Caddy container. Standard Docker Compose commands are sufficient; no host-side script or additional runtime is required.
-The default profile starts the core platform without plugin adapters. To enable adapters, point `ADAPTER_DOCKER_SOCKET` at a rootless Docker daemon, set `ADAPTER_DOCKER_SOCKET_GID` to the socket's numeric group ID, configure the plugin secrets, and run `docker compose --profile plugin-adapters up --build -d`. The Broker verifies Docker's `name=rootless` security option before opening its control sockets and refuses a conventional or unavailable daemon.
+`docker compose up --build -d` builds and starts all ten core, deployment, and plugin services without extra profiles. Frontend and Caddy remain separate. Deployment Agent, Adapter Manager, and Outbound Gateway run continuously; the plugin page controls the Dify/n8n Workers, and the backend reconciles their state to the saved switches (disabled Workers may therefore stop after startup). These Workers host plugin ABIs, not complete Dify/n8n platforms. The old standalone Broker/Supervisor are rollback-only services in `legacy-plugin-adapters`; do not run them alongside the combined Manager.
+
+Before startup, set `APP_IMAGE_REVISION` in `.env` to the full code commit, configure the internal tokens and `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY`, and select the rootless Docker context hosting the entire stack. `ADAPTER_DOCKER_SOCKET` and `DEPLOYMENT_DOCKER_SOCKET` must be paths on that Docker host; socket group IDs must match their IDs visible inside containers. The Broker verifies `name=rootless` before opening control sockets. A normal Docker Desktop daemon does not satisfy this check. Keep the selected Docker VM running so subsequent plain Compose commands use the same images, volumes, and networks. Plugin invocations can create additional temporary sandbox containers.
 
 ### iOS Device Automation Agent
 
@@ -337,7 +339,7 @@ The Agent executes only the documented fixed command set: device discovery, diag
 
 ```bash
 export DEPLOYMENT_AGENT_INTERNAL_TOKEN="$(openssl rand -hex 32)"
-docker compose --profile deployment up --build -d
+docker compose up --build -d
 ```
 
 Local mode always detects the project under `/workspace` inside the Agent; `DEPLOYMENT_PROJECT_DIR` selects its read-only source mount. SSH supports a private key, an account password, or both. Encrypted private keys use a separate optional passphrase. Combined authentication supports servers requiring a public key followed by an account password; the server determines whether both are mandatory. Host keys are automatically trusted on every connection, including after rotation; no fingerprint maintenance is required and server identity is not pinned. Existing fingerprint fields are ignored. Remote deployment requires Docker Compose, exactly one detectable target project, and pre-pulled revision images.

@@ -310,7 +310,9 @@ docker compose ps
 ```
 
 IP 学习和续期全部在 Caddy 容器中完成，直接使用标准 Docker Compose 命令即可，不需要宿主机脚本或额外运行时。
-默认 profile 只启动核心平台，不启用插件适配器。需要启用适配器时，将 `ADAPTER_DOCKER_SOCKET` 指向 rootless Docker Daemon，将 `ADAPTER_DOCKER_SOCKET_GID` 设为 Socket 的数字组 ID，配置插件密钥，然后执行 `docker compose --profile plugin-adapters up --build -d`。Broker 会在开放控制 Socket 前检查 Docker 的 `name=rootless` 安全选项，普通或不可用的 Daemon 会被拒绝。
+`docker compose up --build -d` 默认构建并启动全部 10 个核心、部署和插件服务，无需额外 Profile。frontend 与 Caddy 保持独立；部署代理、适配器控制服务、出站网关常驻，插件页面控制 Dify/n8n Worker 开关。后端会将 Worker 状态收敛到已保存开关，因此关闭状态的 Worker 可能在启动后被停止。Worker 仅提供插件 ABI 宿主，不部署完整 Dify/n8n 平台。旧独立 Broker/Supervisor 仅保留在 `legacy-plugin-adapters` 回滚 Profile，不能与组合 Manager 同时启动。
+
+首次启动前，在 `.env` 中将 `APP_IMAGE_REVISION` 设置为完整代码提交哈希，配置内部 Token 和 `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY`，并选择承载整个栈的 rootless Docker context。`ADAPTER_DOCKER_SOCKET`、`DEPLOYMENT_DOCKER_SOCKET` 必须是 Docker 主机上的 Socket 路径，组 ID 需使用容器内实际可见的数字 ID。Broker 在开放控制 Socket 前检查 `name=rootless`；普通 Docker Desktop Daemon 不满足要求。后续执行普通 Compose 命令前需保持对应 Docker 虚拟机运行，以复用同一环境的镜像、卷和网络。插件执行还可能产生额外的临时沙箱容器。
 
 ### iOS 设备自动化 Agent
 
@@ -331,7 +333,7 @@ Agent 只执行已定义的固定命令集：设备发现、诊断、IDA 安装/
 
 ```bash
 export DEPLOYMENT_AGENT_INTERNAL_TOKEN="$(openssl rand -hex 32)"
-docker compose --profile deployment up --build -d
+docker compose up --build -d
 ```
 
 本地模式固定使用 Agent 内的 `/workspace`；`DEPLOYMENT_PROJECT_DIR` 决定其只读挂载来源。SSH 支持私钥、账户登录密码，以及私钥＋账户登录密码三种认证方式；加密私钥可另填独立的私钥口令。组合认证支持先验证私钥再验证账户密码的服务器，是否必须两项均通过由远端 SSH 策略决定。Host Key 每次连接自动信任，包括服务器更换密钥后，无需维护指纹，也不再固定校验服务器身份；历史指纹字段兼容忽略。远程部署需预先安装 Docker Compose，并预拉取发布版本对应镜像。
