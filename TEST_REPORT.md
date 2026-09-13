@@ -1,5 +1,13 @@
 # 最近分支覆盖测试报告
 
+## 默认启动与部署可用性修复（2026-09-13）
+
+- 变更提交：07742f6、0e9d7f7。Deployment Agent、Adapter Manager、Outbound Gateway、Dify Worker、n8n Worker 移除 Profile 限制，普通 `docker compose up --build -d` 会自动创建全部 10 个服务；前端仍独立于 Caddy。Adapter Manager 使用 `combined` 子进程模式；后端 Dashboard 使用 `@Qualifier("mysqlJdbcTemplate")`，消除双 JdbcTemplate 启动冲突。
+- 测试结果：后端完整 `mvn -B -ntp test`：932/932 通过，失败 0，错误 0，跳过 0。前端 `node --test frontend/test/*.test.mjs frontend/tests/*.test.js`：416/416 通过。适配器 Go 容器构建内测试和前端适配器契约均通过。
+- 启动验证：rootless Docker context `lima-base-ai-rootless` 已启动并通过 `name=rootless` 检查。完整构建曾受 PyPI、Go proxy 和 Caddy runtime 外部下载超时影响；切换源并串行构建后仍在等待远端依赖，未将部分旧容器视为成功。
+- 已知限制：`.env` 中的 `ADAPTER_DOCKER_SOCKET`、`DEPLOYMENT_DOCKER_SOCKET` 必须指向当前 rootless Docker 主机 Socket；Docker Desktop context 不满足插件 Broker 安全检查。插件页面只能控制两个 Worker，部署代理、Adapter Manager 和 Outbound Gateway 常驻。插件执行会动态创建临时沙箱容器，因此运行时容器数可能超过 10。
+- 下次验证：在网络稳定后执行 `docker compose down --remove-orphans && docker compose up --build -d`，确认 10 个服务健康；使用页面完成部署任务、Worker 开关、插件探测和调用，并记录实际成功的容器状态。
+
 ## 适配器组合启动修复（2026-09-13）
 
 - 验证提交：4dba0be（Fix combined adapter startup and process supervision），分支 master。本次未修改 Java 业务代码，不替换下方 Java 测试基准。
