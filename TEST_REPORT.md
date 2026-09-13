@@ -1,5 +1,17 @@
 # 最近分支覆盖测试报告
 
+## 知识库新增入口去重（2026-09-13）
+
+- 验证提交：3f7af8e8ceb71cc27f87f2ed2657e8a6c5e85ad9（Remove duplicate knowledge base creation entry）；分支 master。仅修改 Vue 3 / Element Plus 知识库页模板及正式 Node/Vue SSR 回归测试，保留右上角新增入口，移除目录空状态重复按钮；不改变 Java 测试基准。
+- 验收与用例映射：组件模板层参数化测试使用真实页头和目录模板，分别输入空列表、有数据、筛选无结果、加载中、加载失败五种状态，并组合有/无新增权限，共10例；预期有权限恰好一个新增按钮、无权限零按钮；有权限点击后仅调用一次无参数 openForm，保持新增表单入口绑定。覆盖正常、边界、异常、权限及兼容回归；表单保存及真实浏览器交互未在本轮执行。
+- 缺陷复现：`node --test frontend/tests/knowledgeBaseManagement.test.js` 修复前14/15通过，空列表且有权限场景稳定失败（实际2个入口，预期1个）；修复后15/15通过，失败0、跳过0。测试实现最初将组件按自定义元素编译，遇到 v-model/插槽编译错误；改用 Vue SSR 及保留插槽、事件的组件替身后完成上述有效复现。
+- 静态检查：在 frontend 执行 `npm run typecheck` 和 `npx eslint src/views/KnowledgeBasesView.vue tests/knowledgeBaseManagement.test.js --max-warnings=0` 均通过。`npm run lint` 失败：security-deployment.test.mjs 三处及 workflowAdapterLifecycle.test.js 一处已有 no-regex-spaces 错误，未修改这些文件。
+- 全量测试：在 frontend 执行 `npm run test:coverage`，最后一次共428例，通过425（99.30%）、失败3、跳过0；工具函数覆盖率为行98.43%、分支81.52%、函数95.10%，超过既有阈值，此指标不代表 Vue 模板覆盖率。失败用例为“助手回答使用内容自适应背景并缩小字体”“消息不展示角色标签且用户问题贴齐右侧”“Caddy 构建使用可配置的 Go 模块代理和 Alpine 镜像”。前两项涉及共享工作区正在修改的聊天页，后一项为构建镜像配置与既有契约不一致，均不涉及知识库改动。首次全量执行还出现聊天布局/输入框旧断言失败；共享工作区持续变化，以上为最后一次完整统计快照，不视为其他任务版本验收。
+- 服务测试：在 frontend 执行 `node --test e2e/*.test.mjs`，3/3通过，失败0、跳过0，覆盖流式代理、WebSocket及生产服务路由；未单独执行前端构建，生产编译由 Compose 完成。
+- 部署：`docker compose up --build -d` 退出0，前端镜像重新编译并重建容器；`docker compose ps --format '{{.Service}} {{.State}} {{.Health}}'` 验证10个服务均 running/healthy。存在既有大包、runtime-config脚本及卷来源警告。镜像沿用环境中的 revision 标记61196a4b，不将其认定为本次提交哈希；构建使用当时共享工作区内容。
+- 已知限制及授权：用户明确选择“允许记录后提交”，允许保留非本任务的全量测试/lint失败，仅提交知识库修改及报告。浏览器预览工具提示当前页面已离开预览应用（https://localhost:443），未完成真实页面点击或截图验收；没有执行后端测试，本次未改后端代码。未创建临时测试或调试文件，其他任务修改未纳入本次提交。
+- 下次验证：其他任务修复聊天布局断言、Caddy配置契约及lint后，重跑前端完整检查；在知识库页确认空列表仅右上角一个新增按钮并点击打开表单。修改知识库入口、权限、目录状态或新增表单绑定时需重跑本节定向和全量测试。回滚可回退本次功能提交并执行 Compose 重建，无依赖新增、配置修改或数据迁移。
+
 ## 默认启动与部署可用性修复（2026-09-13）
 
 - 变更提交：07742f6、0e9d7f7。Deployment Agent、Adapter Manager、Outbound Gateway、Dify Worker、n8n Worker 移除 Profile 限制，普通 `docker compose up --build -d` 会自动创建全部 10 个服务；前端仍独立于 Caddy。Adapter Manager 使用 `combined` 子进程模式；后端 Dashboard 使用 `@Qualifier("mysqlJdbcTemplate")`，消除双 JdbcTemplate 启动冲突。
