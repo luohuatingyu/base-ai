@@ -1,11 +1,58 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { compile, createSSRApp, h } from 'vue'
+import { renderToString } from 'vue/server-renderer'
 import { createUploadQueue, documentErrorTranslationKey, documentStatusType, formatFileSize,
   runUploadQueue, uploadQueueSummary, uploadStatusType } from '../src/utils/knowledgeBaseManagement.js'
 
 const file = (name, size, lastModified = 1) => ({ name, size, lastModified })
 const viewSource = readFileSync(new URL('../src/views/KnowledgeBasesView.vue', import.meta.url), 'utf8')
+
+/** 使用真实页头与目录模板验证各状态下的新增入口及点击行为。 */
+for (const state of [
+  { name: 'empty', rows: [], hasBaseFilters: false },
+  { name: 'populated', rows: [{ id: 1, name: 'Knowledge', enabled: true }], hasBaseFilters: false },
+  { name: 'filtered empty', rows: [], hasBaseFilters: true },
+  { name: 'loading', rows: [], loading: true },
+  { name: 'load error', rows: [], loadError: true }
+]) {
+  for (const permitted of [true, false]) {
+    test(`knowledge base create entry is unique for ${state.name}, permission=${permitted}`, async () => {
+      const header = viewSource.match(/<header class="knowledge-hero">[\s\S]*?<\/header>/)[0]
+      const directory = viewSource.match(/<aside class="knowledge-directory panel">[\s\S]*?<\/aside>/)[0]
+      const template = `<div>${header}${directory}</div>`
+      const render = compile(template)
+      const calls = []
+      const context = {
+        t: key => key, auth: { hasPermission: permission => permitted && permission === 'ai:model:knowledge-base:create' },
+        total: state.rows.length, query: { size: 20 }, storageTypes: [], loading: false, loadError: false,
+        activeBase: null, storageLabel: value => value, loadBases() {}, searchBases() {}, selectBase() {},
+        openForm: (...args) => calls.push(args), ...state
+      }
+      const buttons = []
+      const app = createSSRApp({ render, setup: () => context })
+      for (const tag of new Set(template.match(/el-[a-z-]+/g))) {
+        app.component(tag, {
+          /** 保留组件插槽与事件，隔离 Element Plus 的浏览器依赖。 */
+          setup(props, { attrs, slots }) {
+            return () => {
+              const children = slots.default?.() || []
+              if (tag === 'el-button' && children.some(child => child.children === 'knowledgeBases.add')) buttons.push(attrs)
+              return h(tag, attrs, children)
+            }
+          }
+        })
+      }
+      await renderToString(app)
+      assert.equal(buttons.length, permitted ? 1 : 0)
+      if (permitted) {
+        buttons[0].onClick()
+        assert.deepEqual(calls, [[]])
+      }
+    })
+  }
+}
 
 test('upload queue enforces file count, empty file, and size boundaries', () => {
   const files = Array.from({ length: 21 }, (_, index) => file(`file-${index}.txt`, index === 0 ? 0 : index === 1 ? 10 * 1024 * 1024 + 1 : 10))

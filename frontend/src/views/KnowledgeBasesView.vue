@@ -24,9 +24,7 @@
         </div>
         <div v-if="loading" class="directory-state"><el-skeleton :rows="5" animated /></div>
         <div v-else-if="loadError" class="directory-state"><el-result icon="error" :title="t('knowledgeBases.loadFailed')"><template #extra><el-button type="primary" @click="loadBases()">{{ t('knowledgeBases.retry') }}</el-button></template></el-result></div>
-        <el-empty v-else-if="!rows.length" :description="hasBaseFilters ? t('knowledgeBases.noResults') : t('knowledgeBases.empty')">
-          <el-button v-if="!hasBaseFilters&&auth.hasPermission('ai:model:knowledge-base:create')" type="primary" @click="openForm()">{{ t('knowledgeBases.add') }}</el-button>
-        </el-empty>
+        <el-empty v-else-if="!rows.length" :description="hasBaseFilters ? t('knowledgeBases.noResults') : t('knowledgeBases.empty')" />
         <div v-else class="directory-list">
           <button v-for="row in rows" :key="row.id" type="button" :class="['directory-item',{ active: activeBase?.id===row.id }]" @click="selectBase(row)">
             <span class="directory-title"><strong>{{ row.name }}</strong><el-tag size="small" :type="row.enabled?'success':'info'">{{ row.enabled?t('common.enabled'):t('common.disabled') }}</el-tag></span>
