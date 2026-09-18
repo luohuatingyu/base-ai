@@ -6,6 +6,10 @@ import com.baseai.platform.service.TaskTraceService;
 import com.baseai.platform.trace.TraceContextHolder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.retry.Retry;
+import io.vavr.control.Try;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -18,6 +22,7 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import jakarta.annotation.PreDestroy;
 
 /** 有界读取 Worker SSE，保留内部签名、模型路由和完整任务生命周期。 */
@@ -28,19 +33,46 @@ public class ChatStreamClient {
     private final TaskTraceService traces;
     private final ObjectMapper mapper;
     private final ScheduledExecutorService watchdog = Executors.newScheduledThreadPool(2);
+    private final Retry retry;
+    private final CircuitBreaker circuitBreaker;
 
     /** 为流式接口设置连接及响应头超时，保留已有签名拦截器。 */
     public ChatStreamClient(@Qualifier("pythonWorkerRestClient") RestClient client, LlmManagementService management,
-                            TaskTraceService traces, ObjectMapper mapper) {
+                            TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry, 
+                            CircuitBreaker pythonWorkerCircuitBreaker) {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(10)).build());
         factory.setReadTimeout(Duration.ofSeconds(30));
         this.client = client.mutate().requestFactory(factory).build();
         this.management = management; this.traces = traces; this.mapper = mapper;
+        this.retry = pythonWorkerRetry;
+        this.circuitBreaker = pythonWorkerCircuitBreaker;
     }
 
-    /** 逐事件读取；消费者返回前不会预取下一事件。 */
+    /** 逐事件读取；消费者返回前不会预取下一事件。使用重试和熔断保护。 */
     public void stream(ChatConversationService.Turn turn, EventConsumer consumer) {
+        Supplier<Void> supplier = () -> {
+            executeStream(turn, consumer);
+            return null;
+        };
+        
+        // 使用熔断器装饰
+        Supplier<Void> circuitBreakerSupplier = CircuitBreaker.decorateSupplier(circuitBreaker, supplier);
+        
+        // 使用重试装饰
+        Supplier<Void> retrySupplier = Retry.decorateSupplier(retry, circuitBreakerSupplier);
+        
+        try {
+            Try.ofSupplier(retrySupplier).get();
+        } catch (CallNotPermittedException e) {
+            throw new RuntimeException("Python Worker circuit breaker is open", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Python Worker call failed after retries", e);
+        }
+    }
+    
+    /** 实际执行流式调用。 */
+    private void executeStream(ChatConversationService.Turn turn, EventConsumer consumer) {
         var settings = turn.settings();
         String feature = settings.featureCode() == null || settings.featureCode().isBlank() ? "chat" : settings.featureCode();
         var route = settings.modelId() == null ? management.resolveActive(feature, settings.modelType()) :

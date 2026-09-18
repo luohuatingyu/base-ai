@@ -186,5 +186,49 @@ app:
   deployment-agent:
     url: ${DEPLOYMENT_AGENT_URL:}
     internal-token: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:}
-  data-sync:
-    worker-image: ${DATA_SYNC_WORKER_IMAGE:}
+   data-sync:
+     worker-image: ${DATA_SYNC_WORKER_IMAGE:}
+
+resilience4j:
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 500ms
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.lang.Exception
+        ignoreExceptions:
+          - java.lang.IllegalArgumentException
+          - java.lang.IllegalStateException
+    instances:
+      pythonWorker:
+        baseConfig: default
+        maxAttempts: 3
+        waitDuration: 1s
+      externalApi:
+        baseConfig: default
+        maxAttempts: 2
+        waitDuration: 500ms
+  circuitbreaker:
+    configs:
+      default:
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 10
+        slidingWindowSize: 100
+        slidingWindowType: COUNT_BASED
+    instances:
+      pythonWorker:
+        baseConfig: default
+        failureRateThreshold: 50
+        waitDurationInOpenState: 20s
+        permittedNumberOfCallsInHalfOpenState: 5
+        slidingWindowSize: 50
+      externalApi:
+        baseConfig: default
+        failureRateThreshold: 50
+        waitDurationInOpenState: 60s
+        permittedNumberOfCallsInHalfOpenState: 3
+        slidingWindowSize: 20
+

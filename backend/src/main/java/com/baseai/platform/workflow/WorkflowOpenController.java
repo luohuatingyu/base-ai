@@ -1,5 +1,6 @@
 package com.baseai.platform.workflow;
 
+import com.baseai.platform.aop.RateLimit;
 import com.baseai.platform.security.ApiKeyEndpoint;
 import com.baseai.platform.security.ApiKeyField;
 import com.baseai.platform.security.ApiKeyRisk;
@@ -24,6 +25,7 @@ public class WorkflowOpenController {
     /** 按稳定编码异步启动已发布工作流。 */
     @PostMapping("/{code}/runs")
     @RequiredPermission("automation:workflow:canvas:execute")
+    @RateLimit(name = "workflow-execute", limit = 100, period = 1, limitType = RateLimit.LimitType.GLOBAL)
     @ApiKeyEndpoint(code = "workflow.execute", nameKey = "apiKeys.endpointNames.workflowExecute",
         groupKey = "apiKeys.endpointGroups.workflow", descriptionKey = "openPlatform.endpointDescriptions.workflowExecute",
         risk = ApiKeyRisk.HIGH,

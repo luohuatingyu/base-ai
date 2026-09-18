@@ -1,5 +1,6 @@
 package com.baseai.platform.chat;
 
+import com.baseai.platform.aop.RateLimit;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.RequiredPermission;
@@ -46,6 +47,7 @@ public class ChatConversationController {
     /** 增量输出并在完成前持久化终态，最多允许十六条活动流。 */
     @PostMapping(value = "/{id}/messages/stream", produces = "text/event-stream")
     @com.baseai.platform.trace.TraceType(value = "AI_CHAT_STREAM", captureRequest = false)
+    @RateLimit(name = "ai-chat", limit = 10, period = 60, limitType = RateLimit.LimitType.USER)
     public void send(@PathVariable Long id, @RequestBody ChatConversationService.SendRequest request,
                      HttpServletResponse response) {
         if (!slots.tryAcquire()) throw new BusinessException(503, "chat.busy");
