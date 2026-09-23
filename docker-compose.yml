@@ -134,7 +134,7 @@ services:
       ADAPTER_MANAGER_URL: ${ADAPTER_MANAGER_URL:-http://adapter-manager:8090}
       ADAPTER_MANAGER_INTERNAL_TOKEN: ${ADAPTER_MANAGER_INTERNAL_TOKEN:?Set ADAPTER_MANAGER_INTERNAL_TOKEN}
       DEPLOYMENT_AGENT_URL: ${DEPLOYMENT_AGENT_URL:-http://deployment-agent:8091}
-      DEPLOYMENT_AGENT_INTERNAL_TOKEN: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:-}
+      DEPLOYMENT_AGENT_INTERNAL_TOKEN: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:?Set DEPLOYMENT_AGENT_INTERNAL_TOKEN}
       DATA_SYNC_WORKER_IMAGE: ${DATA_SYNC_WORKER_IMAGE:-${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}}
       WORKFLOW_PLUGIN_WORKER_TIMEOUT_SECONDS: ${WORKFLOW_PLUGIN_WORKER_TIMEOUT_SECONDS:-240}
       JAVA_INSTANCE_ID: ${JAVA_INSTANCE_ID:-java-backend-1}
@@ -204,6 +204,30 @@ services:
     networks:
       - app-network
 
+  # Docker API proxy exposes only the operations required by deployment-agent.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      POST: 1
+      EXEC: 1
+      INFO: 1
+      PING: 1
+      VERSION: 1
+      AUTH: 0
+      SECRETS: 0
+      SWARM: 0
+      SYSTEM: 0
+    volumes:
+      - ${DEPLOYMENT_DOCKER_SOCKET:-/run/base-ai-disabled-docker.sock}:/var/run/docker.sock:ro
+    networks:
+      - deployment-network
+
   deployment-agent:
     build:
       context: ./deployment-agent
@@ -220,15 +244,13 @@ services:
     read_only: true
     cap_drop:
       - ALL
-    group_add:
-      - "${DEPLOYMENT_DOCKER_SOCKET_GID:-1000}"
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
     environment:
-      DEPLOYMENT_AGENT_INTERNAL_TOKEN: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:-}
+      DEPLOYMENT_AGENT_INTERNAL_TOKEN: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:?Set DEPLOYMENT_AGENT_INTERNAL_TOKEN}
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
     volumes:
-      - ${DEPLOYMENT_DOCKER_SOCKET:-/run/base-ai-disabled-docker.sock}:/var/run/docker.sock
       - ${DEPLOYMENT_PROJECT_DIR:-.}:/workspace:ro
     tmpfs:
       - /tmp:size=32m,mode=1700,uid=10001
@@ -237,8 +259,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
     networks:
       - app-network
+      - deployment-network
 
   python-worker:
     build:
@@ -697,6 +723,9 @@ networks:
       config:
         - subnet: ${APP_NETWORK_SUBNET:-172.30.0.0/24}
   outbound-network:
+    driver: bridge
+    internal: true
+  deployment-network:
     driver: bridge
     internal: true
 

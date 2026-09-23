@@ -79,7 +79,7 @@ app:
     secret: ${APP_TOKEN_SECRET}
     expire-minutes: ${APP_TOKEN_EXPIRE_MINUTES:720}
   session-cookie:
-    secure: ${APP_SESSION_COOKIE_SECURE:false}
+    secure: ${APP_SESSION_COOKIE_SECURE:true}
   api-key:
     hash-secret: ${APP_API_KEY_HASH_SECRET}
   proxy:
@@ -231,4 +231,3 @@ resilience4j:
         waitDurationInOpenState: 60s
         permittedNumberOfCallsInHalfOpenState: 3
         slidingWindowSize: 20
-

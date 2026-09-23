@@ -25,12 +25,22 @@ const contentTypes = {
 
 /** 将同源 API 请求代理到 Java 后端。 */
 function proxy(request, response) {
+  const forwardedHeaders = {}
+  const allowedHeaders = new Set([
+    'accept', 'accept-encoding', 'accept-language', 'authorization', 'content-type',
+    'content-length', 'cookie', 'if-none-match', 'if-modified-since', 'origin',
+    'referer', 'user-agent', 'x-api-key', 'x-csrf-token', 'x-request-id'
+  ])
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (allowedHeaders.has(name.toLowerCase())) forwardedHeaders[name] = value
+  }
+  forwardedHeaders.host = backend.host
   const upstream = http.request({
     hostname: backend.hostname,
     port: backend.port || 80,
     path: request.url,
     method: request.method,
-    headers: { ...request.headers, host: backend.host }
+    headers: forwardedHeaders
   }, (upstreamResponse) => {
     response.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers)
     upstreamResponse.pipe(response)

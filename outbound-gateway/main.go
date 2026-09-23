@@ -56,8 +56,11 @@ func main() {
 	if len(sandboxKey) < 32 {
 		log.Fatal("PLUGIN_SANDBOX_EGRESS_SIGNING_KEY must contain at least 32 characters")
 	}
-	g := &gateway{token: token, sandboxKey: sandboxKey,
-		domains: parseDomains(os.Getenv("OUTBOUND_ALLOWED_DOMAINS")), now: time.Now}
+	domains, err := parseDomains(os.Getenv("OUTBOUND_ALLOWED_DOMAINS"))
+	if err != nil {
+		log.Fatalf("invalid OUTBOUND_ALLOWED_DOMAINS: %v", err)
+	}
+	g := &gateway{token: token, sandboxKey: sandboxKey, domains: domains, now: time.Now}
 	server := &http.Server{Addr: ":8080", Handler: g, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 130 * time.Second, WriteTimeout: 130 * time.Second, IdleTimeout: 30 * time.Second}
 	log.Printf("outbound gateway started allowed_domains=%d", len(g.domains))
@@ -393,15 +396,14 @@ func (g *gateway) safeAddresses(ctx context.Context, host string) bool {
 	return true
 }
 
-func parseDomains(value string) []string {
+func parseDomains(value string) ([]string, error) {
 	result := []string{}
 	for _, raw := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' }) {
-		domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(raw), "."))
-		if domain != "" {
-			result = append(result, domain)
-		}
+		domain := normalizeExactDomain(raw)
+		if domain == "" { return nil, fmt.Errorf("invalid domain %q", raw) }
+		result = append(result, domain)
 	}
-	return result
+	return result, nil
 }
 
 func isPrivate(ip net.IP) bool {

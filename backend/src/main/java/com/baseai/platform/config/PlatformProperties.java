@@ -137,7 +137,7 @@ public class PlatformProperties {
 
     /** 控制浏览器会话 Cookie 的传输安全属性。 */
     public static class SessionCookie {
-        private boolean secure = false;
+        private boolean secure = true;
         /** 返回是否仅允许通过 HTTPS 发送 Cookie。 */
         public boolean isSecure() { return secure; }
         /** 设置是否仅允许通过 HTTPS 发送 Cookie。 */
