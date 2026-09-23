@@ -89,6 +89,18 @@ func TestSystemInfoParsing(t *testing.T) {
 	}
 }
 
+// TestMonitorCommandEscapesDiskPath 验证监控路径中的 Shell 元字符不会形成额外命令。
+func TestMonitorCommandEscapesDiskPath(t *testing.T) {
+	malicious := "/tmp/a'; touch /tmp/forbidden; echo '"
+	command := monitorCommand(malicious)
+	if !strings.Contains(command, "df -Pk '/tmp/a'\\''; touch /tmp/forbidden; echo '\''") {
+		t.Fatalf("disk path was not shell-escaped: %s", command)
+	}
+	if strings.Contains(command, "df -Pk /tmp/a'; touch") {
+		t.Fatal("raw disk path was interpolated into the command")
+	}
+}
+
 // TestSSHPromptErrors 验证非法提示参数和输出失败均不返回成功。
 func TestSSHPromptErrors(t *testing.T) {
 	for _, arguments := range [][]string{nil, {"password", "extra"}, {"verification code"}} {

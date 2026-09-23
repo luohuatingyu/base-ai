@@ -225,6 +225,11 @@ services:
       SYSTEM: 0
     volumes:
       - ${DEPLOYMENT_DOCKER_SOCKET:-/run/base-ai-disabled-docker.sock}:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2375/_ping >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - deployment-network
 
@@ -261,7 +266,7 @@ services:
       retries: 10
     depends_on:
       docker-socket-proxy:
-        condition: service_started
+        condition: service_healthy
     networks:
       - app-network
       - deployment-network
