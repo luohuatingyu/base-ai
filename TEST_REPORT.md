@@ -33,6 +33,12 @@
 - 在具备 Docker、Maven、Go、Node.js 的 CI 或部署主机上，必须重新执行完整测试，并验证部署、远程终端、容器管理和插件适配器回归流程。
 - Git 基准点：`b967c06`。
 
+### 后续加固（2026-09-23）
+
+- 代码提交：`a769fc8`（Harden deployment monitoring and proxy readiness）。
+- 部署代理监控路径新增 Shell 转义回归测试，覆盖包含引号、分号和命令替换字符的路径；Socket Proxy 新增健康检查，部署代理等待代理健康后再启动。
+- 当前环境仍缺少 Docker、Maven、Go 和 Node/npm，新增测试无法在本机执行；需在 CI 或部署主机执行 `go test ./...` 与 `docker compose up --build -d`。
+
 ## AI 对话页面布局优化（2026-09-13）
 
 ### Git 基准与范围
