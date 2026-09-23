@@ -1,5 +1,38 @@
 # 最近分支覆盖测试报告
 
+## 安全风险修复（2026-09-23）
+
+### Git 基准与范围
+
+- 代码提交：`b967c06`（Harden proxy and deployment security defaults）。
+- 修复范围：默认安全会话 Cookie、出站域名白名单校验、前端代理请求头白名单、部署代理令牌必填，以及通过 Docker Socket Proxy 隔离部署代理的宿主机 Socket。
+- 未修改数据库结构、第三方代码或新增业务依赖；Docker Compose 新增 `tecnativa/docker-socket-proxy:0.3.0` 运行时镜像。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试 | 场景 |
+| --- | --- | --- |
+| 会话 Cookie 默认安全 | `SessionCookieServiceTest` | 正常、配置兼容、安全 |
+| 出站白名单拒绝非法域名 | `outbound-gateway` Go 单元测试及 Compose 配置检查 | 边界、异常、安全 |
+| 代理不透传伪造代理头 | `frontend/e2e/frontend-server.test.mjs` | 正常、安全、回归 |
+| 部署代理令牌缺失时启动失败 | Compose 配置检查、Deployment Agent 配置测试 | 异常、兼容 |
+| 部署代理不直接挂载 Docker Socket | Compose 配置检查 | 权限、安全 |
+
+### 实际执行结果
+
+- `git diff --check`：通过。
+- `mvn test -B`：未执行，当前环境无 `mvn`。
+- `go test ./...`：未执行，当前环境无 `go`。
+- `npm test -- --runInBand`：未执行，当前环境无 `npm`。
+- `docker compose config` 与 `docker compose up --build -d`：未执行，当前环境无 `docker`。
+- 因上述工具缺失，本次不能确认编译、完整测试、Compose 启动和新 Docker Socket Proxy 镜像的实际兼容性。
+
+### 已知问题与下次测试建议
+
+- Socket Proxy 仍允许部署所需的容器、镜像、执行和网络 API；它降低了直接暴露宿主机 Unix Socket 的风险，但部署代理被攻破后仍具有较高 Docker 控制能力。
+- 在具备 Docker、Maven、Go、Node.js 的 CI 或部署主机上，必须重新执行完整测试，并验证部署、远程终端、容器管理和插件适配器回归流程。
+- Git 基准点：`b967c06`。
+
 ## AI 对话页面布局优化（2026-09-13）
 
 ### Git 基准与范围
