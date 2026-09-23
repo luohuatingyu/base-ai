@@ -93,7 +93,7 @@ func TestSystemInfoParsing(t *testing.T) {
 func TestMonitorCommandEscapesDiskPath(t *testing.T) {
 	malicious := "/tmp/a'; touch /tmp/forbidden; echo '"
 	command := monitorCommand(malicious)
-	if !strings.Contains(command, "df -Pk '/tmp/a'\\''; touch /tmp/forbidden; echo '\''") {
+	if !strings.Contains(command, `df -Pk '/tmp/a'\''; touch /tmp/forbidden; echo '\'''`) {
 		t.Fatalf("disk path was not shell-escaped: %s", command)
 	}
 	if strings.Contains(command, "df -Pk /tmp/a'; touch") {
