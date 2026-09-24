@@ -1174,7 +1174,7 @@ func composeDiscoveryCommand() string {
   [ -n "$directory" ] || directory="/"
   services="$(APP_IMAGE_REVISION=validation docker compose --project-directory "$directory" -f "$candidate" config --services 2>/dev/null)" || return 0
   signature="OTHER"
-  if printf '%s\n' "$services" | grep -qx 'backend' && printf '%s\n' "$services" | grep -qx 'frontend' && printf '%s\n' "$services" | grep -qx 'caddy'; then
+  if printf '%s\n' "$services" | grep -qx 'backend' && printf '%s\n' "$services" | grep -qx 'frontend' && printf '%s\n' "$services" | grep -qx 'python-worker' && printf '%s\n' "$services" | grep -qx 'adapter-manager'; then
     signature="BASE_AI"
   fi
   printf 'BASEAI_COMPOSE\t%s\t%s\t%s\n' "$directory" "${candidate##*/}" "$signature"

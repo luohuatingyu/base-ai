@@ -377,7 +377,7 @@ func TestComposeDiscoveryCommandFindsBaseAIHomeProject(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectDir, "compose.yml"), []byte("services: {}"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fakeDocker := "#!/bin/sh\nif [ \"$1\" = ps ]; then exit 0; fi\nprintf 'backend\\nfrontend\\ncaddy\\n'\n"
+	fakeDocker := "#!/bin/sh\nif [ \"$1\" = ps ]; then exit 0; fi\nprintf 'backend\\nfrontend\\npython-worker\\nadapter-manager\\n'\n"
 	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte(fakeDocker), 0700); err != nil {
 		t.Fatal(err)
 	}

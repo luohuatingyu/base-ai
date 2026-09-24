@@ -225,10 +225,10 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
 - **Device Agent:** `DEVICE_AGENT_NONCE_TTL_SECONDS`, `DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS`, `DEVICE_AGENT_HEARTBEAT_STALE_SECONDS`, `DEVICE_AGENT_PAIRING_TTL_SECONDS`, `DEVICE_AGENT_REGISTRY_DEFAULT_PORT`, plus pinned runtime versions `AGENT_NODE_VERSION`, `AGENT_APPIUM_SPEC`, and `AGENT_XCUITEST_SPEC`.
 - **Workflow:** `WORKFLOW_EXECUTOR_POOL_SIZE`, `WORKFLOW_EXECUTOR_QUEUE_CAPACITY`, `WORKFLOW_MAX_NODES`, `WORKFLOW_MAX_ITERATIONS`, `WORKFLOW_MAX_AGENT_STEPS`, `WORKFLOW_MAX_RECURSION_DEPTH`, `WORKFLOW_MAX_PAYLOAD_BYTES`, `WORKFLOW_MAX_WAIT_SECONDS`, `WORKFLOW_MAX_EXECUTION_STEPS`, `WORKFLOW_MAX_RUN_LOG_BYTES`, `WORKFLOW_LEASE_SECONDS`, `WORKFLOW_WEBHOOK_MAX_BODY_BYTES`, `WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE`, and `WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS`.
-- **HTTP ingress and images:** `HTTP_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Caddy serves HTTP only; terminate HTTPS in an external reverse proxy when needed. Backend port 8080 and Worker port 8000 are internal-only.
+- **HTTP ingress and images:** `HTTP_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Frontend serves HTTP directly; terminate HTTPS in an external reverse proxy when needed. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
-Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME` and normalizes it to lowercase. Runtime container names use the same prefix, including Backend, Workers, Frontend, Caddy, the Adapter Manager, and its isolated Supervisor.
+Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME` and normalizes it to lowercase. Runtime container names use the same prefix, including Backend, Workers, Frontend, the Adapter Manager, and its isolated Supervisor.
 
 ### API trigger redirects
 
@@ -246,14 +246,13 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Caddy is a plain HTTP reverse proxy. Standard Docker Compose commands are sufficient; no host-side TLS runtime is required.
-`docker compose up --build -d` builds and starts all ten core, deployment, and plugin services without extra profiles. Frontend and Caddy remain separate. Deployment Agent, Adapter Manager, and Outbound Gateway run continuously; the plugin page controls the Dify/n8n Workers, and the backend reconciles their state to the saved switches (disabled Workers may therefore stop after startup). These Workers host plugin ABIs, not complete Dify/n8n platforms. The old standalone Broker/Supervisor are rollback-only services in `legacy-plugin-adapters`; do not run them alongside the combined Manager.
+Frontend serves the HTTP entry and `/api` proxy directly. Standard Docker Compose commands are sufficient; terminate HTTPS in an external reverse proxy when needed. `docker compose up --build -d` builds and starts all ten core, deployment, and plugin services without extra profiles. Deployment Agent, Adapter Manager, and Outbound Gateway run continuously; the plugin page controls the Dify/n8n Workers, and the backend reconciles their state to the saved switches (disabled Workers may therefore stop after startup). These Workers host plugin ABIs, not complete Dify/n8n platforms. The old standalone Broker/Supervisor are rollback-only services in `legacy-plugin-adapters`; do not run them alongside the combined Manager.
 
 Before startup, set `APP_IMAGE_REVISION` in `.env` to the full code commit, configure the internal tokens and `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY`, and select the rootless Docker context hosting the entire stack. `ADAPTER_DOCKER_SOCKET` and `DEPLOYMENT_DOCKER_SOCKET` must be paths on that Docker host; socket group IDs must match their IDs visible inside containers. The Broker verifies `name=rootless` before opening control sockets. A normal Docker Desktop daemon does not satisfy this check. Keep the selected Docker VM running so subsequent plain Compose commands use the same images, volumes, and networks. Plugin invocations can create additional temporary sandbox containers.
 
 ### iOS Device Automation Agent
 
-The **Automation / Device Agent Management** page creates a 15-minute one-time pairing code and an installation command for a target Mac. Caddy distributes self-contained Python 3.12 and Node.js 22 runtimes for Apple Silicon and Intel; the installer pins Appium 3.7 and XCUITest Driver 12.11 and configures a login-level Appium LaunchAgent plus a root-owned Remote XPC Registry LaunchDaemon. The target Mac needs full Xcode, and each iPhone/iPad must trust the Mac and enable Developer Mode.
+The **Automation / Device Agent Management** page creates a 15-minute one-time pairing code and an installation command for a target Mac. Frontend distributes self-contained Python 3.12 and Node.js 22 runtimes for Apple Silicon and Intel; the installer pins Appium 3.7 and XCUITest Driver 12.11 and configures a login-level Appium LaunchAgent plus a root-owned Remote XPC Registry LaunchDaemon. The target Mac needs full Xcode, and each iPhone/iPad must trust the Mac and enable Developer Mode.
 
 The management page dispatches device-scoped `SETUP_IDA` and `START_IDA` commands, supports stable per-device ports and conflict detection, encrypts IDA signing metadata, manages Registry online/offline/recreate actions, and cancels active commands. Raw UDIDs never enter the backend, logs, or UI; they are used only in Agent memory and restricted local Unix Socket requests to the root helper. WeCom accounts, friends, and business tasks remain out of scope.
 
@@ -285,13 +284,13 @@ After all services are healthy:
 - Unified health check: <http://127.0.0.1:80/api/open/health>
 - Backend liveness check: <http://127.0.0.1:80/api/open/health/live>
 - Backend readiness check: <http://127.0.0.1:80/api/open/health/ready>
-- Caddy health check: <http://127.0.0.1:80/health>
+- Frontend health check: <http://127.0.0.1:80/health>
 
 The unified and readiness checks return HTTP 503 unless MySQL, PostgreSQL, Redis, and the Python Worker are all available. Public ingress returns HTTP 404 for `/api/internal` paths; internal Java-to-Worker traffic continues directly over the Docker network.
 
-Caddy serves the web console, API, and health endpoint over HTTP on the configured `HTTP_PORT` (80 by default). It does not create certificates or redirect HTTP requests to HTTPS. If public HTTPS is required, place a separately managed reverse proxy in front of this HTTP listener.
+Frontend serves the web console, API, health endpoint, and Device Agent packages over HTTP on the configured `HTTP_PORT` (80 by default). It does not create certificates or redirect HTTP requests to HTTPS. If public HTTPS is required, place a separately managed reverse proxy in front of this HTTP listener.
 
-Network-facing application containers use non-root users. Linux capabilities are removed except for Caddy's `NET_BIND_SERVICE` on port 80; the networkless Docker Broker remains an explicitly isolated host-privilege boundary. Base images are digest-pinned directly in Compose and Dockerfiles, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
+Network-facing application containers use non-root users and drop unnecessary Linux capabilities; the networkless Docker Broker remains an explicitly isolated host-privilege boundary. Base images are digest-pinned directly in Compose and Dockerfiles, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
 
 The initial administrator, role, permission tree, root department, and model-type dictionary are seeded automatically. If `APP_SEED_ADMIN_PASSWORD` is empty or weak on first initialization, the backend generates a 32-character strong password in the protected `bootstrap-secrets` volume. Retrieve it once with `docker compose exec backend sh -c 'cat /app/bootstrap/admin-password'`, sign in with `APP_SEED_ADMIN_USERNAME`, and change it immediately.
 

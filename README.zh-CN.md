@@ -220,10 +220,10 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
 - **设备 Agent：** `DEVICE_AGENT_NONCE_TTL_SECONDS`、`DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS`、`DEVICE_AGENT_HEARTBEAT_STALE_SECONDS`、`DEVICE_AGENT_PAIRING_TTL_SECONDS`、`DEVICE_AGENT_REGISTRY_DEFAULT_PORT`，以及固定运行时版本 `AGENT_NODE_VERSION`、`AGENT_APPIUM_SPEC`、`AGENT_XCUITEST_SPEC`。
 - **工作流：** `WORKFLOW_EXECUTOR_POOL_SIZE`、`WORKFLOW_EXECUTOR_QUEUE_CAPACITY`、`WORKFLOW_MAX_NODES`、`WORKFLOW_MAX_ITERATIONS`、`WORKFLOW_MAX_AGENT_STEPS`、`WORKFLOW_MAX_RECURSION_DEPTH`、`WORKFLOW_MAX_PAYLOAD_BYTES`、`WORKFLOW_MAX_WAIT_SECONDS`、`WORKFLOW_MAX_EXECUTION_STEPS`、`WORKFLOW_MAX_RUN_LOG_BYTES`、`WORKFLOW_LEASE_SECONDS`、`WORKFLOW_WEBHOOK_MAX_BODY_BYTES`、`WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE`、`WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS`。
-- **HTTP 入口、端口和镜像：** `HTTP_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。Caddy 仅提供 HTTP；如需 HTTPS，请在项目外部的反向代理终止 TLS。后端 8080 和 Worker 8000 端口仅在内部网络开放。
+- **HTTP 入口、端口和镜像：** `HTTP_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。Frontend 直接提供 HTTP；如需 HTTPS，请在项目外部的反向代理终止 TLS。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
-Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写。Backend、各 Worker、Frontend、Caddy、Adapter Manager 及其隔离 Supervisor 均使用相同的容器名前缀。
+Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写。Backend、各 Worker、Frontend、Adapter Manager 及其隔离 Supervisor 均使用相同的容器名前缀。
 
 ### 接口触发器重定向
 
@@ -241,14 +241,13 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Caddy 是纯 HTTP 反向代理，直接使用标准 Docker Compose 命令即可，不需要宿主机 TLS 运行时。
-`docker compose up --build -d` 默认构建并启动全部 10 个核心、部署和插件服务，无需额外 Profile。frontend 与 Caddy 保持独立；部署代理、适配器控制服务、出站网关常驻，插件页面控制 Dify/n8n Worker 开关。后端会将 Worker 状态收敛到已保存开关，因此关闭状态的 Worker 可能在启动后被停止。Worker 仅提供插件 ABI 宿主，不部署完整 Dify/n8n 平台。旧独立 Broker/Supervisor 仅保留在 `legacy-plugin-adapters` 回滚 Profile，不能与组合 Manager 同时启动。
+Frontend 直接提供 HTTP 入口和 `/api` 代理，直接使用标准 Docker Compose 命令即可；如需 HTTPS，请在项目外部的反向代理终止 TLS。`docker compose up --build -d` 默认构建并启动全部 10 个核心、部署和插件服务，无需额外 Profile。部署代理、适配器控制服务、出站网关常驻，插件页面控制 Dify/n8n Worker 开关。后端会将 Worker 状态收敛到已保存开关，因此关闭状态的 Worker 可能在启动后被停止。Worker 仅提供插件 ABI 宿主，不部署完整 Dify/n8n 平台。旧独立 Broker/Supervisor 仅保留在 `legacy-plugin-adapters` 回滚 Profile，不能与组合 Manager 同时启动。
 
 首次启动前，在 `.env` 中将 `APP_IMAGE_REVISION` 设置为完整代码提交哈希，配置内部 Token 和 `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY`，并选择承载整个栈的 rootless Docker context。`ADAPTER_DOCKER_SOCKET`、`DEPLOYMENT_DOCKER_SOCKET` 必须是 Docker 主机上的 Socket 路径，组 ID 需使用容器内实际可见的数字 ID。Broker 在开放控制 Socket 前检查 `name=rootless`；普通 Docker Desktop Daemon 不满足要求。后续执行普通 Compose 命令前需保持对应 Docker 虚拟机运行，以复用同一环境的镜像、卷和网络。插件执行还可能产生额外的临时沙箱容器。
 
 ### iOS 设备自动化 Agent
 
-在“自动化 / 设备 Agent 管理”页面生成有效期 15 分钟的一次性配对码和目标 Mac 安装命令。Caddy 会同时分发 Apple Silicon 与 Intel 的自包含 Python 3.12 和 Node.js 22 运行时；安装器固定安装 Appium 3.7 与 XCUITest Driver 12.11，并配置登录级 Appium LaunchAgent 和 root-owned Remote XPC Registry LaunchDaemon。目标 Mac 必须安装完整 Xcode，iPhone/iPad 必须信任 Mac 并启用开发者模式。
+在“自动化 / 设备 Agent 管理”页面生成有效期 15 分钟的一次性配对码和目标 Mac 安装命令。Frontend 会同时分发 Apple Silicon 与 Intel 的自包含 Python 3.12 和 Node.js 22 运行时；安装器固定安装 Appium 3.7 与 XCUITest Driver 12.11，并配置登录级 Appium LaunchAgent 和 root-owned Remote XPC Registry LaunchDaemon。目标 Mac 必须安装完整 Xcode，iPhone/iPad 必须信任 Mac 并启用开发者模式。
 
 管理页按设备摘要定向下发 `SETUP_WDA` 与 `START_WDA`，支持多设备独立端口、冲突检测、IDA 签名配置加密、Registry 上线/下线/重建及命令取消。原始 UDID 不进入后端、日志或管理页面，只在 Agent 内存和权限受限的本机 Unix Socket 请求中传给 root Helper。该 Agent 不包含企业微信账号、好友或业务任务功能。
 
@@ -279,11 +278,11 @@ docker compose up --build -d
 - 统一健康检查：<http://127.0.0.1:80/api/open/health>
 - 后端存活检查：<http://127.0.0.1:80/api/open/health/live>
 - 后端就绪检查：<http://127.0.0.1:80/api/open/health/ready>
-- Caddy 健康检查：<http://127.0.0.1:80/health>
+- Frontend 健康检查：<http://127.0.0.1:80/health>
 
 统一健康检查和就绪检查仅在 MySQL、PostgreSQL、Redis 与 Python Worker 全部可用时返回 HTTP 200，否则返回 HTTP 503。公网入口对 `/api/internal` 路径统一返回 HTTP 404，Java 与 Worker 之间仍通过 Docker 内部网络直连。
 
-Caddy 在配置的 `HTTP_PORT`（默认 80）上通过 HTTP 提供 Web 控制台、API 和健康检查。它不会创建证书，也不会把 HTTP 请求重定向到 HTTPS。如需公网 HTTPS，请在该 HTTP 入口前部署单独管理的反向代理。
+Frontend 在配置的 `HTTP_PORT`（默认 80）上通过 HTTP 提供 Web 控制台、API 和健康检查，并负责分发设备 Agent 安装包。它不会创建证书，也不会把 HTTP 请求重定向到 HTTPS。如需公网 HTTPS，请在该 HTTP 入口前部署单独管理的反向代理。
 
 初始管理员、角色、权限树、根部门和模型类型字典会自动创建。首次初始化时，如果 `APP_SEED_ADMIN_PASSWORD` 留空或强度不足，后端会在受保护的 `bootstrap-secrets` 卷生成 32 位强密码。可执行 `docker compose exec backend sh -c 'cat /app/bootstrap/admin-password'` 读取一次，使用 `APP_SEED_ADMIN_USERNAME` 登录并立即修改。
 
@@ -349,7 +348,7 @@ TEST_REPORT.md                  测试基准和执行历史
 - 网络可达的 Adapter Manager 不挂载 Docker Socket、Compose 文件或环境文件；无网络 Supervisor 仅通过私有 Unix Socket 接受类型化的 N8N/Dify 命令，并作为唯一挂载 Docker Socket 的组件。该组件仍具有宿主级权限，生产环境必须继续保护其运行边界。
 - 轮换配置加密密钥时，把新密钥加入 `APP_CONFIG_ENCRYPTION_KEYS` 并切换 `APP_CONFIG_ENCRYPTION_ACTIVE_KEY_ID`；保留旧密钥直到历史 `enc:` 密文完成渐进重写。
 - 执行 Schema 或应用升级前，备份 MySQL 任务、日志与自动化数据。
-- 无法访问公共镜像仓库或软件包代理时，可覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE`、`PYTHON_IMAGE`、`GOPROXY`、`ALPINE_MIRROR` 或 Python 软件包镜像源配置。Caddy 构建默认使用 `https://goproxy.cn,direct` 获取 Go 模块，并使用 `https://mirrors.tuna.tsinghua.edu.cn/alpine` 获取 Alpine 软件包。
+- 无法访问公共镜像仓库或软件包代理时，可覆盖 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_IMAGE`、`PYTHON_IMAGE`、`GOPROXY`、`ALPINE_MIRROR` 或 Python 软件包镜像源配置。Frontend 构建使用 `https://mirrors.tuna.tsinghua.edu.cn/alpine` 获取 Alpine 软件包，Deployment Agent 默认使用 `https://goproxy.cn,direct` 获取 Go 模块。
 
 ## 许可证
 

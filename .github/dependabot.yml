@@ -98,11 +98,6 @@ updates:
     schedule:
       interval: weekly
 
-  - package-ecosystem: docker
-    directory: /caddy
-    schedule:
-      interval: weekly
-
   - package-ecosystem: github-actions
     directory: /
     schedule:

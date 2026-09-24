@@ -21,6 +21,7 @@ test('frontend forwards SSE incrementally and closes upstream on disconnect', as
   const backend = http.createServer((request, response) => {
     assert.equal(request.method, 'POST')
     assert.equal(request.headers['x-csrf-token'], 'test-csrf')
+    assert.equal(request.headers['x-forwarded-for'], '127.0.0.1')
     response.writeHead(200, { 'content-type': 'text/event-stream' })
     response.write('data: {"type":"delta","content":"你好"}\n\n')
     response.on('close', upstreamClosed)
@@ -136,7 +137,7 @@ async function stop(child) {
 test('生产前端服务完整处理运行配置、SPA、API 代理和畸形路径', async () => {
   const backend = http.createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ method: request.method, url: request.url, marker: request.headers['x-e2e-marker'] }))
+    response.end(JSON.stringify({ method: request.method, url: request.url, marker: request.headers['x-request-id'] }))
   })
   await new Promise((resolve, reject) => backend.listen(0, '127.0.0.1', resolve).once('error', reject))
   const backendPort = backend.address().port
@@ -166,7 +167,7 @@ test('生产前端服务完整处理运行配置、SPA、API 代理和畸形路�
     assert.match(spa.headers.get('content-type'), /^text\/html/)
     assert.match(await spa.text(), /<div id="app"><\/div>/)
 
-    const proxied = await fetch(`${origin}/api/probe?value=1`, { headers: { 'x-e2e-marker': 'forwarded' } })
+    const proxied = await fetch(`${origin}/api/probe?value=1`, { headers: { 'x-request-id': 'forwarded' } })
     assert.deepEqual(await proxied.json(), { method: 'GET', url: '/api/probe?value=1', marker: 'forwarded' })
 
     const malformed = await fetch(`${origin}/%E0%A4%A`)

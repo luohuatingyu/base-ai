@@ -21,7 +21,7 @@ def test_bootstrap_verifies_python_node_and_agent_archives() -> None:
 def test_installer_pins_appium_and_installs_root_owned_registry() -> None:
     """安装器必须使用固定清单并将特权副本收敛为 root 所有。"""
     script = (ROOT / "install.sh").read_text(encoding="utf-8")
-    dockerfile = (ROOT.parent / "caddy" / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (ROOT.parent / "frontend" / "Dockerfile").read_text(encoding="utf-8")
 
     assert "AGENT_APPIUM_SPEC=appium@3.7.0" in dockerfile
     assert "AGENT_XCUITEST_SPEC=xcuitest@12.11.1" in dockerfile

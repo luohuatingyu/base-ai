@@ -54,6 +54,7 @@ jobs:
           - image: frontend
             context: frontend
             dockerfile: frontend/Dockerfile
+            agent_context: true
           - image: python-worker
             context: python-worker
             dockerfile: python-worker/Dockerfile
@@ -69,9 +70,6 @@ jobs:
           - image: outbound-gateway
             context: outbound-gateway
             dockerfile: outbound-gateway/Dockerfile
-          - image: caddy
-            context: caddy
-            dockerfile: caddy/Dockerfile
     steps:
       - name: Check out source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -87,7 +85,12 @@ jobs:
           if [ -n "$BUILD_TARGET" ]; then
             target_args+=(--target "$BUILD_TARGET")
           fi
+          context_args=()
+          if [ "${{ matrix.agent_context }}" = "true" ]; then
+            context_args+=(--build-context agent-src=device-agent)
+          fi
           docker build "${target_args[@]}" \
+            "${context_args[@]}" \
             --build-arg "APP_IMAGE_REVISION=$APP_IMAGE_REVISION" \
             --file "${{ matrix.dockerfile }}" \
             --tag "local/base-ai-${{ matrix.image }}:scan" \

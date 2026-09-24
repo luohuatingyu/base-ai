@@ -9,8 +9,8 @@ const router = readFileSync(new URL('../src/router/index.js', import.meta.url), 
 const navigation = readFileSync(new URL('../src/utils/navigation.js', import.meta.url), 'utf8')
 const zhLocaleSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8')
-const caddyDockerfile = readFileSync(new URL('../../caddy/Dockerfile', import.meta.url), 'utf8')
-const caddyfile = readFileSync(new URL('../../Caddyfile', import.meta.url), 'utf8')
+const frontendDockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8')
+const frontendServer = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
 const agentProject = readFileSync(new URL('../../device-agent/pyproject.toml', import.meta.url), 'utf8')
 
 test('device Agent route is protected by its dedicated permission', () => {
@@ -67,11 +67,11 @@ test('device Agent page contains no business automation endpoints', () => {
 
 test('device Agent distribution is self-contained with pinned automation runtimes', () => {
   assert.match(compose, /agent-src:\s*\.\/device-agent/)
-  assert.match(caddyDockerfile, /aarch64-apple-darwin-install_only/)
-  assert.match(caddyDockerfile, /x86_64-apple-darwin-install_only/)
-  assert.match(caddyfile, /handle_path \/agent-dist\/\*/)
+  assert.match(frontendDockerfile, /aarch64-apple-darwin-install_only/)
+  assert.match(frontendDockerfile, /x86_64-apple-darwin-install_only/)
+  assert.match(frontendServer, /agent-dist/)
   assert.match(agentProject, /requires-python = ">=3\.12,<3\.13"/)
-  assert.match(caddyDockerfile, /AGENT_NODE_VERSION=22\.22\.0/)
-  assert.match(caddyDockerfile, /AGENT_APPIUM_SPEC=appium@3\.7\.0/)
-  assert.match(caddyDockerfile, /AGENT_XCUITEST_SPEC=xcuitest@12\.11\.1/)
+  assert.match(frontendDockerfile, /AGENT_NODE_VERSION=22\.22\.0/)
+  assert.match(frontendDockerfile, /AGENT_APPIUM_SPEC=appium@3\.7\.0/)
+  assert.match(frontendDockerfile, /AGENT_XCUITEST_SPEC=xcuitest@12\.11\.1/)
 })
