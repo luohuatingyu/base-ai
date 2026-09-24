@@ -8705,3 +8705,33 @@ Commit: 474cd6a
 - 重建：`docker compose up --build -d` 未完成，缺少 `APP_IMAGE_REVISION` 环境变量。
 - 已知限制：需在具备 Maven 与 Compose 环境变量的环境补跑完整测试。
 - Git 基准点：ea2e1d5。
+# Caddy HTTP-only 入口拆分证书与 HTTPS（2026-09-24）
+
+### Git 基准与范围
+
+- 代码提交：`36c0abd`（Remove stale Caddy helper copy；功能实现提交为 `86ba98e`）。
+- Caddy 入口改为仅监听 HTTP，移除证书生成、证书挂载、443/UDP 映射、HTTPS 重定向和自建 CA 信任；业务出站 HTTPS/TLS 仍使用标准客户端信任链。
+- 删除 Caddy 证书占位文件、IP 证书辅助程序及后端自定义 Caddy CA 信任代码；会话 Cookie 默认 `Secure=false`，可由外部 TLS 终止层继续通过配置启用。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试 | 场景 |
+| --- | --- | --- |
+| Caddy 只提供 HTTP 入口且不生成或挂载证书 | `frontend/test/security-deployment.test.mjs`（15 项） | 正常、配置、安全、回归 |
+| 业务出站 HTTPS/TLS 仍保留默认客户端能力 | `ApiTriggerService` 后端编译与完整 Maven 测试 | 正常、兼容、回归 |
+| 会话 Cookie 默认不添加 Secure，同时显式配置仍可启用 | `SessionCookieServiceTest` | 正常、配置、兼容 |
+
+### 实际执行结果
+
+- 后端完整测试：`docker run --rm -v "$PWD/backend:/workspace" -v baseai-m2-test:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn test -B`，930/930 通过，失败 0、错误 0、跳过 0。
+- Caddy 定向部署契约：`node --test frontend/test/security-deployment.test.mjs`，15/15 通过。
+- 前端完整 Node 测试：`node --test frontend/test/*.test.mjs frontend/tests/*.test.js`，424/424 通过。
+- Compose 配置：使用临时测试环境变量执行 `docker compose --env-file .env.example config --quiet`，通过。
+- Compose 构建：使用 `ALPINE_MIRROR=https://dl-cdn.alpinelinux.org/alpine` 执行 `docker compose --env-file .env.example up --build -d`，全部项目镜像构建成功。
+- Compose 启动最终未完成：现有环境中的 `outbound-gateway` 健康检查失败，导致依赖服务停止启动；不是本次 Caddy 配置构建错误。
+- `git diff --check`：通过。
+
+### 已知问题与下次测试建议
+
+- 当前 Compose 环境未提供稳定的外部依赖服务，需先确认 `outbound-gateway` 健康检查及其依赖，再执行 `docker compose ps` 验证全栈健康状态。
+- 外部 TLS 终止层应将请求转发至 Caddy HTTP 入口，并按需设置 `APP_SESSION_COOKIE_SECURE=true`；业务 API 触发器访问外部 HTTPS 的信任链仍需在部署环境验证。
