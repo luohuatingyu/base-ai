@@ -31,8 +31,13 @@ RUN set -eu; \
         *) echo "Unsupported Docker Compose architecture: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     mkdir -p /out; \
-    wget -qO /out/docker-compose \
-        "https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-${compose_arch}"; \
+    compose_url="https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-${compose_arch}"; \
+    attempt=1; \
+    while ! wget -qO /out/docker-compose -T 30 "${compose_url}"; do \
+        rm -f /out/docker-compose; \
+        [ "${attempt}" -ge 5 ] && { echo "Failed to download Docker Compose after ${attempt} attempts" >&2; exit 1; }; \
+        attempt=$((attempt + 1)); sleep 2; \
+    done; \
     echo "${compose_sha256}  /out/docker-compose" | sha256sum -c -; \
     chmod 0755 /out/docker-compose
 
