@@ -39,6 +39,40 @@
 - 部署代理监控路径新增 Shell 转义回归测试，覆盖包含引号、分号和命令替换字符的路径；Socket Proxy 新增健康检查，部署代理等待代理健康后再启动。
 - 当前环境仍缺少 Docker、Maven、Go 和 Node/npm，新增测试无法在本机执行；需在 CI 或部署主机执行 `go test ./...` 与 `docker compose up --build -d`。
 
+## 自动化覆盖与可靠性修复（2026-09-24）
+
+### Git 基准与范围
+
+- 代码提交：`378342c`（Fix resilience configuration and stream retry behavior）。
+- 修复 Resilience4j 2.3 API 兼容性，补充缺失的 Vavr 依赖，修正 `app.data-sync` YAML 层级，修复测试包名和构造参数问题。
+- 流式回答收到首个增量后不再自动重试，避免重复回答或重复副作用；新增/调整对应测试断言。
+
+### 实际验证
+
+- Docker Compose 配置：通过（使用临时测试环境变量）。
+- Deployment Agent：Docker Go 测试通过。
+- Outbound Gateway：Docker Go 测试通过。
+- Backend 编译：曾通过（修复 Vavr 与 Resilience4j API 后的编译验证）。
+- Backend 定向测试：未完成；Maven 依赖缓存不完整，Maven Central/镜像下载长时间阻塞或断流。
+- Backend 完整测试：此前发现测试编译问题并已修复；后续测试受 Maven 依赖下载阻塞，未取得最终全量结果。
+- Frontend 覆盖测试：Node 依赖安装无输出并阻塞，已停止，未取得结果。
+- `docker compose up --build -d`：失败于 Docker Hub 匿名令牌请求超时，未进入服务启动阶段。
+
+### 待重试命令
+
+```bash
+docker run --rm -v "$PWD/deployment-agent:/workspace" -w /workspace golang:1.26.6-alpine go test ./...
+docker run --rm -v "$PWD/outbound-gateway:/workspace" -w /workspace golang:1.26.6-alpine go test ./...
+cd backend && mvn -B -ntp test
+cd frontend && npm ci --no-audit --no-fund && npm run test:coverage
+docker compose up --build -d
+```
+
+### 已知问题
+
+- 依赖下载网络不稳定是当前验证阻塞原因，不代表代码测试通过。
+- 需要在可访问 Maven Central、npm registry 和 Docker Hub 的 CI/部署环境重新执行全量验证。
+
 ## AI 对话页面布局优化（2026-09-13）
 
 ### Git 基准与范围
