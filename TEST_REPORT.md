@@ -1,5 +1,40 @@
 # 最近分支覆盖测试报告
 
+## 安全策略与自动化覆盖收敛（2026-09-24）
+
+### Git 基准与范围
+
+- 代码提交：`848d9ad`（Stabilize security validation and coverage tests）。
+- 修复 Host 策略保存阶段对不可解析域名的错误依赖；字面 IP 仍在保存阶段检查，实际域名在连接阶段通过受控 DNS Resolver 检查私网和回环地址。
+- 修正 `app.data-sync.worker-image` YAML 层级，补充限流错误文案，稳定流式首增量重试测试和 Resilience4j 熔断测试。
+- 恢复项目历史中要求的 GitHub Actions、供应链扫描和 Dependabot 配置；调整镜像安全测试以区分自建镜像和 Docker Socket Proxy 第三方镜像。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试 | 场景 |
+| --- | --- | --- |
+| Host 白名单、回环和私网策略正确执行 | `ApiTriggerUrlPolicyTest`（11 项） | 正常、边界、异常、安全 |
+| 流式首增量后不重复重试 | `ChatStreamClientTest`（2 项） | 正常、异常、回归 |
+| Resilience4j 重试和熔断配置可加载 | `Resilience4jConfigTest`（6 项） | 正常、边界、回归 |
+| 限流超限消息可本地化 | `RateLimitAspectTest`（3 项） | 正常、异常、兼容 |
+| 自建镜像标签和供应链工作流保持约束 | `frontend/test/security-deployment.test.mjs` | 配置、安全、回归 |
+
+### 实际执行结果
+
+- 后端针对性测试：`mvn -B -ntp -Dtest=ApiTriggerUrlPolicyTest,Resilience4jConfigTest,ChatStreamClientTest,RateLimitAspectTest test`，22/22 通过。
+- 后端完整测试：`mvn -B -ntp test`，941/941 通过，失败 0、错误 0、跳过 0。
+- 前端覆盖测试：`npm run test:coverage`，428/428 通过；行覆盖率 98.43%、分支覆盖率 81.52%、函数覆盖率 95.10%。
+- 前端质量检查：`npm run lint` 和 `npm run typecheck` 均通过。
+- Go 服务：Deployment Agent 和 Outbound Gateway 的 Docker Go 测试均通过。
+- Compose 结构校验：`docker compose config --quiet` 通过。
+- `git diff --check`：通过。
+
+### 已知问题与下次测试建议
+
+- `docker compose up --build -d` 未能完成：构建阶段访问 `auth.docker.io` 获取 `node`/`caddy` 等基础镜像匿名令牌时出现连接被拒绝，未进入服务启动和健康检查阶段。该失败是外部 Docker Hub 网络限制，不能替代 Compose 运行验证。
+- 在可访问 Docker Hub 的 CI 或部署环境重新执行 `docker compose up --build -d`，并执行 `docker compose ps` 健康检查及前后端服务冒烟测试。
+- 后续修改后端业务代码、核心配置或容器构建配置时，继续执行完整 Maven、前端覆盖、Go 服务和 Compose 校验流程，并更新本报告基准点。
+
 ## 安全风险修复（2026-09-23）
 
 ### Git 基准与范围
