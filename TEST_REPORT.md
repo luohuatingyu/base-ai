@@ -1,5 +1,40 @@
 # 最近分支覆盖测试报告
 
+## 移除 Caddy 入口服务（2026-09-24）
+
+### Git 基准与范围
+
+- Commit: `5024625`（Remove Caddy ingress service）
+- 分支：`emdash/codex-vlzfy`
+- 删除 Caddy Compose 服务、镜像构建文件和入口配置；由 Frontend 直接监听 `HTTP_PORT`、代理 `/api` 并分发 `/agent-dist`。
+- 同步更新部署代理的 Compose 服务识别、Dependabot、Trivy 镜像矩阵、文档和设备 Agent 测试契约。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试 | 场景 |
+| --- | --- | --- |
+| Compose 不再创建 Caddy，Frontend 提供宿主 HTTP 入口 | `frontend/test/security-deployment.test.mjs` | 正常、配置、安全、回归 |
+| API 代理保留安全响应头、请求体限制、内部路径隔离和真实客户端地址 | `frontend/test/security-deployment.test.mjs`、`frontend/e2e/frontend-server.test.mjs` | 正常、边界、异常、安全、兼容 |
+| 设备 Agent 运行时和安装包仍由 Frontend 提供 | `frontend/test/device-agent.test.mjs`、Frontend 镜像构建 | 正常、兼容、回归 |
+| Deployment Agent 能识别新的服务集合 | `deployment-agent` Go 测试（Docker 构建阶段） | 正常、兼容、回归 |
+
+### 实际执行结果
+
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 423/423、E2E 3/3 通过。
+- `docker compose --env-file .env.example up --build -d`：全部项目镜像构建成功；Deployment Agent 的 `go test ./...` 通过。
+- `docker compose config --quiet`：通过；当前 Compose 服务共 10 个，不含 Caddy。
+- `git diff --check`：通过。
+- 构建后的 Frontend 健康检查和 `/agent-dist/runtime/manifest.env` 冒烟检查通过。
+
+### 已知问题与下次测试建议
+
+- 示例环境的 Adapter Manager、Outbound Gateway 和 Python Worker 依赖占位配置不健康，整栈启动未能保持运行；已清理验证容器和网络。需在配置真实外部依赖及 rootless Docker Socket 后再次执行 `docker compose up --build -d` 和 `docker compose ps` 健康检查。
+- 本次未修改 Backend Java 业务逻辑，因此未重复 Maven 全量测试；若后续调整 Backend 的代理信任实现，应补跑完整 Maven 测试。
+
+### Git 基准点
+
+Commit: `5024625`
+
 ## Docker Hub 访问恢复与 Compose 构建验证（2026-09-24）
 
 ### Git 基准与范围
