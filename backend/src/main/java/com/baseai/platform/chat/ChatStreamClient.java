@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import jakarta.annotation.PreDestroy;
 
@@ -51,8 +52,12 @@ public class ChatStreamClient {
 
     /** 逐事件读取；消费者返回前不会预取下一事件。使用重试和熔断保护。 */
     public void stream(ChatConversationService.Turn turn, EventConsumer consumer) {
+        AtomicBoolean streamStarted = new AtomicBoolean(false);
         Supplier<Void> supplier = () -> {
-            executeStream(turn, consumer);
+            executeStream(turn, event -> {
+                if ("delta".equals(event.path("type").asText())) streamStarted.set(true);
+                consumer.accept(event);
+            }, streamStarted);
             return null;
         };
         
@@ -72,7 +77,7 @@ public class ChatStreamClient {
     }
     
     /** 实际执行流式调用。 */
-    private void executeStream(ChatConversationService.Turn turn, EventConsumer consumer) {
+    private void executeStream(ChatConversationService.Turn turn, EventConsumer consumer, AtomicBoolean streamStarted) {
         var settings = turn.settings();
         String feature = settings.featureCode() == null || settings.featureCode().isBlank() ? "chat" : settings.featureCode();
         var route = settings.modelId() == null ? management.resolveActive(feature, settings.modelType()) :
@@ -123,8 +128,14 @@ public class ChatStreamClient {
             traces.updatePython(traceId, "SUCCESS", null, null);
         } catch (RuntimeException exception) {
             traces.updatePython(traceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, "Stream interrupted");
+            if (streamStarted.get()) throw new StreamAlreadyStartedException(exception);
             throw exception;
         }
+    }
+
+    /** 首个增量已经交给调用方后禁止重试，避免上游副作用和重复回答。 */
+    private static final class StreamAlreadyStartedException extends IllegalStateException {
+        private StreamAlreadyStartedException(Throwable cause) { super("Stream already started", cause); }
     }
 
     /** 关闭应用时释放超时调度器。 */

@@ -3,6 +3,8 @@ package com.baseai.platform.chat;
 import com.baseai.platform.service.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.retry.Retry;
 import org.junit.jupiter.api.*;
 import org.springframework.web.client.RestClient;
 import java.net.InetSocketAddress;
@@ -42,7 +44,7 @@ class ChatStreamClientTest {
         when(management.resolveActive("chat", "text_model")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), false, true));
         traces = mock(TaskTraceService.class);
         client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build(),
-            management, traces, new ObjectMapper());
+            management, traces, new ObjectMapper(), Retry.ofDefaults("test"), CircuitBreaker.ofDefaults("test"));
     }
 
     /** 回收测试 HTTP 服务器及后台超时调度器。 */

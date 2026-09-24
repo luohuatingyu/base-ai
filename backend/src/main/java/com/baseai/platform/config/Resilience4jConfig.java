@@ -6,6 +6,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import io.github.resilience4j.retry.RetryRegistry;
+import io.github.resilience4j.core.IntervalFunction;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -25,7 +26,7 @@ public class Resilience4jConfig {
         RetryConfig defaultConfig = RetryConfig.custom()
             .maxAttempts(3)
             .waitDuration(Duration.ofMillis(500))
-            .exponentialBackoffMultiplier(2)
+            .intervalFunction(IntervalFunction.ofExponentialBackoff(Duration.ofMillis(500), 2.0))
             .retryExceptions(Exception.class)
             .ignoreExceptions(IllegalArgumentException.class, IllegalStateException.class)
             .build();
@@ -36,8 +37,9 @@ public class Resilience4jConfig {
         RetryConfig pythonWorkerConfig = RetryConfig.custom()
             .maxAttempts(3)
             .waitDuration(Duration.ofSeconds(1))
-            .exponentialBackoffMultiplier(2)
+            .intervalFunction(IntervalFunction.ofExponentialBackoff(Duration.ofSeconds(1), 2.0))
             .retryExceptions(Exception.class)
+            .ignoreExceptions(IllegalStateException.class)
             .build();
         registry.addConfiguration("pythonWorker", pythonWorkerConfig);
         

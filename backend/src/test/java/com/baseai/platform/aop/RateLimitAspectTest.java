@@ -1,6 +1,6 @@
 package com.baseai.platform.aop;
 
-import com.baseai.platform.exception.BusinessException;
+import com.baseai.platform.common.BusinessException;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.BeforeEach;
