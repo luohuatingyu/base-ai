@@ -29,9 +29,9 @@ class SessionCookieServiceTest {
         service = new SessionCookieService(tokenService, properties);
     }
 
-    /** 登录应写入 HttpOnly 会话 Cookie 和可供双提交校验的 CSRF Cookie。 */
+    /** HTTP 入口默认写入可用的会话 Cookie，并保留可选的 Secure 配置。 */
     @Test
-    void writesHttpSessionAndCsrfCookiesWithSecureAttributeByDefault() {
+    void writesHttpSessionAndCsrfCookiesWithoutSecureAttributeByDefault() {
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(tokenService.createCsrfToken("jwt-value")).thenReturn("csrf-value");
 
@@ -44,12 +44,12 @@ class SessionCookieServiceTest {
             .findFirst().orElseThrow();
         assertTrue(sessionCookie.contains("Path=/api"));
         assertTrue(sessionCookie.contains("HttpOnly"));
-        assertTrue(sessionCookie.contains("Secure"));
+        assertFalse(sessionCookie.contains("Secure"));
         assertTrue(sessionCookie.contains("SameSite=Strict"));
         assertTrue(csrfCookie.contains("BAI_test-platform_CSRF=csrf-value"));
         assertTrue(csrfCookie.contains("Path=/"));
         assertFalse(csrfCookie.contains("HttpOnly"));
-        assertTrue(csrfCookie.contains("Secure"));
+        assertFalse(csrfCookie.contains("Secure"));
     }
 
     /** 上游提供 HTTPS 时可重新启用 Cookie 的 Secure 属性。 */

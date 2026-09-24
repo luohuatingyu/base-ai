@@ -114,7 +114,7 @@ Vue -> Java /api/ai/chat -> Python /llm/chat -> 兼容 OpenAI 的 API
 外部系统可以调用代码中明确标记为支持 API Key 的接口。管理员可在**系统管理 > API Key 管理**中创建、授权、轮换、停用或吊销 Key。
 
 ```bash
-curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
+curl -X POST http://127.0.0.1:80/api/ai/chat \
   -H 'X-API-Key: sk-<your-api-key>' \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"hello"}]}'
@@ -220,82 +220,14 @@ API Key 哈希密钥仅因存在加密密钥回退机制而可以省略；生产
 - **自动化：** `API_TRIGGER_SCHEDULER_POOL_SIZE`、`API_TRIGGER_LOCK_SECONDS`、`API_TRIGGER_RESULT_MAX_LENGTH`。
 - **设备 Agent：** `DEVICE_AGENT_NONCE_TTL_SECONDS`、`DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS`、`DEVICE_AGENT_HEARTBEAT_STALE_SECONDS`、`DEVICE_AGENT_PAIRING_TTL_SECONDS`、`DEVICE_AGENT_REGISTRY_DEFAULT_PORT`，以及固定运行时版本 `AGENT_NODE_VERSION`、`AGENT_APPIUM_SPEC`、`AGENT_XCUITEST_SPEC`。
 - **工作流：** `WORKFLOW_EXECUTOR_POOL_SIZE`、`WORKFLOW_EXECUTOR_QUEUE_CAPACITY`、`WORKFLOW_MAX_NODES`、`WORKFLOW_MAX_ITERATIONS`、`WORKFLOW_MAX_AGENT_STEPS`、`WORKFLOW_MAX_RECURSION_DEPTH`、`WORKFLOW_MAX_PAYLOAD_BYTES`、`WORKFLOW_MAX_WAIT_SECONDS`、`WORKFLOW_MAX_EXECUTION_STEPS`、`WORKFLOW_MAX_RUN_LOG_BYTES`、`WORKFLOW_LEASE_SECONDS`、`WORKFLOW_WEBHOOK_MAX_BODY_BYTES`、`WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE`、`WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS`。
-- **HTTPS 入口、端口和镜像：** `APP_HTTPS_SITES_FILE`、`TLS_CERTS_DIR`、`APP_HTTPS_IPS`、`TLS_CERT_CHECK_INTERVAL_SECONDS`、`IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`、`IP_CERT_MAX_LEARNED_HOSTS`、`HTTP_PORT`、`HTTPS_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。后端 8080 和 Worker 8000 端口仅在内部网络开放。
+- **HTTP 入口、端口和镜像：** `HTTP_PORT`、`FRONTEND_BACKEND_URL`，以及 `.env.example` 中可选的镜像与软件包镜像源变量。Caddy 仅提供 HTTP；如需 HTTPS，请在项目外部的反向代理终止 TLS。后端 8080 和 Worker 8000 端口仅在内部网络开放。
 
 `APP_DEFAULT_LOCALE` 支持 `en-US` 或 `zh-CN`，默认值为 `en-US`。
 Docker Compose 使用 `APP_PLATFORM_SHORT_NAME` 生成项目名并自动规范为小写。Backend、各 Worker、Frontend、Caddy、Adapter Manager 及其隔离 Supervisor 均使用相同的容器名前缀。
 
-### HTTPS 入口模式
+### 接口触发器重定向
 
-Caddy 可同时提供外部域名证书、预配置 IP 内部证书和请求驱动的 IP 动态学习：
-
-- **域名证书：** `APP_HTTPS_SITES_FILE` 和 `TLS_CERTS_DIR` 必须同时配置。YAML 中每个 `sites` 分组包含一个或多个 `domains`，并绑定自己的 `tls_cert_file` 和 `tls_key_file`。证书应为包含中间证书的 PEM 完整链，私钥应为无交互密码的 PEM 文件。两项只配置一部分时 Caddy 会拒绝启动，不会降级到 HTTP。
-- **预配置 IP：** `APP_HTTPS_IPS` 接受逗号或空白分隔的规范 IPv4。Caddy 启动时即将这些地址加入内部 CA 证书，因此首次可直接使用 HTTPS；删除配置并重启后会移除对应 SAN，除非该地址也已被动态学习。
-- **动态学习 IP：** 无论是否配置域名证书，新 IPv4 都可在客户端首次通过 HTTP 访问时自动学习。项目始终包含 `localhost` 和 `127.0.0.1`，并持久化内部 CA 和已学习地址。预配置与已学习 IP 共用一张多 SAN 证书，访问设备必须信任 Caddy 根证书。
-
-接口触发器保留 JVM 默认公共 CA，并自动只读加载专用 `caddy-public-ca` 卷中的 Caddy 根证书。Caddy 只向该卷原子发布公开根证书，CA 与站点私钥不会挂载给 Backend。接口触发器因此可直接访问公共 CA 域名、`APP_HTTPS_IPS` 预配置 IP 和已经动态学习的 IP；动态学习产生的新 IP 继续使用同一根 CA，无需逐个配置或重启后端。
-
-接口触发器支持普通 HTTP，并受控跟随远端重定向：每一跳都会重新执行 Host 与网络地址安全校验，最多五跳，禁止跨 Host 和 HTTPS 降级到 HTTP。GET 可跟随 301、302、303、307 和 308；其他方法仅跟随保持方法及正文的 307 和 308。认证地址使用 HTTP 时，密码和请求正文仍会通过明文连接发送，生产环境应直接配置最终 HTTPS 地址。
-
-创建 HTTPS 站点清单，例如 `/absolute/path/https-sites.yml`：
-
-```yaml
-sites:
-  - domains:
-      - ai.example.com
-      - api.example.com
-    tls_cert_file: site-a/fullchain.pem
-    tls_key_file: site-a/privkey.pem
-
-  - domains:
-      - console.example.net
-    tls_cert_file: site-b/fullchain.pem
-    tls_key_file: site-b/privkey.pem
-```
-
-证书目录可按 `site-a/`、`site-b/` 分组；YAML 中的路径相对于 `TLS_CERTS_DIR`，不能使用绝对路径或 `..` 越界。启动时会验证证书与私钥匹配，并验证证书 SAN 覆盖所属分组的全部域名。同一域名不能跨组重复。
-
-配置支持完整 YAML 语法，包括块/行内列表、引号、注释和锚点，但顶层只允许 `sites`，每组只允许 `domains`、`tls_cert_file` 和 `tls_key_file`。文件最大 64 KiB、最多 64 个分组和 256 个域名；域名会转为小写并在组内去重。域名必须是不含协议、端口、路径和通配符的 ASCII DNS 主机名。
-
-多域名使用标准端口的示例：
-
-```dotenv
-APP_HTTPS_SITES_FILE=/absolute/path/https-sites.yml
-TLS_CERTS_DIR=/absolute/path/tls
-APP_HTTPS_IPS=192.168.1.20,203.0.113.10
-HTTP_PORT=80
-HTTPS_PORT=443
-APP_SESSION_COOKIE_SECURE=true
-```
-
-IP 请求驱动签发模式的示例：
-
-```dotenv
-APP_HTTPS_SITES_FILE=
-TLS_CERTS_DIR=
-APP_HTTPS_IPS=192.168.1.20,203.0.113.10
-TLS_CERT_CHECK_INTERVAL_SECONDS=3600
-IP_CERT_MIN_ISSUE_INTERVAL_SECONDS=5
-IP_CERT_MAX_LEARNED_HOSTS=32
-HTTP_PORT=81
-HTTPS_PORT=444
-APP_SESSION_COOKIE_SECURE=true
-```
-
-IP 签发不运行宿主机探测器，也不调用 `uname`、`route`、`ifconfig` 或 `ip` 等系统命令。`APP_HTTPS_IPS` 中的地址在启动完成后可直接访问 `https://<IPv4>:<HTTPS_PORT>`；未预配置的新地址第一次必须访问 `http://<IPv4>:<HTTP_PORT>`。Caddy 校验 HTTP Host、签发证书、原子保存地址并热加载成功后，返回指向 HTTPS 的 308 跳转。该方式可覆盖回环、内网、直接公网及 NAT 映射后的规范 IPv4；首次直接访问既未预配置也未学习地址的 HTTPS 无法完成 TLS 握手。
-
-学习服务仅监听 Caddy 容器回环地址，只接受 GET 和 HEAD 请求。预配置和动态地址都拒绝 IPv6、非规范、未指定、链路本地、组播及不可用地址。内部证书最多包含 256 个非固定回环 IPv4，默认最多动态学习 32 个地址，新地址签发间隔至少 5 秒；达到任一上限后返回 HTTP 429，不会自动移除已有地址。HTTP Host 可由非浏览器客户端伪造，因此该机制用于无配置的服务接入，不构成 IP 所有权证明。首次 HTTP 请求不得携带密码、令牌或敏感查询参数。
-
-IP 证书目标有效期为 30 天，且不会超过 Caddy 中间 CA 的剩余有效期。地址 SAN、中间 CA 或有效期需要更新时会自动重新签发，并通过只监听容器回环地址的管理接口热加载。签发、地址持久化或热加载失败时返回 HTTP 503 并恢复旧状态；后台按 `TLS_CERT_CHECK_INTERVAL_SECONDS` 检查续期，失败时保留当前证书并在下一周期重试。
-
-站点清单和证书根目录以只读方式挂载，Caddy 使用容器 UID `10001`。Linux 主机应通过专用组或 ACL 授予该 UID 读取文件及遍历目录的权限，不要将私钥设置为所有用户可读。可在启动前验证容器用户权限：
-
-```bash
-docker compose run --rm --entrypoint sh caddy -c \
-  'test -r /etc/caddy/https-sites.yml && test -r /etc/caddy/tls/site-a/fullchain.pem && test -r /etc/caddy/tls/site-a/privkey.pem'
-```
-
-修改站点清单或替换续期后的域名证书文件后，执行 `docker compose restart caddy` 重新验证并加载全部分组。项目不会修改清单，也不会自动续期宿主机上的证书。
+接口触发器支持 HTTP 和 HTTPS 目标地址。每一跳都会重新执行 Host 与网络地址安全校验，最多跟随五跳，禁止跨 Host 和 HTTPS 降级到 HTTP。
 
 ## 使用 Docker Compose 启动
 
@@ -309,14 +241,14 @@ docker compose up --build -d
 docker compose ps
 ```
 
-IP 学习和续期全部在 Caddy 容器中完成，直接使用标准 Docker Compose 命令即可，不需要宿主机脚本或额外运行时。
+Caddy 是纯 HTTP 反向代理，直接使用标准 Docker Compose 命令即可，不需要宿主机 TLS 运行时。
 `docker compose up --build -d` 默认构建并启动全部 10 个核心、部署和插件服务，无需额外 Profile。frontend 与 Caddy 保持独立；部署代理、适配器控制服务、出站网关常驻，插件页面控制 Dify/n8n Worker 开关。后端会将 Worker 状态收敛到已保存开关，因此关闭状态的 Worker 可能在启动后被停止。Worker 仅提供插件 ABI 宿主，不部署完整 Dify/n8n 平台。旧独立 Broker/Supervisor 仅保留在 `legacy-plugin-adapters` 回滚 Profile，不能与组合 Manager 同时启动。
 
 首次启动前，在 `.env` 中将 `APP_IMAGE_REVISION` 设置为完整代码提交哈希，配置内部 Token 和 `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY`，并选择承载整个栈的 rootless Docker context。`ADAPTER_DOCKER_SOCKET`、`DEPLOYMENT_DOCKER_SOCKET` 必须是 Docker 主机上的 Socket 路径，组 ID 需使用容器内实际可见的数字 ID。Broker 在开放控制 Socket 前检查 `name=rootless`；普通 Docker Desktop Daemon 不满足要求。后续执行普通 Compose 命令前需保持对应 Docker 虚拟机运行，以复用同一环境的镜像、卷和网络。插件执行还可能产生额外的临时沙箱容器。
 
 ### iOS 设备自动化 Agent
 
-在“自动化 / 设备 Agent 管理”页面生成有效期 15 分钟的一次性配对码和目标 Mac 安装命令。Caddy 会同时分发 Apple Silicon 与 Intel 的自包含 Python 3.12 和 Node.js 22 运行时；安装器固定安装 Appium 3.7 与 XCUITest Driver 12.11，并配置登录级 Appium LaunchAgent 和 root-owned Remote XPC Registry LaunchDaemon。目标 Mac 必须安装完整 Xcode，iPhone/iPad 必须信任 Mac 并启用开发者模式。使用 Caddy 内部 CA 时，请先按下文说明导出并安全传递公开根证书；绝不要分发 CA 私钥。
+在“自动化 / 设备 Agent 管理”页面生成有效期 15 分钟的一次性配对码和目标 Mac 安装命令。Caddy 会同时分发 Apple Silicon 与 Intel 的自包含 Python 3.12 和 Node.js 22 运行时；安装器固定安装 Appium 3.7 与 XCUITest Driver 12.11，并配置登录级 Appium LaunchAgent 和 root-owned Remote XPC Registry LaunchDaemon。目标 Mac 必须安装完整 Xcode，iPhone/iPad 必须信任 Mac 并启用开发者模式。
 
 管理页按设备摘要定向下发 `SETUP_WDA` 与 `START_WDA`，支持多设备独立端口、冲突检测、IDA 签名配置加密、Registry 上线/下线/重建及命令取消。原始 UDID 不进入后端、日志或管理页面，只在 Agent 内存和权限受限的本机 Unix Socket 请求中传给 root Helper。该 Agent 不包含企业微信账号、好友或业务任务功能。
 
@@ -342,39 +274,16 @@ docker compose up --build -d
 
 所有服务进入健康状态后，可访问：
 
-- Web 控制台：<https://127.0.0.1:444>
-- 后端 API 和开放平台：<https://127.0.0.1:444/api>
-- 统一健康检查：<https://127.0.0.1:444/api/open/health>
-- 后端存活检查：<https://127.0.0.1:444/api/open/health/live>
-- 后端就绪检查：<https://127.0.0.1:444/api/open/health/ready>
-- Caddy 健康检查：<https://127.0.0.1:444/health>
+- Web 控制台：<http://127.0.0.1:80>
+- 后端 API 和开放平台：<http://127.0.0.1:80/api>
+- 统一健康检查：<http://127.0.0.1:80/api/open/health>
+- 后端存活检查：<http://127.0.0.1:80/api/open/health/live>
+- 后端就绪检查：<http://127.0.0.1:80/api/open/health/ready>
+- Caddy 健康检查：<http://127.0.0.1:80/health>
 
 统一健康检查和就绪检查仅在 MySQL、PostgreSQL、Redis 与 Python Worker 全部可用时返回 HTTP 200，否则返回 HTTP 503。公网入口对 `/api/internal` 路径统一返回 HTTP 404，Java 与 Worker 之间仍通过 Docker 内部网络直连。
 
-HTTP 入口仅用于 308 跳转，业务页面和 API 统一通过 HTTPS 提供。默认 81/444 端口避免与其他本地项目冲突；无需显式端口的公网域名应使用 80/443。HSTS 仅在标准 80/443 模式启用，避免浏览器在非标准端口下升级到错误端口。
-
-IP 模式首次启动后，导出内部 CA 的公开根证书：
-
-```bash
-docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
-```
-
-只安装 `root.crt`，绝不要从 Caddy 数据卷复制或分发根私钥。常见系统信任方式如下，安装完成后应重启浏览器：
-
-```bash
-# macOS
-sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain caddy-root.crt
-
-# Windows（管理员命令提示符）
-certutil -addstore -f Root caddy-root.crt
-
-# Debian/Ubuntu
-sudo cp caddy-root.crt /usr/local/share/ca-certificates/base-ai-caddy.crt
-sudo update-ca-certificates
-```
-
-Firefox 等使用独立证书库的客户端可能仍需在浏览器设置中导入。Caddy CA 和自动签发的多 SAN IP 证书保存在命名卷中；普通容器重建不会更换根 CA。修改 `APP_PLATFORM_SHORT_NAME`、执行 `docker compose down -v` 或手动删除 Caddy data 卷会生成新的根 CA，届时所有访问设备必须重新信任。
+Caddy 在配置的 `HTTP_PORT`（默认 80）上通过 HTTP 提供 Web 控制台、API 和健康检查。它不会创建证书，也不会把 HTTP 请求重定向到 HTTPS。如需公网 HTTPS，请在该 HTTP 入口前部署单独管理的反向代理。
 
 初始管理员、角色、权限树、根部门和模型类型字典会自动创建。首次初始化时，如果 `APP_SEED_ADMIN_PASSWORD` 留空或强度不足，后端会在受保护的 `bootstrap-secrets` 卷生成 32 位强密码。可执行 `docker compose exec backend sh -c 'cat /app/bootstrap/admin-password'` 读取一次，使用 `APP_SEED_ADMIN_USERNAME` 登录并立即修改。
 

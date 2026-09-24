@@ -135,12 +135,12 @@ public class PlatformProperties {
         public void setExpireMinutes(long expireMinutes) { this.expireMinutes = expireMinutes; }
     }
 
-    /** 控制浏览器会话 Cookie 的传输安全属性。 */
+    /** 控制浏览器会话 Cookie 是否设置 Secure 属性。 */
     public static class SessionCookie {
-        private boolean secure = true;
-        /** 返回是否仅允许通过 HTTPS 发送 Cookie。 */
+        private boolean secure = false;
+        /** 返回是否设置 Secure Cookie 属性。 */
         public boolean isSecure() { return secure; }
-        /** 设置是否仅允许通过 HTTPS 发送 Cookie。 */
+        /** 设置是否设置 Secure Cookie 属性。 */
         public void setSecure(boolean secure) { this.secure = secure; }
     }
 
@@ -361,7 +361,6 @@ public class PlatformProperties {
         private int responseMaxBytes = 2 * 1024 * 1024;
         private int requestBodyMaxBytes = 1024 * 1024;
         private int metadataMaxLength = 64 * 1024;
-        private String caddyCaFile = "";
         public int getSchedulerPoolSize() { return schedulerPoolSize; }
         public void setSchedulerPoolSize(int schedulerPoolSize) { this.schedulerPoolSize = schedulerPoolSize; }
         public int getLockSeconds() { return lockSeconds; }
@@ -374,8 +373,6 @@ public class PlatformProperties {
         public void setRequestBodyMaxBytes(int value) { requestBodyMaxBytes = value; }
         public int getMetadataMaxLength() { return metadataMaxLength; }
         public void setMetadataMaxLength(int value) { metadataMaxLength = value; }
-        public String getCaddyCaFile() { return caddyCaFile; }
-        public void setCaddyCaFile(String caddyCaFile) { this.caddyCaFile = caddyCaFile; }
     }
 
     /** 限制画布和执行器资源占用，所有循环和 Agent 调用均有硬上限。 */

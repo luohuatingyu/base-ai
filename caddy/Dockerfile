@@ -11,13 +11,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go mod init base-ai/caddy-build \
     && go get github.com/caddyserver/caddy/v2/cmd/caddy@${CADDY_VERSION} \
-    && go get gopkg.in/yaml.v3@v3.0.1 \
-    && go get golang.org/x/text@v0.39.0 google.golang.org/grpc@v1.82.1 \
     && CGO_ENABLED=0 go build -trimpath \
         -ldflags="-s -w -X github.com/caddyserver/caddy/v2.CustomVersion=${CADDY_VERSION}" \
-        -o /out/caddy github.com/caddyserver/caddy/v2/cmd/caddy \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
-        -o /out/base-ai-ip-cert ip-cert-helper.go
+        -o /out/caddy github.com/caddyserver/caddy/v2/cmd/caddy
 
 # 构建时下载并校验 macOS 双架构 Python 3.12 与 Node.js 自包含运行时。
 FROM ${CADDY_IMAGE} AS agent-runtime
@@ -105,16 +101,13 @@ ARG ALPINE_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/alpine
 
 COPY --from=build /out/caddy /usr/bin/caddy
 COPY --from=agent-dist /dist /agent-dist
-COPY --from=build /out/base-ai-ip-cert /usr/local/bin/base-ai-ip-cert
 COPY --chmod=0555 caddy-entrypoint.sh /usr/local/bin/base-ai-caddy-entrypoint
-COPY --chmod=0444 Caddyfile.bootstrap /etc/caddy/Caddyfile.bootstrap
 RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_MIRROR}#g" /etc/apk/repositories \
     && apk upgrade --no-cache \
     && setcap cap_net_bind_service=+ep /usr/bin/caddy \
     && addgroup -S -g 10001 appuser \
     && adduser -S -D -H -u 10001 -G appuser appuser \
-    && mkdir -p /public-ca \
-    && chown -R appuser:appuser /data /config /public-ca
+    && chown -R appuser:appuser /data /config
 
 USER appuser
 ENTRYPOINT ["/usr/local/bin/base-ai-caddy-entrypoint"]

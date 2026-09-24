@@ -18,8 +18,8 @@ LABEL org.opencontainers.image.revision=${APP_IMAGE_REVISION}
 WORKDIR /app
 RUN useradd -r -u 10001 appuser \
     && rm -f /usr/bin/pebble \
-    && mkdir -p /app/caddy-public-ca /app/bootstrap /run/document-parser \
-    && chown appuser:appuser /app/caddy-public-ca /app/bootstrap /run/document-parser
+    && mkdir -p /app/bootstrap /run/document-parser \
+    && chown appuser:appuser /app/bootstrap /run/document-parser
 COPY --from=build /workspace/target/base-ai-backend-0.0.1-SNAPSHOT.jar /app/app.jar
 
 FROM runtime-base AS document-parser

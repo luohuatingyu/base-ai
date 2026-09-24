@@ -114,7 +114,7 @@ Prompt and model-response logging is disabled by default. The Java HTTP layer re
 External systems can call endpoints explicitly annotated as API-key accessible. Create, authorize, rotate, disable, or revoke keys from **System Management > API Key Management**.
 
 ```bash
-curl --cacert caddy-root.crt -X POST https://127.0.0.1:444/api/ai/chat \
+curl -X POST http://127.0.0.1:80/api/ai/chat \
   -H 'X-API-Key: sk-<your-api-key>' \
   -H 'Content-Type: application/json' \
   -d '{"messages":[{"role":"user","content":"hello"}]}'
@@ -225,82 +225,14 @@ The API key hash secret is optional only because it falls back to the encryption
 - **Automation:** `API_TRIGGER_SCHEDULER_POOL_SIZE`, `API_TRIGGER_LOCK_SECONDS`, `API_TRIGGER_RESULT_MAX_LENGTH`.
 - **Device Agent:** `DEVICE_AGENT_NONCE_TTL_SECONDS`, `DEVICE_AGENT_SIGNATURE_CLOCK_SKEW_SECONDS`, `DEVICE_AGENT_HEARTBEAT_STALE_SECONDS`, `DEVICE_AGENT_PAIRING_TTL_SECONDS`, `DEVICE_AGENT_REGISTRY_DEFAULT_PORT`, plus pinned runtime versions `AGENT_NODE_VERSION`, `AGENT_APPIUM_SPEC`, and `AGENT_XCUITEST_SPEC`.
 - **Workflow:** `WORKFLOW_EXECUTOR_POOL_SIZE`, `WORKFLOW_EXECUTOR_QUEUE_CAPACITY`, `WORKFLOW_MAX_NODES`, `WORKFLOW_MAX_ITERATIONS`, `WORKFLOW_MAX_AGENT_STEPS`, `WORKFLOW_MAX_RECURSION_DEPTH`, `WORKFLOW_MAX_PAYLOAD_BYTES`, `WORKFLOW_MAX_WAIT_SECONDS`, `WORKFLOW_MAX_EXECUTION_STEPS`, `WORKFLOW_MAX_RUN_LOG_BYTES`, `WORKFLOW_LEASE_SECONDS`, `WORKFLOW_WEBHOOK_MAX_BODY_BYTES`, `WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE`, and `WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS`.
-- **HTTPS ingress and images:** `APP_HTTPS_SITES_FILE`, `TLS_CERTS_DIR`, `APP_HTTPS_IPS`, `TLS_CERT_CHECK_INTERVAL_SECONDS`, `IP_CERT_MIN_ISSUE_INTERVAL_SECONDS`, `IP_CERT_MAX_LEARNED_HOSTS`, `HTTP_PORT`, `HTTPS_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Backend port 8080 and Worker port 8000 are internal-only.
+- **HTTP ingress and images:** `HTTP_PORT`, `FRONTEND_BACKEND_URL`, plus the optional image and package-mirror variables in `.env.example`. Caddy serves HTTP only; terminate HTTPS in an external reverse proxy when needed. Backend port 8080 and Worker port 8000 are internal-only.
 
 `APP_DEFAULT_LOCALE` accepts `en-US` or `zh-CN` and defaults to `en-US`.
 Docker Compose derives the project name from `APP_PLATFORM_SHORT_NAME` and normalizes it to lowercase. Runtime container names use the same prefix, including Backend, Workers, Frontend, Caddy, the Adapter Manager, and its isolated Supervisor.
 
-### HTTPS ingress modes
+### API trigger redirects
 
-Caddy can serve external domain certificates, preconfigured internal-CA IP certificates, and request-driven IP learning at the same time:
-
-- **Domain certificates:** `APP_HTTPS_SITES_FILE` and `TLS_CERTS_DIR` must both be configured. Each YAML `sites` entry contains one or more `domains` and binds its own `tls_cert_file` and `tls_key_file`. Certificates must be PEM full chains including intermediates, and keys must be unencrypted PEM files. A partial configuration fails startup instead of downgrading to HTTP.
-- **Preconfigured IPs:** `APP_HTTPS_IPS` accepts comma- or whitespace-separated canonical IPv4 addresses. Caddy adds them to its internal-CA certificate during startup, so their first request may use HTTPS directly. Removing an address and restarting removes its SAN unless the same address was also learned dynamically.
-- **Dynamically learned IPs:** new IPv4 addresses can be learned on their first HTTP request whether or not domain certificates are configured. The project always includes `localhost` and `127.0.0.1` and persists both its internal CA and learned addresses. Preconfigured and learned IPs share one multi-SAN certificate, and every client must trust the Caddy root CA.
-
-API triggers retain the JVM default public CAs and automatically load the Caddy root certificate from the dedicated read-only `caddy-public-ca` mount. Caddy atomically publishes only its public root certificate to that volume; its CA and site private keys remain unavailable to Backend. Triggers can therefore directly reach public-CA domains, IPs configured through `APP_HTTPS_IPS`, and dynamically learned IPs. Newly learned IPs continue to use the same root CA and require neither per-IP trust configuration nor a Backend restart.
-
-API triggers support ordinary HTTP and controlled remote redirects. Every hop is revalidated against the Host and network-address policy, at most five redirects are followed, cross-Host redirects are rejected, and HTTPS cannot downgrade to HTTP. GET may follow 301, 302, 303, 307, and 308; other methods only follow 307 and 308 so their method and body remain unchanged. An HTTP authentication URL still sends its password and request body over a plaintext connection, so production configurations should use the final HTTPS URL directly.
-
-Create an HTTPS sites list such as `/absolute/path/https-sites.yml`:
-
-```yaml
-sites:
-  - domains:
-      - ai.example.com
-      - api.example.com
-    tls_cert_file: site-a/fullchain.pem
-    tls_key_file: site-a/privkey.pem
-
-  - domains:
-      - console.example.net
-    tls_cert_file: site-b/fullchain.pem
-    tls_key_file: site-b/privkey.pem
-```
-
-Certificates can be organized under `site-a/`, `site-b/`, and similar directories. YAML paths are relative to `TLS_CERTS_DIR`; absolute paths and `..` traversal are rejected. Startup verifies each certificate/key pair and checks that its SANs cover every domain in that group. A domain cannot appear in multiple groups.
-
-The file accepts full YAML syntax, including block and flow lists, quoting, comments, and anchors, but only top-level `sites` is allowed, with `domains`, `tls_cert_file`, and `tls_key_file` in each group. It is limited to 64 KiB, 64 groups, and 256 total domains. Names are lowercased and deduplicated within a group and must be ASCII DNS hostnames without a scheme, port, path, or wildcard.
-
-Example for multiple domains on standard ports:
-
-```dotenv
-APP_HTTPS_SITES_FILE=/absolute/path/https-sites.yml
-TLS_CERTS_DIR=/absolute/path/tls
-APP_HTTPS_IPS=192.168.1.20,203.0.113.10
-HTTP_PORT=80
-HTTPS_PORT=443
-APP_SESSION_COOKIE_SECURE=true
-```
-
-Example for request-driven IP certificates:
-
-```dotenv
-APP_HTTPS_SITES_FILE=
-TLS_CERTS_DIR=
-APP_HTTPS_IPS=192.168.1.20,203.0.113.10
-TLS_CERT_CHECK_INTERVAL_SECONDS=3600
-IP_CERT_MIN_ISSUE_INTERVAL_SECONDS=5
-IP_CERT_MAX_LEARNED_HOSTS=32
-HTTP_PORT=81
-HTTPS_PORT=444
-APP_SESSION_COOKIE_SECURE=true
-```
-
-IP issuance runs no host-side detector and invokes no operating-system networking commands such as `uname`, `route`, `ifconfig`, or `ip`. Addresses in `APP_HTTPS_IPS` can be opened directly as `https://<IPv4>:<HTTPS_PORT>` after startup. An unconfigured address must first be opened as `http://<IPv4>:<HTTP_PORT>`; after Caddy validates the HTTP Host, issues a certificate, atomically persists the address, and hot reloads successfully, it returns a 308 redirect to HTTPS. This covers canonical loopback, private, directly assigned public, and NAT-mapped IPv4 addresses. A first direct HTTPS connection to an address that is neither configured nor learned cannot complete its TLS handshake.
-
-The learning service listens only on the Caddy container loopback and accepts only GET and HEAD. Both configured and dynamic addresses reject IPv6, non-canonical, unspecified, link-local, multicast, and unusable values. The internal certificate contains at most 256 non-fixed-loopback IPv4 addresses; by default, at most 32 of those may be learned dynamically, with at least five seconds between new-address issuances. Reaching either limit returns HTTP 429 without evicting an existing address. Because a non-browser client can forge an HTTP Host header, this mechanism provides zero-configuration service access rather than proof of IP ownership. Never put passwords, tokens, or sensitive query values in the initial HTTP request.
-
-The IP certificate targets a 30-day lifetime without exceeding the remaining lifetime of the Caddy intermediate. Changes to address SANs, the intermediate CA, or the renewal window trigger a new certificate and a hot reload through an admin endpoint bound only to the container loopback address. Issuance, persistence, or reload failures return HTTP 503 and restore the previous state. Background renewal checks run at `TLS_CERT_CHECK_INTERVAL_SECONDS`; failures retain the current certificate and retry on the next cycle.
-
-The sites list and TLS root directory are mounted read-only, while Caddy runs as container UID `10001`. On Linux, grant that UID access with a dedicated group or ACL, including directory traversal permission; do not make private keys world-readable. Verify access before startup with:
-
-```bash
-docker compose run --rm --entrypoint sh caddy -c \
-  'test -r /etc/caddy/https-sites.yml && test -r /etc/caddy/tls/site-a/fullchain.pem && test -r /etc/caddy/tls/site-a/privkey.pem'
-```
-
-After changing the sites list or replacing renewed domain certificate files, run `docker compose restart caddy` to revalidate and load every group. This project does not modify the list or renew host certificate files.
+API triggers support HTTP and HTTPS destinations. Each redirect hop is revalidated against the Host and network-address policy, at most five redirects are followed, cross-Host redirects are rejected, and HTTPS cannot downgrade to HTTP.
 
 ## Start with Docker Compose
 
@@ -314,14 +246,14 @@ docker compose up --build -d
 docker compose ps
 ```
 
-IP learning and renewal run entirely inside the Caddy container. Standard Docker Compose commands are sufficient; no host-side script or additional runtime is required.
+Caddy is a plain HTTP reverse proxy. Standard Docker Compose commands are sufficient; no host-side TLS runtime is required.
 `docker compose up --build -d` builds and starts all ten core, deployment, and plugin services without extra profiles. Frontend and Caddy remain separate. Deployment Agent, Adapter Manager, and Outbound Gateway run continuously; the plugin page controls the Dify/n8n Workers, and the backend reconciles their state to the saved switches (disabled Workers may therefore stop after startup). These Workers host plugin ABIs, not complete Dify/n8n platforms. The old standalone Broker/Supervisor are rollback-only services in `legacy-plugin-adapters`; do not run them alongside the combined Manager.
 
 Before startup, set `APP_IMAGE_REVISION` in `.env` to the full code commit, configure the internal tokens and `PLUGIN_SANDBOX_EGRESS_SIGNING_KEY`, and select the rootless Docker context hosting the entire stack. `ADAPTER_DOCKER_SOCKET` and `DEPLOYMENT_DOCKER_SOCKET` must be paths on that Docker host; socket group IDs must match their IDs visible inside containers. The Broker verifies `name=rootless` before opening control sockets. A normal Docker Desktop daemon does not satisfy this check. Keep the selected Docker VM running so subsequent plain Compose commands use the same images, volumes, and networks. Plugin invocations can create additional temporary sandbox containers.
 
 ### iOS Device Automation Agent
 
-The **Automation / Device Agent Management** page creates a 15-minute one-time pairing code and an installation command for a target Mac. Caddy distributes self-contained Python 3.12 and Node.js 22 runtimes for Apple Silicon and Intel; the installer pins Appium 3.7 and XCUITest Driver 12.11 and configures a login-level Appium LaunchAgent plus a root-owned Remote XPC Registry LaunchDaemon. The target Mac needs full Xcode, and each iPhone/iPad must trust the Mac and enable Developer Mode. For an internal Caddy CA, transfer and install the exported public root certificate described below; never distribute the CA private key.
+The **Automation / Device Agent Management** page creates a 15-minute one-time pairing code and an installation command for a target Mac. Caddy distributes self-contained Python 3.12 and Node.js 22 runtimes for Apple Silicon and Intel; the installer pins Appium 3.7 and XCUITest Driver 12.11 and configures a login-level Appium LaunchAgent plus a root-owned Remote XPC Registry LaunchDaemon. The target Mac needs full Xcode, and each iPhone/iPad must trust the Mac and enable Developer Mode.
 
 The management page dispatches device-scoped `SETUP_IDA` and `START_IDA` commands, supports stable per-device ports and conflict detection, encrypts IDA signing metadata, manages Registry online/offline/recreate actions, and cancels active commands. Raw UDIDs never enter the backend, logs, or UI; they are used only in Agent memory and restricted local Unix Socket requests to the root helper. WeCom accounts, friends, and business tasks remain out of scope.
 
@@ -348,39 +280,16 @@ Remote data synchronization uses the same Agent. `DATA_SYNC_WORKER_IMAGE` defaul
 
 After all services are healthy:
 
-- Web console: <https://127.0.0.1:444>
-- Backend API and open platform: <https://127.0.0.1:444/api>
-- Unified health check: <https://127.0.0.1:444/api/open/health>
-- Backend liveness check: <https://127.0.0.1:444/api/open/health/live>
-- Backend readiness check: <https://127.0.0.1:444/api/open/health/ready>
-- Caddy health check: <https://127.0.0.1:444/health>
+- Web console: <http://127.0.0.1:80>
+- Backend API and open platform: <http://127.0.0.1:80/api>
+- Unified health check: <http://127.0.0.1:80/api/open/health>
+- Backend liveness check: <http://127.0.0.1:80/api/open/health/live>
+- Backend readiness check: <http://127.0.0.1:80/api/open/health/ready>
+- Caddy health check: <http://127.0.0.1:80/health>
 
 The unified and readiness checks return HTTP 503 unless MySQL, PostgreSQL, Redis, and the Python Worker are all available. Public ingress returns HTTP 404 for `/api/internal` paths; internal Java-to-Worker traffic continues directly over the Docker network.
 
-The HTTP listener only returns 308 redirects; application pages and APIs are served over HTTPS. Ports 81/444 are the defaults to avoid conflicts with other local projects. Use 80/443 for a public domain that should work without explicit ports. HSTS is enabled only for standard 80/443 deployments so browsers do not upgrade a non-standard HTTP port to the wrong HTTPS port.
-
-After the first IP-mode startup, export the public root certificate of the internal CA:
-
-```bash
-docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
-```
-
-Install only `root.crt`; never copy or distribute the root private key from the Caddy data volume. Common system trust commands are shown below. Restart browsers after installation.
-
-```bash
-# macOS
-sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain caddy-root.crt
-
-# Windows (administrator command prompt)
-certutil -addstore -f Root caddy-root.crt
-
-# Debian/Ubuntu
-sudo cp caddy-root.crt /usr/local/share/ca-certificates/base-ai-caddy.crt
-sudo update-ca-certificates
-```
-
-Clients such as Firefox may use a separate trust store and require browser-level import. The Caddy CA and automatically-issued multi-SAN IP certificate are persisted in a named volume, so ordinary container rebuilds retain the root. Changing `APP_PLATFORM_SHORT_NAME`, running `docker compose down -v`, or deleting the Caddy data volume creates a new CA that every client must trust again.
+Caddy serves the web console, API, and health endpoint over HTTP on the configured `HTTP_PORT` (80 by default). It does not create certificates or redirect HTTP requests to HTTPS. If public HTTPS is required, place a separately managed reverse proxy in front of this HTTP listener.
 
 Network-facing application containers use non-root users. Linux capabilities are removed except for Caddy's `NET_BIND_SERVICE` on port 80; the networkless Docker Broker remains an explicitly isolated host-privilege boundary. Base images are digest-pinned directly in Compose and Dockerfiles, production images omit unnecessary package managers, and the repository includes weekly Dependabot updates plus Trivy source, secret, configuration, and image scans in GitHub Actions.
 

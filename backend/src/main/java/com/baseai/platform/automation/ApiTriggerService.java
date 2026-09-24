@@ -14,8 +14,6 @@ import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
-import org.apache.hc.client5.http.ssl.DefaultHostnameVerifier;
-import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
 import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpMethod;
@@ -30,7 +28,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import javax.net.ssl.SSLSocketFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -63,7 +60,6 @@ public class ApiTriggerService {
     private final int responseMaxBytes;
     private final int requestBodyMaxBytes;
     private final int metadataMaxLength;
-    private final ApiTriggerTlsTrust tlsTrust;
 
     public ApiTriggerService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                              ConfigCryptoService cryptoService, ApiTriggerUrlPolicy urlPolicy, PlatformProperties properties) {
@@ -75,7 +71,6 @@ public class ApiTriggerService {
         this.responseMaxBytes = positive(properties.getApiTrigger().getResponseMaxBytes(), 2 * 1024 * 1024);
         this.requestBodyMaxBytes = positive(properties.getApiTrigger().getRequestBodyMaxBytes(), 1024 * 1024);
         this.metadataMaxLength = positive(properties.getApiTrigger().getMetadataMaxLength(), 64 * 1024);
-        this.tlsTrust = new ApiTriggerTlsTrust(properties.getApiTrigger().getCaddyCaFile());
     }
 
     /**
@@ -395,10 +390,6 @@ public class ApiTriggerService {
         };
         PoolingHttpClientConnectionManagerBuilder manager = PoolingHttpClientConnectionManagerBuilder.create()
             .setDnsResolver(resolver).setMaxConnTotal(1).setMaxConnPerRoute(1);
-        SSLSocketFactory socketFactory = tlsTrust.socketFactory();
-        if (socketFactory != null) {
-            manager.setSSLSocketFactory(new SSLConnectionSocketFactory(socketFactory, new DefaultHostnameVerifier()));
-        }
         RequestConfig requestConfig = RequestConfig.custom()
             .setConnectionRequestTimeout(Timeout.ofSeconds(timeoutSeconds))
             .setConnectTimeout(Timeout.ofSeconds(timeoutSeconds))

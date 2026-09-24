@@ -87,7 +87,7 @@ services:
       REDIS_TIMEOUT: ${REDIS_TIMEOUT:-5s}
       REDIS_SSL: ${REDIS_SSL:-true}
       APP_TOKEN_SECRET: ${APP_TOKEN_SECRET:?Set APP_TOKEN_SECRET}
-      APP_SESSION_COOKIE_SECURE: ${APP_SESSION_COOKIE_SECURE:-true}
+      APP_SESSION_COOKIE_SECURE: ${APP_SESSION_COOKIE_SECURE:-false}
       APP_PLATFORM_CODE: ${APP_PLATFORM_CODE:-ai-platform}
       APP_PLATFORM_NAME_EN: ${APP_PLATFORM_NAME_EN:-AI Platform}
       APP_PLATFORM_NAME_ZH: ${APP_PLATFORM_NAME_ZH:-AI平台}
@@ -156,7 +156,6 @@ services:
       API_TRIGGER_RESPONSE_MAX_BYTES: ${API_TRIGGER_RESPONSE_MAX_BYTES:-2097152}
       API_TRIGGER_REQUEST_BODY_MAX_BYTES: ${API_TRIGGER_REQUEST_BODY_MAX_BYTES:-1048576}
       API_TRIGGER_METADATA_MAX_LENGTH: ${API_TRIGGER_METADATA_MAX_LENGTH:-65536}
-      API_TRIGGER_CADDY_CA_FILE: /app/caddy-public-ca/root.crt
       WORKFLOW_EXECUTOR_POOL_SIZE: ${WORKFLOW_EXECUTOR_POOL_SIZE:-4}
       WORKFLOW_EXECUTOR_QUEUE_CAPACITY: ${WORKFLOW_EXECUTOR_QUEUE_CAPACITY:-400}
       WORKFLOW_MAX_NODES: ${WORKFLOW_MAX_NODES:-100}
@@ -186,7 +185,6 @@ services:
       WORKFLOW_MARKETPLACE_PROBE_RETENTION_HOURS: ${WORKFLOW_MARKETPLACE_PROBE_RETENTION_HOURS:-168}
     volumes:
       - ${TRACE_TRACKING_EXCLUSIONS_FILE:-./backend/config/trace-tracking-exclusions.yml}:/app/config/trace-tracking-exclusions.yml:ro
-      - caddy-public-ca:/app/caddy-public-ca:ro
       - bootstrap-secrets:/app/bootstrap
       - document-parser-control:/run/document-parser:ro
     depends_on:
@@ -687,31 +685,13 @@ services:
       frontend:
         condition: service_healthy
     environment:
-      APP_HTTPS_SITES_FILE: ${APP_HTTPS_SITES_FILE:-}
-      TLS_CERTS_DIR: ${TLS_CERTS_DIR:-}
-      APP_HTTPS_IPS: ${APP_HTTPS_IPS:-}
-      CADDY_HTTPS_SITES_FILE: /etc/caddy/https-sites.yml
-      CADDY_TLS_ROOT: /etc/caddy/tls
-      CADDY_LEARNED_HOSTS_FILE: /data/base-ai-tls/learned-hosts
-      CADDY_CERT_CHECK_INTERVAL_SECONDS: ${TLS_CERT_CHECK_INTERVAL_SECONDS:-3600}
-      CADDY_IP_MIN_ISSUE_INTERVAL_SECONDS: ${IP_CERT_MIN_ISSUE_INTERVAL_SECONDS:-5}
-      CADDY_IP_MAX_LEARNED_HOSTS: ${IP_CERT_MAX_LEARNED_HOSTS:-32}
-      CADDY_EXTERNAL_HTTP_PORT: ${HTTP_PORT:-81}
-      CADDY_EXTERNAL_HTTPS_PORT: ${HTTPS_PORT:-444}
       APP_MAX_REQUEST_BYTES: ${APP_MAX_REQUEST_BYTES:-20971520}
     ports:
       - "${HTTP_PORT:-81}:80"
-      - "${HTTPS_PORT:-444}:443"
-      - "${HTTPS_PORT:-444}:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ${APP_HTTPS_SITES_FILE:-./caddy/https-sites-placeholder.yml}:/etc/caddy/https-sites.yml:ro
-      - ${TLS_CERTS_DIR:-./caddy/tls-placeholder}:/etc/caddy/tls:ro
-      - caddy-data:/data
-      - caddy-config:/config
-      - caddy-public-ca:/public-ca
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null && wget -qO- http://127.0.0.1:2020/health >/dev/null"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -741,6 +721,3 @@ volumes:
   n8n-sandbox-control:
   bootstrap-secrets:
   document-parser-control:
-  caddy-data:
-  caddy-config:
-  caddy-public-ca:
