@@ -186,8 +186,8 @@ app:
   deployment-agent:
     url: ${DEPLOYMENT_AGENT_URL:}
     internal-token: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:}
-    data-sync:
-      worker-image: ${DATA_SYNC_WORKER_IMAGE:}
+  data-sync:
+    worker-image: ${DATA_SYNC_WORKER_IMAGE:}
 
 resilience4j:
   retry:

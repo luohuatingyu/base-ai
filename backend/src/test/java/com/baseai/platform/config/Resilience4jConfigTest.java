@@ -7,7 +7,7 @@ import io.github.resilience4j.retry.RetryRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Resilience4j 配置测试。
  */
 @ExtendWith(SpringExtension.class)
-@SpringBootTest
+@ContextConfiguration(classes = Resilience4jConfig.class)
 class Resilience4jConfigTest {
     
     @Autowired
@@ -93,7 +93,7 @@ class Resilience4jConfigTest {
         CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker("test-circuit-breaker");
         
         // 模拟高失败率
-        for (int i = 0; i < 60; i++) {
+        for (int i = 0; i < 100; i++) {
             try {
                 circuitBreaker.executeSupplier(() -> {
                     throw new RuntimeException("Simulated failure");

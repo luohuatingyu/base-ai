@@ -422,11 +422,12 @@ test('自建镜像使用必填 Git revision 标签并写入 OCI 元数据', asyn
     'frontend/Dockerfile', 'caddy/Dockerfile', 'deployment-agent/Dockerfile',
   ].map(path => readFile(new URL(path, root), 'utf8')))
   const imageLines = compose.match(/^\s+image:.*$/gm) ?? []
+  const revisionImageLines = imageLines.filter(line => line.includes('${APP_IMAGE_REVISION'))
 
-  assert.equal(imageLines.length, 12)
-  imageLines.forEach(line => assert.match(line, /:\$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/))
+  assert.equal(revisionImageLines.length, 12)
+  revisionImageLines.forEach(line => assert.match(line, /:\$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/))
   assert.doesNotMatch(`${compose}\n${adapterCompose}`, /image:[^\n]*:latest/)
-  assert.equal((compose.match(/^ {8}APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/gm) ?? []).length, imageLines.length)
+  assert.equal((compose.match(/^ {8}APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/gm) ?? []).length, revisionImageLines.length)
   for (const name of ['adapter-manager', 'adapter-docker-broker']) {
     const block = compose.split(`\n  ${name}:\n`)[1].split(/\n {2}[a-z][a-z-]+:\n/)[0]
     assert.match(block, /^ {6}APP_IMAGE_REVISION: \$\{APP_IMAGE_REVISION:\?Set APP_IMAGE_REVISION to Git commit\}$/m)

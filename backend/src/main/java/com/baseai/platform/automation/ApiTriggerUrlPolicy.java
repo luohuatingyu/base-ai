@@ -15,7 +15,7 @@ public class ApiTriggerUrlPolicy {
         this.configurationService = configurationService;
     }
 
-    /** 校验协议、域名白名单和目标网络地址，阻止 SSRF。 */
+    /** 校验协议和 Host 规则，阻止未授权的目标地址。 */
     public URI validate(String value) {
         try {
             URI uri = URI.create(value == null ? "" : value.trim());
@@ -25,7 +25,7 @@ public class ApiTriggerUrlPolicy {
             if (uri.getRawUserInfo() != null || uri.getRawFragment() != null || uri.getPort() == 0) {
                 throw new BusinessException("apiTrigger.urlUnsafeComponent");
             }
-            resolveVerifiedHost(uri.getHost());
+            validateHostPolicy(uri.getHost());
             return uri;
         } catch (BusinessException exception) {
             throw exception;
@@ -42,14 +42,7 @@ public class ApiTriggerUrlPolicy {
     public InetAddress[] resolveVerifiedHost(String value) {
         try {
             String host = normalizeHost(value);
-            ApiTriggerSecurityConfigurationService.ConfigurationView configuration = configurationService.current();
-            boolean literalLoopback = isLiteralLoopbackHost(host);
-            if (literalLoopback && !configuration.allowLoopback()) {
-                throw BusinessException.forbidden("apiTrigger.loopbackForbidden");
-            }
-            if (!literalLoopback && configuration.hostRules().stream().noneMatch(rule -> matches(rule, host))) {
-                throw BusinessException.forbidden("apiTrigger.hostForbidden");
-            }
+            ApiTriggerSecurityConfigurationService.ConfigurationView configuration = validateHostPolicy(host);
             InetAddress[] addresses = InetAddress.getAllByName(stripIpv6Brackets(host));
             if (!configuration.allowLoopback() || !configuration.allowPrivateNetwork()) {
                 for (InetAddress address : addresses) {
@@ -67,6 +60,47 @@ public class ApiTriggerUrlPolicy {
         } catch (Exception exception) {
             throw new BusinessException("apiTrigger.urlParseFailed");
         }
+    }
+
+    /** 校验 Host 白名单和字面回环开关，不触发 DNS，避免保存配置依赖外部解析服务。 */
+    private ApiTriggerSecurityConfigurationService.ConfigurationView validateHostPolicy(String value) {
+        String host = normalizeHost(value);
+        ApiTriggerSecurityConfigurationService.ConfigurationView configuration = configurationService.current();
+        boolean literalLoopback = isLiteralLoopbackHost(host);
+        if (literalLoopback && !configuration.allowLoopback()) {
+            throw BusinessException.forbidden("apiTrigger.loopbackForbidden");
+        }
+        if (!literalLoopback && configuration.hostRules().stream().noneMatch(rule -> matches(rule, host))) {
+            throw BusinessException.forbidden("apiTrigger.hostForbidden");
+        }
+        validateLiteralAddressSafety(host, configuration);
+        return configuration;
+    }
+
+    /** 对数字或 IPv6 字面地址立即执行网络范围检查，域名地址留给连接阶段解析。 */
+    private void validateLiteralAddressSafety(String host,
+                                              ApiTriggerSecurityConfigurationService.ConfigurationView configuration) {
+        if (!isLiteralAddress(host) || (configuration.allowLoopback() && configuration.allowPrivateNetwork())) return;
+        try {
+            for (InetAddress address : InetAddress.getAllByName(stripIpv6Brackets(host))) {
+                if (address.isLoopbackAddress() && !configuration.allowLoopback()) {
+                    throw BusinessException.forbidden("apiTrigger.loopbackForbidden");
+                }
+                if (isNonLoopbackPrivateAddress(address) && !configuration.allowPrivateNetwork()) {
+                    throw BusinessException.forbidden("apiTrigger.privateNetworkForbidden");
+                }
+            }
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new BusinessException("apiTrigger.urlParseFailed");
+        }
+    }
+
+    /** 识别 IPv4 数字形式和 IPv6 文本形式，避免对普通域名执行保存时 DNS。 */
+    private boolean isLiteralAddress(String host) {
+        String normalized = stripIpv6Brackets(host);
+        return normalized.indexOf(':') >= 0 || normalized.matches("[0-9.]+");
     }
 
     /** 按精确、域名边界前后缀、普通包含和任意 Host 五种类型匹配。 */
