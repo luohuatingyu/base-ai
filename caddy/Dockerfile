@@ -6,7 +6,6 @@ ARG CADDY_VERSION=v2.11.4
 ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 WORKDIR /workspace
-COPY ip-cert-helper.go ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go mod init base-ai/caddy-build \
