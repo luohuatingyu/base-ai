@@ -1,5 +1,28 @@
 # 最近分支覆盖测试报告
 
+## Docker Hub 访问恢复与 Compose 构建验证（2026-09-24）
+
+### Git 基准与范围
+
+- 代码提交：`f4570aa`（Retry Docker Compose binary download）。
+- 构建阶段为 Docker Compose 二进制下载增加最多 5 次、每次 30 秒超时的重试，并保留 SHA-256 校验。
+- 通过 Docker Desktop 本地缓存预拉取 Compose 使用的固定 digest 基础镜像，避免重复请求 `auth.docker.io` 匿名令牌。
+- 使用 rootless Colima Docker socket 验证 Adapter Manager 的安全启动条件；未放宽 rootless 校验，也未修改业务代码。
+
+### 实际执行结果
+
+- `docker compose up --build -d --force-recreate`：所有 10 个项目镜像构建成功，构建阶段后端 Maven 测试 941/941 通过；本次不再失败于 `auth.docker.io`。
+- `node --test frontend/test/security-deployment.test.mjs`：19/19 通过。
+- Adapter Manager：rootless Docker 校验和健康检查通过。
+- 已启动并健康的服务：Adapter Manager、Deployment Agent、Dify Worker、n8n Worker、Outbound Gateway、Document Parser、Python Worker、Docker Socket Proxy。
+- Compose 最终退出非零：Backend 因当前环境没有外部 MySQL 服务，`mysql` 主机名无法解析；Caddy 和 Frontend 按依赖关系保持 Created。该问题属于运行环境前置条件，不是 Docker Hub 认证失败。
+
+### 已知问题与下次测试建议
+
+- 启动完整应用前需提供可访问的 MySQL 和 Redis，并设置与其匹配的 `MYSQL_URL`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`、`REDIS_HOST` 等变量；Compose 文件不包含数据库服务。
+- 配置外部数据库后，使用完整 40 位 `APP_IMAGE_REVISION` 再执行 `docker compose up --build -d`，并运行 `docker compose ps` 及 Backend/Caddy 冒烟检查。
+- Docker Hub 仍不可直连时，保留本地 digest 缓存和 Docker Desktop 代理；基础镜像缓存被清除后，需要恢复 Docker Desktop 代理或配置可用镜像代理。
+
 ## 安全策略与自动化覆盖收敛（2026-09-24）
 
 ### Git 基准与范围
