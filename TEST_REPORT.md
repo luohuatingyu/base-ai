@@ -1,5 +1,45 @@
 # 最近分支覆盖测试报告
 
+## 聊天工具修复与 master 合并验证（2026-09-25）
+
+### Git 基准与范围
+
+- Commit: `cb0a08ca9fde2c3c231b72b47fc32ab5afc70357`
+- 提交信息：`Fix chat tool routing and execution authorization`；测试日期：2026-09-25；分支：`master`。
+- 用户确认修复范围后，修正前端 Agent 工具目录 URL，在接口工具执行入口校验登录身份、接口触发权限和所有者身份一致性，并将模型可执行工具限制在本轮显式选择的集合内。
+- 本地 `master` 已从 `c4dacb9` 快进至上述版本；合并前后代码树一致，未执行 push。使用现有 Vue/Node.js 和 Java/Spring 测试栈，没有新增依赖或修改配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级及用例 | 前置条件与输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 工具目录正确显示 | 前端组件行为：`chat-interaction.test.mjs` 的“从会话工具端点加载已配置的 Agent 工具” | 正确目录端点返回一个工具，错误路径返回 404 | 页面状态保留返回工具，请求会话工具端点 | 正常、异常、回归 |
+| 无身份、无触发权限或伪造所有者时拒绝执行 | 服务集成：`ApiTriggerServicePersistenceTest.agentToolRejectsUnauthorizedExecutionWithoutHttpSideEffects` | 真实 H2 配置与本地 HTTP 端点；参数 anonymous/revoked/forgedOwner | 分别返回 401/403/403，无 HTTP 请求、执行日志或最近执行时间更新 | 权限、安全、异常 |
+| 资源所有权与状态保护继续有效 | 同上参数化测试 | 参数 otherOwner/disabled/voided | 返回 404/400/400，无执行副作用 | 边界、安全、兼容 |
+| 合法接口调用继续成功 | 服务集成：`authorizedAgentToolExecutesAndRecordsResult` | trigger 权限、manage 权限、ADMIN 三组身份调用自有配置 | 返回真实 HTTP 内容，持久化一条 CHAT_AGENT/SUCCESS 日志 | 正常、兼容、回归 |
+| 模型不能执行未选工具 | 编排单元：`ChatStreamClientTest.rejectsModelCallsOutsideSelectedTools` | 已选择接口及工作流，模型分别返回未选接口、未选工作流和未知名称 | 返回工具未授权错误，不产生启动事件、接口执行或工作流执行 | 安全、异常、边界 |
+| 已选择工具正常执行 | 既有 `executesIndependentAgentToolWithoutWorkflow` 和 `executesAuthorizedWorkflowToolBeforeFinalAnswer` | 模型请求显式选择的工具 | 工具执行后输出最终答案，执行器类型正确 | 正常、兼容、回归 |
+
+### 实际执行结果
+
+- 失败复现：`cd frontend && node --test --test-name-pattern='从会话工具端点' test/chat-interaction.test.mjs`，修复前 1 项按预期失败（返回空列表）。
+- 后端失败复现：Docker Desktop 内执行 `mvn -o -B -ntp -Dtest=ApiTriggerServicePersistenceTest,ChatStreamClientTest test`，45 项中 5 项按预期失败；对应三种身份/权限绕过和两种未选工具执行。
+- 修复后：`node --test frontend/test/chat-interaction.test.mjs`，17/17 通过；上述后端定向命令 45/45 通过（接口持久化 38、聊天流 7），失败/错误/跳过均为 0。
+- 合并前及合并后在 master 工作区运行 `cd frontend && npm test`，Lint、类型检查、覆盖测试 441/441、E2E 3/3 均通过；失败/跳过均为 0；行覆盖率 98.43%、分支覆盖率 81.54%、函数覆盖率 95.42%。
+- 合并前 Docker Desktop、合并后 Colima 容器内分别执行完整 `mvn -o -B -ntp test`：946/946 通过，通过率 100%，失败 0、错误 0、跳过 0；覆盖项目现有 Domain、Repository、Service、Controller、安全与编排等测试。仓库未配置后端行覆盖率工具，本次数量为测试用例统计。
+- 后端测试通过 `docker [--context desktop-linux] build --progress=plain -f - backend` 执行：标准输入 Dockerfile 使用仓库固定 Maven 镜像，复制 `pom.xml`、`src`，以 `RUN --mount=type=cache,target=/root/.m2` 执行上述 Maven 命令；未保存临时 Dockerfile。
+- `docker compose config --quiet`、`git diff --check` 和合并后的代码树一致性检查通过。
+- `APP_IMAGE_REVISION=cb0a08ca9fde2c3c231b72b47fc32ab5afc70357 docker compose up --build -d`：后端 Maven package 阶段 946/946 通过，Backend/Document Parser 镜像构建成功；整栈构建最终在 Frontend 的 `apk upgrade` 因 Alpine community 软件源 I/O 错误退出（99），未进入新容器切换。
+- 重试 `APP_IMAGE_REVISION=cb0a08ca9fde2c3c231b72b47fc32ab5afc70357 docker --context desktop-linux compose build`：Outbound Gateway 的 Alpine main 软件源发生 TLS 错误，构建退出（99）；未关闭 TLS 校验，也未跳过软件更新。
+
+### 已知限制与下次验证
+
+- 本地代码合并完成且自动化测试通过，但新版整栈部署和运行冒烟检查尚未完成，不能判定新版运行环境验收完成。此前运行的核心服务保持原版本，不能将其健康状态视为新版本验证结果。
+- Colima Maven 缓存起初缺少 JAR，离线定向测试未进入执行；随后复用 Docker Desktop 已有依赖缓存，恢复完整测试。用于传输缓存的临时镜像及 master 复测所用临时依赖链接均已清理。
+- 未单独重复执行未修改的 Python/Go 模块完整测试；未进行真实模型端到端聊天验证。
+- 恢复 Alpine/Debian 软件源及 Docker 镜像网络访问后，使用上述代码版本重新执行 `docker compose up --build -d`，确认 `docker compose ps -a` 中服务健康，并验证工具目录展示、权限撤销拒绝执行和选定工具的真实模型调用。
+- 后续修改后端业务代码、核心业务配置或本次工具授权逻辑时，必须重跑相关用例及完整测试，并更新本报告基准点；运行环境问题解决后应补充 Compose 与冒烟验证结果。
+
 ## 合并 master 前验证（2026-09-25）
 
 - 检查版本：`a8bfc135f715f61be6aafafedc7284a4ffdcaf7f`；源分支 `emdash/codex-vlzfy`，目标 `master`（`c4dacb9`）。目标是源分支祖先，可快进合并；本次因下述功能问题尚未执行合并。
