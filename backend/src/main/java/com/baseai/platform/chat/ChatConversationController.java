@@ -9,6 +9,7 @@ import com.baseai.platform.trace.TraceContextHolder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.util.List;
@@ -28,6 +29,7 @@ public class ChatConversationController {
     private final Semaphore slots = new Semaphore(16);
 
     /** 注入会话存储及真实流式客户端。 */
+    @Autowired
     public ChatConversationController(ChatConversationService service, ChatStreamClient client, ObjectMapper mapper,
                                       ApiTriggerService apiTriggerService) {
         this.service = service; this.client = client; this.mapper = mapper; this.apiTriggerService = apiTriggerService;
