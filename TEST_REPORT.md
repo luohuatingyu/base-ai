@@ -1,5 +1,15 @@
 # 最近分支覆盖测试报告
 
+## 合并 master 前验证（2026-09-25）
+
+- 检查版本：`a8bfc135f715f61be6aafafedc7284a4ffdcaf7f`；源分支 `emdash/codex-vlzfy`，目标 `master`（`c4dacb9`）。目标是源分支祖先，可快进合并；本次因下述功能问题尚未执行合并。
+- `cd frontend && npm test`：退出码 0，Lint、类型检查、完整覆盖测试通过，E2E 3/3 通过；行覆盖率 98.43%、分支覆盖率 81.54%、函数覆盖率 95.42%。
+- `docker build --no-cache-filter build --target build --progress=plain -f backend/Dockerfile backend`：尝试重新执行 Dockerfile 中的 `mvn -B -ntp package`，长时间停留在测试前的 Maven 项目/依赖处理阶段；发现合并阻塞问题后主动取消，退出码 130，未取得本次后端测试结果。
+- `git diff --check master...HEAD`：通过；本次没有修改业务代码。
+- 新发现的问题：`frontend/src/views/AiChatView.vue` 请求 `/ai/chat/agent-tools`，Axios 前缀为 `/api`；`ChatConversationController` 的实际映射是 `/api/ai/conversations/agent-tools`。请求失败被转换为空数组，导致独立 Agent 工具无法在页面列出；前端测试使用相同错误地址，未覆盖真实接口契约。
+- 后续验证建议：修正前端目录请求地址，并增加校验前后端路由一致性及工具列表非空的回归测试；先确认失败测试，再修复并执行完整前端与后端测试。合并后执行 `docker compose up --build -d` 和服务健康检查。本次未执行合并后测试与 Compose 重建。
+- 本节仅记录合并检查，不替换下方已有后端测试基准点；修复方案待用户确认。
+
 ## AI 对话 Agent 与工作流工具分离（2026-09-25）
 
 ### Git 基准与范围
