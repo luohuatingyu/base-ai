@@ -1,5 +1,38 @@
 # 最近分支覆盖测试报告
 
+## AI 对话 Agent 与工作流工具分离（2026-09-25）
+
+### Git 基准与范围
+
+- 代码提交：`21ef6c4`（Separate chat Agent and workflow tools）、`5d26d2c`（Fix chat controller dependency injection）。
+- 分支：`emdash/codex-vlzfy`；将聊天中的独立 Agent 工具与工作流工具拆分为独立目录、字段、授权和执行器；保留旧版 `toolCodes` 工作流兼容读取。
+- 独立 Agent 工具仅返回当前用户启用的接口触发配置，执行时重新校验所有者、启用状态和安全出站策略，不暴露凭据；工作流继续走已发布工作流执行服务。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试 | 场景 |
+| --- | --- | --- |
+| 页面分别加载并展示 Agent 工具、工作流工具，提交独立字段 | `frontend/test/chat-interaction.test.mjs`：Agent 工具和工作流工具使用独立目录与请求字段 | 正常、兼容、回归 |
+| Agent 工具不会被转发为工作流运行 | `ChatStreamClientTest.executesIndependentAgentToolWithoutWorkflow` | 正常、异常隔离、回归 |
+| 工作流工具保持原有 Agent 编排和执行行为 | `ChatStreamClientTest.executesAuthorizedWorkflowToolBeforeFinalAnswer` | 正常、兼容、回归 |
+| Agent 接口工具按当前用户授权执行并写入执行日志 | `ApiTriggerService` 既有安全与持久化测试、`ChatStreamClientTest` | 权限、安全、异常 |
+
+### 实际执行结果
+
+- `cd frontend && npm test`：Lint、TypeScript、覆盖测试 440/440、E2E 3/3 通过；行覆盖率 98.43%、分支覆盖率 81.54%、函数覆盖率 95.42%。
+- `docker compose build backend`：Maven 全量测试 934/934 通过，失败 0、错误 0、跳过 0。
+- `APP_IMAGE_REVISION=<当前提交> docker compose up --build -d`：全部镜像构建成功；Backend、Frontend、Adapter Manager、Deployment Agent、Document Parser、Python Worker、Outbound Gateway、Docker Socket Proxy 健康检查通过。
+- `docker compose ps`：核心服务 healthy；`git diff --check`：通过。
+
+### 已知问题与下次测试建议
+
+- 当前本地 `PLUGIN_WORKER_INTERNAL_TOKEN` 少于 24 个字符，Dify 与 n8n Worker 按安全校验退出；配置至少 24 个字符的内部令牌后，重新执行 Compose 启动并检查两个 Worker 健康状态。
+- 当前 Compose 使用本地外部 MySQL/Redis 配置；后续若更换依赖地址，应再次执行完整 Compose 冒烟检查。
+
+### Git 基准点
+
+Commit: `5d26d2c`
+
 ## 移除 Caddy 入口服务（2026-09-24）
 
 ### Git 基准与范围
