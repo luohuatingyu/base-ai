@@ -8899,3 +8899,51 @@ Commit: 474cd6a
 ### Git 基准点
 
 Commit: `8ae358c`
+
+## 本地 Dify/n8n Worker 内部令牌修复验证（2026-09-26）
+
+### 范围与环境
+
+- 部署工作区：`/Users/xyzc/emdash/worktrees/base-ai-a8652a83/emdash-codex-vlzfy`。
+- 本次环境验证代码版本：`87e9ce7abd8996c819842b609c1b140535a6592e`；分支：`emdash/codex-vlzfy`；提交：`Rotate local worker authentication tokens`。此版本仅标识本次环境检查，不更新历史后端全量测试基准点。
+- 修复前 Dify/n8n 令牌分别为 23/22 字符，两个容器以退出码 1 停止，日志均提示至少需要 24 字符。
+- 仅在既有、Git 忽略的 `.env` 中分别生成 32 随机字节编码的 64 字符令牌；Backend、Adapter Manager 和 Worker 通过 Compose 读取同一来源。未修改业务代码、依赖或第三方代码。
+- 密钥未输出、未提交；上述提交为空提交，仅记录本地配置操作。测试报告单独提交。
+
+### 验收标准与测试结果
+
+| 验收标准 | 层级、前置条件与输入 | 预期与实测结果 | 场景 |
+| --- | --- | --- | --- |
+| 消除过短令牌并同步调用端 | 配置集成：重建后读取 Compose 配置及运行容器环境，仅比较长度和值是否一致 | 两个令牌均为 64 字符，Backend/Manager/对应 Worker 一致；2/2 通过 | 配置、兼容 |
+| 两个 Worker 启动健康 | 运行态：对两个 Worker GET /health | HTTP 200 且 status=UP；2/2 通过；Compose 10 个服务均 healthy | 正常、回归 |
+| 后端令牌可用于有效签名 | 运行态：使用 Backend 容器中的实际令牌，对不存在的 /__auth_smoke__ 路由 POST {}，构造正文绑定 HMAC | 鉴权通过后返回 404 NOT_FOUND，不执行插件；2/2 通过 | 正常、安全 |
+| 拒绝非法请求 | 运行态：两个 Worker 分别发送重复 nonce、无签名、错误密钥、过期 120 秒签名 | 均为 401 UNAUTHORIZED；8/8 通过 | 异常、安全、重放 |
+| Worker 既有行为无回归 | 单元与组件测试：只读挂载当前源码，Python 3.12 / Node 24 容器，禁用外部网络 | Dify 25/25、n8n 16/16 通过 | 正常、边界、异常、安全、兼容、回归 |
+
+- 自动化套件总计：41 项，通过 41，失败 0，错误 0，跳过 0，通过率 100%。
+- 运行态及配置冒烟：14 项通过；不计入上述单元测试数量。
+
+### 实际执行命令
+
+在上述部署工作区执行：
+
+```sh
+docker compose up --build -d
+docker run --rm --network none -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/workspace -v "$PWD/dify-plugin-worker:/workspace:ro" -w /workspace --entrypoint python3.12 baseai-local-dify-plugin-worker:10607f154b3c98e79d86abb5172e39438c31e95a -m unittest discover -s tests -v
+docker run --rm --network none -v "$PWD/n8n-plugin-worker:/workspace:ro" -w /workspace --entrypoint npm baseai-local-n8n-plugin-worker:10607f154b3c98e79d86abb5172e39438c31e95a test
+docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Health}}'
+git diff --check
+```
+
+- 上述命令均成功。测试使用已有运行时镜像并只读挂载当前源码，不依赖镜像内旧源码。
+- 配置验证通过内联 Node 脚本读取 `docker compose config --format json` 和 `docker inspect`，不输出密钥；健康和鉴权通过 `docker exec -i baseai-local-n8n-plugin-worker node --input-type=module` 的内联脚本执行，逐项断言响应状态和业务错误码。有效签名使用 Backend 实际环境值，未知路由避免数据写入及模型调用。
+- 无本地临时测试或调试文件；测试容器使用 `--rm` 自动清理。
+
+### 限制、风险与后续建议
+
+- 未独立重跑 Backend、Frontend 或其他服务全量测试；此次没有代码变更，验证范围为已确认的 Worker 环境恢复。Compose 构建缓存不作为后端重新测试的证据。
+- 未调用真实模型、未验证插件完整调用链；如需此验收，后续执行授权插件端到端场景。
+- 既有 APP_IMAGE_REVISION 配置为 `5d26d2c8ccc46394cf92acf17cffd2aa7b732c66`，本次保持该配置；镜像标签不能代替上方实际源码版本记录。
+- 令牌轮换需同步调用端并重建服务；旧令牌过短，不应回滚为旧值。需要再次轮换时生成新的合规令牌并重复本节验证。
+- 后续修改令牌、Worker 鉴权或 Compose 环境传递时，应重新执行本节验证；修改业务代码时按项目规则另行执行后端完整测试。
+- 工作区原有未跟踪 `docs/` 保留，未纳入本次提交。
