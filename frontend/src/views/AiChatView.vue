@@ -1,17 +1,17 @@
 <!-- AI 对话页面：提交请求并展示模型响应、Trace 标识和 Token 统计。 -->
 <template>
   <div class="panel chat-panel">
-    <div class="section-head"><div><h2>{{ t('chat.title') }}</h2></div></div>
+    <div class="section-head chat-heading"><div><h2>{{ t('chat.title') }}</h2><p>{{ t('chat.subtitle') }}</p></div><span class="chat-session-label">{{ conversations.find(item => item.id === conversationId)?.title || t('chat.untitled') }}</span></div>
 
     <div class="chat-workspace">
     <details class="chat-history" :open="historyInitiallyOpen">
-      <summary class="history-heading">{{ t('chat.conversationTab') }} <span>{{ historyTotal }}</span><el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
+      <summary class="history-heading">{{ t('chat.historyTitle') }} <span>{{ historyTotal }}</span><el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
       <div class="history-toolbar">
         <el-button type="primary" plain :icon="Plus" :disabled="loading" @click="newConversation">{{ t('chat.newConversation') }}</el-button>
-        <el-button class="history-refresh" text :icon="Refresh" :aria-label="t('chat.refreshHistory')" :title="t('chat.refreshHistory')" :disabled="loading" @click="refreshHistory" />
+        <el-button class="history-refresh" text :icon="Refresh" :aria-label="t('chat.refreshHistory')" :title="t('chat.refreshHistory')" :loading="historyLoading" @click="refreshHistory" />
       </div>
       <div class="history-list">
-      <p v-if="!conversations.length" class="history-empty">{{ t('chat.noConversations') }}</p>
+      <p v-if="historyError" class="history-error" role="alert">{{ historyError }}</p><p v-else-if="historyLoading && !conversations.length" class="history-empty">{{ t('chat.loadingHistory') }}</p><p v-else-if="!conversations.length" class="history-empty">{{ t('chat.noConversations') }}</p>
       <div v-for="conversation in conversations" :key="conversation.id" class="history-item" :class="{ selected: conversation.id === conversationId }">
         <button class="history-title" :aria-current="conversation.id === conversationId ? 'true' : undefined" :title="conversation.title || t('chat.untitled')" :disabled="loading" @click="selectConversation(conversation.id)"><el-icon><ChatLineRound /></el-icon><span>{{ conversation.title || t('chat.untitled') }}</span></button>
         <el-button class="history-delete" text :icon="Delete" :aria-label="t('common.delete')" :title="t('common.delete')" :disabled="loading || conversation.generating" @click="deleteConversation(conversation.id)" />
@@ -86,17 +86,19 @@
       </el-form>
         </details>
 
-        <div class="messages">
-      <div v-for="(item, index) in messages" :key="index" :class="['message', item.role]">
-        <div class="message-author">{{ t(item.role === 'user' ? 'chat.user' : 'chat.assistant') }}</div>
+        <div v-if="pageError" class="chat-error" role="alert"><span>{{ pageError }}</span><el-button v-if="!optionsReady" text :loading="optionsLoading" @click="loadOptions">{{ t('chat.retry') }}</el-button><el-button v-else-if="serverGenerating && !generating" text @click="syncGeneration(conversationId)">{{ t('chat.retry') }}</el-button></div>
+        <div ref="messagesElement" class="messages" tabindex="0" :aria-label="t('chat.conversationTab')" @scroll="onMessagesScroll">
+      <div v-for="(item, index) in messages" :key="item.id || index" :class="['message', item.role]">
+        <span class="message-avatar" aria-hidden="true"><el-icon><User v-if="item.role === 'user'" /><ChatLineRound v-else /></el-icon></span><div class="message-author">{{ t(item.role === 'user' ? 'chat.user' : 'chat.assistant') }}</div>
         <div class="message-content">{{ item.content }}</div>
-        <small v-if="item.status && item.status !== 'COMPLETED'">{{ t(item.status === 'GENERATING' ? 'chat.generating' : 'chat.streamInterrupted') }}</small>
+        <div v-if="item.status && item.status !== 'COMPLETED'" class="message-status" :class="{ 'is-generating': item.status === 'GENERATING' }" role="status"><span v-if="item.status === 'GENERATING'" class="generation-dot" aria-hidden="true" />{{ t(item.status === 'GENERATING' ? 'chat.generating' : 'chat.streamInterrupted') }}</div>
         <div v-if="item.images?.length" class="message-images">
-          <img v-for="image in item.images" :key="image.name + image.dataUrl" :src="image.dataUrl" :alt="image.name" />
+          <el-image v-for="(image, imageIndex) in item.images" :key="image.name + image.dataUrl" :src="image.dataUrl" :alt="image.name" :preview-src-list="item.images.map(value => value.dataUrl)" :initial-index="imageIndex" fit="cover" preview-teleported :tabindex="0" />
         </div>
-        <div v-if="item.role === 'assistant' && item.toolCalls?.length" class="message-tools">
-          <span v-for="tool in item.toolCalls" :key="tool.toolCallId" class="message-tool">
-            {{ tool.toolName }} · {{ tool.success ? t('chat.agentToolSucceeded') : t('chat.agentToolFailed') }}
+        <details v-if="item.role === 'assistant' && (item.toolCalls?.length || hasChatResponseMetadata(item))" class="message-details"><summary>{{ t('chat.responseDetails') }}<span v-if="item.toolCalls?.length"> · {{ item.toolCalls.length }} {{ t('chat.toolsCount') }}</span><el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
+        <div v-if="item.toolCalls?.length" class="message-tools">
+          <span v-for="tool in item.toolCalls" :key="tool.toolCallId" class="message-tool" :class="{ 'is-running': tool.success === null, 'is-failed': tool.success === false }">
+            {{ tool.toolName }} · {{ t(tool.success === null ? 'chat.agentToolRunning' : tool.success ? 'chat.agentToolSucceeded' : 'chat.agentToolFailed') }}
           </span>
         </div>
         <div v-if="item.role === 'assistant' && hasChatResponseMetadata(item)" class="message-metadata">
@@ -111,24 +113,26 @@
           >{{ t('chat.traceId') }}: {{ item.traceId }}</el-link>
           <span v-else-if="item.traceId">{{ t('chat.traceId') }}: {{ item.traceId }}</span>
         </div>
+        </details>
       </div>
-      <div v-if="!messages.length" class="chat-empty"><div class="chat-empty-icon"><el-icon><ChatLineRound /></el-icon></div><h3>{{ t('chat.empty') }}</h3><p>{{ t('chat.placeholder') }}</p></div>
+      <div v-if="!messages.length" class="chat-empty"><div class="chat-empty-icon"><el-icon><ChatLineRound /></el-icon></div><h3>{{ t('chat.empty') }}</h3><p>{{ t('chat.emptyHint') }}</p><div class="chat-suggestions"><button v-for="key in ['explain', 'write', 'plan']" :key="key" :disabled="loading || !!prompt.trim()" @click="useSuggestion(t('chat.suggestions.' + key + 'Prompt'))"><span>{{ t('chat.suggestions.' + key) }}</span><el-icon><Right /></el-icon></button></div></div>
         </div>
-        <div class="chat-composer">
+        <div class="chat-scroll-actions"><el-button v-if="!followLatest && messages.length" round size="small" :icon="Bottom" @click="scrollToLatest">{{ t('chat.backToLatest') }}</el-button></div>
+        <div class="chat-composer" :class="{ 'is-busy': generating }">
         <div v-if="pendingImages.length" class="pending-images">
       <div v-for="image in pendingImages" :key="image.name + image.dataUrl" class="pending-image">
         <img :src="image.dataUrl" :alt="image.name" />
-        <el-button circle size="small" type="danger" @click="removeImage(image)">×</el-button>
+        <el-button circle size="small" type="danger" :aria-label="t('chat.removeImage')" @click="removeImage(image)">×</el-button>
       </div>
         </div>
-        <el-input v-model="prompt" class="chat-question-input" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" resize="none" :aria-label="t('chat.placeholder')" :placeholder="t('chat.placeholder')" @keydown.meta.enter="send" @keydown.ctrl.enter="send" />
+        <el-input ref="questionInput" v-model="prompt" class="chat-question-input" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" resize="none" :aria-label="t('chat.placeholder')" :placeholder="t('chat.placeholder')" @keydown.meta.enter.prevent="sendFromKeyboard" @keydown.ctrl.enter.prevent="sendFromKeyboard" />
         <div class="chat-actions">
           <div class="chat-action-buttons">
             <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
-            <el-button text :icon="Picture" :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
-            <el-button type="primary" :icon="Top" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
+            <el-button text :icon="Picture" :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" :title="modelType === 'vision_model' ? t('chat.imageUploadHint') : t('chat.imageVisionOnly')" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
+            <span class="composer-shortcut">{{ t('chat.shortcutHint') }}</span><el-button v-if="generating" class="stop-button" :icon="VideoPause" @click="stopGeneration">{{ t('chat.stopGeneration') }}</el-button><el-button v-else type="primary" :icon="Top" :disabled="!canSend" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
           </div>
-        </div>
+        </div><div class="composer-status" aria-live="polite">{{ optionsLoading ? t('chat.loadingOptions') : serverGenerating && !generating ? t('chat.waitingForSync') : generating ? t('chat.draftHint') : t('chat.composerHint') }}</div>
         </div>
       </el-tab-pane>
       <el-tab-pane :label="t('chat.promptTab')" name="prompt">
@@ -153,9 +157,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, ChatLineRound, Delete, Picture, Plus, Refresh, Setting, Top } from '@element-plus/icons-vue'
+import { ArrowDown, Bottom, ChatLineRound, Delete, Picture, Plus, Refresh, Right, Setting, Top, User, VideoPause } from '@element-plus/icons-vue'
 import http, { showHttpError, chatStreamHeaders } from '../api/http'
 import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
@@ -176,6 +180,19 @@ const historyTotal = ref(0)
 const historyInitiallyOpen = window.matchMedia('(min-width: 769px)').matches
 let streamController = null
 let unmounted = false
+let syncTimer = null
+let historyRequest = 0
+let stopped = false
+const generating = ref(false)
+const serverGenerating = ref(false)
+const optionsReady = ref(false)
+const optionsLoading = ref(false)
+const historyLoading = ref(false)
+const pageError = ref('')
+const historyError = ref('')
+const messagesElement = ref(null)
+const questionInput = ref(null)
+const followLatest = ref(true)
 const auth = useAuthStore()
 const prompt = ref('')
 const systemPrompt = ref('')
@@ -212,12 +229,54 @@ const filteredRoutes = computed(() => routes.value.filter(route => route.feature
 const filteredProviders = computed(() => providers.value.filter(provider => provider.models.some(matchesType)))
 const currentModels = computed(() => (providers.value.find(p => p.id === providerId.value)?.models || []).filter(matchesType))
 
-// 切换供应商时清空已选模型
+const canSend = computed(() => optionsReady.value && !loading.value && !serverGenerating.value && !!prompt.value.trim()
+  && (mode.value === 'single' ? !!modelId.value : featureCode.value
+    ? filteredRoutes.value.some(route => route.featureCode === featureCode.value) : defaultRouteSupportsType.value))
+
+/** 仅在用户位于底部附近时跟随流式内容，保留向上阅读的位置。 */
+function onMessagesScroll() {
+  const element = messagesElement.value
+  if (element) followLatest.value = element.scrollHeight - element.clientHeight - element.scrollTop < 80
+}
+
+/** 等待消息布局完成后回到最新位置，不改变键盘焦点。 */
+async function scrollToLatest() {
+  followLatest.value = true
+  await nextTick()
+  if (messagesElement.value) messagesElement.value.scrollTop = messagesElement.value.scrollHeight
+}
+
+watch(() => messages.value.map(item => [item.content, item.status, item.toolCalls?.length]), async () => {
+  if (followLatest.value) await scrollToLatest()
+}, { flush: 'post' })
+
+/** 示例只填入空草稿，用户确认内容后自行发送。 */
+async function useSuggestion(content) {
+  if (loading.value || prompt.value.trim()) return
+  prompt.value = content
+  await nextTick()
+  questionInput.value?.focus()
+}
+
+/** 中文输入法确认候选时不触发快捷发送。 */
+function sendFromKeyboard(event) {
+  if (!event.isComposing) return send()
+}
+
+/** 用户主动中断读取，已接收内容保留，服务端终态通过历史同步。 */
+function stopGeneration() {
+  if (!generating.value) return
+  stopped = true
+  streamController?.abort()
+}
+
+/** 切换供应商时清空已选模型。 */
 function onProviderChange() {
   modelId.value = null
 }
+/** 切换类型后移除不兼容的模型、路由和待发送图片。 */
 function onModelTypeChange() {
-  if (!defaultRouteSupportsType.value && !filteredRoutes.value.some(route => route.featureCode === featureCode.value)) featureCode.value = ''
+  if (featureCode.value && !filteredRoutes.value.some(route => route.featureCode === featureCode.value)) featureCode.value = ''
   if (!filteredProviders.value.some(provider => provider.id === providerId.value)) providerId.value = null
   if (!currentModels.value.some(model => model.id === modelId.value)) modelId.value = null
   if (modelType.value !== 'vision_model') pendingImages.value = []
@@ -319,33 +378,44 @@ function toApiMessage(message) {
   }
 }
 
-// 加载路由列表和供应商列表
-onMounted(async () => {
+/** 加载必要模型目录，工具权限失败不阻断普通对话。 */
+async function loadOptions() {
+  optionsLoading.value = true
+  pageError.value = ''
   try {
     const [routesRes, providersRes, typesRes, toolsRes] = await Promise.all([
-      http.get('/ai/chat/routes'),
-      http.get('/ai/chat/providers'),
-      http.get('/ai/chat/model-types'),
-      http.get('/workflow/chat-tools')
+      http.get('/ai/chat/routes'), http.get('/ai/chat/providers'), http.get('/ai/chat/model-types'),
+      http.get('/workflow/chat-tools', { silentError: true }).catch(() => ({ data: [] }))
     ])
+    if (unmounted) return
     routes.value = routesRes.data
     providers.value = providersRes.data
     modelTypes.value = typesRes.data
     agentTools.value = toolsRes.data
     if (!modelTypes.value.some(type => type.value === modelType.value)) modelType.value = modelTypes.value[0]?.value || 'text_model'
-    await refreshHistory()
+    optionsReady.value = true
     const selected = Number(route.query.conversation)
-    if (Number.isSafeInteger(selected) && selected > 0) await selectConversation(selected)
+    if (!conversationId.value && Number.isSafeInteger(selected) && selected > 0) await selectConversation(selected)
   } catch (error) {
-    console.error('Failed to load chat options:', error)
-  }
-})
+    if (!unmounted) pageError.value = t('chat.optionsFailed')
+  } finally { optionsLoading.value = false }
+}
+
+onMounted(async () => { await Promise.all([loadOptions(), refreshHistory()]) })
 
 /** 分页读取摘要，不缓存其他用户的会话正文。 */
 async function refreshHistory() {
-  const response = await http.get('/ai/conversations', { params: { page: historyPage.value } })
-  conversations.value = response.data.items
-  historyTotal.value = response.data.total
+  const request = ++historyRequest
+  historyLoading.value = true
+  historyError.value = ''
+  try {
+    const response = await http.get('/ai/conversations', { params: { page: historyPage.value } })
+    if (unmounted || request !== historyRequest) return
+    conversations.value = response.data.items
+    historyTotal.value = response.data.total
+  } catch (error) {
+    if (!unmounted && request === historyRequest) historyError.value = t('chat.historyFailed')
+  } finally { if (request === historyRequest) historyLoading.value = false }
 }
 
 /** 切换历史页并读取数据。 */
@@ -362,13 +432,18 @@ async function newConversation() {
   try {
   const response = await http.post('/ai/conversations')
   conversationId.value = response.data.id
+  clearTimeout(syncTimer)
+  serverGenerating.value = false
+  pageError.value = ''
+  activeTab.value = 'conversation'
   messages.value = []
   prompt.value = ''
   pendingImages.value = []
   historyPage.value = 0
   await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
   await refreshHistory()
-  } finally { loading.value = false }
+  } catch (error) { pageError.value = t('chat.newConversationFailed') }
+  finally { loading.value = false }
 }
 
 /** 恢复会话历史和模型配置，刷新页面后仍可继续对话。 */
@@ -377,7 +452,12 @@ async function selectConversation(id) {
   loading.value = true
   try {
     const response = await http.get(`/ai/conversations/${id}`)
+    if (unmounted) return
+    clearTimeout(syncTimer)
     conversationId.value = id
+    serverGenerating.value = Boolean(response.data.conversation?.generating)
+    pageError.value = ''
+    activeTab.value = 'conversation'
     messages.value = response.data.messages.map(restoreChatMessage)
     const settings = response.data.settings
     modelType.value = settings.modelType || 'text_model'
@@ -393,7 +473,10 @@ async function selectConversation(id) {
     prompt.value = ''
     pendingImages.value = []
     await router.replace({ query: { ...route.query, conversation: String(id) } })
-  } finally { loading.value = false }
+    await scrollToLatest()
+    if (serverGenerating.value) scheduleSync(id)
+  } catch (error) { if (!unmounted) pageError.value = t('chat.conversationFailed') }
+  finally { loading.value = false }
 }
 
 /** 用户确认后删除会话及历史消息。 */
@@ -405,60 +488,96 @@ async function deleteConversation(id) {
   try {
   await http.delete(`/ai/conversations/${id}`)
   if (conversationId.value === id) {
+    clearTimeout(syncTimer)
     conversationId.value = null
+    serverGenerating.value = false
     messages.value = []
     await router.replace({ query: { ...route.query, conversation: undefined } })
   }
   if (conversations.value.length === 1 && historyPage.value > 0) historyPage.value--
   await refreshHistory()
-  } finally { loading.value = false }
+  } catch (error) { pageError.value = t('chat.deleteFailed') }
+  finally { loading.value = false }
 }
 
 /** 离开页面取消网络读取，上游随代理断连释放生成资源。 */
 onBeforeUnmount(() => {
   unmounted = true
+  clearTimeout(syncTimer)
   streamController?.abort()
 })
 
-/** 只发送新问题，由服务端读取历史并通过 SSE 返回增量文本。 */
+/** 停止或恢复生成中的历史后，等待服务端结束保存，避免马上重发产生冲突。 */
+function scheduleSync(id) {
+  clearTimeout(syncTimer)
+  syncTimer = setTimeout(() => syncGeneration(id), 1500)
+}
+
+/** 同步服务端终态，不清空输入、不覆盖本地已接收但尚未落库的部分文本。 */
+async function syncGeneration(id) {
+  if (unmounted || id !== conversationId.value) return
+  try {
+    const response = await http.get('/ai/conversations/' + id)
+    if (unmounted || id !== conversationId.value) return
+    serverGenerating.value = Boolean(response.data.conversation?.generating)
+    if (serverGenerating.value) { scheduleSync(id); return }
+    // 保留停止后已显示的内容；缺失或更长的服务端内容才更新当前消息。
+    for (const message of response.data.messages.map(restoreChatMessage)) {
+      const existing = messages.value.find(item => item.id === message.id)
+      if (existing && message.content.length >= existing.content.length) Object.assign(existing, message)
+    }
+    await refreshHistory()
+  } catch (error) {
+    if (!unmounted && id === conversationId.value) pageError.value = t('chat.syncFailed')
+  }
+}
+
+/** 只发送新问题，立即分离当前草稿，避免首个流事件清空下一条输入。 */
 async function send() {
+  if (!canSend.value) return
   const content = prompt.value.trim()
-  if (!content || loading.value) return
-  if (pendingImages.value.length && modelType.value !== 'vision_model') {
+  const draft = prompt.value
+  const images = [...pendingImages.value]
+  if (images.length && modelType.value !== 'vision_model') {
     ElMessage.warning(t('chat.imageVisionOnly'))
     return
   }
-  if (mode.value === 'single' && !modelId.value) { ElMessage.warning(t('chat.selectModel')); return }
-  if (mode.value === 'multi' && !defaultRouteSupportsType.value && !filteredRoutes.value.some(route => route.featureCode === featureCode.value)) { ElMessage.warning(t('chat.selectModelPool')); return }
-  const userMessage = { role: 'user', content, images: pendingImages.value }
+  const settings = { modelType: modelType.value, featureCode: featureCode.value.trim() || null,
+    modelId: mode.value === 'single' ? modelId.value : null,
+    enableThinking: enableThinking.value, thinkingLevel: thinkingLevel.value, systemPrompt: systemPrompt.value,
+    toolCodes: [...toolCodes.value] }
+  const userMessage = { role: 'user', content, images }
+  let assistant = null
+  let started = false
+  let turnConversationId = null
+  const previousLength = messages.value.length
   loading.value = true
+  pageError.value = ''
+  prompt.value = ''
+  pendingImages.value = []
+  stopped = false
   try {
     if (!conversationId.value) {
       const created = await http.post('/ai/conversations')
+      if (unmounted) return
       conversationId.value = created.data.id
       historyPage.value = 0
       await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
     }
-    messages.value.push(userMessage)
-    messages.value.push({ role: 'assistant', content: '', status: 'GENERATING' })
-    const assistant = messages.value[messages.value.length - 1]
+    if (unmounted) return
+    turnConversationId = conversationId.value
+    messages.value.push(userMessage, { role: 'assistant', content: '', status: 'GENERATING' })
+    assistant = messages.value[messages.value.length - 1]
     streamController = new AbortController()
-    const response = await fetch(`/api/ai/conversations/${conversationId.value}/messages/stream`, {
+    generating.value = true
+    await scrollToLatest()
+    const response = await fetch('/api/ai/conversations/' + turnConversationId + '/messages/stream', {
       method: 'POST', credentials: 'same-origin', headers: chatStreamHeaders(), signal: streamController.signal,
-      body: JSON.stringify({
-        requestId: crypto.randomUUID(),
-        content: toApiMessage(userMessage).content,
-        settings: { modelType: modelType.value, featureCode: featureCode.value.trim() || null,
-          modelId: mode.value === 'single' ? modelId.value : null,
-          enableThinking: enableThinking.value, thinkingLevel: thinkingLevel.value, systemPrompt: systemPrompt.value,
-          toolCodes: toolCodes.value }
-      })
+      body: JSON.stringify({ requestId: crypto.randomUUID(), content: toApiMessage(userMessage).content, settings })
     })
     await readChatStream(response, event => {
-      if (event.type === 'start') { assistant.id = event.messageId; assistant.traceId = event.traceId; prompt.value = ''; pendingImages.value = [] }
-      if (event.type === 'agent_tool_start') {
-        assistant.toolCalls = [...(assistant.toolCalls || []), { ...event, success: null }]
-      }
+      if (event.type === 'start') { started = true; assistant.id = event.messageId; assistant.traceId = event.traceId }
+      if (event.type === 'agent_tool_start') assistant.toolCalls = [...(assistant.toolCalls || []), { ...event, success: null }]
       if (event.type === 'agent_tool_done') {
         const tools = assistant.toolCalls || []
         const index = tools.findIndex(tool => tool.toolCallId === event.toolCallId)
@@ -469,27 +588,38 @@ async function send() {
       if (event.type === 'done') Object.assign(assistant, event, { status: 'COMPLETED' })
     })
   } catch (error) {
-    if (!unmounted) {
-      if (error.response?.status === 401) await router.push({ path: '/login', query: { redirect: route.fullPath } })
-      else showHttpError(error, 'chat.callFailed')
+    if (unmounted) return
+    if (started) {
+      assistant.status = 'INTERRUPTED'
+    } else {
+      messages.value.splice(previousLength)
+      if (!prompt.value) prompt.value = draft
+      if (!pendingImages.value.length && modelType.value === 'vision_model') pendingImages.value = images
+    }
+    if (error.response?.status === 401) await router.push({ path: '/login', query: { redirect: route.fullPath } })
+    else if (!stopped) {
+      pageError.value = t(started ? 'chat.interruptedHint' : 'chat.sendFailed')
+      showHttpError(error, 'chat.callFailed')
+    }
+    if (turnConversationId && (started || stopped || !error.response?.status || error.response?.status === 409)) {
+      serverGenerating.value = true
+      scheduleSync(turnConversationId)
     }
   } finally {
     loading.value = false
+    generating.value = false
     streamController = null
-    if (!unmounted && conversationId.value) {
-      const draft = prompt.value
-      const images = pendingImages.value
-      await selectConversation(conversationId.value)
-      prompt.value = draft
-      pendingImages.value = images
-      await refreshHistory()
-    }
+    if (!unmounted && turnConversationId) await refreshHistory()
   }
 }
 </script>
 
 <style scoped>
 .chat-workspace { display: grid; flex: 1; min-height: 0; overflow: hidden; grid-template-columns: 224px minmax(0, 1fr); gap: 28px; }
+.chat-heading { align-items: center; gap: 16px; }
+.chat-heading h2 { margin-bottom: 4px; }
+.chat-heading p { margin: 0; color: var(--app-muted); font-size: 13px; }
+.chat-session-label { max-width: min(36%, 320px); overflow: hidden; color: var(--app-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .chat-history { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--app-canvas); border: 1px solid var(--app-border); border-radius: 12px; padding: 12px; }
 .chat-history::details-content { min-height: 0; display: flex; flex: 1; flex-direction: column; overflow: hidden; }
 .history-heading { display: flex; align-items: center; gap: 8px; padding: 4px 4px 12px; color: var(--app-muted); font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -503,7 +633,8 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 .history-toolbar > .el-button:first-child { flex: 1; min-width: 0; padding-inline: 8px; }
 .history-refresh.el-button { margin-left: 0; padding: 8px; }
 .history-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
-.history-empty { color: var(--app-muted); font-size: 12px; text-align: center; margin: 24px 0; }
+.history-empty, .history-error { color: var(--app-muted); font-size: 12px; text-align: center; margin: 24px 0; }
+.history-error { color: var(--el-color-danger); }
 .history-item { display: flex; align-items: center; border-radius: 8px; padding: 2px; margin-bottom: 4px; }
 .history-item:hover { background: #edf1f7; }
 .history-item.selected { background: var(--el-color-primary-light-9); color: var(--app-primary); }
@@ -515,6 +646,7 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 .chat-history :deep(.el-pagination) { padding-top: 8px; gap: 2px; flex-wrap: nowrap; }
 .chat-history :deep(.el-pager li), .chat-history :deep(.el-pagination button) { min-width: 24px; }
 .chat-tabs { min-width: 0; }
+.chat-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 12px 0; padding: 9px 12px; border: 1px solid var(--el-color-danger-light-7); border-radius: 9px; color: var(--el-color-danger); background: var(--el-color-danger-light-9); font-size: 12px; }
 .model-config {
   margin-bottom: 4px;
   padding: 0 12px;
@@ -662,6 +794,12 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 .message-metadata :deep(.el-link) { font-size: inherit; }
 .message-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .message-tool { padding: 3px 8px; border-radius: 999px; background: var(--el-color-primary-light-9); color: var(--app-primary); font-size: 12px; }
+.message-details { margin-top: 10px; color: var(--app-muted); font-size: 12px; }
+.message-details > summary { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.message-details[open] > summary { color: var(--app-primary); }
+.message-details .disclosure-icon { margin-left: 2px; }
+.message-tool.is-running { color: var(--el-color-warning-dark); background: var(--el-color-warning-light-9); }
+.message-tool.is-failed { color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
 
 .message-images,
 .pending-images {
@@ -699,6 +837,18 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 }
 .chat-composer .pending-images { margin: 0 0 12px; padding: 6px; max-height: 110px; overflow-y: auto; }
 .chat-composer .pending-image img { width: 64px; height: 64px; }
+.composer-shortcut { flex: 1; color: var(--app-muted); font-size: 11px; text-align: right; }
+.composer-status { min-height: 16px; margin-top: 5px; color: var(--app-muted); font-size: 11px; }
+.stop-button { --el-button-bg-color: var(--el-color-danger-light-9); --el-button-border-color: var(--el-color-danger-light-7); --el-button-text-color: var(--el-color-danger); }
+.chat-scroll-actions { position: relative; z-index: 2; display: flex; justify-content: center; height: 0; pointer-events: none; }
+.chat-scroll-actions .el-button { pointer-events: auto; transform: translateY(-44px); box-shadow: 0 4px 14px rgb(31 53 91 / 14%); }
+.chat-suggestions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: min(100%, 680px); margin-top: 24px; }
+.chat-suggestions button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 42px; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 10px; color: var(--app-text); background: var(--app-surface); text-align: left; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, transform .15s ease; }
+.chat-suggestions button:hover:not(:disabled), .chat-suggestions button:focus-visible { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); transform: translateY(-1px); }
+.chat-suggestions button:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
+.chat-suggestions button:disabled { cursor: not-allowed; opacity: .55; }
+.messages:focus-visible { outline: 2px solid var(--el-color-primary-light-5); outline-offset: -2px; border-radius: 10px; }
+@keyframes chat-pulse { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
 @media (max-width: 768px) {
   .chat-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
   .chat-history { max-height: 176px; padding: 8px 10px; }

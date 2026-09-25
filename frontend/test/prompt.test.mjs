@@ -48,8 +48,8 @@ test('问题输入框按内容增长至六行，提示词保持大编辑区且�
   assert.ok(questionInput, '缺少问题输入框')
   assert.match(questionInput, /:autosize="\{ minRows: 2, maxRows: 6 \}"/)
   assert.match(questionInput, /resize="none"/)
-  assert.match(questionInput, /@keydown\.meta\.enter="send"/)
-  assert.match(questionInput, /@keydown\.ctrl\.enter="send"/)
+  assert.match(questionInput, /@keydown\.meta\.enter\.prevent="sendFromKeyboard"/)
+  assert.match(questionInput, /@keydown\.ctrl\.enter\.prevent="sendFromKeyboard"/)
 
   assert.ok(promptInput, '缺少提示词输入框')
   assert.match(promptInput, /:rows="22"/)

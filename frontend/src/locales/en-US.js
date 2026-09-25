@@ -157,8 +157,8 @@ export default {
     deleteConversationConfirm: 'Delete this conversation and all messages? This cannot be undone.',
     generating: 'Generating…',
     streamInterrupted: 'Answer interrupted; partial content saved',
-    title: 'General AI Chat', description: 'Requests are routed through Java authorization and task layers to the Python Worker.',
-    user: 'You', assistant: 'AI', empty: 'Enter a question to start chatting',
+    title: 'General AI Chat', subtitle: 'Ask a model, then follow the answer and execution status in real time.', description: 'Requests are routed through Java authorization and task layers to the Python Worker.',
+    user: 'You', assistant: 'AI', empty: 'Enter a question to start chatting', emptyHint: 'Start with an example or type your own question below.',
     placeholder: 'Enter a question, then press Ctrl/Cmd + Enter to send', traceId: 'Trace ID', send: 'Send',
     callFailed: 'Model call failed',
     mode: 'Mode',
@@ -195,8 +195,8 @@ export default {
     inputTokens: 'Input Tokens',
     outputTokens: 'Output Tokens',
     totalTokens: 'Total Tokens',
-    conversationTab: 'Conversation',
-    promptTab: 'Prompt Settings',
+    conversationTab: 'Conversation', historyTitle: 'History', loadingHistory: 'Loading conversations…',
+    promptTab: 'Prompt Settings', responseDetails: 'View response details', toolsCount: 'tools', agentToolRunning: 'Running',
     promptTitle: 'System Prompt',
     promptDescription: 'The prompt is sent as a system message for this page session and is cleared after refresh.',
     choosePromptFile: 'Choose Prompt File',
@@ -206,9 +206,9 @@ export default {
     promptFileType: 'Only .txt and .md prompt files are supported',
     promptFileSize: 'Prompt file must not exceed 1 MB',
     promptFileReadFailed: 'Failed to read prompt file',
-    uploadImage: 'Upload Image', imageLimit: 'You can upload up to {count} images',
+    uploadImage: 'Upload Image', imageUploadHint: 'PNG, JPEG, or WEBP, up to 4 images', removeImage: 'Remove image', imageLimit: 'You can upload up to {count} images',
     imageType: 'Only PNG, JPEG, and WEBP images are supported', imageSize: 'Each image must be no larger than 10 MB',
-    imageReadFailed: 'Failed to read image', imageVisionOnly: 'Images can only be sent to vision models'
+    imageReadFailed: 'Failed to read image', imageVisionOnly: 'Images can only be sent to vision models', shortcutHint: 'Ctrl/Cmd + Enter to send · Shift + Enter for a new line', composerHint: 'Replies are saved to the current conversation', draftHint: 'You can keep editing your next question', loadingOptions: 'Loading model options…', waitingForSync: 'Syncing conversation state…', stopGeneration: 'Stop generating', backToLatest: 'Back to latest', retry: 'Retry', optionsFailed: 'Model options failed to load. Try again.', historyFailed: 'Conversation history failed to load. Try again.', conversationFailed: 'Conversation failed to load. Your current content is preserved.', newConversationFailed: 'Could not start a new conversation. Try again.', deleteFailed: 'Could not delete the conversation. Try again.', syncFailed: 'Conversation state could not be synced. Try again later.', sendFailed: 'Send failed. Your draft has been restored.', interruptedHint: 'The response was interrupted; received content is preserved.', suggestions: { explain: 'Explain code', explainPrompt: 'Explain what this code does and point out potential issues.', write: 'Draft a plan', writePrompt: 'Write a clear, actionable implementation plan.', plan: 'Plan next steps', planPrompt: 'Based on this goal, suggest the next steps.' }
   },
   logs: {
     loginTitle: 'Login Logs', loginDescription: 'Records successful and failed login events.',
