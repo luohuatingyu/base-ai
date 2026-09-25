@@ -8770,3 +8770,38 @@ Commit: 474cd6a
 
 - 当前 Compose 环境未提供稳定的外部依赖服务，需先确认 `outbound-gateway` 健康检查及其依赖，再执行 `docker compose ps` 验证全栈健康状态。
 - 外部 TLS 终止层应将请求转发至 Caddy HTTP 入口，并按需设置 `APP_SESSION_COOKIE_SECURE=true`；业务 API 触发器访问外部 HTTPS 的信任链仍需在部署环境验证。
+# 聊天 Agent 工作流工具扩展（2026-09-25）
+
+### Git 基准与范围
+
+- Commit: `8ae358c`（Add workflow tools to AI chat agent）
+- 分支：`emdash/codex-vlzfy`
+- 普通聊天可选择当前用户有权访问的已发布工作流，模型通过 Agent 决策调用工作流并接收真实运行结果；前端展示工具调用状态，沿用工作流发布、权限、运行记录和追踪链路。
+- 新增聊天工具目录接口、工具参数校验、SSE 工具状态事件及中英文文案；未新增依赖、数据库迁移或修改第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试 | 场景 |
+| --- | --- | --- |
+| 只列出当前用户可调用的已发布工作流，并补齐兼容 Schema | `WorkflowServiceAccessTest.listsPublishedChatToolsByOwner` | 正常、权限、安全、兼容 |
+| 工具选择参数拒绝重复、非法和超限编码 | `ChatConversationServiceTest.rejectsInvalidAgentToolSelection` | 边界、异常、安全 |
+| Agent 先执行授权工作流再生成最终回答，并按顺序发送 SSE 事件 | `ChatStreamClientTest.executesAuthorizedWorkflowToolBeforeFinalAnswer` | 正常、回归 |
+| 前端解析并展示 Agent 工具状态事件 | `frontend/test/chat-stream.test.mjs`、`AiChatView.vue` | 正常、异常、兼容 |
+
+### 实际执行结果
+
+- 后端 Docker Maven 全量测试：`mvn -B -ntp package`，933/933 通过，失败 0、错误 0、跳过 0；包含新增聊天和工作流测试。
+- 前端：`cd frontend && npm test`，424/424 通过；Lint、类型检查、覆盖率及 3 项 E2E 均通过。
+- `docker compose --env-file .env.example config --quiet`：通过（使用临时测试环境变量）。
+- `git diff --check`：通过。
+- `docker compose --env-file .env.example up --build -d`：未完成。Deployment Agent 构建阶段从 `goproxy.cn` 下载既有 Go 依赖时发生 EOF/TLS 超时；未进入服务启动阶段。
+- Backend 镜像构建的 Java 测试与 JAR 打包已成功；镜像最终 `apt-get update` 受 Ubuntu 源 502 影响，属于外部网络限制。
+
+### 已知问题与下次测试建议
+
+- 当前未取得完整 Compose 启动和健康检查结果；在 Go 代理、Ubuntu 软件源可访问的环境中重跑 `docker compose up --build -d`，再执行 `docker compose ps` 和聊天工具端到端冒烟测试。
+- Agent 工具执行默认最多 5 轮，每个工作流等待最多 120 秒；超时会取消运行并返回本地化错误。真实模型供应商和异步 Worker 连通性未在本环境验证。
+
+### Git 基准点
+
+Commit: `8ae358c`
