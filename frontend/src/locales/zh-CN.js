@@ -212,7 +212,7 @@ export default {
     thinkingMax: '最高',
     thinkingUltra: '极高',
     agentTools: 'Agent 工具',
-    agentToolsPlaceholder: '选择允许调用的工作流',
+    agentToolsPlaceholder: '选择允许调用的工作流', advancedOptions: '能力增强', optional: '可选',
     agentToolSucceeded: '已完成',
     agentToolFailed: '失败',
     defaultPool: '默认池',

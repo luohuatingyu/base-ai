@@ -24,52 +24,65 @@
         <!-- 模型配置选择器 -->
         <details class="model-config">
           <summary class="model-summary"><el-icon><Setting /></el-icon><span>{{ localizeModelType(modelType, modelTypes, t) }}</span><span class="model-summary-value">{{ mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) }}</span><el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
-      <el-form :inline="true" size="small" :disabled="loading">
-        <el-form-item :label="t('chat.modelType')">
-          <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-radio-button></el-radio-group>
-        </el-form-item>
-        <el-form-item :label="t('chat.mode')">
-          <el-radio-group v-model="mode">
-            <el-radio-button value="multi">{{ t('chat.multiModel') }}</el-radio-button>
-            <el-radio-button value="single">{{ t('chat.singleModel') }}</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="mode === 'multi'" :label="t('chat.modelPool')">
-          <el-select v-model="featureCode" :placeholder="t('chat.defaultPool')" style="width: 180px" clearable filterable>
-            <el-option v-if="defaultRouteSupportsType" value="" :label="t('chat.defaultPool')" />
-            <el-option v-for="route in filteredRoutes" :key="route.id" :value="route.featureCode" :label="route.name + ' (' + route.featureCode + ')'" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="mode === 'single'" :label="t('chat.provider')">
-          <el-select v-model="providerId" :placeholder="t('chat.selectProvider')" style="width: 180px" filterable @change="onProviderChange">
-            <el-option v-for="p in filteredProviders" :key="p.id" :value="p.id" :label="p.name + ' (' + p.code + ')'" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="mode === 'single'" :label="t('chat.model')">
-          <el-select v-model="modelId" :placeholder="t('chat.selectModel')" style="width: 180px" filterable>
-            <el-option v-for="m in currentModels" :key="m.id" :value="m.id" :label="m.name + ' (' + m.modelName + ')'" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chat.agentTools')">
-          <el-select v-model="toolCodes" multiple collapse-tags collapse-tags-tooltip clearable
-            :placeholder="t('chat.agentToolsPlaceholder')" style="width: 260px">
-            <el-option v-for="tool in agentTools" :key="tool.code" :value="tool.code"
-              :label="tool.name + ' (' + tool.code + ')'" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('chat.enableThinking')">
-          <el-switch v-model="enableThinking" />
-        </el-form-item>
-        <el-form-item v-if="enableThinking" :label="t('chat.thinkingLevel')">
-          <el-select v-model="thinkingLevel" style="width: 130px">
-            <el-option value="LOW" :label="t('chat.thinkingLow')" />
-            <el-option value="MEDIUM" :label="t('chat.thinkingMedium')" />
-            <el-option value="HIGH" :label="t('chat.thinkingHigh')" />
-            <el-option value="EXTRA_HIGH" :label="t('chat.thinkingExtraHigh')" />
-            <el-option value="MAX" :label="t('chat.thinkingMax')" />
-            <el-option value="ULTRA" :label="t('chat.thinkingUltra')" />
-          </el-select>
-        </el-form-item>
+      <el-form class="model-settings-form" :inline="true" size="small" :disabled="loading">
+        <div class="model-basic-fields">
+          <el-form-item :label="t('chat.modelType')">
+            <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-radio-button></el-radio-group>
+          </el-form-item>
+          <el-form-item :label="t('chat.mode')">
+            <el-radio-group v-model="mode">
+              <el-radio-button value="multi">{{ t('chat.multiModel') }}</el-radio-button>
+              <el-radio-button value="single">{{ t('chat.singleModel') }}</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="mode === 'single'" :label="t('chat.provider')">
+            <el-select v-model="providerId" :placeholder="t('chat.selectProvider')" filterable @change="onProviderChange">
+              <el-option v-for="p in filteredProviders" :key="p.id" :value="p.id" :label="p.name + ' (' + p.code + ')'" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="mode === 'single'" :label="t('chat.model')">
+            <el-select v-model="modelId" :placeholder="t('chat.selectModel')" filterable>
+              <el-option v-for="m in currentModels" :key="m.id" :value="m.id" :label="m.name + ' (' + m.modelName + ')'" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <div class="model-capability-fields">
+          <div class="model-capability-heading">
+            <span>{{ t('chat.advancedOptions') }}</span>
+            <span class="model-capability-optional">{{ t('chat.optional') }}</span>
+          </div>
+          <div class="model-capability-grid">
+            <el-form-item v-if="mode === 'multi'" :label="t('chat.modelPool')">
+              <el-select v-model="featureCode" :placeholder="t('chat.defaultPool')" clearable filterable>
+                <el-option v-if="defaultRouteSupportsType" value="" :label="t('chat.defaultPool')" />
+                <el-option v-for="route in filteredRoutes" :key="route.id" :value="route.featureCode" :label="route.name + ' (' + route.featureCode + ')'" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('chat.agentTools')">
+              <el-select v-model="toolCodes" multiple collapse-tags collapse-tags-tooltip clearable
+                :placeholder="t('chat.agentToolsPlaceholder')">
+                <el-option v-for="tool in agentTools" :key="tool.code" :value="tool.code"
+                  :label="tool.name + ' (' + tool.code + ')'" />
+              </el-select>
+            </el-form-item>
+            <el-form-item class="thinking-field" :label="t('chat.enableThinking')">
+              <div class="thinking-control">
+                <el-switch v-model="enableThinking" />
+                <span :class="{ 'is-enabled': enableThinking }">{{ enableThinking ? t('common.enabled') : t('common.disabled') }}</span>
+              </div>
+            </el-form-item>
+            <el-form-item v-if="enableThinking" :label="t('chat.thinkingLevel')">
+              <el-select v-model="thinkingLevel">
+                <el-option value="LOW" :label="t('chat.thinkingLow')" />
+                <el-option value="MEDIUM" :label="t('chat.thinkingMedium')" />
+                <el-option value="HIGH" :label="t('chat.thinkingHigh')" />
+                <el-option value="EXTRA_HIGH" :label="t('chat.thinkingExtraHigh')" />
+                <el-option value="MAX" :label="t('chat.thinkingMax')" />
+                <el-option value="ULTRA" :label="t('chat.thinkingUltra')" />
+              </el-select>
+            </el-form-item>
+          </div>
+        </div>
       </el-form>
         </details>
 
@@ -557,25 +570,72 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
   margin-top: 8px;
 }
 
-.model-config .el-form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px 16px;
+.model-config .model-settings-form {
+  display: block;
   margin-bottom: 0;
   padding-bottom: 14px;
+}
+
+.model-basic-fields,
+.model-capability-grid {
+  display: grid;
+  gap: 12px 16px;
+}
+
+.model-basic-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.model-capability-fields {
+  margin-top: 14px;
+  padding: 13px 14px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--app-surface) 76%, var(--app-canvas));
+}
+
+.model-capability-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.model-capability-optional {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--el-color-primary-light-9);
+  color: var(--app-primary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.model-capability-grid {
+  grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.25fr) minmax(145px, .65fr) minmax(170px, .8fr);
 }
 
 .model-config .el-form-item {
   display: flex;
   flex-direction: column;
-  margin-bottom: 0;
-  margin-right: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: border-color .15s ease, background-color .15s ease;
 }
-.model-config :deep(.el-form-item__label) { justify-content: flex-start; height: auto; min-height: 24px; font-size: 12px; color: var(--app-muted); }
-.model-config :deep(.el-form-item__content) { width: 100%; }
+.model-config .el-form-item:hover { border-color: var(--app-border); background: var(--app-surface); }
+.model-config :deep(.el-form-item__label) { justify-content: flex-start; height: auto; min-height: 22px; padding: 0; font-size: 12px; color: var(--app-muted); line-height: 1.5; }
+.model-config :deep(.el-form-item__content) { width: 100%; min-width: 0; }
 .model-config :deep(.el-select) { width: 100% !important; }
+.model-config :deep(.el-select__wrapper) { min-height: 34px; }
 .model-config :deep(.el-radio-group) { flex-wrap: wrap; gap: 4px 0; }
 .model-config :deep(.el-radio-button__inner) { padding: 8px 10px; }
+.thinking-control { display: flex; align-items: center; gap: 9px; min-height: 34px; color: var(--app-muted); font-size: 12px; }
+.thinking-control span.is-enabled { color: var(--app-primary); font-weight: 600; }
 .message-author { font-size: 12px; font-weight: 600; color: var(--app-muted); margin-bottom: 6px; }
 .chat-empty { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px 12px; }
 .chat-empty-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; color: var(--app-primary); background: var(--el-color-primary-light-9); font-size: 26px; }
@@ -644,7 +704,8 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
   .history-toolbar > .el-button:first-child { flex: 0 1 auto; }
   .history-list { min-height: 40px; }
   .history-empty { margin: 8px 0; }
-  .model-config .el-form { grid-template-columns: minmax(0, 1fr); }
+  .model-basic-fields, .model-capability-grid { grid-template-columns: minmax(0, 1fr); }
+  .model-capability-fields { margin-top: 12px; padding: 11px; }
   .chat-composer { padding: 8px; }
   .chat-composer .chat-actions { flex-direction: row; }
   .chat-composer .el-button { width: auto; }

@@ -186,7 +186,7 @@ export default {
     thinkingMax: 'Max',
     thinkingUltra: 'Ultra',
     agentTools: 'Agent Tools',
-    agentToolsPlaceholder: 'Select workflows the Agent may call',
+    agentToolsPlaceholder: 'Select workflows the Agent may call', advancedOptions: 'Enhanced capabilities', optional: 'Optional',
     agentToolSucceeded: 'Completed',
     agentToolFailed: 'Failed',
     defaultPool: 'Default Pool',
