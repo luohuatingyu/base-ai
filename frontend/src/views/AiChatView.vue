@@ -51,7 +51,7 @@
             <span>{{ t('chat.advancedOptions') }}</span>
             <span class="model-capability-optional">{{ t('chat.optional') }}</span>
           </div>
-          <div class="model-capability-grid">
+          <div class="model-capability-grid" :class="{ 'thinking-enabled': enableThinking, 'single-model': mode === 'single' }">
             <el-form-item v-if="mode === 'multi'" :label="t('chat.modelPool')">
               <el-select v-model="featureCode" :placeholder="t('chat.defaultPool')" clearable filterable>
                 <el-option v-if="defaultRouteSupportsType" value="" :label="t('chat.defaultPool')" />
@@ -614,8 +614,11 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 }
 
 .model-capability-grid {
-  grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.25fr) minmax(145px, .65fr) minmax(170px, .8fr);
+  grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.25fr) minmax(145px, .65fr);
 }
+.model-capability-grid.thinking-enabled { grid-template-columns: minmax(180px, .9fr) minmax(240px, 1.2fr) minmax(145px, .65fr) minmax(170px, .8fr); }
+.model-capability-grid.single-model { grid-template-columns: minmax(260px, 1.5fr) minmax(145px, .7fr); }
+.model-capability-grid.single-model.thinking-enabled { grid-template-columns: minmax(220px, 1.2fr) minmax(145px, .7fr) minmax(170px, .8fr); }
 
 .model-config .el-form-item {
   display: flex;
