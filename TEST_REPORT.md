@@ -8,6 +8,8 @@
 - `git diff --check master...HEAD`：通过；本次没有修改业务代码。
 - 新发现的问题：`frontend/src/views/AiChatView.vue` 请求 `/ai/chat/agent-tools`，Axios 前缀为 `/api`；`ChatConversationController` 的实际映射是 `/api/ai/conversations/agent-tools`。请求失败被转换为空数组，导致独立 Agent 工具无法在页面列出；前端测试使用相同错误地址，未覆盖真实接口契约。
 - 后续验证建议：修正前端目录请求地址，并增加校验前后端路由一致性及工具列表非空的回归测试；先确认失败测试，再修复并执行完整前端与后端测试。合并后执行 `docker compose up --build -d` 和服务健康检查。本次未执行合并后测试与 Compose 重建。
+- 审查还发现两项授权缺口：聊天调用 `ApiTriggerService.executeAgentTool` 仅检查配置所有权和启用状态，没有校验直接触发端点要求的 `automation:api-trigger:trigger` 权限；`ChatStreamClient.streamAgent` 使用完整工具目录验证模型返回的工具名，允许执行用户本轮未选择但仍在目录中的工具。以上为静态代码审查结论，尚未新增或运行对应复现测试。
+- 补充回归建议：覆盖撤销触发权限后聊天调用被拒绝、选择工具 1 但模型返回工具 2 时拒绝执行，断言不会发起外部请求；同时保留有权限且显式选择工具时的正常执行回归。
 - 本节仅记录合并检查，不替换下方已有后端测试基准点；修复方案待用户确认。
 
 ## AI 对话 Agent 与工作流工具分离（2026-09-25）
