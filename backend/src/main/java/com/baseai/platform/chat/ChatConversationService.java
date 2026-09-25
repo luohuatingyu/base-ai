@@ -134,9 +134,10 @@ public class ChatConversationService {
             || settings.featureCode() != null && settings.featureCode().length() > 100
             || settings.modelId() != null && settings.modelId() <= 0
             || settings.thinkingLevel() != null && !Set.of("LOW", "MEDIUM", "HIGH", "EXTRA_HIGH", "MAX", "ULTRA").contains(settings.thinkingLevel())
-            || settings.toolCodes() != null && (settings.toolCodes().size() > 10
-                || settings.toolCodes().stream().anyMatch(code -> code == null || !code.matches("[A-Z][A-Z0-9_-]{1,79}"))
-                || settings.toolCodes().stream().distinct().count() != settings.toolCodes().size()))
+            || !validToolCodes(settings.toolCodes())
+            || !validToolCodes(settings.agentToolCodes())
+            || !validToolCodes(settings.workflowToolCodes())
+            || totalToolCount(settings) > 10)
             throw new BusinessException("chat.invalidInput");
         JsonNode content = request.content();
         if (content.isTextual()) { validateText(content.asText()); return; }
@@ -156,6 +157,21 @@ public class ChatConversationService {
                 catch (IllegalArgumentException exception) { throw new BusinessException("chat.invalidInput"); }
             } else throw new BusinessException("chat.invalidInput");
         }
+    }
+
+    /** 校验不同来源的工具编码，避免用户伪造跨模块工具授权。 */
+    private boolean validToolCodes(List<String> codes) {
+        return codes == null || codes.size() <= 10
+            && codes.stream().allMatch(code -> code != null && code.matches("[A-Z][A-Z0-9_-]{1,79}"))
+            && codes.stream().distinct().count() == codes.size();
+    }
+
+    /** 合并新字段和兼容字段计算本次 Agent 最多可授权的工具数。 */
+    private int totalToolCount(Settings settings) {
+        List<String> agent = settings.agentToolCodes() == null ? List.of() : settings.agentToolCodes();
+        List<String> workflow = settings.workflowToolCodes() == null || settings.workflowToolCodes().isEmpty()
+            ? settings.toolCodes() == null ? List.of() : settings.toolCodes() : settings.workflowToolCodes();
+        return agent.size() + workflow.size();
     }
 
     /** 空白和超长文本不能进入历史。 */
@@ -211,11 +227,26 @@ public class ChatConversationService {
     }
 
     public record Settings(String modelType, String featureCode, Long modelId, Boolean enableThinking,
-                           String thinkingLevel, String systemPrompt, List<String> toolCodes) {
+                           String thinkingLevel, String systemPrompt, List<String> toolCodes,
+                           List<String> agentToolCodes, List<String> workflowToolCodes) {
         /** 兼容未启用 Agent 工具的历史会话设置。 */
         public Settings(String modelType, String featureCode, Long modelId, Boolean enableThinking,
                         String thinkingLevel, String systemPrompt) {
-            this(modelType, featureCode, modelId, enableThinking, thinkingLevel, systemPrompt, List.of());
+            this(modelType, featureCode, modelId, enableThinking, thinkingLevel, systemPrompt, List.of(), List.of(), List.of());
+        }
+        /** 兼容旧版把工作流工具存入 toolCodes 的请求和测试。 */
+        public Settings(String modelType, String featureCode, Long modelId, Boolean enableThinking,
+                        String thinkingLevel, String systemPrompt, List<String> toolCodes) {
+            this(modelType, featureCode, modelId, enableThinking, thinkingLevel, systemPrompt, toolCodes, List.of(), List.of());
+        }
+        /** 返回兼容旧数据后的工作流工具编码。 */
+        public List<String> effectiveWorkflowToolCodes() {
+            return workflowToolCodes == null || workflowToolCodes.isEmpty()
+                ? toolCodes == null ? List.of() : toolCodes : workflowToolCodes;
+        }
+        /** 返回当前请求的独立 Agent 工具编码。 */
+        public List<String> effectiveAgentToolCodes() {
+            return agentToolCodes == null ? List.of() : agentToolCodes;
         }
     }
     public record SendRequest(String requestId, JsonNode content, Settings settings) {}

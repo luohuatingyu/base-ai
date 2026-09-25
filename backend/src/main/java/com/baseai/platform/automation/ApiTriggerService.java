@@ -1,5 +1,6 @@
 package com.baseai.platform.automation;
 
+import com.baseai.platform.chat.ChatAgentToolOption;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
 import com.baseai.platform.security.AuthContext;
@@ -46,7 +47,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-
 @Service
 public class ApiTriggerService {
     private static final Set<String> METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE");
@@ -82,6 +82,43 @@ public class ApiTriggerService {
     public List<ApiTriggerModels.View> listForCurrentUser(String keyword, Boolean enabled) {
         AuthUser user = AuthContext.require();
         return list(keyword, enabled, canManageAll(user) ? null : user.id());
+    }
+
+    /** 返回当前用户可作为聊天 Agent 工具的启用接口，只暴露安全的工具描述。 */
+    public List<ChatAgentToolOption> agentToolOptions(Long ownerUserId) {
+        if (ownerUserId == null || ownerUserId <= 0) return List.of();
+        ObjectMapper mapper = objectMapper;
+        return jdbcTemplate.query("""
+            SELECT id,name,description FROM automation_api_trigger_config
+            WHERE owner_user_id=? AND enabled=true AND voided=false ORDER BY id DESC
+            """, (rs, row) -> new ChatAgentToolOption(
+                "HTTP_TRIGGER_" + rs.getLong("id"),
+                rs.getString("name"),
+                rs.getString("description") == null || rs.getString("description").isBlank()
+                    ? rs.getString("name") : rs.getString("description"),
+                mapper.createObjectNode().put("type", "object").put("additionalProperties", true)
+            ), ownerUserId);
+    }
+
+    /** 执行当前用户明确授权的 Agent 接口工具，Agent 参数作为请求 JSON 正文。 */
+    public ApiTriggerModels.ExecutionResult executeAgentTool(Long ownerUserId, String code, JsonNode arguments) {
+        long id = parseAgentToolId(code);
+        ApiTriggerModels.View config = get(id);
+        if (!Objects.equals(config.ownerUserId(), ownerUserId)) throw BusinessException.notFound("apiTrigger.notFound");
+        if (config.voided() || !config.enabled()) throw new BusinessException("apiTrigger.disabled");
+        String body = arguments == null || arguments.isNull() || arguments.isEmpty()
+            ? config.requestBody() : writeJson(arguments);
+        long startedAt = System.nanoTime();
+        try {
+            ApiTriggerModels.ExecutionResult result = call(config, body);
+            saveExecution(config.id(), "CHAT_AGENT", "SUCCESS", result.httpStatus(), result.durationMs(),
+                summary(result.responseBody()), null);
+            return result;
+        } catch (RuntimeException exception) {
+            long duration = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+            saveExecution(config.id(), "CHAT_AGENT", "FAILED", null, duration, null, summary(exception.getMessage()));
+            throw exception;
+        }
     }
 
     /** 同包调度与维护逻辑查询全部未作废配置，不可由 HTTP 入口直接调用。 */
@@ -221,7 +258,7 @@ public class ApiTriggerService {
         if (config.voided() || !config.enabled()) throw new BusinessException("apiTrigger.disabled");
         long startedAt = System.nanoTime();
         try {
-            ApiTriggerModels.ExecutionResult result = call(config);
+            ApiTriggerModels.ExecutionResult result = call(config, config.requestBody());
             saveExecution(config.id(), triggerType, "SUCCESS", result.httpStatus(), result.durationMs(), summary(result.responseBody()), null);
             return result;
         } catch (RuntimeException exception) {
@@ -234,7 +271,7 @@ public class ApiTriggerService {
     /** 使用未保存配置执行一次安全测试，不写 MySQL 执行记录。 */
     public ApiTriggerModels.ExecutionResult test(ApiTriggerModels.Command command) {
         validate(command);
-        return call(toTemporaryView(command));
+        return call(toTemporaryView(command), command.requestBody());
     }
 
     /** 同包系统调用的日志查询实现，调用前必须完成资源所有权校验。 */
@@ -270,8 +307,22 @@ public class ApiTriggerService {
         return user.authenticationType() != AuthenticationType.API_KEY && user.roles().contains("ADMIN");
     }
 
-    /** 发起认证请求和目标 HTTP 请求。 */
-    private ApiTriggerModels.ExecutionResult call(ApiTriggerModels.View config) {
+    /** 解析带固定前缀的 Agent 工具编码，拒绝伪造任意接口编号。 */
+    private long parseAgentToolId(String code) {
+        if (code == null || !code.matches("HTTP_TRIGGER_[1-9][0-9]{0,18}"))
+            throw BusinessException.notFound("apiTrigger.notFound");
+        try { return Long.parseLong(code.substring("HTTP_TRIGGER_".length())); }
+        catch (NumberFormatException exception) { throw BusinessException.notFound("apiTrigger.notFound"); }
+    }
+
+    /** 序列化 Agent 参数，失败时按非法输入处理。 */
+    private String writeJson(JsonNode value) {
+        try { return objectMapper.writeValueAsString(value); }
+        catch (Exception exception) { throw new BusinessException("apiTrigger.jsonConfigurationInvalid"); }
+    }
+
+    /** 发起认证请求和目标 HTTP 请求，使用调用方提供的正文。 */
+    private ApiTriggerModels.ExecutionResult call(ApiTriggerModels.View config, String requestBody) {
         TraceContextHolder.checkpoint();
         URI targetUri = buildUri(urlPolicy.validate(config.url()), config.queryParams());
         try (OutboundClient outbound = buildClient(config.timeoutSeconds())) {
@@ -285,7 +336,7 @@ public class ApiTriggerService {
             }
             long startedAt = System.nanoTime();
             OutboundRequest request = new OutboundRequest(config.httpMethod(), targetUri, headers,
-                hasBody(config.httpMethod(), config.requestBody()) ? config.requestBody() : null, config.contentType());
+                hasBody(config.httpMethod(), requestBody) ? requestBody : null, config.contentType());
             LimitedResponse response = exchange(client, request);
             TraceContextHolder.checkpoint();
             return new ApiTriggerModels.ExecutionResult(response.status(),

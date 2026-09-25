@@ -1,5 +1,6 @@
 package com.baseai.platform.chat;
 
+import com.baseai.platform.automation.ApiTriggerService;
 import com.baseai.platform.aop.RateLimit;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.security.AuthContext;
@@ -10,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
@@ -22,11 +24,18 @@ public class ChatConversationController {
     private final ChatConversationService service;
     private final ChatStreamClient client;
     private final ObjectMapper mapper;
+    private final ApiTriggerService apiTriggerService;
     private final Semaphore slots = new Semaphore(16);
 
     /** 注入会话存储及真实流式客户端。 */
+    public ChatConversationController(ChatConversationService service, ChatStreamClient client, ObjectMapper mapper,
+                                      ApiTriggerService apiTriggerService) {
+        this.service = service; this.client = client; this.mapper = mapper; this.apiTriggerService = apiTriggerService;
+    }
+
+    /** 兼容不需要 Agent 工具目录的控制器单元测试和轻量装配。 */
     public ChatConversationController(ChatConversationService service, ChatStreamClient client, ObjectMapper mapper) {
-        this.service = service; this.client = client; this.mapper = mapper;
+        this(service, client, mapper, null);
     }
 
     /** 创建当前登录用户的会话。 */
@@ -36,6 +45,13 @@ public class ChatConversationController {
     /** 分页返回当前用户的会话摘要。 */
     @GetMapping
     public Map<String, Object> list(@RequestParam(defaultValue = "0") int page) { return service.list(AuthContext.require().id(), page); }
+
+    /** 返回当前用户独立配置的 Agent 工具，不混入工作流目录。 */
+    @GetMapping("/agent-tools")
+    public List<ChatAgentToolOption> agentTools() {
+        if (apiTriggerService == null) return List.of();
+        return apiTriggerService.agentToolOptions(AuthContext.require().id());
+    }
 
     /** 读取私有会话详情。 */
     @GetMapping("/{id}")

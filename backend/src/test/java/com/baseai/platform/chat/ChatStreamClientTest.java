@@ -107,6 +107,36 @@ class ChatStreamClientTest {
         verify(agent, times(2)).step(any(), anyList(), anyList());
     }
 
+    /** 独立 Agent 工具只走接口工具执行器，不会被错误转发为工作流运行。 */
+    @Test void executesIndependentAgentToolWithoutWorkflow() {
+        var agent = mock(com.baseai.platform.workflow.WorkflowAgentClient.class);
+        var apiTools = mock(com.baseai.platform.automation.ApiTriggerService.class);
+        var mapper = new ObjectMapper();
+        var option = new ChatAgentToolOption("HTTP_TRIGGER_7", "查询服务", "调用已配置接口",
+            mapper.createObjectNode().put("type", "object"));
+        when(apiTools.agentToolOptions(1L)).thenReturn(List.of(option));
+        when(agent.step(any(), anyList(), anyList()))
+            .thenReturn(new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("", List.of(
+                new com.baseai.platform.workflow.WorkflowAgentClient.ToolCall("call-1", "HTTP_TRIGGER_7",
+                    mapper.createObjectNode().put("orderId", "A-1"))), "agent-model"))
+            .thenReturn(new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("接口已返回", List.of(), "agent-model"));
+        when(apiTools.executeAgentTool(eq(1L), eq("HTTP_TRIGGER_7"), any()))
+            .thenReturn(new com.baseai.platform.automation.ApiTriggerModels.ExecutionResult(200, 18, "{\"ok\":true}"));
+
+        client.close();
+        client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1").build(),
+            mock(LlmManagementService.class), traces, mapper, retry(), CircuitBreaker.ofDefaults("agent-http-test"),
+            agent, null, null, apiTools);
+        List<String> events = new ArrayList<>();
+        client.stream(new ChatConversationService.Turn(1L, 1L, 2L,
+            List.of(new AiChatClient.Message("user", "查询")),
+            new ChatConversationService.Settings("text_model", "chat", null, false, "MEDIUM", "",
+                List.of(), List.of("HTTP_TRIGGER_7"), List.of())),
+            event -> events.add(event.path("type").asText()));
+        assertEquals(List.of("agent_tool_start", "agent_tool_done", "delta", "done"), events);
+        verify(apiTools).executeAgentTool(eq(1L), eq("HTTP_TRIGGER_7"), any());
+    }
+
     /** 构造真实客户端需要的会话上下文。 */
     private ChatConversationService.Turn turn() {
         return new ChatConversationService.Turn(1L, 1L, 2L, List.of(new AiChatClient.Message("user", "hello")),

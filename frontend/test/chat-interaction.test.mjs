@@ -19,7 +19,7 @@ async function createChat(t, overrides = {}) {
     async get(url) {
       requests.push(url)
       if (url === '/ai/chat/routes') return { data: [{ featureCode: 'DEFAULT', supportedModelTypes: ['text_model'] }] }
-      if (url === '/ai/chat/providers' || url === '/workflow/chat-tools') return { data: [] }
+      if (url === '/ai/chat/providers' || url === '/ai/chat/agent-tools' || url === '/workflow/chat-tools') return { data: [] }
       if (url === '/ai/chat/model-types') return { data: [{ value: 'text_model' }] }
       if (url === '/ai/conversations') return { data: { items: [], total: 0 } }
       return { data: detail }
@@ -158,7 +158,7 @@ test('配置加载失败可以重试，恢复前禁止发送', async t => {
 
 test('无工具权限时仍能加载模型并发送普通对话', async t => {
   const { state } = await createChat(t, { http: { get: async url => {
-    if (url === '/workflow/chat-tools') throw new Error('forbidden')
+    if (url === '/workflow/chat-tools' || url === '/ai/chat/agent-tools') throw new Error('forbidden')
     return { data: url === '/ai/conversations' ? { items: [], total: 0 } : url === '/ai/chat/routes' ? [{ featureCode: 'DEFAULT', supportedModelTypes: ['text_model'] }] : [] }
   } } })
   state.prompt.value = '问题'
@@ -238,4 +238,13 @@ test('模型配置焦点态和移动端布局使用柔和高亮', () => {
   assert.match(source, /\.mode-option:focus-visible \{ outline: none; box-shadow: 0 0 0 3px var\(--el-color-primary-light-9\)/)
   assert.match(source, /el-select__wrapper\.is-focused[\s\S]*box-shadow: 0 0 0 3px var\(--el-color-primary-light-9\)/)
   assert.match(source, /\.model-basic-fields\.multi-model, \.model-basic-fields\.single-model, \.model-capability-grid \{ grid-template-columns: minmax\(0, 1fr\); \}/)
+})
+
+test('Agent 工具和工作流工具使用独立目录与请求字段', () => {
+  assert.match(source, /v-model="agentToolCodes"/)
+  assert.match(source, /v-model="workflowToolCodes"/)
+  assert.match(source, /\/ai\/chat\/agent-tools/)
+  assert.match(source, /\/workflow\/chat-tools/)
+  assert.match(source, /agentToolCodes: \[\.\.\.agentToolCodes\.value\]/)
+  assert.match(source, /workflowToolCodes: \[\.\.\.workflowToolCodes\.value\]/)
 })

@@ -69,9 +69,16 @@
               </el-select>
             </el-form-item>
             <el-form-item :label="t('chat.agentTools')">
-              <el-select v-model="toolCodes" multiple collapse-tags collapse-tags-tooltip clearable
-                :placeholder="t('chat.agentToolsPlaceholder')">
+              <el-select v-model="agentToolCodes" multiple collapse-tags collapse-tags-tooltip clearable
+                :disabled="!agentTools.length" :placeholder="t('chat.agentToolsPlaceholder')">
                 <el-option v-for="tool in agentTools" :key="tool.code" :value="tool.code"
+                  :label="tool.name + ' (' + tool.code + ')'" />
+              </el-select>
+            </el-form-item>
+            <el-form-item class="workflow-tools-field" :label="t('chat.workflowTools')">
+              <el-select v-model="workflowToolCodes" multiple collapse-tags collapse-tags-tooltip clearable
+                :disabled="!workflowTools.length" :placeholder="t('chat.workflowToolsPlaceholder')">
+                <el-option v-for="tool in workflowTools" :key="tool.code" :value="tool.code"
                   :label="tool.name + ' (' + tool.code + ')'" />
               </el-select>
             </el-form-item>
@@ -212,7 +219,9 @@ const activeTab = ref('conversation')
 const messages = ref([])
 const pendingImages = ref([])
 const agentTools = ref([])
-const toolCodes = ref([])
+const workflowTools = ref([])
+const agentToolCodes = ref([])
+const workflowToolCodes = ref([])
 const imageInput = ref(null)
 const loading = ref(false)
 const MAX_IMAGES = 4
@@ -404,15 +413,17 @@ async function loadOptions() {
   optionsLoading.value = true
   pageError.value = ''
   try {
-    const [routesRes, providersRes, typesRes, toolsRes] = await Promise.all([
+    const [routesRes, providersRes, typesRes, agentToolsRes, workflowToolsRes] = await Promise.all([
       http.get('/ai/chat/routes'), http.get('/ai/chat/providers'), http.get('/ai/chat/model-types'),
+      http.get('/ai/chat/agent-tools', { silentError: true }).catch(() => ({ data: [] })),
       http.get('/workflow/chat-tools', { silentError: true }).catch(() => ({ data: [] }))
     ])
     if (unmounted) return
     routes.value = routesRes.data
     providers.value = providersRes.data
     modelTypes.value = typesRes.data
-    agentTools.value = toolsRes.data
+    agentTools.value = agentToolsRes.data
+    workflowTools.value = workflowToolsRes.data
     if (!modelTypes.value.some(type => type.value === modelType.value)) modelType.value = modelTypes.value[0]?.value || 'text_model'
     optionsReady.value = true
     const selected = Number(route.query.conversation)
@@ -489,7 +500,9 @@ async function selectConversation(id) {
     enableThinking.value = Boolean(settings.enableThinking)
     thinkingLevel.value = settings.thinkingLevel || 'MEDIUM'
     systemPrompt.value = settings.systemPrompt || ''
-    toolCodes.value = Array.isArray(settings.toolCodes) ? settings.toolCodes : []
+    agentToolCodes.value = Array.isArray(settings.agentToolCodes) ? settings.agentToolCodes : []
+    workflowToolCodes.value = Array.isArray(settings.workflowToolCodes)
+      ? settings.workflowToolCodes : Array.isArray(settings.toolCodes) ? settings.toolCodes : []
     promptFileName.value = ''
     prompt.value = ''
     pendingImages.value = []
@@ -566,7 +579,8 @@ async function send() {
   const settings = { modelType: modelType.value, featureCode: featureCode.value.trim() || null,
     modelId: mode.value === 'single' ? modelId.value : null,
     enableThinking: enableThinking.value, thinkingLevel: thinkingLevel.value, systemPrompt: systemPrompt.value,
-    toolCodes: [...toolCodes.value] }
+    toolCodes: [...workflowToolCodes.value],
+    agentToolCodes: [...agentToolCodes.value], workflowToolCodes: [...workflowToolCodes.value] }
   const userMessage = { role: 'user', content, images }
   let assistant = null
   let started = false
