@@ -215,3 +215,27 @@ test('工具运行态不会误报失败，辅助详情默认折叠且输入保�
   assert.match(source, /aria-live="polite"/)
   assert.match(source, /:disabled="!canSend"/)
 })
+
+test('模型来源切换显示上下文选项并清理不适用配置', async t => {
+  const { state } = await createChat(t)
+  state.providerId.value = 12
+  state.modelId.value = 34
+  state.setMode('single')
+  state.featureCode.value = 'chat'
+  state.setMode('multi')
+  assert.equal(state.providerId.value, null)
+  assert.equal(state.modelId.value, null)
+  assert.equal(state.featureCode.value, 'chat')
+  state.setMode('single')
+  assert.equal(state.featureCode.value, '')
+  assert.match(source, /class="model-basic-fields" :class="mode === 'single' \? 'single-model' : 'multi-model'"/)
+  assert.match(source, /v-if="mode === 'single' && providerId"/)
+  assert.match(source, /selectProviderFirst/)
+  assert.match(source, /function setMode\(nextMode\)/)
+})
+
+test('模型配置焦点态和移动端布局使用柔和高亮', () => {
+  assert.match(source, /\.mode-option:focus-visible \{ outline: none; box-shadow: 0 0 0 3px var\(--el-color-primary-light-9\)/)
+  assert.match(source, /el-select__wrapper\.is-focused[\s\S]*box-shadow: 0 0 0 3px var\(--el-color-primary-light-9\)/)
+  assert.match(source, /\.model-basic-fields\.multi-model, \.model-basic-fields\.single-model, \.model-capability-grid \{ grid-template-columns: minmax\(0, 1fr\); \}/)
+})

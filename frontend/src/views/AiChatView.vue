@@ -23,28 +23,38 @@
       <el-tab-pane :label="t('chat.conversationTab')" name="conversation">
         <!-- 模型配置选择器 -->
         <details class="model-config">
-          <summary class="model-summary"><el-icon><Setting /></el-icon><span>{{ localizeModelType(modelType, modelTypes, t) }}</span><span class="model-summary-value">{{ mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) }}</span><el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
+          <summary class="model-summary"><el-icon><Setting /></el-icon><span>{{ localizeModelType(modelType, modelTypes, t) }}</span><span class="model-summary-value">{{ mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider') }}</span><el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
       <el-form class="model-settings-form" :inline="true" size="small" :disabled="loading">
-        <div class="model-basic-fields">
+        <div class="model-basic-fields" :class="mode === 'single' ? 'single-model' : 'multi-model'">
           <el-form-item :label="t('chat.modelType')">
             <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-radio-button></el-radio-group>
           </el-form-item>
-          <el-form-item :label="t('chat.mode')">
-            <el-radio-group v-model="mode">
-              <el-radio-button value="multi">{{ t('chat.multiModel') }}</el-radio-button>
-              <el-radio-button value="single">{{ t('chat.singleModel') }}</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
+          <div class="mode-field">
+            <span class="mode-field-label">{{ t('chat.mode') }}</span>
+            <div class="mode-switch" role="radiogroup" :aria-label="t('chat.mode')">
+              <button type="button" class="mode-option" :class="{ 'is-active': mode === 'multi' }" role="radio" :aria-checked="mode === 'multi'" :disabled="loading" @click="setMode('multi')">
+                <span class="mode-option-title">{{ t('chat.multiModel') }}</span>
+                <span class="mode-option-description">{{ t('chat.multiModelDescription') }}</span>
+              </button>
+              <button type="button" class="mode-option" :class="{ 'is-active': mode === 'single' }" role="radio" :aria-checked="mode === 'single'" :disabled="loading" @click="setMode('single')">
+                <span class="mode-option-title">{{ t('chat.singleModel') }}</span>
+                <span class="mode-option-description">{{ t('chat.singleModelDescription') }}</span>
+              </button>
+            </div>
+          </div>
           <el-form-item v-if="mode === 'single'" :label="t('chat.provider')">
             <el-select v-model="providerId" :placeholder="t('chat.selectProvider')" filterable @change="onProviderChange">
               <el-option v-for="p in filteredProviders" :key="p.id" :value="p.id" :label="p.name + ' (' + p.code + ')'" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="mode === 'single'" :label="t('chat.model')">
+          <el-form-item v-if="mode === 'single' && providerId" :label="t('chat.model')">
             <el-select v-model="modelId" :placeholder="t('chat.selectModel')" filterable>
               <el-option v-for="m in currentModels" :key="m.id" :value="m.id" :label="m.name + ' (' + m.modelName + ')'" />
             </el-select>
           </el-form-item>
+          <div v-if="mode === 'single' && !providerId" class="model-selection-hint">
+            <el-icon><Setting /></el-icon><span>{{ t('chat.selectProviderFirst') }}</span>
+          </div>
         </div>
         <div class="model-capability-fields">
           <div class="model-capability-heading">
@@ -273,6 +283,17 @@ function stopGeneration() {
 /** 切换供应商时清空已选模型。 */
 function onProviderChange() {
   modelId.value = null
+}
+/** 切换模型来源时只保留当前模式需要的配置，避免隐藏字段继续影响请求。 */
+function setMode(nextMode) {
+  if (loading.value || mode.value === nextMode) return
+  mode.value = nextMode
+  if (nextMode === 'multi') {
+    providerId.value = null
+    modelId.value = null
+  } else {
+    featureCode.value = ''
+  }
 }
 /** 切换类型后移除不兼容的模型、路由和待发送图片。 */
 function onModelTypeChange() {
@@ -714,9 +735,22 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
   gap: 12px 16px;
 }
 
-.model-basic-fields {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
+.model-basic-fields.multi-model { grid-template-columns: minmax(220px, .8fr) minmax(320px, 1.2fr); }
+.model-basic-fields.single-model { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mode-field { min-width: 0; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; transition: border-color .15s ease, background-color .15s ease; }
+.mode-field:hover { border-color: var(--app-border); background: var(--app-surface); }
+.mode-field-label { display: block; min-height: 22px; color: var(--app-muted); font-size: 12px; line-height: 1.5; }
+.mode-switch { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.mode-option { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; padding: 8px 10px; border: 1px solid var(--app-border); border-radius: 8px; color: var(--app-text); background: var(--app-canvas); text-align: left; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.mode-option:hover:not(:disabled) { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); transform: translateY(-1px); }
+.mode-option.is-active { border-color: var(--app-primary); background: var(--el-color-primary-light-9); box-shadow: inset 0 0 0 1px var(--app-primary); }
+.mode-option:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--el-color-primary-light-9), 0 0 0 4px var(--el-color-primary-light-5); }
+.mode-option.is-active:focus-visible { box-shadow: inset 0 0 0 1px var(--app-primary), 0 0 0 3px var(--el-color-primary-light-9), 0 0 0 4px var(--el-color-primary-light-5); }
+.mode-option:disabled { cursor: not-allowed; opacity: .6; }
+.mode-option-title { font-size: 12px; font-weight: 600; }
+.mode-option-description { overflow: hidden; color: var(--app-muted); font-size: 11px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.model-selection-hint { grid-column: 3 / -1; display: flex; align-items: center; gap: 7px; align-self: end; min-height: 34px; margin: 0 10px 9px; padding: 7px 10px; border: 1px dashed var(--el-color-primary-light-5); border-radius: 8px; color: var(--app-muted); background: var(--el-color-primary-light-9); font-size: 12px; }
+.model-selection-hint .el-icon { flex-shrink: 0; color: var(--app-primary); }
 
 .model-capability-fields {
   margin-top: 14px;
@@ -766,7 +800,9 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 .model-config :deep(.el-form-item__label) { justify-content: flex-start; height: auto; min-height: 22px; padding: 0; font-size: 12px; color: var(--app-muted); line-height: 1.5; }
 .model-config :deep(.el-form-item__content) { width: 100%; min-width: 0; }
 .model-config :deep(.el-select) { width: 100% !important; }
-.model-config :deep(.el-select__wrapper) { min-height: 34px; }
+.model-config :deep(.el-select__wrapper) { min-height: 34px; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+.model-config :deep(.el-select__wrapper.is-focused), .model-config :deep(.el-input__wrapper.is-focus) { border-color: var(--el-color-primary-light-5); box-shadow: 0 0 0 3px var(--el-color-primary-light-9) !important; }
+.model-config :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner) { outline: none; box-shadow: 0 0 0 3px var(--el-color-primary-light-9), 0 0 0 4px var(--el-color-primary-light-5); }
 .model-config :deep(.el-radio-group) { flex-wrap: wrap; gap: 4px 0; }
 .model-config :deep(.el-radio-button__inner) { padding: 8px 10px; }
 .thinking-control { display: flex; align-items: center; gap: 9px; min-height: 34px; color: var(--app-muted); font-size: 12px; }
@@ -857,7 +893,9 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
   .history-toolbar > .el-button:first-child { flex: 0 1 auto; }
   .history-list { min-height: 40px; }
   .history-empty { margin: 8px 0; }
-  .model-basic-fields, .model-capability-grid { grid-template-columns: minmax(0, 1fr); }
+  .model-basic-fields.multi-model, .model-basic-fields.single-model, .model-capability-grid { grid-template-columns: minmax(0, 1fr); }
+  .model-selection-hint { grid-column: auto; margin-inline: 0; }
+  .mode-switch { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .model-capability-fields { margin-top: 12px; padding: 11px; }
   .chat-composer { padding: 8px; }
   .chat-composer .chat-actions { flex-direction: row; }
