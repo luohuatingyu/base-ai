@@ -111,6 +111,54 @@ class ApiTriggerServicePersistenceTest {
         assertEquals(other.id(), service.getForCurrentUser(other.id()).id());
     }
 
+    /** 身份、权限和资源状态不合法时，必须在 HTTP 调用和执行日志写入之前拒绝。 */
+    @ParameterizedTest
+    @CsvSource({"anonymous,401", "revoked,403", "forgedOwner,403", "otherOwner,404", "disabled,400", "voided,400"})
+    void agentToolRejectsUnauthorizedExecutionWithoutHttpSideEffects(String scenario, int status) throws Exception {
+        var requests = new java.util.concurrent.atomic.AtomicInteger();
+        HttpServer target = server(200, "{\"ok\":true}");
+        target.createContext("/count", exchange -> {
+            requests.incrementAndGet();
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+        long owner = scenario.equals("otherOwner") || scenario.equals("forgedOwner") ? 99L : OWNER;
+        var config = service.create(commandForUrl("Agent", url(target).replace("/target", "/count")), owner);
+        if (!scenario.equals("anonymous")) AuthContext.set(new AuthUser(OWNER, "user", Set.of(),
+            scenario.equals("revoked") ? Set.of("ai:chat:invoke") : Set.of("automation:api-trigger:trigger"),
+            AuthenticationType.TOKEN, null, null));
+        if (scenario.equals("disabled")) service.disable(config.id());
+        if (scenario.equals("voided")) service.voidConfig(config.id());
+        long requestedOwner = scenario.equals("forgedOwner") ? 99L : OWNER;
+
+        var exception = assertThrows(BusinessException.class, () -> service.executeAgentTool(
+            requestedOwner, "HTTP_TRIGGER_" + config.id(), new ObjectMapper().createObjectNode()));
+
+        assertEquals(status, exception.getStatus());
+        assertEquals(0, requests.get());
+        assertTrue(service.logs(config.id(), null).isEmpty());
+        assertNull(service.get(config.id()).lastTriggerAt());
+    }
+
+    /** 显式授权、管理权限和管理员沿用既有权限语义，真实请求成功后记录聊天执行日志。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"automation:api-trigger:trigger", "automation:api-trigger:manage", "ADMIN"})
+    void authorizedAgentToolExecutesAndRecordsResult(String permission) throws Exception {
+        HttpServer target = server(200, "{\"ok\":true}");
+        var config = service.create(commandForUrl("Agent", url(target)), OWNER);
+        AuthContext.set(new AuthUser(OWNER, "user", permission.equals("ADMIN") ? Set.of("ADMIN") : Set.of(),
+            Set.of(permission), AuthenticationType.TOKEN, null, null));
+
+        var result = service.executeAgentTool(OWNER, "HTTP_TRIGGER_" + config.id(), null);
+
+        assertEquals(200, result.httpStatus());
+        assertEquals("{\"ok\":true}", result.responseBody());
+        var logs = service.logs(config.id(), null);
+        assertEquals(1, logs.size());
+        assertEquals("CHAT_AGENT", logs.get(0).triggerType());
+        assertEquals("SUCCESS", logs.get(0).status());
+    }
+
     /** 创建配置应回填 MySQL 自增主键并完整持久化全部字段。 */
     @Test
     void createReturnsGeneratedIdAndPersistsAllFields() {

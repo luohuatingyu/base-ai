@@ -137,6 +137,44 @@ class ChatStreamClientTest {
         verify(apiTools).executeAgentTool(eq(1L), eq("HTTP_TRIGGER_7"), any());
     }
 
+    /** 模型请求未选择或未知工具时直接拒绝，不产生工具启动事件或执行副作用。 */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"HTTP_TRIGGER_8", "UNSELECTED_WORKFLOW", "UNKNOWN"})
+    void rejectsModelCallsOutsideSelectedTools(String returnedCode) {
+        var agent = mock(com.baseai.platform.workflow.WorkflowAgentClient.class);
+        var apiTools = mock(com.baseai.platform.automation.ApiTriggerService.class);
+        var workflows = mock(com.baseai.platform.workflow.WorkflowService.class);
+        var executions = mock(com.baseai.platform.workflow.WorkflowExecutionService.class);
+        var mapper = new ObjectMapper();
+        var schema = mapper.createObjectNode().put("type", "object");
+        when(apiTools.agentToolOptions(1L)).thenReturn(List.of(
+            new ChatAgentToolOption("HTTP_TRIGGER_7", "选中接口", "接口", schema),
+            new ChatAgentToolOption("HTTP_TRIGGER_8", "未选接口", "接口", schema)));
+        when(workflows.chatToolOptions()).thenReturn(List.of(
+            new com.baseai.platform.workflow.WorkflowModels.ChatToolOption("SELECTED_WORKFLOW", "选中工作流", "工作流", schema),
+            new com.baseai.platform.workflow.WorkflowModels.ChatToolOption("UNSELECTED_WORKFLOW", "未选工作流", "工作流", schema)));
+        when(agent.step(any(), anyList(), anyList())).thenReturn(
+            new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("", List.of(
+                new com.baseai.platform.workflow.WorkflowAgentClient.ToolCall("call-1", returnedCode,
+                    mapper.createObjectNode())), "agent-model"));
+        client.close();
+        client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1").build(),
+            mock(LlmManagementService.class), traces, mapper, retry(), CircuitBreaker.ofDefaults("selection-test"),
+            agent, workflows, executions, apiTools);
+        List<String> events = new ArrayList<>();
+
+        var exception = assertThrows(com.baseai.platform.common.BusinessException.class, () -> client.stream(
+            new ChatConversationService.Turn(1L, 1L, 2L, List.of(new AiChatClient.Message("user", "查询")),
+                new ChatConversationService.Settings("text_model", "chat", null, false, "MEDIUM", "",
+                    List.of(), List.of("HTTP_TRIGGER_7"), List.of("SELECTED_WORKFLOW"))),
+            event -> events.add(event.path("type").asText())));
+
+        assertEquals("workflow.agentToolForbidden", exception.getMessageKey());
+        assertTrue(events.isEmpty());
+        verify(apiTools, never()).executeAgentTool(anyLong(), anyString(), any());
+        verifyNoInteractions(executions);
+    }
+
     /** 构造真实客户端需要的会话上下文。 */
     private ChatConversationService.Turn turn() {
         return new ChatConversationService.Turn(1L, 1L, 2L, List.of(new AiChatClient.Message("user", "hello")),

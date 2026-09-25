@@ -188,17 +188,20 @@ public class ChatStreamClient {
             || !workflowCodes.isEmpty() && (workflowService == null || workflowExecutionService == null)) {
             throw new BusinessException("chat.agentUnavailable");
         }
-        Map<String, SelectedTool> options = new LinkedHashMap<>();
+        Map<String, SelectedTool> availableOptions = new LinkedHashMap<>();
         if (!agentCodes.isEmpty()) apiTriggerService.agentToolOptions(turn.owner()).forEach(option ->
-            options.put(option.code(), new SelectedTool(option.code(), option.name(), option.description(),
+            availableOptions.put(option.code(), new SelectedTool(option.code(), option.name(), option.description(),
                 option.inputSchema(), true)));
         if (!workflowCodes.isEmpty()) workflowService.chatToolOptions().forEach(option ->
-            options.put(option.code(), new SelectedTool(option.code(), option.name(), option.description(),
+            availableOptions.put(option.code(), new SelectedTool(option.code(), option.name(), option.description(),
                 option.inputSchema(), false)));
+        // 模型返回值不可信：执行目录只包含本轮显式选择并通过目录校验的工具。
+        Map<String, SelectedTool> options = new LinkedHashMap<>();
         List<WorkflowAgentClient.Tool> tools = new ArrayList<>();
         for (String code : concat(agentCodes, workflowCodes)) {
-            SelectedTool option = options.get(code);
+            SelectedTool option = availableOptions.get(code);
             if (option == null) throw new BusinessException("workflow.agentToolForbidden", code);
+            options.put(code, option);
             tools.add(new WorkflowAgentClient.Tool(option.code(), option.description(), option.inputSchema()));
         }
         if (tools.isEmpty()) throw new BusinessException("workflow.agentToolsRequired");

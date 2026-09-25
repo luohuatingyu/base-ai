@@ -102,6 +102,10 @@ public class ApiTriggerService {
 
     /** 执行当前用户明确授权的 Agent 接口工具，Agent 参数作为请求 JSON 正文。 */
     public ApiTriggerModels.ExecutionResult executeAgentTool(Long ownerUserId, String code, JsonNode arguments) {
+        // 聊天入口不能绕过接口触发权限，调用方传入的所有者必须与当前身份一致。
+        AuthUser user = AuthContext.require();
+        if (!user.hasPermission("automation:api-trigger:trigger") || !Objects.equals(user.id(), ownerUserId))
+            throw BusinessException.forbidden("auth.permissionDenied");
         long id = parseAgentToolId(code);
         ApiTriggerModels.View config = get(id);
         if (!Objects.equals(config.ownerUserId(), ownerUserId)) throw BusinessException.notFound("apiTrigger.notFound");

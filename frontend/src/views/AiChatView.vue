@@ -415,7 +415,7 @@ async function loadOptions() {
   try {
     const [routesRes, providersRes, typesRes, agentToolsRes, workflowToolsRes] = await Promise.all([
       http.get('/ai/chat/routes'), http.get('/ai/chat/providers'), http.get('/ai/chat/model-types'),
-      http.get('/ai/chat/agent-tools', { silentError: true }).catch(() => ({ data: [] })),
+      http.get('/ai/conversations/agent-tools', { silentError: true }).catch(() => ({ data: [] })),
       http.get('/workflow/chat-tools', { silentError: true }).catch(() => ({ data: [] }))
     ])
     if (unmounted) return
