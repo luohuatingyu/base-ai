@@ -72,9 +72,49 @@ class ChatStreamClientTest {
         verify(traces, never()).updatePython(anyString(), eq("SUCCESS"), any(), any());
     }
 
+    /** Agent 模式先执行授权工作流，再把工具结果交给模型并输出最终回答。 */
+    @Test void executesAuthorizedWorkflowToolBeforeFinalAnswer() {
+        var agent = mock(com.baseai.platform.workflow.WorkflowAgentClient.class);
+        var workflows = mock(com.baseai.platform.workflow.WorkflowService.class);
+        var executions = mock(com.baseai.platform.workflow.WorkflowExecutionService.class);
+        var mapper = new ObjectMapper();
+        var option = new com.baseai.platform.workflow.WorkflowModels.ChatToolOption("ORDERS", "查询订单",
+            "查询订单状态", mapper.createObjectNode().put("type", "object"));
+        when(workflows.chatToolOptions()).thenReturn(List.of(option));
+        when(agent.step(any(), anyList(), anyList()))
+            .thenReturn(new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("", List.of(
+                new com.baseai.platform.workflow.WorkflowAgentClient.ToolCall("call-1", "ORDERS",
+                    mapper.createObjectNode().put("id", "A-1"))), "agent-model"))
+            .thenReturn(new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("订单已完成", List.of(), "agent-model"));
+        when(executions.startPublished(eq("ORDERS"), anyMap()))
+            .thenReturn(new com.baseai.platform.workflow.WorkflowModels.RunAccepted("run-1", "QUEUED"));
+        when(executions.run("run-1")).thenReturn(new com.baseai.platform.workflow.WorkflowModels.RunView(
+            "run-1", 1L, "ORDERS", 1, null, null, "CHAT_AGENT", "SUCCESS",
+            mapper.createObjectNode(), mapper.createObjectNode().put("status", "done"), null, 1L, null,
+            false, null, null, null, List.of()));
+
+        client.close();
+        client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1").build(),
+            mock(LlmManagementService.class), traces, mapper, retry(), CircuitBreaker.ofDefaults("agent-test"),
+            agent, workflows, executions);
+        List<String> events = new ArrayList<>();
+        client.stream(new ChatConversationService.Turn(1L, 1L, 2L,
+            List.of(new AiChatClient.Message("user", "查询订单")),
+            new ChatConversationService.Settings("text_model", "chat", null, false, "MEDIUM", "", List.of("ORDERS"))),
+            event -> events.add(event.path("type").asText()));
+        assertEquals(List.of("agent_tool_start", "agent_tool_done", "delta", "done"), events);
+        verify(executions).startPublished(eq("ORDERS"), anyMap());
+        verify(agent, times(2)).step(any(), anyList(), anyList());
+    }
+
     /** 构造真实客户端需要的会话上下文。 */
     private ChatConversationService.Turn turn() {
         return new ChatConversationService.Turn(1L, 1L, 2L, List.of(new AiChatClient.Message("user", "hello")),
             new ChatConversationService.Settings("text_model", "chat", null, false, "MEDIUM", ""));
+    }
+
+    /** Agent 测试使用一次调用，避免把模型重试混入编排断言。 */
+    private Retry retry() {
+        return Retry.of("agent-test", RetryConfig.custom().maxAttempts(1).retryExceptions(Exception.class).build());
     }
 }

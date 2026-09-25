@@ -100,6 +100,8 @@ public final class WorkflowModels {
                                Long currentVersionId, Integer currentVersion, Long publishedVersionId,
                                Integer publishedVersion, long revision, boolean enabled, Long ownerUserId,
                                JsonNode graph, JsonNode inputSchema, LocalDateTime createdAt, LocalDateTime updatedAt) {}
+    /** 聊天 Agent 可选择的已发布工作流工具，不返回画布或敏感连接配置。 */
+    public record ChatToolOption(String code, String name, String description, JsonNode inputSchema) {}
     public record VersionView(Long id, int versionNumber, JsonNode graph, JsonNode inputSchema,
                               LocalDateTime createdAt) {}
     public record RunCommand(Map<String, Object> inputs) {}

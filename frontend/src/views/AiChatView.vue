@@ -50,6 +50,13 @@
             <el-option v-for="m in currentModels" :key="m.id" :value="m.id" :label="m.name + ' (' + m.modelName + ')'" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('chat.agentTools')">
+          <el-select v-model="toolCodes" multiple collapse-tags collapse-tags-tooltip clearable
+            :placeholder="t('chat.agentToolsPlaceholder')" style="width: 260px">
+            <el-option v-for="tool in agentTools" :key="tool.code" :value="tool.code"
+              :label="tool.name + ' (' + tool.code + ')'" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('chat.enableThinking')">
           <el-switch v-model="enableThinking" />
         </el-form-item>
@@ -73,6 +80,11 @@
         <small v-if="item.status && item.status !== 'COMPLETED'">{{ t(item.status === 'GENERATING' ? 'chat.generating' : 'chat.streamInterrupted') }}</small>
         <div v-if="item.images?.length" class="message-images">
           <img v-for="image in item.images" :key="image.name + image.dataUrl" :src="image.dataUrl" :alt="image.name" />
+        </div>
+        <div v-if="item.role === 'assistant' && item.toolCalls?.length" class="message-tools">
+          <span v-for="tool in item.toolCalls" :key="tool.toolCallId" class="message-tool">
+            {{ tool.toolName }} · {{ tool.success ? t('chat.agentToolSucceeded') : t('chat.agentToolFailed') }}
+          </span>
         </div>
         <div v-if="item.role === 'assistant' && hasChatResponseMetadata(item)" class="message-metadata">
           <span>{{ t('chat.answerModel') }}: {{ item.model || t('chat.unknownModel') }}</span>
@@ -159,6 +171,8 @@ const promptFileInput = ref(null)
 const activeTab = ref('conversation')
 const messages = ref([])
 const pendingImages = ref([])
+const agentTools = ref([])
+const toolCodes = ref([])
 const imageInput = ref(null)
 const loading = ref(false)
 const MAX_IMAGES = 4
@@ -295,14 +309,16 @@ function toApiMessage(message) {
 // 加载路由列表和供应商列表
 onMounted(async () => {
   try {
-    const [routesRes, providersRes, typesRes] = await Promise.all([
+    const [routesRes, providersRes, typesRes, toolsRes] = await Promise.all([
       http.get('/ai/chat/routes'),
       http.get('/ai/chat/providers'),
-      http.get('/ai/chat/model-types')
+      http.get('/ai/chat/model-types'),
+      http.get('/workflow/chat-tools')
     ])
     routes.value = routesRes.data
     providers.value = providersRes.data
     modelTypes.value = typesRes.data
+    agentTools.value = toolsRes.data
     if (!modelTypes.value.some(type => type.value === modelType.value)) modelType.value = modelTypes.value[0]?.value || 'text_model'
     await refreshHistory()
     const selected = Number(route.query.conversation)
@@ -359,6 +375,7 @@ async function selectConversation(id) {
     enableThinking.value = Boolean(settings.enableThinking)
     thinkingLevel.value = settings.thinkingLevel || 'MEDIUM'
     systemPrompt.value = settings.systemPrompt || ''
+    toolCodes.value = Array.isArray(settings.toolCodes) ? settings.toolCodes : []
     promptFileName.value = ''
     prompt.value = ''
     pendingImages.value = []
@@ -420,11 +437,21 @@ async function send() {
         content: toApiMessage(userMessage).content,
         settings: { modelType: modelType.value, featureCode: featureCode.value.trim() || null,
           modelId: mode.value === 'single' ? modelId.value : null,
-          enableThinking: enableThinking.value, thinkingLevel: thinkingLevel.value, systemPrompt: systemPrompt.value }
+          enableThinking: enableThinking.value, thinkingLevel: thinkingLevel.value, systemPrompt: systemPrompt.value,
+          toolCodes: toolCodes.value }
       })
     })
     await readChatStream(response, event => {
       if (event.type === 'start') { assistant.id = event.messageId; assistant.traceId = event.traceId; prompt.value = ''; pendingImages.value = [] }
+      if (event.type === 'agent_tool_start') {
+        assistant.toolCalls = [...(assistant.toolCalls || []), { ...event, success: null }]
+      }
+      if (event.type === 'agent_tool_done') {
+        const tools = assistant.toolCalls || []
+        const index = tools.findIndex(tool => tool.toolCallId === event.toolCallId)
+        if (index >= 0) tools[index] = { ...tools[index], ...event }
+        else assistant.toolCalls = [...tools, event]
+      }
       if (event.type === 'delta') assistant.content += event.content
       if (event.type === 'done') Object.assign(assistant, event, { status: 'COMPLETED' })
     })
@@ -570,6 +597,8 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 }
 .message-metadata > * { min-width: 0; }
 .message-metadata :deep(.el-link) { font-size: inherit; }
+.message-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.message-tool { padding: 3px 8px; border-radius: 999px; background: var(--el-color-primary-light-9); color: var(--app-primary); font-size: 12px; }
 
 .message-images,
 .pending-images {

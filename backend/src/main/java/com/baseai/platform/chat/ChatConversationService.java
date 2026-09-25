@@ -133,7 +133,10 @@ public class ChatConversationService {
             || settings.modelType() == null || !settings.modelType().matches("[A-Za-z0-9_-]{1,64}")
             || settings.featureCode() != null && settings.featureCode().length() > 100
             || settings.modelId() != null && settings.modelId() <= 0
-            || settings.thinkingLevel() != null && !Set.of("LOW", "MEDIUM", "HIGH", "EXTRA_HIGH", "MAX", "ULTRA").contains(settings.thinkingLevel()))
+            || settings.thinkingLevel() != null && !Set.of("LOW", "MEDIUM", "HIGH", "EXTRA_HIGH", "MAX", "ULTRA").contains(settings.thinkingLevel())
+            || settings.toolCodes() != null && (settings.toolCodes().size() > 10
+                || settings.toolCodes().stream().anyMatch(code -> code == null || !code.matches("[A-Z][A-Z0-9_-]{1,79}"))
+                || settings.toolCodes().stream().distinct().count() != settings.toolCodes().size()))
             throw new BusinessException("chat.invalidInput");
         JsonNode content = request.content();
         if (content.isTextual()) { validateText(content.asText()); return; }
@@ -208,7 +211,13 @@ public class ChatConversationService {
     }
 
     public record Settings(String modelType, String featureCode, Long modelId, Boolean enableThinking,
-                           String thinkingLevel, String systemPrompt) {}
+                           String thinkingLevel, String systemPrompt, List<String> toolCodes) {
+        /** 兼容未启用 Agent 工具的历史会话设置。 */
+        public Settings(String modelType, String featureCode, Long modelId, Boolean enableThinking,
+                        String thinkingLevel, String systemPrompt) {
+            this(modelType, featureCode, modelId, enableThinking, thinkingLevel, systemPrompt, List.of());
+        }
+    }
     public record SendRequest(String requestId, JsonNode content, Settings settings) {}
     public record Summary(Long id, String title, Instant updatedAt, boolean generating) {}
     public record MessageView(Long id, String role, JsonNode content, String status, JsonNode metadata, String traceId) {}

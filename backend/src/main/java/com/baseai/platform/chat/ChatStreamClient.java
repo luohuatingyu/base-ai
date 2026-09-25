@@ -1,15 +1,21 @@
 package com.baseai.platform.chat;
 
+import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.LlmManagementService;
 import com.baseai.platform.service.TaskTraceService;
 import com.baseai.platform.trace.TraceContextHolder;
+import com.baseai.platform.workflow.WorkflowAgentClient;
+import com.baseai.platform.workflow.WorkflowExecutionService;
+import com.baseai.platform.workflow.WorkflowModels;
+import com.baseai.platform.workflow.WorkflowService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.retry.Retry;
 import io.vavr.control.Try;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -19,6 +25,11 @@ import java.io.*;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -36,11 +47,16 @@ public class ChatStreamClient {
     private final ScheduledExecutorService watchdog = Executors.newScheduledThreadPool(2);
     private final Retry retry;
     private final CircuitBreaker circuitBreaker;
+    private final WorkflowAgentClient agentClient;
+    private final WorkflowService workflowService;
+    private final WorkflowExecutionService workflowExecutionService;
 
-    /** 为流式接口设置连接及响应头超时，保留已有签名拦截器。 */
+    /** 为流式接口设置连接及响应头超时，并注入聊天 Agent 的工作流执行能力。 */
+    @Autowired
     public ChatStreamClient(@Qualifier("pythonWorkerRestClient") RestClient client, LlmManagementService management,
                             TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry, 
-                            CircuitBreaker pythonWorkerCircuitBreaker) {
+                            CircuitBreaker pythonWorkerCircuitBreaker, WorkflowAgentClient agentClient,
+                            WorkflowService workflowService, WorkflowExecutionService workflowExecutionService) {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(10)).build());
         factory.setReadTimeout(Duration.ofSeconds(30));
@@ -48,10 +64,25 @@ public class ChatStreamClient {
         this.management = management; this.traces = traces; this.mapper = mapper;
         this.retry = pythonWorkerRetry;
         this.circuitBreaker = pythonWorkerCircuitBreaker;
+        this.agentClient = agentClient;
+        this.workflowService = workflowService;
+        this.workflowExecutionService = workflowExecutionService;
+    }
+
+    /** 保留基础流测试使用的构造方式，普通聊天不需要工作流依赖。 */
+    public ChatStreamClient(@Qualifier("pythonWorkerRestClient") RestClient client, LlmManagementService management,
+                            TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry,
+                            CircuitBreaker pythonWorkerCircuitBreaker) {
+        this(client, management, traces, mapper, pythonWorkerRetry, pythonWorkerCircuitBreaker,
+            null, null, null);
     }
 
     /** 逐事件读取；消费者返回前不会预取下一事件。使用重试和熔断保护。 */
     public void stream(ChatConversationService.Turn turn, EventConsumer consumer) {
+        if (turn.settings().toolCodes() != null && !turn.settings().toolCodes().isEmpty()) {
+            streamAgent(turn, consumer);
+            return;
+        }
         AtomicBoolean streamStarted = new AtomicBoolean(false);
         Supplier<Void> supplier = () -> {
             executeStream(turn, event -> {
@@ -131,6 +162,126 @@ public class ChatStreamClient {
             if (streamStarted.get()) throw new StreamAlreadyStartedException(exception);
             throw exception;
         }
+    }
+
+    /** 让模型在授权工作流工具中循环决策，并把工具状态作为 SSE 事件返回。 */
+    private void streamAgent(ChatConversationService.Turn turn, EventConsumer consumer) {
+        if (agentClient == null || workflowService == null || workflowExecutionService == null) {
+            throw new BusinessException("chat.agentUnavailable");
+        }
+        Map<String, WorkflowModels.ChatToolOption> options = new LinkedHashMap<>();
+        workflowService.chatToolOptions().forEach(option -> options.put(option.code(), option));
+        List<WorkflowAgentClient.Tool> tools = new ArrayList<>();
+        for (String code : turn.settings().toolCodes()) {
+            WorkflowModels.ChatToolOption option = options.get(code);
+            if (option == null) throw new BusinessException("workflow.agentToolForbidden", code);
+            tools.add(new WorkflowAgentClient.Tool(option.code(), option.description(), option.inputSchema()));
+        }
+        if (tools.isEmpty()) throw new BusinessException("workflow.agentToolsRequired");
+
+        var config = mapper.createObjectNode()
+            .put("featureCode", turn.settings().featureCode() == null ? "chat" : turn.settings().featureCode())
+            .put("modelType", turn.settings().modelType())
+            .put("enableThinking", Boolean.TRUE.equals(turn.settings().enableThinking()));
+        if (turn.settings().modelId() != null) config.put("modelId", turn.settings().modelId());
+        if (turn.settings().thinkingLevel() != null) config.put("thinkingLevel", turn.settings().thinkingLevel());
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        for (AiChatClient.Message message : turn.context()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("role", message.role());
+            item.put("content", message.content());
+            messages.add(item);
+        }
+        List<Map<String, Object>> toolEvents = new ArrayList<>();
+        String model = "";
+        for (int step = 0; step < 5; step++) {
+            TraceContextHolder.checkpoint();
+            WorkflowAgentClient.AgentStep decision = agentClient.step(config, messages, tools);
+            model = decision.model();
+            if (decision.toolCalls().isEmpty()) {
+                if (decision.content().isBlank()) throw new BusinessException("ai.emptyResponse");
+                emit(consumer, mapper.createObjectNode().put("type", "delta").put("content", decision.content()));
+                var done = mapper.createObjectNode().put("type", "done").put("model", model);
+                done.set("toolCalls", mapper.valueToTree(toolEvents));
+                emit(consumer, done);
+                return;
+            }
+
+            List<Map<String, Object>> rawCalls = new ArrayList<>();
+            for (WorkflowAgentClient.ToolCall call : decision.toolCalls()) {
+                rawCalls.add(Map.of("id", call.id(), "type", "function", "function",
+                    Map.of("name", call.name(), "arguments", call.arguments().toString())));
+            }
+            Map<String, Object> assistant = new LinkedHashMap<>();
+            assistant.put("role", "assistant");
+            assistant.put("content", decision.content());
+            assistant.put("tool_calls", rawCalls);
+            messages.add(assistant);
+
+            for (WorkflowAgentClient.ToolCall call : decision.toolCalls()) {
+                WorkflowModels.ChatToolOption option = options.get(call.name());
+                if (option == null) throw new BusinessException("workflow.agentToolForbidden", call.name());
+                emit(consumer, mapper.createObjectNode().put("type", "agent_tool_start")
+                    .put("toolCallId", call.id()).put("toolName", option.name()).put("toolCode", option.code()));
+                Map<String, Object> event = new LinkedHashMap<>();
+                event.put("toolCallId", call.id());
+                event.put("toolName", option.name());
+                event.put("toolCode", option.code());
+                try {
+                    Map<String, Object> arguments = mapper.convertValue(call.arguments(), Map.class);
+                    WorkflowModels.RunAccepted accepted = workflowExecutionService.startPublished(option.code(), arguments);
+                    JsonNode result = awaitTool(accepted.runId());
+                    String resultText = mapper.writeValueAsString(result == null ? mapper.nullNode() : result);
+                    if (resultText.length() > 100_000) resultText = resultText.substring(0, 100_000) + "…";
+                    messages.add(new LinkedHashMap<>(Map.of("role", "tool", "tool_call_id", call.id(),
+                        "name", call.name(), "content", resultText)));
+                    event.put("success", true);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    event.put("success", false);
+                    event.put("error", "interrupted");
+                    emit(consumer, toolDone(call, option, false));
+                    throw new BusinessException("chat.agentToolInterrupted");
+                } catch (RuntimeException | IOException exception) {
+                    event.put("success", false);
+                    event.put("error", "failed");
+                    emit(consumer, toolDone(call, option, false));
+                    throw new BusinessException("chat.agentToolFailed");
+                }
+                toolEvents.add(event);
+                emit(consumer, toolDone(call, option, true));
+            }
+        }
+        throw new BusinessException("chat.agentStepLimit");
+    }
+
+    /** 轮询已持久化的工作流运行，确保聊天 Agent 获得真实工具结果。 */
+    private JsonNode awaitTool(String runId) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+        while (System.nanoTime() < deadline) {
+            TraceContextHolder.checkpoint();
+            WorkflowModels.RunView run = workflowExecutionService.run(runId);
+            if ("SUCCESS".equals(run.status())) return run.output();
+            if (Set.of("FAILED", "CANCELLED").contains(run.status())) throw new BusinessException("chat.agentToolFailed");
+            Thread.sleep(200L);
+        }
+        try { workflowExecutionService.cancel(runId); } catch (RuntimeException ignored) { }
+        throw new BusinessException("chat.agentToolTimeout");
+    }
+
+    /** 构造不包含工具结果正文的状态事件，避免把业务数据写入前端日志。 */
+    private JsonNode toolDone(WorkflowAgentClient.ToolCall call, WorkflowModels.ChatToolOption option,
+                              boolean success) {
+        return mapper.createObjectNode().put("type", "agent_tool_done")
+            .put("toolCallId", call.id()).put("toolName", option.name())
+            .put("toolCode", option.code()).put("success", success);
+    }
+
+    /** 将客户端断开转换为流式失败，避免泄漏下游异常文本。 */
+    private void emit(EventConsumer consumer, JsonNode event) {
+        try { consumer.accept(event); }
+        catch (IOException exception) { throw new IllegalStateException("Chat stream disconnected", exception); }
     }
 
     /** 首个增量已经交给调用方后禁止重试，避免上游副作用和重复回答。 */

@@ -22,7 +22,7 @@ export async function readChatStream(response, onEvent) {
         const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
         if (!data) continue
         const event = JSON.parse(data)
-        if (!['start', 'delta', 'heartbeat', 'done', 'error'].includes(event.type)) throw new Error('chat.callFailed')
+        if (!['start', 'delta', 'heartbeat', 'agent_tool_start', 'agent_tool_done', 'done', 'error'].includes(event.type)) throw new Error('chat.callFailed')
         if (event.type === 'delta' && typeof event.content !== 'string') throw new Error('chat.callFailed')
         if (event.type === 'error') throw new Error('chat.callFailed')
         onEvent(event)

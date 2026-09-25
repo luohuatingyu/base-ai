@@ -27,6 +27,7 @@ import static org.mockito.Mockito.mock;
 
 class WorkflowServiceAccessTest {
     private final ObjectMapper mapper = new ObjectMapper();
+    private JdbcTemplate jdbcTemplate;
     private WorkflowService service;
 
     /** 创建两个所有者的画布和自定义模板，使用真实资源访问服务。 */
@@ -34,7 +35,7 @@ class WorkflowServiceAccessTest {
     void setUp() {
         JdbcDataSource dataSource = new JdbcDataSource();
         dataSource.setURL("jdbc:h2:mem:workflow-service-access-" + System.nanoTime() + ";MODE=MySQL;DB_CLOSE_DELAY=-1");
-        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        jdbcTemplate = new JdbcTemplate(dataSource);
         jdbcTemplate.execute("""
             CREATE TABLE workflow_definition(id BIGINT PRIMARY KEY,code VARCHAR(80),name VARCHAR(120),description VARCHAR(500),
             status VARCHAR(20),current_version_id BIGINT,published_version_id BIGINT,revision BIGINT,owner_user_id BIGINT,
@@ -94,6 +95,20 @@ class WorkflowServiceAccessTest {
         authenticate(1L, Set.of("ADMIN"));
         assertEquals(2, service.workflows().size());
         assertEquals(3, service.templates().size());
+    }
+
+    /** 聊天工具目录只暴露当前用户拥有且已发布的工作流及输入 Schema。 */
+    @Test
+    void listsPublishedChatToolsByOwner() {
+        jdbcTemplate.update("UPDATE workflow_definition SET status='PUBLISHED',published_version_id=10 WHERE id=1");
+        assertEquals(1, service.chatToolOptions().size());
+        WorkflowModels.ChatToolOption option = service.chatToolOptions().get(0);
+        assertEquals("OWN", option.code());
+        assertEquals("Own", option.name());
+        assertEquals("object", option.inputSchema().path("type").asText());
+
+        authenticate(1L, Set.of("ADMIN"));
+        assertEquals(1, service.chatToolOptions().size());
     }
 
     /** 市场模板导入必须幂等保存外部身份并默认启用。 */

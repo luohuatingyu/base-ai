@@ -267,6 +267,26 @@ public class WorkflowService {
             : jdbcTemplate.query(sql, (rs, row) -> mapWorkflow(rs), user.id());
     }
 
+    /** 查询当前用户可作为聊天工具调用的已发布工作流。 */
+    public List<WorkflowModels.ChatToolOption> chatToolOptions() {
+        return workflows().stream()
+            .filter(workflow -> workflow.enabled() && "PUBLISHED".equals(workflow.status())
+                && workflow.publishedVersionId() != null)
+            .map(workflow -> new WorkflowModels.ChatToolOption(workflow.code(), workflow.name(),
+                workflow.description() == null || workflow.description().isBlank()
+                    ? workflow.name() : workflow.description(),
+                chatToolInputSchema(workflow.inputSchema())))
+            .toList();
+    }
+
+    /** 为聊天 Agent 补齐工具参数根类型，兼容旧工作流保存的空 Schema。 */
+    private JsonNode chatToolInputSchema(JsonNode inputSchema) {
+        ObjectNode schema = inputSchema != null && inputSchema.isObject()
+            ? (ObjectNode) inputSchema.deepCopy() : objectMapper.createObjectNode();
+        if (!schema.has("type")) schema.put("type", "object");
+        return schema;
+    }
+
     /** 创建工作流及首个不可变草稿版本。 */
     @Transactional
     public WorkflowModels.WorkflowView createWorkflow(WorkflowModels.WorkflowCommand command) {

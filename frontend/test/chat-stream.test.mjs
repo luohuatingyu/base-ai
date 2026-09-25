@@ -38,6 +38,13 @@ test('HTTP 鉴权失败保留状态及业务错误', async () => {
   await assert.rejects(readChatStream(new Response('{}'), () => {}))
 })
 
+test('Agent 工具状态事件按顺序传递给聊天页', async () => {
+  const events = []
+  await readChatStream(response('data: {"type":"start"}\n\ndata: {"type":"agent_tool_start","toolName":"订单查询"}\n\ndata: {"type":"agent_tool_done","toolName":"订单查询","success":true}\n\ndata: {"type":"delta","content":"完成"}\n\ndata: {"type":"done","toolCalls":[{"toolName":"订单查询","success":true}]}\n\n'), event => events.push(event))
+  assert.deepEqual(events.map(event => event.type), ['start', 'agent_tool_start', 'agent_tool_done', 'delta', 'done'])
+  assert.equal(events[2].success, true)
+})
+
 test('历史恢复保留统计、状态和文本且拒绝外部图片地址', () => {
   const restored = restoreChatMessage({ id: 1, role: 'user', status: 'COMPLETED', traceId: 'trace',
     metadata: { totalTokens: 3 }, content: [{ type: 'text', text: '说明' },

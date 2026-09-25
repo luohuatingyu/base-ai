@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Semaphore;
 
 /** 登录用户会话管理及 SSE 输出，同一请求线程保留鉴权和追踪上下文。 */
@@ -71,7 +72,9 @@ public class ChatConversationController {
                         int available = 100000 - content.length();
                         content.append(delta, 0, Math.min(available, delta.length()));
                         if (delta.length() > available) throw new IOException("Answer limit");
-                    } else if (!"done".equals(type) && !"heartbeat".equals(type)) throw new IOException("Invalid event");
+                    } else if (!Set.of("done", "heartbeat", "agent_tool_start", "agent_tool_done").contains(type)) {
+                        throw new IOException("Invalid event");
+                    }
                     if ("done".equals(type)) {
                         if (content.isEmpty()) throw new IOException("Empty answer");
                         service.save(turn, content.toString(), "COMPLETED", event);

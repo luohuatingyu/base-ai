@@ -187,6 +187,11 @@ public class WorkflowController {
     @RequiredPermission("automation:workflow:canvas:list")
     public List<WorkflowModels.WorkflowView> workflows() { return workflowService.workflows(); }
 
+    /** 查询聊天 Agent 可调用的当前用户已发布工作流。 */
+    @GetMapping("/chat-tools")
+    @RequiredPermission("ai:chat:invoke")
+    public List<WorkflowModels.ChatToolOption> chatTools() { return workflowService.chatToolOptions(); }
+
     /** 创建工作流和首个版本。 */
     @PostMapping("/canvases")
     @RequiredPermission("automation:workflow:canvas:create")
