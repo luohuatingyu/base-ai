@@ -680,7 +680,10 @@ body { margin: 0; background: var(--app-canvas); }
   min-height: 0;
 }
 
-.model-config { flex: 0 0 auto; }
+/* 配置抽屉仅由主体整体滚动，避免聊天区和设置表单出现嵌套滚动。 */
+.chat-settings-drawer { max-width: 100vw; }
+.chat-settings-drawer .el-drawer__header { margin-bottom: 20px; }
+.chat-settings-drawer .el-drawer__body { min-height: 0; overflow-y: auto; padding-top: 0; }
 
 .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 12px; scrollbar-width: thin; }
 

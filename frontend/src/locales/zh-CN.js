@@ -175,6 +175,7 @@ export default {
     }
   },
   chat: {
+    settings: '对话设置', modelSelection: '模型选择', toolSettings: '工具', thinkingSettings: '思考设置',
     newConversation: '新建会话',
     refreshHistory: '刷新历史',
     noConversations: '暂无历史会话',

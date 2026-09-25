@@ -150,6 +150,7 @@ export default {
     }
   },
   chat: {
+    settings: 'Chat Settings', modelSelection: 'Model Selection', toolSettings: 'Tools', thinkingSettings: 'Thinking Settings',
     newConversation: 'New conversation',
     refreshHistory: 'Refresh history',
     noConversations: 'No conversations yet',
