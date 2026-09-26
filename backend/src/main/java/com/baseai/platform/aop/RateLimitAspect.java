@@ -1,6 +1,7 @@
 package com.baseai.platform.aop;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.security.AuthContext;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
@@ -116,11 +117,13 @@ public class RateLimitAspect {
     }
     
     /**
-     * 获取当前用户ID。
+     * 从已认证上下文获取用户 ID，缺失身份时拒绝请求，避免按 IP 或匿名身份共享额度。
      */
     private String getCurrentUserId() {
-        // TODO: 从安全上下文获取当前用户ID
-        // 临时返回IP作为用户标识
-        return getClientIp();
+        Long userId = AuthContext.require().id();
+        if (userId == null) {
+            throw BusinessException.unauthorized("auth.required");
+        }
+        return userId.toString();
     }
 }
