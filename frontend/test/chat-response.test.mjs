@@ -67,8 +67,9 @@ test('助手回答使用自适应宽度和舒适行距，长文本允许换行',
   assert.doesNotMatch(chatStyles, /\.message div\s*\{/)
 })
 
-test('消息显示本地化角色，用户气泡靠右且正文左对齐', () => {
-  assert.match(chatView, /class="message-author">\{\{ t\(item\.role === 'user' \? 'chat\.user' : 'chat\.assistant'\) \}\}/)
+test('仅 AI 消息显示本地化角色，用户气泡靠右且正文左对齐', () => {
+  assert.match(chatView, /<template v-if="item\.role === 'assistant'">[^\n]*class="message-author">\{\{ t\('chat\.assistant'\) \}\}<\/div><\/template>/)
+  assert.doesNotMatch(chatView, /<User\b|t\('chat\.user'\)/)
   assert.doesNotMatch(chatView, /<small>\{\{ item\.role === 'user'/)
   assert.doesNotMatch(chatStyles, /\.message small\s*\{/)
   assert.match(chatStyles, /\.message\.user\s*\{\s*margin-left:\s*auto;\s*text-align:\s*right;\s*\}/)

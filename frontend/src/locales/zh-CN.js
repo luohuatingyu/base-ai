@@ -175,6 +175,16 @@ export default {
     }
   },
   chat: {
+    tools: '工具', selectedTools: '已选工具', browseTools: '查看工具用途与可用状态',
+    toolsHint: '选择本轮允许 AI 使用的工具。发送后，AI 会按问题需要决定是否调用。',
+    searchTools: '搜索工具名称或用途', manageTools: '管理', loadingTools: '正在加载工具…',
+    toolsForbidden: '暂无使用权限，请联系管理员开通。', toolsLoadFailed: '工具加载失败，可重试；普通对话仍可使用。',
+    noMatchingTools: '没有匹配的工具，试试其他关键词。', noConfiguredTools: '暂无可用工具，可前往管理页面配置。',
+    agentToolsHelp: '来自你已启用的接口触发配置，需具备接口触发权限。',
+    workflowToolsHelp: '来自你有权使用的已发布工作流。', finishToolSelection: '完成选择',
+    toolProgress: '工具执行状态', toolStatus: { running: '执行中', succeeded: '已完成', failed: '失败', interrupted: '连接中断，执行结果待确认' },
+    copyAnswer: '复制回答', answerCopied: '回答已复制', answerCopyFailed: '复制失败，请检查浏览器剪贴板权限。',
+    restoreQuestion: '放回输入框', replaceDraftConfirm: '输入框中已有草稿或图片，是否替换为这条原问题？不会自动发送。',
     settings: '对话设置', modelSelection: '模型选择', toolSettings: '工具', thinkingSettings: '思考设置',
     newConversation: '新建会话',
     refreshHistory: '刷新历史',

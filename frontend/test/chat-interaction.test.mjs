@@ -13,6 +13,7 @@ async function createChat(t, overrides = {}) {
   const mounts = []
   const unmounts = []
   const requests = []
+  const notices = []
   const route = { query: {}, fullPath: '/ai-chat' }
   const detail = { conversation: { generating: false }, messages: [], settings: {} }
   const http = {
@@ -32,16 +33,16 @@ async function createChat(t, overrides = {}) {
   const globals = {
     window: { matchMedia: () => ({ matches: true }) },
     fetch: overrides.fetch || (async () => streamResponse([{ type: 'start', messageId: 2 }, { type: 'delta', content: '回答' }, { type: 'done' }])),
-    navigator: { clipboard: { writeText: async () => {} } }
+    navigator: { clipboard: { writeText: overrides.writeText || (async () => {}) } }
   }
   const modules = {
     vue: { ...vue, onMounted: callback => mounts.push(callback), onBeforeUnmount: callback => unmounts.push(callback) },
-    'element-plus': { ElMessage: { warning() {}, error() {}, success() {} }, ElMessageBox: { confirm: async () => {} } },
+    'element-plus': { ElMessage: Object.fromEntries(['warning', 'error', 'success'].map(type => [type, text => notices.push({ type, text })])), ElMessageBox: { confirm: overrides.confirm || (async () => {}) } },
     '@element-plus/icons-vue': {},
     '../api/http': { default: http, showHttpError() {}, chatStreamHeaders: () => ({ 'X-CSRF-Token': 'test' }) },
     'vue-i18n': { useI18n: () => ({ t: key => key.split('.').reduce((value, part) => value?.[part], zh) || key }) },
     'vue-router': { useRouter: () => router, useRoute: () => route },
-    '../stores/auth': { useAuthStore: () => ({ hasPermission: () => false }) }
+    '../stores/auth': { useAuthStore: () => ({ hasPermission: overrides.hasPermission || (() => false) }) }
   }
   const bindings = { ...globals }
   for (const node of compiled.scriptSetupAst.filter(node => node.type === 'ImportDeclaration')) {
@@ -54,13 +55,27 @@ async function createChat(t, overrides = {}) {
   const state = scope.run(() => component.setup({}, { expose() {} }))
   t.after(() => { unmounts.forEach(callback => callback()); scope.stop() })
   await Promise.all(mounts.map(callback => callback()))
-  return { state, requests, detail, http }
+  return { state, requests, detail, http, notices }
 }
 
 /** 使用真实 SSE 字节流验证组件和流解析器的协作。 */
 function streamResponse(events) {
   return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } })
 }
+
+test('模型池不可用时显示同步建议且保留会话和已收到内容', async t => {
+  const message = '默认模型池没有支持所选类型的可用模型，请检查能力路由并执行同步'
+  const { state } = await createChat(t, { fetch: async () => streamResponse([
+    { type: 'start', messageId: 2 }, { type: 'delta', content: '保留内容' },
+    { type: 'error', code: 'llm.defaultPoolUnavailable', message }
+  ]) })
+  state.prompt.value = '1111'
+  await state.send()
+  assert.equal(state.pageError.value, message)
+  assert.equal(state.messages.value.at(-1).content, '保留内容')
+  assert.equal(state.messages.value.at(-1).status, 'INTERRUPTED')
+  assert.equal(state.loading.value, false)
+})
 
 test('欢迎示例仅填入草稿并聚焦，不直接消耗模型调用', async t => {
   const { state, requests } = await createChat(t)
@@ -311,3 +326,197 @@ test('从会话工具端点加载已配置的 Agent 工具，地址错误不能�
   assert.deepEqual(state.agentTools.value, [option])
   assert.ok(requests.includes('/ai/conversations/agent-tools'))
 })
+
+test('工具按名称、用途和编码搜索，选中及移除后提交独立字段', async t => {
+  let submitted
+  const { state } = await createChat(t, { hasPermission: () => true, fetch: async (_url, options) => {
+    submitted = JSON.parse(options.body)
+    return streamResponse([{ type: 'start', messageId: 2 }, { type: 'done' }])
+  } })
+  state.agentTools.value = [{ code: 'HTTP_TRIGGER_7', name: '订单', description: '查询库存' }]
+  state.workflowTools.value = [{ code: 'WORKFLOW_1', name: '周报', description: '汇总数据' }]
+  for (const query of ['订单', '库存', 'http_trigger_7']) {
+    state.toolSearch.value = query
+    assert.deepEqual(state.toolGroups.value[0].options.map(tool => tool.code), ['HTTP_TRIGGER_7'])
+    assert.equal(state.toolGroups.value[1].options.length, 0)
+  }
+  state.toolSearch.value = '无匹配'
+  assert.equal(state.toolGroups.value[0].options.length, 0)
+  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
+  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
+  state.toggleTool('workflow', 'WORKFLOW_1', true)
+  assert.equal(state.selectedTools.value.length, 2)
+  state.removeTool('workflow', 'WORKFLOW_1')
+  state.prompt.value = '查订单'
+  await state.send()
+  assert.deepEqual(submitted.settings.agentToolCodes, ['HTTP_TRIGGER_7'])
+  assert.deepEqual(submitted.settings.workflowToolCodes, [])
+  assert.deepEqual(submitted.settings.toolCodes, [])
+})
+
+for (const status of [403, 500]) {
+  test(`工具目录 ${status} 与空目录区分，独立重试不丢失草稿和已选工具`, async t => {
+    const { state, http } = await createChat(t, { hasPermission: () => true })
+    state.prompt.value = '保留草稿'
+    state.agentToolCodes.value = ['HTTP_TRIGGER_7']
+    http.get = async () => { throw { response: { status } } }
+    await state.loadTools('agent')
+    assert.equal(state.toolStates.value.agent, status === 403 ? 'forbidden' : 'error')
+    assert.equal(state.canSend.value, true)
+    assert.equal(state.selectedTools.value[0].name, 'HTTP_TRIGGER_7')
+    http.get = async () => ({ data: [] })
+    await state.loadTools('agent')
+    assert.equal(state.toolStates.value.agent, 'ready')
+    assert.equal(state.toolGroups.value[0].options.length, 0)
+    assert.equal(state.prompt.value, '保留草稿')
+    assert.deepEqual(state.agentToolCodes.value, ['HTTP_TRIGGER_7'])
+  })
+}
+
+test('工具选择锁定覆盖发送和服务端同步，拒绝未知及无权限工具', async t => {
+  const { state } = await createChat(t)
+  state.agentTools.value = [{ code: 'HTTP_TRIGGER_7', name: '订单' }]
+  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
+  assert.deepEqual(state.agentToolCodes.value, [])
+  state.workflowTools.value = [{ code: 'WORKFLOW_1', name: '周报' }]
+  state.toggleTool('workflow', 'unknown', true)
+  assert.deepEqual(state.workflowToolCodes.value, [])
+  state.workflowToolCodes.value = ['WORKFLOW_1']
+  for (const flag of ['loading', 'serverGenerating']) {
+    state[flag].value = true
+    state.removeTool('workflow', 'WORKFLOW_1')
+    state.toggleTool('workflow', 'WORKFLOW_1', false)
+    assert.deepEqual(state.workflowToolCodes.value, ['WORKFLOW_1'])
+    state[flag].value = false
+  }
+  state.removeTool('workflow', 'WORKFLOW_1')
+  assert.deepEqual(state.workflowToolCodes.value, [])
+})
+
+for (const success of [true, false, null]) {
+  test(`工具事件在回复旁显示终态 ${success}，中断后不再显示运行中`, async t => {
+    const events = [{ type: 'start', messageId: 2 }, { type: 'agent_tool_start', toolCallId: 'call-1', toolName: '查询' }]
+    if (success !== null) events.push({ type: 'agent_tool_done', toolCallId: 'call-1', toolName: '查询', success })
+    if (success === true) events.push({ type: 'done' })
+    const { state } = await createChat(t, { fetch: async () => streamResponse(events) })
+    state.prompt.value = '查询'
+    await state.send()
+    const message = state.messages.value.at(-1)
+    assert.equal(message.toolCalls.length, 1)
+    assert.equal(state.toolStatus(message.toolCalls[0], message), success === null ? 'interrupted' : success ? 'succeeded' : 'failed')
+    assert.equal(state.toolStatus({ success: null }, { status: 'GENERATING' }), 'running')
+    assert.ok(source.indexOf('class="message-tools"') < source.indexOf('class="message-details"'))
+  })
+}
+
+for (const failed of [false, true]) {
+  test(`复制回答${failed ? '失败' : '成功'}有明确反馈，按原文复制`, async t => {
+    let copied
+    const { state, notices } = await createChat(t, { writeText: async text => {
+      copied = text
+      if (failed) throw new Error('denied')
+    } })
+    await state.copyAnswer({ content: '<script>示例</script>\n代码' })
+    assert.equal(copied, '<script>示例</script>\n代码')
+    assert.equal(notices.at(-1).type, failed ? 'error' : 'success')
+  })
+}
+
+for (const decision of ['empty', 'confirm', 'cancel', 'changed']) {
+  test(`恢复原问题仅填草稿，已有内容处理：${decision}`, async t => {
+    let confirmations = 0
+    let fetches = 0
+    const { state } = await createChat(t, { confirm: async () => {
+      confirmations++
+      if (decision === 'cancel') throw new Error('cancel')
+      if (decision === 'changed') state.prompt.value = '确认期间的新草稿'
+    }, fetch: async () => { fetches++; throw new Error('must not send') } })
+    if (decision !== 'empty') state.prompt.value = '已有草稿'
+    await state.restoreQuestion({ role: 'user', content: '原问题' })
+    assert.equal(state.prompt.value, decision === 'cancel' ? '已有草稿' : decision === 'changed' ? '确认期间的新草稿' : '原问题')
+    assert.equal(confirmations, decision === 'empty' ? 0 : 1)
+    assert.equal(fetches, 0)
+  })
+}
+
+test('恢复图片问题要求视觉模型，并保留图片附件和输入焦点', async t => {
+  const { state, notices } = await createChat(t)
+  const original = { role: 'user', content: '解释图片', images: [{ name: '图', dataUrl: 'data:image/png;base64,AAAA' }] }
+  await state.restoreQuestion(original)
+  assert.equal(state.prompt.value, '')
+  assert.equal(notices.at(-1).type, 'warning')
+  state.modelType.value = 'vision_model'
+  let focused = false
+  state.questionInput.value = { focus() { focused = true } }
+  await state.restoreQuestion(original)
+  assert.deepEqual(state.pendingImages.value, original.images)
+  assert.equal(focused, true)
+})
+
+test('较早工具目录请求晚返回不会覆盖最新重试结果', async t => {
+  const { state, http } = await createChat(t, { hasPermission: () => true })
+  let release
+  http.get = () => new Promise(resolve => { release = resolve })
+  const earlier = state.loadTools('agent')
+  assert.equal(state.toolStates.value.agent, 'loading')
+  http.get = async () => ({ data: [{ code: 'HTTP_TRIGGER_8', name: '新工具' }] })
+  await state.loadTools('agent')
+  release({ data: [{ code: 'HTTP_TRIGGER_7', name: '旧工具' }] })
+  await earlier
+  assert.deepEqual(state.agentTools.value.map(tool => tool.code), ['HTTP_TRIGGER_8'])
+})
+
+test('两类工具都可取消选择，目录失败时不能新增选择，管理入口遵守权限', async t => {
+  const { state, requests } = await createChat(t, { hasPermission: permission => permission === 'automation:api-trigger:trigger' })
+  state.agentTools.value = [{ code: 'HTTP_TRIGGER_7' }]
+  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
+  state.toggleTool('agent', 'HTTP_TRIGGER_7', false)
+  assert.deepEqual(state.agentToolCodes.value, [])
+  state.workflowTools.value = [{ code: 'WORKFLOW_1' }]
+  state.toggleTool('workflow', 'WORKFLOW_1', true)
+  state.toggleTool('workflow', 'WORKFLOW_1', false)
+  assert.deepEqual(state.workflowToolCodes.value, [])
+  state.toolStates.value.agent = 'error'
+  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
+  assert.deepEqual(state.agentToolCodes.value, [])
+  assert.equal(state.toolGroups.value.some(group => group.canManage), false)
+  state.toolsOpen.value = true
+  state.openToolManagement('/automation/api-triggers')
+  assert.equal(state.toolsOpen.value, false)
+  assert.equal(requests.at(-1), '/automation/api-triggers')
+})
+
+test('同步服务端终态保留已收到的工具事件，刷新历史可恢复已完成工具', async t => {
+  const { state, detail } = await createChat(t)
+  state.conversationId.value = 1
+  state.serverGenerating.value = true
+  state.messages.value = [{ id: 2, role: 'assistant', content: '部分回答', status: 'INTERRUPTED', toolCalls: [{ toolCallId: 'c', success: null }] }]
+  detail.messages = [{ id: 2, role: 'assistant', content: '部分回答', status: 'INTERRUPTED', metadata: {} }]
+  await state.syncGeneration(1)
+  assert.equal(state.messages.value[0].toolCalls.length, 1)
+  assert.equal(state.toolStatus(state.messages.value[0].toolCalls[0], state.messages.value[0]), 'interrupted')
+  detail.messages[0].metadata.toolCalls = [{ toolCallId: 'c', success: true }]
+  detail.messages[0].status = 'COMPLETED'
+  await state.selectConversation(1)
+  assert.equal(state.toolStatus(state.messages.value[0].toolCalls[0], state.messages.value[0]), 'succeeded')
+})
+
+for (const condition of ['busy', 'assistant', 'switched', 'imageDraft']) {
+  test(`恢复问题保护当前会话及附件：${condition}`, async t => {
+    let confirmations = 0
+    const { state } = await createChat(t, { confirm: async () => {
+      confirmations++
+      if (condition === 'switched') state.conversationId.value = 9
+      if (condition === 'imageDraft') throw new Error('cancel')
+    } })
+    if (condition === 'busy') state.serverGenerating.value = true
+    if (condition === 'switched') state.prompt.value = '当前草稿'
+    if (condition === 'imageDraft') state.pendingImages.value = [{ name: '未发送图片', dataUrl: 'data:image/png;base64,AAAA' }]
+    const draft = state.prompt.value
+    const images = [...state.pendingImages.value]
+    await state.restoreQuestion({ role: condition === 'assistant' ? 'assistant' : 'user', content: '原问题' })
+    assert.equal(state.prompt.value, draft)
+    assert.deepEqual(state.pendingImages.value, images)
+    assert.equal(confirmations, ['switched', 'imageDraft'].includes(condition) ? 1 : 0)
+  })
+}

@@ -88,6 +88,186 @@ Commit: 7bd79f993d25ca3d9ffda10943fc140ff89377a7
 - 恢复 Alpine/Debian 软件源及 Docker 镜像网络访问后，使用上述代码版本重新执行 `docker compose up --build -d`，确认 `docker compose ps -a` 中服务健康，并验证工具目录展示、权限撤销拒绝执行和选定工具的真实模型调用。
 - 后续修改后端业务代码、核心业务配置或本次工具授权逻辑时，必须重跑相关用例及完整测试，并更新本报告基准点；运行环境问题解决后应补充 Compose 与冒烟验证结果。
 
+## Worker DNS 恢复及真实流式聊天验收（2026-09-26）
+
+### Git 基准与变更范围
+
+- 配置验收提交：`ea076799d48f00f814e04991e4e1182cdd674611`（Configure external DNS for the Python worker）。
+- 后端全量测试基准仍为 `d7f231276e0af69a7dc4ea05e7956a97b2e94940`；分支 `emdash/codex-vlzfy`；验证日期 2026-09-26（Asia/Shanghai）。
+- 经用户确认，仅在既有 `docker-compose.yml` 的 `python-worker` 增加 `dns: [223.5.5.5, 1.1.1.1]` 及中文说明。未修改 Java/Python/前端业务代码、依赖或数据库结构。
+- 技术栈沿用 Docker Compose、Python 3.12 公网网络校验、Spring MVC SSE 与前端真实 `readChatStream` 解析器。外部 DNS 查询交给指定解析器；Docker 内部服务名仍由内置 DNS 解析。
+- 本节关闭此前“流式聊天路由错误提示修复与 DNS 阻塞”中的真实模型调用阻塞；历史失败记录保留。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| DNS 配置生效且保留安全边界 | 配置检查：渲染 Compose JSON，读取 Worker DNS、内部网络及 cap_drop | 指定两项 DNS；保留 app-network、ALL 权限丢弃 | 通过；配置、兼容、安全 |
+| 正式 Worker 能解析公网及内部服务 | 容器集成：Python 3.12，调用既有 `public_addresses` 解析 api.deepseek.com/example.com；getaddrinfo 解析 backend | 公网地址通过既有安全校验，内部服务可解析 | 分别取得 2、4、1 个地址结果；正常、兼容、安全 |
+| 默认路由可使用真实模型 | 端到端：正常账号登录，携带 Cookie/CSRF，POST `/api/models/routes/sync`，routeId=1 | 健康检查成功并刷新路由 | 模型 2 HEALTHY，1227ms，无错误；正常、回归 |
+| 原请求设置能够完成真实流式回答 | 端到端：临时会话，输入 1111，modelType=text_model，modelId/featureCode=null，不启用思考及工具；使用真实前端流解析器逐事件读取 | start、非空 delta、done，无 error | 20 个增量、81 字符；首增量 4586ms，总耗时 4763ms；正常、兼容、回归 |
+| 回答完整持久化且释放生成状态 | 端到端：流结束后读取同一会话详情 | COMPLETED；数据库正文与全部增量拼接完全一致；generating=false | 三项均通过；关键业务结果与副作用 |
+| 验证不遗留临时业务数据 | 清理：删除本次临时会话、退出验证登录 | 均返回成功 | 两项 HTTP 200；原会话 1 未修改 |
+
+### 实际执行结果
+
+- `docker --context colima-rootless compose config --quiet`：通过。
+- `node --test frontend/test/security-deployment.test.mjs`：14/14 通过，失败 0、跳过 0。
+- Compose JSON 验证脚本通过标准输入执行：DNS、内部网络和 cap_drop 三项断言通过。首次临时检查错误地要求网络配置值为 truthy，而 Compose 正常以 `"app-network": null` 表示无附加选项；改用键存在性断言后通过。这是检查脚本的表示方式错误，未修改或弱化任何既有测试。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker --context colima-rootless compose up --build -d`：退出码 0；9 个自建服务镜像完成构建；10 个 Compose 服务最终均 healthy，无端口冲突。
+- `docker --context colima-rootless inspect --format '{{json .HostConfig.Dns}}' baseai-local-python-worker`：返回 `["223.5.5.5","1.1.1.1"]`。
+- `docker --context colima-rootless exec -i baseai-local-python-worker python3.12 -`：正式容器内公网与内部域名解析验证通过。
+- Node 标准输入端到端脚本：读取既有本地登录配置但不输出凭据，调用真实同步/聊天/详情接口，导入项目 `readChatStream` 校验事件、非空正文、COMPLETED、正文一致及生成锁释放；退出码 0，具体结果见上表。
+- `git diff d7f231276e0af69a7dc4ea05e7956a97b2e94940 HEAD -- backend/src/main/java/ frontend/src/`：无业务代码差异。本轮仅部署 DNS 配置，未重复独立 Maven、前端及 Python 全量套件；前一轮后端 951/951、前端 478/478 及 E2E 3/3 的记录保持原测试日期与基准，构建缓存不记作重新测试。
+- `git diff --check` 通过；没有落盘临时测试/调试脚本，没有新增 Markdown 文件。临时会话和验证登录均已清理；未推送 Git。
+
+### 已知限制与后续验证
+
+- 本轮真实模型验收通过，原始 DNS 阻塞已解决。未执行 Safari 真机测试，也未对供应商故障注入；流中断、鉴权及未知异常安全处理沿用前一轮已通过的回归测试。
+- DNS 服务器需在部署网络中可达；如迁移环境或调整 DNS，重跑配置检查、容器解析、路由同步和真实流式/持久化验证。撤销本次 DNS 配置并重建可回滚，但在当前 Docker DNS 缺失的环境中会恢复原故障。
+- 业务代码变化时按既有规则重跑相关及完整套件并推进后端基准。
+
+## AI 对话工具选择与消息交互验收（2026-09-26）
+
+### Git 基准与变更范围
+
+- Commit: 7b8560cab92ef5e71345bc33cecc4143db5bea3d
+- 提交信息：Improve chat tool selection and message interactions。
+- 分支：emdash/codex-vlzfy；测试日期：2026-09-26（Asia/Shanghai）。
+- 使用现有 Vue 3、Element Plus、SSE 和 CSS，增加输入区工具入口、Agent/工作流分组搜索、用途说明、已选标签与移除、目录错误和权限提示、管理入口；工具状态直接展示在回复旁，增加复制回答和恢复原问题至草稿。
+- 发送及服务端终态同步期间锁定工具选择；恢复问题不自动发送，覆盖草稿前确认；断流后未完成工具显示“连接中断，执行结果待确认”，不推断外部操作已取消。
+- 修改 AiChatView.vue、中英文文案、既有聊天交互及布局测试；未修改后端、依赖、配置、数据库或第三方代码。
+- 本节仅验收上述提交。执行过程中其他任务追加的用户标识和路由错误处理等修改不包含在本节结论内，也未被覆盖或撤销。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与用例 | 前置条件和输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 工具搜索、选择及移除 | chat-interaction 组件测试 | 两类目录，名称/用途/大小写编码、无匹配关键词、重复选择 | 搜索准确、选择去重、提交独立字段和兼容 toolCodes 正确 | 正常、边界、兼容 |
+| 目录状态明确且可独立恢复 | chat-interaction 参数化测试 | 空目录、403、500、失败后重试、旧请求晚返回 | 区分空目录/权限/失败，保留草稿和选择，旧响应不覆盖新目录，普通对话可用 | 异常、边界、回归 |
+| 权限和发送锁定有效 | chat-interaction 组件测试 | 未授权 Agent 工具、未知编码、发送中、服务端同步中、无管理权限 | 拒绝不可用选择，发送期间不能移除或切换，管理入口按权限展示 | 权限、安全、状态冲突 |
+| 工具执行状态直接可见 | 组件及真实 SSE 字节流测试 | 开始、成功、失败、缺少终态断流、历史恢复与服务端同步 | 状态位于详情折叠区外；终态准确；断流后不永久显示运行中；同步保留本地事件 | 正常、异常、兼容、回归 |
+| 复制反馈准确 | chat-interaction 参数化测试 | 多行及 HTML 字符回答，剪贴板成功/拒绝 | 原文复制，反馈准确 | 正常、异常、安全 |
+| 恢复原问题保护草稿及附件 | chat-interaction 参数化测试 | 空/已有草稿、确认/取消、确认期间新输入或切换会话、图片、非视觉模型、忙碌状态 | 不自动调用模型；不覆盖新草稿；图片要求视觉模型；恢复后聚焦 | 正常、边界、异常、兼容 |
+| 窄屏和长名称不溢出 | layout-alignment 正式测试、Firefox 实测 | 中英文；1440×900、1024×768、390×844、320×568；长名称、HTML 说明 | 无横向溢出，说明安全转义，按钮换行，关闭抽屉后恢复焦点和草稿 | 边界、安全、回归 |
+| 既有对话保持兼容 | chat-interaction/chat-stream/chat-response 和完整前端套件 | 发送、401、停止、断流、配置、滚动及历史切换 | 既有断言通过，未删除或跳过有效测试 | 回归、兼容、异常 |
+
+### 实际执行结果
+
+- 先运行失败测试：`cd frontend && node --test test/chat-interaction.test.mjs`，33 项中 19 通过、14 失败，失败均对应尚未实现的新行为。
+- 首次实现后相关套件 71/71 通过；浏览器发现 320px 操作栏溢出，补充正式布局回归后先确认该项失败，再增加换行规则修复。
+- 最终相关套件：`cd frontend && node --test test/chat-interaction.test.mjs test/chat-stream.test.mjs test/chat-response.test.mjs test/layout-alignment.test.mjs`，79/79 通过，失败/跳过 0。
+- 最终完整前端：`cd frontend && npm test`，Lint、类型检查通过，覆盖测试 466/466、E2E 3/3，失败/跳过 0。为排除实时工作区的并行修改影响，又在提交 7b8560c 的临时独立检出执行相同完整命令，结果同为 466/466 与 3/3。
+- 工具函数覆盖率：行 98.43%、分支 81.54%、函数 95.42%，达到既有门槛；只统计 src/utils/**/*.js，不代表 Vue 模板或 CSS 覆盖率。
+- 浏览器命令：`node /tmp/baseai-chat-tools.APyppT/check.mjs`。Firefox WebDriver BiDi 的上述 8 组布局全部通过；另外验证选择后请求字段、运行/完成状态、发送锁定、恢复问题不重发、目录 500 后重试。使用真实前端产物与本地模拟 API，未调用真实供应商。
+- 浏览器脚本首次 DOM click 未模拟焦点，焦点断言失败；改为 focus 后 click 后通过。另一次检查发现真实的 320px 溢出问题，按上述流程修复，未弱化断言。
+- 第一次 Compose 构建实际执行 `mvn -B -ntp package`：946/946 通过，失败 0、错误 0、跳过 0，BUILD SUCCESS。聊天模块 34 项（ChatStreamClient 7、ChatConversationService 22、ChatConversationSecurity 5）全部通过；Workflow 276、Automation 87、Service 171、Security 59、Controller 27 等模块通过。后续构建的 Maven 步骤命中缓存，不重复计数。
+- `git diff --check`：代码提交前通过。没有以单独前端构建或后端编译替代测试。
+
+### 构建启动结果与环境限制
+
+- 原工作区执行 `APP_IMAGE_REVISION=7b8560cab92ef5e71345bc33cecc4143db5bea3d docker compose up --build -d`：第一次取得上述 Maven 结果，但后续进程句柄失效，未取得退出结果；再次执行退出码 1，Python Worker 下载 Debian libpcre2 包返回 502，未进入服务启动。
+- 一次动态 HEAD 重试发现工作区已有其他任务提交及未提交修改后主动取消，退出码 130，未将其认作本功能验证结果。
+- 为固定源码，在 /tmp/baseai-chat-build.U5mCOF 独立检出 7b8560c，执行 `APP_IMAGE_REVISION=7b8560cab92ef5e71345bc33cecc4143db5bea3d docker compose --env-file /Users/xyzc/emdash/worktrees/base-ai-a8652a83/emdash-codex-vlzfy/.env up --build -d`；环境文件只读复用，未复制或修改凭据。
+- 隔离重试成功构建 Frontend、Backend 等镜像，先前失败的 Debian 包也下载成功；最终仍退出码 1：Python Worker 的 pip 从 mirrors.aliyun.com 读取超时（ReadTimeoutError），构建步骤退出码 2。未跳过依赖或测试，未改镜像配置。
+- 最终 `docker compose ps -a` 无服务容器。没有端口冲突，也未停止其他容器。整栈启动、健康检查、部署后页面及真实模型/工具联调尚未完成，不能认定部署验收完成。
+- 前端既有提示包括非 module runtime-config.js、依赖 PURE 注释和 bundle 超过 500kB，未导致前端测试失败。
+- 未单独执行 mvn test，后端实际验证来自上述 package 的完整测试阶段。未执行 Chromium/Safari 和真实模型/外部工具业务验证。MCP、工具参数 Schema 及后端编排调整不在本次范围。
+
+### 清理、重测与下一步
+
+- 浏览器临时脚本、profile、截图位于 /tmp/baseai-chat-tools.APyppT，已关闭进程并删除；独立检出 /tmp/baseai-chat-build.U5mCOF 及生成产物也已移除。没有提交临时测试代码或新建 Markdown 文件。
+- 本次正式代码和测试已提交为 7b8560c，本节报告单独提交。其他任务的提交与工作区内容保留。
+- 在依赖源可稳定访问时，从最终确认版本重新执行 `docker compose up --build -d`，检查全部服务健康，再执行真实供应商和授权工具端到端冒烟；并行新增代码需依据其自身报告验收。
+- 重测条件：工具选择、目录状态、消息操作、SSE、语言或布局变化时执行相关套件及完整前端测试；后端业务或核心配置变化时执行完整 Maven 测试并更新基准。
+- 回滚：撤销 7b8560c 的功能变更；后续提交若依赖相关代码，先检查并解决依赖/冲突，再按回滚版本重建。无数据库迁移。
+
+## 流式聊天路由错误提示修复与 DNS 阻塞（2026-09-26）
+
+### Git 基准与变更范围
+
+- Commit: d7f231276e0af69a7dc4ea05e7956a97b2e94940
+- 提交信息：Explain unavailable chat routes without retrying。
+- 分支：`emdash/codex-vlzfy`；测试日期：2026-09-26（Asia/Shanghai）。本节是最新后端全量测试基准，下方基准保留为历史记录。
+- `git diff 5d26d2c HEAD -- backend/src/main/java/` 检出旧基准之后的业务改动，因此执行完整 Maven 测试。
+- 使用 Java 17 / Spring MVC、Vue 3 和既有 SSE 协议。普通聊天在 Worker 重试和熔断之外解析一次模型路由；仅允许默认/指定模型池不可用两种业务错误返回本地化提示；前端保留安全提示和已收到的内容。未知异常仍返回通用错误。
+- 修改两项 Java 业务文件、两个 Java 测试文件、前端流解析器、聊天页面及两个现有前端测试文件；未修改配置、依赖、数据库结构或第三方代码。运行态默认路由已通过现有同步接口刷新。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与用例 | 前置条件、输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 模型池错误不重试、不污染熔断 | Java 单元：`preservesRouteFailureWithoutRetryOrWorkerCall`，两组参数 | 路由解析分别抛出默认/指定池不可用异常 | 原异常返回；仅解析一次；无 Worker HTTP、追踪注册或熔断失败计数 | 异常、回归 |
+| 用户得到安全、准确的路由提示 | MVC + H2/JPA：`controllerExplainsUnavailableRoute`，三组参数 | 中文默认池、英文指定池、非白名单业务异常 | 前两项返回对应本地化提示；后一项只返回通用错误；消息中断、空回答保留、租约释放 | 异常、安全、兼容 |
+| 正常完成与中途失败正确保存 | 既有 `controllerPersistsStreamOutcome`、`deliversBeforeCompletion`、`rejectsMissingCompletion` | 真实 HTTP 增量、完成事件、部分输出后失败或提前关闭 | 完整回答为 COMPLETED；失败保留文本且释放租约；不泄漏上游异常文本 | 正常、异常、回归 |
+| 页面展示可操作提示且保留内容 | 前端组件 + 真实 ReadableStream：新增模型池不可用用例 | start、部分 delta、路由 error | 显示同步建议，文本保留，中断状态正确，发送状态解除 | 异常、回归 |
+| SSE 错误安全且兼容原协议 | `chat-stream.test.mjs` 参数化及既有测试 | 两种白名单码、未知码、非文本消息、缺少码、UTF-8 分块、CRLF、空流、非法帧、缺少 done | 仅允许白名单文本提示；其他情况安全失败；原增量及工具事件正确解析 | 边界、异常、安全、兼容 |
+| 会话权限保持有效 | `ChatConversationSecurityTest` 和既有会话集成测试 | 未登录、权限不足、非本人会话、重复请求及并发请求 | 继续拒绝未授权访问与冲突，不泄漏会话内容 | 权限、安全、回归 |
+
+### 实际执行命令与结果
+
+- 失败回归：`node --test frontend/test/chat-stream.test.mjs frontend/test/chat-interaction.test.mjs`，57 项中 54 通过、3 失败；失败均对应通用提示掩盖路由提示。后端初次针对性测试 38 项中 34 通过、4 失败，复现错误被包装重试、SSE 缺少明确错误码。
+- 修复后前端相关套件同命令：57/57 通过；失败 0、跳过 0。
+- 本机没有 Java/Maven，后端使用 `docker --context colima-rootless build --progress plain -f - backend`，通过标准输入提供临时 Dockerfile，基于既有 `maven:3.9.9-eclipse-temurin-17`，复制 pom/src 并挂载既有 `/root/.m2` BuildKit 缓存，依次执行：
+  - `mvn -B -ntp -Dtest=ChatStreamClientTest,ChatConversationServiceTest,ChatConversationSecurityTest test`：最终 39/39 通过（会话集成 25、流客户端 9、权限 5）。
+  - `mvn -B -ntp test`：最终 951/951 通过，成功率 100%，失败 0、错误 0、跳过 0。主要模块包括 workflow 276、service 171、deployment 128、automation 87、security 59、chat 39、controller 27；含 Domain/Repository 的集成验证由 H2/JPA 会话测试覆盖。
+- `cd frontend && npm test`：最终当前版本 Lint、类型检查、覆盖测试 478/478、生产服务 E2E 3/3 全部通过；失败/跳过均为 0。测试期间并入了用户消息头像展示的独立提交，最终已对并入后的版本重新完整验证。
+- 前端覆盖率：行 98.43%、分支 81.61%、函数 95.42%，统计范围为既有 `src/utils/**/*.js`。后端 pom 未配置 JaCoCo，不将通过率冒充 Java 行/分支覆盖率。
+- `docker --context colima-rootless compose config --quiet`：通过。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker --context colima-rootless compose up --build -d`：退出码 0，9 个自建服务镜像构建成功；构建内 Maven `package` 另执行 951 项测试并通过。10 个 Compose 服务最终均 healthy；Backend/Frontend 镜像 revision 均为本节基准提交。
+- 部署后通过正常登录、Cookie/CSRF 和 HTTP 入口创建临时会话验证：不存在的指定路由返回 `start → error(code=llm.selectedPoolUnavailable)` 与中文同步建议；数据库状态 INTERRUPTED、generating=false，符合预期。默认路由请求仍为 `start → error(ai.serviceCallFailed)`、无文本输出，真实模型回答验收受下述 DNS 问题阻塞。
+- 默认路由同步接口 HTTP 200，但模型健康检查为 FAILED；Worker 日志确认 `OUTBOUND_DNS_FAILED`。正式 Worker 的 `/etc/resolv.conf` 显示 `NO EXTERNAL NAMESERVERS DEFINED`；内部 backend 名称可解析，供应商与 example.com 均解析失败，而宿主机可以解析。
+- Python 3.12 只读 DNS 探测：容器内向 `223.5.5.5`、`1.1.1.1` 发送 DNS 查询均得到 rcode=0 和有效答案。使用 `docker run --rm --network baseai-local_app-network --dns 223.5.5.5 --dns 1.1.1.1 --entrypoint python3.12` 的临时 Worker 容器，复用 `PublicNetworkTransport`，访问供应商 `/models` 返回 HTTP 401，证明 DNS/TLS 可通；未使用模型密钥，不能将 401 视为模型调用成功。
+- `git diff --check` 通过。无新增本地调试脚本或文件；临时 Dockerfile/验证脚本均通过标准输入执行。临时测试镜像已删除、临时网络验证容器自动删除、临时会话已删除、验证登录已退出；未推送 Git。
+
+### 已知问题、重测条件与下一步
+
+- **整体接口恢复尚未完成**：真实模型回答被正式 Worker 缺失外部 DNS 阻塞。代码错误提示修复已测试并部署，不能据此判定真实供应商链路通过。
+- 需另经用户确认的最小配置方案：在 `docker-compose.yml` 的 `python-worker` 增加已验证的两项 DNS 配置（223.5.5.5、1.1.1.1），重建服务、重新同步默认路由，并验证健康检查及真实流式 `delta → done`、COMPLETED 状态。该方案会把 Worker 的外部域名查询发送到指定解析器；回滚时撤销 DNS 配置并重建服务。
+- 尚未执行 DNS 配置改动及修复后的真实模型成功验证；未重复无关 Python/Go 独立全量套件，未进行 Safari 真机验证。既有前端构建体积、runtime-config script 和依赖 PURE 注释警告不影响本次测试结果。
+- 修改聊天 Java 业务逻辑、路由解析、错误白名单时重跑针对性与完整 Maven 测试并推进基准；修改前端流协议/页面处理时重跑相关和完整前端测试；修改 DNS/供应商配置后必须另跑实际容器解析、同步及真实模型端到端验证。
+
+## 隐藏用户消息头像与称呼（2026-09-26）
+
+### Git 基准与变更范围
+
+- 前端验收版本：`7b10a3b8366e7df65fe2b64a7d2c4ab500cb4c89`（Hide user avatar and label in chat messages）。
+- 分支：`emdash/codex-vlzfy`；测试日期：2026-09-26（Asia/Shanghai）。
+- 使用现有 Vue 3 条件渲染，仅 AI 消息展示头像及本地化称呼；用户消息不展示头像和“你”标签，保留正文与既有右对齐布局。
+- 本次修改 `frontend/src/views/AiChatView.vue`、`frontend/test/layout-alignment.test.mjs`、`frontend/test/chat-response.test.mjs`；未修改后端、依赖、配置或数据结构。本节不推进后端验收基准。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与用例 | 前置条件和输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 用户头像和称呼不显示 | Vue SSR 模板渲染，4 个参数化用例 | 提取真实消息模板，角色 user；普通、空、长文本、HTML 字符 | 输出不含头像和称呼节点，正文完整且安全转义 | 正常、边界、安全 |
+| AI 标识和正文保持正常 | Vue SSR 模板渲染，4 个参数化用例 | 相同输入，角色 assistant | 头像及 AI 称呼存在，正文完整且安全转义 | 正常、边界、兼容 |
+| 用户消息布局保持正常 | 既有 chat-response 用例及布局断言 | 用户消息样式 | 气泡靠右，正文左对齐；角色断言按新需求更新 | 回归、兼容 |
+| 聊天交互保持兼容 | 既有聊天交互、响应、流解析及前端完整套件 | 原有模拟网络和组件状态场景 | 发送、流式处理、错误、权限和草稿行为通过原有断言 | 回归、异常、权限 |
+
+### 实际执行结果
+
+- `cd frontend && node --test --test-name-pattern='聊天消息标识与内容' test/layout-alignment.test.mjs`：实现前 8 项中 4 通过、4 失败，稳定复现用户头像和称呼仍然渲染。
+- `cd frontend && node --test test/chat-interaction.test.mjs test/layout-alignment.test.mjs test/chat-response.test.mjs test/chat-stream.test.mjs`：实现后首次因旧测试要求显示用户称呼而失败；更新该断言以匹配已确认需求，保留原布局断言后，87/87 通过，失败/跳过 0。
+- `cd frontend && npm test`：首次同样被上述旧断言阻断；更新后 Lint、类型检查、覆盖测试 474/474、生产服务 E2E 3/3 全部通过，失败/跳过 0。未删除或跳过有效测试。
+- 工具函数覆盖率：行 98.43%、分支 81.54%、函数 95.42%，达到项目门槛；范围为 `src/utils/**/*.js`，不代表 Vue 模板覆盖率。新增模板用例通过真实 Vue SSR 渲染验证。
+- `git diff --check`：通过。代码提交前前端验证已通过；后续工作区出现并行产生的其他未提交修改，上述结果不为后续修改提供验收结论。
+
+### 构建启动阻塞与已知问题
+
+- `APP_IMAGE_REVISION=7b10a3b8366e7df65fe2b64a7d2c4ab500cb4c89 docker compose up --build -d`：退出码 1，未完成服务重建启动。镜像版本参数是提交标识，构建上下文仍来自实时工作区。
+- Compose 构建内的 `mvn -B -ntp package` 执行 950 项测试，946 通过（99.58%）、4 失败、错误/跳过 0，导致构建失败。
+- 失败项：`ChatConversationServiceTest.controllerExplainsUnavailableRoute` 的两个参数化场景，错误响应缺少预期业务错误码；`ChatStreamClientTest.preservesRouteFailureWithoutRetryOrWorkerCall` 的两个场景，预期 BusinessException，实际 RuntimeException。
+- 构建期间工作区新增了上述后端测试、对应后端代码和前端流错误处理等其他任务的未提交修改；这些修改不属于本次头像调整，未被覆盖或纳入本次提交。该次构建捕获的源码/测试可能处于并行修改中间状态，不能作为稳定版本的后端验收结果。
+- Docker Hub 连接较慢；诊断命令 `curl -I --connect-timeout 10 --max-time 15 https://registry-1.docker.io/v2/` 返回 28（连接超时），但 Compose 最终阻塞原因是上述测试失败。
+- 未执行真实浏览器和真实模型联调；未验证部署后的页面效果。未单独执行后端测试或修复其他任务的后端代码，也未通过跳过测试完成构建。
+- 本次没有创建临时调试文件。代码及正式测试已提交，其他任务的工作区修改保留。
+
+### 重测条件与下一步
+
+- 消息模板、角色展示或相关样式变更时重跑布局/响应测试；聊天交互或流解析变更时重跑前端完整套件。
+- 待并行修改完成并通过后端失败用例后，在稳定工作区重新运行 `docker compose up --build -d`，检查服务健康状态并在浏览器确认用户标识隐藏、AI 标识保留。部署验收尚未完成。
+
 ## AI 对话配置抽屉布局验收（2026-09-26）
 
 ### Git 基准与变更范围

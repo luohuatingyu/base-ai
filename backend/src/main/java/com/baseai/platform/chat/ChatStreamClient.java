@@ -98,12 +98,17 @@ public class ChatStreamClient {
             streamAgent(turn, consumer);
             return;
         }
+        // 路由配置错误不能作为 Worker 故障重试或计入熔断；本轮重试固定使用同一快照。
+        var settings = turn.settings();
+        String feature = settings.featureCode() == null || settings.featureCode().isBlank() ? "chat" : settings.featureCode();
+        var route = settings.modelId() == null ? management.resolveActive(feature, settings.modelType()) :
+            management.resolveModel(settings.modelId(), settings.modelType(), Boolean.TRUE.equals(settings.enableThinking()), settings.thinkingLevel());
         AtomicBoolean streamStarted = new AtomicBoolean(false);
         Supplier<Void> supplier = () -> {
             executeStream(turn, event -> {
                 if ("delta".equals(event.path("type").asText())) streamStarted.set(true);
                 consumer.accept(event);
-            }, streamStarted);
+            }, streamStarted, feature, route);
             return null;
         };
         
@@ -123,11 +128,9 @@ public class ChatStreamClient {
     }
     
     /** 实际执行流式调用。 */
-    private void executeStream(ChatConversationService.Turn turn, EventConsumer consumer, AtomicBoolean streamStarted) {
+    private void executeStream(ChatConversationService.Turn turn, EventConsumer consumer, AtomicBoolean streamStarted,
+                               String feature, LlmManagementService.WorkerRoute route) {
         var settings = turn.settings();
-        String feature = settings.featureCode() == null || settings.featureCode().isBlank() ? "chat" : settings.featureCode();
-        var route = settings.modelId() == null ? management.resolveActive(feature, settings.modelType()) :
-            management.resolveModel(settings.modelId(), settings.modelType(), Boolean.TRUE.equals(settings.enableThinking()), settings.thinkingLevel());
         String traceId = UUID.randomUUID().toString().replace("-", "");
         traces.registerPython(TraceContextHolder.currentTraceId().orElse(null), traceId, "/llm/chat/stream");
         try {

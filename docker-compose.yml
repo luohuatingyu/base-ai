@@ -288,6 +288,10 @@ services:
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker
     restart: unless-stopped
+    # 为模型供应商域名提供外部解析，避免宿主 Docker 未配置上游 DNS 时调用失败。
+    dns:
+      - 223.5.5.5
+      - 1.1.1.1
     mem_limit: ${PYTHON_WORKER_MEMORY_LIMIT:-1g}
     cpus: ${PYTHON_WORKER_CPU_LIMIT:-2.0}
     pids_limit: ${PYTHON_WORKER_PIDS_LIMIT:-256}

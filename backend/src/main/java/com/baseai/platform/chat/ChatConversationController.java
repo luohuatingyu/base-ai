@@ -105,11 +105,22 @@ public class ChatConversationController {
                 });
             } catch (Exception exception) {
                 if (!completed[0]) service.save(turn, content.toString(), "INTERRUPTED", null);
-                try { write(response, mapper.valueToTree(Map.of("type", "error", "message", "ai.serviceCallFailed"))); }
+                try { write(response, errorEvent(exception)); }
                 catch (IOException ignored) { }
                 throw new StreamFailure(exception);
             }
         } finally { slots.release(); }
+    }
+
+    /** 仅向客户端公开固定的路由提示，其他异常不携带内部细节或上游响应。 */
+    private JsonNode errorEvent(Exception exception) {
+        if (exception instanceof BusinessException business
+            && Set.of("llm.defaultPoolUnavailable", "llm.selectedPoolUnavailable").contains(business.getMessageKey())) {
+            String message = java.util.ResourceBundle.getBundle("messages",
+                org.springframework.context.i18n.LocaleContextHolder.getLocale()).getString(business.getMessageKey());
+            return mapper.valueToTree(Map.of("type", "error", "code", business.getMessageKey(), "message", message));
+        }
+        return mapper.valueToTree(Map.of("type", "error", "message", "ai.serviceCallFailed"));
     }
 
     /** 每个事件立即刷新，避免代理或 Servlet 缓冲整个回答。 */
