@@ -150,6 +150,16 @@ export default {
     }
   },
   chat: {
+    tools: 'Tools', selectedTools: 'Selected tools', browseTools: 'View tool details and availability',
+    toolsHint: 'Choose the tools AI may use for this turn. After you send, AI decides whether a tool is needed.',
+    searchTools: 'Search tools by name or purpose', manageTools: 'Manage', loadingTools: 'Loading tools…',
+    toolsForbidden: 'Access is unavailable. Ask an administrator for permission.', toolsLoadFailed: 'Tools could not be loaded. Retry or continue chatting without tools.',
+    noMatchingTools: 'No matching tools. Try another keyword.', noConfiguredTools: 'No tools available. Configure tools on the management page.',
+    agentToolsHelp: 'Your enabled API trigger configurations. API trigger permission is required.',
+    workflowToolsHelp: 'Published workflows you are allowed to use.', finishToolSelection: 'Done',
+    toolProgress: 'Tool execution status', toolStatus: { running: 'Running', succeeded: 'Completed', failed: 'Failed', interrupted: 'Connection interrupted; outcome unconfirmed' },
+    copyAnswer: 'Copy answer', answerCopied: 'Answer copied', answerCopyFailed: 'Copy failed. Check browser clipboard permission.',
+    restoreQuestion: 'Use as draft', replaceDraftConfirm: 'Replace the current draft and images with this question? It will not be sent automatically.',
     settings: 'Chat Settings', modelSelection: 'Model Selection', toolSettings: 'Tools', thinkingSettings: 'Thinking Settings',
     newConversation: 'New conversation',
     refreshHistory: 'Refresh history',

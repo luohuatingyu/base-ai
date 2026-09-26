@@ -112,6 +112,14 @@ test('会话双栏继承剩余高度且历史列表独立滚动', () => {
   assert.doesNotMatch(chatViewSource, /\.chat-tabs\s*:deep\(\.el-tabs__content\)\s*\{[^}]*overflow:\s*visible/)
 })
 
+test('聊天工具与消息操作允许窄屏换行，长工具名称不会撑破输入区', () => {
+  assertDeclarations(chatViewSource, '.chat-action-buttons', [/flex-wrap:\s*wrap/])
+  assertDeclarations(chatViewSource, '.selected-tools', [/flex-wrap:\s*wrap/, /max-height:/, /overflow-y:\s*auto/])
+  assertDeclarations(chatViewSource, '.selected-tools :deep(.el-tag__content)', [/min-width:\s*0/, /text-overflow:\s*ellipsis/])
+  assertDeclarations(chatViewSource, '.tool-option :deep(.el-checkbox__label)', [/white-space:\s*normal/, /overflow-wrap:\s*anywhere/])
+  assertDeclarations(chatViewSource, '.message-tool', [/max-width:\s*100%/, /overflow-wrap:\s*anywhere/])
+})
+
 test('配置通过独立抽屉展示，窄屏历史可收拢且长消息元信息可以换行', () => {
   assert.match(chatViewSource, /<el-drawer[\s\S]*?v-model="settingsOpen"[\s\S]*?append-to-body/)
   assert.match(chatViewSource, /<details class="chat-history"/)
