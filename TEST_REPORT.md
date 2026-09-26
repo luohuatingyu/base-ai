@@ -1,5 +1,53 @@
 # 最近分支覆盖测试报告
 
+## master 合并验证（2026-09-26）
+
+### 当前 Git 基准点
+
+Commit: 7bd79f993d25ca3d9ffda10943fc140ff89377a7
+
+- 提交信息：Merge deployment and regression updates into master；分支：`master`；测试日期：2026-09-26（Asia/Shanghai）。
+- 合并来源：`emdash/rare-laws-ask-aa901`（`0851bda`）；合并前 master：`2a57b2f`。本次仅本地合并，未执行 push。
+- 解决聊天页面、聊天流测试和测试报告冲突，保留双方功能、测试和历史记录；登录失效清除身份与 master 的中断恢复逻辑同时保留。
+- 浏览器夹具适配 master 的工具目录权限响应、停止按钮和中断状态元素；空白输入仍验证按钮禁用、快捷键无写入副作用。文档同步说明外部 HTTPS 入口要求，未恢复已删除的 Caddy 服务。
+
+### 验收标准—测试映射
+
+| 验收标准 | 层级、前置条件及输入 | 预期及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 合并保留限流、分页、启动门禁及聊天工具行为 | JUnit/JPA；Docker Maven、H2、协议 HTTP 端点；合法/非法身份、不同页码、依赖故障及 SSE 事件 | 正常、边界、异常、安全、兼容与回归均维持各测试业务结果 | 定向 87/87；完整 1039/1039 |
+| 页面继续支持认证、聊天与工作流 | Node、Vue、Playwright；真实组件和路由、HTTP 夹具；401/403、空白、增量/断流及工作流终态 | 会话跳转、CSRF、增量渲染、历史恢复、卸载断连及权限限制正确 | Node 464/464；浏览器 18/18 |
+| 运行环境应用合并结果 | Compose；有效部署环境配置 | 服务重建启动并通过业务冒烟 | 环境受阻，尚未验证 |
+
+### 实际命令与执行结果
+
+后端通过 `docker --context desktop-linux run --rm -v /Users/xyzc/github/base-ai/backend:/workspace -v baseai-m2-test:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17` 执行：
+
+- `mvn -B -ntp -Dtest=RateLimitAspectTest,ChatConversationSecurityTest,ChatStreamClientTest,DeploymentPreflightTest,DatabaseListPaginationTest test`：87/87 通过，失败、错误、跳过均为 0。聊天流 14、聊天安全 6、限流 11、依赖门禁 18、数据库分页 38。
+- `mvn -B -ntp test`：1039/1039 通过，通过率 100%，失败 0、错误 0、跳过 0；包含现有 Domain、Repository、Service、Controller、认证安全和工作流测试。
+- JaCoCo：行覆盖 8721/13134（66.40%），分支覆盖 4411/8465（52.11%），方法覆盖 2387/3672（65.01%）。
+
+前端在 `frontend/` 执行：
+
+- `npm ci --no-audit --no-fund`：安装锁文件已有依赖成功，未新增依赖或修改锁文件。安装前从根目录执行 `node --test frontend/test/*.test.mjs frontend/tests/*.test.js` 因缺失 Vue 等依赖出现 5 个测试文件加载失败（380 通过）；安装后下项完整测试已通过。
+- `npm run lint`、`npm run typecheck`：通过；浏览器夹具适配后再次 Lint 通过。
+- `npm run test:coverage`：464/464 通过，失败 0、跳过 0；工具函数行覆盖 98.43%、分支 81.54%、函数 95.42%，不代表 Vue 页面行覆盖率。
+- `npm run test:browser`：初次 8 通过、10 失败，原因是旧夹具缺少 master 新增工具目录接口，以及按钮和中断状态选择器过时；适配后重跑 18/18 通过，失败 0、跳过 0。全部原有业务场景保留。
+
+其他检查：
+
+- `git diff --check`、`git diff --cached --check`：通过；无未解决冲突。
+- 在 master 工作区执行 `docker compose up --build -d`：退出 1，Compose 插值缺少 `APP_PLATFORM_SHORT_NAME`，未进入构建和服务启动。
+
+### 已知限制、未执行测试及下次建议
+
+- 本报告确认合并代码回归通过，不确认部署交付完成。该工作区缺少有效部署环境变量，未执行合并后服务健康检查、外部 MySQL/Redis 集成及真实供应商业务冒烟；配置已有部署环境后重新执行 `docker compose up --build -d`、`docker compose ps` 及 `node scripts/deployment-smoke.mjs`。
+- 未执行 `npm test` 聚合命令中的生产代理产物套件（`node --test e2e/*.test.mjs`）：Compose 未能构建，工作区没有当前合并版本的 `frontend/dist/`。未使用单独的 `npm run build` 替代规定的 Compose 重建；取得匹配产物后应补测。
+- 未重新执行 Python/Go 套件：本次合并未改动其源码。
+- 冒烟脚本仍要求外部 HTTPS 入口及 Secure Cookie；默认纯 HTTP Compose 入口无法直接用于该脚本，未降低其安全验证。
+- 临时产物 `/Users/xyzc/github/base-ai/backend/target/`、`frontend/node_modules/.cache/browser-tests/` 和 Vite 缓存已清理；测试统计统一保存在本文件，未提交临时调试代码。
+- 后续修改业务代码、核心配置或发生合并冲突时，重新执行对应测试及完整 Maven 套件并更新基准；后续部署验收须补充本节未验证项。需要撤销本次合并时，审查并使用 `git revert -m 1 7bd79f993d25ca3d9ffda10943fc140ff89377a7`，不改写既有历史。
+
 ## 聊天工具修复与 master 合并验证（2026-09-25）
 
 ### Git 基准与范围
@@ -246,9 +294,9 @@
 - JaCoCo 已提供业务分支基线；下一轮优先补 `WorkflowExecutionService` 未覆盖的节点执行和错误策略分支，并在 CI 保存 HTML/XML 报告。
 
 
-## 当前测试基准
+## 合并前分支测试基准（历史）
 
-Commit: 8d71e667a8a5e2db94744cc1b72a69f5f109fe3a
+历史提交：8d71e667a8a5e2db94744cc1b72a69f5f109fe3a
 
 - 提交信息：Update deployment acceptance test report。
 - 测试日期：2026-09-26（Asia/Shanghai）；分支：`emdash/rare-laws-ask-aa901`。
@@ -9129,7 +9177,7 @@ docker compose up --build -d
 
 ### Git 基准点
 
-Commit: `8ae358c`
+历史提交：`8ae358c`
 
 ## 本地 Dify/n8n Worker 内部令牌修复验证（2026-09-26）
 
