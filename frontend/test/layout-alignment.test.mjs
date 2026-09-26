@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { createSSRApp } from 'vue'
+import { renderToString } from 'vue/server-renderer'
+import { ChatLineRound, User } from '@element-plus/icons-vue'
 
 const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 const chatViewSource = readFileSync(new URL('../src/views/AiChatView.vue', import.meta.url), 'utf8')
@@ -45,6 +48,32 @@ function assertDeclarations(source, selector, expected) {
   const rule = declarations(source, selector)
   for (const declaration of expected) {
     assert.match(rule, declaration, `${selector} 缺少布局声明 ${declaration}`)
+  }
+}
+
+// 渲染真实消息模板，覆盖用户标识隐藏、AI 标识保留和文本安全输出。
+for (const role of ['user', 'assistant']) {
+  for (const [scenario, content] of [['普通文本', '111'], ['空内容', ''], ['长文本', '长消息'.repeat(500)], ['HTML 字符', '<script>alert("test")</script>']]) {
+    test(`聊天消息标识与内容：${role} / ${scenario}`, async () => {
+      const fragment = chatViewSource.match(/<div v-for="\(item, index\) in messages"[^>]*>([\s\S]*?)\s*<div v-if="item.status/)
+      assert.ok(fragment, '应找到包含头像、称呼和正文的真实消息模板')
+      const app = createSSRApp({
+        template: fragment[1],
+        components: { ChatLineRound, User, ElIcon: { template: '<i><slot /></i>' } },
+        /** 提供不同角色和边界内容，保留模板自身的条件渲染与转义。 */
+        data() { return { item: { role, content }, t: key => key === 'chat.user' ? '你' : 'AI' } }
+      })
+      const html = await renderToString(app)
+      if (role === 'user') {
+        assert.doesNotMatch(html, /message-avatar|message-author/)
+        assertDeclarations(globalStyles, '.message.user', [/margin-left:\s*auto/, /text-align:\s*right/])
+      } else {
+        assert.match(html, /class="message-avatar"/)
+        assert.match(html, /class="message-author">AI<\/div>/)
+      }
+      const escaped = content.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+      assert.ok(html.includes(`<div class="message-content">${escaped}</div>`), '消息正文应完整保留并转义 HTML')
+    })
   }
 }
 

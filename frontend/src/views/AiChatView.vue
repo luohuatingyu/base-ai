@@ -30,7 +30,8 @@
         <div v-if="pageError" class="chat-error" role="alert"><span>{{ pageError }}</span><el-button v-if="!optionsReady" text :loading="optionsLoading" @click="loadOptions">{{ t('chat.retry') }}</el-button><el-button v-else-if="serverGenerating && !generating" text @click="syncGeneration(conversationId)">{{ t('chat.retry') }}</el-button></div>
         <div ref="messagesElement" class="messages" tabindex="0" :aria-label="t('chat.conversationTab')" @scroll="onMessagesScroll">
       <div v-for="(item, index) in messages" :key="item.id || index" :class="['message', item.role]">
-        <span class="message-avatar" aria-hidden="true"><el-icon><User v-if="item.role === 'user'" /><ChatLineRound v-else /></el-icon></span><div class="message-author">{{ t(item.role === 'user' ? 'chat.user' : 'chat.assistant') }}</div>
+        <!-- 仅 AI 回复展示头像和称呼，用户消息直接展示正文。 -->
+        <template v-if="item.role === 'assistant'"><span class="message-avatar" aria-hidden="true"><el-icon><ChatLineRound /></el-icon></span><div class="message-author">{{ t('chat.assistant') }}</div></template>
         <div class="message-content">{{ item.content }}</div>
         <div v-if="item.status && item.status !== 'COMPLETED'" class="message-status" :class="{ 'is-generating': item.status === 'GENERATING' }" role="status"><span v-if="item.status === 'GENERATING'" class="generation-dot" aria-hidden="true" />{{ t(item.status === 'GENERATING' ? 'chat.generating' : 'chat.streamInterrupted') }}</div>
         <div v-if="item.images?.length" class="message-images">
@@ -214,7 +215,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Bottom, ChatLineRound, CopyDocument, Delete, EditPen, Picture, Plus, Refresh, Right, Search, Setting, Tools, Top, User, VideoPause } from '@element-plus/icons-vue'
+import { ArrowDown, Bottom, ChatLineRound, CopyDocument, Delete, EditPen, Picture, Plus, Refresh, Right, Search, Setting, Tools, Top, VideoPause } from '@element-plus/icons-vue'
 import http, { showHttpError, chatStreamHeaders } from '../api/http'
 import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
