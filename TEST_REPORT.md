@@ -1,5 +1,60 @@
 # 最近分支覆盖测试报告
 
+## AI 对话工具选择与消息交互验收（2026-09-26）
+
+### Git 基准与变更范围
+
+- Commit: 7b8560cab92ef5e71345bc33cecc4143db5bea3d
+- 提交信息：Improve chat tool selection and message interactions。
+- 分支：emdash/codex-vlzfy；测试日期：2026-09-26（Asia/Shanghai）。
+- 使用现有 Vue 3、Element Plus、SSE 和 CSS，增加输入区工具入口、Agent/工作流分组搜索、用途说明、已选标签与移除、目录错误和权限提示、管理入口；工具状态直接展示在回复旁，增加复制回答和恢复原问题至草稿。
+- 发送及服务端终态同步期间锁定工具选择；恢复问题不自动发送，覆盖草稿前确认；断流后未完成工具显示“连接中断，执行结果待确认”，不推断外部操作已取消。
+- 修改 AiChatView.vue、中英文文案、既有聊天交互及布局测试；未修改后端、依赖、配置、数据库或第三方代码。
+- 本节仅验收上述提交。执行过程中其他任务追加的用户标识和路由错误处理等修改不包含在本节结论内，也未被覆盖或撤销。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与用例 | 前置条件和输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 工具搜索、选择及移除 | chat-interaction 组件测试 | 两类目录，名称/用途/大小写编码、无匹配关键词、重复选择 | 搜索准确、选择去重、提交独立字段和兼容 toolCodes 正确 | 正常、边界、兼容 |
+| 目录状态明确且可独立恢复 | chat-interaction 参数化测试 | 空目录、403、500、失败后重试、旧请求晚返回 | 区分空目录/权限/失败，保留草稿和选择，旧响应不覆盖新目录，普通对话可用 | 异常、边界、回归 |
+| 权限和发送锁定有效 | chat-interaction 组件测试 | 未授权 Agent 工具、未知编码、发送中、服务端同步中、无管理权限 | 拒绝不可用选择，发送期间不能移除或切换，管理入口按权限展示 | 权限、安全、状态冲突 |
+| 工具执行状态直接可见 | 组件及真实 SSE 字节流测试 | 开始、成功、失败、缺少终态断流、历史恢复与服务端同步 | 状态位于详情折叠区外；终态准确；断流后不永久显示运行中；同步保留本地事件 | 正常、异常、兼容、回归 |
+| 复制反馈准确 | chat-interaction 参数化测试 | 多行及 HTML 字符回答，剪贴板成功/拒绝 | 原文复制，反馈准确 | 正常、异常、安全 |
+| 恢复原问题保护草稿及附件 | chat-interaction 参数化测试 | 空/已有草稿、确认/取消、确认期间新输入或切换会话、图片、非视觉模型、忙碌状态 | 不自动调用模型；不覆盖新草稿；图片要求视觉模型；恢复后聚焦 | 正常、边界、异常、兼容 |
+| 窄屏和长名称不溢出 | layout-alignment 正式测试、Firefox 实测 | 中英文；1440×900、1024×768、390×844、320×568；长名称、HTML 说明 | 无横向溢出，说明安全转义，按钮换行，关闭抽屉后恢复焦点和草稿 | 边界、安全、回归 |
+| 既有对话保持兼容 | chat-interaction/chat-stream/chat-response 和完整前端套件 | 发送、401、停止、断流、配置、滚动及历史切换 | 既有断言通过，未删除或跳过有效测试 | 回归、兼容、异常 |
+
+### 实际执行结果
+
+- 先运行失败测试：`cd frontend && node --test test/chat-interaction.test.mjs`，33 项中 19 通过、14 失败，失败均对应尚未实现的新行为。
+- 首次实现后相关套件 71/71 通过；浏览器发现 320px 操作栏溢出，补充正式布局回归后先确认该项失败，再增加换行规则修复。
+- 最终相关套件：`cd frontend && node --test test/chat-interaction.test.mjs test/chat-stream.test.mjs test/chat-response.test.mjs test/layout-alignment.test.mjs`，79/79 通过，失败/跳过 0。
+- 最终完整前端：`cd frontend && npm test`，Lint、类型检查通过，覆盖测试 466/466、E2E 3/3，失败/跳过 0。为排除实时工作区的并行修改影响，又在提交 7b8560c 的临时独立检出执行相同完整命令，结果同为 466/466 与 3/3。
+- 工具函数覆盖率：行 98.43%、分支 81.54%、函数 95.42%，达到既有门槛；只统计 src/utils/**/*.js，不代表 Vue 模板或 CSS 覆盖率。
+- 浏览器命令：`node /tmp/baseai-chat-tools.APyppT/check.mjs`。Firefox WebDriver BiDi 的上述 8 组布局全部通过；另外验证选择后请求字段、运行/完成状态、发送锁定、恢复问题不重发、目录 500 后重试。使用真实前端产物与本地模拟 API，未调用真实供应商。
+- 浏览器脚本首次 DOM click 未模拟焦点，焦点断言失败；改为 focus 后 click 后通过。另一次检查发现真实的 320px 溢出问题，按上述流程修复，未弱化断言。
+- 第一次 Compose 构建实际执行 `mvn -B -ntp package`：946/946 通过，失败 0、错误 0、跳过 0，BUILD SUCCESS。聊天模块 34 项（ChatStreamClient 7、ChatConversationService 22、ChatConversationSecurity 5）全部通过；Workflow 276、Automation 87、Service 171、Security 59、Controller 27 等模块通过。后续构建的 Maven 步骤命中缓存，不重复计数。
+- `git diff --check`：代码提交前通过。没有以单独前端构建或后端编译替代测试。
+
+### 构建启动结果与环境限制
+
+- 原工作区执行 `APP_IMAGE_REVISION=7b8560cab92ef5e71345bc33cecc4143db5bea3d docker compose up --build -d`：第一次取得上述 Maven 结果，但后续进程句柄失效，未取得退出结果；再次执行退出码 1，Python Worker 下载 Debian libpcre2 包返回 502，未进入服务启动。
+- 一次动态 HEAD 重试发现工作区已有其他任务提交及未提交修改后主动取消，退出码 130，未将其认作本功能验证结果。
+- 为固定源码，在 /tmp/baseai-chat-build.U5mCOF 独立检出 7b8560c，执行 `APP_IMAGE_REVISION=7b8560cab92ef5e71345bc33cecc4143db5bea3d docker compose --env-file /Users/xyzc/emdash/worktrees/base-ai-a8652a83/emdash-codex-vlzfy/.env up --build -d`；环境文件只读复用，未复制或修改凭据。
+- 隔离重试成功构建 Frontend、Backend 等镜像，先前失败的 Debian 包也下载成功；最终仍退出码 1：Python Worker 的 pip 从 mirrors.aliyun.com 读取超时（ReadTimeoutError），构建步骤退出码 2。未跳过依赖或测试，未改镜像配置。
+- 最终 `docker compose ps -a` 无服务容器。没有端口冲突，也未停止其他容器。整栈启动、健康检查、部署后页面及真实模型/工具联调尚未完成，不能认定部署验收完成。
+- 前端既有提示包括非 module runtime-config.js、依赖 PURE 注释和 bundle 超过 500kB，未导致前端测试失败。
+- 未单独执行 mvn test，后端实际验证来自上述 package 的完整测试阶段。未执行 Chromium/Safari 和真实模型/外部工具业务验证。MCP、工具参数 Schema 及后端编排调整不在本次范围。
+
+### 清理、重测与下一步
+
+- 浏览器临时脚本、profile、截图位于 /tmp/baseai-chat-tools.APyppT，已关闭进程并删除；独立检出 /tmp/baseai-chat-build.U5mCOF 及生成产物也已移除。没有提交临时测试代码或新建 Markdown 文件。
+- 本次正式代码和测试已提交为 7b8560c，本节报告单独提交。其他任务的提交与工作区内容保留。
+- 在依赖源可稳定访问时，从最终确认版本重新执行 `docker compose up --build -d`，检查全部服务健康，再执行真实供应商和授权工具端到端冒烟；并行新增代码需依据其自身报告验收。
+- 重测条件：工具选择、目录状态、消息操作、SSE、语言或布局变化时执行相关套件及完整前端测试；后端业务或核心配置变化时执行完整 Maven 测试并更新基准。
+- 回滚：撤销 7b8560c 的功能变更；后续提交若依赖相关代码，先检查并解决依赖/冲突，再按回滚版本重建。无数据库迁移。
+
 ## 流式聊天路由错误提示修复与 DNS 阻塞（2026-09-26）
 
 ### Git 基准与变更范围
