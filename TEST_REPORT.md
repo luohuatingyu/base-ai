@@ -1,5 +1,52 @@
 # 最近分支覆盖测试报告
 
+## master 合并 emdash/codex-vlzfy 验证（2026-09-26）
+
+### 当前 Git 基准点
+
+Commit: d66bcf0b98f06dfef5354a40b4ff8450ab49bedc
+
+- 提交信息：Merge emdash/codex-vlzfy into master；分支：`master`；测试日期：2026-09-26（Asia/Shanghai）。
+- 合并前 master：`2aa8c27`；源分支尖端：`b3b2e45`。仅本地合并，未执行 push。
+- 冲突仅 `TEST_REPORT.md`，保留双方全部章节与历史记录，无业务代码冲突。
+- 合并带入的业务变更：后端 `ChatConversationController`、`ChatStreamClient` 及对应测试；`docker-compose.yml` 为 python-worker 增加外部 DNS；前端 `chatStream.js`、`AiChatView.vue`、中英文案及四个聊天测试文件。
+
+### 验收标准—测试映射
+
+| 验收标准 | 层级、前置条件及输入 | 预期及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 合并后后端全量回归无回归 | Docker Maven 3.9.9 / JDK 17、H2；完整 `mvn test` | 全部业务、安全、权限、工作流用例通过 | 1044/1044；失败、错误、跳过均为 0 |
+| 合并后前端全量回归无回归 | Node、Vue、Playwright；Lint、类型、覆盖、生产 E2E、浏览器 | 前端既有聊天、布局、权限与安全场景全部通过 | 覆盖 498/498；E2E 3/3；浏览器 18/18 |
+| 运行环境应用合并结果并可用 | Compose（colima-rootless）、既有 MySQL/Redis | 服务重建、健康检查通过，入口可用 | 10 个 Compose 服务 healthy；health=UP、/ai-chat=200 |
+
+### 实际命令与执行结果
+
+后端在 Docker Desktop 执行 `docker --context desktop-linux run --rm -v <repo>/backend:/workspace -v baseai-m2-test:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：
+
+- 1044/1044 通过，失败 0、错误 0、跳过 0；BUILD SUCCESS。
+- JaCoCo：行覆盖 8739/13159（66.41%），分支覆盖 4415/8469（52.13%）。
+
+前端在 `frontend/` 执行 `npm test`：
+
+- ESLint、`vue-tsc` 类型检查通过。
+- `npm run test:coverage`：498/498 通过，失败 0、跳过 0；行 98.43%、分支 81.61%、函数 95.42%（范围 `src/utils/**/*.js`）。
+- `npm run test:e2e`：生产构建后 3/3 通过。
+- `npm run test:browser`：18/18 通过。
+
+部署与运行环境：
+
+- 首次在 Docker Desktop 执行 `docker compose up --build -d`：退出 1，adapter-manager 要求 rootless Docker、后端 preflight 的 mysql/redis DNS 解析失败；该失败环境已用 `compose down` 完整清理（含其创建的网络），未遗留容器。
+- 最终执行 `APP_IMAGE_REVISION=d66bcf0b98f06dfef5354a40b4ff8450ab49bedc docker --context colima-rootless compose --env-file <worktree>/.env up --build -d`：退出 0；构建内 Maven `package` 再次执行 1044/1044 测试通过；9 个自建镜像全部构建，10 个 Compose 服务 healthy，另加既有 mysql/redis 依赖容器均在运行。
+- `curl http://localhost:8080/health` 返回 `{"status":"UP"}`；`/ai-chat` 返回 200。
+- `git diff --check`、冲突标记检查通过；未遗留临时调试文件，未新增 Markdown 文件，未推送 Git。
+
+### 已知限制、未执行测试及下次建议
+
+- 未执行真实供应商模型端到端聊天与 `scripts/deployment-smoke.mjs` 冒烟：脚本要求外部 HTTPS 入口与 Secure Cookie，本地 HTTP 环境不满足，未降低其安全要求。
+- 未重复执行 Python/Go 独立套件：本次合并未改动其源码。
+- 环境文件复用 worktree 的 `.env`（只读，未复制或修改凭据）；主工作区本身没有 `.env`。
+- 重测条件：后续修改后端业务代码、核心配置或前端聊天协议时，重跑对应套件与完整 Maven/前端测试并推进本基准；部署变更后重新执行 Compose 重建与健康检查。
+
 ## master 合并验证（2026-09-26）
 
 ### 当前 Git 基准点
