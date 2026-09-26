@@ -1,5 +1,44 @@
 # 最近分支覆盖测试报告
 
+## Worker DNS 恢复及真实流式聊天验收（2026-09-26）
+
+### Git 基准与变更范围
+
+- 配置验收提交：`ea076799d48f00f814e04991e4e1182cdd674611`（Configure external DNS for the Python worker）。
+- 后端全量测试基准仍为 `d7f231276e0af69a7dc4ea05e7956a97b2e94940`；分支 `emdash/codex-vlzfy`；验证日期 2026-09-26（Asia/Shanghai）。
+- 经用户确认，仅在既有 `docker-compose.yml` 的 `python-worker` 增加 `dns: [223.5.5.5, 1.1.1.1]` 及中文说明。未修改 Java/Python/前端业务代码、依赖或数据库结构。
+- 技术栈沿用 Docker Compose、Python 3.12 公网网络校验、Spring MVC SSE 与前端真实 `readChatStream` 解析器。外部 DNS 查询交给指定解析器；Docker 内部服务名仍由内置 DNS 解析。
+- 本节关闭此前“流式聊天路由错误提示修复与 DNS 阻塞”中的真实模型调用阻塞；历史失败记录保留。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| DNS 配置生效且保留安全边界 | 配置检查：渲染 Compose JSON，读取 Worker DNS、内部网络及 cap_drop | 指定两项 DNS；保留 app-network、ALL 权限丢弃 | 通过；配置、兼容、安全 |
+| 正式 Worker 能解析公网及内部服务 | 容器集成：Python 3.12，调用既有 `public_addresses` 解析 api.deepseek.com/example.com；getaddrinfo 解析 backend | 公网地址通过既有安全校验，内部服务可解析 | 分别取得 2、4、1 个地址结果；正常、兼容、安全 |
+| 默认路由可使用真实模型 | 端到端：正常账号登录，携带 Cookie/CSRF，POST `/api/models/routes/sync`，routeId=1 | 健康检查成功并刷新路由 | 模型 2 HEALTHY，1227ms，无错误；正常、回归 |
+| 原请求设置能够完成真实流式回答 | 端到端：临时会话，输入 1111，modelType=text_model，modelId/featureCode=null，不启用思考及工具；使用真实前端流解析器逐事件读取 | start、非空 delta、done，无 error | 20 个增量、81 字符；首增量 4586ms，总耗时 4763ms；正常、兼容、回归 |
+| 回答完整持久化且释放生成状态 | 端到端：流结束后读取同一会话详情 | COMPLETED；数据库正文与全部增量拼接完全一致；generating=false | 三项均通过；关键业务结果与副作用 |
+| 验证不遗留临时业务数据 | 清理：删除本次临时会话、退出验证登录 | 均返回成功 | 两项 HTTP 200；原会话 1 未修改 |
+
+### 实际执行结果
+
+- `docker --context colima-rootless compose config --quiet`：通过。
+- `node --test frontend/test/security-deployment.test.mjs`：14/14 通过，失败 0、跳过 0。
+- Compose JSON 验证脚本通过标准输入执行：DNS、内部网络和 cap_drop 三项断言通过。首次临时检查错误地要求网络配置值为 truthy，而 Compose 正常以 `"app-network": null` 表示无附加选项；改用键存在性断言后通过。这是检查脚本的表示方式错误，未修改或弱化任何既有测试。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker --context colima-rootless compose up --build -d`：退出码 0；9 个自建服务镜像完成构建；10 个 Compose 服务最终均 healthy，无端口冲突。
+- `docker --context colima-rootless inspect --format '{{json .HostConfig.Dns}}' baseai-local-python-worker`：返回 `["223.5.5.5","1.1.1.1"]`。
+- `docker --context colima-rootless exec -i baseai-local-python-worker python3.12 -`：正式容器内公网与内部域名解析验证通过。
+- Node 标准输入端到端脚本：读取既有本地登录配置但不输出凭据，调用真实同步/聊天/详情接口，导入项目 `readChatStream` 校验事件、非空正文、COMPLETED、正文一致及生成锁释放；退出码 0，具体结果见上表。
+- `git diff d7f231276e0af69a7dc4ea05e7956a97b2e94940 HEAD -- backend/src/main/java/ frontend/src/`：无业务代码差异。本轮仅部署 DNS 配置，未重复独立 Maven、前端及 Python 全量套件；前一轮后端 951/951、前端 478/478 及 E2E 3/3 的记录保持原测试日期与基准，构建缓存不记作重新测试。
+- `git diff --check` 通过；没有落盘临时测试/调试脚本，没有新增 Markdown 文件。临时会话和验证登录均已清理；未推送 Git。
+
+### 已知限制与后续验证
+
+- 本轮真实模型验收通过，原始 DNS 阻塞已解决。未执行 Safari 真机测试，也未对供应商故障注入；流中断、鉴权及未知异常安全处理沿用前一轮已通过的回归测试。
+- DNS 服务器需在部署网络中可达；如迁移环境或调整 DNS，重跑配置检查、容器解析、路由同步和真实流式/持久化验证。撤销本次 DNS 配置并重建可回滚，但在当前 Docker DNS 缺失的环境中会恢复原故障。
+- 业务代码变化时按既有规则重跑相关及完整套件并推进后端基准。
+
 ## AI 对话工具选择与消息交互验收（2026-09-26）
 
 ### Git 基准与变更范围
