@@ -1,5 +1,36 @@
 # 最近分支覆盖测试报告
 
+## 完整部署依赖检查与业务冒烟验收（2026-09-26）
+
+### 变更范围与验收映射
+
+| 验收标准 | 可执行验证 | 实际结果与场景 |
+| --- | --- | --- |
+| Backend 启动前发现 MySQL/Redis 配置和网络问题 | `DeploymentPreflightTest` 18 项；真实容器矩阵覆盖 DNS、认证、TLS、拒绝连接和非法端口 | 18/18 通过；所有失败均阻止 Spring/Flyway 启动，诊断脱敏；异常、边界、安全 |
+| Compose 仅在 rootless Docker 和有效配置下继续 | `frontend/test/deployment-preflight.test.mjs` 6 项；`scripts/deploy-preflight.sh --host-only` | 6/6 通过；Docker、rootless 安全能力和 Compose 结构检查通过；异常、兼容 |
+| Backend、Frontend、Caddy 在真实依赖环境健康 | 临时隔离 MySQL 8.4、Redis 7、`docker compose up --build -d`、`docker compose ps` | 11 个应用／依赖服务构建并 healthy；部署、回归 |
+| 登录和会话安全可用 | `scripts/deployment-smoke.mjs` HTTPS 入口 | 正确登录、错误密码、匿名拒绝、CSRF 拒绝、退出后 Token 拒绝均通过；权限、安全 |
+| 聊天完整落库 | 同一冒烟脚本的真实 Backend/Python Worker 链路，模型 HTTP 使用隔离替身 | SSE 首增量约 173ms，收到完成事件，用户和 COMPLETED 助手消息均落库；正常、异常、回归 |
+| 工作流业务闭环 | 同一冒烟脚本创建、发布、异步执行、查询、删除临时工作流 | SUCCESS 输出和 start/end 节点 SUCCESS 日志通过；正常、超时边界、回归 |
+
+### 实际执行结果
+
+- Backend 定向依赖测试：`mvn -B -ntp -Dtest=DeploymentPreflightTest test`，18/18 通过。
+- Frontend 部署检查测试：`node --test frontend/test/deployment-preflight.test.mjs frontend/test/security-deployment.test.mjs`，25/25 通过。
+- 部署冒烟解析测试：`node --test frontend/test/deployment-smoke.test.mjs`，14/14 通过。
+- Frontend 质量与覆盖：`npm run lint`、`npm run typecheck`、`npm run test:coverage`，448/448 通过；工具函数行 98.43%、分支 81.52%、函数 95.10%。
+- Compose 结构和容器构建：`docker compose up --build -d`（rootless Colima，临时 MySQL/Redis 覆盖配置），所有服务构建成功；`docker compose ps` 显示 Backend、Frontend、Caddy、Python Worker、Adapter Manager、Deployment Agent、Outbound Gateway、Document Parser、Socket Proxy 及 MySQL/Redis healthy。
+- 依赖检查真实失败矩阵：MySQL DNS、MySQL TLS 认证、Redis 错误密码、Redis TLS 不匹配、Redis 拒绝连接、非法端口均以非零退出并且 Backend 应用未启动。
+- 真实 HTTPS 业务冒烟：`node scripts/deployment-smoke.mjs`，登录、聊天 SSE/历史、工作流发布执行/节点日志、清理和会话撤销全部通过。聊天使用隔离模型 HTTP 替身；真实供应商 API 未调用。
+- 本次期间另行执行完整 Maven：1033 项中 1028 通过、5 失败、0 错误、0 跳过。失败为并行工作区改动触发的 `AuthServiceTest.rejectsBlankCredentials`（4）和 `ChatStreamClientTest.resolvesSelectedModelAndDefaultThinking`（1），不是部署检查代码；该结果保留在报告中，不以删除或跳过测试规避。
+
+### 已知限制与下次建议
+
+- 当前分支在验收期间包含其他并行业务改动；应在合并这些改动后重新执行完整 Maven 套件，并确认上述 5 项失败已由对应任务处理。
+- 模型替身只验证真实 Backend、Worker、签名、流解析和 MySQL 落库链路；配置真实供应商密钥后仍需执行同一脚本完成供应商级聊天验收。
+- 临时验收 Compose 项目、数据库、卷、模型替身文件和管理员密码已在 `/tmp/baseai-deploy-aa901/` 清理；未保留凭据或调试文件。
+- 代码回滚到 `bab1698` 可移除启动门禁；业务数据库迁移不由本次脚本执行，回滚前应按平台备份策略处理。
+
 ## 页面回归与业务分支覆盖补足（2026-09-26）
 
 ### Git 基准与范围
