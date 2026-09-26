@@ -287,12 +287,18 @@ class PlatformAdminServiceTest {
         UserAccount outsider = user(9L, "outsider", true, role(33L, "USER"));
         outsider.setDepartment(finance);
         when(userRepository.findById(7L)).thenReturn(Optional.of(current));
-        when(userRepository.findAll()).thenReturn(List.of(current, teammate, outsider));
+        when(userRepository.countForList(null, null, false, 7L, true, Set.of(11L))).thenReturn(2L);
+        when(userRepository.findListIds(null, null, false, 7L, true, Set.of(11L), 0L, 20)).thenReturn(List.of(7L, 8L));
+        when(userRepository.findListDetails(List.of(7L, 8L))).thenReturn(List.of(current, teammate));
         AuthContext.set(actor(7L, Set.of("EDITOR"), Set.of("system:user:list")));
 
         PlatformAdminService.PageResult<PlatformAdminService.UserView> result = service.users(null, null, 1, 20);
 
         assertEquals(List.of(7L, 8L), result.items().stream().map(PlatformAdminService.UserView::id).toList());
+        assertEquals(2, result.total());
+        verify(userRepository).countForList(null, null, false, 7L, true, Set.of(11L));
+        verify(userRepository).findListIds(null, null, false, 7L, true, Set.of(11L), 0L, 20);
+        verify(userRepository, never()).findAll();
     }
 
     /** 数据范围必须同时保护按 ID 更新，不能只依赖列表过滤。 */

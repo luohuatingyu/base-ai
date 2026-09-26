@@ -57,6 +57,14 @@ services:
     image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
     container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-backend
     restart: unless-stopped
+    # 每次启动均验证真实依赖；失败时不启动 Spring/Flyway，避免复用过期检查结果。
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        java -Dloader.main=com.baseai.platform.deployment.DeploymentPreflight
+        -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher
+        && exec java $$JAVA_OPTS -jar /app/app.jar
     mem_limit: ${BACKEND_MEMORY_LIMIT:-2g}
     cpus: ${BACKEND_CPU_LIMIT:-2.0}
     pids_limit: ${BACKEND_PIDS_LIMIT:-512}

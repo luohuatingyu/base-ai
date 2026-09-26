@@ -641,7 +641,12 @@ async function send() {
       if (!prompt.value) prompt.value = draft
       if (!pendingImages.value.length && modelType.value === 'vision_model') pendingImages.value = images
     }
-    if (error.response?.status === 401) await router.push({ path: '/login', query: { redirect: route.fullPath } })
+    if (error.response?.status === 401) {
+      // 流式请求绕过 Axios 拦截器，失效会话必须清除身份，避免路由守卫将用户送回首页。
+      auth.user = null
+      auth.initialized = true
+      await router.push({ path: '/login', query: { redirect: route.fullPath } })
+    }
     else if (!stopped) {
       pageError.value = t(started ? 'chat.interruptedHint' : 'chat.sendFailed')
       showHttpError(error, 'chat.callFailed')

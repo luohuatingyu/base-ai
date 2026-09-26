@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @Service
@@ -48,19 +49,16 @@ public class ApiKeyManagementService {
     /** 分页查询未吊销的 API Key。 */
     @Transactional(readOnly = true)
     public PlatformAdminService.PageResult<ApiKeyView> list(String keyword, Boolean enabled, int page, int size) {
-        List<ApiKeyView> rows = repository.findAll().stream()
-            .filter(item -> item.getRevokedAt() == null)
-            .filter(item -> keyword == null || keyword.isBlank()
-                || item.getName().toLowerCase().contains(keyword.trim().toLowerCase())
-                || item.getKeyId().contains(keyword.trim().toLowerCase()))
-            .filter(item -> enabled == null || enabled.equals(item.getEnabled()))
-            .sorted(Comparator.comparing(ApiKeyCredential::getId).reversed())
-            .map(this::toView).toList();
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), 100);
-        int from = Math.min((safePage - 1) * safeSize, rows.size());
-        int to = Math.min(from + safeSize, rows.size());
-        return new PlatformAdminService.PageResult<>(rows.subList(from, to), rows.size(), safePage, safeSize);
+        long offset = (long) (safePage - 1) * safeSize;
+        String normalizedKeyword = keyword == null || keyword.isBlank() ? null : keyword.trim().toLowerCase(Locale.ROOT);
+        long total = repository.countForList(normalizedKeyword, enabled);
+        if (offset >= total) return new PlatformAdminService.PageResult<>(List.of(), total, safePage, safeSize);
+        List<Long> ids = repository.findListIds(normalizedKeyword, enabled, offset, safeSize);
+        // 将集合加载限定在当前页，避免分页查询连接集合后退回内存分页。
+        List<ApiKeyView> items = ids.isEmpty() ? List.of() : repository.findListDetails(ids).stream().map(this::toView).toList();
+        return new PlatformAdminService.PageResult<>(items, total, safePage, safeSize);
     }
 
     /** 返回可绑定 API Key 的启用用户。 */
