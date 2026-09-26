@@ -240,6 +240,55 @@ test('模型配置焦点态和移动端布局使用柔和高亮', () => {
   assert.match(source, /\.model-basic-fields\.multi-model, \.model-basic-fields\.single-model, \.model-capability-grid \{ grid-template-columns: minmax\(0, 1fr\); \}/)
 })
 
+for (const mode of ['multi', 'single']) {
+  test(`设置面板开关保留 ${mode} 模式配置、草稿、消息和阅读位置，发送沿用配置`, async t => {
+    let submitted
+    const { state, requests } = await createChat(t, { fetch: async (_url, options) => {
+      submitted = JSON.parse(options.body)
+      return streamResponse([{ type: 'start', messageId: 2 }, { type: 'delta', content: '回答' }, { type: 'done' }])
+    } })
+    assert.equal(state.settingsOpen.value, false)
+    assert.match(source, /@click="settingsOpen = true"/)
+    assert.match(source, /<el-drawer[\s\S]*?v-model="settingsOpen"/)
+    state.prompt.value = '未发送的草稿'
+    state.messages.value = [{ role: 'assistant', content: '已有回答' }]
+    const scroll = { scrollTop: 120, scrollHeight: 1000, clientHeight: 300 }
+    state.messagesElement.value = scroll
+    state.onMessagesScroll()
+    const requestCount = requests.length
+    state.settingsOpen.value = true
+    state.setMode(mode)
+    if (mode === 'single') {
+      state.providerId.value = 12
+      state.modelId.value = 34
+    }
+    state.enableThinking.value = true
+    state.thinkingLevel.value = 'HIGH'
+    state.agentToolCodes.value = ['HTTP_TRIGGER_7']
+    state.workflowToolCodes.value = ['WORKFLOW_1']
+    state.settingsOpen.value = false
+    await vue.nextTick()
+    state.settingsOpen.value = true
+    await vue.nextTick()
+    assert.equal(state.mode.value, mode)
+    assert.equal(state.enableThinking.value, true)
+    assert.equal(state.thinkingLevel.value, 'HIGH')
+    assert.equal(state.prompt.value, '未发送的草稿')
+    assert.deepEqual(state.messages.value, [{ role: 'assistant', content: '已有回答' }])
+    assert.equal(scroll.scrollTop, 120)
+    assert.equal(state.followLatest.value, false)
+    assert.equal(requests.length, requestCount)
+    state.settingsOpen.value = false
+    await state.send()
+    assert.equal(submitted.content, '未发送的草稿')
+    assert.equal(submitted.settings.modelId, mode === 'single' ? 34 : null)
+    assert.equal(submitted.settings.enableThinking, true)
+    assert.equal(submitted.settings.thinkingLevel, 'HIGH')
+    assert.deepEqual(submitted.settings.agentToolCodes, ['HTTP_TRIGGER_7'])
+    assert.deepEqual(submitted.settings.workflowToolCodes, ['WORKFLOW_1'])
+  })
+}
+
 test('Agent 工具和工作流工具使用独立目录与请求字段', () => {
   assert.match(source, /v-model="agentToolCodes"/)
   assert.match(source, /v-model="workflowToolCodes"/)

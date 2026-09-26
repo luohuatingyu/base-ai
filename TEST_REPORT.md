@@ -40,6 +40,55 @@
 - 恢复 Alpine/Debian 软件源及 Docker 镜像网络访问后，使用上述代码版本重新执行 `docker compose up --build -d`，确认 `docker compose ps -a` 中服务健康，并验证工具目录展示、权限撤销拒绝执行和选定工具的真实模型调用。
 - 后续修改后端业务代码、核心业务配置或本次工具授权逻辑时，必须重跑相关用例及完整测试，并更新本报告基准点；运行环境问题解决后应补充 Compose 与冒烟验证结果。
 
+## AI 对话配置抽屉布局验收（2026-09-26）
+
+### Git 基准与变更范围
+
+- 前端验收版本：`10607f154b3c98e79d86abb5172e39438c31e95a`（Move chat settings into a responsive drawer）。
+- 分支：`emdash/codex-vlzfy`；测试日期：2026-09-26（Asia/Shanghai）。
+- 使用现有 Vue 3、Element Plus Drawer 和 CSS，将聊天区内限高 38% 的配置表单改为 600px 侧边抽屉；桌面双列、手机全宽单列，抽屉主体统一滚动；聊天顶部保留模型摘要和设置按钮。
+- 修改范围：`AiChatView.vue`、`styles.css`、中英文文案、现有聊天交互及布局测试；没有修改后端、依赖、部署配置或数据库。
+- 本节仅建立前端验收版本。下方后端 Maven 基准仍为 `5d26d2c`，不因本次前端测试推进；该基准之后已有的后端授权修复不属于本次变更。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与用例 | 前置条件和输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 设置展开不挤占聊天区 | 布局回归 + Firefox 浏览器测量 | 加载 24 条历史消息，打开/关闭抽屉 | 消息区域高度及顶部坐标不变，输入区保持原布局 | 正常、回归 |
+| 配置完整且无横向溢出 | 布局回归 + Firefox 8 组场景 | 1440×900、1024×768、390×844、320×568；中英文、长供应商/模型/工具名称、单/多模型、未选供应商、思考开关 | 桌面 600px 双列、手机全宽单列；表单不嵌套滚动；条件配置项数量正确；页面及抽屉主体无横向溢出 | 边界、兼容 |
+| 开关保留草稿、设置和阅读位置 | chat-interaction.test.mjs 参数化用例 + Firefox | 单/多模型配置、草稿、历史消息，上滚至 100px 后开关面板 | 不发额外网络请求；草稿、消息、设置和阅读位置保留；关闭后焦点返回设置按钮 | 正常、回归 |
+| 发送沿用面板中的配置 | chat-interaction.test.mjs 参数化用例 | 修改思考级别和 Agent/工作流工具，关闭面板后发送 | 实际请求内容、模型编号、思考参数及两类工具字段正确 | 正常、兼容 |
+| 原有对话行为保持兼容 | 既有 chat-interaction、chat-response、chat-stream 套件 | 切换会话、流式回复、停止生成、失败重试、401、无工具权限、空白及重复提交 | 保留原有消息状态、错误处理、权限控制和请求限制 | 异常、权限安全、回归 |
+
+### 实际执行结果
+
+- 先运行失败回归：`cd frontend && node --test test/chat-interaction.test.mjs test/layout-alignment.test.mjs`，38 项中 33 通过、5 失败；失败均对应尚未实现的抽屉状态/布局要求。
+- 实现后运行相关套件：`cd frontend && node --test test/chat-interaction.test.mjs test/layout-alignment.test.mjs test/chat-response.test.mjs test/chat-stream.test.mjs`，57/57 通过，失败/跳过均为 0。
+- `cd frontend && npm test`：实现后及最终样式微调后均通过。Lint、类型检查通过；覆盖测试 444/444，失败 0、跳过 0；生产服务 E2E 3/3，失败 0、跳过 0。该命令包含测试所需的 Vite 构建，没有以单独构建替代测试。
+- 覆盖率：行 98.43%、分支 81.54%、函数 95.42%。统计范围为项目既有 `src/utils/**/*.js`，不代表 Vue 模板/CSS 的覆盖率；布局另由结构断言和真实浏览器验证。
+- `node /tmp/baseai-chat-layout.0i7zRO/check.mjs`：本机 Firefox 156.0.1 / WebDriver BiDi，最终 8/8 场景通过。使用真实前端产物和本地模拟 API，未调用真实模型。检查长名称、配置条件展示、尺寸、草稿、消息滚动位置、关闭后焦点及中英文布局；已检查桌面与手机截图。
+- 浏览器验证发现模式说明文字可裁切，增加最大宽度约束后重新运行完整前端测试和浏览器检查，全部通过。
+- 验证准备过程中：一次在仓库根目录误执行 `npm test`，因根目录没有 package.json 返回 254，随后在 frontend 目录正确执行通过；临时浏览器脚本首次使用不受支持的顶层 await 表达式失败，修正脚本后完成上述浏览器验证。两者均未跳过或弱化产品测试。
+- `git diff --check`：通过。
+
+### 构建启动与运行环境
+
+- `APP_IMAGE_REVISION=10607f154b3c98e79d86abb5172e39438c31e95a docker compose up --build -d`：首次因 n8n Worker 构建时 Alpine 仓库暂时不可用返回 1；重试后全部镜像构建成功，最终退出码 0。
+- 中间先执行同版本 `docker compose up --build -d --no-deps frontend`，退出码 0，成功应用本次前端改动。
+- 曾启动不带版本覆盖的 `docker compose up --build -d`；发现使用环境文件中的旧版本标识后，在构建阶段主动取消（退出码 130），再使用上述明确版本命令完成整栈重建，未修改环境文件。
+- `docker compose ps -a`：Frontend、Backend、Adapter Manager、Deployment Agent、Document Parser、Python Worker、Outbound Gateway、Docker Socket Proxy 均 healthy。
+- `curl -fsS --max-time 10 http://localhost:8080/health` 返回 UP；前端容器镜像版本为上述代码提交。通过 Node fetch + assert 校验 /ai-chat 返回 200，实际加载的 JS/CSS 两个文件逐字节匹配通过测试的 frontend/dist 产物。
+- 本次未独立执行后端 Maven 测试；没有后端代码变更，Compose 的 Maven 构建步骤命中缓存，不能计作本次重新运行后端测试。
+
+### 已知问题、未验证范围与后续建议
+
+- 既有环境问题仍存在：Dify、n8n Worker 启动后退出，日志均指出 `PLUGIN_WORKER_INTERNAL_TOKEN` 少于 24 个字符，与下方历史报告一致。本次布局验收通过，但不宣称整栈所有服务健康；后续配置合规长度的内部令牌后需重新启动并检查这两个 Worker。
+- 未运行 Chromium、Safari 浏览器检查和真实模型/外部工具调用；建议跨浏览器发布验收补测键盘焦点、移动端滚动和真实业务续聊。
+- 既有构建提示包括 bundle 体积超过 500kB、runtime-config.js 非 module 和依赖 PURE 注释提示，均未导致测试或构建失败。
+- 临时浏览器脚本、独立 profile、截图位于 `/tmp/baseai-chat-layout.0i7zRO`，已关闭验证进程并删除整个目录；临时验证代码未提交。测试过程、问题和结果只记录在本报告。原有未跟踪 `docs/` 保持不动。
+- 重测条件：聊天布局、语言文案、设置状态或发送配置字段变更时，重跑相关套件、完整前端测试及桌面/窄屏验证；涉及 Java 业务逻辑时另按后端规则运行完整 Maven 测试并更新后端基准。
+- 回滚方式：撤销 `10607f1` 后按回滚代码版本重新执行 Compose 构建启动；本次不涉及数据迁移。
+
 ## 合并 master 前验证（2026-09-25）
 
 - 检查版本：`a8bfc135f715f61be6aafafedc7284a4ffdcaf7f`；源分支 `emdash/codex-vlzfy`，目标 `master`（`c4dacb9`）。目标是源分支祖先，可快进合并；本次因下述功能问题尚未执行合并。
@@ -8890,3 +8939,51 @@ Commit: 474cd6a
 ### Git 基准点
 
 Commit: `8ae358c`
+
+## 本地 Dify/n8n Worker 内部令牌修复验证（2026-09-26）
+
+### 范围与环境
+
+- 部署工作区：`/Users/xyzc/emdash/worktrees/base-ai-a8652a83/emdash-codex-vlzfy`。
+- 本次环境验证代码版本：`87e9ce7abd8996c819842b609c1b140535a6592e`；分支：`emdash/codex-vlzfy`；提交：`Rotate local worker authentication tokens`。此版本仅标识本次环境检查，不更新历史后端全量测试基准点。
+- 修复前 Dify/n8n 令牌分别为 23/22 字符，两个容器以退出码 1 停止，日志均提示至少需要 24 字符。
+- 仅在既有、Git 忽略的 `.env` 中分别生成 32 随机字节编码的 64 字符令牌；Backend、Adapter Manager 和 Worker 通过 Compose 读取同一来源。未修改业务代码、依赖或第三方代码。
+- 密钥未输出、未提交；上述提交为空提交，仅记录本地配置操作。测试报告单独提交。
+
+### 验收标准与测试结果
+
+| 验收标准 | 层级、前置条件与输入 | 预期与实测结果 | 场景 |
+| --- | --- | --- | --- |
+| 消除过短令牌并同步调用端 | 配置集成：重建后读取 Compose 配置及运行容器环境，仅比较长度和值是否一致 | 两个令牌均为 64 字符，Backend/Manager/对应 Worker 一致；2/2 通过 | 配置、兼容 |
+| 两个 Worker 启动健康 | 运行态：对两个 Worker GET /health | HTTP 200 且 status=UP；2/2 通过；Compose 10 个服务均 healthy | 正常、回归 |
+| 后端令牌可用于有效签名 | 运行态：使用 Backend 容器中的实际令牌，对不存在的 /__auth_smoke__ 路由 POST {}，构造正文绑定 HMAC | 鉴权通过后返回 404 NOT_FOUND，不执行插件；2/2 通过 | 正常、安全 |
+| 拒绝非法请求 | 运行态：两个 Worker 分别发送重复 nonce、无签名、错误密钥、过期 120 秒签名 | 均为 401 UNAUTHORIZED；8/8 通过 | 异常、安全、重放 |
+| Worker 既有行为无回归 | 单元与组件测试：只读挂载当前源码，Python 3.12 / Node 24 容器，禁用外部网络 | Dify 25/25、n8n 16/16 通过 | 正常、边界、异常、安全、兼容、回归 |
+
+- 自动化套件总计：41 项，通过 41，失败 0，错误 0，跳过 0，通过率 100%。
+- 运行态及配置冒烟：14 项通过；不计入上述单元测试数量。
+
+### 实际执行命令
+
+在上述部署工作区执行：
+
+```sh
+docker compose up --build -d
+docker run --rm --network none -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/workspace -v "$PWD/dify-plugin-worker:/workspace:ro" -w /workspace --entrypoint python3.12 baseai-local-dify-plugin-worker:10607f154b3c98e79d86abb5172e39438c31e95a -m unittest discover -s tests -v
+docker run --rm --network none -v "$PWD/n8n-plugin-worker:/workspace:ro" -w /workspace --entrypoint npm baseai-local-n8n-plugin-worker:10607f154b3c98e79d86abb5172e39438c31e95a test
+docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Health}}'
+git diff --check
+```
+
+- 上述命令均成功。测试使用已有运行时镜像并只读挂载当前源码，不依赖镜像内旧源码。
+- 配置验证通过内联 Node 脚本读取 `docker compose config --format json` 和 `docker inspect`，不输出密钥；健康和鉴权通过 `docker exec -i baseai-local-n8n-plugin-worker node --input-type=module` 的内联脚本执行，逐项断言响应状态和业务错误码。有效签名使用 Backend 实际环境值，未知路由避免数据写入及模型调用。
+- 无本地临时测试或调试文件；测试容器使用 `--rm` 自动清理。
+
+### 限制、风险与后续建议
+
+- 未独立重跑 Backend、Frontend 或其他服务全量测试；此次没有代码变更，验证范围为已确认的 Worker 环境恢复。Compose 构建缓存不作为后端重新测试的证据。
+- 未调用真实模型、未验证插件完整调用链；如需此验收，后续执行授权插件端到端场景。
+- 既有 APP_IMAGE_REVISION 配置为 `5d26d2c8ccc46394cf92acf17cffd2aa7b732c66`，本次保持该配置；镜像标签不能代替上方实际源码版本记录。
+- 令牌轮换需同步调用端并重建服务；旧令牌过短，不应回滚为旧值。需要再次轮换时生成新的合规令牌并重复本节验证。
+- 后续修改令牌、Worker 鉴权或 Compose 环境传递时，应重新执行本节验证；修改业务代码时按项目规则另行执行后端完整测试。
+- 工作区原有未跟踪 `docs/` 保留，未纳入本次提交。

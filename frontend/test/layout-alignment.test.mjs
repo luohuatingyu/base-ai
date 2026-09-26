@@ -96,7 +96,7 @@ test('AI 对话仅滚动消息区域并固定上下操作区域', () => {
   assertDeclarations(globalStyles, '.chat-tabs', [/display:\s*flex/, /flex:\s*1/, /flex-direction:\s*column/, /min-height:\s*0/])
   assertDeclarations(globalStyles, '.chat-tabs .el-tabs__content', [/flex:\s*1/, /min-height:\s*0/, /overflow:\s*hidden/])
   assertDeclarations(globalStyles, '.chat-tabs .el-tab-pane', [/height:\s*100%/, /display:\s*flex/, /flex-direction:\s*column/, /min-height:\s*0/])
-  assertDeclarations(globalStyles, '.model-config', [/flex:\s*0\s+0\s+auto/])
+  assertDeclarations(chatViewSource, '.model-toolbar', [/flex:\s*0\s+0\s+auto/])
   assertDeclarations(globalStyles, '.messages', [/flex:\s*1/, /min-height:\s*0/, /overflow-y:\s*auto/])
   assertDeclarations(
     globalStyles,
@@ -112,12 +112,28 @@ test('会话双栏继承剩余高度且历史列表独立滚动', () => {
   assert.doesNotMatch(chatViewSource, /\.chat-tabs\s*:deep\(\.el-tabs__content\)\s*\{[^}]*overflow:\s*visible/)
 })
 
-test('窄屏配置和历史可收拢且长消息元信息可以换行', () => {
-  assert.match(chatViewSource, /<details class="model-config"/)
+test('配置通过独立抽屉展示，窄屏历史可收拢且长消息元信息可以换行', () => {
+  assert.match(chatViewSource, /<el-drawer[\s\S]*?v-model="settingsOpen"[\s\S]*?append-to-body/)
   assert.match(chatViewSource, /<details class="chat-history"/)
   assert.match(chatViewSource, /@media\s*\(max-width:\s*768px\)/)
   assertDeclarations(chatViewSource, '.message-metadata', [/overflow-wrap:\s*anywhere/])
   assertDeclarations(chatViewSource, '.chat-composer', [/min-width:\s*0/])
+})
+
+test('模型设置脱离聊天布局，桌面双列且窄屏单列，配置本身不嵌套滚动', () => {
+  const drawer = chatViewSource.slice(chatViewSource.indexOf('<el-drawer'), chatViewSource.indexOf('</el-drawer>'))
+  assert.ok(chatViewSource.indexOf('<el-drawer') > chatViewSource.indexOf('</el-tabs>'))
+  assert.match(drawer, /class="chat-settings-drawer"/)
+  assert.match(drawer, /size="600px"/)
+  for (const field of ['modelType', 'providerId', 'modelId', 'featureCode', 'agentToolCodes', 'workflowToolCodes', 'enableThinking', 'thinkingLevel']) {
+    assert.ok(drawer.includes(`v-model="${field}"`), `抽屉缺少设置：${field}`)
+  }
+  assert.doesNotMatch(declarations(chatViewSource, '.model-config'), /max-height|overflow/)
+  assertDeclarations(globalStyles, '.chat-settings-drawer', [/max-width:\s*100vw/])
+  assertDeclarations(globalStyles, '.chat-settings-drawer .el-drawer__body', [/overflow-y:\s*auto/])
+  assertDeclarations(chatViewSource, '.model-basic-fields,\n.model-capability-grid', [/grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/])
+  assert.match(chatViewSource, /@media\s*\(max-width:\s*768px\)[\s\S]*\.model-basic-fields\.multi-model, \.model-basic-fields\.single-model, \.model-capability-grid \{ grid-template-columns: minmax\(0, 1fr\); \}/)
+  assertDeclarations(chatViewSource, '.model-summary-value', [/overflow:\s*hidden/, /text-overflow:\s*ellipsis/])
 })
 
 test('收缩侧边栏的菜单宽度适配内层可用空间，图标保持居中', () => {
