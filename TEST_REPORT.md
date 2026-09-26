@@ -1,5 +1,63 @@
 # 最近分支覆盖测试报告
 
+## 聊天 USER 限流身份修复（2026-09-26）
+
+### Git 基准点与变更范围
+
+Commit: 975e9b166cfca6b53bf45a7c0a99af68b3854fc3
+
+- 提交信息：`Fix user identity in chat rate limiting`。
+- 分支：`emdash/rare-laws-ask-aa901`；测试日期：2026-09-26（Asia/Shanghai）。
+- `RateLimitAspect` 使用 `AuthContext.require().id()` 生成 USER 限流键；无认证上下文或用户 ID 为 null 时返回 401 / `auth.required`。
+- 同一出口的不同用户额度独立，同账号切换 IP 或代理头继续使用同一额度。聊天每 60 秒 10 次、现有限流错误协议、IP/GLOBAL 策略保持兼容。
+- 修改两个既有测试文件，无新增依赖、配置、数据库或第三方代码变更。技术栈为 Java 17、Spring AOP、Resilience4j、JUnit 5、Mockito。
+- 变更前检查：`git diff f4570aa HEAD -- backend/src/main/java/` 无差异；旧报告首个 `Commit:` 为 `dc062e4638e00fceee548b7cc4dbeac6c1601a25`，相对本次起始 HEAD 的业务差异涉及 11 个文件，因此执行完整后端测试并把最新基准置于报告首部。
+
+### 验收标准—可执行测试映射
+
+| 验收标准 | 测试层级及用例 | 前置条件、输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 同出口用户额度独立 | 单元：`RateLimitAspectTest.shouldUseDifferentLimitersForDifferentUsers`（2 组） | 每用户额度为 1；同 IP 或无 Servlet 上下文，依次使用 ID 1、2、1 | 两用户首请求成功，各自超额均拒绝，业务仅执行两次 | 正常、边界、隔离 |
+| 同账号换地址不能新增额度 | 单元：`shouldKeepUserQuotaAcrossAddressChanges`（3 组） | 同账号额度耗尽后更换 remoteAddr、X-Forwarded-For 或 X-Real-IP | 保持限流，业务不重复执行 | 安全、回归 |
+| 缺失身份不能使用匿名额度 | 单元：`shouldRejectMissingIdentity`（2 组） | 无 AuthContext 或 AuthUser.id 为 null | 401 / auth.required，业务不执行；随后有效用户仍能请求 | 异常、边界、安全 |
+| 额度内放行，超限保持协议 | 单元：`shouldAllowRequestWithinLimit`、`shouldRejectRequestWhenLimitExceeded` | 有效用户正常请求；额度为 1 时连续请求两次 | 返回业务结果；超额为 rate.limit.exceeded / 400，业务仅执行一次 | 正常、边界、兼容 |
+| IP/GLOBAL 策略兼容 | 单元：`shouldPreserveIpStrategy`、`shouldPreserveGlobalStrategy` | 匿名首请求，之后切换身份和地址 | IP 按地址隔离，GLOBAL 跨用户和地址共享 | 兼容、回归 |
+| 聊天使用真实认证 ID | 集成：`ChatConversationSecurityTest.isolatesChatQuotaByAuthenticatedUser` | 真实认证拦截器、Controller 和 AOP 代理；隔离用户存储及模型服务，两个用户来自同 IP | 各用户前 10 次得到 SSE answer/done 并保存 COMPLETED；第 11 次及换 IP 请求拒绝，模型调用总计 20 次 | 正常、边界、安全、集成 |
+| 聊天权限和原业务不回归 | 既有 `ChatConversationSecurityTest`、`AuthInterceptorTest`、`ChatConversationServiceTest`、`ChatStreamClientTest` | 未登录、无权限、CSRF 缺失、会话归属及模型流式输入 | 原认证拒绝、会话隔离和流式行为保持有效 | 权限、异常、回归 |
+
+### 实际执行命令与结果
+
+主机无 Java/Maven；使用已有 Docker Desktop 的 `maven:3.9.9-eclipse-temurin-17` 镜像与 `baseai-m2-test` 缓存，未修改默认 Docker context 或项目配置。以下 Maven 命令均通过此包装执行：
+
+```bash
+docker --context desktop-linux run --rm \
+  -v "$PWD/backend:/workspace" -v baseai-m2-test:/root/.m2 \
+  -w /workspace maven:3.9.9-eclipse-temurin-17 <Maven 命令>
+```
+
+| 阶段 | Maven 命令或宿主命令 | 实际结果 |
+| --- | --- | --- |
+| 原始基线 | `mvn -B -ntp -Dtest=RateLimitAspectTest,ChatConversationSecurityTest test` | 8/8 通过 |
+| 修复前缺陷复现 | `mvn -B -ntp -Dtest=RateLimitAspectTest test` | 11 项：通过 4、失败 5、错误 2；换地址绕过及缺失身份未拒绝共 5 项失败，同 IP 和无请求上下文的第二用户被误限流共 2 项错误 |
+| 修复前聊天复现 | `mvn -B -ntp -Dtest=ChatConversationSecurityTest test` | 6 项：通过 5、失败 1；`isolatesChatQuotaByAuthenticatedUser` 证明换 IP 后未继续限流 |
+| 修复后针对性回归 | `mvn -B -ntp -Dtest=RateLimitAspectTest,ChatConversationSecurityTest,AuthInterceptorTest,ChatConversationServiceTest,ChatStreamClientTest test` | 45/45 通过，失败 0、错误 0、跳过 0 |
+| 修复后完整后端测试 | `mvn -B -ntp test` | 950/950 通过（100%），失败 0、错误 0、跳过 0；24.470 秒 |
+| 重建并启动 | `DOCKER_CONTEXT=desktop-linux docker compose up --build -d` | 退出码 1：缺少 `APP_PLATFORM_SHORT_NAME`，配置插值失败，未进入构建或启动阶段 |
+| 差异检查 | `git diff --check` | 通过 |
+
+关键模块：限流 11/11、聊天 29/29、安全 59/59、Service 包 171/171、Controller 包 27/27、Workflow 275/275，均无失败或跳过。其他后端模块也纳入 950 项完整套件。项目未配置 JaCoCo，本报告的 100% 是用例通过率，不代表代码行或分支覆盖率。
+
+### 审查、限制及下次验证
+
+- 最终独立只读审查未发现必须修复问题；业务代码与测试在全量测试通过后提交，测试报告单独提交。
+- Ruling：按已确认方案保留本次修复边界，不扩展到多实例共享额度、限流缓存回收或 IP 策略的代理头信任；这些属于既有设计，当前限流仍是单进程内存状态，多实例和重启后的额度行为未改变。
+- Ruling：遵循项目规则，测试过程和决策统一记录于本文件，不另建技能流程日志或新增 Markdown 文件；已确认的对话方案作为实施依据。
+- **部署验证未完成，不能据单元/集成测试通过判定运行环境交付完成。** 当前工作区没有部署 `.env`，Compose 首先因缺少 `APP_PLATFORM_SHORT_NAME` 失败；后续必填变量、外部 MySQL/Redis 可达性和服务健康尚未验证。
+- 下次需注入项目已有的有效部署环境变量及凭据，再执行 `docker compose up --build -d`、`docker compose ps`，并使用两个真实账号进行聊天冒烟验证；本次未创建虚假配置或修改部署配置。
+- 未执行前端及 Go 测试：此次仅修改 Java 限流逻辑和后端测试，已确认范围为完整后端套件。未执行运行环境端到端聊天验证：Compose 尚未启动。
+- Maven 自动生成的临时结果和构建文件位于 `backend/target/`；汇总至本报告后清理，保留正式测试源码。未创建或提交临时调试代码。
+- 后续修改后端业务代码、认证上下文、限流策略、聊天端点或核心业务配置，或用户明确要求重测时，必须重新执行相关及完整后端套件，更新本报告基准；回滚使用业务修复提交的反向提交。
+
 ## Docker Hub 访问恢复与 Compose 构建验证（2026-09-24）
 
 ### Git 基准与范围
