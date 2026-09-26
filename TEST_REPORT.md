@@ -8,6 +8,24 @@ Commit: 975e9b166cfca6b53bf45a7c0a99af68b3854fc3
 - 测试日期：2026-09-26（Asia/Shanghai）；分支：`emdash/rare-laws-ask-aa901`。
 - 验收范围：完整后端 Maven 套件，950/950 通过，失败 0、错误 0、跳过 0；详细结果见历史分区的“聊天 USER 限流身份修复”。这是后端自动重测判断的代码基准，不代表部署验收完成；该轮 Compose 因缺少环境变量未完成。
 
+### 本次变更测试结果（2026-09-26）
+
+**变更范围**：用户和 API Key 列表改为数据库条件筛选、计数、主键分页和当前页关联加载；用户查询保留数据权限条件，并使用 `long` 偏移防止超大页码溢出。
+
+**测试执行结果**：
+- 针对性测试：`mvn -B -ntp -Dtest=DatabaseListPaginationTest,PlatformAdminServiceTest,ApiKeyManagementServiceTest,DataScopeResolverTest,AuthInterceptorTest,ApiKeyManagementControllerTest,PlatformControllerTest test`，87/87 通过，失败 0、错误 0、跳过 0。
+- 完整后端测试：`mvn -B -ntp test`，1028/1033 通过，失败 5、错误 0、跳过 0。失败集中在工作区原有的 `ChatStreamClientTest.resolvesSelectedModelAndDefaultThinking` 和 `AuthServiceTest.rejectsBlankCredentials`，与本次列表分页变更无关；本次新增 `DatabaseListPaginationTest` 38/38 通过。
+- Compose 重建：`docker --context desktop-linux compose up --build -d` 未进入构建，因环境缺少必填变量 `APP_PLATFORM_SHORT_NAME`。
+
+**测试覆盖范围**：
+- Repository/JPA 集成：数据库筛选、排序、总数、当前页关联加载、已吊销 Key 排除、SQL 分页限制。
+- Service：数据权限的本人、部门、子部门、自定义部门及并集；空关键词、通配符和超长输入；整数最大页码、溢出临界页码和分页参数归一化。
+- Controller 与安全回归：现有列表权限标注、认证拦截器和数据范围解析测试。
+
+**已知问题**：完整套件仍受上述既有测试失败影响；Compose 需提供 `APP_PLATFORM_SHORT_NAME` 后重试。
+
+**代码提交**：`009f681`（Push admin list pagination to database）。
+
 ### 基准维护与读取约定
 
 - 本节是当前基准的唯一来源：机器字段必须独占一行，使用上述英文键、一个空格和完整 40 位 Git 哈希；全文只保留这一处机器字段。
