@@ -29,7 +29,7 @@ esac
         SECURITY: '["name=rootless"]', CONFIG_EXIT: '0', PROBE_EXIT: '0', ...overrides },
     })
     let calls = ''
-    try { calls = readFileSync(join(directory, 'calls'), 'utf8') } catch {}
+    try { calls = readFileSync(join(directory, 'calls'), 'utf8') } catch { /* 参数拒绝时尚未调用 Docker。 */ }
     return { ...result, calls }
   } finally { rmSync(directory, { recursive: true, force: true }) }
 }

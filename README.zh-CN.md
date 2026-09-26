@@ -299,6 +299,36 @@ docker compose run --rm --entrypoint sh caddy -c \
 
 ## 使用 Docker Compose 启动
 
+### 部署依赖检查与验收
+
+Compose 使用外部 MySQL 和 Redis，不会自动创建这两个服务。启动前创建专用 MySQL 数据库，并配置 `.env` 中的 `MYSQL_*`、可选 `MYSQL_MIGRATION_*` 和 `REDIS_*`。主机名必须能在 Backend 容器网络中解析；容器内 `localhost` 不代表宿主机数据库。生产环境保留 MySQL 身份校验和 Redis TLS，并配置受信证书。迁移账号还需要执行项目既有 Flyway 迁移的权限。
+
+```bash
+export APP_IMAGE_REVISION="$(git rev-parse HEAD)"
+sh scripts/deploy-preflight.sh --host-only
+docker compose up --build -d
+docker compose ps
+# 已有当前版本 Backend 镜像时，可在启动应用前单独检查数据库连接
+sh scripts/deploy-preflight.sh
+```
+
+宿主检查验证所选 Docker daemon 的 rootless 能力及最终 Compose 配置。完整检查复用 Backend 镜像、环境变量和容器网络，分别用运行账号、迁移账号执行 `SELECT 1`，再用 Redis ACL/TLS 配置执行 `PING`；启用 PostgreSQL 时也检查其连接。每项检查最多等待 15 秒，输出仅包含组件、状态和错误分类。检查不执行迁移，也不验证 DDL 权限。全新环境需先构建镜像；Compose 已在每次 Backend 启动前自动执行相同检查，失败时不会启动 Spring/Flyway。Frontend/Caddy 保留原有健康依赖。
+
+业务冒烟需要 Node.js 20+、具有聊天和工作流创建／发布／执行／删除权限的专用账号，以及已配置的文本模型。凭据文件不要提交到 Git：
+
+```bash
+SMOKE_BASE_URL=https://your-host:443 \
+SMOKE_USERNAME=acceptance-user \
+SMOKE_PASSWORD_FILE=/secure/acceptance-password \
+SMOKE_CA_FILE=/secure/caddy-root.crt \
+SMOKE_MODEL_ID=123 \
+node scripts/deployment-smoke.mjs
+```
+
+公共 CA 站点可省略 `SMOKE_CA_FILE`；内部 CA 可从 Caddy 的 `/public-ca/root.crt` 获取并核验来源。脚本不会关闭 TLS 校验。也可用 `SMOKE_FEATURE_CODE` 选择路由（默认 `chat`），用 `SMOKE_EXPECTED_TEXT` 约束可控模型的回答。
+
+脚本验证页面与就绪状态、正确／错误登录、匿名拒绝、CSRF、退出后会话撤销、SSE 完成与历史落库、工作流发布和异步执行输出及节点日志。失败返回非零退出码，并尝试删除本次聊天和工作流定义；执行历史按平台保留策略处理。建议使用隔离数据库，避免验收记录污染生产数据。模型替身只证明链路，真实供应商调用应另行验收。构建成功或健康检查通过均不能替代业务冒烟；实际结果和未验证项统一记录在 `TEST_REPORT.md`。
+
 启动前先验证最终配置。请注意，`docker compose config` 会展开敏感配置，请勿分享其输出。
 将 `APP_IMAGE_REVISION` 设置为本次构建对应的完整提交。Compose 会把该值同时用于全部本地镜像标签和 OCI revision 标签。
 

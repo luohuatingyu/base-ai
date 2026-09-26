@@ -304,6 +304,36 @@ After changing the sites list or replacing renewed domain certificate files, run
 
 ## Start with Docker Compose
 
+### Dependency checks and deployment acceptance
+
+Compose requires external MySQL and Redis. Create a dedicated MySQL database and configure `MYSQL_*`, optional `MYSQL_MIGRATION_*`, and `REDIS_*` in `.env`. Their hostnames must resolve from the Backend container network; container `localhost` is not the host database. Keep MySQL identity verification and Redis TLS enabled in production with trusted certificates. The migration account also needs permission to apply the existing Flyway migrations.
+
+```bash
+export APP_IMAGE_REVISION="$(git rev-parse HEAD)"
+sh scripts/deploy-preflight.sh --host-only
+docker compose up --build -d
+docker compose ps
+# With the current Backend image already built, probe dependencies before application startup:
+sh scripts/deploy-preflight.sh
+```
+
+The host check validates the selected rootless Docker daemon and resolved Compose configuration. The full check uses the Backend image, environment and container network to run `SELECT 1` with both runtime and migration credentials, and Redis `PING` with the configured ACL/TLS settings. Enabled PostgreSQL is also checked. Each probe has a 15-second deadline; diagnostics contain only component, status and failure category. No migrations run and DDL grants are not verified. A fresh environment needs its image built first. Compose runs the same check on every Backend start before Spring/Flyway; failures block application startup. Frontend/Caddy keep their existing health dependencies.
+
+Run business acceptance through the actual Caddy HTTPS origin using Node.js 20+, a dedicated account with chat and workflow create/publish/execute/delete permissions, and a configured text model. Keep credential files outside Git:
+
+```bash
+SMOKE_BASE_URL=https://your-host:443 \
+SMOKE_USERNAME=acceptance-user \
+SMOKE_PASSWORD_FILE=/secure/acceptance-password \
+SMOKE_CA_FILE=/secure/caddy-root.crt \
+SMOKE_MODEL_ID=123 \
+node scripts/deployment-smoke.mjs
+```
+
+Omit `SMOKE_CA_FILE` for a publicly trusted certificate. For the internal CA, obtain and verify Caddy's `/public-ca/root.crt`; certificate verification is never disabled. Alternatively select a route with `SMOKE_FEATURE_CODE` (default `chat`), and optionally require fixture text with `SMOKE_EXPECTED_TEXT`.
+
+The script checks the frontend, readiness, valid/invalid login, anonymous denial, CSRF, session revocation, completed SSE and persisted chat history, workflow publishing, final output and node logs. Failures exit nonzero; cleanup attempts to delete the created conversation and workflow definition. Execution history follows platform retention. Use an isolated database. A model fixture verifies the chain only; real provider acceptance remains separate. Build and health success do not replace business smoke tests. Record results and unverified items in `TEST_REPORT.md`.
+
 Validate the resolved configuration before starting the stack. Be aware that `docker compose config` expands secrets, so do not share its output.
 Set `APP_IMAGE_REVISION` to the full commit being built. Compose uses that value as every local image tag and writes it to the OCI revision label.
 
