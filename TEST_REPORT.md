@@ -23,6 +23,7 @@
 - 依赖检查真实失败矩阵：MySQL DNS、MySQL TLS 认证、Redis 错误密码、Redis TLS 不匹配、Redis 拒绝连接、非法端口均以非零退出并且 Backend 应用未启动。
 - 真实 HTTPS 业务冒烟：`node scripts/deployment-smoke.mjs`，登录、聊天 SSE/历史、工作流发布执行/节点日志、清理和会话撤销全部通过。聊天使用隔离模型 HTTP 替身；真实供应商 API 未调用。
 - 本次期间另行执行完整 Maven：1033 项中 1028 通过、5 失败、0 错误、0 跳过。失败为并行工作区改动触发的 `AuthServiceTest.rejectsBlankCredentials`（4）和 `ChatStreamClientTest.resolvesSelectedModelAndDefaultThinking`（1），不是部署检查代码；该结果保留在报告中，不以删除或跳过测试规避。
+- 并行改动完成后最终重跑完整 Maven：1034/1034 通过，失败 0、错误 0、跳过 0；该结果覆盖当前 HEAD，已解除上项临时工作区阻塞。
 
 ### 已知限制与下次建议
 
@@ -78,11 +79,11 @@
 
 ## 当前测试基准
 
-Commit: 975e9b166cfca6b53bf45a7c0a99af68b3854fc3
+Commit: 8d71e667a8a5e2db94744cc1b72a69f5f109fe3a
 
-- 提交信息：Fix user identity in chat rate limiting。
+- 提交信息：Update deployment acceptance test report。
 - 测试日期：2026-09-26（Asia/Shanghai）；分支：`emdash/rare-laws-ask-aa901`。
-- 验收范围：完整后端 Maven 套件，950/950 通过，失败 0、错误 0、跳过 0；详细结果见历史分区的“聊天 USER 限流身份修复”。这是后端自动重测判断的代码基准，不代表部署验收完成；该轮 Compose 因缺少环境变量未完成。
+- 验收范围：完整后端 Maven 套件 1034/1034 通过，失败 0、错误 0、跳过 0；同时完成 MySQL、Redis、Compose 健康检查和 HTTPS 业务冒烟。该基准包含部署依赖门禁及验收脚本。
 
 ### 本次变更测试结果（2026-09-26）
 
