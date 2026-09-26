@@ -122,16 +122,20 @@ public class PlatformAdminService {
     public PageResult<UserView> users(String keyword, Boolean enabled, int page, int size) {
         DataScopeContext.Scope contextualScope = DataScopeContext.current();
         DataScopeContext.Scope scope = contextualScope == null ? dataScopeResolver.resolveCurrent() : contextualScope;
-        // 获取所有用户并应用过滤条件
-        return page(userRepository.findAll().stream()
-            // 数据范围过滤必须先于映射，防止页面列表泄漏其他部门或其他账号。
-            .filter(user -> dataScopeResolver.canAccessUser(scope, user))
-            // 关键字过滤：匹配用户名或显示名称
-            .filter(user -> blank(keyword) || contains(user.getUsername(), keyword) || contains(user.getDisplayName(), keyword))
-            // 状态过滤：根据启用状态筛选
-            .filter(user -> enabled == null || enabled.equals(user.getEnabled()))
-            // 按ID排序并转换为视图对象
-            .sorted(Comparator.comparing(UserAccount::getId)).map(this::toUserView).toList(), page, size);
+        int safePage = Math.max(1, page), safeSize = Math.min(200, Math.max(1, size));
+        long offset = (long) (safePage - 1) * safeSize;
+        String normalizedKeyword = blank(keyword) ? null : keyword.trim().toLowerCase(Locale.ROOT);
+        Long selfId = scope.self() ? scope.userId() : null;
+        boolean hasDepartments = !scope.departmentIds().isEmpty();
+        // 空集合使用占位值避免生成 IN ()，独立开关保证占位值绝不授予访问权。
+        Set<Long> departmentIds = hasDepartments ? scope.departmentIds() : Set.of(0L);
+        long total = userRepository.countForList(normalizedKeyword, enabled, scope.all(), selfId, hasDepartments, departmentIds);
+        if (offset >= total) return new PageResult<>(List.of(), total, safePage, safeSize);
+        List<Long> ids = userRepository.findListIds(normalizedKeyword, enabled, scope.all(), selfId,
+            hasDepartments, departmentIds, offset, safeSize);
+        // 只加载当前页的关联关系，计数与主键查询始终使用相同的数据权限条件。
+        List<UserView> items = ids.isEmpty() ? List.of() : userRepository.findListDetails(ids).stream().map(this::toUserView).toList();
+        return new PageResult<>(items, total, safePage, safeSize);
     }
 
     /**
@@ -610,12 +614,6 @@ public class PlatformAdminService {
     private DepartmentView toDepartmentView(Department item) { return new DepartmentView(item.getId(), item.getParentId(), item.getCode(), item.getName(), item.getSortOrder(), item.getEnabled()); }
     private PositionView toPositionView(Position item) { return new PositionView(item.getId(), item.getCode(), item.getName(), item.getSortOrder(), item.getEnabled()); }
 
-    /** 将查询结果切分为稳定分页结构。 */
-    private <T> PageResult<T> page(List<T> rows, int page, int size) {
-        int safePage = Math.max(1, page), safeSize = Math.min(200, Math.max(1, size));
-        int from = Math.min(rows.size(), (safePage - 1) * safeSize), to = Math.min(rows.size(), from + safeSize);
-        return new PageResult<>(rows.subList(from, to), rows.size(), safePage, safeSize);
-    }
     private Comparator<Menu> menuComparator() { return Comparator.comparing(Menu::getSortOrder).thenComparing(Menu::getId); }
     private <T> LinkedHashSet<T> load(List<Long> ids, Function<Iterable<Long>, List<T>> loader) { return new LinkedHashSet<>(loader.apply(ids == null ? List.of() : ids)); }
     private boolean contains(String value, String keyword) { return value != null && value.toLowerCase(Locale.ROOT).contains(keyword.trim().toLowerCase(Locale.ROOT)); }
