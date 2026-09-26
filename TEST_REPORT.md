@@ -1,17 +1,55 @@
 # 最近分支覆盖测试报告
 
+## 当前测试基准
+
+Commit: 975e9b166cfca6b53bf45a7c0a99af68b3854fc3
+
+- 提交信息：Fix user identity in chat rate limiting。
+- 测试日期：2026-09-26（Asia/Shanghai）；分支：`emdash/rare-laws-ask-aa901`。
+- 验收范围：完整后端 Maven 套件，950/950 通过，失败 0、错误 0、跳过 0；详细结果见历史分区的“聊天 USER 限流身份修复”。这是后端自动重测判断的代码基准，不代表部署验收完成；该轮 Compose 因缺少环境变量未完成。
+
+### 基准维护与读取约定
+
+- 本节是当前基准的唯一来源：机器字段必须独占一行，使用上述英文键、一个空格和完整 40 位 Git 哈希；全文只保留这一处机器字段。
+- 新增测试记录写入下方历史分区，记录内使用“历史提交”或“代码提交”等中文标签。只有完成相应后端测试验收后，才同步替换顶部哈希、提交信息、测试日期、分支和验收范围。
+- 文档、前端或其他未覆盖后端验收范围的记录不能自动推进本基准，也不能用报告提交或未经验证的 HEAD 替代已测试代码版本。
+- 兼容 AGENTS.md 中现有的首项提取命令；推荐按行首精确读取，并在字段数量异常、格式错误或提交不存在时停止判断，不能视为“无变更”。
+
+```bash
+# 在仓库根目录执行；依次验证唯一字段、哈希格式与 Git 对象，再比较业务代码。
+(
+  test "$(grep -c '^Commit[:]' TEST_REPORT.md)" -eq 1 || exit 1
+  test "$(grep -Ec '^Commit[:] [0-9a-f]{40}$' TEST_REPORT.md)" -eq 1 || exit 1
+  BASELINE=$(awk '$1 == "Commit" ":" {print $2}' TEST_REPORT.md)
+  git cat-file -e "${BASELINE}^{commit}" || exit 1
+  git diff "$BASELINE" HEAD -- backend/src/main/java/
+)
+```
+
+### 本次文档校验（2026-09-26）
+
+- 仅统一本报告的基准字段与历史分区，不新增测试验收、不推进代码基准。
+- 修复前字段检查发现 106 个基准字段；修复后唯一性、40 位哈希格式、Git 提交存在性、AGENTS.md 原提取命令兼容性检查均通过。
+- 执行上方 Bash 校验命令及 Node 内存断言：确认历史正文仅替换英文基准标签，原有提交哈希、测试结果和顺序全部保留；`git diff --check` 通过。文档校验无失败，未生成临时测试或调试文件。首次编辑脚本因模板插值报错而未写入文件，改用普通字符串后完成编辑。
+- 比较基准与本次检查时的 HEAD（`bab1698`），仍检出 `DeploymentPreflight.java` 业务差异；本次文档整理不将该差异认定为已经测试覆盖，需对应任务完成重测并更新基准。
+- 本次未执行 Maven、前端、Go 套件或 Compose 重建：仅修改 Markdown 文档，沿用既有测试结果及部署限制；今后修改业务代码仍须按项目规则执行测试与重建。
+
+## 历史测试记录
+
+以下全部章节均为历史验收记录，按原有顺序保留；其中的提交标记、局部“当前”表述及测试结果仅属于各次记录，不参与当前基准提取。新增记录放在本分区开头。
+
 ## 聊天 USER 限流身份修复（2026-09-26）
 
 ### Git 基准点与变更范围
 
-Commit: 975e9b166cfca6b53bf45a7c0a99af68b3854fc3
+历史提交： 975e9b166cfca6b53bf45a7c0a99af68b3854fc3
 
 - 提交信息：`Fix user identity in chat rate limiting`。
 - 分支：`emdash/rare-laws-ask-aa901`；测试日期：2026-09-26（Asia/Shanghai）。
 - `RateLimitAspect` 使用 `AuthContext.require().id()` 生成 USER 限流键；无认证上下文或用户 ID 为 null 时返回 401 / `auth.required`。
 - 同一出口的不同用户额度独立，同账号切换 IP 或代理头继续使用同一额度。聊天每 60 秒 10 次、现有限流错误协议、IP/GLOBAL 策略保持兼容。
 - 修改两个既有测试文件，无新增依赖、配置、数据库或第三方代码变更。技术栈为 Java 17、Spring AOP、Resilience4j、JUnit 5、Mockito。
-- 变更前检查：`git diff f4570aa HEAD -- backend/src/main/java/` 无差异；旧报告首个 `Commit:` 为 `dc062e4638e00fceee548b7cc4dbeac6c1601a25`，相对本次起始 HEAD 的业务差异涉及 11 个文件，因此执行完整后端测试并把最新基准置于报告首部。
+- 变更前检查：`git diff f4570aa HEAD -- backend/src/main/java/` 无差异；旧报告首个 `历史提交：` 为 `dc062e4638e00fceee548b7cc4dbeac6c1601a25`，相对本次起始 HEAD 的业务差异涉及 11 个文件，因此执行完整后端测试并把最新基准置于报告首部。
 
 ### 验收标准—可执行测试映射
 
@@ -268,7 +306,7 @@ docker compose up --build -d
 
 ### Git 基准与范围
 
-Commit: dc062e4638e00fceee548b7cc4dbeac6c1601a25
+历史提交： dc062e4638e00fceee548b7cc4dbeac6c1601a25
 - 功能提交：496f21b99557da3e5c256aee6ec4218e72c0a621，Add persistent user conversations and streaming chat。
 - 基准提交说明：Correct verification baseline；其与前一提交仅调整其他任务的测试记录，业务代码与功能提交一致。分支 master；测试日期 2026-09-12（Asia/Shanghai）。保留其报告内容。
 - 技术栈：Vue 3 / Element Plus / Spring MVC / JPA / MySQL / Python 3.12 / FastAPI / httpx；无新增项目依赖或运行配置。
@@ -336,7 +374,7 @@ Commit: dc062e4638e00fceee548b7cc4dbeac6c1601a25
 
 ### Git 基准与范围
 
-Commit: 496f21b99557da3e5c256aee6ec4218e72c0a621
+历史提交： 496f21b99557da3e5c256aee6ec4218e72c0a621
 - 提交信息：对当前工作区插件兼容边界、跨库同步和 SSH 浏览器验收缺口进行独立复核；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
 - 本轮仅执行验证和更新测试报告，未修改业务代码、配置、数据库迁移或测试用例；测试命令读取了当前工作区快照，报告提交未包含原有未提交改动。
 
@@ -367,7 +405,7 @@ Commit: 496f21b99557da3e5c256aee6ec4218e72c0a621
 
 ### Git 基准与范围
 
-Commit: 724fec3eee679eab80d0c32db7056baebe01a9e1
+历史提交： 724fec3eee679eab80d0c32db7056baebe01a9e1
 - 提交信息：Redesign data sync workspace and plan editor；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
 - Vue 3 / Element Plus / Vue I18n / CSS Grid；修改 DataSyncView.vue、中英文资源及 data-sync-remote.test.mjs，无新增项目依赖、后端接口、配置或数据库变更。
 - 四张指标卡展示计划总数、启用、运行中（含取消中）、最近失败；任务卡片突出源库到目标库的流向，右侧提供选中摘要与权限控制的操作。
@@ -413,7 +451,7 @@ Commit: 724fec3eee679eab80d0c32db7056baebe01a9e1
 
 ### Git 基准与范围
 
-Commit: 0f740b5be9577f1d9998bc1e098720c694cc8f72
+历史提交： 0f740b5be9577f1d9998bc1e098720c694cc8f72
 - 提交信息：Add interactive SSH terminals to server management；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
 - Vue 3、xterm.js、Spring WebSocket、Go WebSocket/PTY、OpenSSH。新增 SSH 终端入口、持续会话、尺寸同步、中断、断开重连及独立 operations:server:shell 权限；新增 V38 权限迁移，默认不授予 OPS。
 - 一次性票据有效期 30 秒，握手必须登录且同源，票据通过首帧传输；会话归属、权限、启用状态持续检查，空闲 5 分钟、最长 30 分钟；每用户最多 4 个连接、全局最多 32 个。终端正文不写审计日志，凭据不返回前端。
@@ -462,7 +500,7 @@ Commit: 0f740b5be9577f1d9998bc1e098720c694cc8f72
 
 ### Git 基准与范围
 
-Commit: 86bfcb63fe9bce45d7f56d281b8e0bec8ef1690d
+历史提交： 86bfcb63fe9bce45d7f56d281b8e0bec8ef1690d
 - 提交信息：Match server password credentials to entered username；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
 - Vue 3 / Element Plus / Java 17 / Spring JDBC。修改服务器表单、服务器认证服务、中英文文案及正式测试，无新增依赖、数据库迁移或持久配置变更。
 - 三种 SSH 认证方式均必填用户名。选择账密、秘钥或切换认证方式不覆盖用户名。账密按用户名去除首尾空白后精确匹配（区分大小写），同时检查类型、所有者及启用状态；未填写用户名时没有账密选项，秘钥不按用户名过滤。
@@ -506,7 +544,7 @@ Commit: 86bfcb63fe9bce45d7f56d281b8e0bec8ef1690d
 
 ### Git 基准与实现范围
 
-Commit: a3b317a67c7a7fd33c9a98a4497669114a6ec854
+历史提交： a3b317a67c7a7fd33c9a98a4497669114a6ec854
 - 提交信息：Support independent server password and key credentials；分支 master；测试日期 2026-09-12（Asia/Shanghai）。
 - Vue 3 / Element Plus / Java 17 / Spring JDBC / AES-GCM / MySQL Flyway；新增 V37 的两个可空引用列及外键，无新增依赖。
 - 新增和编辑支持账号＋秘钥、账密、账密＋秘钥。密码和秘钥分别选择已有凭据或手工配置，可混搭。只有纯秘钥模式独立显示账号；账密模式从已选账密继承账号，手工账密在账密区域填写账号。
@@ -553,7 +591,7 @@ Commit: a3b317a67c7a7fd33c9a98a4497669114a6ec854
 
 ### Git 基准与范围
 
-Commit: fd31496e74f34d0c07f000dfb33808ffe1810aee
+历史提交： fd31496e74f34d0c07f000dfb33808ffe1810aee
 - 提交信息：Improve credential file import and full text editing；分支 master，测试日期 2026-09-11。
 - 仅修改 ServerCredentialManager.vue、中英文语言资源、server-credentials.test.mjs；Vue 3 / Element Plus / 浏览器 File API / TextEncoder，无新增依赖、后端接口、配置或迁移变更。
 - 弹窗加宽、减少多层卡片，三个长文本字段全宽独占行。私钥默认 8 行、其他材料 4 行，自动增高至 16 行后滚动；等宽字体、视觉自动折行、无 maxlength 截断。每个字段支持全屏展开编辑，通过同一 form 字段即时同步，收起保留输入。
@@ -591,7 +629,7 @@ Commit: fd31496e74f34d0c07f000dfb33808ffe1810aee
 
 ### 自动化测试基准与范围
 
-Commit: 5cc7605f3bfe02bfcb697048aa5da395d98d5176
+历史提交： 5cc7605f3bfe02bfcb697048aa5da395d98d5176
 - 提交信息：Improve data synchronization workspace layout；分支：master；测试日期：2026-09-11。
 - 本次仅修改 DataSyncView.vue、中英文语言资源与现有 data-sync-remote.test.mjs，使用 Vue 3、Element Plus、现有图标库及 scoped CSS；没有新增依赖、修改后端、运行配置或数据库。
 - 页头和计划概览、编号配置分区、来源到目标的数据流布局、表选择卡片及空状态、已选数量、计划列表、语义状态标签、手动调度提示和弹窗排版统一优化；窄屏使用单列配置及可横向滚动表格，避免固定操作列遮挡内容。
@@ -634,7 +672,7 @@ Commit: 5cc7605f3bfe02bfcb697048aa5da395d98d5176
 
 ### Git 基准点
 
-Commit: abbb8cbb33283b6e27d65ff6a3721b6f04f71643
+历史提交： abbb8cbb33283b6e27d65ff6a3721b6f04f71643
 - 提交信息：Keep SSH usernames on servers for key credentials；分支：master；测试日期：2026-09-11。
 - 相对上一基准 d559cdcf4af42b02e181a9f0d850588299e89bcf，业务修改仅 ServerCredentialService；技术栈仍为 Spring Boot/JDBC/AES-GCM 与 Vue 3/Element Plus，无新增依赖、配置或数据库迁移。
 - 私钥表单移除账号，列表显示“—”，切换私钥清空账号，提交不携带账号值。服务端忽略私钥请求中的账号，保存空账号；读取 KEY 或被识别为 KEY 的历史 RSA 记录时返回空账号，因此绑定与运行解析均使用服务器自身 SSH 用户。旧数据库账号不批量清理，编辑时清空。账号密码和历史组合凭据维持原规则。
@@ -668,7 +706,7 @@ Commit: abbb8cbb33283b6e27d65ff6a3721b6f04f71643
 
 ### Git 基准点
 
-Commit: d559cdcf4af42b02e181a9f0d850588299e89bcf
+历史提交： d559cdcf4af42b02e181a9f0d850588299e89bcf
 - 提交信息：Fix credential type lifecycle and improve management interface
 - 分支：master；测试日期：2026-09-11。
 - 相对已验证基准 f1d1cde80ba6c1a9768fb532c8821dad71a93579，业务变更集中于 ServerCredentialService；执行定向和完整测试。以下历史章节的失败与旧基准保留作为过程记录，以本节为最新验收记录。
@@ -725,7 +763,7 @@ Commit: d559cdcf4af42b02e181a9f0d850588299e89bcf
 
 ### Git 基准点与实现范围
 
-Commit: f1d1cde80ba6c1a9768fb532c8821dad71a93579
+历史提交： f1d1cde80ba6c1a9768fb532c8821dad71a93579
 - 提交信息：Complete reusable server credential management；分支：master；测试日期：2026-09-11。
 - 本次基于此前未完成的凭据后端骨架继续开发。检查旧基准 cb5ee140660424ff340234a8daefe313021f8464 与 HEAD 的业务代码差异后，执行完整后端与前端验证。
 - 技术栈：Java 17 / Spring Boot / JDBC / MySQL / Flyway、Vue 3 / Element Plus、AES-GCM；未新增依赖或修改运行配置，Python 运行镜像保持 3.12。
@@ -786,7 +824,7 @@ Commit: f1d1cde80ba6c1a9768fb532c8821dad71a93579
 
 ### Git 基准点与交付状态
 
-Commit: cb5ee140660424ff340234a8daefe313021f8464
+历史提交： cb5ee140660424ff340234a8daefe313021f8464
 - 提交信息：Fix SSH runtime user and display detected server OS；分支：master；测试日期：2026-09-11。
 - 技术栈：Go/OpenSSH、Java 17/Spring/JDBC、Vue 3/Element Plus、Docker Compose；Python 服务仍使用 3.12。
 - 自动化测试、镜像重建和服务健康检查通过。阿里云实际连接和监控尚未验收通过，用户选择“先不处理，我调整方案”，已暂停进一步远端认证调整。
@@ -846,7 +884,7 @@ Commit: cb5ee140660424ff340234a8daefe313021f8464
 
 ### Git 基准点
 
-Commit: a6be07dc36dc7004f9950a2390cd7472fd5a1899
+历史提交： a6be07dc36dc7004f9950a2390cd7472fd5a1899
 - 提交信息：Support SSH prompts with noexec temporary storage；分支：master；测试日期：2026-09-11。
 - 功能提交：c62948c78d9f2f512fec8f674587d06d2d2c5d42（Support combined SSH authentication and automatic host trust）。
 - 技术栈：Vue、Java/Spring、Go/OpenSSH。前端取消指纹输入，后端和 Agent 忽略历史指纹；新增 KEY_PASSWORD，保留独立私钥口令。SSH 执行统一入口，使用 Agent 自身响应口令，兼容 /tmp 的 noexec 挂载，凭据不进入命令参数。
@@ -890,7 +928,7 @@ Commit: a6be07dc36dc7004f9950a2390cd7472fd5a1899
 
 ### Git 基准点与范围
 
-Commit: b0b7e034f304e564a5e353004e0eeb2f8aa3de02
+历史提交： b0b7e034f304e564a5e353004e0eeb2f8aa3de02
 - 提交信息：Remove Docker container monitoring from server resources；分支：master；测试日期：2026-09-11。
 - 本节验收本次监控移除提交；共享工作区同时存在独立 SSH 认证变更，本次仅分块提交监控相关内容。完整套件和镜像构建基于执行时共享工作区，因此不将本报告视为其他后续提交的独立验收。
 - 前端移除容器列表、健康状态、Docker 错误提示及相关样式；Go Agent 不再调用 Docker 查询；Java 后端只验证主机指标，兼容旧 Agent 的 PARTIAL 响应并忽略容器错误。
@@ -928,7 +966,7 @@ Commit: b0b7e034f304e564a5e353004e0eeb2f8aa3de02
 
 ### Git 基准点
 
-Commit: eb4bcb57edcd95648b0d9cb7b2b307f2a65aaff3
+历史提交： eb4bcb57edcd95648b0d9cb7b2b307f2a65aaff3
 - 提交信息：Restore immutable migrations and preserve IDA storage compatibility
 - 分支：master；测试日期：2026-09-11。
 - 本节取代上一节中的数据库启动阻塞状态；未修改数据库存量数据或 Flyway 历史记录。
@@ -975,7 +1013,7 @@ Commit: eb4bcb57edcd95648b0d9cb7b2b307f2a65aaff3
 
 ### Git 基准点
 
-Commit: 62529051e0bc78db972c0e32fef2a07b44d1f78f
+历史提交： 62529051e0bc78db972c0e32fef2a07b44d1f78f
 - 提交信息：Simplify server actions and align IDA regression tests
 - 分支：master；测试日期：2026-09-11。
 - 状态：代码测试通过，完整运行环境验收未完成；数据库兼容修复方案待确认。
@@ -1048,7 +1086,7 @@ Commit: 62529051e0bc78db972c0e32fef2a07b44d1f78f
 
 ### Git 基准点
 
-Commit: ee42649574b042d6853ffa79c39fef4f97bfc498
+历史提交： ee42649574b042d6853ffa79c39fef4f97bfc498
 - 提交信息: Fix USB device detection without developer tunnels
 - 测试日期: 2026-09-11
 - 分支: master
@@ -1129,7 +1167,7 @@ Commit: ee42649574b042d6853ffa79c39fef4f97bfc498
 
 ### Git 基准点
 
-Commit: fa50f51
+历史提交： fa50f51
 - 提交信息: Add Alibaba Cloud OSS as object storage data source type
 - 测试日期: 2026-09-11
 - 分支: master
@@ -1190,7 +1228,7 @@ Commit: fa50f51
 
 ### Git 基准点
 
-Commit: 9b35f1c9b018cf966546f9c83c63b2e979c1ba30
+历史提交： 9b35f1c9b018cf966546f9c83c63b2e979c1ba30
 - 提交信息: Move device agents into automation domain
 - 测试日期: 2026-09-11
 - 分支: master
@@ -1260,7 +1298,7 @@ Commit: 9b35f1c9b018cf966546f9c83c63b2e979c1ba30
 
 ### Git 基准点
 
-Commit: dba837f8fff192e28645156eb393615919f839f3
+历史提交： dba837f8fff192e28645156eb393615919f839f3
 - 提交信息: Complete data sync server safeguards
 - 测试日期: 2026-09-11
 - 分支: master
@@ -1338,7 +1376,7 @@ Commit: dba837f8fff192e28645156eb393615919f839f3
 
 ### Git 基准点
 
-Commit: aa13c4a5a09cb22e1900dbcace5f92474721a0b0
+历史提交： aa13c4a5a09cb22e1900dbcace5f92474721a0b0
 - 提交信息: Auto-detect server Compose projects
 - 测试日期: 2026-09-11
 - 分支: master
@@ -1419,7 +1457,7 @@ Commit: aa13c4a5a09cb22e1900dbcace5f92474721a0b0
 
 ### Git 基准点
 
-Commit: 37055f09e801bf335cf89c7d5b044831d6b2c862
+历史提交： 37055f09e801bf335cf89c7d5b044831d6b2c862
 - 提交信息: Improve data source configuration form
 - 测试日期: 2026-09-11
 - 分支: master
@@ -1494,7 +1532,7 @@ Commit: 37055f09e801bf335cf89c7d5b044831d6b2c862
 
 ### Git 基准点
 
-Commit: 8688e17dbd7dc9e884ca8809a8e19d53304c6bfe
+历史提交： 8688e17dbd7dc9e884ca8809a8e19d53304c6bfe
 - 提交信息: Redesign data source setup wizard
 - 测试日期: 2026-09-11
 - 分支: master
@@ -1567,7 +1605,7 @@ Commit: 8688e17dbd7dc9e884ca8809a8e19d53304c6bfe
 
 ### Git 基准点
 
-Commit: a203957a2b778e2036a7bdd1e1c8c0e0be4ef826
+历史提交： a203957a2b778e2036a7bdd1e1c8c0e0be4ef826
 - 提交信息: Report active device agent version
 - 测试日期: 2026-09-11
 - 分支: master
@@ -1637,7 +1675,7 @@ Commit: a203957a2b778e2036a7bdd1e1c8c0e0be4ef826
 
 ### Git 基准点
 
-Commit: 194ead1568267edc94c145663543cc5466e2a35b
+历史提交： 194ead1568267edc94c145663543cc5466e2a35b
 - 提交信息: Correct device registry test report
 - 本次功能提交: `511c63bfb72fbb00782547b07d2c0201607a6de3`（Agent 升级互斥）、`16c78fe1defc88e650e193f6d091ff2e1f7c7e8e`（连接图标）
 - 测试日期: 2026-09-10
@@ -1717,7 +1755,7 @@ Commit: 194ead1568267edc94c145663543cc5466e2a35b
 
 ### Git 基准点
 
-Commit: 3902fd54bcba7f0ff3882759856fa2eff3432880
+历史提交： 3902fd54bcba7f0ff3882759856fa2eff3432880
 - 提交信息: Fix device registry tunnel bootstrap
 - 测试日期: 2026-09-10
 - 分支: master
@@ -1786,7 +1824,7 @@ Commit: 3902fd54bcba7f0ff3882759856fa2eff3432880
 
 ### Git 基准点
 
-Commit: 5dd20f394a61326c2c7e01146baaeb8958007c47
+历史提交： 5dd20f394a61326c2c7e01146baaeb8958007c47
 - 提交信息: Complete device agent full-stack management sync
 - 测试日期: 2026-09-10
 - 分支: master
@@ -1865,7 +1903,7 @@ Commit: 5dd20f394a61326c2c7e01146baaeb8958007c47
 
 ### Git 基准点
 
-Commit: 10fa8374d387760a142382093b6df3c8ee03ed80
+历史提交： 10fa8374d387760a142382093b6df3c8ee03ed80
 - 提交信息: Add real-time server resource monitoring
 - 测试日期: 2026-09-10
 - 分支: master
@@ -1938,7 +1976,7 @@ Commit: 10fa8374d387760a142382093b6df3c8ee03ed80
 
 ### Git 基准点
 
-Commit: f4535252aa4b73a7dbd3ccaf35fb276b80432f7f
+历史提交： f4535252aa4b73a7dbd3ccaf35fb276b80432f7f
 - 提交信息: Show data source maintenance actions
 - 测试日期: 2026-09-10
 - 分支: master
@@ -1997,7 +2035,7 @@ Commit: f4535252aa4b73a7dbd3ccaf35fb276b80432f7f
 
 ### Git 基准点
 
-Commit: 3a048c940e32cd2b1642afe82df66fad2cf10450
+历史提交： 3a048c940e32cd2b1642afe82df66fad2cf10450
 - 提交信息: Grant data source maintenance with view access
 - 测试日期: 2026-09-10
 - 分支: master
@@ -2068,7 +2106,7 @@ Commit: 3a048c940e32cd2b1642afe82df66fad2cf10450
 
 ### Git 基准点
 
-Commit: abb3202cb63024ab921b23be7a2f480e12a22d5f
+历史提交： abb3202cb63024ab921b23be7a2f480e12a22d5f
 - 提交信息: Move mail management under operations and reorder top catalogs
 - 测试日期: 2026-09-10
 - 分支: master
@@ -2116,7 +2154,7 @@ Commit: abb3202cb63024ab921b23be7a2f480e12a22d5f
 
 ### Git 基准点
 
-Commit: b9d620f5038bdb3a4d52c7671eeedf7b03564db9
+历史提交： b9d620f5038bdb3a4d52c7671eeedf7b03564db9
 - 提交信息: Redesign data source page with health status monitoring
 - 测试日期: 2026-09-10
 - 分支: master
@@ -2177,7 +2215,7 @@ Commit: b9d620f5038bdb3a4d52c7671eeedf7b03564db9
 
 ### Git 基准点
 
-Commit: 2888353fac1badbd4f7ee64a129faea9fe4a937d
+历史提交： 2888353fac1badbd4f7ee64a129faea9fe4a937d
 - 提交信息: Restore applied V28 migration checksum
 - 核心功能提交: 2f78119（Add dedicated data source management）
 - 测试日期: 2026-09-10
@@ -2237,7 +2275,7 @@ Commit: 2888353fac1badbd4f7ee64a129faea9fe4a937d
 
 ### Git 基准点
 
-Commit: 05ff1d5659279bc4e918d7f10817f8e68af4df19
+历史提交： 05ff1d5659279bc4e918d7f10817f8e68af4df19
 - 提交信息: Reorganize management permission domains
 - 测试日期: 2026-09-10
 - 分支: master
@@ -2291,7 +2329,7 @@ Commit: 05ff1d5659279bc4e918d7f10817f8e68af4df19
 
 ### Git 基准点
 
-Commit: cf157791736538697b1000589673ee2621d2edd9
+历史提交： cf157791736538697b1000589673ee2621d2edd9
 - 提交信息: Keep device agent protocol responses unwrapped
 - 核心功能提交: e8f52114e819aa46f1f7fdf848f3233d97cc1530（Add read-only iOS device agent management）
 - 自升级修复提交: 9229d238c01cfe975604d7d80db5ffef69334283（Fix device agent self-upgrade）
@@ -2375,7 +2413,7 @@ Commit: cf157791736538697b1000589673ee2621d2edd9
 
 ### Git 基准点
 
-Commit: 3370c3fa283094bc629091414eae9d29eb63f101
+历史提交： 3370c3fa283094bc629091414eae9d29eb63f101
 - 提交信息: Recover deployment results after backend restart
 - 上一完整测试基准点: 806666e9ee3fa147415105f04f95d51d0b77e491
 - 基准差异检查: `git diff 806666e9ee3fa147415105f04f95d51d0b77e491 3370c3fa283094bc629091414eae9d29eb63f101 -- backend/src/main/java/` 包含数据同步、服务器管理、连接引用保护、菜单与权限初始化等业务代码变更，已触发 Backend 完整测试和项目相关回归测试。
@@ -2460,7 +2498,7 @@ Commit: 3370c3fa283094bc629091414eae9d29eb63f101
 
 ### Git 基准点
 
-Commit: 806666e9ee3fa147415105f04f95d51d0b77e491
+历史提交： 806666e9ee3fa147415105f04f95d51d0b77e491
 - 提交信息: Enable rootless adapter lifecycle
 - 上一完整测试基准点: 16fa0198aa9da9b9e8f8ae61e165f22a042138f6
 - 基准差异检查: `git diff 16fa0198aa9da9b9e8f8ae61e165f22a042138f6 806666e9ee3fa147415105f04f95d51d0b77e491 -- backend/src/main/java/` 无输出；本次只修改 Adapter Broker 镜像、Compose 运行配置和部署契约测试，未触发后端业务代码完整重测。
@@ -2543,7 +2581,7 @@ Commit: 806666e9ee3fa147415105f04f95d51d0b77e491
 
 ### Git 基准点
 
-Commit: 16fa0198aa9da9b9e8f8ae61e165f22a042138f6
+历史提交： 16fa0198aa9da9b9e8f8ae61e165f22a042138f6
 - 提交信息: Pass image revisions through CI validation
 - 核心安全提交: 8d888ec9640eafdefb756cd6335dc4a487fa14d0（Harden application and container security）
 - 构造注入修复提交: 158b2b7a6f64f164a2665fdb85b22d84faf9126d（Fix workflow network policy constructor injection）
@@ -2632,7 +2670,7 @@ Commit: 16fa0198aa9da9b9e8f8ae61e165f22a042138f6
 
 ### Git 基准点
 
-Commit: a9fe614
+历史提交： a9fe614
 - 提交信息: Harden credential and execution security
 - 上一测试报告业务基准点: af666ba38d1b7250554061f66c0f02d4a3a08346
 - 基准差异检查: 23 个后端业务代码文件发生变化，共 832 行新增、180 行删除，已触发完整后端重测。
@@ -2720,7 +2758,7 @@ Commit: a9fe614
 
 ### Git 基准点
 
-Commit: af666ba38d1b7250554061f66c0f02d4a3a08346
+历史提交： af666ba38d1b7250554061f66c0f02d4a3a08346
 - 提交信息: `Improve knowledge base management`
 - 上一测试报告业务基准点: `e9377369e9c8fee18d4133306f0737468852ebc3`
 - 基准差异检查: `git diff e9377369e9c8fee18d4133306f0737468852ebc3 af666ba38d1b7250554061f66c0f02d4a3a08346 -- backend/src/main/java/` 有输出，共 2 个业务代码文件、103 行新增、4 行删除，已触发完整重测
@@ -2813,7 +2851,7 @@ Commit: af666ba38d1b7250554061f66c0f02d4a3a08346
 
 ### Git 基准点
 
-Commit: e9377369e9c8fee18d4133306f0737468852ebc3
+历史提交： e9377369e9c8fee18d4133306f0737468852ebc3
 - 提交信息: `Isolate plugin execution in dedicated sandboxes`
 - 上一测试报告基准点: `cb57855dd345a18b75cc5e50d97f3a7dd506337a`
 - 基准差异检查: `git diff cb57855dd345a18b75cc5e50d97f3a7dd506337a e9377369e9c8fee18d4133306f0737468852ebc3 -- backend/src/main/java/` 有输出，共 4 个业务代码文件、38 行新增、9 行删除，已触发完整重测
@@ -2920,7 +2958,7 @@ Commit: e9377369e9c8fee18d4133306f0737468852ebc3
 
 ### Git 基准点
 
-Commit: cb57855dd345a18b75cc5e50d97f3a7dd506337a
+历史提交： cb57855dd345a18b75cc5e50d97f3a7dd506337a
 - 提交信息: `Apply runtime image security updates`
 - 变更提交: `0cf7e29`、`3d3c8f0`、`8e018bb`、`0077c60`、`773c32b`、`83b7455`、`12328a7`、`cb57855`
 - 上一测试报告基准点: `0ef3d6c`
@@ -3022,7 +3060,7 @@ Commit: cb57855dd345a18b75cc5e50d97f3a7dd506337a
 
 ### Git 基准点
 
-Commit: 0ef3d6c
+历史提交： 0ef3d6c
 - 业务代码提交: `0ef3d6c`（Consolidate MySQL migrations into a single baseline）
 - 测试日期: 2026-08-24
 - 分支: master
@@ -3117,7 +3155,7 @@ Commit: 0ef3d6c
 
 ### Git 基准点
 
-Commit: 9c010db5287bdf432bb2cdf0794f29b0c02f2270
+历史提交： 9c010db5287bdf432bb2cdf0794f29b0c02f2270
 - 业务代码提交: `6b79411`（Move API trigger storage to MySQL）
 - 文档提交: `9c010db`（Update docs for API trigger MySQL storage）
 - 测试日期: 2026-08-24
@@ -3199,7 +3237,7 @@ Commit: 9c010db5287bdf432bb2cdf0794f29b0c02f2270
 
 ### Git 基准点
 
-Commit: 9f8e39f1cc8f3aca6ebd1f3d52702603d67f4579
+历史提交： 9f8e39f1cc8f3aca6ebd1f3d52702603d67f4579
 - 日志优化提交: `05a9120`（Harden trace logging defaults）
 - 基准说明: 测试时共享工作区同时包含 `9f8e39f` 的 Adapter Supervisor 代码；后续 `d604662` 仅更新测试文档，不影响运行结果。
 - 测试日期: 2026-08-20
@@ -3278,7 +3316,7 @@ Commit: 9f8e39f1cc8f3aca6ebd1f3d52702603d67f4579
 
 ### Git 基准点
 
-Commit: 9f8e39f1cc8f3aca6ebd1f3d52702603d67f4579
+历史提交： 9f8e39f1cc8f3aca6ebd1f3d52702603d67f4579
 - 提交说明: Isolate adapter Docker supervisor
 - 前置日志安全提交: `05a9120`（Harden trace logging defaults）
 - 测试日期: 2026-08-19 至 2026-08-20
@@ -3356,7 +3394,7 @@ Commit: 9f8e39f1cc8f3aca6ebd1f3d52702603d67f4579
 
 ### Git 基准点
 
-Commit: e2133a9
+历史提交： e2133a9
 - 提交说明: Restore sanitized LLM content logs
 - 测试日期: 2026-08-19
 - 分支: master
@@ -3422,7 +3460,7 @@ Commit: e2133a9
 
 ### Git 基准点
 
-Commit: bbc13eb
+历史提交： bbc13eb
 - 提交说明: Add NVIDIA LLM request strategy
 - 测试日期: 2026-08-19
 - 分支: master
@@ -3476,7 +3514,7 @@ Commit: bbc13eb
 
 ### Git 基准点
 
-Commit: c459d41b004167affa5c0c0cc4f60b117427a793
+历史提交： c459d41b004167affa5c0c0cc4f60b117427a793
 - 提交说明: Update adapter isolation regression test
 - 核心功能提交: c930c47（Harden plugin isolation and configuration security）、bec30e3（Complete security hardening and test gates）、efde786（Propagate required adapter runtime secrets）
 - 测试日期: 2026-08-18
@@ -3557,7 +3595,7 @@ Commit: c459d41b004167affa5c0c0cc4f60b117427a793
 
 ### Git 基准点
 
-Commit: a09a46a
+历史提交： a09a46a
 - 提交说明: Compensate latest missed cron event
 - 前一功能提交: 0a234aa（Harden workflow execution recovery）
 - 测试日期: 2026-08-17
@@ -3606,7 +3644,7 @@ Commit: a09a46a
 
 ### Git 基准点
 
-Commit: 099eeae629d13ed8a2c909c40a81473ff31c0dd6
+历史提交： 099eeae629d13ed8a2c909c40a81473ff31c0dd6
 - 提交说明: Harden workflow execution reliability
 - 测试日期: 2026-08-13
 - 分支: master
@@ -3665,7 +3703,7 @@ Commit: 099eeae629d13ed8a2c909c40a81473ff31c0dd6
 
 ### Git 基准点
 
-Commit: 3154d5021e744aeb8f2c96d8486c52b2c0f0052e
+历史提交： 3154d5021e744aeb8f2c96d8486c52b2c0f0052e
 - 提交说明: Localize workflow node metadata；Harden workflow localized error output
 - 测试日期: 2026-08-12
 - 分支: master
@@ -3747,7 +3785,7 @@ Commit: 3154d5021e744aeb8f2c96d8486c52b2c0f0052e
 
 ### Git 基准点
 
-Commit: af586ab51bc6736728b4d4f0883cfca3ad280b34
+历史提交： af586ab51bc6736728b4d4f0883cfca3ad280b34
 - 提交说明: Fix workflow internationalization gaps
 - 测试日期: 2026-08-12
 - 分支: master
@@ -3831,7 +3869,7 @@ Commit: af586ab51bc6736728b4d4f0883cfca3ad280b34
 
 ### Git 基准点
 
-Commit: 1125abc683970b9bc0bc74ff2df2b73e51554052
+历史提交： 1125abc683970b9bc0bc74ff2df2b73e51554052
 - 提交说明: Complete n8n node compatibility；Align n8n worker ABI version
 - 测试日期: 2026-08-12
 - 分支: master
@@ -3891,7 +3929,7 @@ Commit: 1125abc683970b9bc0bc74ff2df2b73e51554052
 
 ### Git 基准点
 
-Commit: 1125abc683970b9bc0bc74ff2df2b73e51554052
+历史提交： 1125abc683970b9bc0bc74ff2df2b73e51554052
 - 提交说明: Add plugin admission controls；Align n8n worker ABI version
 - 测试日期: 2026-08-12
 - 分支: master
@@ -3940,7 +3978,7 @@ Commit: 1125abc683970b9bc0bc74ff2df2b73e51554052
 
 ### Git 基准点
 
-Commit: 848d8157b7d1423d97723e0c399db90a40f6f768
+历史提交： 848d8157b7d1423d97723e0c399db90a40f6f768
 - 提交说明: Add on-demand workflow adapter services
 - 测试日期: 2026-08-11
 - 分支: master
@@ -4033,7 +4071,7 @@ Commit: 848d8157b7d1423d97723e0c399db90a40f6f768
 
 ### Git 基准点
 
-Commit: 47eb917b8f55d60733b10575bde06edd5a8382b5
+历史提交： 47eb917b8f55d60733b10575bde06edd5a8382b5
 - 提交说明: Improve Dify and n8n plugin compatibility
 - 测试日期: 2026-08-11
 - 分支: master
@@ -4115,7 +4153,7 @@ Commit: 47eb917b8f55d60733b10575bde06edd5a8382b5
 
 ### Git 基准点
 
-Commit: fa785c9aa313d7ca0b283bf247b2ba3d5d05d4ed
+历史提交： fa785c9aa313d7ca0b283bf247b2ba3d5d05d4ed
 - 提交说明: Classify marketplace plugins by capability；Align marketplace preview categories
 - 测试日期: 2026-08-11
 - 分支: master
@@ -4198,7 +4236,7 @@ Commit: fa785c9aa313d7ca0b283bf247b2ba3d5d05d4ed
 
 ### Git 基准点
 
-Commit: fa785c9aa313d7ca0b283bf247b2ba3d5d05d4ed
+历史提交： fa785c9aa313d7ca0b283bf247b2ba3d5d05d4ed
 - 提交说明: Classify marketplace plugins by capability；Mark fully imported marketplace plugins；Align marketplace preview categories
 - 本功能提交: `a1236ab84e780bccf29ec390fc9c37ba13cb7751`
 - 测试日期: 2026-08-11
@@ -4288,7 +4326,7 @@ Commit: fa785c9aa313d7ca0b283bf247b2ba3d5d05d4ed
 
 ### Git 基准点
 
-Commit: 9750a2c483ebc8cc6cc9b5ce8da0fab29d157be1
+历史提交： 9750a2c483ebc8cc6cc9b5ce8da0fab29d157be1
 - 提交说明: Speed up Dify plugin probing
 - 测试日期: 2026-08-11
 - 分支: master
@@ -4383,7 +4421,7 @@ Commit: 9750a2c483ebc8cc6cc9b5ce8da0fab29d157be1
 
 ### Git 基准点
 
-Commit: 09b6757792727088fec142590882c6265759c523
+历史提交： 09b6757792727088fec142590882c6265759c523
 - 提交说明: Enable imported marketplace templates
 - 测试日期: 2026-08-11
 - 分支: master
@@ -4465,7 +4503,7 @@ Commit: 09b6757792727088fec142590882c6265759c523
 
 ### Git 基准点
 
-Commit: 92c5ce191ef18cd89358f99493f5679e46f5cc96
+历史提交： 92c5ce191ef18cd89358f99493f5679e46f5cc96
 - 提交说明: Fix Dify plugin probing；Support Dify package imports
 - 测试日期: 2026-08-11
 - 分支: master
@@ -4564,7 +4602,7 @@ Commit: 92c5ce191ef18cd89358f99493f5679e46f5cc96
 
 ### Git 基准点
 
-Commit: 721d8b2c3a7443ec598cf3aac9fe8cf9ef9576d5
+历史提交： 721d8b2c3a7443ec598cf3aac9fe8cf9ef9576d5
 - 提交说明: Probe marketplace plugins asynchronously
 - 测试日期: 2026-08-11
 - 分支: master
@@ -4658,7 +4696,7 @@ Commit: 721d8b2c3a7443ec598cf3aac9fe8cf9ef9576d5
 
 ### Git 基准点
 
-Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
+历史提交： 2c5e37653f944cf488889c6eef7d68a2d159f714
 - 提交说明: Expand marketplace plugin compatibility
 - 测试日期: 2026-08-11
 - 分支: master
@@ -4757,7 +4795,7 @@ Commit: 2c5e37653f944cf488889c6eef7d68a2d159f714
 
 ### Git 基准点
 
-Commit: 1fe40abc0e00a8e660af27bca040a5da9f284caf
+历史提交： 1fe40abc0e00a8e660af27bca040a5da9f284caf
 - 提交说明: Add workflow model compatibility routing
 - 测试日期: 2026-08-10
 - 分支: master
@@ -4841,7 +4879,7 @@ Commit: 1fe40abc0e00a8e660af27bca040a5da9f284caf
 
 ### Git 基准点
 
-Commit: c69ec030b515d36b33438fb990af1c6e7f7b9d4c
+历史提交： c69ec030b515d36b33438fb990af1c6e7f7b9d4c
 - 提交说明: Improve workflow node documentation
 - 测试日期: 2026-08-10
 - 分支: master
@@ -4904,7 +4942,7 @@ Commit: c69ec030b515d36b33438fb990af1c6e7f7b9d4c
 
 ### Git 基准点
 
-Commit: aad9bc301904e5be9da332c7f0fe1d3132d78237
+历史提交： aad9bc301904e5be9da332c7f0fe1d3132d78237
 - 提交说明: Fix RAG conditional field requirements
 - 功能提交: `c1b1dd9f3be6741d749d03ab2e4a8960617f1cb0`（Add workflow knowledge nodes）
 - 测试日期: 2026-08-10
@@ -4992,7 +5030,7 @@ Commit: aad9bc301904e5be9da332c7f0fe1d3132d78237
 
 ### Git 基准点
 
-Commit: 75ea3fb93c86a00d3facf8e1144697cfb11f70ba
+历史提交： 75ea3fb93c86a00d3facf8e1144697cfb11f70ba
 - 提交说明: Add knowledge base RAG support
 - 测试日期: 2026-08-10
 - 分支: master
@@ -5086,7 +5124,7 @@ Commit: 75ea3fb93c86a00d3facf8e1144697cfb11f70ba
 
 ### Git 基准点
 
-Commit: f813b0c4f7853639a777408aad860975878d120c
+历史提交： f813b0c4f7853639a777408aad860975878d120c
 - 提交说明: Add vector model worker support
 - 测试日期: 2026-08-10
 - 分支: master
@@ -5186,7 +5224,7 @@ Commit: f813b0c4f7853639a777408aad860975878d120c
 
 ### Git 基准点
 
-Commit: da1b8ac0dccb53e10efe1a5e39a8a738da9d832e
+历史提交： da1b8ac0dccb53e10efe1a5e39a8a738da9d832e
 - 提交说明: Fix marketplace node compatibility
 - 测试日期: 2026-08-10
 - 分支: master
@@ -5278,7 +5316,7 @@ Commit: da1b8ac0dccb53e10efe1a5e39a8a738da9d832e
 
 ### Git 基准点
 
-Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
+历史提交： 499cea569b9acfb4e284ed1cbae007b986934e73
 - 提交说明: Add marketplace node imports
 - 测试日期: 2026-08-09
 - 分支: master
@@ -5377,7 +5415,7 @@ Commit: 499cea569b9acfb4e284ed1cbae007b986934e73
 
 ### Git 基准点
 
-Commit: 981e47af29914a9f6fb6d23853d04938f2e8cfa9
+历史提交： 981e47af29914a9f6fb6d23853d04938f2e8cfa9
 - 提交说明: Harden workflow security and execution
 - 测试日期: 2026-08-08
 - 分支: master
@@ -5467,7 +5505,7 @@ Commit: 981e47af29914a9f6fb6d23853d04938f2e8cfa9
 
 ### Git 基准点
 
-Commit: 4f7cad12590ae883af7be2601b8c1ce56fb6cc62
+历史提交： 4f7cad12590ae883af7be2601b8c1ce56fb6cc62
 - 提交说明: Use model route selector for workflow nodes
 - 测试日期: 2026-08-08
 - 分支: master
@@ -5542,7 +5580,7 @@ Commit: 4f7cad12590ae883af7be2601b8c1ce56fb6cc62
 
 ### Git 基准点
 
-Commit: 182fce8c3b522dbcc6821251488e8436277017cd
+历史提交： 182fce8c3b522dbcc6821251488e8436277017cd
 - 提交说明: Use valid defaults for workflow requirements
 - 测试日期: 2026-08-08
 - 分支: master
@@ -5612,7 +5650,7 @@ Commit: 182fce8c3b522dbcc6821251488e8436277017cd
 
 ### Git 基准点
 
-Commit: 1446320e0b13d9c4483eed35082bca5f257cac41
+历史提交： 1446320e0b13d9c4483eed35082bca5f257cac41
 - 提交说明: Enforce workflow node configuration modes
 - 测试日期: 2026-08-08
 - 分支: master
@@ -5691,7 +5729,7 @@ Commit: 1446320e0b13d9c4483eed35082bca5f257cac41
 
 ### Git 基准点
 
-Commit: 8c216877ffd3d0695b0f4f3194748ed5dfaa4326
+历史提交： 8c216877ffd3d0695b0f4f3194748ed5dfaa4326
 - 提交说明: Use selectors for workflow resources
 - 测试日期: 2026-08-08
 - 分支: master
@@ -5795,7 +5833,7 @@ Commit: 8c216877ffd3d0695b0f4f3194748ed5dfaa4326
 
 ### Git 基准点
 
-Commit: cf308192b35d6e3a5c638792f4bb17606a060c03
+历史提交： cf308192b35d6e3a5c638792f4bb17606a060c03
 - 提交说明: Add Agent model selector
 - 测试日期: 2026-08-08
 - 分支: master
@@ -5881,7 +5919,7 @@ Commit: cf308192b35d6e3a5c638792f4bb17606a060c03
 
 ### Git 基准点
 
-Commit: 405db69163389d643f67747641a3563e18caa22f
+历史提交： 405db69163389d643f67747641a3563e18caa22f
 - 提交说明: Validate required workflow node configuration
 - 测试日期: 2026-08-08
 - 分支: master
@@ -5979,7 +6017,7 @@ Commit: 405db69163389d643f67747641a3563e18caa22f
 
 ### Git 基准点
 
-Commit: 64e1e7279ae0a0d2fe92eb19520b573baf978643
+历史提交： 64e1e7279ae0a0d2fe92eb19520b573baf978643
 - 提交说明: Support configurable workflow node sources
 - 测试日期: 2026-08-08
 - 分支: master
@@ -6065,7 +6103,7 @@ Commit: 64e1e7279ae0a0d2fe92eb19520b573baf978643
 
 ### Git 基准点
 
-Commit: 5f0aaa6009275c417cafef1ad6066f2d75c5011e
+历史提交： 5f0aaa6009275c417cafef1ad6066f2d75c5011e
 - 提交说明: Harden workflow connector nodes
 - 测试日期: 2026-08-07
 - 分支: master
@@ -6155,7 +6193,7 @@ Commit: 5f0aaa6009275c417cafef1ad6066f2d75c5011e
 
 ### Git 基准点
 
-Commit: 14c27e253ead1fb785de7a711ffe4c93da441664
+历史提交： 14c27e253ead1fb785de7a711ffe4c93da441664
 - 提交说明: Add executable workflow management
 - 测试日期: 2026-08-07
 - 分支: master
@@ -6251,7 +6289,7 @@ Commit: 14c27e253ead1fb785de7a711ffe4c93da441664
 
 ### Git 基准点
 
-Commit: 75d130c480f00c9bc5d09393a1c3e641e325f480
+历史提交： 75d130c480f00c9bc5d09393a1c3e641e325f480
 - 提交说明: Support secure API trigger redirects
 - 测试日期: 2026-08-07
 - 分支: master
@@ -6347,7 +6385,7 @@ Commit: 75d130c480f00c9bc5d09393a1c3e641e325f480
 
 ### Git 基准点
 
-Commit: e17167958253ef876b1e9c273f92044b570a616d
+历史提交： e17167958253ef876b1e9c273f92044b570a616d
 - 提交说明: Support preconfigured HTTPS IP addresses
 - 测试日期: 2026-08-07
 - 分支: master
@@ -6438,7 +6476,7 @@ Commit: e17167958253ef876b1e9c273f92044b570a616d
 
 ### Git 基准点
 
-Commit: 1a2f15dae635a024c892a05d59f97b764f3cac3b
+历史提交： 1a2f15dae635a024c892a05d59f97b764f3cac3b
 - 提交说明: Support per-site TLS certificate groups
 - 测试日期: 2026-08-06
 - 分支: master
@@ -6535,7 +6573,7 @@ Commit: 1a2f15dae635a024c892a05d59f97b764f3cac3b
 
 ### Git 基准点
 
-Commit: be5c89e41204529d28a16b57ff8278c8e38c8344
+历史提交： be5c89e41204529d28a16b57ff8278c8e38c8344
 - 提交说明: Relocate trace tracking configuration
 - 测试日期: 2026-08-06
 - 分支: master
@@ -6613,7 +6651,7 @@ Commit: be5c89e41204529d28a16b57ff8278c8e38c8344
 
 ### Git 基准点
 
-Commit: 92d65da884384c51dfeb64715142d95c5c7fa537
+历史提交： 92d65da884384c51dfeb64715142d95c5c7fa537
 - 提交说明: Support YAML domain lists for HTTPS ingress
 - 测试日期: 2026-08-06
 - 分支: master
@@ -6716,7 +6754,7 @@ Commit: 92d65da884384c51dfeb64715142d95c5c7fa537
 
 ### Git 基准点
 
-Commit: 9fa8f2e8031572e94342dc5a164dda7498a77198
+历史提交： 9fa8f2e8031572e94342dc5a164dda7498a77198
 - 提交说明: Implement request-driven IP certificates
 - 测试日期: 2026-08-06
 - 分支: master
@@ -6830,7 +6868,7 @@ Commit: 9fa8f2e8031572e94342dc5a164dda7498a77198
 
 ### Git 基准点
 
-Commit: 3d44128efeed8c1ebc009125baee9de991e66abe
+历史提交： 3d44128efeed8c1ebc009125baee9de991e66abe
 - 提交说明: Add adaptive HTTPS ingress modes
 - 测试日期: 2026-08-06
 - 分支: master
@@ -6944,7 +6982,7 @@ Commit: 3d44128efeed8c1ebc009125baee9de991e66abe
 
 ### Git 基准点
 
-Commit: 370b4b8cbc001087bb865e2a1404c2a5cf692176
+历史提交： 370b4b8cbc001087bb865e2a1404c2a5cf692176
 - 提交说明: Use HTTP ingress for service access
 - 测试日期: 2026-08-06
 - 分支: master
@@ -7037,7 +7075,7 @@ Commit: 370b4b8cbc001087bb865e2a1404c2a5cf692176
 
 ### Git 基准点
 
-Commit: ae3cea9a8692c2ab6917cbe52191eeb3d250107f
+历史提交： ae3cea9a8692c2ab6917cbe52191eeb3d250107f
 - 提交说明: Harden browser sessions and service readiness
 - 测试日期: 2026-08-06
 - 分支: master
@@ -7118,7 +7156,7 @@ Commit: ae3cea9a8692c2ab6917cbe52191eeb3d250107f
 
 ### Git 基准点
 
-Commit: a7d7edb3a1a7fe2400f26f3680be88f98ecac829
+历史提交： a7d7edb3a1a7fe2400f26f3680be88f98ecac829
 - 提交说明: Harden runtime supply chain
 - 测试日期: 2026-08-06
 - 分支: master
@@ -7261,7 +7299,7 @@ Commit: a7d7edb3a1a7fe2400f26f3680be88f98ecac829
 
 ## 📋 Git 基准点
 
-Commit: 666fe85a9ee78f35af2a00891df2b41e80d491fe
+历史提交： 666fe85a9ee78f35af2a00891df2b41e80d491fe
 - 提交说明: Remove legacy compatibility logic
 - 测试日期: 2026-08-05
 - 分支: master
@@ -7392,7 +7430,7 @@ Commit: 666fe85a9ee78f35af2a00891df2b41e80d491fe
 
 ## 📋 Git 基准点
 
-Commit: 9e695dc0949848c050cc6b859c473b72ec4de539
+历史提交： 9e695dc0949848c050cc6b859c473b72ec4de539
 - 提交说明: Add Trace ID filters for task logs
 - 测试日期: 2026-07-31
 - 分支: master
@@ -7493,7 +7531,7 @@ Commit: 9e695dc0949848c050cc6b859c473b72ec4de539
 
 ## 📋 Git 基准点
 
-Commit: 66028e36bab6c54e5f8dd7b361ef47270bcbf843
+历史提交： 66028e36bab6c54e5f8dd7b361ef47270bcbf843
 - 提交说明: Document response field examples
 - 测试日期: 2026-07-29
 - 分支: master
@@ -7695,7 +7733,7 @@ Commit: 66028e36bab6c54e5f8dd7b361ef47270bcbf843
 
 ## 📋 Git 基准点
 
-Commit: db0adccc1f5137d8b4c051db3845efebdfd3e2ef
+历史提交： db0adccc1f5137d8b4c051db3845efebdfd3e2ef
 - 提交说明: Add configurable admin password synchronization
 - 测试日期: 2026-07-29
 - 分支: master
@@ -7803,7 +7841,7 @@ Commit: db0adccc1f5137d8b4c051db3845efebdfd3e2ef
 
 ## 📋 Git 基准点
 
-Commit: d96017ea0eadd8ebe02224a8d65cfcedc3d2baa2
+历史提交： d96017ea0eadd8ebe02224a8d65cfcedc3d2baa2
 - 提交说明: Preserve chat trace ID after response unwrap
 - 测试日期: 2026-07-28
 - 分支: master
@@ -7895,7 +7933,7 @@ Commit: d96017ea0eadd8ebe02224a8d65cfcedc3d2baa2
 
 ## 📋 Git 基准点
 
-Commit: 4a646531b30676431d01211f6ed31335f1d003e6
+历史提交： 4a646531b30676431d01211f6ed31335f1d003e6
 - 提交说明: Add backend-generated trace IDs to API responses
 - 测试日期: 2026-07-28
 - 分支: master
@@ -8008,7 +8046,7 @@ Commit: 4a646531b30676431d01211f6ed31335f1d003e6
 
 ## 📋 Git 基准点
 
-Commit: 29662482c198e28688c7220188ce6531affabae1
+历史提交： 29662482c198e28688c7220188ce6531affabae1
 - 提交说明: Add API key open platform documentation
 - 测试日期: 2026-07-28
 - 分支: master
@@ -8125,7 +8163,7 @@ Commit: 29662482c198e28688c7220188ce6531affabae1
 
 ## 📋 Git 基准点
 
-- Commit: b3e5ca6
+- 历史提交： b3e5ca6
 - 提交说明: Fix built-in data localization switching
 - 测试日期: 2026-07-27
 - 分支: master
@@ -8220,7 +8258,7 @@ Commit: 29662482c198e28688c7220188ce6531affabae1
 
 ## 📋 Git 基准点
 
-- Commit: 8bf3561
+- 历史提交： 8bf3561
 - 提交说明: Localize menu names and fix English layouts
 - 测试日期: 2026-07-27
 - 分支: master
@@ -8301,7 +8339,7 @@ Commit: 29662482c198e28688c7220188ce6531affabae1
 
 ## 📋 Git 基准点
 
-- Commit: da79cc2
+- 历史提交： da79cc2
 - 提交说明: Make backend default locale configurable
 - 测试日期: 2026-07-27
 - 分支: master
@@ -8385,7 +8423,7 @@ Commit: 29662482c198e28688c7220188ce6531affabae1
 
 ## 📋 Git 基准点
 
-- Commit: e959210
+- 历史提交： e959210
 - 提交说明: Align API response codes and messages
 - 测试日期: 2026-07-27
 - 分支: master
@@ -8469,7 +8507,7 @@ Commit: 29662482c198e28688c7220188ce6531affabae1
 
 ## 📋 Git 基准点
 
-- Commit: 8341a18
+- 历史提交： 8341a18
 - 提交说明: Generate fixed length API keys
 - 测试日期: 2026-07-25
 - 分支: master
@@ -8639,7 +8677,7 @@ Commit: 29662482c198e28688c7220188ce6531affabae1
 
 ### Git 基准点
 
-Commit: 28cb1901a0feafc1bd39fd8f0ea8ff1514bb0fb2
+历史提交： 28cb1901a0feafc1bd39fd8f0ea8ff1514bb0fb2
 - 提交说明: Complete plugin adapter compatibility；包含包限制、ABI 兼容和旧探测结果重试修复。
 - 测试日期: 2026-08-11
 - 分支: master
@@ -8716,7 +8754,7 @@ Commit: 28cb1901a0feafc1bd39fd8f0ea8ff1514bb0fb2
 
 ### Git 基准点
 
-Commit: 474cd6a
+历史提交： 474cd6a
 - 提交说明: Retry cached plugin probes after worker recovery
 - 测试日期: 2026-08-12
 - 分支: master
