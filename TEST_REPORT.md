@@ -1,5 +1,46 @@
 # 最近分支覆盖测试报告
 
+## 隐藏用户消息头像与称呼（2026-09-26）
+
+### Git 基准与变更范围
+
+- 前端验收版本：`7b10a3b8366e7df65fe2b64a7d2c4ab500cb4c89`（Hide user avatar and label in chat messages）。
+- 分支：`emdash/codex-vlzfy`；测试日期：2026-09-26（Asia/Shanghai）。
+- 使用现有 Vue 3 条件渲染，仅 AI 消息展示头像及本地化称呼；用户消息不展示头像和“你”标签，保留正文与既有右对齐布局。
+- 本次修改 `frontend/src/views/AiChatView.vue`、`frontend/test/layout-alignment.test.mjs`、`frontend/test/chat-response.test.mjs`；未修改后端、依赖、配置或数据结构。本节不推进后端验收基准。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与用例 | 前置条件和输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 用户头像和称呼不显示 | Vue SSR 模板渲染，4 个参数化用例 | 提取真实消息模板，角色 user；普通、空、长文本、HTML 字符 | 输出不含头像和称呼节点，正文完整且安全转义 | 正常、边界、安全 |
+| AI 标识和正文保持正常 | Vue SSR 模板渲染，4 个参数化用例 | 相同输入，角色 assistant | 头像及 AI 称呼存在，正文完整且安全转义 | 正常、边界、兼容 |
+| 用户消息布局保持正常 | 既有 chat-response 用例及布局断言 | 用户消息样式 | 气泡靠右，正文左对齐；角色断言按新需求更新 | 回归、兼容 |
+| 聊天交互保持兼容 | 既有聊天交互、响应、流解析及前端完整套件 | 原有模拟网络和组件状态场景 | 发送、流式处理、错误、权限和草稿行为通过原有断言 | 回归、异常、权限 |
+
+### 实际执行结果
+
+- `cd frontend && node --test --test-name-pattern='聊天消息标识与内容' test/layout-alignment.test.mjs`：实现前 8 项中 4 通过、4 失败，稳定复现用户头像和称呼仍然渲染。
+- `cd frontend && node --test test/chat-interaction.test.mjs test/layout-alignment.test.mjs test/chat-response.test.mjs test/chat-stream.test.mjs`：实现后首次因旧测试要求显示用户称呼而失败；更新该断言以匹配已确认需求，保留原布局断言后，87/87 通过，失败/跳过 0。
+- `cd frontend && npm test`：首次同样被上述旧断言阻断；更新后 Lint、类型检查、覆盖测试 474/474、生产服务 E2E 3/3 全部通过，失败/跳过 0。未删除或跳过有效测试。
+- 工具函数覆盖率：行 98.43%、分支 81.54%、函数 95.42%，达到项目门槛；范围为 `src/utils/**/*.js`，不代表 Vue 模板覆盖率。新增模板用例通过真实 Vue SSR 渲染验证。
+- `git diff --check`：通过。代码提交前前端验证已通过；后续工作区出现并行产生的其他未提交修改，上述结果不为后续修改提供验收结论。
+
+### 构建启动阻塞与已知问题
+
+- `APP_IMAGE_REVISION=7b10a3b8366e7df65fe2b64a7d2c4ab500cb4c89 docker compose up --build -d`：退出码 1，未完成服务重建启动。镜像版本参数是提交标识，构建上下文仍来自实时工作区。
+- Compose 构建内的 `mvn -B -ntp package` 执行 950 项测试，946 通过（99.58%）、4 失败、错误/跳过 0，导致构建失败。
+- 失败项：`ChatConversationServiceTest.controllerExplainsUnavailableRoute` 的两个参数化场景，错误响应缺少预期业务错误码；`ChatStreamClientTest.preservesRouteFailureWithoutRetryOrWorkerCall` 的两个场景，预期 BusinessException，实际 RuntimeException。
+- 构建期间工作区新增了上述后端测试、对应后端代码和前端流错误处理等其他任务的未提交修改；这些修改不属于本次头像调整，未被覆盖或纳入本次提交。该次构建捕获的源码/测试可能处于并行修改中间状态，不能作为稳定版本的后端验收结果。
+- Docker Hub 连接较慢；诊断命令 `curl -I --connect-timeout 10 --max-time 15 https://registry-1.docker.io/v2/` 返回 28（连接超时），但 Compose 最终阻塞原因是上述测试失败。
+- 未执行真实浏览器和真实模型联调；未验证部署后的页面效果。未单独执行后端测试或修复其他任务的后端代码，也未通过跳过测试完成构建。
+- 本次没有创建临时调试文件。代码及正式测试已提交，其他任务的工作区修改保留。
+
+### 重测条件与下一步
+
+- 消息模板、角色展示或相关样式变更时重跑布局/响应测试；聊天交互或流解析变更时重跑前端完整套件。
+- 待并行修改完成并通过后端失败用例后，在稳定工作区重新运行 `docker compose up --build -d`，检查服务健康状态并在浏览器确认用户标识隐藏、AI 标识保留。部署验收尚未完成。
+
 ## AI 对话配置抽屉布局验收（2026-09-26）
 
 ### Git 基准与变更范围
