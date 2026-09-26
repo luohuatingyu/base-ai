@@ -24,7 +24,12 @@ export async function readChatStream(response, onEvent) {
         const event = JSON.parse(data)
         if (!['start', 'delta', 'heartbeat', 'agent_tool_start', 'agent_tool_done', 'done', 'error'].includes(event.type)) throw new Error('chat.callFailed')
         if (event.type === 'delta' && typeof event.content !== 'string') throw new Error('chat.callFailed')
-        if (event.type === 'error') throw new Error('chat.callFailed')
+        if (event.type === 'error') {
+          // 只展示服务端明确允许的路由错误，未知异常继续使用通用提示。
+          const streamMessage = ['llm.defaultPoolUnavailable', 'llm.selectedPoolUnavailable'].includes(event.code)
+            && typeof event.message === 'string' && event.message.trim() ? event.message.trim() : undefined
+          throw Object.assign(new Error(streamMessage || 'chat.callFailed'), { streamMessage })
+        }
         onEvent(event)
         if (event.type === 'done') { ended = true; break }
       }

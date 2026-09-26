@@ -63,6 +63,20 @@ function streamResponse(events) {
   return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } })
 }
 
+test('模型池不可用时显示同步建议且保留会话和已收到内容', async t => {
+  const message = '默认模型池没有支持所选类型的可用模型，请检查能力路由并执行同步'
+  const { state } = await createChat(t, { fetch: async () => streamResponse([
+    { type: 'start', messageId: 2 }, { type: 'delta', content: '保留内容' },
+    { type: 'error', code: 'llm.defaultPoolUnavailable', message }
+  ]) })
+  state.prompt.value = '1111'
+  await state.send()
+  assert.equal(state.pageError.value, message)
+  assert.equal(state.messages.value.at(-1).content, '保留内容')
+  assert.equal(state.messages.value.at(-1).status, 'INTERRUPTED')
+  assert.equal(state.loading.value, false)
+})
+
 test('欢迎示例仅填入草稿并聚焦，不直接消耗模型调用', async t => {
   const { state, requests } = await createChat(t)
   let focused = false

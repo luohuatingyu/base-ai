@@ -181,6 +181,26 @@ class ChatStreamClientTest {
             new ChatConversationService.Settings("text_model", "chat", null, false, "MEDIUM", ""));
     }
 
+    /** 路由配置错误不属于 Worker 故障，不重试、不计入熔断且保留业务错误。 */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"llm.defaultPoolUnavailable", "llm.selectedPoolUnavailable"})
+    void preservesRouteFailureWithoutRetryOrWorkerCall(String key) {
+        var management = mock(LlmManagementService.class);
+        var failure = new com.baseai.platform.common.BusinessException(key);
+        when(management.resolveActive("chat", "text_model")).thenThrow(failure);
+        var breaker = CircuitBreaker.ofDefaults("route-failure");
+        client.close();
+        client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build(),
+            management, traces, new ObjectMapper(), Retry.ofDefaults("route-failure"), breaker);
+
+        assertSame(failure, assertThrows(com.baseai.platform.common.BusinessException.class,
+            () -> client.stream(turn(), event -> fail("Route failure must not emit model events"))));
+        verify(management, times(1)).resolveActive("chat", "text_model");
+        verifyNoInteractions(traces);
+        assertNull(requestBody);
+        assertEquals(0, breaker.getMetrics().getNumberOfFailedCalls());
+    }
+
     /** Agent 测试使用一次调用，避免把模型重试混入编排断言。 */
     private Retry retry() {
         return Retry.of("agent-test", RetryConfig.custom().maxAttempts(1).retryExceptions(Exception.class).build());

@@ -208,6 +208,37 @@ class ChatConversationServiceTest {
         } finally { executor.shutdownNow(); }
     }
 
+    /** 路由错误仅返回白名单本地化提示，同时持久化中断并释放租约。 */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "llm.defaultPoolUnavailable,zh-CN,默认模型池",
+        "llm.selectedPoolUnavailable,en-US,The selected model pool",
+        "llm.modelNotFound,zh-CN,ai.serviceCallFailed"})
+    void controllerExplainsUnavailableRoute(String key, String language, String expected) throws Exception {
+        var client = org.mockito.Mockito.mock(ChatStreamClient.class);
+        org.mockito.Mockito.doThrow(new BusinessException(key)).when(client)
+            .stream(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
+            .standaloneSetup(new ChatConversationController(service, client, mapper)).build();
+        com.baseai.platform.security.AuthContext.set(new com.baseai.platform.security.AuthUser(1L, "user", Set.of(), Set.of("ai:chat:invoke"),
+            com.baseai.platform.security.AuthenticationType.TOKEN, null, null));
+        try {
+            Long id = service.create(1L).id();
+            var response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/api/ai/conversations/" + id + "/messages/stream").contentType("application/json")
+                .header("Accept-Language", language).content(mapper.writeValueAsString(request("route-failure", "1111"))))
+                .andReturn().getResponse();
+            String body = response.getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            if ("llm.modelNotFound".equals(key)) assertFalse(body.contains("\"code\""));
+            else assertTrue(body.contains("\"code\":\"" + key + "\""));
+            assertTrue(body.contains(expected));
+            var detail = service.detail(1L, id);
+            assertEquals("INTERRUPTED", detail.messages().get(1).status());
+            assertEquals("", detail.messages().get(1).content().asText());
+            assertFalse(detail.conversation().generating());
+        } finally { com.baseai.platform.security.AuthContext.clear(); }
+    }
+
     /** 真实 Controller、SSE 序列化和数据库共同验证成功与部分失败终态。 */
     @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
     void controllerPersistsStreamOutcome(boolean fails) throws Exception {

@@ -57,3 +57,19 @@ test('历史恢复保留统计、状态和文本且拒绝外部图片地址', ()
   assert.equal(restoreChatMessage({ content: '部分回答', status: 'INTERRUPTED' }).content, '部分回答')
   assert.deepEqual(restoreChatMessage({}).images, [])
 })
+
+for (const code of ['llm.defaultPoolUnavailable', 'llm.selectedPoolUnavailable']) {
+  test(`路由错误保留安全提示：${code}`, async () => {
+    const message = '请检查能力路由并执行同步'
+    await assert.rejects(readChatStream(response(`data: ${JSON.stringify({ type: 'error', code, message })}\n\n`), () => {}),
+      error => error.message === message && error.streamMessage === message)
+  })
+}
+
+test('未知错误码及非文本提示不得暴露服务端原始异常', async () => {
+  for (const event of [{ code: 'internal', message: 'upstream-secret' },
+    { code: 'llm.defaultPoolUnavailable', message: {} }, { message: 'upstream-secret' }]) {
+    await assert.rejects(readChatStream(response(`data: ${JSON.stringify({ type: 'error', ...event })}\n\n`), () => {}),
+      error => error.message === 'chat.callFailed' && !error.streamMessage)
+  }
+})

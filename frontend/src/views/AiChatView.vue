@@ -769,7 +769,7 @@ async function send() {
     }
     if (error.response?.status === 401) await router.push({ path: '/login', query: { redirect: route.fullPath } })
     else if (!stopped) {
-      pageError.value = t(started ? 'chat.interruptedHint' : 'chat.sendFailed')
+      pageError.value = error.streamMessage || t(started ? 'chat.interruptedHint' : 'chat.sendFailed')
       showHttpError(error, 'chat.callFailed')
     }
     if (turnConversationId && (started || stopped || !error.response?.status || error.response?.status === 409)) {
