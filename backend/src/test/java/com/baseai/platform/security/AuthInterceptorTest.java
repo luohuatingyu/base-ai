@@ -6,6 +6,9 @@ import com.baseai.platform.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -126,6 +129,49 @@ class AuthInterceptorTest {
 
         verify(tokenService, never()).parseToken("cookie-jwt");
         verify(sessionCookieService, never()).validateCsrf(request, "cookie-jwt");
+    }
+
+    /** 无效凭据不可触达用户存储，保留统一未登录错误。 */
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "Basic abc", "Bearer "})
+    void rejectsMissingOrMalformedToken(String authorization) {
+        var request = new MockHttpServletRequest("GET", "/api/test");
+        if (authorization != null) request.addHeader("Authorization", authorization);
+        BusinessException error = assertThrows(BusinessException.class,
+            () -> interceptor.preHandle(request, new MockHttpServletResponse(), handler));
+        assertEquals(401, error.getStatus());
+        org.mockito.Mockito.verifyNoInteractions(tokenService, userRepository, sessionService);
+    }
+
+    /** 安全读取方法无需 CSRF，但仍必须验证登录态和权限。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"GET", "HEAD", "TRACE"})
+    void safeCookieMethodsDoNotRequireCsrf(String method) {
+        var request = new MockHttpServletRequest(method, "/api/test");
+        when(sessionCookieService.sessionToken(request)).thenReturn("cookie-jwt");
+        when(tokenService.parseToken("cookie-jwt")).thenReturn(tokenClaims());
+        when(userRepository.findById(3L)).thenReturn(Optional.of(enabledUser()));
+        when(authUserFactory.fromToken(org.mockito.ArgumentMatchers.any())).thenReturn(tokenUser());
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), handler));
+        verify(sessionCookieService, never()).validateCsrf(request, "cookie-jwt");
+        assertEquals(3L, AuthContext.require().id());
+        interceptor.afterCompletion(request, new MockHttpServletResponse(), handler, null);
+        assertThrows(BusinessException.class, AuthContext::require);
+    }
+
+    /** 已登录但无权限的 API Key 不能执行受限业务。 */
+    @Test
+    void rejectsAuthenticatedUserWithoutPermission() {
+        var request = new MockHttpServletRequest("POST", "/api/test");
+        request.addHeader("X-API-Key", "key");
+        when(apiKeyAuthenticationService.authenticate("key", request, handler)).thenReturn(
+            new AuthUser(2L, "restricted", Set.of(), Set.of(), AuthenticationType.API_KEY, 9L, "test"));
+        BusinessException error = assertThrows(BusinessException.class,
+            () -> interceptor.preHandle(request, new MockHttpServletResponse(), handler));
+        assertEquals(403, error.getStatus());
+        assertEquals("auth.permissionDenied", error.getMessageKey());
+        org.mockito.Mockito.verifyNoInteractions(sessionService);
     }
 
     /** 创建有效 Token 声明。 */

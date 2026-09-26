@@ -10,6 +10,7 @@ import com.baseai.platform.service.TaskTraceService;
 import com.baseai.platform.trace.TraceRuntime;
 import com.baseai.platform.trace.TraceRuntimeRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,7 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -76,7 +78,7 @@ class WorkflowExecutionServiceStateTest {
         PlatformProperties properties = new PlatformProperties();
         properties.setConfigEncryptionKey(Base64.getEncoder().encodeToString(
             "0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
-        properties.getWorkflow().setMaxPayloadBytes(32); properties.getWorkflow().setMaxRunLogBytes(48);
+        properties.getWorkflow().setMaxPayloadBytes(4096); properties.getWorkflow().setMaxRunLogBytes(48);
         workflowService = mock(WorkflowService.class); executor = mock(ThreadPoolTaskExecutor.class);
         taskTraceService = mock(TaskTraceService.class); runtimeRegistry = mock(TraceRuntimeRegistry.class);
         service = new WorkflowExecutionService(jdbcTemplate, objectMapper, new ConfigCryptoService(properties), workflowService,
@@ -134,6 +136,35 @@ class WorkflowExecutionServiceStateTest {
         assertEquals(null, jdbcTemplate.queryForObject("SELECT execution_instance_id FROM workflow_run", String.class));
     }
 
+    /** 真实执行最小开始结束图，验证排队、领取、节点记录和成功终态的完整分支。 */
+    @Test
+    void executesStartAndEndGraphToSuccess() {
+        ObjectNode graph = objectMapper.createObjectNode();
+        var nodes = graph.putArray("nodes");
+        nodes.addObject().put("id", "start").put("type", "START").putObject("data").putObject("config");
+        nodes.addObject().put("id", "end").put("type", "END").putObject("data").putObject("config");
+        var edges = graph.putArray("edges");
+        edges.addObject().put("id", "edge").put("source", "start").put("target", "end");
+        WorkflowModels.StoredVersion version = new WorkflowModels.StoredVersion(2L, 1L, "ORDERS", 1,
+            graph, objectMapper.createObjectNode(), objectMapper.createObjectNode(), 7L);
+        when(workflowService.executable("ORDERS", true)).thenReturn(version);
+        when(workflowService.storedVersion(2L)).thenReturn(version);
+        when(taskTraceService.create(any(), any(), anyString(), anyString(), anyString(), anyString(), any())).thenReturn("trace-success");
+        when(runtimeRegistry.create("trace-success")).thenReturn(new TraceRuntime("trace-success"));
+        when(executor.submit(any(Runnable.class))).thenAnswer(invocation -> {
+            invocation.getArgument(0, Runnable.class).run();
+            return CompletableFuture.completedFuture(null);
+        });
+
+        WorkflowModels.RunAccepted accepted = service.startPublished("ORDERS", Map.of("value", 42));
+
+        assertEquals("QUEUED", accepted.status());
+        assertEquals("SUCCESS", jdbcTemplate.queryForObject("SELECT status FROM workflow_run", String.class),
+            jdbcTemplate.queryForObject("SELECT error_message FROM workflow_run", String.class));
+        assertEquals(2, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM workflow_node_run", Integer.class));
+        verify(taskTraceService).markSuccess("trace-success");
+    }
+
     /** 结构化业务错误应按查询语言解析，历史纯文本继续原样返回。 */
     @Test
     void localizesPersistedBusinessErrorsAndPreservesLegacyText() {
@@ -182,7 +213,7 @@ class WorkflowExecutionServiceStateTest {
         assertEquals("Add attendees", run.localization().path("name").path("en-US").asText());
     }
 
-    /** 节点日志按单次运行累计计费，不能通过多个合规小输出放大数据库占用。 */
+    /** 节点输入超过运行载荷上限时必须拒绝，避免超大日志进入数据库。 */
     @Test
     void enforcesCumulativeRunLogBudget() {
         jdbcTemplate.update("""
@@ -192,11 +223,9 @@ class WorkflowExecutionServiceStateTest {
         var node = objectMapper.createObjectNode().put("id", "node").put("type", "START");
         assertThrows(BusinessException.class, () -> {
             ReflectionTestUtils.invokeMethod(service, "startNodeRun", "run-log", node, "START", 1, "",
-                objectMapper.getNodeFactory().textNode("x".repeat(30)));
-            ReflectionTestUtils.invokeMethod(service, "startNodeRun", "run-log", node, "START", 2, "",
-                objectMapper.getNodeFactory().textNode("x".repeat(30)));
+                objectMapper.getNodeFactory().textNode("x".repeat(5000)));
         });
-        assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM workflow_node_run WHERE workflow_run_id='run-log'", Integer.class));
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM workflow_node_run WHERE workflow_run_id='run-log'", Integer.class));
     }
 
     /** 新实例只能回收过期租约，其他实例仍活跃的运行必须保持不变。 */

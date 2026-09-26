@@ -430,7 +430,12 @@ async function send() {
     })
   } catch (error) {
     if (!unmounted) {
-      if (error.response?.status === 401) await router.push({ path: '/login', query: { redirect: route.fullPath } })
+      if (error.response?.status === 401) {
+        // 流式请求绕过 Axios 拦截器，失效会话必须同步清除 Pinia 身份再跳转，避免路由守卫把用户送回首页。
+        auth.user = null
+        auth.initialized = true
+        await router.push({ path: '/login', query: { redirect: route.fullPath } })
+      }
       else showHttpError(error, 'chat.callFailed')
     }
   } finally {
