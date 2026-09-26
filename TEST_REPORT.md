@@ -1,5 +1,50 @@
 # 最近分支覆盖测试报告
 
+## 页面回归与业务分支覆盖补足（2026-09-26）
+
+### Git 基准与范围
+
+- 代码提交：`ed5fab9`（Add browser regression and coverage instrumentation）。本次只修改测试、前端回归和 Maven 测试插件配置，没有修改 `backend/src/main/java/` 业务实现，因此保留后端业务基准 `975e9b...`。
+- 本次范围：前端 Playwright/Chromium 浏览器回归、后端 JaCoCo 采集，以及认证、聊天流和工作流执行分支测试。
+- 新增浏览器用例：`frontend/e2e/browser/auth.spec.mjs`、`chat.spec.mjs`、`workflow.spec.mjs`，使用真实 Vue 路由、Pinia、组件和 SSE 解析；仅用本地 HTTP 夹具隔离后端接口。
+- 前端 `test:coverage` 仍只统计 `src/utils/**/*.js`，本次另列浏览器用例结果；后端新增 `jacoco-maven-plugin`，报告位于 `backend/target/site/jacoco/`（已在汇总后清理生成目录）。
+
+### 验收标准—可执行测试映射
+
+| 验收标准 | 测试 | 实际结果 |
+| --- | --- | --- |
+| 登录、回跳、失效会话和权限限制 | Playwright `auth.spec.mjs` 5 组；`AuthServiceTest`、`AuthInterceptorTest` | 浏览器 5/5；后端定向通过 |
+| 聊天增量、CSRF、错误、断流和卸载清理 | Playwright `chat.spec.mjs` 9 组；`ChatStreamClientTest` | 浏览器 9/9；Java 9/9 |
+| 工作流启动、轮询、成功/失败/取消、输入边界和执行权限 | Playwright `workflow.spec.mjs` 5 组；`WorkflowExecutionServiceStateTest` | 浏览器 5/5；Java 11/11 |
+| 核心业务分支可测量 | JaCoCo 0.8.14 | 全量后端 1034/1034 通过；行覆盖 8638/13033（66.30%），分支 4356/8361（52.10%），方法 2370/3655（64.84%） |
+
+### 实际执行结果
+
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run test:coverage`：428/428 通过；工具函数行 98.43%、分支 81.52%、函数 95.10%。这不是 Vue 页面覆盖率。
+- `npm run test:browser`：18/18 通过（登录权限 5、聊天 9、工作流 5，另含夹具清理断言）。
+- `npm test`：在既有 `frontend/e2e/frontend-server.test.mjs` 代理回归处 2/3 通过；失败原因是测试期待 `x-e2e-marker` 被转发，而当前生产代理白名单按安全设计剥离该非协议请求头；本次未放宽生产头白名单。
+- `mvn -B -ntp -Dtest=AuthServiceTest,AuthInterceptorTest,ChatStreamClientTest,WorkflowExecutionServiceStateTest test`：49/49 通过。
+- Docker Maven `mvn -B -ntp test`：1034/1034 通过，失败 0、错误 0、跳过 0；生成 JaCoCo 报告并已清理 `backend/target/`。
+- `DOCKER_CONTEXT=desktop-linux docker compose up --build -d`：未进入构建，Compose 插值因缺少 `APP_PLATFORM_SHORT_NAME` 失败。
+- `git diff --check`：通过。
+
+### 核心类覆盖率
+
+- `AuthService`：行 56/56（100%），分支 18/18（100%）。
+- `AuthInterceptor`：行 40/40（100%），分支 41/48（85.42%）。
+- `ChatConversationService`：行 117/120（97.50%），分支 84/112（75.00%）。
+- `ChatStreamClient`：行 71/77（92.21%），分支 32/42（76.19%）。
+- `WorkflowExecutionService`：行 301/653（46.09%），分支 110/322（34.16%）；后续应继续按节点类型、重试策略、等待恢复和取消竞态补分支。
+
+### 已知问题与下次建议
+
+- 浏览器夹具没有连接真实 MySQL、Redis、模型供应商或生产代理，因此不能替代部署联调；需要在有效 Compose 环境中重跑真实账号和供应商流。
+- 当前代理回归的 `x-e2e-marker` 断言与安全白名单不一致，建议后续将断言改为确认该头被剥离，或改用允许的诊断头；本次不改变代理安全策略。
+- JaCoCo 已提供业务分支基线；下一轮优先补 `WorkflowExecutionService` 未覆盖的节点执行和错误策略分支，并在 CI 保存 HTML/XML 报告。
+
+
 ## 当前测试基准
 
 Commit: 975e9b166cfca6b53bf45a7c0a99af68b3854fc3
