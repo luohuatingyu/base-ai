@@ -1,5 +1,50 @@
 # 最近分支覆盖测试报告
 
+## 流式聊天路由错误提示修复与 DNS 阻塞（2026-09-26）
+
+### Git 基准与变更范围
+
+- Commit: d7f231276e0af69a7dc4ea05e7956a97b2e94940
+- 提交信息：Explain unavailable chat routes without retrying。
+- 分支：`emdash/codex-vlzfy`；测试日期：2026-09-26（Asia/Shanghai）。本节是最新后端全量测试基准，下方基准保留为历史记录。
+- `git diff 5d26d2c HEAD -- backend/src/main/java/` 检出旧基准之后的业务改动，因此执行完整 Maven 测试。
+- 使用 Java 17 / Spring MVC、Vue 3 和既有 SSE 协议。普通聊天在 Worker 重试和熔断之外解析一次模型路由；仅允许默认/指定模型池不可用两种业务错误返回本地化提示；前端保留安全提示和已收到的内容。未知异常仍返回通用错误。
+- 修改两项 Java 业务文件、两个 Java 测试文件、前端流解析器、聊天页面及两个现有前端测试文件；未修改配置、依赖、数据库结构或第三方代码。运行态默认路由已通过现有同步接口刷新。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级与用例 | 前置条件、输入 | 预期结果 | 场景 |
+| --- | --- | --- | --- | --- |
+| 模型池错误不重试、不污染熔断 | Java 单元：`preservesRouteFailureWithoutRetryOrWorkerCall`，两组参数 | 路由解析分别抛出默认/指定池不可用异常 | 原异常返回；仅解析一次；无 Worker HTTP、追踪注册或熔断失败计数 | 异常、回归 |
+| 用户得到安全、准确的路由提示 | MVC + H2/JPA：`controllerExplainsUnavailableRoute`，三组参数 | 中文默认池、英文指定池、非白名单业务异常 | 前两项返回对应本地化提示；后一项只返回通用错误；消息中断、空回答保留、租约释放 | 异常、安全、兼容 |
+| 正常完成与中途失败正确保存 | 既有 `controllerPersistsStreamOutcome`、`deliversBeforeCompletion`、`rejectsMissingCompletion` | 真实 HTTP 增量、完成事件、部分输出后失败或提前关闭 | 完整回答为 COMPLETED；失败保留文本且释放租约；不泄漏上游异常文本 | 正常、异常、回归 |
+| 页面展示可操作提示且保留内容 | 前端组件 + 真实 ReadableStream：新增模型池不可用用例 | start、部分 delta、路由 error | 显示同步建议，文本保留，中断状态正确，发送状态解除 | 异常、回归 |
+| SSE 错误安全且兼容原协议 | `chat-stream.test.mjs` 参数化及既有测试 | 两种白名单码、未知码、非文本消息、缺少码、UTF-8 分块、CRLF、空流、非法帧、缺少 done | 仅允许白名单文本提示；其他情况安全失败；原增量及工具事件正确解析 | 边界、异常、安全、兼容 |
+| 会话权限保持有效 | `ChatConversationSecurityTest` 和既有会话集成测试 | 未登录、权限不足、非本人会话、重复请求及并发请求 | 继续拒绝未授权访问与冲突，不泄漏会话内容 | 权限、安全、回归 |
+
+### 实际执行命令与结果
+
+- 失败回归：`node --test frontend/test/chat-stream.test.mjs frontend/test/chat-interaction.test.mjs`，57 项中 54 通过、3 失败；失败均对应通用提示掩盖路由提示。后端初次针对性测试 38 项中 34 通过、4 失败，复现错误被包装重试、SSE 缺少明确错误码。
+- 修复后前端相关套件同命令：57/57 通过；失败 0、跳过 0。
+- 本机没有 Java/Maven，后端使用 `docker --context colima-rootless build --progress plain -f - backend`，通过标准输入提供临时 Dockerfile，基于既有 `maven:3.9.9-eclipse-temurin-17`，复制 pom/src 并挂载既有 `/root/.m2` BuildKit 缓存，依次执行：
+  - `mvn -B -ntp -Dtest=ChatStreamClientTest,ChatConversationServiceTest,ChatConversationSecurityTest test`：最终 39/39 通过（会话集成 25、流客户端 9、权限 5）。
+  - `mvn -B -ntp test`：最终 951/951 通过，成功率 100%，失败 0、错误 0、跳过 0。主要模块包括 workflow 276、service 171、deployment 128、automation 87、security 59、chat 39、controller 27；含 Domain/Repository 的集成验证由 H2/JPA 会话测试覆盖。
+- `cd frontend && npm test`：最终当前版本 Lint、类型检查、覆盖测试 478/478、生产服务 E2E 3/3 全部通过；失败/跳过均为 0。测试期间并入了用户消息头像展示的独立提交，最终已对并入后的版本重新完整验证。
+- 前端覆盖率：行 98.43%、分支 81.61%、函数 95.42%，统计范围为既有 `src/utils/**/*.js`。后端 pom 未配置 JaCoCo，不将通过率冒充 Java 行/分支覆盖率。
+- `docker --context colima-rootless compose config --quiet`：通过。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker --context colima-rootless compose up --build -d`：退出码 0，9 个自建服务镜像构建成功；构建内 Maven `package` 另执行 951 项测试并通过。10 个 Compose 服务最终均 healthy；Backend/Frontend 镜像 revision 均为本节基准提交。
+- 部署后通过正常登录、Cookie/CSRF 和 HTTP 入口创建临时会话验证：不存在的指定路由返回 `start → error(code=llm.selectedPoolUnavailable)` 与中文同步建议；数据库状态 INTERRUPTED、generating=false，符合预期。默认路由请求仍为 `start → error(ai.serviceCallFailed)`、无文本输出，真实模型回答验收受下述 DNS 问题阻塞。
+- 默认路由同步接口 HTTP 200，但模型健康检查为 FAILED；Worker 日志确认 `OUTBOUND_DNS_FAILED`。正式 Worker 的 `/etc/resolv.conf` 显示 `NO EXTERNAL NAMESERVERS DEFINED`；内部 backend 名称可解析，供应商与 example.com 均解析失败，而宿主机可以解析。
+- Python 3.12 只读 DNS 探测：容器内向 `223.5.5.5`、`1.1.1.1` 发送 DNS 查询均得到 rcode=0 和有效答案。使用 `docker run --rm --network baseai-local_app-network --dns 223.5.5.5 --dns 1.1.1.1 --entrypoint python3.12` 的临时 Worker 容器，复用 `PublicNetworkTransport`，访问供应商 `/models` 返回 HTTP 401，证明 DNS/TLS 可通；未使用模型密钥，不能将 401 视为模型调用成功。
+- `git diff --check` 通过。无新增本地调试脚本或文件；临时 Dockerfile/验证脚本均通过标准输入执行。临时测试镜像已删除、临时网络验证容器自动删除、临时会话已删除、验证登录已退出；未推送 Git。
+
+### 已知问题、重测条件与下一步
+
+- **整体接口恢复尚未完成**：真实模型回答被正式 Worker 缺失外部 DNS 阻塞。代码错误提示修复已测试并部署，不能据此判定真实供应商链路通过。
+- 需另经用户确认的最小配置方案：在 `docker-compose.yml` 的 `python-worker` 增加已验证的两项 DNS 配置（223.5.5.5、1.1.1.1），重建服务、重新同步默认路由，并验证健康检查及真实流式 `delta → done`、COMPLETED 状态。该方案会把 Worker 的外部域名查询发送到指定解析器；回滚时撤销 DNS 配置并重建服务。
+- 尚未执行 DNS 配置改动及修复后的真实模型成功验证；未重复无关 Python/Go 独立全量套件，未进行 Safari 真机验证。既有前端构建体积、runtime-config script 和依赖 PURE 注释警告不影响本次测试结果。
+- 修改聊天 Java 业务逻辑、路由解析、错误白名单时重跑针对性与完整 Maven 测试并推进基准；修改前端流协议/页面处理时重跑相关和完整前端测试；修改 DNS/供应商配置后必须另跑实际容器解析、同步及真实模型端到端验证。
+
 ## 隐藏用户消息头像与称呼（2026-09-26）
 
 ### Git 基准与变更范围
