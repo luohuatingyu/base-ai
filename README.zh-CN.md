@@ -18,6 +18,9 @@ Base AI 是一个可扩展的管理与 AI 集成平台，由 Vue 管理控制台
 - 支持基于 MySQL 的 macOS 设备 Agent 配对、匿名 iOS 设备池、IDA/Appium 自动化、Remote XPC Registry 和健康诊断。
 - 支持带版本的可视化工作流、复用节点模板、条件分支、迭代、循环、工具调用 Agent、手动运行及 API Key 调用。
 - 支持运行时平台品牌和语言配置。
+- 提供 AI 视频工作台，覆盖项目、剧本、分镜、角色/场景/物品资产、生成任务、视频合成、审核和发布记录。
+
+AI 视频工作台的完整使用、接口、权限、数据表和排障说明见 [AI_VIDEO_GUIDE.md](docs/AI_VIDEO_GUIDE.md)。
 
 ## 技术栈
 

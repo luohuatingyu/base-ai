@@ -166,7 +166,10 @@ export default {
     statuses: { SUCCESS: '成功', FAILED: '失败', INTERRUPTED: '中断', CANCELLED: '取消', RUNNING: '运行中' }
   },
   aiVideo: {
-    eyebrow: 'AI VIDEO WORKSPACE', currentModule: '当前模块', currentModuleHint: '菜单、权限和路由已经接入，业务数据接口可按模块继续实现。', permissionReady: '权限菜单已接入', empty: '暂无业务数据，完成对应数据接口后将在此展示。',
+    workflowTitle: 'AI 视频制作闭环', workflowHint: '从项目、剧本和资产开始，提交生成任务，再进行合成、审核和发布。', liveData: '实时数据', analyticsTitle: 'AI 视频运营数据', analyticsHint: '当前统计来自已保存的项目、任务、资产和成片记录。', runningTasks: '进行中任务', failedTasks: '失败任务', assetCoverage: '资产总量', videoCoverage: '成片总量', assetsUnit: '项', videosUnit: '条', assetContextHint: '当前列表仅展示该类资产。', noRows: '暂无数据，点击右上角新增。', selectProject: '请选择所属项目', cancelTask: '取消任务', retryTask: '重试任务', completePublish: '完成发布', taskCancelled: '任务已取消', taskRetried: '任务已重新排队', publishCompleted: '发布已完成',
+    steps: { project: '建立项目', projectHint: '设置画幅、分辨率和整体风格。', content: '创作内容', contentHint: '编写剧本并拆解成可执行分镜。', asset: '准备资产', assetHint: '统一管理角色、场景、物品和声音。', generate: '提交生成', generateHint: '创建图像、视频、配音或合成任务。', publish: '审核发布', publishHint: '通过审核后记录渠道发布结果。' },
+    fields: { project: '所属项目', code: '项目编码', name: '名称', title: '标题', description: '说明', coverUrl: '封面地址', mediaUrl: '视频地址', previewUrl: '预览地址', resourceUrl: '资源地址', aspectRatio: '画幅', resolution: '分辨率', fps: '帧率', style: '风格', content: '内容', version: '版本', shotNo: '镜头序号', sceneDescription: '画面描述', dialogue: '对白', narration: '旁白', camera: '机位景别', durationMs: '时长（毫秒）', tags: '标签', taskType: '任务类型', prompt: '提示词', providerRouteId: '能力路由 ID', inputJson: '输入 JSON', configJson: '合成配置 JSON', renderId: '渲染任务 ID', videoId: '成片 ID', comment: '审核意见', channel: '发布渠道', externalId: '外部编号', externalUrl: '外部地址', errorMessage: '错误信息' },
+    eyebrow: 'AI VIDEO WORKSPACE', currentModule: '当前模块', currentModuleHint: '使用列表、表单和任务操作完成 AI 视频制作流程。', permissionReady: '权限菜单已接入', empty: '暂无业务数据。',
     summary: { projects: '项目数', projectsHint: '管理视频项目和剧集', assets: '资产数', assetsHint: '角色、场景和物品等资产', tasks: '生成任务', tasksHint: '图片、视频和配音任务', videos: '成片数', videosHint: '审核和发布版本' },
     sections: {
       dashboard: { title: 'AI视频', description: '统一管理 AI 视频项目、资产、生成任务和成片发布。' },
