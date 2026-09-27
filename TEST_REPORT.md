@@ -27,6 +27,7 @@
 - Maven 3.9.9 / Java 17 容器执行 `mvn -q -Dtest=LlmUsageServiceTest,ChatStreamClientTest test`：14/14 通过。
 - Maven 3.9.9 / Java 17 容器执行 `mvn -q test`：960/960 通过，失败 0、错误 0、跳过 0。
 - 已执行 `docker compose up --build -d`：Backend、Python Worker、Document Parser 等核心服务构建并健康启动；命令整体因既有 `adapter-manager`/`docker-socket-proxy` 健康检查失败返回 1，未跳过该失败。后端 Flyway 已验证迁移至 v44。
+- 追加执行 `docker compose up --build -d backend python-worker document-parser`：退出码 0，Backend、Python Worker、Document Parser 均为 healthy，`/api/open/health/ready` 返回 HTTP 200。
 - 部署后在 Backend 容器内以管理员身份请求 `/api/operations/llm-usage/summary`：HTTP 200，返回合法 overview/trend/models/errors 结构；当前数据库没有实际模型调用记录，Token 合计为 0。
 - `git diff --check` 通过；未执行 `git push`，未留下调试文件。
 
