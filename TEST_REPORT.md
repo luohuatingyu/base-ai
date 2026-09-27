@@ -4,7 +4,7 @@
 
 ### Git 基准与变更范围
 
-- 代码提交：`3e46639`（Accept explicit stream completion sentinel）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 代码提交：`36770bb`（Clarify stream parser regression test name，包含实现提交 `3e46639`）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
 - 修改 `python-worker/app/llm_stream.py` 及对应测试：明确收到供应商 `[DONE]` 即视为完整终态，不再额外要求 `finish_reason`；兼容没有最后换行的终止帧；流失败日志仅记录异常类型并沿用既有脱敏链路。
 - 未修改 Java、前端、数据库、依赖或配置；未改变上游在正文输出后的故障切换和部分内容持久化规则。
 
