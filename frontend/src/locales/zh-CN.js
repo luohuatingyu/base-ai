@@ -78,6 +78,7 @@ export default {
     add: '添加',
     search: '搜索',
     reset: '重置',
+    retry: '重试',
     refresh: '刷新',
     query: '查询',
     detail: '详情',
@@ -166,8 +167,11 @@ export default {
     statuses: { SUCCESS: '成功', FAILED: '失败', INTERRUPTED: '中断', CANCELLED: '取消', RUNNING: '运行中' }
   },
   aiVideo: {
-    workflowTitle: 'AI 视频制作闭环', workflowHint: '从项目、剧本和资产开始，提交生成任务，再进行合成、审核和发布。', liveData: '实时数据', analyticsTitle: 'AI 视频运营数据', analyticsHint: '当前统计来自已保存的项目、任务、资产和成片记录。', runningTasks: '进行中任务', failedTasks: '失败任务', assetCoverage: '资产总量', videoCoverage: '成片总量', assetsUnit: '项', videosUnit: '条', assetContextHint: '当前列表仅展示该类资产。', noRows: '暂无数据，点击右上角新增。', selectProject: '请选择所属项目', cancelTask: '取消任务', retryTask: '重试任务', completePublish: '完成发布', taskCancelled: '任务已取消', taskRetried: '任务已重新排队', publishCompleted: '发布已完成',
+    workflowTitle: 'AI 视频制作闭环', workflowHint: '从项目、剧本和资产开始，提交生成任务，再进行合成、审核和发布。', liveData: '实时数据', analyticsTitle: 'AI 视频运营数据', analyticsHint: '当前统计来自已保存的项目、任务、资产和成片记录。', runningTasks: '进行中任务', failedTasks: '失败任务', assetCoverage: '资产总量', videoCoverage: '成片总量', assetsUnit: '项', videosUnit: '条', assetContextHint: '当前列表仅展示该类资产。', noRows: '暂无数据，点击右上角新增。', noResults: '没有匹配的记录，请调整筛选条件。', selectProject: '请选择所属项目', cancelTask: '取消任务', retryTask: '重试任务', completePublish: '完成发布', taskCancelled: '任务已取消', taskRetried: '任务已重新排队', publishCompleted: '发布已完成', loadFailed: '数据加载失败，请重试。', searchPlaceholder: '搜索名称、标题、编码或描述', allStatuses: '全部状态', resultCount: '共 {count} 条', startProject: '开始创建项目', fieldRequired: '请填写{field}',
+    statuses: { DRAFT: '草稿', ACTIVE: '进行中', ARCHIVED: '已归档', READY: '就绪', LOCKED: '已锁定', QUEUED: '排队中', RUNNING: '运行中', SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消', PREVIEW: '预览版', REVIEW: '待审核', PENDING: '待处理', APPROVED: '已通过', REJECTED: '已拒绝', PUBLISHING: '发布中', PUBLISHED: '已发布' },
     steps: { project: '建立项目', projectHint: '设置画幅、分辨率和整体风格。', content: '创作内容', contentHint: '编写剧本并拆解成可执行分镜。', asset: '准备资产', assetHint: '统一管理角色、场景、物品和声音。', generate: '提交生成', generateHint: '创建图像、视频、配音或合成任务。', publish: '审核发布', publishHint: '通过审核后记录渠道发布结果。' },
+    pathsTitle: '选择成片路径', pathsHint: '按已有素材和目标选择入口，系统会自动打开对应的创建表单。', pathsUnit: '条路径',
+    paths: { textTitle: '文本生成视频', textHint: '从提示词创建视频任务。', storyboardTitle: '分镜合成视频', storyboardHint: '将镜头、字幕和声音组合成片。', assetTitle: '资产驱动生成', assetHint: '从角色、场景或物品生成画面。', audioTitle: '配音与音乐', audioHint: '先生成旁白、配音或背景音乐。', templateTitle: '模板批量合成', templateHint: '按模板配置批量渲染视频。' },
     fields: { project: '所属项目', code: '项目编码', name: '名称', title: '标题', description: '说明', coverUrl: '封面地址', mediaUrl: '视频地址', previewUrl: '预览地址', resourceUrl: '资源地址', aspectRatio: '画幅', resolution: '分辨率', fps: '帧率', style: '风格', content: '内容', version: '版本', shotNo: '镜头序号', sceneDescription: '画面描述', dialogue: '对白', narration: '旁白', camera: '机位景别', durationMs: '时长（毫秒）', tags: '标签', taskType: '任务类型', prompt: '提示词', providerRouteId: '能力路由 ID', inputJson: '输入 JSON', configJson: '合成配置 JSON', renderId: '渲染任务 ID', videoId: '成片 ID', comment: '审核意见', channel: '发布渠道', externalId: '外部编号', externalUrl: '外部地址', errorMessage: '错误信息' },
     eyebrow: 'AI VIDEO WORKSPACE', currentModule: '当前模块', currentModuleHint: '使用列表、表单和任务操作完成 AI 视频制作流程。', permissionReady: '权限菜单已接入', empty: '暂无业务数据。',
     summary: { projects: '项目数', projectsHint: '管理视频项目和剧集', assets: '资产数', assetsHint: '角色、场景和物品等资产', tasks: '生成任务', tasksHint: '图片、视频和配音任务', videos: '成片数', videosHint: '审核和发布版本' },

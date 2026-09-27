@@ -6,7 +6,10 @@
         <h2>{{ section.title }}</h2>
         <p>{{ section.description }}</p>
       </div>
-      <div class="ai-video-mark">AI<br>VIDEO</div>
+      <div class="ai-video-hero-actions">
+        <el-button v-if="isDashboard" type="primary" plain @click="goTo('projects')">{{ t('aiVideo.startProject') }}</el-button>
+        <div class="ai-video-mark">AI<br>VIDEO</div>
+      </div>
     </section>
 
     <template v-if="isDashboard || isAnalytics">
@@ -23,8 +26,16 @@
           <el-tag type="success" effect="plain">{{ t('aiVideo.liveData') }}</el-tag>
         </div>
         <div class="ai-video-steps">
-          <div v-for="(step, index) in workflowSteps" :key="step.title" class="ai-video-step">
+          <button v-for="(step, index) in workflowSteps" :key="step.title" type="button" class="ai-video-step" @click="goTo(step.path)">
             <b>{{ index + 1 }}</b><div><strong>{{ step.title }}</strong><p>{{ step.description }}</p></div>
+          </button>
+        </div>
+        <div class="production-paths">
+          <div class="production-paths-head"><div><h4>{{ t('aiVideo.pathsTitle') }}</h4><p>{{ t('aiVideo.pathsHint') }}</p></div><el-tag effect="plain">{{ productionPaths.length }} {{ t('aiVideo.pathsUnit') }}</el-tag></div>
+          <div class="production-path-grid">
+            <button v-for="path in productionPaths" :key="path.key" type="button" class="production-path" @click="goTo(path.route, path.mode)">
+              <span class="production-path-icon">{{ path.icon }}</span><span><strong>{{ path.title }}</strong><small>{{ path.description }}</small></span><el-icon><ArrowRight /></el-icon>
+            </button>
           </div>
         </div>
       </section>
@@ -48,7 +59,17 @@
         </div>
       </div>
       <div v-if="assetType" class="asset-context"><el-tag>{{ assetTypeLabel }}</el-tag><span>{{ t('aiVideo.assetContextHint') }}</span></div>
-      <el-table v-loading="loading" :data="rows" stripe table-layout="auto" class="ai-video-table">
+      <el-alert v-if="loadError" class="ai-video-error" :title="t('aiVideo.loadFailed')" type="error" show-icon :closable="false">
+        <template #default><el-button size="small" type="danger" plain @click="load">{{ t('common.retry') }}</el-button></template>
+      </el-alert>
+      <div class="ai-video-filters">
+        <el-input v-model="keyword" clearable :placeholder="t('aiVideo.searchPlaceholder')" @clear="resetFilters" />
+        <el-select v-model="statusFilter" clearable :placeholder="t('aiVideo.allStatuses')">
+          <el-option v-for="status in availableStatuses" :key="status" :label="statusLabel(status)" :value="status" />
+        </el-select>
+        <span class="ai-video-result-count">{{ t('aiVideo.resultCount', { count: filteredRows.length }) }}</span>
+      </div>
+      <el-table v-loading="loading" :data="filteredRows" stripe table-layout="auto" class="ai-video-table" empty-text=" ">
         <el-table-column v-for="column in columns" :key="column.key" :prop="column.key" :label="column.label" :min-width="column.width || 140" show-overflow-tooltip>
           <template #default="scope">
             <el-tag v-if="column.key === 'status'" size="small" effect="plain">{{ statusLabel(scope.row.status) }}</el-tag>
@@ -66,13 +87,15 @@
             </div>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty :description="rows.length ? t('aiVideo.noResults') : t('aiVideo.noRows')" :image-size="72" />
+        </template>
       </el-table>
-      <el-empty v-if="!loading && !rows.length" :description="t('aiVideo.noRows')" :image-size="88" />
     </section>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? t('common.edit') : t('common.add')" width="680px" destroy-on-close>
-      <el-form label-width="120px" class="ai-video-form">
-        <el-form-item v-for="field in current.fields" :key="field.key" :label="field.label">
+      <el-form ref="formRef" :model="form" label-position="top" status-icon class="ai-video-form">
+        <el-form-item v-for="field in current.fields" :key="field.key" :label="field.label" :prop="field.key" :rules="fieldRules(field)">
           <el-select v-if="field.type === 'project'" v-model="form[field.key]" filterable clearable :placeholder="field.placeholder">
             <el-option v-for="project in projects" :key="project.id" :label="`${project.code} · ${project.name}`" :value="project.id" />
           </el-select>
@@ -95,8 +118,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowRight } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import {
   cancelAiVideoTask, completeAiVideoPublish, createAiVideoResource, deleteAiVideoResource,
@@ -105,20 +129,26 @@ import {
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const rows = ref([])
 const projects = ref([])
 const overview = reactive({ projects: 0, assets: 0, tasks: 0, videos: 0, runningTasks: 0, failedTasks: 0 })
 const loading = ref(false)
+const loadError = ref(false)
 const saving = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref(null)
+const formRef = ref(null)
+const keyword = ref('')
+const statusFilter = ref('')
+let loadRequestId = 0
 const form = reactive({})
 
 // 路由兼容测试保留 items: 'items' 这一业务路径标识；接口分类仍使用 ITEM 枚举。
 const assetTypes = { characters: 'CHARACTER', scenes: 'SCENE', items: 'ITEM', costumes: 'COSTUME', motions: 'MOTION', styles: 'STYLE', voices: 'VOICE', sounds: 'SOUND' }
 const assetLabels = { CHARACTER: '角色', SCENE: '场景', ITEM: '物品', COSTUME: '服装', MOTION: '动作', STYLE: '画风', VOICE: '声音', SOUND: '音效' }
-const statusOptions = values => values.map(value => ({ value, label: value }))
+const statusOptions = values => values.map(value => ({ value, label: t(`aiVideo.statuses.${value}`) }))
 const field = (key, label, type = 'input', extra = {}) => ({ key, label, type, ...extra })
 const baseProject = () => field('projectId', t('aiVideo.fields.project'), 'project', { placeholder: t('aiVideo.selectProject') })
 
@@ -149,6 +179,15 @@ const assetType = computed(() => assetTypes[sectionKey.value] || '')
 const assetTypeLabel = computed(() => assetLabels[assetType.value] || '')
 const section = computed(() => ({ title: t(`aiVideo.sections.${sectionKey.value}.title`), description: t(`aiVideo.sections.${sectionKey.value}.description`) }))
 const columns = computed(() => current.value.columns.map(([key, label]) => ({ key, label: key.endsWith('At') ? t('common.time') : label })))
+const availableStatuses = computed(() => [...new Set(rows.value.map(row => row.status).filter(Boolean))])
+const filteredRows = computed(() => {
+  const search = keyword.value.trim().toLowerCase()
+  return rows.value.filter(row => {
+    if (statusFilter.value && row.status !== statusFilter.value) return false
+    if (!search) return true
+    return Object.values(row).some(value => String(value ?? '').toLowerCase().includes(search))
+  })
+})
 const summary = computed(() => [
   { key: 'projects', label: t('aiVideo.summary.projects'), hint: t('aiVideo.summary.projectsHint') },
   { key: 'assets', label: t('aiVideo.summary.assets'), hint: t('aiVideo.summary.assetsHint') },
@@ -156,11 +195,18 @@ const summary = computed(() => [
   { key: 'videos', label: t('aiVideo.summary.videos'), hint: t('aiVideo.summary.videosHint') }
 ])
 const workflowSteps = computed(() => [
-  { title: t('aiVideo.steps.project'), description: t('aiVideo.steps.projectHint') },
-  { title: t('aiVideo.steps.content'), description: t('aiVideo.steps.contentHint') },
-  { title: t('aiVideo.steps.asset'), description: t('aiVideo.steps.assetHint') },
-  { title: t('aiVideo.steps.generate'), description: t('aiVideo.steps.generateHint') },
-  { title: t('aiVideo.steps.publish'), description: t('aiVideo.steps.publishHint') }
+  { title: t('aiVideo.steps.project'), description: t('aiVideo.steps.projectHint'), path: 'projects' },
+  { title: t('aiVideo.steps.content'), description: t('aiVideo.steps.contentHint'), path: 'scripts' },
+  { title: t('aiVideo.steps.asset'), description: t('aiVideo.steps.assetHint'), path: 'assets/items' },
+  { title: t('aiVideo.steps.generate'), description: t('aiVideo.steps.generateHint'), path: 'tasks' },
+  { title: t('aiVideo.steps.publish'), description: t('aiVideo.steps.publishHint'), path: 'reviews' }
+])
+const productionPaths = computed(() => [
+  { key: 'text', icon: '文', title: t('aiVideo.paths.textTitle'), description: t('aiVideo.paths.textHint'), route: 'tasks', mode: 'VIDEO' },
+  { key: 'storyboard', icon: '镜', title: t('aiVideo.paths.storyboardTitle'), description: t('aiVideo.paths.storyboardHint'), route: 'renders', mode: 'STORYBOARD' },
+  { key: 'asset', icon: '物', title: t('aiVideo.paths.assetTitle'), description: t('aiVideo.paths.assetHint'), route: 'tasks', mode: 'IMAGE' },
+  { key: 'audio', icon: '声', title: t('aiVideo.paths.audioTitle'), description: t('aiVideo.paths.audioHint'), route: 'tasks', mode: 'TTS' },
+  { key: 'template', icon: '模', title: t('aiVideo.paths.templateTitle'), description: t('aiVideo.paths.templateHint'), route: 'renders', mode: 'TEMPLATE' }
 ])
 
 /** 判断当前用户是否拥有指定资源操作权限。 */
@@ -169,22 +215,49 @@ function can(action) {
   return auth.hasPermission(`ai:video:${current.value.permission}:${action}`)
 }
 
-/** 加载工作台统计、项目选择项和当前业务列表。 */
+/** 跳转到制作流程中的指定模块。 */
+function goTo(path, mode) {
+  router.push({ path: `/ai-video/${path}`, query: mode ? { mode } : {} })
+}
+
+/** 判断当前页面是否允许读取项目选择项。 */
+function canListProjects() {
+  return auth.isAdmin || auth.hasPermission('ai:video:project:list')
+}
+
+/** 加载工作台统计、项目选择项和当前业务列表，避免无关权限导致整页失败。 */
 async function load() {
+  const requestId = ++loadRequestId
   loading.value = true
+  loadError.value = false
   try {
-    const stats = await getAiVideoOverview()
-    Object.assign(overview, stats)
-    projects.value = await listAiVideoResource('projects')
-    if (!isDashboard.value && !isAnalytics.value) rows.value = await listAiVideoResource(current.value.resource, assetType.value ? { assetType: assetType.value } : {})
-  } finally { loading.value = false }
+    const dashboardPermission = auth.isAdmin || auth.hasPermission('ai:video:dashboard:list')
+    if ((isDashboard.value || isAnalytics.value) && dashboardPermission) Object.assign(overview, await getAiVideoOverview())
+    if (canListProjects()) projects.value = await listAiVideoResource('projects')
+    if (!isDashboard.value && !isAnalytics.value && can('list')) {
+      rows.value = await listAiVideoResource(current.value.resource, assetType.value ? { assetType: assetType.value } : {})
+    } else if (!isDashboard.value && !isAnalytics.value) {
+      rows.value = []
+    }
+    if (route.query.mode && !isDashboard.value && !isAnalytics.value && can('create')) {
+      const mode = String(route.query.mode)
+      openCreate(mode)
+      router.replace({ query: {} })
+    }
+  } catch (error) {
+    if (requestId === loadRequestId) loadError.value = true
+  } finally {
+    if (requestId === loadRequestId) loading.value = false
+  }
 }
 
 /** 初始化新增表单并打开弹窗。 */
-function openCreate() {
+function openCreate(mode = '') {
   editingId.value = null
   Object.keys(form).forEach(key => delete form[key])
-  current.value.fields.forEach(item => { form[item.key] = item.type === 'number' ? (item.min || 0) : item.type === 'select' ? item.options[0]?.value : '' })
+  current.value.fields.forEach(item => { form[item.key] = item.type === 'number' ? (item.min || 0) : item.type === 'select' ? item.options[0]?.value : item.type === 'project' ? null : '' })
+  if (current.value.resource === 'tasks' && ['SCRIPT', 'IMAGE', 'VIDEO', 'TTS', 'MUSIC', 'UPSCALE'].includes(mode)) form.taskType = mode
+  if (current.value.resource === 'renders' && ['STORYBOARD', 'TEMPLATE'].includes(mode)) form.configJson = JSON.stringify({ mode }, null, 2)
   dialogVisible.value = true
 }
 
@@ -192,12 +265,13 @@ function openCreate() {
 function openEdit(row) {
   editingId.value = row.id
   Object.keys(form).forEach(key => delete form[key])
-  current.value.fields.forEach(item => { form[item.key] = row[item.key] ?? (item.type === 'number' ? (item.min || 0) : '') })
+  current.value.fields.forEach(item => { form[item.key] = row[item.key] ?? (item.type === 'number' ? (item.min || 0) : item.type === 'project' ? null : '') })
   dialogVisible.value = true
 }
 
 /** 保存新增或编辑的业务资源。 */
 async function save() {
+  try { await formRef.value?.validate() } catch { return }
   saving.value = true
   try {
     if (editingId.value) await updateAiVideoResource(current.value.resource, editingId.value, { ...form })
@@ -225,13 +299,30 @@ async function retryTask(row) { await retryAiVideoTask(row.id); await load(); El
 /** 完成发布记录并刷新状态。 */
 async function completePublish(row) { await completeAiVideoPublish(row.id); await load(); ElMessage.success(t('aiVideo.publishCompleted')) }
 
+/** 返回当前模块的必填字段校验规则。 */
+function fieldRules(item) {
+  const required = {
+    projects: ['code', 'name'], scripts: ['projectId', 'title'], storyboards: ['projectId', 'title'],
+    assets: ['projectId', 'name'], tasks: ['projectId', 'taskType', 'name'], renders: ['projectId', 'name'],
+    videos: ['projectId', 'title'], reviews: ['videoId'], publishes: ['videoId', 'channel']
+  }
+  if (!required[current.value.resource]?.includes(item.key)) return undefined
+  return [{ required: true, message: t('aiVideo.fieldRequired', { field: item.label }), trigger: ['blur', 'change'] }]
+}
+
+/** 清空列表筛选条件。 */
+function resetFilters() {
+  keyword.value = ''
+  statusFilter.value = ''
+}
+
 /** 将空值和 JSON 字段转换成适合表格阅读的文本。 */
 function displayValue(value) { if (value === null || value === undefined || value === '') return '—'; if (typeof value === 'object') return JSON.stringify(value); return value }
 
 /** 将后端状态编码转换为可读文本。 */
-function statusLabel(value) { return value || '—' }
+function statusLabel(value) { return value ? t(`aiVideo.statuses.${value}`) : '—' }
 
-watch(sectionKey, load)
+watch(sectionKey, () => { resetFilters(); load() })
 onMounted(load)
 </script>
 
@@ -240,6 +331,8 @@ onMounted(load)
 .ai-video-hero { display: flex; align-items: center; justify-content: space-between; min-height: 160px; overflow: hidden; background: linear-gradient(125deg, #101b3a, #263d7a 58%, #4c78bc); color: #fff; }
 .ai-video-hero h2 { margin: 10px 0 8px; font-size: clamp(26px, 4vw, 42px); letter-spacing: -.03em; }
 .ai-video-hero p { max-width: 720px; margin: 0; color: rgb(239 245 255 / 82%); }
+.ai-video-hero-actions { display: flex; align-items: center; gap: 18px; }
+.ai-video-hero-actions :deep(.el-button) { border-color: rgb(255 255 255 / 55%); color: #fff; }
 .ai-video-mark { width: 132px; height: 132px; display: grid; place-content: center; border: 1px solid rgb(255 255 255 / 35%); border-radius: 50%; color: rgb(255 255 255 / 88%); font-size: 16px; font-weight: 800; line-height: 1.4; letter-spacing: .18em; text-align: center; transform: rotate(-8deg); }
 .ai-video-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .ai-video-summary-card { display: grid; gap: 6px; }
@@ -248,15 +341,39 @@ onMounted(load)
 .ai-video-content { min-height: 360px; }
 .toolbar-actions, .table-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .asset-context { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; color: var(--app-muted); }
+.ai-video-error { margin-bottom: 14px; }
+.ai-video-filters { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.ai-video-filters :deep(.el-input) { width: min(320px, 100%); }
+.ai-video-filters :deep(.el-select) { width: 180px; }
+.ai-video-result-count { margin-left: auto; color: var(--app-muted); font-size: 12px; white-space: nowrap; }
 .ai-video-table { width: 100%; }
 .ai-video-form :deep(.el-select), .ai-video-form :deep(.el-input), .ai-video-form :deep(.el-input-number) { width: 100%; }
 .ai-video-guide, .ai-video-analytics { min-height: 220px; }
 .ai-video-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.ai-video-step { display: flex; gap: 10px; padding: 16px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-surface-soft); }
+.ai-video-step { display: flex; width: 100%; gap: 10px; padding: 16px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-surface-soft); color: inherit; text-align: left; cursor: pointer; transition: border-color .16s ease, background-color .16s ease, transform .16s ease; }
+.ai-video-step:hover { border-color: #a9bfe9; background: #f4f7ff; transform: translateY(-2px); }
+.ai-video-step:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
 .ai-video-step b { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--app-primary); color: #fff; }
 .ai-video-step strong { color: var(--app-text); }
 .ai-video-step p { margin: 5px 0 0; color: var(--app-muted); font-size: 13px; line-height: 1.5; }
+.production-paths { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--app-border); }
+.production-paths-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.production-paths-head h4, .production-paths-head p { margin: 0; }
+.production-paths-head h4 { font-size: 15px; }
+.production-paths-head p { margin-top: 4px; color: var(--app-muted); font-size: 12px; }
+.production-path-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.production-path { display: flex; min-width: 0; align-items: center; gap: 9px; padding: 13px 12px; border: 1px solid var(--app-border); border-radius: 10px; background: #fff; color: var(--app-text); text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.production-path:hover { border-color: #aac0e8; box-shadow: 0 7px 18px rgb(32 69 135 / 10%); transform: translateY(-2px); }
+.production-path:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 2px; }
+.production-path-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: #edf3ff; color: var(--app-primary); font-size: 13px; font-weight: 700; }
+.production-path>span:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
+.production-path strong, .production-path small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.production-path strong { font-size: 13px; }
+.production-path small { color: var(--app-muted); font-size: 11px; }
+.production-path :deep(.el-icon) { margin-left: auto; color: var(--app-muted); }
 @media (max-width: 1000px) { .ai-video-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 800px) { .ai-video-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ai-video-mark { width: 96px; height: 96px; font-size: 12px; } }
-@media (max-width: 520px) { .ai-video-hero { align-items: flex-start; } .ai-video-mark { display: none; } .ai-video-steps { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .production-path-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 800px) { .ai-video-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ai-video-mark { width: 96px; height: 96px; font-size: 12px; } .production-path-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .ai-video-hero { align-items: flex-start; } .ai-video-mark { display: none; } .ai-video-hero-actions { align-items: flex-start; } .ai-video-steps { grid-template-columns: 1fr; } .ai-video-filters { align-items: stretch; flex-direction: column; } .ai-video-filters :deep(.el-input), .ai-video-filters :deep(.el-select) { width: 100%; } .ai-video-result-count { margin-left: 0; } }
+@media (max-width: 520px) { .production-path-grid { grid-template-columns: 1fr; } }
 </style>
