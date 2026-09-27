@@ -29,18 +29,24 @@
         <el-descriptions-item :label="t('packageAdjustment.issuedAt')">{{ formatTimestamp(parsed.payload.iat) || t('packageAdjustment.notSet') }}</el-descriptions-item>
         <el-descriptions-item :label="t('packageAdjustment.expiresAt')">{{ formatTimestamp(parsed.payload.exp) || t('packageAdjustment.notSet') }}</el-descriptions-item>
       </el-descriptions>
+      <el-alert class="key-notice" :title="t('packageAdjustment.keyNotice')" type="info" :closable="false" show-icon />
+      <el-form class="signing-form" label-position="top">
+        <el-form-item :label="t('packageAdjustment.privateKey')">
+          <el-input v-model="privateKey" type="textarea" :rows="5" resize="vertical" :placeholder="t('packageAdjustment.privateKeyPlaceholder')" autocomplete="off" spellcheck="false" />
+        </el-form-item>
+      </el-form>
       <el-form class="plan-form" label-position="top">
         <el-form-item :label="t('packageAdjustment.planType')">
           <el-input v-model="planType" :placeholder="t('packageAdjustment.planPlaceholder')" maxlength="80" show-word-limit @keyup.enter="generateToken" />
         </el-form-item>
-        <el-button type="primary" :disabled="!planType.trim()" @click="generateToken">{{ t('packageAdjustment.generate') }}</el-button>
+        <el-button type="primary" :loading="generating" :disabled="!planType.trim() || !privateKey.trim()" @click="generateToken">{{ t('packageAdjustment.generate') }}</el-button>
       </el-form>
     </section>
 
     <section v-if="generatedToken" class="panel">
       <div class="section-head"><div><h3>{{ t('packageAdjustment.generatedTitle') }}</h3><p>{{ t('packageAdjustment.generatedHint') }}</p></div><el-button @click="copyGenerated">{{ t('packageAdjustment.copy') }}</el-button></div>
       <el-input v-model="generatedToken" type="textarea" :rows="9" readonly />
-      <el-alert class="signature-alert" :title="t('packageAdjustment.signatureWarning')" type="error" :closable="false" show-icon />
+      <el-alert class="signature-alert" :title="t('packageAdjustment.signatureReady')" type="success" :closable="false" show-icon />
     </section>
   </div>
 </template>
@@ -55,8 +61,10 @@ const { t, locale } = useI18n()
 const token = ref('')
 const parsed = ref(null)
 const planType = ref('')
+const privateKey = ref('')
 const generatedToken = ref('')
 const parsing = ref(false)
+const generating = ref(false)
 
 /** 解析输入 Token 并回显套餐字段，所有凭证只保留在当前页面内存中。 */
 function parseToken() {
@@ -76,13 +84,16 @@ function parseToken() {
   }
 }
 
-/** 仅修改 Payload 中的套餐字段并生成新的三段式 Token。 */
-function generateToken() {
+/** 使用页面内存中的 issuer 私钥重新签名套餐字段。 */
+async function generateToken() {
+  generating.value = true
   try {
-    generatedToken.value = buildTokenWithPlan(parsed.value, planType.value)
+    generatedToken.value = await buildTokenWithPlan(parsed.value, planType.value, privateKey.value)
     ElMessage.success(t('packageAdjustment.generateSuccess'))
   } catch (error) {
     ElMessage.error(error.message || t('packageAdjustment.generateFailed'))
+  } finally {
+    generating.value = false
   }
 }
 
@@ -106,6 +117,8 @@ function formatTimestamp(value) {
 .package-adjustment-page { display: grid; gap: 18px; }
 .eyebrow { color: var(--el-color-primary); font-size: 12px; letter-spacing: .12em; font-weight: 700; }
 .intro-panel :deep(.el-alert) { margin-top: 16px; }
+.key-notice { margin-top: 18px; }
+.signing-form { margin-top: 18px; }
 .plan-form { display: flex; align-items: flex-end; gap: 14px; margin-top: 20px; }
 .plan-form .el-form-item { flex: 1; margin-bottom: 0; }
 .signature-alert { margin-top: 16px; }
