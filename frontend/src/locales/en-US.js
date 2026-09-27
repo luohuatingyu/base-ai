@@ -126,11 +126,12 @@ export default {
     userNotFound: 'The authenticated user does not exist'
   },
   packageAdjustment: {
-    eyebrow: 'JWT PLAN TOOL', title: 'Plan Adjustment', description: 'Decode the ChatGPT plan claim in a JWT and generate a token with an edited value.',
-    securityNotice: 'The token stays in this page memory and is never uploaded or stored. Changing the payload invalidates the original RS256 signature, so the generated value is not a valid authentication credential.',
+    eyebrow: 'JWT PLAN TOOL', title: 'Plan Adjustment', description: 'Decode the ChatGPT plan claim and create a new RS256 token with the issuer private key.',
+    securityNotice: 'The token and private key stay in page memory and are never uploaded or stored. Only a PKCS#8 private key matching the issuer public key can create a verifiable token.',
     inputTitle: 'Input token', inputHint: 'Paste the complete Header.Payload.Signature value and parse it.', parse: 'Parse token', tokenPlaceholder: 'Paste a JWT token',
     resultTitle: 'Decoded claims', resultHint: 'The values below come from the JWT payload; only the plan field is editable.', email: 'Email', accountId: 'Account ID', userId: 'User ID', algorithm: 'Algorithm', issuedAt: 'Issued at', expiresAt: 'Expires at', notSet: 'Not set',
-    planType: 'chatgpt_plan_type', planPlaceholder: 'For example plus, pro, or team', generate: 'Generate token', generatedTitle: 'Generated token', generatedHint: 'The original signature segment is preserved for payload comparison and debugging.', copy: 'Copy', signatureWarning: 'The payload changed, so the original RS256 signature no longer matches. Do not use this token for login or API authentication.',
+    keyNotice: 'Paste the issuer PKCS#8 RSA private key. It is used only for this browser signing operation and is never uploaded or stored.', privateKey: 'Issuer private key', privateKeyPlaceholder: '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----',
+    planType: 'chatgpt_plan_type', planPlaceholder: 'For example plus, pro, or team', generate: 'Generate and sign token', generatedTitle: 'Signed token', generatedHint: 'This token uses a new RS256 signature created with the issuer private key.', copy: 'Copy', signatureReady: 'The signature was created. Only a verifier with the matching public key can accept this token.',
     parseSuccess: 'Token parsed', parseFailed: 'Unable to parse token', planMissing: 'No plan field was found. Enter a plan value before generating.', generateSuccess: 'Token generated', generateFailed: 'Unable to generate token', copied: 'Token copied', copyFailed: 'Copy failed. Check clipboard permissions.'
   },
   dashboard: {
