@@ -67,7 +67,7 @@ export default {
     expand: '展开侧边栏',
     theme: '侧边栏主题',
     themes: { midnight: '暗夜蓝', cloud: '云雾白', aurora: '极光紫' },
-    items: { ai: 'AI 能力', aiChat: 'AI 对话', automation: '自动化', workflow: '工作流', operations: '运维管理', monitoring: '监控审计', system: '系统管理', access: '访问控制', organization: '组织管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSources: '数据源管理', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowCanvas: '画布管理' }
+    items: { aiVideo: 'AI视频', aiVideoDashboard: '工作台首页', aiVideoContent: '内容创作', aiVideoAssets: '资产中心', aiVideoGeneration: '生成中心', aiVideoPublishing: '发布中心', aiVideoProjects: '项目管理', aiVideoScripts: '剧本管理', aiVideoStoryboards: '分镜管理', aiVideoCharacters: '角色资产', aiVideoScenes: '场景资产', aiVideoItems: '物品资产', aiVideoCostumes: '服装造型', aiVideoMotions: '动作表情', aiVideoStyles: '画风模板', aiVideoVoices: '声音管理', aiVideoSounds: '音乐音效', aiVideoTasks: '生成任务', aiVideoRenders: '视频合成', aiVideoVideos: '成片管理', aiVideoReviews: '审核管理', aiVideoPublishes: '发布管理', aiVideoAnalytics: '数据分析', ai: 'AI 能力', aiChat: 'AI 对话', automation: '自动化', workflow: '工作流', operations: '运维管理', monitoring: '监控审计', system: '系统管理', access: '访问控制', organization: '组织管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSources: '数据源管理', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowCanvas: '画布管理' }
   },
   common: {
     confirm: '确认',
@@ -155,6 +155,25 @@ export default {
     businessDatabase: '从属业务数据库',
     cacheTokens: '缓存与令牌状态',
     worker: 'OpenAI-compatible 调用'
+  },
+  modelUsage: {
+    eyebrow: '模型可观测性', title: '模型使用与健康度', description: '查看模型调用、Token、延迟、失败和近期使用记录，不保存提示词或回答正文。',
+    updatedAt: '更新于 {time}', startTime: '开始时间', endTime: '结束时间', provider: '供应商', model: '模型', source: '来源', status: '状态',
+    calls: '调用次数', successRate: '成功率', totalTokens: '总 Token', firstToken: '平均首 Token', duration: '平均耗时', running: '运行中',
+    modelRanking: '模型排行', errors: '近期错误', errorType: '错误类型', errorCode: '错误码', count: '次数', records: '使用记录', time: '开始时间', inputTokens: '输入 Token', outputTokens: '输出 Token', traceId: 'Trace ID',
+    empty: '当前范围没有使用记录', noErrors: '当前范围没有错误', loadFailed: '模型使用数据加载失败',
+    sources: { CHAT: '对话', STREAM: '流式对话', EMBEDDING: '向量化', AGENT: 'Agent' },
+    statuses: { SUCCESS: '成功', FAILED: '失败', INTERRUPTED: '中断', CANCELLED: '取消', RUNNING: '运行中' }
+  },
+  aiVideo: {
+    eyebrow: 'AI VIDEO WORKSPACE', currentModule: '当前模块', currentModuleHint: '菜单、权限和路由已经接入，业务数据接口可按模块继续实现。', permissionReady: '权限菜单已接入', empty: '暂无业务数据，完成对应数据接口后将在此展示。',
+    summary: { projects: '项目数', projectsHint: '管理视频项目和剧集', assets: '资产数', assetsHint: '角色、场景和物品等资产', tasks: '生成任务', tasksHint: '图片、视频和配音任务', videos: '成片数', videosHint: '审核和发布版本' },
+    sections: {
+      dashboard: { title: 'AI视频', description: '统一管理 AI 视频项目、资产、生成任务和成片发布。' },
+      projects: { title: '项目管理', description: '维护视频项目、剧集、成员和项目版本。' }, scripts: { title: '剧本管理', description: '维护故事大纲、分集剧本、对白和旁白。' }, storyboards: { title: '分镜管理', description: '维护镜头、景别、动作、机位和镜头时长。' },
+      characters: { title: '角色资产', description: '维护角色外观、性格、声音和参考图。' }, scenes: { title: '场景资产', description: '维护地点、时间、天气和场景参考图。' }, items: { title: '物品资产', description: '维护道具、武器、车辆、家具和剧情物品。' }, costumes: { title: '服装造型', description: '维护服装、发型、妆容和饰品组合。' }, motions: { title: '动作表情', description: '维护角色动作、表情和可复用动作模板。' }, styles: { title: '画风模板', description: '维护视频项目使用的画风、色彩和生成参数。' }, voices: { title: '声音管理', description: '维护角色音色、配音和旁白声音版本。' }, sounds: { title: '音乐音效', description: '维护背景音乐、环境音和动作音效。' },
+      tasks: { title: '生成任务', description: '查看图片、视频、配音和字幕生成任务。' }, renders: { title: '视频合成', description: '管理镜头拼接、字幕、配音和视频渲染。' }, videos: { title: '成片管理', description: '维护草稿、预览版、审核版和正式成片。' }, reviews: { title: '审核管理', description: '处理内容安全、版权检查和人工审核记录。' }, publishes: { title: '发布管理', description: '维护平台发布配置、状态和发布记录。' }, analytics: { title: '数据分析', description: '查看播放、完播、互动和生成成本数据。' }
+    }
   },
   language: { zhCN: '简体中文', enUS: 'English' },
   apiKeyUsage: { title: '使用说明', introduction: '外部系统调用已授权 API 时，将完整 API Key 放入 X-API-Key 请求头。', exampleTitle: 'curl 示例', curlExample: `curl -X POST <BASE_URL>/api/ai/chat\n  -H "X-API-Key: sk-<your-api-key>"\n  -H "Content-Type: application/json"\n  -d '{'{'}"messages":[{'{'}"role":"user","content":"hello"{'}'}]{'}'}'`, rulesTitle: '调用规则', permissionRule: '实际可调用范围是 Key 勾选的开放 API 与绑定用户 RBAC 权限的交集。', credentialRule: '请求不能同时携带 Authorization 和 X-API-Key，否则会返回 401。', restrictionRule: 'Key 必须处于启用且未过期、未吊销状态，并同时满足来源 IP 白名单和调用频次限制。' },

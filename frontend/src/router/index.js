@@ -4,6 +4,7 @@ import AdminLayout from '../views/AdminLayout.vue'
 import LoginView from '../views/LoginView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import AiChatView from '../views/AiChatView.vue'
+import AiVideoView from '../views/AiVideoView.vue'
 import UsersView from '../views/UsersView.vue'
 import RolesView from '../views/RolesView.vue'
 import MenusView from '../views/MenusView.vue'
@@ -44,6 +45,24 @@ const router = createRouter({
     {
       path: '/', component: AdminLayout, redirect: '/dashboard', children: [
         { path: 'dashboard', component: DashboardView, meta: { navigable: true, desc: 'dashboard.description' } },
+        { path: 'ai-video/dashboard', component: AiVideoView, meta: { permission: 'ai:video:dashboard:list', navigable: true, desc: 'aiVideo.sections.dashboard.description' } },
+        { path: 'ai-video/projects', component: AiVideoView, meta: { permission: 'ai:video:project:list', navigable: true, desc: 'aiVideo.sections.projects.description' } },
+        { path: 'ai-video/scripts', component: AiVideoView, meta: { permission: 'ai:video:script:list', navigable: true, desc: 'aiVideo.sections.scripts.description' } },
+        { path: 'ai-video/storyboards', component: AiVideoView, meta: { permission: 'ai:video:storyboard:list', navigable: true, desc: 'aiVideo.sections.storyboards.description' } },
+        { path: 'ai-video/assets/characters', component: AiVideoView, meta: { permission: 'ai:video:character:list', navigable: true, desc: 'aiVideo.sections.characters.description' } },
+        { path: 'ai-video/assets/scenes', component: AiVideoView, meta: { permission: 'ai:video:scene:list', navigable: true, desc: 'aiVideo.sections.scenes.description' } },
+        { path: 'ai-video/assets/items', component: AiVideoView, meta: { permission: 'ai:video:item:list', navigable: true, desc: 'aiVideo.sections.items.description' } },
+        { path: 'ai-video/assets/costumes', component: AiVideoView, meta: { permission: 'ai:video:costume:list', navigable: true, desc: 'aiVideo.sections.costumes.description' } },
+        { path: 'ai-video/assets/motions', component: AiVideoView, meta: { permission: 'ai:video:motion:list', navigable: true, desc: 'aiVideo.sections.motions.description' } },
+        { path: 'ai-video/assets/styles', component: AiVideoView, meta: { permission: 'ai:video:style:list', navigable: true, desc: 'aiVideo.sections.styles.description' } },
+        { path: 'ai-video/assets/voices', component: AiVideoView, meta: { permission: 'ai:video:voice:list', navigable: true, desc: 'aiVideo.sections.voices.description' } },
+        { path: 'ai-video/assets/sounds', component: AiVideoView, meta: { permission: 'ai:video:sound:list', navigable: true, desc: 'aiVideo.sections.sounds.description' } },
+        { path: 'ai-video/tasks', component: AiVideoView, meta: { permission: 'ai:video:task:list', navigable: true, desc: 'aiVideo.sections.tasks.description' } },
+        { path: 'ai-video/renders', component: AiVideoView, meta: { permission: 'ai:video:render:list', navigable: true, desc: 'aiVideo.sections.renders.description' } },
+        { path: 'ai-video/videos', component: AiVideoView, meta: { permission: 'ai:video:video:list', navigable: true, desc: 'aiVideo.sections.videos.description' } },
+        { path: 'ai-video/reviews', component: AiVideoView, meta: { permission: 'ai:video:review:list', navigable: true, desc: 'aiVideo.sections.reviews.description' } },
+        { path: 'ai-video/publishes', component: AiVideoView, meta: { permission: 'ai:video:publish:list', navigable: true, desc: 'aiVideo.sections.publishes.description' } },
+        { path: 'ai-video/analytics', component: AiVideoView, meta: { permission: 'ai:video:analytics:list', navigable: true, desc: 'aiVideo.sections.analytics.description' } },
         { path: 'ai-chat', component: AiChatView, meta: { permission: 'ai:chat:invoke', navigable: true, desc: 'chat.description' } },
         { path: 'users', component: UsersView, meta: { permission: 'system:user:list', navigable: true, desc: 'users.description' } },
         { path: 'roles', component: RolesView, meta: { permission: 'system:role:list', navigable: true, desc: 'roles.description' } },
