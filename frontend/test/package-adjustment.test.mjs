@@ -31,7 +31,6 @@ before(async () => {
     ['sign', 'verify']
   )
   privateKeyPem = bytesToPem(await webcrypto.subtle.exportKey('pkcs8', signingKeyPair.privateKey))
-  globalThis.crypto = webcrypto
 })
 
 function encode(value) {
