@@ -107,6 +107,19 @@ public class ChatStreamClient {
 
     /** 逐事件读取；消费者返回前不会预取下一事件。使用重试和熔断保护。 */
     public void stream(ChatConversationService.Turn turn, EventConsumer consumer) {
+        stream(turn, consumer, "STREAM", 0D);
+    }
+
+    /** 为公开聊天接口复用同一套 SSE、重试和 Token 记录逻辑。 */
+    public void stream(AiChatClient.ChatRequest request, String source, EventConsumer consumer) {
+        var settings = new ChatConversationService.Settings(request.modelType(), request.featureCode(), null,
+            request.enableThinking(), request.thinkingLevel(), "");
+        var turn = new ChatConversationService.Turn(null, null, null, request.messages(), settings);
+        stream(turn, consumer, source, request.temperature());
+    }
+
+    /** 执行指定来源和温度的流式调用，保持会话和公开接口共用生命周期。 */
+    private void stream(ChatConversationService.Turn turn, EventConsumer consumer, String source, Double temperature) {
         if (!turn.settings().effectiveAgentToolCodes().isEmpty()
             || !turn.settings().effectiveWorkflowToolCodes().isEmpty()) {
             streamAgent(turn, consumer);
@@ -122,7 +135,7 @@ public class ChatStreamClient {
             executeStream(turn, event -> {
                 if ("delta".equals(event.path("type").asText())) streamStarted.set(true);
                 consumer.accept(event);
-            }, streamStarted, feature, route);
+            }, streamStarted, feature, route, source, temperature);
             return null;
         };
         
@@ -143,18 +156,19 @@ public class ChatStreamClient {
     
     /** 实际执行流式调用。 */
     private void executeStream(ChatConversationService.Turn turn, EventConsumer consumer, AtomicBoolean streamStarted,
-                               String feature, LlmManagementService.WorkerRoute route) {
+                               String feature, LlmManagementService.WorkerRoute route, String source,
+                               Double temperature) {
         var settings = turn.settings();
         String traceId = UUID.randomUUID().toString().replace("-", "");
         traces.registerPython(TraceContextHolder.currentTraceId().orElse(null), traceId, "/llm/chat/stream");
         String usageId = llmUsageService == null ? null : llmUsageService.start(
-            LlmUsageService.Start.current(traceId, turn.owner(), turn.conversationId(), "STREAM", feature, settings.modelType()));
+            LlmUsageService.Start.current(traceId, turn.owner(), turn.conversationId(), source, feature, settings.modelType()));
         AtomicBoolean usageFinished = new AtomicBoolean(false);
         AtomicReference<TokenUsage> latestUsage = new AtomicReference<>();
         try {
             client.post().uri("/llm/chat/stream").header("X-Python-Trace-Id", traceId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(new AiChatClient.ChatRequest(feature, settings.modelType(), turn.context(), 0,
+                .body(new AiChatClient.ChatRequest(feature, settings.modelType(), turn.context(), temperature == null ? 0D : temperature,
                     route.candidates(), settings.enableThinking() == null ? route.enableThinking() : settings.enableThinking(),
                     settings.thinkingLevel(), route.routeConfigured()))
                 .exchange((request, response) -> {
