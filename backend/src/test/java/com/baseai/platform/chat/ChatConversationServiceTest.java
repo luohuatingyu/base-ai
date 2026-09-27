@@ -290,9 +290,9 @@ class ChatConversationServiceTest {
             Long id = service.create(1L).id();
             var base = request("non-stream-error", "问题");
             var nonStreaming = new ChatConversationService.SendRequest(base.requestId(), base.content(), base.settings(), false);
-            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+            assertThrows(Exception.class, () -> mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .post("/api/ai/conversations/" + id + "/messages/stream").contentType("application/json")
-                .content(mapper.writeValueAsString(nonStreaming)));
+                .content(mapper.writeValueAsString(nonStreaming))));
             var detail = service.detail(1L, id);
             assertEquals("INTERRUPTED", detail.messages().get(1).status());
             assertFalse(detail.messages().get(1).content().asText().contains("provider-secret"));
