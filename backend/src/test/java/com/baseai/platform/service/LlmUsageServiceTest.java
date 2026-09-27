@@ -51,4 +51,19 @@ class LlmUsageServiceTest {
             null, null, null, "TimeoutException", "ai.serviceCallFailed", Instant.parse("2026-01-01T00:00:01Z")));
         verify(jdbc).update(anyString(), any(Object[].class));
     }
+
+    /** 动态查询条件必须和 WHERE 关键字分开，避免监控接口生成非法 SQL。 */
+    @Test
+    void summarySeparatesWhereKeywordFromFilters() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForMap(anyString(), any(Object[].class))).thenReturn(java.util.Map.of());
+        when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(java.util.List.of());
+        LlmUsageService service = new LlmUsageService(jdbc);
+
+        service.summary(LlmUsageService.Query.last24Hours());
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).queryForMap(sql.capture(), any(Object[].class));
+        org.junit.jupiter.api.Assertions.assertTrue(sql.getValue().contains("WHERE started_at"), sql.getValue());
+    }
 }

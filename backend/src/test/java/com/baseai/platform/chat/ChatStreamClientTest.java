@@ -20,6 +20,7 @@ class ChatStreamClientTest {
     HttpServer server;
     ChatStreamClient client;
     TaskTraceService traces;
+    LlmUsageService usage;
     CountDownLatch delivered;
     String response;
     String requestBody;
@@ -44,10 +45,12 @@ class ChatStreamClientTest {
         var management = mock(LlmManagementService.class);
         when(management.resolveActive("chat", "text_model")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), false, true));
         traces = mock(TaskTraceService.class);
+        usage = mock(LlmUsageService.class);
         Retry retry = Retry.of("test", RetryConfig.custom().maxAttempts(3).retryExceptions(Exception.class)
             .ignoreExceptions(IllegalStateException.class).build());
         client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build(),
-            management, traces, new ObjectMapper(), retry, CircuitBreaker.ofDefaults("test"));
+            management, traces, new ObjectMapper(), retry, CircuitBreaker.ofDefaults("test"),
+            null, null, null, null, usage);
     }
 
     /** 回收测试 HTTP 服务器及后台超时调度器。 */
@@ -70,6 +73,18 @@ class ChatStreamClientTest {
         assertThrows(RuntimeException.class, () -> client.stream(turn(), event -> delivered.countDown()));
         verify(traces).updatePython(anyString(), eq("FAILED"), isNull(), eq("Stream interrupted"));
         verify(traces, never()).updatePython(anyString(), eq("SUCCESS"), any(), any());
+    }
+
+    /** 上游已返回 usage 后即使连接中断，也必须把已知 Token 写入中断记录。 */
+    @Test void preservesUsageWhenStreamInterrupts() {
+        response = "data: {\"type\":\"usage\",\"inputTokens\":5,\"outputTokens\":2,\"totalTokens\":7}\n\n";
+        assertThrows(RuntimeException.class, () -> client.stream(turn(), event -> delivered.countDown()));
+        var completion = org.mockito.ArgumentCaptor.forClass(LlmUsageService.Completion.class);
+        verify(usage).finish(anyString(), completion.capture());
+        assertEquals("INTERRUPTED", completion.getValue().status());
+        assertEquals(5L, completion.getValue().inputTokens());
+        assertEquals(2L, completion.getValue().outputTokens());
+        assertEquals(7L, completion.getValue().totalTokens());
     }
 
     /** Agent 模式先执行授权工作流，再把工具结果交给模型并输出最终回答。 */

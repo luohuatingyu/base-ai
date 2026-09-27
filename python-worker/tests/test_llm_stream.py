@@ -78,6 +78,8 @@ def test_streams_utf8_and_usage_and_fails_over_before_output(fail_first):
     """首段之前切换候选，完整响应逐段交付并保留统计。"""
     events, calls, chunks = asyncio.run(collect(success(), fail_first))
     assert events == [{"type": "delta", "content": "你好"},
+                      {"type": "usage", "model": "test-model", "inputTokens": 2,
+                       "outputTokens": 1, "totalTokens": 3},
                       {"type": "done", "model": "test-model", "inputTokens": 2, "outputTokens": 1, "totalTokens": 3}]
     assert len(calls) == (2 if fail_first else 1)
     assert all(call["stream"] is True for call in calls)
@@ -124,6 +126,18 @@ def test_does_not_fail_over_after_first_delta():
             await generator.aclose()
             await client.close()
     asyncio.run(run())
+
+
+def test_normalizes_usage_aliases_and_calculates_total_tokens():
+    """兼容供应商 Token 别名，并在缺少总数时补算输入加输出。"""
+    body = frame({"choices": [{"delta": {"content": "ok"}}]}) + frame(
+        {"choices": [], "usage": {"input_tokens": "4", "outputTokens": 3}}
+    ) + "data: [DONE]\n\n"
+    events, _, _ = asyncio.run(collect(body))
+    assert events[-2:] == [
+        {"type": "usage", "model": "test-model", "inputTokens": 4, "outputTokens": 3, "totalTokens": 7},
+        {"type": "done", "model": "test-model", "inputTokens": 4, "outputTokens": 3, "totalTokens": 7},
+    ]
 
 
 def test_size_middleware_waits_for_real_disconnect():
