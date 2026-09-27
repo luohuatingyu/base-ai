@@ -177,7 +177,7 @@ public class AiChatController {
                 streamClient.stream(workerRequest, request.modelId(), "CHAT_STREAM", event -> {
                     String type = event.path("type").asText();
                     if ("delta".equals(type)) hasOutput.set(true);
-                    if (!Set.of("delta", "done", "heartbeat").contains(type))
+                    if (!Set.of("model", "delta", "done", "heartbeat").contains(type))
                         throw new IOException("Invalid stream event");
                     writeSse(output, event);
                 });
