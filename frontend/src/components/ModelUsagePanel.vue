@@ -1,7 +1,7 @@
 <template>
   <section v-if="auth.isAdmin" class="panel model-usage-panel">
     <div class="section-head">
-      <div>
+      <div class="model-usage-heading">
         <span class="eyebrow">{{ t('modelUsage.eyebrow') }}</span>
         <h2>{{ t('modelUsage.title') }}</h2>
         <p>{{ t('modelUsage.description') }}</p>
@@ -41,7 +41,7 @@
     <div class="model-usage-columns" v-loading="loading">
       <div>
         <h3>{{ t('modelUsage.modelRanking') }}</h3>
-        <el-table :data="models" size="small">
+        <el-table v-if="models.length" :data="models" size="small">
           <el-table-column prop="providerCode" :label="t('modelUsage.provider')" min-width="120" />
           <el-table-column prop="modelName" :label="t('modelUsage.model')" min-width="160" />
           <el-table-column prop="calls" :label="t('modelUsage.calls')" width="90" />
@@ -50,16 +50,16 @@
             <template #default="scope">{{ percent(rate(scope.row.success, scope.row.calls)) }}</template>
           </el-table-column>
         </el-table>
-        <el-empty v-if="!models.length && !loading" :description="t('modelUsage.empty')" />
+        <el-empty v-else-if="!loading" :description="t('modelUsage.empty')" />
       </div>
       <div>
         <h3>{{ t('modelUsage.errors') }}</h3>
-        <el-table :data="errors" size="small">
+        <el-table v-if="errors.length" :data="errors" size="small">
           <el-table-column prop="errorType" :label="t('modelUsage.errorType')" min-width="130" />
           <el-table-column prop="errorCode" :label="t('modelUsage.errorCode')" min-width="150" />
           <el-table-column prop="count" :label="t('modelUsage.count')" width="90" />
         </el-table>
-        <el-empty v-if="!errors.length && !loading" :description="t('modelUsage.noErrors')" />
+        <el-empty v-else-if="!loading" :description="t('modelUsage.noErrors')" />
       </div>
     </div>
 
@@ -153,7 +153,10 @@ function reset() {
 }
 
 function number(value) { return Number(value || 0).toLocaleString() }
-function milliseconds(value) { return value == null ? '-' : `${Math.round(Number(value))} ms` }
+function milliseconds(value) {
+  const numeric = Number(value)
+  return !Number.isFinite(numeric) || numeric < 0 ? '-' : `${Math.round(numeric).toLocaleString()} ms`
+}
 function percent(value) { return `${(Number(value || 0) * 100).toFixed(1)}%` }
 function rate(success, calls) { return Number(calls || 0) ? Number(success || 0) / Number(calls) : 0 }
 function statusType(status) { return status === 'SUCCESS' ? 'success' : status === 'RUNNING' ? 'warning' : 'danger' }
@@ -168,12 +171,28 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
 
 <style scoped>
 .model-usage-panel { margin-top: 20px; }
-.model-usage-actions { display: flex; align-items: center; gap: 10px; }
-.model-usage-filters { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
-.model-usage-filters .el-input, .model-usage-filters .el-select { width: 160px; }
+.model-usage-panel .section-head { align-items: flex-start; justify-content: space-between; }
+.model-usage-panel .section-head > .model-usage-heading { display: block; }
+.model-usage-heading h2 { margin: 8px 0 6px; font-size: 20px; }
+.model-usage-heading p { max-width: 720px; margin: 0; color: var(--app-muted); line-height: 1.6; }
+.model-usage-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.model-usage-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.model-usage-filters .el-date-editor { flex: 1 1 320px; min-width: 280px; }
+.model-usage-filters .el-input, .model-usage-filters .el-select { flex: 1 1 150px; width: auto; min-width: 140px; }
 .model-usage-metrics { margin: 18px 0; }
-.model-usage-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+.model-usage-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 24px; }
+.model-usage-columns > div { min-width: 0; }
 .model-usage-columns h3, .model-usage-records h3 { margin: 0 0 12px; font-size: 15px; }
-.model-usage-records { margin-top: 24px; }
-@media (max-width: 900px) { .model-usage-columns { grid-template-columns: 1fr; } .model-usage-filters .el-input, .model-usage-filters .el-select { width: 100%; } }
+.model-usage-records { min-width: 0; margin-top: 24px; }
+@media (max-width: 900px) {
+  .model-usage-columns { grid-template-columns: minmax(0, 1fr); }
+  .model-usage-filters .el-input, .model-usage-filters .el-select { flex-basis: 180px; }
+}
+@media (max-width: 600px) {
+  .model-usage-panel .section-head { gap: 12px; }
+  .model-usage-actions { width: 100%; justify-content: flex-start; }
+  .model-usage-actions .el-button { flex: 1 1 auto; }
+  .model-usage-filters .el-date-editor, .model-usage-filters .el-input, .model-usage-filters .el-select { flex-basis: 100%; min-width: 100%; }
+  .model-usage-filters .el-button { flex: 1 1 calc(50% - 5px); }
+}
 </style>

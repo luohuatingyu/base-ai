@@ -50,16 +50,22 @@ public class LlmUsageService {
 
     /** 登记流式调用已经产生首个可见增量，重复事件不会覆盖首次延迟。 */
     public void markFirstToken(String usageId) {
+        markFirstToken(usageId, Instant.now());
+    }
+
+    /** 使用调用方时间记录首 Token，避免数据库时区与 Java 时区差异造成负延迟。 */
+    public void markFirstToken(String usageId, Instant firstTokenAt) {
         if (usageId == null) return;
+        Instant observedAt = firstTokenAt == null ? Instant.now() : firstTokenAt;
         try {
             jdbcTemplate.update("""
                 UPDATE llm_usage_record
-                SET first_token_at=COALESCE(first_token_at, CURRENT_TIMESTAMP(6)),
+                SET first_token_at=COALESCE(first_token_at, ?),
                     first_token_latency_ms=COALESCE(first_token_latency_ms,
-                        TIMESTAMPDIFF(MICROSECOND, started_at, CURRENT_TIMESTAMP(6)) DIV 1000),
+                        GREATEST(TIMESTAMPDIFF(MICROSECOND, started_at, ?) DIV 1000, 0)),
                     has_output=b'1'
                 WHERE usage_id=? AND first_token_at IS NULL
-                """, usageId);
+                """, Timestamp.from(observedAt), Timestamp.from(observedAt), usageId);
         } catch (RuntimeException exception) {
             log.warn("event=llm_usage_first_token_failed error_type={}", exception.getClass().getSimpleName());
         }
@@ -102,7 +108,7 @@ public class LlmUsageService {
                 COALESCE(SUM(output_tokens), 0) outputTokens,
                 COALESCE(SUM(total_tokens), 0) totalTokens,
                 AVG(duration_ms) averageDurationMs,
-                AVG(first_token_latency_ms) averageFirstTokenLatencyMs,
+                AVG(CASE WHEN first_token_latency_ms >= 0 THEN first_token_latency_ms END) averageFirstTokenLatencyMs,
                 SUM(input_tokens IS NOT NULL) tokenRecords
             FROM llm_usage_record""" + " WHERE " + where, args.toArray()));
 

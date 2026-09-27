@@ -28,6 +28,7 @@ import java.io.*;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -219,7 +220,7 @@ public class ChatStreamClient {
                                 continue;
                             }
                             if ("delta".equals(event.path("type").asText()) && llmUsageService != null)
-                                llmUsageService.markFirstToken(usageId);
+                                llmUsageService.markFirstToken(usageId, Instant.now());
                             consumer.accept(event);
                             if ("done".equals(event.path("type").asText())) {
                                 TokenUsage usage = mergeUsage(latestUsage.get(), event);

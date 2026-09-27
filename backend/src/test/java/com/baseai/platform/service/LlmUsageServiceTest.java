@@ -52,6 +52,24 @@ class LlmUsageServiceTest {
         verify(jdbc).update(anyString(), any(Object[].class));
     }
 
+    /** 首 Token 时间使用同一 Java 时间戳绑定两次，避免数据库时区差异产生负延迟。 */
+    @Test
+    void recordsFirstTokenWithBoundTimestampAndClampsNegativeLatency() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        LlmUsageService service = new LlmUsageService(jdbc);
+        Instant firstTokenAt = Instant.parse("2026-01-01T00:00:00.120Z");
+
+        service.markFirstToken("usage-1", firstTokenAt);
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> args = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(sql.capture(), args.capture());
+        assertTrue(sql.getValue().contains("COALESCE(first_token_at, ?),"), sql.getValue());
+        assertTrue(sql.getValue().contains("GREATEST(TIMESTAMPDIFF(MICROSECOND, started_at, ?) DIV 1000, 0)"), sql.getValue());
+        assertEquals(args.getValue()[0], args.getValue()[1]);
+        assertEquals("usage-1", args.getValue()[2]);
+    }
+
     /** 动态查询条件必须和 WHERE 关键字分开，避免监控接口生成非法 SQL。 */
     @Test
     void summarySeparatesWhereKeywordFromFilters() {
@@ -65,5 +83,6 @@ class LlmUsageServiceTest {
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).queryForMap(sql.capture(), any(Object[].class));
         org.junit.jupiter.api.Assertions.assertTrue(sql.getValue().contains("WHERE started_at"), sql.getValue());
+        org.junit.jupiter.api.Assertions.assertTrue(sql.getValue().contains("AVG(CASE WHEN first_token_latency_ms >= 0 THEN first_token_latency_ms END)"), sql.getValue());
     }
 }
