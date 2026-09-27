@@ -54,6 +54,7 @@ test('缺少 auth 对象时仍可创建套餐字段', () => {
 test('时间戳格式化支持有效值和无效值', () => {
   assert.match(formatJwtTimestamp(1700000000), /2023/)
   assert.equal(formatJwtTimestamp('unknown'), '')
+  assert.equal(formatJwtTimestamp(Number.MAX_VALUE), '')
 })
 
 test('套餐调整页面已接入受权限控制的动态导航', () => {

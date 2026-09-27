@@ -80,7 +80,9 @@ export function buildTokenWithPlan(parsedToken, planType) {
 export function formatJwtTimestamp(value, locale = 'zh-CN') {
   const seconds = Number(value)
   if (!Number.isFinite(seconds)) return ''
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(seconds * 1000))
+  const date = new Date(seconds * 1000)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium' }).format(date)
 }
 
 export { AUTH_CLAIM }
