@@ -27,10 +27,10 @@ class AiChatControllerTest {
         AiChatController controller = new AiChatController(chat, mock(LlmManagementService.class),
             mock(ChatStreamClient.class), new ObjectMapper());
 
-        Object response = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
+        ResponseEntity<?> response = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
             List.of(new AiChatClient.Message("user", "hello")), 0D, false, "MEDIUM", null, false));
 
-        assertEquals(new AiChatController.ChatResponse("answer", "model-a", 2, 3, 5), response);
+        assertEquals(new AiChatController.ChatResponse("answer", "model-a", 2, 3, 5), response.getBody());
     }
 
     /** stream=true 返回可执行 SSE，首帧、增量和终止帧按顺序即时输出。 */
@@ -47,10 +47,9 @@ class AiChatControllerTest {
         }).when(streams).stream(any(AiChatClient.ChatRequest.class), isNull(), eq("CHAT_STREAM"), any());
         AiChatController controller = new AiChatController(chat, mock(LlmManagementService.class), streams, new ObjectMapper());
 
-        Object result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
+        ResponseEntity<?> result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
             List.of(new AiChatClient.Message("user", "hello")), 0D, false, "MEDIUM", null, true));
-        assertInstanceOf(ResponseEntity.class, result);
-        ResponseEntity<?> response = (ResponseEntity<?>) result;
+        ResponseEntity<?> response = result;
         assertEquals(MediaType.TEXT_EVENT_STREAM, response.getHeaders().getContentType());
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ((StreamingResponseBody) response.getBody()).writeTo(output);
@@ -70,10 +69,10 @@ class AiChatControllerTest {
             .when(streams).stream(any(AiChatClient.ChatRequest.class), isNull(), eq("CHAT_STREAM"), any());
         AiChatController controller = new AiChatController(mock(AiChatClient.class), mock(LlmManagementService.class),
             streams, new ObjectMapper());
-        Object result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
+        ResponseEntity<?> result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
             List.of(new AiChatClient.Message("user", "hello")), 0D, false, "MEDIUM", null, true));
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        ((StreamingResponseBody) ((ResponseEntity<?>) result).getBody()).writeTo(output);
+        ((StreamingResponseBody) result.getBody()).writeTo(output);
         String body = output.toString(java.nio.charset.StandardCharsets.UTF_8);
         assertTrue(body.contains("\"type\":\"error\""));
         assertFalse(body.contains("provider-secret"));
