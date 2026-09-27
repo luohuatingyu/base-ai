@@ -40,6 +40,7 @@ class AiChatControllerTest {
         ChatStreamClient streams = mock(ChatStreamClient.class);
         doAnswer(invocation -> {
             ChatStreamClient.EventConsumer consumer = invocation.getArgument(3);
+            consumer.accept(new ObjectMapper().readTree("{\"type\":\"model\",\"model\":\"model-a\",\"providerCode\":\"provider-a\"}"));
             consumer.accept(new ObjectMapper().readTree("{\"type\":\"delta\",\"content\":\"答\"}"));
             consumer.accept(new ObjectMapper().readTree("{\"type\":\"done\",\"model\":\"model-a\",\"inputTokens\":2,\"outputTokens\":1,\"totalTokens\":3}"));
             return null;
@@ -55,6 +56,8 @@ class AiChatControllerTest {
         ((StreamingResponseBody) response.getBody()).writeTo(output);
         String body = output.toString(java.nio.charset.StandardCharsets.UTF_8);
         assertTrue(body.contains("\"type\":\"start\""));
+        assertTrue(body.contains("\"type\":\"model\""));
+        assertTrue(body.contains("\"model\":\"model-a\""));
         assertTrue(body.contains("\"type\":\"delta\""));
         assertTrue(body.contains("\"type\":\"done\""));
     }

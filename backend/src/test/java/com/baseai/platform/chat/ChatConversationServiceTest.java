@@ -305,6 +305,7 @@ class ChatConversationServiceTest {
         var client = org.mockito.Mockito.mock(ChatStreamClient.class);
         org.mockito.Mockito.doAnswer(invocation -> {
             ChatStreamClient.EventConsumer consumer = invocation.getArgument(1);
+            consumer.accept(mapper.readTree("{\"type\":\"model\",\"model\":\"test-model\",\"providerCode\":\"test-provider\"}"));
             consumer.accept(mapper.readTree("{\"type\":\"delta\",\"content\":\"部分回答\"}"));
             if (fails) throw new IllegalStateException("upstream-secret-must-not-leak");
             consumer.accept(mapper.readTree("{\"type\":\"done\",\"model\":\"test-model\",\"totalTokens\":3}"));
@@ -322,6 +323,7 @@ class ChatConversationServiceTest {
             assertEquals(200, response.getStatus());
             assertTrue(response.getContentType().startsWith("text/event-stream"));
             String body = response.getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(body.contains("\"type\":\"model\""));
             assertTrue(body.contains(fails ? "\"type\":\"error\"" : "\"type\":\"done\""));
             assertFalse(body.contains("upstream-secret"));
             var detail = service.detail(1L, id);
