@@ -58,4 +58,21 @@ class AiChatControllerTest {
         assertTrue(body.contains("\"type\":\"delta\""));
         assertTrue(body.contains("\"type\":\"done\""));
     }
+
+    /** 公开流上游失败时只返回安全错误事件，不泄露供应商异常正文。 */
+    @Test
+    void hidesPublicStreamFailureDetails() throws Exception {
+        ChatStreamClient streams = mock(ChatStreamClient.class);
+        doThrow(new IllegalStateException("provider-secret"))
+            .when(streams).stream(any(AiChatClient.ChatRequest.class), isNull(), eq("CHAT_STREAM"), any());
+        AiChatController controller = new AiChatController(mock(AiChatClient.class), mock(LlmManagementService.class),
+            streams, new ObjectMapper());
+        Object result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
+            List.of(new AiChatClient.Message("user", "hello")), 0D, false, "MEDIUM", null, true));
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ((StreamingResponseBody) ((ResponseEntity<?>) result).getBody()).writeTo(output);
+        String body = output.toString(java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(body.contains("\"type\":\"error\""));
+        assertFalse(body.contains("provider-secret"));
+    }
 }
