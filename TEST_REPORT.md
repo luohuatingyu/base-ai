@@ -4,35 +4,33 @@
 
 ### Git 基准与变更范围
 
-- Commit: `457fcff`（Harden JWT timestamp formatting）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
-- 新增“套餐调整”动态菜单和受权限保护的前端页面；页面仅在浏览器内解析 JWT，回显邮箱、账号、时间和 `chatgpt_plan_type`，修改套餐后重新编码 Header/Payload 并保留原签名段。
-- Token 不上传、不落库；页面明确提示 Payload 改动会使原 RS256 签名失效，生成结果仅用于调试和 Payload 比对。
-- 未新增依赖、数据库表、后端接口或第三方代码。
+- Commit: `4341242`（Fix Web Crypto test setup）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 套餐调整页面继续在浏览器内解析 JWT，并使用操作人员粘贴的 issuer PKCS#8 RSA 私钥通过 Web Crypto API 重新生成 RS256 签名；原签名不再复用。
+- Token 和私钥只保留在页面内存，不上传、不落库；未新增依赖、数据库表、后端接口或第三方代码。
 
 ### 验收标准—测试用例映射
 
 | 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
 | --- | --- | --- | --- |
-| 菜单可见且受权限控制 | 前端 `package-adjustment.test.mjs`；构造 AI 目录和套餐权限菜单 | 有权限时显示 `/package-adjustment`，无权限时不进入导航；中英文名称可解析 | 通过；权限、安全、兼容 |
-| 正常 JWT 可提取套餐和关键字段 | Node 工具测试；输入三段式 RS256 JWT | 正确解析 Header/Payload，回显套餐、邮箱、账号和签名 | 通过；正常、回归 |
-| 非法 Token 安全失败 | Node 工具测试；两段 Token、非法 Base64URL、非法 JSON | 拒绝解析并返回可理解错误，不产生结果 Token | 通过；边界、异常、恶意输入 |
-| 修改套餐后生成新 Token | Node 工具测试；将 `plus` 改为 `team`，并覆盖缺少 auth 对象 | 新 Payload 仅更新套餐字段，原签名段保留，空套餐被拒绝 | 通过；正常、边界、兼容 |
-| 时间信息可展示 | Node 工具测试；有效和非法 Unix 秒时间戳 | 有效时间按语言格式化，非法值安全显示为空 | 通过；边界、兼容 |
+| 正常 JWT 可提取套餐和关键字段 | Node 前端工具测试；输入三段式 RS256 JWT | 正确解析 Header/Payload，回显套餐、邮箱、账号和签名 | 通过；正常、回归 |
+| 修改套餐后生成可验证 Token | Node 前端工具测试；生成临时 RSA 密钥对，将 `plus` 改为 `team` 后用公钥验签 | 新 Payload 使用 issuer 私钥生成有效 RS256 签名，字段更新正确 | 通过；正常、密码学兼容 |
+| 非法算法、私钥和 Token 安全失败 | Node 前端工具测试；HS256、非法 PKCS#8、两段 Token、非法 Base64URL/JSON、空套餐 | 拒绝签发或解析，不产生误导性结果 | 通过；边界、异常、安全 |
+| 页面输入和权限入口可用 | 前端静态回归测试；检查私钥输入、签名流程和动态权限导航 | 页面仅在权限菜单中出现，私钥输入用于本地签名 | 通过；权限、兼容、回归 |
+| 时间信息可展示 | Node 前端工具测试；有效和非法 Unix 秒时间戳 | 有效时间本地化显示，非法值安全为空 | 通过；边界、兼容 |
 
 ### 实际执行结果
 
-- `node --test frontend/test/package-adjustment.test.mjs`：6/6 通过。
-- 时间戳极大值回归：`Number.MAX_VALUE` 安全返回空值，不会触发日期格式化异常。
-- `npm --prefix frontend test`：Lint、类型检查、覆盖测试 559/559、E2E 3/3 通过；失败 0、错误 0、跳过 0；覆盖率行 98.34%、分支 82.30%、函数 95.67%。
-- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：971/971 通过，失败 0、错误 0、跳过 0。
-- `docker compose up --build -d`：9 个自建镜像构建成功；Backend 镜像内 Maven 测试 971/971 通过，Frontend 构建成功。统一启动因既有 `docker-socket-proxy` 健康检查不通过而退出；随后单独启动新构建的 Backend/Frontend，容器健康检查均为 healthy，两个 `/health` 均返回 `{"status":"UP"}`。
+- `node --test frontend/test/package-adjustment.test.mjs`：7/7 通过。
+- `npm --prefix frontend test`：Lint、类型检查、覆盖测试 560/560、E2E 3/3 通过；失败 0、错误 0、跳过 0；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `docker compose up --build -d`：9 个自建镜像全部构建成功；统一启动因既有 `docker-socket-proxy` 健康检查不通过而退出。随后单独启动新构建 Frontend，容器 healthy，`curl http://localhost:8080/health` 返回 `{"status":"UP"}`；Backend 也 healthy。
 - `git diff --check`：通过；未执行 `git push`，未留下临时测试或调试文件。
 
 ### 已知问题与下次测试建议
 
-- `baseai-local-docker-socket-proxy` 当前持续 unhealthy，导致 Adapter Manager、Deployment Agent 和插件 Worker 无法由 Compose 依赖链统一启动；不影响本次套餐页面的前端构建、后端测试和已启动的 Backend/Frontend。
-- 生成 Token 保留原签名而不重新签名，因此不能通过原 RS256 验证；若未来需要生成真实有效 Token，必须接入受控的服务端签名密钥或签名服务，并补充密钥权限、审计和安全测试。
-- 后续修改 JWT 字段、套餐规则或导航权限时，重跑前端完整套件、后端完整套件和 Compose 健康检查，并更新本报告基准点。
+- 生成可验证 Token 必须提供与验证方公钥匹配的 issuer PKCS#8 私钥；没有私钥时页面会拒绝生成。验证方仍需信任对应公钥，页面无法从旧 Token 反推出私钥。
+- Web Crypto 需要浏览器支持并运行在安全上下文（HTTPS 或 localhost）；不支持时页面会提示无法签名。
+- `baseai-local-docker-socket-proxy` 当前持续 unhealthy，导致部分 Compose 依赖服务不能由统一命令启动；修复健康检查后应重跑整栈启动验收。
+- 后续修改 JWT 字段、签名算法或套餐规则时，重跑前端完整套件和 Compose 健康检查，并更新本报告基准点。
 
 ## 公开 AI Chat SSE HTTP 修复与压测（2026-09-27）
 
