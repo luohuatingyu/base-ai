@@ -1,5 +1,41 @@
 # 最近分支覆盖测试报告
 
+## Token 消耗记录与流式中断统计修复（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `0522a93`（Persist token usage across streaming failures）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 修正 LLM 使用监控查询动态 SQL 的 `WHERE` 拼接，恢复管理员 Token 汇总和明细查询。
+- Worker 统一兼容 snake_case、camelCase 及 input/output 别名 Token 字段；总数缺失时按输入加输出补算。
+- 流式 Worker 发送内部 usage 事件；Java 流客户端缓存已收到的统计，在连接中断时仍写入 Token 并标记 `INTERRUPTED`。非流式聊天、Embedding 和 Agent 共用同一解析规则。
+- 未新增依赖、配置或数据库迁移；未记录提示词和回答正文。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 管理端 Token 汇总/明细可查询 | Java `LlmUsageServiceTest.summarySeparatesWhereKeywordFromFilters`；模拟最近 24 小时查询 | SQL 包含 `WHERE started_at`，接口不再生成 `WHEREstarted_at` | 通过；正常、回归、异常 |
+| 完整流记录 Token | Python `test_streams_utf8_and_usage_and_fails_over_before_output`；delta、usage、`[DONE]` | usage 和 done 均返回规范化输入、输出、总 Token | 通过；正常、兼容 |
+| 中断流保留已知 Token | Java `ChatStreamClientTest.preservesUsageWhenStreamInterrupts`；delta 后 usage 后 EOF | 使用记录状态为 `INTERRUPTED`，Token 数值保留 | 通过；异常、状态冲突、回归 |
+| 多种供应商字段可用且总数可补算 | Python `test_normalizes_usage_aliases_and_calculates_total_tokens` | `input_tokens`/`outputTokens` 等别名得到正确统计，总数缺失时补算 | 通过；边界、兼容 |
+| 非流式调用不回归 | Python LLM 全量测试、Java 后端全量测试 | 普通聊天、Embedding、Agent 的既有响应和 Token 结果保持通过 | 通过；正常、异常、回归 |
+
+### 实际执行结果
+
+- Python 3.12 镜像执行 `python -m pytest -q tests/test_llm_stream.py`：10/10 通过。
+- Python 3.12 镜像执行 `python -m pytest -q`：87/87 通过，失败 0、错误 0、跳过 0。
+- Maven 3.9.9 / Java 17 容器执行 `mvn -q -Dtest=LlmUsageServiceTest,ChatStreamClientTest test`：14/14 通过。
+- Maven 3.9.9 / Java 17 容器执行 `mvn -q test`：960/960 通过，失败 0、错误 0、跳过 0。
+- 已执行 `docker compose up --build -d`：Backend、Python Worker、Document Parser 等核心服务构建并健康启动；命令整体因既有 `adapter-manager`/`docker-socket-proxy` 健康检查失败返回 1，未跳过该失败。后端 Flyway 已验证迁移至 v44。
+- 部署后在 Backend 容器内以管理员身份请求 `/api/operations/llm-usage/summary`：HTTP 200，返回合法 overview/trend/models/errors 结构；当前数据库没有实际模型调用记录，Token 合计为 0。
+- `git diff --check` 通过；未执行 `git push`，未留下调试文件。
+
+### 已知问题与下次测试建议
+
+- 当前本地默认模型路由为空，无法进行真实供应商流式调用和产生实际 Token 记录；需配置可用 Provider/Model 后验证 `start → delta* → usage → done` 以及真实中断落库。
+- Compose 整栈启动仍受既有 adapter-manager 和 Docker socket proxy 健康检查阻塞；核心后端与 Worker 已健康，需修复该环境依赖后再执行全栈健康验收。
+- 后续修改 Worker 供应商协议、流式 SSE、使用记录表或查询条件时，重跑 Python/后端全量测试并更新本报告基准点。
+
 ## 模型使用监控与管理员交互（2026-09-27）
 
 ### Git 基准与变更范围
