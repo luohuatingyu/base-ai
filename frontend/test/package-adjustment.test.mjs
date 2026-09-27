@@ -1,12 +1,38 @@
 import assert from 'node:assert/strict'
+import { webcrypto } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import test from 'node:test'
+import test, { before } from 'node:test'
 import { buildTokenWithPlan, formatJwtTimestamp, parseJwtToken } from '../src/utils/jwtToken.js'
 import { buildAccessibleNavigation, localizeMenuName } from '../src/utils/navigation.js'
 import zhCN from '../src/locales/zh-CN.js'
 
 const routeSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const viewSource = readFileSync(new URL('../src/views/PackageAdjustmentView.vue', import.meta.url), 'utf8')
+let signingKeyPair
+let privateKeyPem
+
+function bytesToBase64(bytes) {
+  return Buffer.from(bytes).toString('base64')
+}
+
+function bytesToPem(bytes) {
+  const base64 = bytesToBase64(bytes)
+  return `-----BEGIN PRIVATE KEY-----\n${base64.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----`
+}
+
+function decodeBase64Url(value) {
+  return Uint8Array.from(Buffer.from(value.replace(/-/g, '+').replace(/_/g, '/'), 'base64'))
+}
+
+before(async () => {
+  signingKeyPair = await webcrypto.subtle.generateKey(
+    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true,
+    ['sign', 'verify']
+  )
+  privateKeyPem = bytesToPem(await webcrypto.subtle.exportKey('pkcs8', signingKeyPair.privateKey))
+  globalThis.crypto = webcrypto
+})
 
 function encode(value) {
   const bytes = new TextEncoder().encode(JSON.stringify(value))
@@ -34,21 +60,34 @@ test('非法 JWT 结构、编码和 JSON 会被拒绝', () => {
   assert.throws(() => parseJwtToken(`${encode({})}.not-json.sig`), /Payload 不是有效的 JSON/)
 })
 
-test('只修改套餐字段并保留原签名段', () => {
+test('修改套餐后使用 issuer 私钥生成可验证的 RS256 Token', async () => {
   const parsed = parseJwtToken(sampleToken())
-  const nextToken = buildTokenWithPlan(parsed, 'team')
+  const nextToken = await buildTokenWithPlan(parsed, 'team', privateKeyPem)
   const next = parseJwtToken(nextToken)
   assert.equal(next.planType, 'team')
-  assert.equal(next.signature, parsed.signature)
+  assert.notEqual(next.signature, parsed.signature)
   assert.equal(next.payload.email, parsed.payload.email)
-  assert.throws(() => buildTokenWithPlan(parsed, '  '), /套餐类型不能为空/)
+  const [header, payload, signature] = nextToken.split('.')
+  assert.equal(await webcrypto.subtle.verify(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    signingKeyPair.publicKey,
+    decodeBase64Url(signature),
+    new TextEncoder().encode(`${header}.${payload}`)
+  ), true)
+  await assert.rejects(() => buildTokenWithPlan(parsed, '  ', privateKeyPem), /套餐类型不能为空/)
 })
 
-test('缺少 auth 对象时仍可创建套餐字段', () => {
+test('缺少 auth 对象时仍可创建套餐字段', async () => {
   const parsed = parseJwtToken(`${encode({ alg: 'RS256' })}.${encode({ sub: 'subject' })}.sig`)
-  const next = parseJwtToken(buildTokenWithPlan(parsed, 'free'))
+  const next = parseJwtToken(await buildTokenWithPlan(parsed, 'free', privateKeyPem))
   assert.equal(next.planType, 'free')
   assert.equal(next.payload.sub, 'subject')
+})
+
+test('非法算法或私钥会阻止签发', async () => {
+  const hs256 = parseJwtToken(`${encode({ alg: 'HS256' })}.${encode({})}.sig`)
+  await assert.rejects(() => buildTokenWithPlan(hs256, 'team', privateKeyPem), /仅支持 Header.alg 为 RS256/)
+  await assert.rejects(() => buildTokenWithPlan(parseJwtToken(sampleToken()), 'team', 'not-a-key'), /PKCS#8 PEM/)
 })
 
 test('时间戳格式化支持有效值和无效值', () => {
@@ -66,5 +105,6 @@ test('套餐调整页面已接入受权限控制的动态导航', () => {
   assert.deepEqual(visible.map(item => item.path), ['/package-adjustment'])
   assert.match(routeSource, /path: 'package-adjustment'/)
   assert.match(viewSource, /parseJwtToken/)
+  assert.match(viewSource, /privateKey/)
   assert.equal(localizeMenuName(menus[1], key => key === 'nav.items.packageAdjustment' ? zhCN.nav.items.packageAdjustment : key), '套餐调整')
 })
