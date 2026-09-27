@@ -126,23 +126,41 @@
       </el-table>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? t('common.edit') : t('common.add')" width="680px" destroy-on-close>
-      <el-form ref="formRef" :model="form" label-position="top" status-icon class="ai-video-form">
-        <el-form-item v-for="field in current.fields" :key="field.key" :label="field.label" :prop="field.key" :rules="fieldRules(field)">
-          <el-select v-if="field.type === 'project'" v-model="form[field.key]" filterable clearable :placeholder="field.placeholder">
-            <el-option v-for="project in projects" :key="project.id" :label="`${project.code} · ${project.name}`" :value="project.id" />
-          </el-select>
-          <el-select v-else-if="field.type === 'select'" v-model="form[field.key]" clearable :placeholder="field.placeholder">
-            <el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" />
-          </el-select>
-          <el-input-number v-else-if="field.type === 'number'" v-model="form[field.key]" :min="field.min" :max="field.max" />
-          <el-input v-else-if="field.type === 'textarea'" v-model="form[field.key]" type="textarea" :rows="field.rows || 4" :placeholder="field.placeholder" />
-          <el-input v-else v-model="form[field.key]" :placeholder="field.placeholder" />
-        </el-form-item>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="min(920px, 94vw)" top="5vh" class="video-editor" destroy-on-close :close-on-click-modal="false" :before-close="closeEditor">
+      <div class="editor-intro"><span class="editor-badge">{{ section.title }}</span><p>{{ section.description }}</p></div>
+      <el-alert v-if="saveError" :title="saveError" type="error" show-icon :closable="false" class="editor-alert" />
+      <el-form ref="formRef" :model="form" label-position="top" status-icon class="ai-video-form" :disabled="saving">
+        <section v-for="group in formGroups" :key="group.key" class="editor-section">
+          <button v-if="group.key === 'advanced'" type="button" class="editor-section-toggle" :aria-expanded="advancedOpen" @click="advancedOpen = !advancedOpen">
+            <span>{{ group.title }}</span><span>{{ advancedOpen ? '−' : '+' }}</span>
+          </button>
+          <div v-else class="editor-section-heading"><span>{{ group.number }}</span><h3>{{ group.title }}</h3></div>
+          <p class="editor-section-hint">{{ group.hint }}</p>
+          <div v-show="group.key !== 'advanced' || advancedOpen" class="editor-field-grid">
+            <el-form-item v-for="field in group.fields" :key="field.key" :label="field.label" :prop="field.config ? undefined : field.key" :rules="field.config ? undefined : fieldRules(field)" :class="{ 'field-wide': field.wide }">
+              <el-select v-if="field.type === 'project'" v-model="form[field.key]" filterable clearable :disabled="!!editingId" :placeholder="t('aiVideo.selectProject')">
+                <el-option v-for="project in projects" :key="project.id" :label="project.code + ' · ' + project.name" :value="project.id" />
+              </el-select>
+              <el-select v-else-if="field.type === 'select'" :model-value="fieldValue(field)" filterable clearable :allow-create="field.custom" :disabled="field.config ? !configurationValid : !!editingId && field.key === 'taskType'" @update:model-value="setFieldValue(field, $event)">
+                <el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+              <el-input-number v-else-if="field.type === 'number'" v-model="form[field.key]" :min="field.min" :max="field.max" :precision="0" controls-position="right" :disabled="!!editingId && (['renderId', 'videoId'].includes(field.key) || field.key === 'version' && current.resource === 'videos')" />
+              <el-input v-else :model-value="fieldValue(field)" :type="field.type === 'textarea' ? 'textarea' : 'text'" :rows="field.rows || 4" :maxlength="field.maxlength" :show-word-limit="field.type === 'textarea'" :placeholder="field.placeholder" :disabled="field.config && !configurationValid" @update:model-value="setFieldValue(field, $event)" />
+              <small v-if="field.hint" class="editor-field-hint">{{ field.hint }}</small>
+              <template v-if="field.media && safeMediaUrl(form[field.key])">
+                <el-button link type="primary" @click="previewField = previewField === field.key ? '' : field.key">{{ t('aiVideo.editor.preview') }}</el-button>
+                <div v-if="previewField === field.key" class="editor-preview">
+                  <img v-if="field.media === 'image'" :src="safeMediaUrl(form[field.key])" :alt="field.label" referrerpolicy="no-referrer" @error="previewField = ''; ElMessage.warning(t('aiVideo.editor.previewFailed'))">
+                  <audio v-else-if="field.media === 'audio'" :src="safeMediaUrl(form[field.key])" controls preload="metadata" @error="previewField = ''; ElMessage.warning(t('aiVideo.editor.previewFailed'))" />
+                  <video v-else :src="safeMediaUrl(form[field.key])" controls preload="metadata" @error="previewField = ''; ElMessage.warning(t('aiVideo.editor.previewFailed'))" />
+                </div>
+              </template>
+            </el-form-item>
+          </div>
+        </section>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
+        <div class="editor-footer"><span>{{ t('aiVideo.editor.requiredHint') }}</span><div><el-button :disabled="saving" @click="closeEditor()">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="save">{{ editingId ? t('common.save') : t('aiVideo.editor.create') }}</el-button></div></div>
       </template>
     </el-dialog>
   </div>
@@ -154,6 +172,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { assetAttributes, configurationKey, parseConfiguration, updateConfiguration, safeMediaUrl, prepareVideoPayload } from '../utils/ai-video-form'
 import { useAuthStore } from '../stores/auth'
 import {
   cancelAiVideoTask, completeAiVideoPublish, createAiVideoResource, deleteAiVideoResource,
@@ -178,6 +197,10 @@ const statusFilter = ref('')
 let loadRequestId = 0
 const loadTimeoutMs = 12000
 const form = reactive({})
+const advancedOpen = ref(false)
+const previewField = ref('')
+const saveError = ref('')
+let initialForm = ''
 
 // 路由兼容测试保留 items: 'items' 这一业务路径标识；接口分类仍使用 ITEM 枚举。
 const assetTypes = { characters: 'CHARACTER', scenes: 'SCENE', items: 'ITEM', costumes: 'COSTUME', motions: 'MOTION', styles: 'STYLE', voices: 'VOICE', sounds: 'SOUND' }
@@ -215,6 +238,69 @@ const assetType = computed(() => assetTypes[sectionKey.value] || '')
 const assetTypeLabel = computed(() => assetLabels[assetType.value] || '')
 const section = computed(() => ({ title: t(`aiVideo.sections.${sectionKey.value}.title`), description: t(`aiVideo.sections.${sectionKey.value}.description`) }))
 const columns = computed(() => current.value.columns.map(([key, label]) => ({ key, label: key.endsWith('At') ? t('common.time') : label })))
+const configKey = computed(() => configurationKey(sectionKey.value))
+const configurationValid = computed(() => { try { parseConfiguration(form[configKey.value]); return true } catch { return false } })
+const dialogTitle = computed(() => t(editingId.value ? 'aiVideo.editor.editTitle' : 'aiVideo.editor.createTitle', { module: section.value.title }))
+// 在原接口字段之上增强布局与输入方式，分类属性使用现有 JSON 扩展字段。
+const formGroups = computed(() => {
+  const advanced = ['version', 'status', 'providerRouteId', 'renderId', 'externalId', 'errorMessage', 'inputJson', 'configJson', 'metadataJson']
+  const basic = ['projectId', 'code', 'name', 'title', 'taskType', 'videoId', 'channel', 'shotNo']
+  const presets = { aspectRatio: ['16:9', '9:16', '1:1', '4:3'], resolution: ['1920x1080', '1080x1920', '1280x720', '1080x1080'], fps: [24, 25, 30, 60], camera: ['close', 'medium', 'wide'] }
+  const fields = current.value.fields.map(item => {
+    const result = { ...item, group: advanced.includes(item.key) ? 'advanced' : basic.includes(item.key) ? 'basic' : 'content', wide: item.type === 'textarea', maxlength: fieldMaxLength(item.key) }
+    if (presets[item.key]) Object.assign(result, { type: 'select', options: presets[item.key].map(value => ({ value, label: item.key === 'camera' ? t('aiVideo.editor.camera.' + value) : String(value) })), custom: item.key !== 'fps' })
+    if (item.key.endsWith('Url')) Object.assign(result, { maxlength: 500, hint: t('aiVideo.editor.urlHint'), placeholder: 'https://…', wide: true })
+    if (['coverUrl', 'previewUrl'].includes(item.key)) result.media = 'image'
+    if (item.key === 'mediaUrl' || item.key === 'resourceUrl') result.media = ['voices', 'sounds'].includes(sectionKey.value) ? 'audio' : sectionKey.value === 'motions' || item.key === 'mediaUrl' ? 'video' : 'image'
+    return result
+  })
+  const attributes = assetAttributes[sectionKey.value] || []
+  for (const key of attributes) fields.push({ key, label: t('aiVideo.editor.attributes.' + key), type: 'input', config: true, group: 'content', maxlength: 500 })
+  if (configKey.value && !fields.some(item => item.key === configKey.value)) fields.push({ key: configKey.value, label: t('aiVideo.editor.extended'), type: 'textarea', group: 'advanced', wide: true, maxlength: 20000 })
+  if (['tasks', 'renders'].includes(sectionKey.value)) {
+    const options = sectionKey.value === 'renders' ? ['STORYBOARD', 'TEMPLATE'] : []
+    if (options.length) fields.push({ key: 'mode', label: t('aiVideo.editor.renderMode'), type: 'select', options: options.map(value => ({ value, label: t('aiVideo.editor.' + value) })), config: true, group: 'content' })
+    for (const key of (sectionKey.value === 'renders' || ['VIDEO', 'IMAGE', 'UPSCALE'].includes(form.taskType) ? ['aspectRatio', 'resolution'] : [])) fields.push({ key, label: t('aiVideo.fields.' + key), type: 'select', options: presets[key].map(value => ({ value, label: value })), custom: true, config: true, group: 'content' })
+  }
+  return ['basic', 'content', 'advanced'].map((key, index) => ({ key, number: index + 1, title: t('aiVideo.editor.' + key), hint: t('aiVideo.editor.' + key + 'Hint'), fields: fields.filter(item => item.group === key) })).filter(group => group.fields.length)
+})
+
+/** 读取普通字段或扩展对象字段；损坏 JSON 留在高级区供用户修正。 */
+function fieldValue(item) {
+  if (!item.config) return form[item.key]
+  try { return parseConfiguration(form[configKey.value])[item.key] ?? '' } catch { return '' }
+}
+
+/** 双向同步可视化配置和高级 JSON，保证只有一份配置数据。 */
+function setFieldValue(item, value) {
+  if (item.config) form[configKey.value] = updateConfiguration(form[configKey.value], item.key, value)
+  else form[item.key] = value
+}
+
+/** 按后端约束限制输入长度，减少提交后才发现错误的情况。 */
+function fieldMaxLength(key) {
+  return ({ code: 80, name: current.value.resource === 'projects' ? 160 : 200, title: 200, description: 1000, tags: 500, prompt: 10000, inputJson: 20000, configJson: 20000, sceneDescription: 2000, dialogue: 5000, narration: 5000, camera: 120, style: 120, channel: 64, comment: 1000, errorMessage: 1000, externalId: 200 })[key]
+}
+
+/** 关闭前保护未保存内容，保存过程中禁止关闭编辑器。 */
+async function closeEditor(done) {
+  if (saving.value) return
+  if (JSON.stringify(form) !== initialForm) {
+    try { await ElMessageBox.confirm(t('aiVideo.editor.discardHint'), t('aiVideo.editor.discardTitle'), { type: 'warning' }) } catch { return }
+  }
+  if (typeof done === 'function') done()
+  else dialogVisible.value = false
+}
+
+/** 每次打开表单清理上次错误、预览和高级区展开状态。 */
+function resetEditor() {
+  saveError.value = ''
+  previewField.value = ''
+  advancedOpen.value = !configurationValid.value
+  initialForm = JSON.stringify(form)
+  dialogVisible.value = true
+}
+
 const availableStatuses = computed(() => [...new Set(rows.value.map(row => row.status).filter(Boolean))])
 const filteredRows = computed(() => {
   const search = keyword.value.trim().toLowerCase()
@@ -321,33 +407,52 @@ async function load() {
 
 /** 初始化新增表单并打开弹窗。 */
 function openCreate(mode = '') {
+  if (saving.value || !can('create')) return
   editingId.value = null
   Object.keys(form).forEach(key => delete form[key])
   current.value.fields.forEach(item => { form[item.key] = item.type === 'number' ? (item.min || 0) : item.type === 'select' ? item.options[0]?.value : item.type === 'project' ? null : '' })
+  if (configKey.value) form[configKey.value] = ''
+  if (current.value.resource === 'projects') Object.assign(form, { aspectRatio: '16:9', resolution: '1920x1080', fps: 25 })
+  for (const key of ['providerRouteId', 'renderId']) if (key in form) form[key] = null
+  if ('durationMs' in form) form.durationMs = current.value.resource === 'storyboards' ? 5000 : 0
   if (current.value.resource === 'tasks' && ['SCRIPT', 'IMAGE', 'VIDEO', 'TTS', 'MUSIC', 'UPSCALE'].includes(mode)) form.taskType = mode
   if (current.value.resource === 'renders' && ['STORYBOARD', 'TEMPLATE'].includes(mode)) form.configJson = JSON.stringify({ mode }, null, 2)
-  dialogVisible.value = true
+  resetEditor()
 }
 
 /** 将列表行复制到编辑表单。 */
 function openEdit(row) {
+  if (saving.value || !can('update')) return
   editingId.value = row.id
   Object.keys(form).forEach(key => delete form[key])
-  current.value.fields.forEach(item => { form[item.key] = row[item.key] ?? (item.type === 'number' ? (item.min || 0) : item.type === 'project' ? null : '') })
-  dialogVisible.value = true
+  current.value.fields.forEach(item => { form[item.key] = row[item.key] ?? (['providerRouteId', 'renderId'].includes(item.key) ? null : item.type === 'number' ? (item.min || 0) : item.type === 'project' ? null : '') })
+  if (configKey.value) form[configKey.value] = row[configKey.value] || ''
+  resetEditor()
 }
 
 /** 保存新增或编辑的业务资源。 */
 async function save() {
-  try { await formRef.value?.validate() } catch { return }
+  if (saving.value || !can(editingId.value ? 'update' : 'create')) return
+  saveError.value = ''
+  // 提交期间即使切换模块，也必须使用提交开始时的资源和分类。
+  const resource = current.value.resource
+  const targetId = editingId.value
+  const targetType = assetType.value
+  let payload
+  try { payload = prepareVideoPayload(form, sectionKey.value) } catch (error) {
+    advancedOpen.value = true
+    saveError.value = t(error.message === 'configTooLong' ? 'aiVideo.editor.configTooLong' : 'aiVideo.editor.invalidJson')
+    return
+  }
   saving.value = true
+  try { await formRef.value?.validate() } catch { advancedOpen.value = true; saving.value = false; return }
   try {
-    if (editingId.value) await updateAiVideoResource(current.value.resource, editingId.value, { ...form })
-    else await createAiVideoResource(current.value.resource, { ...form }, assetType.value)
+    if (targetId) await updateAiVideoResource(resource, targetId, payload)
+    else await createAiVideoResource(resource, payload, targetType)
     dialogVisible.value = false
     await load()
     ElMessage.success(t('common.successSaved'))
-  } finally { saving.value = false }
+  } catch { saveError.value = t('aiVideo.editor.saveFailed') } finally { saving.value = false }
 }
 
 /** 删除业务资源并刷新当前列表。 */
@@ -374,8 +479,10 @@ function fieldRules(item) {
     assets: ['projectId', 'name'], tasks: ['projectId', 'taskType', 'name'], renders: ['projectId', 'name'],
     videos: ['projectId', 'title'], reviews: ['videoId'], publishes: ['videoId', 'channel']
   }
-  if (!required[current.value.resource]?.includes(item.key)) return undefined
-  return [{ required: true, message: t('aiVideo.fieldRequired', { field: item.label }), trigger: ['blur', 'change'] }]
+  const rules = []
+  if (required[current.value.resource]?.includes(item.key)) rules.push({ required: true, type: ['project', 'number'].includes(item.type) ? 'number' : 'string', whitespace: !['project', 'number'].includes(item.type), message: t('aiVideo.fieldRequired', { field: item.label }), trigger: ['blur', 'change'] })
+  if (item.key.endsWith('Url')) rules.push({ validator: (_rule, value, callback) => callback(!value || safeMediaUrl(value) ? undefined : new Error(t('aiVideo.editor.invalidUrl'))), trigger: ['blur', 'change'] })
+  return rules
 }
 
 /** 清空列表筛选条件。 */
@@ -408,11 +515,34 @@ function taskProgressStatus(status) { return status === 'SUCCEEDED' ? 'success' 
 /** 生成任务卡片摘要并优先展示失败原因。 */
 function taskDescription(row) { return row.errorMessage || row.prompt || t('aiVideo.taskBoard.noPrompt') }
 
+watch(() => route.path, () => { dialogVisible.value = false })
 watch(() => route.fullPath, () => { resetFilters(); load() })
 onMounted(load)
 </script>
 
 <style scoped>
+.editor-intro { display: flex; align-items: center; gap: 12px; padding: 0 0 20px; }
+.editor-intro p, .editor-section-hint, .editor-field-hint { margin: 0; color: var(--app-muted); font-size: 12px; line-height: 1.7; }
+.editor-badge { flex-shrink: 0; padding: 5px 10px; border-radius: 8px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
+.editor-section { margin-bottom: 16px; padding: 20px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-surface-soft); }
+.editor-section-heading { display: flex; align-items: center; gap: 10px; }
+.editor-section-heading span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
+.editor-section-heading h3 { margin: 0; color: var(--app-text); font-size: 15px; }
+.editor-section-hint { margin-top: 6px; margin-bottom: 16px; }
+.editor-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+.editor-field-grid > * { min-width: 0; }
+.editor-field-grid .field-wide { grid-column: 1 / -1; }
+.editor-section-toggle { display: flex; justify-content: space-between; width: 100%; padding: 0; border: 0; background: transparent; color: var(--app-text); font: inherit; font-weight: 600; cursor: pointer; }
+.editor-field-hint { width: 100%; margin-top: 5px; }
+.editor-preview { width: 100%; margin-top: 10px; }
+.editor-preview img, .editor-preview video { display: block; max-width: 100%; max-height: 220px; border-radius: 8px; }
+.editor-preview audio { width: 100%; }
+.editor-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.editor-footer > span { color: var(--app-muted); font-size: 12px; }
+.editor-alert { margin-bottom: 16px; }
+.ai-video-form { max-height: 62vh; overflow-y: auto; padding-right: 8px; }
+@media (max-width: 620px) { .editor-field-grid { grid-template-columns: 1fr; } .editor-section { padding: 14px; } .editor-intro { align-items: flex-start; flex-direction: column; } .editor-footer > span { display: none; } .editor-footer { justify-content: flex-end; } }
+
 .ai-video-page { display: grid; gap: 18px; }
 .ai-video-hero { display: flex; align-items: center; justify-content: space-between; min-height: 160px; overflow: hidden; background: linear-gradient(125deg, #101b3a, #263d7a 58%, #4c78bc); color: #fff; }
 .ai-video-hero h2 { margin: 10px 0 8px; font-size: clamp(26px, 4vw, 42px); letter-spacing: -.03em; }
