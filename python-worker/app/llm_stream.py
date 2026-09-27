@@ -2,9 +2,13 @@
 
 import asyncio
 import json
+import logging
 from contextlib import aclosing
 
 from app.llm_provider import strategy_for
+
+
+logger = logging.getLogger(__name__)
 
 
 async def stream_chat(client, request):
@@ -30,7 +34,6 @@ async def stream_chat(client, request):
                         buffer = bytearray()
                         total = 0
                         usage = {}
-                        finished = False
                         async for chunk in response.aiter_bytes():
                             total += len(chunk)
                             if total > client.settings.llm_response_max_bytes:
@@ -44,8 +47,6 @@ async def stream_chat(client, request):
                                     continue
                                 data = line[5:].strip()
                                 if data == "[DONE]":
-                                    if not finished:
-                                        raise RuntimeError("流式响应缺少结束原因")
                                     yield {"type": "done", "model": candidate.model,
                                            "inputTokens": usage.get("prompt_tokens"),
                                            "outputTokens": usage.get("completion_tokens"),
@@ -66,12 +67,25 @@ async def stream_chat(client, request):
                                 if content:
                                     emitted = True
                                     yield {"type": "delta", "content": content}
-                                if choice.get("finish_reason"):
-                                    finished = True
+                        # 部分 OpenAI 兼容服务会在连接关闭前省略最后一个换行，
+                        # 但仍会发送完整的 data: [DONE] 终止帧；不能丢弃该帧。
+                        tail = bytes(buffer).rstrip(b"\r")
+                        if tail:
+                            line = tail.decode("utf-8")
+                            if line.startswith("data:") and line[5:].strip() == "[DONE]":
+                                yield {"type": "done", "model": candidate.model,
+                                       "inputTokens": usage.get("prompt_tokens"),
+                                       "outputTokens": usage.get("completion_tokens"),
+                                       "totalTokens": usage.get("total_tokens")}
+                                return
                         raise RuntimeError("供应商流式响应意外中断")
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exception:
+                logger.warning(
+                    "event=llm_stream_failed emitted=%s error_type=%s",
+                    emitted, type(exception).__name__, exc_info=True,
+                )
                 if emitted:
                     raise RuntimeError("回答生成中断") from None
     raise RuntimeError("没有可用的流式模型")

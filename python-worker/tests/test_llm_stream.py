@@ -42,6 +42,11 @@ def success():
             "data: [DONE]\r\n\r\n")
 
 
+def success_without_finish_reason():
+    """生成只用 [DONE] 表示终态的兼容供应商响应。"""
+    return frame({"choices": [{"delta": {"content": "完整回答"}}]}) + "data: [DONE]"
+
+
 async def collect(body, fail_first=False):
     """仅隔离上游 HTTP，运行真实策略、并发控制和解析器。"""
     client = LlmClient(settings())
@@ -79,9 +84,19 @@ def test_streams_utf8_and_usage_and_fails_over_before_output(fail_first):
     assert chunks.closed
 
 
-@pytest.mark.parametrize("body", ["data: nope\n\n", "data: [DONE]\n\n", "data: " + "x" * 2000 + "\n\n"])
+def test_accepts_done_sentinel_without_finish_reason_or_trailing_newline():
+    """显式 [DONE] 已经是完整终态，不要求供应商额外发送 finish_reason。"""
+    events, calls, chunks = asyncio.run(collect(success_without_finish_reason()))
+    assert events == [{"type": "delta", "content": "完整回答"},
+                      {"type": "done", "model": "test-model", "inputTokens": None,
+                       "outputTokens": None, "totalTokens": None}]
+    assert len(calls) == 1
+    assert chunks.closed
+
+
+@pytest.mark.parametrize("body", ["data: nope\n\n", "data: " + "x" * 2000 + "\n\n"])
 def test_rejects_invalid_missing_finish_and_oversize(body):
-    """畸形响应、缺少结束原因及超限不能返回成功。"""
+    """畸形响应和超限不能返回成功。"""
     with pytest.raises(RuntimeError):
         asyncio.run(collect(body))
 
