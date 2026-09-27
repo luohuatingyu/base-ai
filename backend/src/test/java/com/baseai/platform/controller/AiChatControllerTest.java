@@ -27,10 +27,13 @@ class AiChatControllerTest {
         AiChatController controller = new AiChatController(chat, mock(LlmManagementService.class),
             mock(ChatStreamClient.class), new ObjectMapper());
 
-        ResponseEntity<?> response = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
+        ResponseEntity<StreamingResponseBody> response = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
             List.of(new AiChatClient.Message("user", "hello")), 0D, false, "MEDIUM", null, false));
 
-        assertEquals(new AiChatController.ChatResponse("answer", "model-a", 2, 3, 5), response.getBody());
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        response.getBody().writeTo(output);
+        assertTrue(output.toString(java.nio.charset.StandardCharsets.UTF_8).contains("\"content\":\"answer\""));
+        assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
     }
 
     /** stream=true 返回可执行 SSE，首帧、增量和终止帧按顺序即时输出。 */
@@ -47,9 +50,9 @@ class AiChatControllerTest {
         }).when(streams).stream(any(AiChatClient.ChatRequest.class), isNull(), eq("CHAT_STREAM"), any());
         AiChatController controller = new AiChatController(chat, mock(LlmManagementService.class), streams, new ObjectMapper());
 
-        ResponseEntity<?> result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
+        ResponseEntity<StreamingResponseBody> result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
             List.of(new AiChatClient.Message("user", "hello")), 0D, false, "MEDIUM", null, true));
-        ResponseEntity<?> response = result;
+        ResponseEntity<StreamingResponseBody> response = result;
         assertEquals(MediaType.TEXT_EVENT_STREAM, response.getHeaders().getContentType());
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ((StreamingResponseBody) response.getBody()).writeTo(output);
@@ -69,7 +72,7 @@ class AiChatControllerTest {
             .when(streams).stream(any(AiChatClient.ChatRequest.class), isNull(), eq("CHAT_STREAM"), any());
         AiChatController controller = new AiChatController(mock(AiChatClient.class), mock(LlmManagementService.class),
             streams, new ObjectMapper());
-        ResponseEntity<?> result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
+        ResponseEntity<StreamingResponseBody> result = controller.chat(new AiChatController.ChatRequest("text_model", "chat",
             List.of(new AiChatClient.Message("user", "hello")), 0D, false, "MEDIUM", null, true));
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ((StreamingResponseBody) result.getBody()).writeTo(output);

@@ -153,13 +153,16 @@ public class AiChatController {
         requestExample = "{\n  \"model_type\": \"text_model\",\n  \"featureCode\": \"chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Hello\" }\n  ],\n  \"temperature\": 0.7,\n  \"enableThinking\": false,\n  \"stream\": false\n}",
         responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"traceId\": \"trace-id\",\n  \"data\": {\n    \"content\": \"Hello!\",\n    \"model\": \"example-model\",\n    \"inputTokens\": 8,\n    \"outputTokens\": 4,\n    \"totalTokens\": 12\n  }\n}")
     @TraceType(value = "AI_CHAT", triggerEntry = "WEB_UI", authenticationTriggerEntry = true, captureRequest = false)
-    public ResponseEntity<?> chat(@RequestBody ChatRequest request) {
+    public ResponseEntity<StreamingResponseBody> chat(@RequestBody ChatRequest request) {
         log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());
         if (request.streaming()) return stream(request);
         AiChatClient.ChatResult result = client.chat(request.featureCode(), request.modelType(), request.messages(),
             request.temperature(), request.enableThinking(), request.thinkingLevel(), request.modelId());
         log.info("event=ai_chat_succeeded model={} total_tokens={}", result.model(), result.totalTokens());
-        return ResponseEntity.ok(new ChatResponse(result.content(), result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens()));
+        ChatResponse response = new ChatResponse(result.content(), result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
+        // 保留 StreamingResponseBody 泛型，让 Spring MVC 在同一路由下正确处理流式和非流式响应。
+        StreamingResponseBody body = output -> mapper.writeValue(output, response);
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(body);
     }
 
     /** 返回公开 SSE 协议，事件格式与会话接口保持一致并立即刷新每个事件。 */
