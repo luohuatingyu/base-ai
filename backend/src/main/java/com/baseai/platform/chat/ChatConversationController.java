@@ -5,6 +5,7 @@ import com.baseai.platform.aop.RateLimit;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.RequiredPermission;
+import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.trace.TraceContextHolder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,18 +27,26 @@ public class ChatConversationController {
     private final ChatStreamClient client;
     private final ObjectMapper mapper;
     private final ApiTriggerService apiTriggerService;
+    private final AiChatClient aiChatClient;
     private final Semaphore slots = new Semaphore(16);
 
     /** 注入会话存储及真实流式客户端。 */
     @Autowired
     public ChatConversationController(ChatConversationService service, ChatStreamClient client, ObjectMapper mapper,
-                                      ApiTriggerService apiTriggerService) {
+                                      ApiTriggerService apiTriggerService, AiChatClient aiChatClient) {
         this.service = service; this.client = client; this.mapper = mapper; this.apiTriggerService = apiTriggerService;
+        this.aiChatClient = aiChatClient;
+    }
+
+    /** 兼容已有不需要 Agent 工具目录的控制器装配。 */
+    public ChatConversationController(ChatConversationService service, ChatStreamClient client, ObjectMapper mapper,
+                                      ApiTriggerService apiTriggerService) {
+        this(service, client, mapper, apiTriggerService, null);
     }
 
     /** 兼容不需要 Agent 工具目录的控制器单元测试和轻量装配。 */
     public ChatConversationController(ChatConversationService service, ChatStreamClient client, ObjectMapper mapper) {
-        this(service, client, mapper, null);
+        this(service, client, mapper, null, null);
     }
 
     /** 创建当前登录用户的会话。 */
@@ -64,7 +73,7 @@ public class ChatConversationController {
     public void delete(@PathVariable Long id) { service.delete(AuthContext.require().id(), id); }
 
     /** 增量输出并在完成前持久化终态，最多允许十六条活动流。 */
-    @PostMapping(value = "/{id}/messages/stream", produces = "text/event-stream")
+    @PostMapping(value = "/{id}/messages/stream")
     @com.baseai.platform.trace.TraceType(value = "AI_CHAT_STREAM", captureRequest = false)
     @RateLimit(name = "ai-chat", limit = 10, period = 60, limitType = RateLimit.LimitType.USER)
     public void send(@PathVariable Long id, @RequestBody ChatConversationService.SendRequest request,
@@ -72,6 +81,10 @@ public class ChatConversationController {
         if (!slots.tryAcquire()) throw new BusinessException(503, "chat.busy");
         try {
             var turn = service.begin(AuthContext.require().id(), id, request);
+            if (!request.streaming()) {
+                sendNonStreaming(turn, response);
+                return;
+            }
             StringBuilder content = new StringBuilder();
             long[] savedAt = {System.nanoTime()};
             boolean[] completed = {false};
@@ -112,6 +125,34 @@ public class ChatConversationController {
         } finally { slots.release(); }
     }
 
+    /** 执行非流式会话请求，复用同一路由和 Token 监控并一次性返回 JSON。 */
+    private void sendNonStreaming(ChatConversationService.Turn turn, HttpServletResponse response) {
+        boolean completed = false;
+        try {
+            if (aiChatClient == null) throw new IllegalStateException("Chat client is unavailable");
+            var settings = turn.settings();
+            AiChatClient.ChatResult result = aiChatClient.chat(settings.featureCode(), settings.modelType(), turn.context(),
+                0D, settings.enableThinking(), settings.thinkingLevel(), settings.modelId(), "CONVERSATION",
+                turn.owner(), turn.conversationId());
+            if (result == null || result.content() == null || result.content().isBlank())
+                throw new BusinessException("ai.emptyResponse");
+            JsonNode metadata = mapper.valueToTree(Map.of("model", result.model(),
+                "inputTokens", result.inputTokens(), "outputTokens", result.outputTokens(),
+                "totalTokens", result.totalTokens()));
+            service.save(turn, result.content(), "COMPLETED", metadata);
+            completed = true;
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            mapper.writeValue(response.getOutputStream(), new NonStreamResponse(turn.messageId(),
+                TraceContextHolder.currentTraceId().orElse(""), result.content(), result.model(),
+                result.inputTokens(), result.outputTokens(), result.totalTokens()));
+        } catch (Exception exception) {
+            if (!completed) service.save(turn, "", "INTERRUPTED", null);
+            if (exception instanceof RuntimeException runtime) throw runtime;
+            throw new StreamFailure(exception);
+        }
+    }
+
     /** 仅向客户端公开固定的路由提示，其他异常不携带内部细节或上游响应。 */
     private JsonNode errorEvent(Exception exception) {
         if (exception instanceof BusinessException business
@@ -139,4 +180,8 @@ public class ChatConversationController {
         /** 保留内部异常用于追踪，不返回异常细节。 */
         public StreamFailure(Throwable cause) { super("Chat stream interrupted", cause); }
     }
+
+    /** 非流式会话响应，字段与流式 done 事件保持一致。 */
+    public record NonStreamResponse(Long messageId, String traceId, String content, String model,
+                                    int inputTokens, int outputTokens, int totalTokens) {}
 }
