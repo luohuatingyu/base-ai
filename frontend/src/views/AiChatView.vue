@@ -748,6 +748,8 @@ async function send() {
     })
     await readChatStream(response, event => {
       if (event.type === 'start') { started = true; assistant.id = event.messageId; assistant.traceId = event.traceId }
+      // 路由在首个增量前已确定优先模型，先展示模型；done 事件会覆盖故障切换后的实际模型。
+      if (event.type === 'model') Object.assign(assistant, { model: event.model, providerCode: event.providerCode })
       if (event.type === 'agent_tool_start') assistant.toolCalls = [...(assistant.toolCalls || []), { ...event, success: null }]
       if (event.type === 'agent_tool_done') {
         const tools = assistant.toolCalls || []
