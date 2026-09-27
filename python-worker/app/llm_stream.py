@@ -121,15 +121,20 @@ async def stream_events(client, request, trace_id, registry, reporter):
     producer = asyncio.create_task(produce())
     await registry.register(trace_id, asyncio.current_task())
     status = "CANCELLED"
+    first_event = True
     try:
-        await reporter.report(trace_id, "RUNNING")
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=10)
             except TimeoutError:
-                await reporter.report(trace_id, "RUNNING")
+                # 状态回报不能阻塞首个模型事件或后续增量读取。
+                asyncio.create_task(reporter.report(trace_id, "RUNNING"))
                 event = {"type": "heartbeat"}
             yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+            if first_event:
+                first_event = False
+                # 首帧已经交付后再异步回报 RUNNING，避免后端状态接口慢时推迟首字。
+                asyncio.create_task(reporter.report(trace_id, "RUNNING"))
             if event["type"] in {"done", "error"}:
                 status = "SUCCESS" if event["type"] == "done" else "FAILED"
                 return
