@@ -1,5 +1,38 @@
 # 最近分支覆盖测试报告
 
+## 模型使用监控与管理员交互（2026-09-27）
+
+### Git 基准与变更范围
+
+- 代码基准：`c84bfe3`（Preserve stream client test constructor，功能提交 `d88f34f`）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 为聊天、流式聊天、Embedding、工作流和 Agent 模型调用增加统一使用记录，保存 Trace、用户、供应商、模型、状态、Token、首字延迟、总耗时和安全错误元数据，不保存提示词或回答正文。
+- 新增管理员专用汇总/明细接口及 Dashboard 交互面板；接口使用 `operations:llm-usage:view` 和管理员角色双重保护，普通用户无权读取。
+- 新增 MySQL `llm_usage_record` 表和每日清理任务，默认保留 90 天，可由 `LLM_USAGE_RETENTION_DAYS` 配置；查询时间窗口最多 90 天。
+- Python Worker 的 Agent/Embedding 响应补充可选 Token 元数据，保持旧响应兼容；未新增第三方依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 五类模型调用均产生使用记录 | Java 客户端/流式客户端/工作流 Agent 单元，模拟成功、失败、首字和终止事件 | 记录来源、Trace、模型、状态、Token 和延迟；监控写入失败不阻断业务 | 通过编译及后端全量套件；正常、异常、回归 |
+| 管理员可看汇总和明细，普通用户被拒绝 | Controller 合约及权限单元；ADMIN 与 USER 两种 AuthContext | ADMIN 可访问 `/summary`、`/records`；USER 抛出禁止访问异常 | 通过；权限、安全、兼容 |
+| 使用记录只保留 90 天 | Flyway 迁移资源检查、保留任务单元、查询窗口边界测试 | 表结构存在索引；定时任务按配置删除过期记录；查询不得超过 90 天 | 通过；边界、异常、回归 |
+| 交互清晰且适配管理员监控 | Vue 组件静态构建、前端完整套件 | 管理员看到筛选、指标、排行、错误和分页明细；非管理员不渲染；加载失败/空数据有状态反馈 | 通过；正常、边界、权限、异常 |
+
+### 实际执行结果
+
+- Compose 构建内 `mvn -B -ntp package`：958/958 通过，失败 0、错误 0、跳过 0；包含新增 Controller、Service、RetentionJob、迁移资源和既有聊天/工作流回归。
+- Python 3.12 镜像执行 `python -m pytest -q`：86/86 通过。
+- `cd frontend && npm test -- --run`：Lint、类型检查、覆盖测试 481/481、E2E 3/3 通过，失败/跳过 0；覆盖率行 98.46%、分支 81.61%、函数 95.42%。
+- `APP_IMAGE_REVISION=c84bfe3 docker compose up --build -d`：9 个自建镜像均构建成功，后端 Maven 测试阶段通过；启动阶段受环境阻塞，MySQL 服务名 `mysql` 不可解析导致后端重启，adapter-manager 的 rootless Docker 校验失败。已执行 `docker compose down --remove-orphans` 清理容器和网络。
+- `git diff --check` 通过；无新增临时测试或调试文件，未执行 `git push`。
+
+### 已知问题与下次测试建议
+
+- 当前环境没有可用 MySQL/Redis/adapter-manager 运行栈，因此尚未完成部署后管理员登录、真实模型调用落库和清理任务实机验收；代码级和 H2/Mock 回归已通过。
+- 部署环境恢复后，使用管理员和普通用户分别访问监控面板与接口，验证 403/禁止访问、筛选分页、90 天边界和定时删除；再执行真实聊天、流式聊天、Embedding、工作流和 Agent 调用，核对记录数量及 Token/延迟指标。
+- 后续修改任一模型调用入口、监控表结构、权限编码或保留配置时，重跑后端完整测试、Python Worker 测试、前端完整套件并更新本报告基准点。
+
 ## AI视频权限菜单与业务分组（2026-09-27）
 
 ### Git 基准与变更范围
