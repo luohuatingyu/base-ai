@@ -239,6 +239,38 @@ class ChatConversationServiceTest {
         } finally { com.baseai.platform.security.AuthContext.clear(); }
     }
 
+    /** stream=false 时返回 JSON，并将完整回答及 Token 元数据持久化为已完成消息。 */
+    @Test
+    void controllerReturnsJsonForNonStreamingRequest() throws Exception {
+        var streamClient = org.mockito.Mockito.mock(ChatStreamClient.class);
+        var chatClient = org.mockito.Mockito.mock(com.baseai.platform.service.AiChatClient.class);
+        org.mockito.Mockito.when(chatClient.chat(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.anyDouble(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.eq("CONVERSATION"), org.mockito.ArgumentMatchers.eq(1L),
+            org.mockito.ArgumentMatchers.any()))
+            .thenReturn(new com.baseai.platform.service.AiChatClient.ChatResult("一次性回答", "test-model", 4, 5, 9));
+        var controller = new ChatConversationController(service, streamClient, mapper, null, chatClient);
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+        com.baseai.platform.security.AuthContext.set(new com.baseai.platform.security.AuthUser(1L, "user", Set.of(), Set.of("ai:chat:invoke"),
+            com.baseai.platform.security.AuthenticationType.TOKEN, null, null));
+        try {
+            Long id = service.create(1L).id();
+            var base = request("non-stream", "问题");
+            var nonStreaming = new ChatConversationService.SendRequest(base.requestId(), base.content(), base.settings(), false);
+            var response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/api/ai/conversations/" + id + "/messages/stream").contentType("application/json")
+                .content(mapper.writeValueAsString(nonStreaming))).andReturn().getResponse();
+            assertTrue(response.getContentType().startsWith("application/json"));
+            var body = mapper.readTree(response.getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+            assertEquals("一次性回答", body.path("content").asText());
+            assertEquals(9, body.path("totalTokens").asInt());
+            var detail = service.detail(1L, id);
+            assertEquals("COMPLETED", detail.messages().get(1).status());
+            assertEquals(9, detail.messages().get(1).metadata().path("totalTokens").asInt());
+        } finally { com.baseai.platform.security.AuthContext.clear(); }
+    }
+
     /** 真实 Controller、SSE 序列化和数据库共同验证成功与部分失败终态。 */
     @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
     void controllerPersistsStreamOutcome(boolean fails) throws Exception {
