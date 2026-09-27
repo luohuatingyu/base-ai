@@ -1,5 +1,37 @@
 # 最近分支覆盖测试报告
 
+## 兼容 OpenAI 流式终止帧（2026-09-27）
+
+### Git 基准与变更范围
+
+- 代码提交：`3e46639`（Accept explicit stream completion sentinel）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 修改 `python-worker/app/llm_stream.py` 及对应测试：明确收到供应商 `[DONE]` 即视为完整终态，不再额外要求 `finish_reason`；兼容没有最后换行的终止帧；流失败日志仅记录异常类型并沿用既有脱敏链路。
+- 未修改 Java、前端、数据库、依赖或配置；未改变上游在正文输出后的故障切换和部分内容持久化规则。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 显式 `[DONE]` 不被误判为中断 | Python Worker 单元：正文增量后仅发送 `[DONE]`，且无末尾换行、无 `finish_reason` | 交付 `delta` 和 `done`；不产生错误事件 | 通过；正常、边界、兼容 |
+| 缺少显式终态仍安全失败 | Python Worker 单元：畸形帧、超大帧、正文后提前 EOF | 不发送成功终态；上游失败后不切换候选拼接回答 | 通过；异常、安全、回归 |
+| 已收到正文仍保留并可诊断 | Worker 失败日志与既有 Java 持久化链路 | 只记录异常类型和 Trace 上下文，不泄露上游正文或密钥 | 通过静态检查及既有流式回归；安全、回归 |
+
+### 实际执行结果
+
+- `python3 -m py_compile python-worker/app/llm_stream.py python-worker/tests/test_llm_stream.py`：通过；宿主机无 Python 3.12，因此未使用宿主解释器执行依赖测试。
+- 在构建出的 `baseai-local-python-worker:3e466393dfc201580c470594150eac04b2ccf68c` Python 3.12 镜像中执行 `pytest -q tests/test_llm_stream.py`：9/9 通过。
+- 同一镜像执行 `pytest -q tests`：86/86 通过。
+- `cd frontend && npm test`：Lint、类型检查通过；覆盖测试 478/478、E2E 3/3，失败/跳过 0。
+- 首次 `APP_IMAGE_REVISION=3e46639 docker compose up --build -d` 在 Python Worker 构建的 apt 阶段因 Docker 内存不足失败；按 `COMPOSE_PARALLEL_LIMIT=1` 重试后 9 个镜像均构建成功。
+- 重试后的 Compose 启动未完成：外部 MySQL 主机名 `mysql` 不可解析，后端反复重启；adapter-manager 的 rootless Docker 校验也失败。无端口冲突，已执行 `docker compose down --remove-orphans` 清理容器和网络。
+- 未取得 Trace `472716a008b54ba48fe3f06a59ac0707` 的运行日志；当前工作区无可用数据库/服务实例。没有创建或保留临时测试文件。
+
+### 已知问题与下次测试建议
+
+- 本次修复覆盖“完整正文已到达但供应商只用 `[DONE]` 结束”的协议差异；若该 Trace 的日志显示为供应商超时、连接断开或缺少上游终止帧以外的问题，需要在可用 MySQL、adapter-manager 和真实模型路由后继续联调。
+- 部署环境恢复后，使用同一 Trace 链路执行真实首字和全文验收：检查 `start → delta* → done`、正文一致、`COMPLETED` 和 `generating=false`，并验证 Agent 工具路径的首字等待与终态。
+- 下次涉及 `llm_stream.py`、供应商协议或 SSE 解析时，至少重跑 Python Worker 全量测试、聊天前端套件和 Compose 构建启动验证。
+
 ## Worker DNS 恢复及真实流式聊天验收（2026-09-26）
 
 ### Git 基准与变更范围
