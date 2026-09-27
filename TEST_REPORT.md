@@ -1,5 +1,42 @@
 # 最近分支覆盖测试报告
 
+## 公开 AI Chat SSE HTTP 修复与压测（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `9248c2c`（Fix JSON stream test exception handling）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 修复 `/api/ai/chat` 真实 HTTP 流式响应的 Spring MVC 返回值转换问题：统一使用 `ResponseEntity<StreamingResponseBody>`，并保留 `stream=false` 的一次性 JSON 兼容行为。
+- 流式协议返回 `start → model → delta* → done`，首帧立即刷新，模型在正文前返回；Token 用量继续在完成或中断路径记录。
+- 未修改数据库结构、第三方代码或新增依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| `stream` 参数切换两种协议 | Java `AiChatControllerTest`；分别执行 false/true 分支 | false 返回 JSON，true 返回可持续读取的 SSE | 通过；正常、兼容、回归 |
+| 真实 HTTP 可流式返回并提前给出模型 | 本地登录会话 `curl -N` 调用 `/api/ai/chat` | HTTP 200、`text/event-stream`，事件含 start/model/delta/done | 通过；协议、性能 |
+| 3 秒每秒 10 次可稳定运行 | Python 3.12 容器并发压测 3 批×10 请求 | 30/30 成功、无 error、每次含 model/done | 通过；并发、异常恢复 |
+| 后端业务回归通过 | Docker 构建内 Maven 完整套件 | 971/971 通过 | 通过；回归 |
+
+### 实际执行结果
+
+- `docker compose up --build -d`：9 个自建镜像构建成功；Backend 镜像内 Maven 测试 971/971 通过，Backend 健康。统一启动仍因既有 `docker-socket-proxy` unhealthy 返回依赖错误。
+- 真实 `curl -N`：HTTP 200，`Content-Type: text/event-stream`，事件顺序为 `start`、`model`、`delta`、`done`；`model` 在回答正文前到达。
+- 压测：30 请求全部 HTTP 200，成功率 100%；model/done 均为 30/30。首个 SSE 帧延迟 p50 1728.0ms、p95 4029.8ms、最大 5350.3ms；总耗时 p50 1735.0ms、p95 4043.6ms、最大 5360.2ms。
+- `git diff --check`：通过；未执行 `git push`。
+
+### 首字延迟原因与已知限制
+
+- 本次修复已移除本地同步状态回调造成的首事件阻塞，并让响应使用正确的 Servlet 流式处理器。
+- 压测中首帧仍受模型供应商排队、网络往返和 Prefill 影响；这是上游首 Token 延迟，不能由 SSE 刷新消除。生产环境应结合 `first_token_latency_ms` 和上游耗时继续区分定位。
+- `docker-socket-proxy` 的既有健康检查问题仍会阻断部分依赖服务的 Compose 编排，不影响本次 Backend SSE 验证。
+
+### 下次测试建议
+
+- 修复 socket proxy 健康检查后重跑整栈启动验收。
+- 在不同模型和 thinking 配置下分别采集首帧、model、首 delta 时间，建立 Provider 延迟基线。
+
+
 ## 首页模型使用监控显示优化（2026-09-27）
 
 ### Git 基准与变更范围
