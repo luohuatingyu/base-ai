@@ -60,3 +60,12 @@ test('AI视频页面避免请求卡住导致加载状态无法结束', () => {
   assert.match(view, /withLoadTimeout\(listAiVideoResource\(currentResource, currentParams\)/)
   assert.match(view, /watch\(\(\) => route\.fullPath/)
 })
+
+test('AI视频生成任务使用任务看板展示状态和进度', () => {
+  assert.match(view, /isTaskModule/)
+  assert.match(view, /taskMetrics/)
+  assert.match(view, /taskProgress\(row\)/)
+  assert.match(view, /cancelTask\(row\)/)
+  assert.match(view, /retryTask\(row\)/)
+  assert.match(view, /taskTypeLabel\(row\.taskType\)/)
+})

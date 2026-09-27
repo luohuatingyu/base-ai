@@ -69,7 +69,40 @@
         </el-select>
         <span class="ai-video-result-count">{{ t('aiVideo.resultCount', { count: filteredRows.length }) }}</span>
       </div>
-      <el-table v-loading="loading" :data="filteredRows" stripe table-layout="auto" class="ai-video-table" empty-text=" ">
+      <div v-if="isTaskModule" v-loading="loading" class="task-workspace">
+        <div class="task-metrics">
+          <div v-for="metric in taskMetrics" :key="metric.key" class="task-metric" :class="`is-${metric.tone}`">
+            <span>{{ metric.label }}</span><strong>{{ metric.value }}</strong>
+          </div>
+        </div>
+        <div v-if="filteredRows.length" class="task-grid">
+          <article v-for="row in filteredRows" :key="row.id" class="task-card">
+            <div class="task-card-head">
+              <span class="task-type" :class="`task-type-${String(row.taskType || 'default').toLowerCase()}`"><b>{{ taskTypeIcon(row.taskType) }}</b>{{ taskTypeLabel(row.taskType) }}</span>
+              <el-tag size="small" effect="plain" :type="taskStatusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
+            </div>
+            <div class="task-card-body">
+              <h4 :title="row.name">{{ row.name || t('aiVideo.taskBoard.unnamed') }}</h4>
+              <p :title="taskDescription(row)">{{ taskDescription(row) }}</p>
+              <div class="task-progress-head"><span>{{ t('aiVideo.taskBoard.progress') }}</span><strong>{{ taskProgress(row) }}%</strong></div>
+              <el-progress :percentage="taskProgress(row)" :status="taskProgressStatus(row.status)" :stroke-width="8" :show-text="false" />
+            </div>
+            <div class="task-card-meta">
+              <span><i class="meta-dot" />{{ row.projectId ? `${t('aiVideo.fields.project')} #${row.projectId}` : t('aiVideo.taskBoard.noProject') }}</span>
+              <span>{{ displayValue(row.createdAt) }}</span>
+            </div>
+            <div v-if="row.errorMessage" class="task-error" :title="row.errorMessage">{{ row.errorMessage }}</div>
+            <div class="task-card-actions">
+              <el-button v-if="can('update')" link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+              <el-button v-if="['QUEUED', 'RUNNING'].includes(row.status)" link type="warning" @click="cancelTask(row)">{{ t('aiVideo.cancelTask') }}</el-button>
+              <el-button v-if="['FAILED', 'CANCELLED'].includes(row.status)" link type="primary" @click="retryTask(row)">{{ t('aiVideo.retryTask') }}</el-button>
+              <el-button v-if="can('delete')" link type="danger" @click="remove(row)">{{ t('common.delete') }}</el-button>
+            </div>
+          </article>
+        </div>
+        <el-empty v-else :description="rows.length ? t('aiVideo.noResults') : t('aiVideo.noRows')" :image-size="72" />
+      </div>
+      <el-table v-else v-loading="loading" :data="filteredRows" stripe table-layout="auto" class="ai-video-table" empty-text=" ">
         <el-table-column v-for="column in columns" :key="column.key" :prop="column.key" :label="column.label" :min-width="column.width || 140" show-overflow-tooltip>
           <template #default="scope">
             <el-tag v-if="column.key === 'status'" size="small" effect="plain">{{ statusLabel(scope.row.status) }}</el-tag>
@@ -176,6 +209,7 @@ const sectionKey = computed(() => route.path.split('/').filter(Boolean).pop() ||
 const isDashboard = computed(() => sectionKey.value === 'dashboard')
 const isAnalytics = computed(() => sectionKey.value === 'analytics')
 const current = computed(() => modules[sectionKey.value] || modules.projects)
+const isTaskModule = computed(() => current.value.resource === 'tasks')
 const assetType = computed(() => assetTypes[sectionKey.value] || '')
 const assetTypeLabel = computed(() => assetLabels[assetType.value] || '')
 const section = computed(() => ({ title: t(`aiVideo.sections.${sectionKey.value}.title`), description: t(`aiVideo.sections.${sectionKey.value}.description`) }))
@@ -189,6 +223,12 @@ const filteredRows = computed(() => {
     return Object.values(row).some(value => String(value ?? '').toLowerCase().includes(search))
   })
 })
+const taskMetrics = computed(() => [
+  { key: 'total', label: t('aiVideo.taskBoard.total'), value: rows.value.length, tone: 'neutral' },
+  { key: 'running', label: t('aiVideo.taskBoard.running'), value: rows.value.filter(row => row.status === 'RUNNING').length, tone: 'active' },
+  { key: 'queued', label: t('aiVideo.taskBoard.queued'), value: rows.value.filter(row => row.status === 'QUEUED').length, tone: 'queued' },
+  { key: 'failed', label: t('aiVideo.taskBoard.failed'), value: rows.value.filter(row => ['FAILED', 'CANCELLED'].includes(row.status)).length, tone: 'danger' }
+])
 const summary = computed(() => [
   { key: 'projects', label: t('aiVideo.summary.projects'), hint: t('aiVideo.summary.projectsHint') },
   { key: 'assets', label: t('aiVideo.summary.assets'), hint: t('aiVideo.summary.assetsHint') },
@@ -349,6 +389,24 @@ function displayValue(value) { if (value === null || value === undefined || valu
 /** 将后端状态编码转换为可读文本。 */
 function statusLabel(value) { return value ? t(`aiVideo.statuses.${value}`) : '—' }
 
+/** 将任务类型转换为卡片上的短标签。 */
+function taskTypeLabel(value) { return value ? t(`aiVideo.taskTypes.${value}`) : t('aiVideo.taskBoard.unknownType') }
+
+/** 为任务类型提供稳定、易扫读的字母标识。 */
+function taskTypeIcon(value) { return ({ VIDEO: 'V', IMAGE: 'I', TTS: 'A', MUSIC: 'M', SCRIPT: 'S', UPSCALE: 'U' })[value] || '·' }
+
+/** 将后端进度限制在进度条可接受的范围内。 */
+function taskProgress(row) { return Math.min(100, Math.max(0, Number(row.progress) || 0)) }
+
+/** 映射任务状态到 Element Plus 的语义色。 */
+function taskStatusType(status) { return ({ RUNNING: 'primary', QUEUED: 'warning', SUCCEEDED: 'success', FAILED: 'danger', CANCELLED: 'info' })[status] || 'info' }
+
+/** 映射任务状态到进度条终态。 */
+function taskProgressStatus(status) { return status === 'SUCCEEDED' ? 'success' : ['FAILED', 'CANCELLED'].includes(status) ? 'exception' : undefined }
+
+/** 生成任务卡片摘要并优先展示失败原因。 */
+function taskDescription(row) { return row.errorMessage || row.prompt || t('aiVideo.taskBoard.noPrompt') }
+
 watch(() => route.fullPath, () => { resetFilters(); load() })
 onMounted(load)
 </script>
@@ -374,6 +432,37 @@ onMounted(load)
 .ai-video-filters :deep(.el-select) { width: 180px; }
 .ai-video-result-count { margin-left: auto; color: var(--app-muted); font-size: 12px; white-space: nowrap; }
 .ai-video-table { width: 100%; }
+.task-workspace { min-height: 360px; }
+.task-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.task-metric { display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 12px 14px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-surface-soft); }
+.task-metric span { color: var(--app-muted); font-size: 12px; }
+.task-metric strong { color: var(--app-text); font-size: 22px; line-height: 1; }
+.task-metric.is-active { border-color: #bfd7ff; background: #f1f6ff; }
+.task-metric.is-active strong { color: #2563eb; }
+.task-metric.is-queued { border-color: #f4ddb1; background: #fffaf0; }
+.task-metric.is-queued strong { color: #b7791f; }
+.task-metric.is-danger { border-color: #f4c6c6; background: #fff6f6; }
+.task-metric.is-danger strong { color: #d14343; }
+.task-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.task-card { display: flex; min-width: 0; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--app-border); border-radius: 14px; background: #fff; box-shadow: 0 5px 16px rgb(18 39 75 / 5%); transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.task-card:hover { border-color: #b7c9e8; box-shadow: 0 10px 24px rgb(18 39 75 / 9%); transform: translateY(-2px); }
+.task-card-head, .task-progress-head, .task-card-meta, .task-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.task-type { display: inline-flex; min-width: 0; align-items: center; gap: 7px; color: var(--app-muted); font-size: 12px; font-weight: 600; }
+.task-type b { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 9px; background: #edf3ff; color: var(--app-primary); font-size: 12px; }
+.task-type-video b { background: #eaf1ff; color: #3b6fdb; }
+.task-type-image b { background: #e9faf4; color: #138a68; }
+.task-type-tts b, .task-type-music b { background: #fff3df; color: #b7791f; }
+.task-card-body { min-width: 0; }
+.task-card-body h4 { overflow: hidden; margin: 0 0 7px; color: var(--app-text); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.task-card-body p { display: -webkit-box; min-height: 36px; overflow: hidden; margin: 0 0 16px; color: var(--app-muted); font-size: 12px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.task-progress-head { margin-bottom: 7px; color: var(--app-muted); font-size: 11px; }
+.task-progress-head strong { color: var(--app-text); font-size: 12px; }
+.task-card-meta { padding-top: 12px; border-top: 1px solid #eef1f6; color: var(--app-muted); font-size: 11px; }
+.task-card-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta-dot { display: inline-block; width: 5px; height: 5px; margin-right: 6px; border-radius: 50%; background: #9aabc2; vertical-align: middle; }
+.task-error { overflow: hidden; padding: 8px 10px; border-radius: 8px; background: #fff4f4; color: #c24141; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.task-card-actions { justify-content: flex-start; margin-top: auto; }
+.task-card-actions :deep(.el-button) { margin-left: 0; }
 .ai-video-form :deep(.el-select), .ai-video-form :deep(.el-input), .ai-video-form :deep(.el-input-number) { width: 100%; }
 .ai-video-guide, .ai-video-analytics { min-height: 220px; }
 .ai-video-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
@@ -399,8 +488,9 @@ onMounted(load)
 .production-path small { color: var(--app-muted); font-size: 11px; }
 .production-path :deep(.el-icon) { margin-left: auto; color: var(--app-muted); }
 @media (max-width: 1000px) { .ai-video-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .task-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1100px) { .production-path-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 800px) { .ai-video-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ai-video-mark { width: 96px; height: 96px; font-size: 12px; } .production-path-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 800px) { .ai-video-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .task-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .task-grid { grid-template-columns: 1fr; } .ai-video-mark { width: 96px; height: 96px; font-size: 12px; } .production-path-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .ai-video-hero { align-items: flex-start; } .ai-video-mark { display: none; } .ai-video-hero-actions { align-items: flex-start; } .ai-video-steps { grid-template-columns: 1fr; } .ai-video-filters { align-items: stretch; flex-direction: column; } .ai-video-filters :deep(.el-input), .ai-video-filters :deep(.el-select) { width: 100%; } .ai-video-result-count { margin-left: 0; } }
 @media (max-width: 520px) { .production-path-grid { grid-template-columns: 1fr; } }
 </style>
