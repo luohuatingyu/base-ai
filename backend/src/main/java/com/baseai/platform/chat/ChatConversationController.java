@@ -103,7 +103,7 @@ public class ChatConversationController {
                         int available = 100000 - content.length();
                         content.append(delta, 0, Math.min(available, delta.length()));
                         if (delta.length() > available) throw new IOException("Answer limit");
-                    } else if (!Set.of("done", "heartbeat", "agent_tool_start", "agent_tool_done").contains(type)) {
+                    } else if (!Set.of("model", "done", "heartbeat", "agent_tool_start", "agent_tool_done").contains(type)) {
                         throw new IOException("Invalid event");
                     }
                     if ("done".equals(type)) {
