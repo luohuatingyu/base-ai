@@ -1,5 +1,43 @@
 # 最近分支覆盖测试报告
 
+## 流式首帧与模型元数据优化（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `d5eb700`（Prevent AI video page loading hangs）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- Worker 不再在首个上游事件前同步等待 RUNNING 状态回调；状态上报改为异步任务，避免 Java 状态接口慢或超时拖延首字。
+- 路由确定优先模型后立即发送公开 SSE `model` 事件，顺序为 `start → model → delta* → done`；`done.model` 仍可在故障切换后修正为实际上游模型。
+- 会话和公开聊天 Controller、前端 SSE 解析器及聊天页均允许并展示提前到达的模型元数据；未新增依赖、配置或数据库迁移。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 首个流式事件不等待状态回调 | Python 3.12 `test_generator_tracks_until_done_and_closes`，让 RUNNING 回调异步执行并读取首个 delta | 首个 delta 立即交付，状态回报不阻塞，终态仍为 SUCCESS | 通过；正常、性能、回归 |
+| 模型在回答正文前返回 | Java `ChatStreamClientTest.deliversBeforeCompletion`，模拟路由模型和 Worker 增量 | 事件顺序为 model、delta、done，首个 model 含路由模型 | 通过；正常、协议兼容 |
+| 两个 SSE 接口接受模型事件 | Java `AiChatControllerTest`、`ChatConversationServiceTest` | SSE 包含 model 事件且继续持久化回答；失败仍返回安全 error | 通过；正常、异常、回归 |
+| 前端可解析并展示提前模型 | Node `chat-stream.test.mjs`，覆盖单字节、双字节和大块网络切分 | model 事件不被拒绝，回答开始前即可写入模型字段 | 通过；边界、兼容 |
+
+### 实际执行结果
+
+- Python 3.12 Docker 执行 `python -m pytest -q`：87/87 通过，失败 0、错误 0、跳过 0。
+- Maven 3.9 / Java 17 Docker 执行 `mvn -q -Dtest=AiChatControllerTest,ChatConversationServiceTest,ChatStreamClientTest test`：定向测试通过，失败 0、错误 0、跳过 0。
+- Maven 3.9 / Java 17 Docker 执行 `mvn -q test`：971/971 通过，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 482/482、E2E 3/3 通过，失败/跳过 0；`chatStream.js` 行覆盖率 100%、分支覆盖率 98.04%。
+- `docker compose up --build -d` 已执行；9 个自建镜像构建成功，后端 Maven 构建测试 971/971 通过，前端镜像构建成功；启动阶段因既有 `docker-socket-proxy` 健康检查不通过而退出，后端和 Python Worker 已启动并健康。该基础设施问题不涉及本次流式代码。
+- `git diff --check` 通过；未执行 `git push`，未留下临时测试或调试文件。
+
+### 首字延迟原因与已知限制
+
+- 已修复的本地可避免原因是 Worker 在首个事件前同步请求 Java RUNNING 状态接口；该接口超时上限为 5 秒，网络或后端繁忙时会直接表现为首字迟迟不出现。
+- 修复后仍可能存在供应商侧首 Token 延迟，包括 Provider 排队、网络往返、模型 Prefill，以及启用 thinking/reasoning 的计算时间。这些属于上游或模型本身，SSE 刷新无法消除；可通过 `first_token_latency_ms` 与总耗时记录区分定位。
+- 当前 Compose 整栈启动仍受既有 `docker-socket-proxy` unhealthy 阻断；修复该基础设施健康检查后应重新执行整栈健康验收。
+
+### 下次测试建议
+
+- 修复既有 `LlmUsageServiceTest` 编译错误后，重新执行后端完整套件和 `docker compose up --build -d`。
+- 在真实 Provider 配置下用 `curl -N` 验证 `start → model → delta → done` 的时间间隔，并核对 `llm_usage_record.first_token_latency_ms`。
+
 ## AI视频多路径流程与交互优化（2026-09-27）
 
 ### Git 基准与变更范围
