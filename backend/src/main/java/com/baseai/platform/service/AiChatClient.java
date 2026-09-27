@@ -101,6 +101,14 @@ public class AiChatClient {
     /** 执行指定来源的模型调用，工作流和聊天共用同一套路由及监控逻辑。 */
     public ChatResult chat(String featureCode, String modelType, List<Message> messages, Double temperature,
                           Boolean enableThinking, String thinkingLevel, Long modelId, String source) {
+        return chat(featureCode, modelType, messages, temperature, enableThinking, thinkingLevel, modelId,
+            source, null, null);
+    }
+
+    /** 执行带归属信息的模型调用，确保会话非流式请求也能关联用户和会话用量。 */
+    public ChatResult chat(String featureCode, String modelType, List<Message> messages, Double temperature,
+                           Boolean enableThinking, String thinkingLevel, Long modelId, String source,
+                           Long ownerUserId, Long conversationId) {
         // 设置追踪检查点，记录当前执行位置
         TraceContextHolder.checkpoint();
 
@@ -124,7 +132,8 @@ public class AiChatClient {
         // 注册Python调用追踪记录，关联父追踪ID
         taskTraceService.registerPython(parentTraceId, pythonTraceId, "/llm/chat");
         String usageId = llmUsageService == null ? null : llmUsageService.start(
-            LlmUsageService.Start.current(pythonTraceId, null, null, source, normalizedFeature, normalizedModelType));
+            LlmUsageService.Start.current(pythonTraceId, ownerUserId, conversationId, source,
+                normalizedFeature, normalizedModelType));
 
         // 确定最终的思考模式开关：优先使用请求参数，其次使用路由配置
         Boolean finalEnableThinking = enableThinking != null ? enableThinking : route.enableThinking();
