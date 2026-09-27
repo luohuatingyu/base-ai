@@ -4,7 +4,7 @@
 
 ### Git 基准与变更范围
 
-- 代码基准：`c84bfe3`（Preserve stream client test constructor，功能提交 `d88f34f`）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- Commit: `c84bfe3`（Preserve stream client test constructor，功能提交 `d88f34f`）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
 - 为聊天、流式聊天、Embedding、工作流和 Agent 模型调用增加统一使用记录，保存 Trace、用户、供应商、模型、状态、Token、首字延迟、总耗时和安全错误元数据，不保存提示词或回答正文。
 - 新增管理员专用汇总/明细接口及 Dashboard 交互面板；接口使用 `operations:llm-usage:view` 和管理员角色双重保护，普通用户无权读取。
 - 新增 MySQL `llm_usage_record` 表和每日清理任务，默认保留 90 天，可由 `LLM_USAGE_RETENTION_DAYS` 配置；查询时间窗口最多 90 天。
