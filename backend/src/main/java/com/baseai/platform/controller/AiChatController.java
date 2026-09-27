@@ -1,6 +1,8 @@
 package com.baseai.platform.controller;
 
+import com.baseai.platform.chat.ChatStreamClient;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baseai.platform.trace.TraceType;
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.security.ApiKeyEndpoint;
@@ -10,9 +12,17 @@ import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.LlmManagementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * AI 对话接口控制器。
@@ -27,10 +37,22 @@ public class AiChatController {
     private static final Logger log = LoggerFactory.getLogger(AiChatController.class);
     private final AiChatClient client;
     private final LlmManagementService llmManagementService;
+    private final ChatStreamClient streamClient;
+    private final ObjectMapper mapper;
 
-    public AiChatController(AiChatClient client, LlmManagementService llmManagementService) {
+    /** 注入同步客户端、流式客户端和统一 JSON 编解码器。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    public AiChatController(AiChatClient client, LlmManagementService llmManagementService,
+                            ChatStreamClient streamClient, ObjectMapper mapper) {
         this.client = client;
         this.llmManagementService = llmManagementService;
+        this.streamClient = streamClient;
+        this.mapper = mapper;
+    }
+
+    /** 兼容只测试非流式调用的轻量构造方式。 */
+    public AiChatController(AiChatClient client, LlmManagementService llmManagementService) {
+        this(client, llmManagementService, null, new ObjectMapper());
     }
 
     /** 获取可用的路由列表，供对话页面选择模型池。 */
@@ -128,15 +150,53 @@ public class AiChatController {
             @ApiKeyField(name = "data.totalTokens", descriptionKey = "openPlatform.fields.totalTokens", type = "integer", required = true,
                 example = "12")
         },
-        requestExample = "{\n  \"model_type\": \"text_model\",\n  \"featureCode\": \"chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Hello\" }\n  ],\n  \"temperature\": 0.7,\n  \"enableThinking\": false\n}",
+        requestExample = "{\n  \"model_type\": \"text_model\",\n  \"featureCode\": \"chat\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Hello\" }\n  ],\n  \"temperature\": 0.7,\n  \"enableThinking\": false,\n  \"stream\": false\n}",
         responseExample = "{\n  \"success\": true,\n  \"code\": 200,\n  \"message\": \"Success\",\n  \"traceId\": \"trace-id\",\n  \"data\": {\n    \"content\": \"Hello!\",\n    \"model\": \"example-model\",\n    \"inputTokens\": 8,\n    \"outputTokens\": 4,\n    \"totalTokens\": 12\n  }\n}")
     @TraceType(value = "AI_CHAT", triggerEntry = "WEB_UI", authenticationTriggerEntry = true, captureRequest = false)
-    public ChatResponse chat(@RequestBody ChatRequest request) {
+    public Object chat(@RequestBody ChatRequest request) {
         log.info("event=ai_chat_started message_count={}", request.messages() == null ? 0 : request.messages().size());
+        if (request.streaming()) return stream(request);
         AiChatClient.ChatResult result = client.chat(request.featureCode(), request.modelType(), request.messages(),
             request.temperature(), request.enableThinking(), request.thinkingLevel(), request.modelId());
         log.info("event=ai_chat_succeeded model={} total_tokens={}", result.model(), result.totalTokens());
         return new ChatResponse(result.content(), result.model(), result.inputTokens(), result.outputTokens(), result.totalTokens());
+    }
+
+    /** 返回公开 SSE 协议，事件格式与会话接口保持一致并立即刷新每个事件。 */
+    private ResponseEntity<StreamingResponseBody> stream(ChatRequest request) {
+        if (streamClient == null) throw new IllegalStateException("Streaming chat client is unavailable");
+        String traceId = com.baseai.platform.trace.TraceContextHolder.currentTraceId().orElse("");
+        StreamingResponseBody body = output -> {
+            writeSse(output, Map.of("type", "start", "traceId", traceId));
+            java.util.concurrent.atomic.AtomicBoolean hasOutput = new java.util.concurrent.atomic.AtomicBoolean();
+            try {
+                AiChatClient.ChatRequest workerRequest = new AiChatClient.ChatRequest(
+                    request.featureCode(), request.modelType(), request.messages(),
+                    request.temperature() == null ? 0D : request.temperature(), List.of(),
+                    request.enableThinking(), request.thinkingLevel(), false);
+                streamClient.stream(workerRequest, request.modelId(), "CHAT_STREAM", event -> {
+                    String type = event.path("type").asText();
+                    if ("delta".equals(type)) hasOutput.set(true);
+                    if (!Set.of("delta", "done", "heartbeat").contains(type))
+                        throw new IOException("Invalid stream event");
+                    writeSse(output, event);
+                });
+                if (!hasOutput.get()) throw new IOException("Empty answer");
+            } catch (Exception exception) {
+                writeSse(output, Map.of("type", "error", "message", "ai.serviceCallFailed"));
+            }
+        };
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.TEXT_EVENT_STREAM);
+        headers.setCacheControl("no-cache, no-transform");
+        headers.set("X-Accel-Buffering", "no");
+        return ResponseEntity.ok().headers(headers).body(body);
+    }
+
+    /** 将对象编码为 SSE data 帧，避免 Servlet 或代理缓冲整个回答。 */
+    private void writeSse(OutputStream output, Object event) throws IOException {
+        output.write(("data: " + mapper.writeValueAsString(event) + "\n\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        output.flush();
     }
 
     /** 路由选项，用于前端下拉列表。 */
@@ -148,7 +208,17 @@ public class AiChatController {
     /** AI 对话请求参数，字段名称与前端接口协议保持一致。 */
     public record ChatRequest(@JsonProperty("model_type") String modelType, String featureCode,
                               List<AiChatClient.Message> messages, Double temperature,
-                              Boolean enableThinking, String thinkingLevel, Long modelId) {}
+                              Boolean enableThinking, String thinkingLevel, Long modelId, Boolean stream) {
+        /** 兼容旧版公开接口请求，缺省保持非流式 JSON。 */
+        public ChatRequest(String modelType, String featureCode, List<AiChatClient.Message> messages,
+                           Double temperature, Boolean enableThinking, String thinkingLevel, Long modelId) {
+            this(modelType, featureCode, messages, temperature, enableThinking, thinkingLevel, modelId, false);
+        }
+
+        /** 公开接口仅在显式 stream=true 时切换 SSE。 */
+        public boolean streaming() { return Boolean.TRUE.equals(stream); }
+
+    }
     /** AI 对话业务响应，仅包含模型结果和 Token 统计。 */
     public record ChatResponse(String content, String model, int inputTokens, int outputTokens, int totalTokens) {}
 }
