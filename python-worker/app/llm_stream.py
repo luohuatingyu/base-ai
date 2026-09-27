@@ -5,6 +5,7 @@ import json
 import logging
 from contextlib import aclosing
 
+from app.llm import usage_tokens
 from app.llm_provider import strategy_for
 
 
@@ -34,6 +35,7 @@ async def stream_chat(client, request):
                         buffer = bytearray()
                         total = 0
                         usage = {}
+                        emitted_usage = None
                         async for chunk in response.aiter_bytes():
                             total += len(chunk)
                             if total > client.settings.llm_response_max_bytes:
@@ -47,16 +49,24 @@ async def stream_chat(client, request):
                                     continue
                                 data = line[5:].strip()
                                 if data == "[DONE]":
+                                    input_tokens, output_tokens, total_tokens = usage_tokens(usage)
                                     yield {"type": "done", "model": candidate.model,
-                                           "inputTokens": usage.get("prompt_tokens"),
-                                           "outputTokens": usage.get("completion_tokens"),
-                                           "totalTokens": usage.get("total_tokens")}
+                                           "inputTokens": input_tokens,
+                                           "outputTokens": output_tokens,
+                                           "totalTokens": total_tokens}
                                     return
                                 item = json.loads(data)
                                 if item.get("error"):
                                     raise RuntimeError("供应商流式调用失败")
                                 if isinstance(item.get("usage"), dict):
-                                    usage = item["usage"]
+                                    usage.update(item["usage"])
+                                    input_tokens, output_tokens, total_tokens = usage_tokens(usage)
+                                    usage_event = (input_tokens, output_tokens, total_tokens)
+                                    if usage_event != emitted_usage:
+                                        emitted_usage = usage_event
+                                        yield {"type": "usage", "model": candidate.model,
+                                               "inputTokens": input_tokens, "outputTokens": output_tokens,
+                                               "totalTokens": total_tokens}
                                 choices = item.get("choices") or []
                                 if not choices:
                                     continue
@@ -73,10 +83,11 @@ async def stream_chat(client, request):
                         if tail:
                             line = tail.decode("utf-8")
                             if line.startswith("data:") and line[5:].strip() == "[DONE]":
+                                input_tokens, output_tokens, total_tokens = usage_tokens(usage)
                                 yield {"type": "done", "model": candidate.model,
-                                       "inputTokens": usage.get("prompt_tokens"),
-                                       "outputTokens": usage.get("completion_tokens"),
-                                       "totalTokens": usage.get("total_tokens")}
+                                       "inputTokens": input_tokens,
+                                       "outputTokens": output_tokens,
+                                       "totalTokens": total_tokens}
                                 return
                         raise RuntimeError("供应商流式响应意外中断")
             except asyncio.CancelledError:

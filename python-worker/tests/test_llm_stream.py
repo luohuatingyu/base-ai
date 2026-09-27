@@ -194,6 +194,7 @@ def test_generator_tracks_until_done_and_closes():
             assert "delta" in await anext(generator)
             assert reporter.states == ["RUNNING"]
             assert registry.active
+            assert "usage" in await anext(generator)
             assert "done" in await anext(generator)
             with pytest.raises(StopAsyncIteration): await anext(generator)
             assert reporter.states == ["RUNNING", "SUCCESS"]

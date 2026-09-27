@@ -17,6 +17,32 @@ from app.network_policy import PublicNetworkTransport
 logger = logging.getLogger(__name__)
 
 
+def usage_tokens(usage: dict | None) -> tuple[int | None, int | None, int | None]:
+    """统一解析供应商 Token 字段，并在总数缺失时补算输入与输出。"""
+    values = usage if isinstance(usage, dict) else {}
+
+    def read(*names: str) -> int | None:
+        """从多个兼容字段名读取非负整数。"""
+        for name in names:
+            value = values.get(name)
+            if value is None or isinstance(value, bool):
+                continue
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed >= 0:
+                return parsed
+        return None
+
+    input_tokens = read("prompt_tokens", "input_tokens", "promptTokens", "inputTokens")
+    output_tokens = read("completion_tokens", "output_tokens", "completionTokens", "outputTokens")
+    total_tokens = read("total_tokens", "totalTokens")
+    if total_tokens is None and (input_tokens is not None or output_tokens is not None):
+        total_tokens = (input_tokens or 0) + (output_tokens or 0)
+    return input_tokens, output_tokens, total_tokens
+
+
 class LlmClient:
     """按功能候选模型执行并发控制、Key 轮换和故障切换。"""
 
@@ -123,10 +149,10 @@ class LlmClient:
                 data = self._parse_response(bytes(response_body), response.status_code,
                                             response.headers.get("content-type", "未提供"), candidate)
             content = self._extract_content(data, candidate)
-            usage = data.get("usage", {})
-            input_tokens = int(usage.get("prompt_tokens", 0) or 0)
-            output_tokens = int(usage.get("completion_tokens", 0) or 0)
-            total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
+            input_tokens, output_tokens, total_tokens = usage_tokens(data.get("usage"))
+            input_tokens = input_tokens or 0
+            output_tokens = output_tokens or 0
+            total_tokens = total_tokens if total_tokens is not None else input_tokens + output_tokens
             self._log_success(candidate.model, messages, content, input_tokens, output_tokens, total_tokens, started_at)
             return ChatResponse(content=content, model=candidate.model, inputTokens=input_tokens,
                                 outputTokens=output_tokens, totalTokens=total_tokens)
@@ -177,10 +203,10 @@ class LlmClient:
             if not content and not calls:
                 raise RuntimeError("Agent 响应既无内容也无工具调用")
             logger.info("event=agent_step_succeeded model=%s tool_call_count=%d", candidate.model, len(calls))
-            usage = data.get("usage", {}) if isinstance(data.get("usage", {}), dict) else {}
-            input_tokens = int(usage.get("prompt_tokens", 0) or 0)
-            output_tokens = int(usage.get("completion_tokens", 0) or 0)
-            total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
+            input_tokens, output_tokens, total_tokens = usage_tokens(data.get("usage"))
+            input_tokens = input_tokens or 0
+            output_tokens = output_tokens or 0
+            total_tokens = total_tokens if total_tokens is not None else input_tokens + output_tokens
             return AgentStepResponse(content=content, toolCalls=calls, model=candidate.model,
                                      inputTokens=input_tokens, outputTokens=output_tokens,
                                      totalTokens=total_tokens)
@@ -222,10 +248,10 @@ class LlmClient:
             indexed[index] = [float(value) for value in embedding]
         if len(indexed) != len(values):
             raise RuntimeError(f"供应商 {candidate.providerCode} 返回的向量索引不完整")
-        usage = data.get("usage", {}) if isinstance(data.get("usage", {}), dict) else {}
-        input_tokens = int(usage.get("prompt_tokens", 0) or 0)
-        output_tokens = int(usage.get("completion_tokens", 0) or 0)
-        total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
+        input_tokens, output_tokens, total_tokens = usage_tokens(data.get("usage"))
+        input_tokens = input_tokens or 0
+        output_tokens = output_tokens or 0
+        total_tokens = total_tokens if total_tokens is not None else input_tokens + output_tokens
         result = EmbeddingResponse(
             embeddings=[indexed[index] for index in range(len(values))],
             model=candidate.model,

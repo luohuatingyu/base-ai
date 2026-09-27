@@ -46,6 +46,7 @@ class ChatStreamClientTest {
         when(management.resolveActive("chat", "text_model")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), false, true));
         traces = mock(TaskTraceService.class);
         usage = mock(LlmUsageService.class);
+        when(usage.start(any())).thenReturn("usage-id");
         Retry retry = Retry.of("test", RetryConfig.custom().maxAttempts(3).retryExceptions(Exception.class)
             .ignoreExceptions(IllegalStateException.class).build());
         client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build(),

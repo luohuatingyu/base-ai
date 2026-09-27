@@ -104,7 +104,7 @@ public class LlmUsageService {
                 AVG(duration_ms) averageDurationMs,
                 AVG(first_token_latency_ms) averageFirstTokenLatencyMs,
                 SUM(input_tokens IS NOT NULL) tokenRecords
-            FROM llm_usage_record WHERE """ + where, args.toArray()));
+            FROM llm_usage_record""" + " WHERE " + where, args.toArray()));
 
         List<Object> trendArgs = new ArrayList<>();
         String trendWhere = filters(query, trendArgs);
@@ -112,7 +112,7 @@ public class LlmUsageService {
             SELECT DATE_FORMAT(started_at, '%Y-%m-%d %H:00:00') bucket,
                 COUNT(*) calls, SUM(status='SUCCESS') success, SUM(status IN ('FAILED','INTERRUPTED','CANCELLED')) failures,
                 COALESCE(SUM(total_tokens), 0) totalTokens
-            FROM llm_usage_record WHERE """ + trendWhere + " GROUP BY bucket ORDER BY bucket", trendArgs.toArray()));
+            FROM llm_usage_record""" + " WHERE " + trendWhere + " GROUP BY bucket ORDER BY bucket", trendArgs.toArray()));
 
         List<Object> dimensionArgs = new ArrayList<>();
         String dimensionWhere = filters(query, dimensionArgs);
@@ -120,7 +120,7 @@ public class LlmUsageService {
             SELECT COALESCE(provider_code, 'unknown') providerCode, COALESCE(model_name, 'unknown') modelName,
                 COUNT(*) calls, SUM(status='SUCCESS') success, SUM(status IN ('FAILED','INTERRUPTED','CANCELLED')) failures,
                 COALESCE(SUM(total_tokens), 0) totalTokens, AVG(duration_ms) averageDurationMs
-            FROM llm_usage_record WHERE """ + dimensionWhere
+            FROM llm_usage_record""" + " WHERE " + dimensionWhere
             + " GROUP BY provider_code, model_name ORDER BY calls DESC LIMIT 20", dimensionArgs.toArray()));
 
         List<Object> errorArgs = new ArrayList<>();
@@ -128,7 +128,7 @@ public class LlmUsageService {
         result.put("errors", jdbcTemplate.queryForList("""
             SELECT COALESCE(error_type, 'unknown') errorType, COALESCE(error_code, 'unknown') errorCode,
                 COUNT(*) count
-            FROM llm_usage_record WHERE """ + errorWhere + " AND status IN ('FAILED','INTERRUPTED','CANCELLED')"
+            FROM llm_usage_record""" + " WHERE " + errorWhere + " AND status IN ('FAILED','INTERRUPTED','CANCELLED')"
             + " GROUP BY error_type, error_code ORDER BY count DESC LIMIT 20", errorArgs.toArray()));
         return result;
     }
@@ -150,7 +150,7 @@ public class LlmUsageService {
                 input_tokens inputTokens, output_tokens outputTokens, total_tokens totalTokens,
                 started_at startedAt, first_token_at firstTokenAt, finished_at finishedAt,
                 duration_ms durationMs, first_token_latency_ms firstTokenLatencyMs, error_type errorType, error_code errorCode
-            FROM llm_usage_record WHERE """ + where + " ORDER BY started_at DESC LIMIT ?, ?", listArgs.toArray());
+            FROM llm_usage_record""" + " WHERE " + where + " ORDER BY started_at DESC LIMIT ?, ?", listArgs.toArray());
         return new Page(records, total == null ? 0L : total, safePage, safeSize);
     }
 

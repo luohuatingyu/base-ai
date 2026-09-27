@@ -37,6 +37,7 @@ import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import jakarta.annotation.PreDestroy;
 
@@ -149,6 +150,7 @@ public class ChatStreamClient {
         String usageId = llmUsageService == null ? null : llmUsageService.start(
             LlmUsageService.Start.current(traceId, turn.owner(), turn.conversationId(), "STREAM", feature, settings.modelType()));
         AtomicBoolean usageFinished = new AtomicBoolean(false);
+        AtomicReference<TokenUsage> latestUsage = new AtomicReference<>();
         try {
             client.post().uri("/llm/chat/stream").header("X-Python-Trace-Id", traceId)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -184,14 +186,19 @@ public class ChatStreamClient {
                             JsonNode event = mapper.readTree(value.substring(5).strip());
                             if (event == null || !event.path("type").isTextual()) throw new IOException("Invalid stream event");
                             if ("error".equals(event.path("type").asText())) throw new IOException("Worker generation failed");
+                            if ("usage".equals(event.path("type").asText())) {
+                                latestUsage.set(mergeUsage(latestUsage.get(), event));
+                                continue;
+                            }
                             if ("delta".equals(event.path("type").asText()) && llmUsageService != null)
                                 llmUsageService.markFirstToken(usageId);
                             consumer.accept(event);
                             if ("done".equals(event.path("type").asText())) {
+                                TokenUsage usage = mergeUsage(latestUsage.get(), event);
+                                latestUsage.set(usage);
                                 if (llmUsageService != null) llmUsageService.finish(usageId, new LlmUsageService.Completion(
-                                    "SUCCESS", providerFor(route, event.path("model").asText(null)),
-                                    event.path("model").asText(null), true, token(event, "inputTokens"),
-                                    token(event, "outputTokens"), token(event, "totalTokens"), null, null, null));
+                                    "SUCCESS", providerFor(route, usage.model()), usage.model(), true, usage.inputTokens(),
+                                    usage.outputTokens(), usage.totalTokens(), null, null, null));
                                 usageFinished.set(true);
                                 return null;
                             }
@@ -204,7 +211,11 @@ public class ChatStreamClient {
             traces.updatePython(traceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, "Stream interrupted");
             if (!usageFinished.get() && llmUsageService != null) llmUsageService.finish(usageId,
                 new LlmUsageService.Completion(Thread.currentThread().isInterrupted() ? "CANCELLED" : streamStarted.get() ? "INTERRUPTED" : "FAILED",
-                    null, null, streamStarted.get(), null, null, null, exception.getClass().getSimpleName(), null, null));
+                    latestUsage.get() == null ? null : providerFor(route, latestUsage.get().model()),
+                    latestUsage.get() == null ? null : latestUsage.get().model(), streamStarted.get(),
+                    latestUsage.get() == null ? null : latestUsage.get().inputTokens(),
+                    latestUsage.get() == null ? null : latestUsage.get().outputTokens(),
+                    latestUsage.get() == null ? null : latestUsage.get().totalTokens(), exception.getClass().getSimpleName(), null, null));
             if (streamStarted.get()) throw new StreamAlreadyStartedException(exception);
             throw exception;
         }
@@ -217,10 +228,30 @@ public class ChatStreamClient {
             .map(LlmManagementService.WorkerCandidate::providerCode).findFirst().orElse(null);
     }
 
-    /** 读取 Worker done 事件中的可选 Token 字段。 */
-    private Long token(JsonNode event, String name) {
-        return event.path(name).isNumber() ? event.path(name).asLong() : null;
+    /** 读取 Worker 事件中的兼容 Token 字段。 */
+    private Long token(JsonNode event, String... names) {
+        for (String name : names) {
+            JsonNode value = event.get(name);
+            if (value != null && value.isNumber() && value.isIntegralNumber()) return value.asLong();
+        }
+        return null;
     }
+
+    /** 合并流中多次 usage 事件，避免供应商分批返回统计时丢字段。 */
+    private TokenUsage mergeUsage(TokenUsage previous, JsonNode event) {
+        String model = event.path("model").isTextual() ? event.path("model").asText() : previous == null ? null : previous.model();
+        Long input = first(token(event, "inputTokens", "input_tokens", "promptTokens", "prompt_tokens"), previous == null ? null : previous.inputTokens());
+        Long output = first(token(event, "outputTokens", "output_tokens", "completionTokens", "completion_tokens"), previous == null ? null : previous.outputTokens());
+        Long total = first(token(event, "totalTokens", "total_tokens"), previous == null ? null : previous.totalTokens());
+        if (total == null && (input != null || output != null)) total = (input == null ? 0 : input) + (output == null ? 0 : output);
+        return new TokenUsage(model, input, output, total);
+    }
+
+    /** 选择最新的非空 Token 值。 */
+    private Long first(Long current, Long previous) { return current == null ? previous : current; }
+
+    /** 流式调用已收到的模型和 Token 统计。 */
+    private record TokenUsage(String model, Long inputTokens, Long outputTokens, Long totalTokens) {}
 
     /** 让模型在独立 Agent 工具和显式工作流工具中循环决策，并把状态作为 SSE 事件返回。 */
     private void streamAgent(ChatConversationService.Turn turn, EventConsumer consumer) {
