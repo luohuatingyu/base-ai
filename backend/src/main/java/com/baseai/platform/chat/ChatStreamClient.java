@@ -94,6 +94,16 @@ public class ChatStreamClient {
             agentClient, workflowService, workflowExecutionService, null, null);
     }
 
+    /** 兼容已有包含 API 触发器依赖的测试构造方式。 */
+    public ChatStreamClient(@Qualifier("pythonWorkerRestClient") RestClient client, LlmManagementService management,
+                            TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry,
+                            CircuitBreaker pythonWorkerCircuitBreaker, WorkflowAgentClient agentClient,
+                            WorkflowService workflowService, WorkflowExecutionService workflowExecutionService,
+                            ApiTriggerService apiTriggerService) {
+        this(client, management, traces, mapper, pythonWorkerRetry, pythonWorkerCircuitBreaker,
+            agentClient, workflowService, workflowExecutionService, apiTriggerService, null);
+    }
+
     /** 逐事件读取；消费者返回前不会预取下一事件。使用重试和熔断保护。 */
     public void stream(ChatConversationService.Turn turn, EventConsumer consumer) {
         if (!turn.settings().effectiveAgentToolCodes().isEmpty()
