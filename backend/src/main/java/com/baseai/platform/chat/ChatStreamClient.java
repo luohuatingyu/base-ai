@@ -6,6 +6,7 @@ import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.LlmManagementService;
 import com.baseai.platform.service.TaskTraceService;
+import com.baseai.platform.service.LlmUsageService;
 import com.baseai.platform.trace.TraceContextHolder;
 import com.baseai.platform.workflow.WorkflowAgentClient;
 import com.baseai.platform.workflow.WorkflowExecutionService;
@@ -53,6 +54,7 @@ public class ChatStreamClient {
     private final WorkflowService workflowService;
     private final WorkflowExecutionService workflowExecutionService;
     private final ApiTriggerService apiTriggerService;
+    private final LlmUsageService llmUsageService;
 
     /** 为流式接口设置连接及响应头超时，并注入聊天 Agent 的工作流执行能力。 */
     @Autowired
@@ -60,7 +62,7 @@ public class ChatStreamClient {
                             TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry, 
                             CircuitBreaker pythonWorkerCircuitBreaker, WorkflowAgentClient agentClient,
                             WorkflowService workflowService, WorkflowExecutionService workflowExecutionService,
-                            ApiTriggerService apiTriggerService) {
+                            ApiTriggerService apiTriggerService, LlmUsageService llmUsageService) {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(10)).build());
         factory.setReadTimeout(Duration.ofSeconds(30));
@@ -72,6 +74,7 @@ public class ChatStreamClient {
         this.workflowService = workflowService;
         this.workflowExecutionService = workflowExecutionService;
         this.apiTriggerService = apiTriggerService;
+        this.llmUsageService = llmUsageService;
     }
 
     /** 保留基础流测试使用的构造方式，普通聊天不需要工作流依赖。 */
@@ -79,7 +82,7 @@ public class ChatStreamClient {
                             TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry,
                             CircuitBreaker pythonWorkerCircuitBreaker) {
         this(client, management, traces, mapper, pythonWorkerRetry, pythonWorkerCircuitBreaker,
-            null, null, null, null);
+            null, null, null, null, null);
     }
 
     /** 兼容已有仅注入工作流 Agent 依赖的测试构造方式。 */
@@ -88,7 +91,7 @@ public class ChatStreamClient {
                             CircuitBreaker pythonWorkerCircuitBreaker, WorkflowAgentClient agentClient,
                             WorkflowService workflowService, WorkflowExecutionService workflowExecutionService) {
         this(client, management, traces, mapper, pythonWorkerRetry, pythonWorkerCircuitBreaker,
-            agentClient, workflowService, workflowExecutionService, null);
+            agentClient, workflowService, workflowExecutionService, null, null);
     }
 
     /** 逐事件读取；消费者返回前不会预取下一事件。使用重试和熔断保护。 */
@@ -133,6 +136,9 @@ public class ChatStreamClient {
         var settings = turn.settings();
         String traceId = UUID.randomUUID().toString().replace("-", "");
         traces.registerPython(TraceContextHolder.currentTraceId().orElse(null), traceId, "/llm/chat/stream");
+        String usageId = llmUsageService == null ? null : llmUsageService.start(
+            LlmUsageService.Start.current(traceId, turn.owner(), turn.conversationId(), "STREAM", feature, settings.modelType()));
+        AtomicBoolean usageFinished = new AtomicBoolean(false);
         try {
             client.post().uri("/llm/chat/stream").header("X-Python-Trace-Id", traceId)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -168,8 +174,17 @@ public class ChatStreamClient {
                             JsonNode event = mapper.readTree(value.substring(5).strip());
                             if (event == null || !event.path("type").isTextual()) throw new IOException("Invalid stream event");
                             if ("error".equals(event.path("type").asText())) throw new IOException("Worker generation failed");
+                            if ("delta".equals(event.path("type").asText()) && llmUsageService != null)
+                                llmUsageService.markFirstToken(usageId);
                             consumer.accept(event);
-                            if ("done".equals(event.path("type").asText())) return null;
+                            if ("done".equals(event.path("type").asText())) {
+                                if (llmUsageService != null) llmUsageService.finish(usageId, new LlmUsageService.Completion(
+                                    "SUCCESS", providerFor(route, event.path("model").asText(null)),
+                                    event.path("model").asText(null), true, token(event, "inputTokens"),
+                                    token(event, "outputTokens"), token(event, "totalTokens"), null, null, null));
+                                usageFinished.set(true);
+                                return null;
+                            }
                         }
                         throw new IOException("Incomplete worker stream");
                     } finally { timeout.cancel(false); }
@@ -177,9 +192,24 @@ public class ChatStreamClient {
             traces.updatePython(traceId, "SUCCESS", null, null);
         } catch (RuntimeException exception) {
             traces.updatePython(traceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, "Stream interrupted");
+            if (!usageFinished.get() && llmUsageService != null) llmUsageService.finish(usageId,
+                new LlmUsageService.Completion(Thread.currentThread().isInterrupted() ? "CANCELLED" : streamStarted.get() ? "INTERRUPTED" : "FAILED",
+                    null, null, streamStarted.get(), null, null, null, exception.getClass().getSimpleName(), null, null));
             if (streamStarted.get()) throw new StreamAlreadyStartedException(exception);
             throw exception;
         }
+    }
+
+    /** 根据实际返回模型匹配供应商，避免把路由首项当成实际调用项。 */
+    private String providerFor(LlmManagementService.WorkerRoute route, String model) {
+        if (route == null || model == null) return null;
+        return route.candidates().stream().filter(candidate -> model.equals(candidate.model()))
+            .map(LlmManagementService.WorkerCandidate::providerCode).findFirst().orElse(null);
+    }
+
+    /** 读取 Worker done 事件中的可选 Token 字段。 */
+    private Long token(JsonNode event, String name) {
+        return event.path(name).isNumber() ? event.path(name).asLong() : null;
     }
 
     /** 让模型在独立 Agent 工具和显式工作流工具中循环决策，并把状态作为 SSE 事件返回。 */

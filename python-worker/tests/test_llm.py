@@ -123,7 +123,7 @@ def test_embedding_uses_openai_compatible_endpoint_and_restores_input_order():
             return httpx.Response(200, json={"data": [
                 {"index": 1, "embedding": [0.0, 1.0]},
                 {"index": 0, "embedding": [1.0, 0.0]},
-            ]})
+            ], "usage": {"prompt_tokens": 8, "total_tokens": 8}})
 
         client = LlmClient(settings())
         await client.client.aclose()
@@ -141,6 +141,8 @@ def test_embedding_uses_openai_compatible_endpoint_and_restores_input_order():
         "input": ["55英寸", "一级能效"],
     }
     assert result.embeddings == [[1.0, 0.0], [0.0, 1.0]]
+    assert result.inputTokens == 8
+    assert result.totalTokens == 8
 
 
 def test_embedding_falls_back_to_next_candidate():

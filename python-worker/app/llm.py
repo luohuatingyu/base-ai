@@ -177,7 +177,13 @@ class LlmClient:
             if not content and not calls:
                 raise RuntimeError("Agent 响应既无内容也无工具调用")
             logger.info("event=agent_step_succeeded model=%s tool_call_count=%d", candidate.model, len(calls))
-            return AgentStepResponse(content=content, toolCalls=calls, model=candidate.model)
+            usage = data.get("usage", {}) if isinstance(data.get("usage", {}), dict) else {}
+            input_tokens = int(usage.get("prompt_tokens", 0) or 0)
+            output_tokens = int(usage.get("completion_tokens", 0) or 0)
+            total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
+            return AgentStepResponse(content=content, toolCalls=calls, model=candidate.model,
+                                     inputTokens=input_tokens, outputTokens=output_tokens,
+                                     totalTokens=total_tokens)
 
     async def _invoke_embedding(self, candidate: LlmCandidate, api_key: str,
                                 values: list[str]) -> EmbeddingResponse:
@@ -216,9 +222,14 @@ class LlmClient:
             indexed[index] = [float(value) for value in embedding]
         if len(indexed) != len(values):
             raise RuntimeError(f"供应商 {candidate.providerCode} 返回的向量索引不完整")
+        usage = data.get("usage", {}) if isinstance(data.get("usage", {}), dict) else {}
+        input_tokens = int(usage.get("prompt_tokens", 0) or 0)
+        output_tokens = int(usage.get("completion_tokens", 0) or 0)
+        total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
         result = EmbeddingResponse(
             embeddings=[indexed[index] for index in range(len(values))],
             model=candidate.model,
+            inputTokens=input_tokens, outputTokens=output_tokens, totalTokens=total_tokens,
         )
         logger.info("event=embedding_succeeded model=%s input_count=%d dimension=%d", candidate.model,
                     len(values), len(result.embeddings[0]))

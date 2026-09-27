@@ -39,6 +39,17 @@ class TraceSchemaResourceTest {
         assertTrue(repair.contains("secret_encrypted TEXT NOT NULL"));
     }
 
+    /** 模型使用迁移必须包含明细字段和聚合查询所需索引。 */
+    @Test
+    void containsLlmUsageMonitoringSchema() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V43__add_llm_usage_monitoring.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS llm_usage_record"));
+        assertTrue(schema.contains("input_tokens BIGINT"));
+        assertTrue(schema.contains("first_token_latency_ms BIGINT"));
+        assertTrue(schema.contains("idx_llm_usage_provider_model"));
+    }
+
     /** MySQL 迁移应将历史模型类型转换为当前标准值，并保留已规范及自定义类型。 */
     @Test
     void normalizesLegacyModelTypesWithoutChangingCanonicalValues() throws Exception {

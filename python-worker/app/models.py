@@ -168,6 +168,9 @@ class AgentStepResponse(BaseModel):
     content: str = ""
     toolCalls: list[AgentToolCall] = Field(default_factory=list)
     model: str
+    inputTokens: int | None = None
+    outputTokens: int | None = None
+    totalTokens: int | None = None
 
 
 class LlmTestRequest(BaseModel):
@@ -199,6 +202,9 @@ class EmbeddingResponse(BaseModel):
 
     embeddings: list[list[float]] = Field(min_length=1, max_length=256)
     model: str = Field(min_length=1, max_length=160)
+    inputTokens: int | None = None
+    outputTokens: int | None = None
+    totalTokens: int | None = None
 
     @model_validator(mode="after")
     def validate_embeddings(self):
