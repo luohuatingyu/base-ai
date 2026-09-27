@@ -130,11 +130,11 @@ async def stream_events(client, request, trace_id, registry, reporter):
                 # 状态回报不能阻塞首个模型事件或后续增量读取。
                 asyncio.create_task(reporter.report(trace_id, "RUNNING"))
                 event = {"type": "heartbeat"}
-            yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
             if first_event:
                 first_event = False
-                # 首帧已经交付后再异步回报 RUNNING，避免后端状态接口慢时推迟首字。
+                # 首个模型事件交付前只创建异步任务，不等待慢速状态接口。
                 asyncio.create_task(reporter.report(trace_id, "RUNNING"))
+            yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
             if event["type"] in {"done", "error"}:
                 status = "SUCCESS" if event["type"] == "done" else "FAILED"
                 return

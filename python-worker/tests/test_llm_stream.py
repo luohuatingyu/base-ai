@@ -192,9 +192,10 @@ def test_generator_tracks_until_done_and_closes():
         generator = stream_events(client, request, "trace", registry, reporter)
         try:
             assert "delta" in await anext(generator)
-            assert reporter.states == ["RUNNING"]
             assert registry.active
             assert "usage" in await anext(generator)
+            await asyncio.sleep(0)
+            assert reporter.states == ["RUNNING"]
             assert "done" in await anext(generator)
             with pytest.raises(StopAsyncIteration): await anext(generator)
             assert reporter.states == ["RUNNING", "SUCCESS"]
