@@ -148,11 +148,12 @@ export default {
     userNotFound: '登录用户不存在'
   },
   packageAdjustment: {
-    eyebrow: 'JWT 套餐工具', title: '套餐调整', description: '解析 JWT 中的 ChatGPT 套餐字段，并生成修改后的 Token。',
-    securityNotice: 'Token 只在当前页面内存中处理，不会上传或保存。修改 Payload 后原 RS256 签名将失效，生成结果不能作为有效认证凭证。',
+    eyebrow: 'JWT 套餐工具', title: '套餐调整', description: '解析 JWT 中的 ChatGPT 套餐字段，并使用 issuer 私钥生成新的 RS256 Token。',
+    securityNotice: 'Token 和私钥只在当前页面内存中处理，不会上传或保存。只有与 issuer 公钥匹配的 PKCS#8 私钥才能生成可验证 Token。',
     inputTitle: '输入 Token', inputHint: '粘贴完整的 Header.Payload.Signature 字符串后点击解析。', parse: '解析 Token', tokenPlaceholder: '请粘贴 JWT Token',
     resultTitle: '解析结果', resultHint: '以下信息来自 Token Payload；仅套餐字段可编辑。', email: '邮箱', accountId: '账号 ID', userId: '用户 ID', algorithm: '签名算法', issuedAt: '签发时间', expiresAt: '过期时间', notSet: '未设置',
-    planType: 'chatgpt_plan_type', planPlaceholder: '例如 plus、pro、team', generate: '生成新 Token', generatedTitle: '新 Token', generatedHint: '新 Token 保留原签名段，仅用于调试和比对 Payload。', copy: '复制', signatureWarning: 'Payload 已修改，原 RS256 签名与新内容不匹配；请勿将此 Token 用作登录或 API 认证。',
+    keyNotice: '请粘贴 issuer 的 PKCS#8 RSA 私钥。私钥只用于本次浏览器内签名，不会上传或保存。', privateKey: 'Issuer 私钥', privateKeyPlaceholder: '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----',
+    planType: 'chatgpt_plan_type', planPlaceholder: '例如 plus、pro、team', generate: '生成并签名 Token', generatedTitle: '已签名 Token', generatedHint: '此 Token 使用输入的 issuer 私钥重新生成 RS256 签名。', copy: '复制', signatureReady: '签名已生成；只有对应公钥的验证方才能接受此 Token。',
     parseSuccess: 'Token 解析成功', parseFailed: 'Token 解析失败', planMissing: 'Token 中未找到套餐字段，请输入新的套餐后生成。', generateSuccess: '新 Token 已生成', generateFailed: '新 Token 生成失败', copied: 'Token 已复制', copyFailed: '复制失败，请检查浏览器剪贴板权限。'
   },
   dashboard: {
