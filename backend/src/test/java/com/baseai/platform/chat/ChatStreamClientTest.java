@@ -43,7 +43,9 @@ class ChatStreamClientTest {
         });
         server.start();
         var management = mock(LlmManagementService.class);
-        when(management.resolveActive("chat", "text_model")).thenReturn(new LlmManagementService.WorkerRoute(List.of(), false, true));
+        var candidate = new LlmManagementService.WorkerCandidate("test-provider", "http://provider.example",
+            List.of("key"), "test-model", 2, "PROVIDER", 30, null, null, List.of("text_model"));
+        when(management.resolveActive("chat", "text_model")).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), false, true));
         traces = mock(TaskTraceService.class);
         usage = mock(LlmUsageService.class);
         when(usage.start(any())).thenReturn("usage-id");
@@ -61,8 +63,10 @@ class ChatStreamClientTest {
     @Test void deliversBeforeCompletion() {
         response = "data: {\"type\":\"done\",\"model\":\"test-model\",\"totalTokens\":3}\n\n";
         List<String> events = new ArrayList<>();
-        client.stream(turn(), event -> { events.add(event.path("type").asText()); delivered.countDown(); });
-        assertEquals(List.of("delta", "done"), events);
+        List<com.fasterxml.jackson.databind.JsonNode> payloads = new ArrayList<>();
+        client.stream(turn(), event -> { events.add(event.path("type").asText()); payloads.add(event); delivered.countDown(); });
+        assertEquals(List.of("model", "delta", "done"), events);
+        assertEquals("test-model", payloads.get(0).path("model").asText());
         assertTrue(requestBody.contains("\"role\":\"user\""));
         assertTrue(requestBody.contains("\"model_type\":\"text_model\""));
         verify(traces).updatePython(anyString(), eq("SUCCESS"), isNull(), isNull());
