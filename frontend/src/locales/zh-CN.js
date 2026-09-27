@@ -67,7 +67,7 @@ export default {
     expand: '展开侧边栏',
     theme: '侧边栏主题',
     themes: { midnight: '暗夜蓝', cloud: '云雾白', aurora: '极光紫' },
-    items: { aiVideo: 'AI视频', aiVideoDashboard: '工作台首页', aiVideoContent: '内容创作', aiVideoAssets: '资产中心', aiVideoGeneration: '生成中心', aiVideoPublishing: '发布中心', aiVideoProjects: '项目管理', aiVideoScripts: '剧本管理', aiVideoStoryboards: '分镜管理', aiVideoCharacters: '角色资产', aiVideoScenes: '场景资产', aiVideoItems: '物品资产', aiVideoCostumes: '服装造型', aiVideoMotions: '动作表情', aiVideoStyles: '画风模板', aiVideoVoices: '声音管理', aiVideoSounds: '音乐音效', aiVideoTasks: '生成任务', aiVideoRenders: '视频合成', aiVideoVideos: '成片管理', aiVideoReviews: '审核管理', aiVideoPublishes: '发布管理', aiVideoAnalytics: '数据分析', ai: 'AI 能力', aiChat: 'AI 对话', automation: '自动化', workflow: '工作流', operations: '运维管理', monitoring: '监控审计', system: '系统管理', access: '访问控制', organization: '组织管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSources: '数据源管理', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowCanvas: '画布管理' }
+    items: { aiVideo: 'AI视频', aiVideoDashboard: '工作台首页', aiVideoContent: '内容创作', aiVideoAssets: '资产中心', aiVideoGeneration: '生成中心', aiVideoPublishing: '发布中心', aiVideoProjects: '项目管理', aiVideoScripts: '剧本管理', aiVideoStoryboards: '分镜管理', aiVideoCharacters: '角色资产', aiVideoScenes: '场景资产', aiVideoItems: '物品资产', aiVideoCostumes: '服装造型', aiVideoMotions: '动作表情', aiVideoStyles: '画风模板', aiVideoVoices: '声音管理', aiVideoSounds: '音乐音效', aiVideoTasks: '生成任务', aiVideoRenders: '视频合成', aiVideoVideos: '成片管理', aiVideoReviews: '审核管理', aiVideoPublishes: '发布管理', aiVideoAnalytics: '数据分析', ai: 'AI 能力', aiChat: 'AI 对话', packageAdjustment: '套餐调整', automation: '自动化', workflow: '工作流', operations: '运维管理', monitoring: '监控审计', system: '系统管理', access: '访问控制', organization: '组织管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSources: '数据源管理', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowCanvas: '画布管理' }
   },
   common: {
     confirm: '确认',
@@ -146,6 +146,14 @@ export default {
     invalidCredentials: '账号或密码错误',
     accountDisabled: '账号已停用',
     userNotFound: '登录用户不存在'
+  },
+  packageAdjustment: {
+    eyebrow: 'JWT 套餐工具', title: '套餐调整', description: '解析 JWT 中的 ChatGPT 套餐字段，并生成修改后的 Token。',
+    securityNotice: 'Token 只在当前页面内存中处理，不会上传或保存。修改 Payload 后原 RS256 签名将失效，生成结果不能作为有效认证凭证。',
+    inputTitle: '输入 Token', inputHint: '粘贴完整的 Header.Payload.Signature 字符串后点击解析。', parse: '解析 Token', tokenPlaceholder: '请粘贴 JWT Token',
+    resultTitle: '解析结果', resultHint: '以下信息来自 Token Payload；仅套餐字段可编辑。', email: '邮箱', accountId: '账号 ID', userId: '用户 ID', algorithm: '签名算法', issuedAt: '签发时间', expiresAt: '过期时间', notSet: '未设置',
+    planType: 'chatgpt_plan_type', planPlaceholder: '例如 plus、pro、team', generate: '生成新 Token', generatedTitle: '新 Token', generatedHint: '新 Token 保留原签名段，仅用于调试和比对 Payload。', copy: '复制', signatureWarning: 'Payload 已修改，原 RS256 签名与新内容不匹配；请勿将此 Token 用作登录或 API 认证。',
+    parseSuccess: 'Token 解析成功', parseFailed: 'Token 解析失败', planMissing: 'Token 中未找到套餐字段，请输入新的套餐后生成。', generateSuccess: '新 Token 已生成', generateFailed: '新 Token 生成失败', copied: 'Token 已复制', copyFailed: '复制失败，请检查浏览器剪贴板权限。'
   },
   dashboard: {
     tasks24h: '任务总数', success24h: '成功任务', failed24h: '失败任务', running: '当前运行中',

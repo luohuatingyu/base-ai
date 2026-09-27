@@ -1,0 +1,69 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+import { buildTokenWithPlan, formatJwtTimestamp, parseJwtToken } from '../src/utils/jwtToken.js'
+import { buildAccessibleNavigation, localizeMenuName } from '../src/utils/navigation.js'
+import zhCN from '../src/locales/zh-CN.js'
+
+const routeSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
+const viewSource = readFileSync(new URL('../src/views/PackageAdjustmentView.vue', import.meta.url), 'utf8')
+
+function encode(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value))
+  let binary = ''
+  bytes.forEach(byte => { binary += String.fromCharCode(byte) })
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function sampleToken(auth = { chatgpt_account_id: 'account-1', chatgpt_user_id: 'user-1', chatgpt_plan_type: 'plus' }) {
+  return `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode({ email: 'person@example.com', iat: 1700000000, exp: 1700003600, 'https://api.openai.com/auth': auth })}.signature-part`
+}
+
+test('解析 JWT 并提取套餐和关键账户信息', () => {
+  const parsed = parseJwtToken(sampleToken())
+  assert.equal(parsed.header.alg, 'RS256')
+  assert.equal(parsed.payload.email, 'person@example.com')
+  assert.equal(parsed.auth.chatgpt_account_id, 'account-1')
+  assert.equal(parsed.planType, 'plus')
+  assert.equal(parsed.signature, 'signature-part')
+})
+
+test('非法 JWT 结构、编码和 JSON 会被拒绝', () => {
+  assert.throws(() => parseJwtToken('only.two'), /Header\.Payload\.Signature/)
+  assert.throws(() => parseJwtToken('%%%.' + encode({}) + '.sig'), /Header 不是有效的 Base64URL/)
+  assert.throws(() => parseJwtToken(`${encode({})}.not-json.sig`), /Payload 不是有效的 JSON/)
+})
+
+test('只修改套餐字段并保留原签名段', () => {
+  const parsed = parseJwtToken(sampleToken())
+  const nextToken = buildTokenWithPlan(parsed, 'team')
+  const next = parseJwtToken(nextToken)
+  assert.equal(next.planType, 'team')
+  assert.equal(next.signature, parsed.signature)
+  assert.equal(next.payload.email, parsed.payload.email)
+  assert.throws(() => buildTokenWithPlan(parsed, '  '), /套餐类型不能为空/)
+})
+
+test('缺少 auth 对象时仍可创建套餐字段', () => {
+  const parsed = parseJwtToken(`${encode({ alg: 'RS256' })}.${encode({ sub: 'subject' })}.sig`)
+  const next = parseJwtToken(buildTokenWithPlan(parsed, 'free'))
+  assert.equal(next.planType, 'free')
+  assert.equal(next.payload.sub, 'subject')
+})
+
+test('时间戳格式化支持有效值和无效值', () => {
+  assert.match(formatJwtTimestamp(1700000000), /2023/)
+  assert.equal(formatJwtTimestamp('unknown'), '')
+})
+
+test('套餐调整页面已接入受权限控制的动态导航', () => {
+  const menus = [
+    { id: 1, parentId: null, type: 'CATALOG', path: '/ai', permission: 'ai:catalog', name: 'AI 能力', sortOrder: 30 },
+    { id: 2, parentId: 1, type: 'MENU', path: '/package-adjustment', permission: 'ai:package-adjustment:list', name: '套餐调整', sortOrder: 12 }
+  ]
+  const visible = buildAccessibleNavigation(menus, ['/package-adjustment'], permission => permission === 'ai:package-adjustment:list')
+  assert.deepEqual(visible.map(item => item.path), ['/package-adjustment'])
+  assert.match(routeSource, /path: 'package-adjustment'/)
+  assert.match(viewSource, /parseJwtToken/)
+  assert.equal(localizeMenuName(menus[1], key => key === 'nav.items.packageAdjustment' ? zhCN.nav.items.packageAdjustment : key), '套餐调整')
+})

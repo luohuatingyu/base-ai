@@ -36,6 +36,7 @@ import ServersView from '../views/ServersView.vue'
 import DeviceAgentsView from '../views/DeviceAgentsView.vue'
 import DeviceAgentGuideView from '../views/DeviceAgentGuideView.vue'
 import DeviceAgentOnboardingView from '../views/DeviceAgentOnboardingView.vue'
+import PackageAdjustmentView from '../views/PackageAdjustmentView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -64,6 +65,7 @@ const router = createRouter({
         { path: 'ai-video/publishes', component: AiVideoView, meta: { permission: 'ai:video:publish:list', navigable: true, desc: 'aiVideo.sections.publishes.description' } },
         { path: 'ai-video/analytics', component: AiVideoView, meta: { permission: 'ai:video:analytics:list', navigable: true, desc: 'aiVideo.sections.analytics.description' } },
         { path: 'ai-chat', component: AiChatView, meta: { permission: 'ai:chat:invoke', navigable: true, desc: 'chat.description' } },
+        { path: 'package-adjustment', component: PackageAdjustmentView, meta: { permission: 'ai:package-adjustment:list', navigable: true, desc: 'packageAdjustment.description' } },
         { path: 'users', component: UsersView, meta: { permission: 'system:user:list', navigable: true, desc: 'users.description' } },
         { path: 'roles', component: RolesView, meta: { permission: 'system:role:list', navigable: true, desc: 'roles.description' } },
         { path: 'menus', component: MenusView, meta: { permission: 'system:menu:list', navigable: true, desc: 'menus.description' } },
