@@ -1,5 +1,39 @@
 # 最近分支覆盖测试报告
 
+## AI视频工作台完整功能（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `78d6725`（Implement AI video workspace workflow）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 将 AI视频页面从空白骨架升级为可操作工作台，覆盖项目、剧本、分镜、角色、场景、物品、服装、动作、画风、声音、音效、生成任务、渲染、成片、审核和发布。
+- 新增 MySQL Flyway v44 数据表、统一资源 API、任务取消/重试、审核和发布完成动作，并按资产分类实施细粒度权限和项目归属隔离。
+- 新增完整使用文档 `docs/AI_VIDEO_GUIDE.md`；未新增第三方依赖，未修改第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 工作台可以读取统计和资源列表 | 容器端到端：管理员登录并请求 `/api/ai-video/overview`、`projects`、`assets?assetType=ITEM` | 返回统计、项目和按资产分类过滤的物品列表 | 通过；正常、兼容 |
+| 项目和物品资产可以持久化 | 容器端到端：创建项目、创建 ITEM 资产、读取列表、删除项目 | HTTP 200，返回生成编号，级联清理临时数据 | 通过；正常、边界、回归 |
+| 任务生命周期可操作 | 容器端到端：创建 VIDEO 任务，执行 cancel、retry | 状态按 `QUEUED → CANCELLED → QUEUED` 变化 | 通过；正常、状态冲突 |
+| 资产分类权限不能越权 | Java `AiVideoServiceTest`：ITEM create 权限访问 ITEM/SCENE 两种分类 | ITEM 允许，SCENE 返回 403；未知资源返回业务错误 | 4/4 通过；权限、安全、异常、边界 |
+| 前端菜单和工作台操作真实接入 | `ai-video-navigation.test.mjs`：路由、API 导出、创建/取消/重试/发布调用 | 页面不再依赖静态空白状态，所有资源操作绑定真实 API | 4/4 通过；正常、兼容、回归 |
+
+### 实际执行结果
+
+- Docker Maven 3.9.9 / Java 17 构建阶段执行 `mvn -B -ntp package`：964/964 通过，失败 0、错误 0、跳过 0；新增 `AiVideoServiceTest` 4/4 通过。
+- `cd frontend && npm test -- --runInBand`：Lint、类型检查、覆盖测试 482/482、E2E 3/3 通过，失败/跳过 0；覆盖率行 98.46%、分支 81.61%、函数 95.42%。
+- `node --test frontend/test/ai-video-navigation.test.mjs`：4/4 通过。
+- `APP_IMAGE_REVISION=ai-video-workspace docker compose up --build -d`：全部 9 个自建镜像构建成功，后端测试阶段通过；整栈启动命令因既有 `docker-socket-proxy` unhealthy 退出 1。随后直接启动已创建的前端容器，Backend、Frontend、Document Parser、Python Worker 均 healthy，前端 `/health` 返回 HTTP 200。
+- 容器端到端接口冒烟：管理员登录 HTTP 200；overview HTTP 200；项目/物品资产创建和列表 HTTP 200；任务创建、取消、重试及项目删除 HTTP 200；临时数据已清理。Flyway 日志确认 schema version 44。
+- `git diff --check` 通过；未执行 `git push`，临时 Cookie 和接口响应文件均已清理。
+
+### 已知问题与下次测试建议
+
+- 当前工作台负责项目数据、任务队列和状态编排；具体供应商执行器需要后续接入 Worker/Provider Adapter，任务不会伪造成功状态。文档已说明接入点和状态约束。
+- 本机 Docker socket proxy 的 rootless `/_ping` 健康检查持续返回 503，导致 Compose 命令整体失败；不影响已经健康运行的 Backend、Frontend、Document Parser 和 Python Worker。修复该基础设施检查后，应重新执行整栈启动和健康验收。
+- 后续增加供应商适配器、任务消费进度或真实视频文件生成时，重跑后端完整套件、前端完整套件、数据库迁移和真实任务端到端测试，并更新本报告基准点。
+
 ## Token 消耗记录与流式中断统计修复（2026-09-27）
 
 ### Git 基准与变更范围
