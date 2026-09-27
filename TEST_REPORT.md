@@ -4,7 +4,7 @@
 
 ### Git 基准与变更范围
 
-- Commit: `ad64f78`（Test public stream adapter）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- Commit: `d023be0`（Fix non-streaming failure assertion）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
 - 会话发送请求和公开 `/api/ai/chat` 请求均支持顶层 `stream` 参数：会话接口缺省为流式，公开接口缺省为非流式，以兼容既有调用。
 - `stream=true` 返回立即刷新的 SSE `start/delta/heartbeat/done/error` 事件；`stream=false` 返回一次性 JSON，并持久化会话消息、模型和 Token 元数据。
 - 公开流式请求复用现有 `ChatStreamClient` 的路由、重试、断流处理和 Token 记录；未新增依赖、配置或数据库迁移。
@@ -13,15 +13,16 @@
 
 | 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
 | --- | --- | --- | --- |
-| 公开聊天可由参数切换 JSON/SSE | Java `AiChatControllerTest`，分别发送 `stream=false/true` | false 返回 JSON；true 返回 `text/event-stream` 且包含 start、delta、done | 2/2 通过；正常、兼容 |
+| 公开聊天可由参数切换 JSON/SSE | Java `AiChatControllerTest`，分别发送 `stream=false/true` 并模拟上游失败 | false 返回 JSON；true 返回 `text/event-stream`、包含 start/delta/done；失败只返回安全 error | 3/3 通过；正常、异常、兼容 |
 | 会话接口可由参数切换并保持持久化 | Java `ChatConversationServiceTest.controllerReturnsJsonForNonStreamingRequest`；会话请求 `stream=false` | 返回内容和 Token，助手消息状态为 `COMPLETED` 并保存 metadata | 通过；正常、回归 |
+| 非流式会话失败可恢复 | Java `ChatConversationServiceTest.controllerMarksNonStreamingFailureAsInterrupted`；模型抛出异常 | 助手消息标记 `INTERRUPTED`，不保存异常正文 | 通过；异常、安全、状态冲突 |
 | 公开流式请求使用真实增量读取 | Java `ChatStreamClientTest.streamsPublicChatRequest`；模拟 Worker SSE | 温度参数下发，事件逐个消费，用量来源为 `CHAT_STREAM` | 通过；正常、协议兼容 |
 | 中断和 Token 统计不回归 | 既有 `ChatStreamClientTest`、`LlmUsageServiceTest`、Python Worker 测试 | 中断仍保留已知 Token，别名和总数补算规则不变 | 通过；异常、边界、回归 |
 
 ### 实际执行结果
 
-- Maven 3.9 / Java 17 容器执行 `mvn -q -Dtest=AiChatControllerTest,ChatConversationServiceTest,ChatStreamClientTest,LlmUsageServiceTest test`：首次 14 个相关旧测试加新增用例全部通过；追加公开适配器后定向套件 39/39 通过。
-- Maven 3.9 / Java 17 容器执行 `mvn -q test`：979/979 通过，失败 0、错误 0、跳过 0。
+- Maven 3.9 / Java 17 容器执行 `mvn -q -Dtest=AiChatControllerTest,ChatConversationServiceTest,ChatStreamClientTest test`：42/42 通过，失败 0、错误 0、跳过 0。
+- Maven 3.9 / Java 17 容器执行 `mvn -q test`：981/981 通过，失败 0、错误 0、跳过 0。
 - Python 3.12 镜像执行 `python -m pytest -q`：87/87 通过，失败 0、错误 0、跳过 0。
 - `docker compose up --build -d` 已按要求执行并重试；前端、Worker、插件和后端 Maven 构建阶段通过，但后端运行镜像安装 `curl` 时 Ubuntu `ports.ubuntu.com` 的 `resolute-updates/backports` 持续返回 502，整栈未启动。无端口占用问题，未修改 Dockerfile 绕过外部源故障。
 - `git diff --check` 通过；未执行 `git push`，未留下临时测试或调试文件。
