@@ -95,7 +95,7 @@ def test_accepts_done_sentinel_without_finish_reason_or_trailing_newline():
 
 
 @pytest.mark.parametrize("body", ["data: nope\n\n", "data: " + "x" * 2000 + "\n\n"])
-def test_rejects_invalid_missing_finish_and_oversize(body):
+def test_rejects_invalid_and_oversize_streams(body):
     """畸形响应和超限不能返回成功。"""
     with pytest.raises(RuntimeError):
         asyncio.run(collect(body))
