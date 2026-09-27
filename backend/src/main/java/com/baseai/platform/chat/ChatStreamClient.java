@@ -135,6 +135,15 @@ public class ChatStreamClient {
         String feature = settings.featureCode() == null || settings.featureCode().isBlank() ? "chat" : settings.featureCode();
         var route = settings.modelId() == null ? management.resolveActive(feature, settings.modelType()) :
             management.resolveModel(settings.modelId(), settings.modelType(), Boolean.TRUE.equals(settings.enableThinking()), settings.thinkingLevel());
+        if (route != null && route.candidates() != null && !route.candidates().isEmpty()) {
+            var selected = route.candidates().get(0);
+            if (selected != null && selected.model() != null && !selected.model().isBlank()) {
+                // 路由在连接上游前已经确定优先模型，先通知前端；done 事件仍以实际上游模型为准。
+                var modelEvent = mapper.createObjectNode().put("type", "model").put("model", selected.model());
+                if (selected.providerCode() != null) modelEvent.put("providerCode", selected.providerCode());
+                emit(consumer, modelEvent);
+            }
+        }
         AtomicBoolean streamStarted = new AtomicBoolean(false);
         Supplier<Void> supplier = () -> {
             executeStream(turn, event -> {
