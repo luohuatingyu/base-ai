@@ -88,6 +88,18 @@ class ChatStreamClientTest {
         assertEquals(7L, completion.getValue().totalTokens());
     }
 
+    /** 公开聊天适配器复用真实 SSE 读取，并把请求温度和来源传给 Worker/用量记录。 */
+    @Test void streamsPublicChatRequest() {
+        response = "data: {\"type\":\"done\",\"model\":\"test-model\",\"totalTokens\":3}\n\n";
+        var request = new AiChatClient.ChatRequest("chat", "text_model",
+            List.of(new AiChatClient.Message("user", "hello")), 0.7D, List.of(), false, "MEDIUM", false);
+        client.stream(request, "CHAT_STREAM", event -> delivered.countDown());
+        assertTrue(requestBody.contains("\"temperature\":0.7"));
+        var start = org.mockito.ArgumentCaptor.forClass(LlmUsageService.Start.class);
+        verify(usage).start(start.capture());
+        assertEquals("CHAT_STREAM", start.getValue().source());
+    }
+
     /** Agent 模式先执行授权工作流，再把工具结果交给模型并输出最终回答。 */
     @Test void executesAuthorizedWorkflowToolBeforeFinalAnswer() {
         var agent = mock(com.baseai.platform.workflow.WorkflowAgentClient.class);
