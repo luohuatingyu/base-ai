@@ -4,7 +4,7 @@
 
 ### Git 基准与变更范围
 
-- Commit: `1d57cf8`（Add JWT plan adjustment tool）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- Commit: `457fcff`（Harden JWT timestamp formatting）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
 - 新增“套餐调整”动态菜单和受权限保护的前端页面；页面仅在浏览器内解析 JWT，回显邮箱、账号、时间和 `chatgpt_plan_type`，修改套餐后重新编码 Header/Payload 并保留原签名段。
 - Token 不上传、不落库；页面明确提示 Payload 改动会使原 RS256 签名失效，生成结果仅用于调试和 Payload 比对。
 - 未新增依赖、数据库表、后端接口或第三方代码。
@@ -22,6 +22,7 @@
 ### 实际执行结果
 
 - `node --test frontend/test/package-adjustment.test.mjs`：6/6 通过。
+- 时间戳极大值回归：`Number.MAX_VALUE` 安全返回空值，不会触发日期格式化异常。
 - `npm --prefix frontend test`：Lint、类型检查、覆盖测试 559/559、E2E 3/3 通过；失败 0、错误 0、跳过 0；覆盖率行 98.34%、分支 82.30%、函数 95.67%。
 - `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：971/971 通过，失败 0、错误 0、跳过 0。
 - `docker compose up --build -d`：9 个自建镜像构建成功；Backend 镜像内 Maven 测试 971/971 通过，Frontend 构建成功。统一启动因既有 `docker-socket-proxy` 健康检查不通过而退出；随后单独启动新构建的 Backend/Frontend，容器健康检查均为 healthy，两个 `/health` 均返回 `{"status":"UP"}`。
