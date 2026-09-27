@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 class AiChatControllerTest {
     /** stream=false 或缺省时返回一次性 JSON，不调用流式客户端。 */
     @Test
-    void returnsJsonWhenStreamingDisabled() {
+    void returnsJsonWhenStreamingDisabled() throws Exception {
         AiChatClient chat = mock(AiChatClient.class);
         when(chat.chat(any(), any(), anyList(), any(), any(), any(), any()))
             .thenReturn(new AiChatClient.ChatResult("answer", "model-a", 2, 3, 5));
