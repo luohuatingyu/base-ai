@@ -59,13 +59,63 @@ export function parseJwtToken(token) {
   }
 }
 
-/** 修改套餐字段并重新编码 JWT；签名保持原值，因此结果不能通过原 RS256 验证。 */
-export function buildTokenWithPlan(parsedToken, planType) {
+/** 将 PKCS#8 PEM 私钥转换为 Web Crypto 可导入的 DER 字节。 */
+function decodePrivateKeyPem(privateKeyPem) {
+  const normalized = String(privateKeyPem || '').trim()
+  const match = normalized.match(/^-----BEGIN PRIVATE KEY-----([\s\S]+)-----END PRIVATE KEY-----$/)
+  if (!match) throw new Error('私钥必须是 PKCS#8 PEM 格式（BEGIN PRIVATE KEY）')
+  const body = match[1].replace(/\s+/g, '')
+  if (!body || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) throw new Error('私钥不是有效的 Base64 编码')
+  let binary
+  try {
+    binary = atob(body)
+  } catch {
+    throw new Error('私钥不是有效的 Base64 编码')
+  }
+  return Uint8Array.from(binary, character => character.charCodeAt(0))
+}
+
+/** 使用当前浏览器的 Web Crypto API 导入 RSA 私钥。 */
+async function importSigningKey(privateKeyPem) {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) throw new Error('当前浏览器不支持 Web Crypto，无法生成 RS256 Token')
+  const keyData = decodePrivateKeyPem(privateKeyPem)
+  try {
+    return await subtle.importKey('pkcs8', keyData, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign'])
+  } catch (error) {
+    throw new Error('无法导入 RSA 私钥，请确认是与 issuer 公钥匹配的 PKCS#8 私钥', { cause: error })
+  }
+}
+
+/** 使用 issuer 私钥为 JWT 内容生成 RS256 签名。 */
+async function signRs256(content, privateKeyPem) {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) throw new Error('当前浏览器不支持 Web Crypto，无法生成 RS256 Token')
+  const key = await importSigningKey(privateKeyPem)
+  const signature = await subtle.sign(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    key,
+    new TextEncoder().encode(content)
+  )
+  return encodeBase64UrlBytes(new Uint8Array(signature))
+}
+
+/** 将二进制签名编码为不含填充符的 Base64URL 字符串。 */
+function encodeBase64UrlBytes(bytes) {
+  let binary = ''
+  bytes.forEach(byte => { binary += String.fromCharCode(byte) })
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+/** 修改套餐字段并使用 issuer 私钥重新生成可验签的 RS256 JWT。 */
+export async function buildTokenWithPlan(parsedToken, planType, privateKeyPem) {
   if (!parsedToken?.header || !parsedToken?.payload || typeof parsedToken.signature !== 'string') {
     throw new Error('请先解析有效的 Token')
   }
+  if (parsedToken.header.alg !== 'RS256') throw new Error('仅支持 Header.alg 为 RS256 的 Token')
   const nextPlan = String(planType || '').trim()
   if (!nextPlan) throw new Error('套餐类型不能为空')
+  if (!String(privateKeyPem || '').trim()) throw new Error('请提供 issuer 的 PKCS#8 RSA 私钥')
   const payload = JSON.parse(JSON.stringify(parsedToken.payload))
   const currentAuth = payload[AUTH_CLAIM]
   const auth = currentAuth && typeof currentAuth === 'object' && !Array.isArray(currentAuth)
@@ -73,7 +123,8 @@ export function buildTokenWithPlan(parsedToken, planType) {
     : {}
   auth.chatgpt_plan_type = nextPlan
   payload[AUTH_CLAIM] = auth
-  return `${encodeBase64Url(parsedToken.header)}.${encodeBase64Url(payload)}.${parsedToken.signature}`
+  const content = `${encodeBase64Url(parsedToken.header)}.${encodeBase64Url(payload)}`
+  return `${content}.${await signRs256(content, privateKeyPem)}`
 }
 
 /** 将 JWT Unix 秒时间戳转换为本地化日期文本，无法解析时返回空字符串。 */
