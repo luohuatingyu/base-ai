@@ -1,5 +1,38 @@
 # 最近分支覆盖测试报告
 
+## 首页模型使用监控显示优化（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `ba94ceb`（Fix dashboard usage test import，功能实现提交 `ded96d9`）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 修复模型使用监控首 Token 延迟的时区混算：首 Token 时间改为使用 Java 调用时间绑定，并对延迟计算增加非负保护；汇总查询忽略历史负延迟记录。
+- 首页模型使用面板显示标题和说明；模型排行、近期错误无数据时直接展示空状态；延迟格式化拒绝负数和非法值；筛选区、双列区域和操作区补充窄屏换行规则。
+- 未修改数据库结构、接口路径、权限逻辑或第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 首 Token 平均值不再被时区差异污染 | Java `LlmUsageServiceTest.recordsFirstTokenWithBoundTimestampAndClampsNegativeLatency`；固定首 Token 时间并检查 SQL 参数 | 首 Token 时间和延迟计算使用同一绑定时间，负延迟被限制为 0 | 通过；正常、边界、兼容 |
+| 历史负延迟不再污染首页平均值 | Java `LlmUsageServiceTest.summarySeparatesWhereKeywordFromFilters`；检查汇总 SQL | `AVG` 只统计非负首 Token 延迟 | 通过；异常、回归 |
+| 首页无数据区域有明确反馈 | 前端 `dashboard-usage.test.mjs`；检查模型排行和错误排行模板 | 无数据时隐藏空表并显示对应空状态 | 通过；边界、异常 |
+| 首页指标和筛选区适配窄屏 | 前端 `dashboard-usage.test.mjs`；检查响应式 CSS 规则 | 双列收缩为单列，筛选控件和操作按钮换行且不溢出 | 通过；兼容、回归 |
+
+### 实际执行结果
+
+- `node --test frontend/test/dashboard-usage.test.mjs`：3/3 通过。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 485/485、E2E 3/3 通过；覆盖率行 98.46%、分支 81.58%、函数 95.42%。
+- `docker run --rm -v "$PWD/backend:/workspace" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=LlmUsageServiceTest test`：5/5 通过。
+- `docker run --rm -v "$PWD/backend:/workspace" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：971/971 通过，失败 0、错误 0、跳过 0。
+- `docker compose up --build -d`：全部 9 个自建镜像构建成功；Backend、Frontend、Python Worker、Document Parser、Outbound Gateway 已启动并健康，Backend readiness 和 Frontend `/health` 返回 `{"status":"UP"}`。整栈命令因既有 `docker-socket-proxy` unhealthy 导致依赖链失败，Adapter Manager 持续重启；已单独启动新构建 Frontend 容器完成首页探活。
+- `git diff --check` 通过；未执行 `git push`，未留下临时测试或调试文件。
+
+### 已知问题与下次测试建议
+
+- `docker-socket-proxy` 的既有 rootless `/_ping` 健康检查仍返回 unhealthy，导致 Adapter Manager、Deployment Agent、插件 Worker 的 Compose 依赖链未完成整栈启动；不影响本次前后端代码测试和已健康核心服务。
+- 已存在的历史负延迟记录不会被回写，汇总会过滤这些值；配置可用模型后应再次执行真实流式调用，确认新记录的首 Token 延迟为非负值。
+- 后续修改模型使用记录、时间字段或 Dashboard 布局时，重跑 Java/Python/前端相关套件和 Compose 健康检查，并更新本报告基准点。
+
 ## AI视频页面加载状态修复（2026-09-27）
 
 ### Git 基准与变更范围
