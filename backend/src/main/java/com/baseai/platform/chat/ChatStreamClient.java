@@ -112,7 +112,12 @@ public class ChatStreamClient {
 
     /** 为公开聊天接口复用同一套 SSE、重试和 Token 记录逻辑。 */
     public void stream(AiChatClient.ChatRequest request, String source, EventConsumer consumer) {
-        var settings = new ChatConversationService.Settings(request.modelType(), request.featureCode(), null,
+        stream(request, null, source, consumer);
+    }
+
+    /** 为公开聊天接口保留指定模型直连能力。 */
+    public void stream(AiChatClient.ChatRequest request, Long modelId, String source, EventConsumer consumer) {
+        var settings = new ChatConversationService.Settings(request.modelType(), request.featureCode(), modelId,
             request.enableThinking(), request.thinkingLevel(), "");
         var turn = new ChatConversationService.Turn(null, null, null, request.messages(), settings);
         stream(turn, consumer, source, request.temperature());
