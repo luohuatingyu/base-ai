@@ -54,3 +54,9 @@ test('AI视频工作台接入真实资源和任务操作', () => {
   assert.match(view, /route\.query\.mode/)
   assert.match(view, /openCreate\(mode\)/)
 })
+
+test('AI视频页面避免请求卡住导致加载状态无法结束', () => {
+  assert.match(view, /const loadTimeoutMs = 12000/)
+  assert.match(view, /withLoadTimeout\(listAiVideoResource\(currentResource, currentParams\)/)
+  assert.match(view, /watch\(\(\) => route\.fullPath/)
+})

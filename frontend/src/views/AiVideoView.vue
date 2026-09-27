@@ -143,6 +143,7 @@ const formRef = ref(null)
 const keyword = ref('')
 const statusFilter = ref('')
 let loadRequestId = 0
+const loadTimeoutMs = 12000
 const form = reactive({})
 
 // 路由兼容测试保留 items: 'items' 这一业务路径标识；接口分类仍使用 ITEM 枚举。
@@ -225,21 +226,47 @@ function canListProjects() {
   return auth.isAdmin || auth.hasPermission('ai:video:project:list')
 }
 
+/** 为页面读取增加上限，后端异常或网络半开连接时及时交给页面错误态处理。 */
+function withLoadTimeout(promise, label) {
+  let timer
+  const timeout = new Promise((resolve, reject) => {
+    timer = window.setTimeout(() => reject(new Error(`${label} load timeout`)), loadTimeoutMs)
+  })
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer))
+}
+
 /** 加载工作台统计、项目选择项和当前业务列表，避免无关权限导致整页失败。 */
 async function load() {
   const requestId = ++loadRequestId
   loading.value = true
   loadError.value = false
+  if (!isDashboard.value && !isAnalytics.value) rows.value = []
+
+  const dashboardPermission = auth.isAdmin || auth.hasPermission('ai:video:dashboard:list')
+  const canReadCurrent = !isDashboard.value && !isAnalytics.value && can('list')
+  const currentResource = current.value.resource
+  const currentParams = assetType.value ? { assetType: assetType.value } : {}
+
+  // 项目选项只服务于弹窗，独立加载失败不应阻塞当前页面列表。
+  if (canListProjects()) {
+    withLoadTimeout(listAiVideoResource('projects'), 'projects')
+      .then(data => { if (requestId === loadRequestId) projects.value = data })
+      .catch(() => {})
+  }
+
+  let criticalRequest
+  if ((isDashboard.value || isAnalytics.value) && dashboardPermission) {
+    criticalRequest = withLoadTimeout(getAiVideoOverview(), 'overview')
+      .then(data => { if (requestId === loadRequestId) Object.assign(overview, data) })
+  } else if (canReadCurrent) {
+    criticalRequest = withLoadTimeout(listAiVideoResource(currentResource, currentParams), currentResource)
+      .then(data => { if (requestId === loadRequestId) rows.value = data })
+  }
+
   try {
-    const dashboardPermission = auth.isAdmin || auth.hasPermission('ai:video:dashboard:list')
-    if ((isDashboard.value || isAnalytics.value) && dashboardPermission) Object.assign(overview, await getAiVideoOverview())
-    if (canListProjects()) projects.value = await listAiVideoResource('projects')
-    if (!isDashboard.value && !isAnalytics.value && can('list')) {
-      rows.value = await listAiVideoResource(current.value.resource, assetType.value ? { assetType: assetType.value } : {})
-    } else if (!isDashboard.value && !isAnalytics.value) {
-      rows.value = []
-    }
-    if (route.query.mode && !isDashboard.value && !isAnalytics.value && can('create')) {
+    if (criticalRequest) await criticalRequest
+    if (requestId !== loadRequestId) return
+    if (route.query.mode && canReadCurrent && can('create')) {
       const mode = String(route.query.mode)
       openCreate(mode)
       router.replace({ query: {} })
@@ -322,7 +349,7 @@ function displayValue(value) { if (value === null || value === undefined || valu
 /** 将后端状态编码转换为可读文本。 */
 function statusLabel(value) { return value ? t(`aiVideo.statuses.${value}`) : '—' }
 
-watch(sectionKey, () => { resetFilters(); load() })
+watch(() => route.fullPath, () => { resetFilters(); load() })
 onMounted(load)
 </script>
 
