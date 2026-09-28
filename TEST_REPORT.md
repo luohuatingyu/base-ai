@@ -1,5 +1,50 @@
 # 最近分支覆盖测试报告
 
+## 资产中心与 AI 视频全模块新建引导（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `df9f530cc48d66590326ce28acd9723cec42f3c9`（Add asset guidance and AI video creation tips）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Vue 3 / Element Plus / vue-i18n：八类资产列表新增用途、准备内容、填写方法、保存后用途和名称示例；在已有项目向导基础上，为其余 15 个资源模块补充新建指南及字段提示，覆盖 AI 视频全部 16 类新建表单。
+- 中文、英文同步维护，760px 以下指南单列；示例仅作为 placeholder，不自动填充；编辑保持原表单行为。资产分类标签随语言切换更新。
+- 修改范围：AiVideoView.vue、中英语言文件、ai-video-form.test.mjs、ai-video-navigation.test.mjs；资产属性继续存入原 metadataJson。
+- `git diff 523ffb4 HEAD -- backend/src/main/java/` 无输出；没有修改后端、数据库、接口、配置或依赖，无后端重测触发变更。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件和输入 | 预期结果与场景 | 结果 |
+| --- | --- | --- | --- |
+| 所有新建入口有指南 | 真实 Vue setup + Vue I18n 组件测试；管理员分别打开 15 类新增，中英文参数化；既有项目指南用例 | 对应模块显示具体目的、准备、填写和下一步；项目专属向导保留；正常、兼容 | 通过 |
+| 八类资产内容有区分 | 组件及模板测试；characters/scenes/items/costumes/motions/styles/voices/sounds | 分类页绑定正确指南；属性字段显示对应说明，名称示例不写入表单；正常、边界 | 通过 |
+| 关键字段提示无翻译键遗漏 | 组件测试；枚举每个模块全部基础/内容/高级字段、中英文 | 每个新建字段都有实际文案，分类属性包含具体示例；正常、兼容 | 通过 |
+| 新建与编辑隔离 | 组件测试；新建后打开已有 ID、名称和自定义 JSON 的记录 | 编辑隐藏新建指南和新建示例，原 JSON 不变；回归 | 通过 |
+| 路由、语言和快捷入口正确 | 组件测试；角色切到声音分类，中切英；6 种生成类型和 2 种合成模式 | 指南和分类标签更新，快捷创建保留 taskType/configJson.mode；正常、分支、兼容 | 通过 |
+| 权限和保存行为保持 | 组件测试；无创建权限、空必填、恶意 URL、非法 JSON、20000 字符边界、提交失败、重复提交、提交期间导航 | 无权限不打开或提交；非法输入不发请求；失败保留输入；旧扩展属性、分类及请求目标保持；安全、异常、边界、回归 | 通过 |
+| 首页/分析不显示新增向导 | 组件测试；dashboard/analytics/projects/unknown 路由 | 通用向导隐藏、无不适用的资产说明；边界、兼容 | 通过 |
+| 窄屏布局与模板安全 | 模板静态测试和生产构建 | 760px 以下三列切单列，不使用 v-html；布局规则、安全 | 通过；未执行浏览器视觉验收 |
+| 新前端实际运行 | Docker 构建、启动及 HTTP 检查 | 新镜像运行，健康接口 UP，线上入口 bundle 包含新增中英文指南 | 前端通过；整栈启动受阻 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-video-form.test.mjs frontend/test/ai-video-navigation.test.mjs`：81/81 通过，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：lint、vue-tsc 类型检查、641/641 覆盖测试、3/3 服务 E2E、E2E 内置生产构建全部通过；通过率 100%，失败 0、错误 0、跳过 0。没有删除、跳过或弱化已有测试。
+- utils 覆盖率：行 98.24%、分支 82.05%、函数 95.74%；ai-video-form.js 三项均为 100%。该覆盖率范围为 src/utils，不代表 Vue 页面整体覆盖率。
+- `docker compose up --build -d`：9 个镜像构建成功，前端包含最终代码；整栈启动退出 1，docker-socket-proxy unhealthy 与 adapter-manager 依赖健康失败。没有端口冲突。
+- `docker compose up -d --no-deps frontend`：退出 0，前端启动成功。
+- `docker compose ps frontend --format '{{.Name}} {{.State}} {{.Health}}'`：baseai-local-frontend running healthy。
+- Node 内联 HTTP 验证：GET /health 返回 200 和 {"status":"UP"}；GET /ai-video/assets/characters 返回生产页面，读取其 /assets/index-DBwor106.js，断言包含“资产使用指南”“创建前先了解”“林晓 · 青年侦探”“Asset guide”，全部通过。
+- `git diff --check`：通过。未执行 git push；没有创建临时调试或临时测试文件。
+
+### 已知问题、未执行项与后续建议
+
+- 整栈启动未通过，原因与此前报告一致：Docker socket proxy / adapter-manager 环境依赖健康故障。修复该环境后重跑 `docker compose up --build -d` 与全栈健康检查；本次没有修改相关配置。
+- 未执行真实浏览器逐项点击、窄屏视觉验收及 Chrome/Safari 兼容性验证；现有 E2E 验证生产 HTTP/SSE/WebSocket 服务，不是页面点击测试。建议在八类资产页与各新建弹窗切换中英文，检查滚动、提示与保存操作。
+- 未运行后端 Maven 测试，后端无改动。Vite 保留既有 runtime-config、第三方 PURE 注释与大包体积警告；Compose 提示现有网络不是由 Compose 创建，未为此改动配置。
+- 引导描述当前真实能力：记录素材地址不等于上传，创建任务/渲染记录依赖执行服务，登记发布记录不等于向平台发布。
+- 回滚：如需撤销本次功能，可 revert df9f530 并重新执行前端测试和 Compose 构建；不涉及迁移。
+- 重测触发：改变指南文案、字段映射、分类定义、可见性、快捷入口或布局时，重跑相关 81 项及完整 npm test；后端约束变更时补充后端完整测试。
+- 正式用例保留在原测试文件；测试报告单独提交，工作区不保留本次未跟踪文件。
+
 ## 项目创建说明与引导（2026-09-28）
 
 ### Git 基准与变更范围
