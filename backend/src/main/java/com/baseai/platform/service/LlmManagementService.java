@@ -5,6 +5,7 @@ import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.domain.*;
+import com.baseai.platform.modeltype.LlmModelTypeRegistry;
 import com.baseai.platform.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.http.MediaType;
@@ -58,6 +59,9 @@ public class LlmManagementService {
 
     /** Python Worker服务客户端，用于模型连接测试 */
     private final RestClient workerClient;
+
+    /** 模型类型能力注册表，隔离不同协议的接入细节。 */
+    private final LlmModelTypeRegistry modelTypeRegistry;
     /** 经健康检查后可参与真实调用的不可变路由快照。 */
     private final AtomicReference<Map<String, WorkerRoute>> activeRoutes = new AtomicReference<>(Map.of());
 
@@ -70,11 +74,22 @@ public class LlmManagementService {
      * @param cryptoService 加密服务
      * @param workerClient Python Worker REST客户端（通过pythonWorkerRestClient限定符注入）
      */
+    @org.springframework.beans.factory.annotation.Autowired
+    public LlmManagementService(LlmProviderRepository providerRepository, LlmModelRepository modelRepository,
+                                LlmRouteRepository routeRepository, DictionaryDataRepository dictionaryDataRepository,
+                                ConfigCryptoService cryptoService,
+                                @org.springframework.beans.factory.annotation.Qualifier("pythonWorkerRestClient") RestClient workerClient,
+                                LlmModelTypeRegistry modelTypeRegistry) {
+        this.providerRepository=providerRepository;this.modelRepository=modelRepository;this.routeRepository=routeRepository;this.dictionaryDataRepository=dictionaryDataRepository;this.cryptoService=cryptoService;this.workerClient=workerClient;this.modelTypeRegistry=modelTypeRegistry;
+    }
+
+    /** 兼容既有单元测试和嵌入式调用方的构造方式。 */
     public LlmManagementService(LlmProviderRepository providerRepository, LlmModelRepository modelRepository,
                                 LlmRouteRepository routeRepository, DictionaryDataRepository dictionaryDataRepository,
                                 ConfigCryptoService cryptoService,
                                 @org.springframework.beans.factory.annotation.Qualifier("pythonWorkerRestClient") RestClient workerClient) {
-        this.providerRepository=providerRepository;this.modelRepository=modelRepository;this.routeRepository=routeRepository;this.dictionaryDataRepository=dictionaryDataRepository;this.cryptoService=cryptoService;this.workerClient=workerClient;
+        this(providerRepository, modelRepository, routeRepository, dictionaryDataRepository, cryptoService, workerClient,
+            new LlmModelTypeRegistry());
     }
 
     /**
@@ -493,17 +508,18 @@ public class LlmManagementService {
     /** 使用可选思考等级测试模型，仅允许模型自身声明的等级参与调用。 */
     public Map<String,Object> testModel(Long modelId,String thinkingLevel){
         LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound"));
-        // 生成协议尚未接入时明确拒绝，避免健康检查向聊天接口发送错误请求。
-        if(chatModelTypes(model.getSupportedModelTypes()).isEmpty())throw new BusinessException("llm.generationAdapterUnavailable");
+        // 由类型处理器选择健康检查协议，避免生成模型误走聊天接口。
+        String protocol=modelTypeRegistry.healthProtocol(model.getSupportedModelTypes());
+        if(protocol==null)throw new BusinessException("llm.generationAdapterUnavailable");
         // 构建候选模型配置，包含解密后的API密钥
         String normalizedThinking=blank(thinkingLevel)?null:thinkingLevel.trim().toUpperCase(Locale.ROOT);
         WorkerCandidate candidate=candidate(model,normalizedThinking);
         if(candidate==null)throw new BusinessException("llm.providerUnavailable");
 
-        // 调用Worker的测试接口
+        // 调用Worker的测试接口；embedding 字段保留给旧 Worker 版本兼容。
         Map<String,Object> request=new LinkedHashMap<>();
         request.put("candidate",candidate);request.put("enableThinking",normalizedThinking!=null);
-        request.put("embedding",candidate.supportedModelTypes().contains("embedding_model"));
+        request.put("protocol",protocol);request.put("embedding","embedding".equals(protocol));
         Map<?,?> result=workerClient.post().uri("/llm/test").contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(Map.class);
         if(result==null)throw new BusinessException("llm.workerEmptyTestResult");
 
@@ -777,6 +793,9 @@ public class LlmManagementService {
         if(blank(value))throw new BusinessException(messageKey);
         return value.trim();
     }
+    /** 返回模型类型注册表，供独立协议服务复用同一能力定义。 */
+    public LlmModelTypeRegistry modelTypeRegistry(){return modelTypeRegistry;}
+
     public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
     public record ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
     public record ProviderApiKeysView(Long id,String apiKeys){}
