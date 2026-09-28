@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import * as Vue from 'vue'
-import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
+import { compileScript, compileTemplate, compileStyle, parse } from '@vue/compiler-sfc'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import * as icons from '@element-plus/icons-vue'
@@ -259,6 +259,7 @@ test('中英文标签、状态颜色和未知值兼容，服务端文本按普�
   assert.equal(c.state.sourceLabel(null), '—')
   assert.equal(c.state.statusLabel(null), '—')
   assert.equal(c.state.sourceLabel('CHAT'), 'Chat')
+  assert.equal(c.state.sourceLabel('CHAT_STREAM'), 'Public API stream')
   assert.equal(c.state.statusLabel('SUCCESS'), 'Success')
   await c.state.load()
   const html = await c.html()
@@ -270,5 +271,14 @@ test('中英文标签、状态颜色和未知值兼容，服务端文本按普�
   assert.doesNotMatch(html, /modelUsage\./)
   c.i18n.global.locale.value = 'zh-CN'
   assert.equal(c.state.sourceLabel('CHAT'), '对话')
+  assert.equal(c.state.sourceLabel('CHAT_STREAM'), '公开 API 流式对话')
   assert.match(await c.html(), /模型使用监控/)
+})
+
+// 日期组件内部节点没有页面 scope 属性，必须穿透作用域才能约束实际输入框宽度。
+test('日期范围内部输入框应用容器宽度，避免手机端被裁切', () => {
+  const { descriptor } = parse(panelSource)
+  const compiled = compileStyle({ source: descriptor.styles[0].content, id: 'data-v-dashboard-test', scoped: true })
+  assert.deepEqual(compiled.errors, [])
+  assert.match(compiled.code, /\.model-usage-filters\[data-v-dashboard-test\] \.el-date-editor[^{}]*\{[^}]*width: 100%;[^}]*min-width: 0;[^}]*max-width: 100%;/)
 })

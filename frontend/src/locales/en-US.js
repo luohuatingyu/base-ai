@@ -156,7 +156,7 @@ export default {
     calls: 'Calls', successRate: 'Success rate', totalTokens: 'Total tokens', firstToken: 'Avg first token latency', duration: 'Avg duration', running: 'Running',
     modelRanking: 'Model ranking', errors: 'Error distribution', errorType: 'Error type', errorCode: 'Error code', count: 'Count', records: 'Call records', time: 'Started at', inputTokens: 'Input tokens', outputTokens: 'Output tokens', traceId: 'Trace ID',
     empty: 'No usage records in this range', noErrors: 'No errors in this range', loadFailed: 'Failed to load model usage',
-    sources: { CHAT: 'Chat', STREAM: 'Streaming chat', EMBEDDING: 'Embedding', AGENT: 'Agent' },
+    sources: { CHAT_STREAM: 'Public API stream', CHAT: 'Chat', STREAM: 'Streaming chat', EMBEDDING: 'Embedding', AGENT: 'Agent' },
     statuses: { SUCCESS: 'Success', FAILED: 'Failed', INTERRUPTED: 'Interrupted', CANCELLED: 'Cancelled', RUNNING: 'Running' },
     timeRange: 'Time range (last 24 hours by default)',
     allProviders: 'All providers',

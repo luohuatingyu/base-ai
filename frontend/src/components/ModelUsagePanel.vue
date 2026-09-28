@@ -123,7 +123,7 @@ const models = ref([])
 const errors = ref([])
 const records = ref([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const sources = ['CHAT', 'STREAM', 'EMBEDDING', 'AGENT']
+const sources = ['CHAT', 'STREAM', 'CHAT_STREAM', 'EMBEDDING', 'AGENT']
 const statuses = ['SUCCESS', 'FAILED', 'INTERRUPTED', 'CANCELLED', 'RUNNING']
 const appliedParams = ref({})
 const recordParams = ref(null)
@@ -262,7 +262,8 @@ onUnmounted(() => {
 .model-usage-filters { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 14px 12px; margin: 20px 0 12px; padding: 16px; background: var(--app-canvas); border: 1px solid var(--app-border); border-radius: 10px; }
 .model-usage-filters label { display: flex; flex-direction: column; gap: 7px; flex: 1 1 140px; min-width: 0; color: #56637a; font-size: 12px; }
 .model-usage-filters .usage-date-field { flex: 2 1 360px; }
-.model-usage-filters .el-date-editor, .model-usage-filters .el-input, .model-usage-filters .el-select { width: 100%; min-width: 0; }
+.model-usage-filters :deep(.el-date-editor) { width: 100%; min-width: 0; max-width: 100%; }
+.model-usage-filters .el-input, .model-usage-filters .el-select { width: 100%; min-width: 0; }
 .filter-buttons { display: flex; gap: 8px; }
 .filter-buttons .el-button + .el-button { margin-left: 0; }
 .usage-scope { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 14px 0; color: #56637a; font-size: 12px; }
