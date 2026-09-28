@@ -69,3 +69,11 @@ test('AI视频生成任务使用任务看板展示状态和进度', () => {
   assert.match(view, /retryTask\(row\)/)
   assert.match(view, /taskTypeLabel\(row\.taskType\)/)
 })
+
+test('AI视频首页主按钮在深色横幅上保持可读性', () => {
+  assert.match(view, /class="ai-video-start-button"/)
+  assert.match(view, /\.ai-video-start-button[^}]*background:\s*#fff/)
+  assert.match(view, /\.ai-video-start-button[^}]*color:\s*#24447d/)
+  assert.match(view, /\.ai-video-start-button:hover[^}]*background:\s*#edf3ff/)
+  assert.match(view, /\.ai-video-start-button:focus-visible[^}]*outline/)
+})
