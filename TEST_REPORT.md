@@ -1,5 +1,63 @@
 # 最近分支覆盖测试报告
 
+## 图片与视频模型独立配置及聊天隔离（2026-09-28）
+
+### Git 基准、范围与当前交付状态
+
+- Commit: `11e5d856d5ba0137b25730db88ca3ef6b06746b9`（Separate image and video model configuration）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Spring Boot / Java 17、Vue 3 / Element Plus / vue-i18n：分别初始化 `image_model` 与 `video_model`，保持 `vision_model` 的原有视觉理解含义。新增类型使用现有字典、供应商及模型表；没有新增依赖或数据库迁移。
+- 每条生成模型配置只允许一种类型，前后端共同校验；已有文本与视觉组合保留。聊天类型、供应商模型及路由候选排除生成能力；同步聊天、流式聊天、Agent 工具调用在发送请求前检查实际候选。
+- 生成模型健康测试明确拒绝尚未实现的协议，不向聊天接口误发请求、不解密或返回密钥。现有路由同步会将无法测试的生成模型记录为 FAILED，原因是适配器未接入，不代表已探测供应商故障。
+- **整体生成能力仍未完成**：本提交是配置与隔离部分。供应商协议尚未提供，未实现图片/视频适配器、生成任务选模、专用生成路由、任务消费、视频进度轮询、结果保存与预览；现有任务记录仍不会自动生成媒体。已向用户询问供应商/模型或官方文档，未收到具体信息。
+- 执行记录遵循项目约定，统一写入本文件；没有另建 Markdown 计划或调试记录。已在现有隔离 worktree 内工作。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果、场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片和视频类型独立可维护 | Java DataInitializerTest / LlmManagementServiceTest；空字典、已有自定义停用字典、两种类型分别保存 | 补齐缺项、保留管理员配置、保存原始独立编码；正常、边界、幂等、兼容 | 通过 |
+| 生成类型不能混选 | Java 参数化保存测试；image+video、image+vision、video+text；Vue 真实 setup 输入空选、已选及历史混合值 | 后端拒绝且不持久化；前端禁止新增冲突项但允许取消旧项；异常、边界、回归 | 通过 |
+| 按类型选择候选 | Java generationCandidatesRemainSeparate；同一供应商配置 image/video/vision | 每种筛选只返回对应模型，未解密凭据；正常、隔离、安全 | 通过 |
+| 聊天目录与调用隔离 | AiChatControllerTest、AiChatClientTest、ChatStreamClientTest；图片/视频、混合路由、省略请求类型直连 | 聊天目录不暴露生成类型；调用在 Worker 请求和用量登记前拒绝；正常、异常、安全、兼容 | 通过 |
+| 工具调用不能绕过隔离 | WorkflowAgentClientTest；显式类型、省略类型、历史 text+image/text+video 候选 | 统一业务错误，无 Worker 请求或追踪副作用；历史数据、分支、安全 | 通过 |
+| 未接入协议不伪报成功 | Java generationHealthCheckDoesNotUseChat；Vue startTest 两种生成类型 | 明确未接入提示，未调用聊天、不解密密钥；异常、安全 | 通过 |
+| 中英文及原有文本功能兼容 | frontend/test/localization.test.mjs；真实组件状态、两种语言、text+vision 组合与文本测试 | 标签正确、原组合可选、文本测试仍发送原接口；正常、回归 | 通过 |
+| 运行环境加载新类型 | 只读 MySQL 查询、前端 HTTP bundle、后端 ready 健康检查 | 数据库两种独立类型均启用、线上脚本有中英文标签、后端健康 | 通过；整栈依赖故障另列 |
+| 真实图片/视频调用 | 尚缺供应商及协议 | 需验证真实请求、轮询、产物、权限与失败恢复 | 未实现、未执行 |
+
+### 实际测试命令与结果
+
+- 后端通过 stdin Dockerfile 使用既有 `maven:3.9.9-eclipse-temurin-17` 和 BuildKit Maven 缓存执行（未保存临时 Dockerfile）：
+  - `mvn -o -B -ntp -Dtest=DataInitializerTest,LlmManagementServiceTest test`：实现前 71 项，6 失败、3 错误，复现目录缺项、无法保存与健康检查误走旧分支；随后修复。
+  - `mvn -o -B -ntp -Dtest=DataInitializerTest,LlmManagementServiceTest,AiChatClientTest,AiChatControllerTest,ChatStreamClientTest test`：105/105 通过。
+  - `mvn -o -B -ntp -Dtest=WorkflowAgentClientTest test`：修复前先 4/4、补充历史混合值后 6/6 失败，均已进入不应访问的 Worker 路径；修复后 6/6 通过。
+  - `mvn -o -B -ntp test`：最终 **999/999 通过，失败 0、错误 0、跳过 0，通过率 100%**。已读取 Surefire XML 汇总核对；前一版本为 993/993。
+- 关键模块：DataInitializerTest 19/19、LlmManagementServiceTest 52/52、AiChatClientTest 12/12、AiChatControllerTest 5/5、ChatStreamClientTest 17/17、WorkflowAgentClientTest 6/6。完整套件覆盖既有 Service、Controller、Workflow、Domain/Repository 集成及历史业务。
+- `node --test frontend/test/localization.test.mjs`：新增标签测试实现前 12 通过、1 失败；最终含真实 ModelsView setup 用例 **18/18 通过**。
+- `cd frontend && npm test`：lint、vue-tsc、完整覆盖测试及 3/3 HTTP/SSE/WebSocket E2E 全部通过，失败 0、跳过 0。utils 行覆盖率 98.24%、分支 82.06%、函数 95.74%；覆盖范围不等同于整个 Vue 页面。E2E 脚本内置生产构建通过。
+- 一次在 frontend 目录执行带 frontend/ 前缀的单测路径未找到文件，修正为 `node --test test/localization.test.mjs` 后通过。
+- Java 未配置 JaCoCo 等覆盖率插件，本次执行完整测试及分支用例映射，不宣称 Java 行覆盖率；未为覆盖率新增依赖。
+- `git diff --check`：通过。未删减、跳过或弱化已有有效测试。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：执行两次（第二次包含 Agent 最终修复），9 个镜像均构建成功，内置 Maven package 阶段最终 999/999 测试通过；两次整栈启动均退出 1，原因是原有 docker-socket-proxy unhealthy 和 adapter-manager 健康依赖失败。没有端口冲突。
+- `docker compose up -d --no-deps frontend`：恢复已成功构建的前端，退出 0；最终 Backend 与 Frontend 均 running / healthy。后端实际镜像为 `sha256:d31f1065b204900924075cb61df285f712ed7c751e5f1e0d083af2f7a79b1436`，包含最终 Agent 修复。
+- `docker compose exec -T backend curl -fsS http://localhost:8080/api/open/health/ready`：返回 `{"status":"UP"}`。首次误用 /actuator/health 返回 404，按项目实际 ready 路径验证通过。
+- Node 内联 HTTP 检查：/health 200；/models 返回 SPA；线上 `/assets/index-Celv4ok9.js` 包含 image_model、video_model 和两种语言的独立名称。
+- Node 内联只读 MySQL 查询：vision_model=视觉模型、image_model=图片生成模型、video_model=视频生成模型，三者启用值为 1；未输出连接凭据或创建业务数据。首次客户端字符集显示问号，指定 utf8mb4 后确认标签正确。
+- 临时测试镜像内的报告位于 /workspace/target/surefire-reports，JUnit 临时目录由测试框架回收；测试镜像标签在汇总后移除。没有创建宿主机临时脚本、调试文件或新的 Markdown 文件。
+
+### 审查、限制、后续与回滚
+
+- 独立只读审查发现历史混合能力模型可经过 Agent 工具分支绕过候选检查；已增加 WorkflowAgentClient 统一校验，6 个失败复现用例修复后通过，完整套件 999/999 通过。没有未处理的已确认重要审查问题。
+- 决策：先交付不依赖供应商协议的模型配置和类型隔离，真实调用保留待办；理由是缺少供应商契约，不能猜测通用视频协议。代价是用户此时可以维护模型，但仍不能生成媒体。
+- 整栈启动仍未验收通过，不能将局部服务健康描述为整体生成能力完成；需修复既有 socket proxy/rootless Docker 环境后重跑 Compose 和整栈检查。
+- 未执行真实付费生成、浏览器逐项点击与窄屏视觉验收；供应商适配完成后应补充图片/视频各自请求、异步轮询、幂等、超时、取消、鉴权、结果持久化和预览测试。
+- 重测触发：修改类型字典、模型保存、候选筛选、聊天/Agent 分支、健康检查或实际生成适配器时，重跑相关套件与后端完整测试；前端选择逻辑变更时运行完整 npm test。
+- 回滚代码可 revert 11e5d85 后重建；已初始化的两条字典数据不会自动删除，需要回滚时单独评估停用。供应商凭据、既有模型和任务数据未迁移。
+- 本报告单独提交；不执行 git push。
+
 ## 资产中心与 AI 视频全模块新建引导（2026-09-28）
 
 ### Git 基准与变更范围
