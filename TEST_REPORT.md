@@ -1,5 +1,61 @@
 # 最近分支覆盖测试报告
 
+## 仪表盘信息与样式优化（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `72269d83a2fadb7d6d5641cc4a73c9eb901e9cc5`（Fix dashboard mobile date filter and stream labels）；主体实现提交 `a2e7c78`（Improve dashboard metrics and monitoring layout）。
+- 分支：`emdash/codex-vlzfy`；测试日期：2026-09-27 至 2026-09-28（Asia/Shanghai），最终复验于 2026-09-28。
+- 使用 Vue 3、Element Plus 和现有 CSS 设计令牌，优化任务概览、近一小时失败提示、模型指标、筛选、排行、错误分布和调用明细；同步中英文文案。
+- 补充权限控制、加载与失败状态、数值占位符；汇总和明细使用相同时间边界；自动刷新与分页使用已应用筛选；无调用时成功率显示占位符。
+- 修改范围：DashboardView.vue、ModelUsagePanel.vue、两份语言文件、dashboardMetrics.js 与 dashboard-usage.test.mjs。未修改后端、数据库、部署配置或第三方代码，未新增依赖。
+- `git diff 4341242 HEAD -- backend/src/main/java/` 无输出；本次仅前端变更，不触发后端业务代码重测。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 指标准确且不把未知数据显示为零 | Node 单元测试；输入零、数字字符串、大数、空值、布尔值、负数、非数值与不一致汇总 | 正常计数按语言格式化；缺失延迟与无调用成功率为 —；正常、边界、异常 | 通过 |
+| 任务概览和失败告警可读 | 编译真实 Vue 组件；HTTP 返回统计、随后超时、再恢复 | 展示任务数及 alerts，失败清空旧值并提示，恢复后重新显示；正常、异常、回归 | 通过 |
+| 权限不会导致无权请求或数据展示 | Vue 组件测试；未登录、普通用户、仅有 dashboard:view 权限和管理员 | 普通用户不请求模型接口，无权限不请求任务接口；权限、安全、兼容 | 通过 |
+| 查询、刷新和分页条件一致 | Vue 组件测试；修改未提交模型名称、分页、刷新、查询、重置 | 未提交筛选不参与刷新和分页；新查询回第一页；明细复用汇总起止时间；正常、状态冲突、回归 | 通过 |
+| 日期输入受限且不会裁切 | 参数化日期测试及 scoped CSS 编译回归；无日期、非法日期、逆序、同一时刻、90 天和超限；真实浏览器 320/390px | 拒绝非法窗口；容器样式穿透 Element Plus 内部日期节点；边界、异常、兼容 | 通过 |
+| 空结果与依赖错误明确区分 | Vue 组件测试；汇总失败、明细失败、空结果、恢复重试 | 错误不显示为成功空状态；明细失败仍保留可用汇总；异常、回归 | 通过 |
+| 重复刷新和离开页面安全 | Vue 组件测试；挂起请求期间重复调用、离开后返回 | 阻止并发重复请求，清理定时器，忽略卸载后的结果；并发、生命周期 | 通过 |
+| 中英文、状态和恶意文本兼容 | Vue 模板渲染；切换语言、已知/未知来源及状态、含 HTML 的模型名 | 标签正确、未知值可读、文本被转义；公开 API 流式来源有本地化文案；兼容、安全 | 通过 |
+| 桌面和手机可读且真实查询可用 | Firefox headless + WebDriver BiDi；管理员会话连接真实后端；1440/390/320px 中文和 768/390px 英文 | 四张任务卡加载成功，无页面或主内容横向溢出，日期框不超过父容器；不存在模型筛选显示 0 次调用/— 成功率，重置恢复数据 | 通过 |
+| 前端历史功能不回归 | 完整 npm test（Lint、类型检查、覆盖测试、生产服务 E2E） | 所有检查通过，覆盖率达到既有门槛；回归 | 通过 |
+
+### 实际执行命令与结果
+
+- 修复前新增空值延迟回归用例，`node --test frontend/test/dashboard-usage.test.mjs` 初次结果 3 通过、6 失败：null、空字符串和布尔值被转换为数字；修复后全部通过。
+- 手机日期样式先添加 scoped CSS 编译回归用例，`node --test --test-name-pattern='日期范围内部' frontend/test/dashboard-usage.test.mjs` 在修复前断言失败，修复后通过。
+- 最终 `node --test frontend/test/dashboard-usage.test.mjs`：40/40 通过，失败 0、跳过 0。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 561/561、E2E 3/3 全部通过，失败 0、跳过 0；包含 SSE 增量转发、WebSocket 代理、SPA/API 代理回归。该命令中的构建属于 E2E 前置步骤，服务更新使用下述 Docker Compose 命令。
+- `cd frontend && npm run test:coverage`：最终复核 561/561 通过；行覆盖率 98.24%、分支 82.06%、函数 95.74%；dashboardMetrics.js 三项均为 100%。
+- `docker compose up --build -d`：全部 9 个自建镜像构建成功；随后启动因既有 docker-socket-proxy unhealthy、adapter-manager 重启而失败（退出码 1）。Backend 构建测试层使用缓存，不计作本次重新运行后端测试。
+- `docker compose up -d --no-deps frontend`：新版 Frontend 启动成功，随后容器为 healthy；Backend 也为 healthy。
+- `curl -fsS http://localhost:8080/health`：最终返回 `{"status":"UP"}`；启动瞬间的一次请求曾遇到连接重置，服务就绪后复验成功。
+- `DASHBOARD_ORIGIN=http://localhost:8080 node /tmp/baseai-dashboard-browser/check.mjs`：最终对部署页面执行上述 5 组语言/视口检查及筛选、重置验证，全部通过。390px 日期框与父容器均为 283px，320px 均为 213px。
+- `git diff --check`：通过；未执行 git push。
+
+### 测试限制、已知问题与环境处理
+
+- 整栈启动验收尚未通过：docker-socket-proxy 的既有健康检查失败及 adapter-manager 重启阻断其下游服务；本次未修改这些配置。新版仪表盘和它依赖的前后端已单独验证可用。
+- 最终继续工作时 Docker daemon 未运行，已启动 Docker Desktop，并恢复原有 mysql、redis 容器；数据库结构及数据未修改。
+- Safari 未开启远程自动化，因此改用本机 Firefox；未修改 Safari 设置。未执行 Chrome/Safari 跨浏览器验证。
+- 组件测试使用真实 Vue 编译器、响应式与模板；HTTP 为外部边界替身，Element Plus 表格在 SSR 中使用行插槽适配器。真实浏览器检查另行验证生产 Element Plus 渲染及真实接口。
+- 本次没有重新运行独立 Maven 测试：仅前端变更且业务基准差异为空。历史后端测试结果保留在下方报告，不能解释为本次新结果。
+- 构建存在既有的资源体积、runtime-config 脚本和第三方 PURE 注释提示，未阻断构建。
+- 临时 Firefox 配置、截图、验证脚本位于 `/tmp/baseai-dashboard-browser`，已全部清理；临时浏览器和 5191 验证服务已停止，无临时测试文件提交。
+
+### 重测触发条件与下次测试建议
+
+- 修改仪表盘字段、权限、格式化、筛选/分页/自动刷新、语言或组件样式时，重新运行 dashboard-usage.test.mjs 与完整前端测试，并复查窄屏日期控件。
+- 修改 backend/src/main/java/ 业务代码或影响业务逻辑的配置时，按仓库规则执行完整 Maven 测试并更新后端基准。
+- 修复既有 socket proxy / adapter manager 环境问题后重跑整栈 Compose 启动验收；补充 Chrome 和 Safari 显示检查。
+
+
 ## JWT 套餐调整工具（2026-09-27）
 
 ### Git 基准与变更范围
