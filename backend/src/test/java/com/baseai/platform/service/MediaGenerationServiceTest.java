@@ -7,6 +7,9 @@ import com.baseai.platform.security.AuthenticationType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
@@ -106,6 +109,61 @@ class MediaGenerationServiceTest {
             assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(
                 type, 1L, "reference", null, "MULTIMODAL", java.util.Collections.singletonList(null), Map.of())), type);
         }
+    }
+
+    /** 两类输出均接收全部非空输入组合，并保留旧纯文本和模式字段兼容性。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"image_model", "video_model"})
+    void acceptsAllInputCombinationsAndLegacyRequests(String type) {
+        var all = List.of(textInput(), imageInput(), videoInput());
+        for (int mask = 1; mask < 8; mask++) {
+            var inputs = new java.util.ArrayList<MediaGenerationService.MediaInput>();
+            for (int index = 0; index < 3; index++) if ((mask & (1 << index)) != 0) inputs.add(all.get(index));
+            for (String prompt : new String[]{null, "", "instructions"})
+                assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(type, 1L, prompt, null,
+                    "MULTIMODAL", inputs, Map.of())));
+        }
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(type, 1L, "legacy", null, Map.of())));
+        String legacyMode = "image_model".equals(type) ? "IMAGE_TO_IMAGE" : "VIDEO_TO_VIDEO";
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(type, 1L, "legacy", null,
+            legacyMode, all, Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(type, 1L, "", null,
+            "MULTIMODAL", java.util.Collections.nCopies(4, textInput()), Map.of())));
+    }
+
+    /** 空请求、越界数量、未知种类、MIME 错配和非法 Base64 均在供应商调用前拒绝。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"image_model", "video_model"})
+    void rejectsInvalidCombinedInputs(String type) {
+        for (String prompt : new String[]{null, "", " "})
+            assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(type, 1L,
+                prompt, null, "MULTIMODAL", List.of(), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(type, 1L,
+            "", null, "MULTIMODAL", java.util.Collections.nCopies(5, textInput()), Map.of())));
+        for (var invalid : List.of(
+            new MediaGenerationService.MediaInput("UNKNOWN", "file.mp4", "video/mp4", videoInput().dataUrl()),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "video/mp4", videoInput().dataUrl()),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "text/html", "data:text/html;base64,YQ=="),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "text/plain", "data:text/plain;base64,"),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "text/plain", "data:text/plain;base64,A"),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "text/plain", "data:text/plain;base64,***"))) {
+            assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(type, 1L,
+                "", null, "MULTIMODAL", List.of(invalid), Map.of())));
+        }
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(type, 1L,
+            "prompt", null, "INVALID", List.of(), Map.of())));
+    }
+
+    /** 文本、图片和视频分别校验解码后最大字节数，覆盖临界值与超限值。 */
+    @ParameterizedTest
+    @CsvSource({"TEXT,text/plain,1048576", "IMAGE,image/png,10485760", "VIDEO,video/mp4,6291456"})
+    void enforcesPerFileByteLimits(String kind, String contentType, int limit) {
+        var atLimit = new MediaGenerationService.MediaInput(kind, "reference", contentType, dataUrl(contentType, limit));
+        var tooLarge = new MediaGenerationService.MediaInput(kind, "reference", contentType, dataUrl(contentType, limit + 1));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L,
+            "", null, "MULTIMODAL", List.of(atLimit), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("video_model", 1L,
+            "", null, "MULTIMODAL", List.of(tooLarge), Map.of())));
     }
 
     /** 通过反射只测试纯校验分支，避免为边界测试伪造数据库和供应商调用。 */

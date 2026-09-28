@@ -1,6 +1,8 @@
 package com.baseai.platform.modeltype;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,21 @@ class MediaGenerationProtocolRegistryTest {
         assertEquals("IMAGE_TEXT_TO_IMAGE", request.get("generation_mode"));
         assertEquals(1, ((List<?>) request.get("inputs")).size());
         assertEquals("1024x1024", request.get("size"));
+    }
+
+    /** 两类输出协议均完整保留混合输入的顺序、内容和提示词。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"image_model", "video_model"})
+    void preservesCombinedInputs(String type) {
+        List<Map<String, Object>> inputs = List.of(
+            Map.of("kind", "TEXT", "data", "data:text/plain;base64,YQ=="),
+            Map.of("kind", "IMAGE", "data", "data:image/png;base64,YQ=="),
+            Map.of("kind", "VIDEO", "data", "data:video/mp4;base64,YQ=="));
+        var body = new MediaGenerationProtocolRegistry().request(type, "model", "instructions", "MULTIMODAL", inputs, Map.of());
+        assertEquals(inputs, body.get("inputs"));
+        assertEquals("instructions", body.get("prompt"));
+        assertEquals("MULTIMODAL", body.get("generation_mode"));
+        assertEquals("model", body.get("model"));
     }
 
     /** 未注册的模型类型不生成请求，避免未知协议误发供应商。 */

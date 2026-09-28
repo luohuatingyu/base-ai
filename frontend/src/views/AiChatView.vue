@@ -40,7 +40,8 @@
         <div v-if="item.generationInputs?.length" class="message-images">
           <template v-for="input in item.generationInputs" :key="input.fileName + input.dataUrl">
             <el-image v-if="input.kind === 'IMAGE'" :src="input.dataUrl" :alt="input.fileName" fit="cover" preview-teleported />
-            <video v-else controls muted preload="metadata" :src="input.dataUrl" />
+            <video v-else-if="input.kind === 'VIDEO'" controls muted preload="metadata" :src="input.dataUrl" />
+            <span v-else class="pending-generation-text" :title="input.fileName">{{ input.fileName }}</span>
           </template>
         </div>
         <div v-if="item.toolCalls?.length" class="message-tools" :aria-label="t('chat.toolProgress')" aria-live="polite">
@@ -554,7 +555,7 @@ function removeImage(image) {
   pendingImages.value = pendingImages.value.filter(item => item !== image)
 }
 
-/** 打开媒体生成专用文件选择器，图片和视频输入使用不同白名单。 */
+/** 打开统一生成输入选择器，支持文本、图片和视频组合。 */
 function openGenerationInputPicker() {
   if (generationMode.value === 'generation') generationInput.value?.click()
 }
@@ -568,18 +569,21 @@ async function onGenerationInputSelected(event) {
     return
   }
   for (const file of files) {
-    const kind = file.type.startsWith('text/') ? 'TEXT' : file.type.startsWith('image/') ? 'IMAGE' : file.type.startsWith('video/') ? 'VIDEO' : ''
+    // 部分浏览器不提供文本文件 MIME，仅在 MIME 缺失时按受控扩展名补齐。
+    const contentType = file.type || (/\.txt$/i.test(file.name) ? 'text/plain' : /\.md$/i.test(file.name) ? 'text/markdown' : '')
+    const kind = contentType.startsWith('text/') ? 'TEXT' : contentType.startsWith('image/') ? 'IMAGE' : contentType.startsWith('video/') ? 'VIDEO' : ''
     const allowed = kind === 'TEXT' ? new Set(['text/plain', 'text/markdown']) : kind === 'IMAGE' ? IMAGE_TYPES : VIDEO_TYPES
     const maxSize = kind === 'TEXT' ? MAX_PROMPT_FILE_SIZE : kind === 'IMAGE' ? MAX_IMAGE_SIZE : MAX_GENERATION_VIDEO_SIZE
-    if (!kind || !allowed.has(file.type)) { ElMessage.warning(t('chat.generationInputType')); continue }
-    if (file.size > maxSize) { ElMessage.warning(t('chat.generationInputSize')); continue }
+    if (!kind || !allowed.has(contentType)) { ElMessage.warning(t('chat.generationInputType')); continue }
+    if (file.size <= 0 || file.size > maxSize) { ElMessage.warning(t('chat.generationInputSize')); continue }
     try {
-      generationInputs.value.push({ kind, fileName: file.name, contentType: file.type, dataUrl: await readMediaFile(file) })
+      const dataUrl = await readMediaFile(file)
+      generationInputs.value.push({ kind, fileName: file.name, contentType, dataUrl: dataUrl.replace(/^data:[^,]*,/, `data:${contentType};base64,`) })
     } catch { /* readMediaFile 已展示安全错误提示。 */ }
   }
 }
 
-/** 读取图片或视频文件，统一使用浏览器 Data URL 供协议适配器转换。 */
+/** 读取文本、图片或视频文件，统一使用浏览器 Data URL 供协议适配器转换。 */
 function readMediaFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -1162,6 +1166,7 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 }
 .pending-generation-inputs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; padding: 6px; max-height: 150px; overflow-y: auto; }
 .pending-generation-input { position: relative; }
+.pending-generation-text { display: inline-flex; align-items: center; width: 96px; min-height: 64px; padding: 8px; border: 1px solid #dcdfe6; border-radius: 6px; overflow-wrap: anywhere; white-space: normal; }
 .pending-generation-input img, .pending-generation-input video { width: 96px; height: 96px; object-fit: cover; border: 1px solid #dcdfe6; border-radius: 6px; background: #111827; }
 .pending-generation-input .el-button { position: absolute; top: -8px; right: -8px; }
 
