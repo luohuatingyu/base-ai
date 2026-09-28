@@ -41,6 +41,7 @@
           <template v-for="input in item.generationInputs" :key="input.fileName + input.dataUrl">
             <el-image v-if="input.kind === 'IMAGE'" :src="input.dataUrl" :alt="input.fileName" fit="cover" preview-teleported />
             <video v-else-if="input.kind === 'VIDEO'" controls muted preload="metadata" :src="input.dataUrl" />
+            <audio v-else-if="input.kind === 'AUDIO'" controls :src="input.dataUrl" />
             <span v-else class="pending-generation-text" :title="input.fileName">{{ input.fileName }}</span>
           </template>
         </div>
@@ -91,6 +92,7 @@
           <div v-for="input in generationInputs" :key="input.fileName + input.dataUrl" class="pending-generation-input">
             <img v-if="input.kind === 'IMAGE'" :src="input.dataUrl" :alt="input.fileName" />
             <video v-else-if="input.kind === 'VIDEO'" controls muted preload="metadata" :src="input.dataUrl" />
+            <audio v-else-if="input.kind === 'AUDIO'" controls :src="input.dataUrl" />
             <span v-else class="pending-generation-text" :title="input.fileName">{{ input.fileName }}</span>
             <el-button circle size="small" type="danger" :aria-label="t('chat.removeGenerationInput')" @click="removeGenerationInput(input)">×</el-button>
           </div>
@@ -144,6 +146,22 @@
             <el-form-item v-if="generationMode === 'generation'" :label="t('chat.model')">
               <el-select v-model="generationModelId" :placeholder="t('chat.selectModel')" filterable><el-option v-for="model in generationModels.filter(item => item.modelType === generationType)" :key="model.id + ':' + model.modelType" :value="model.id" :label="model.name + ' (' + model.modelName + ')'" /></el-select>
             </el-form-item>
+            <div v-if="generationMode === 'generation' && generationModelId" class="media-generation-options">
+              <h3 class="model-section-title">{{ t('chat.mediaOptions') }}</h3>
+              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaSize')"><el-input v-model="generationOptions.size" placeholder="2K / 2048x2048" /></el-form-item>
+              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaResponseFormat')"><el-select v-model="generationOptions.response_format" clearable><el-option value="url" label="URL" /><el-option value="b64_json" label="Base64" /></el-select></el-form-item>
+              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaGroups')"><el-switch v-model="imageGroupEnabled" /><el-input-number v-if="imageGroupEnabled" v-model="generationOptions.sequential_image_generation_options.max_images" :min="1" :max="15" /></el-form-item>
+              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaStream')"><el-switch v-model="generationOptions.stream" /></el-form-item>
+              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaSeed')"><el-input-number v-model="generationOptions.seed" :min="0" :max="2147483647" controls-position="right" /></el-form-item>
+              <template v-else>
+                <el-form-item :label="t('chat.mediaResolution')"><el-select v-model="generationOptions.resolution" clearable><el-option v-for="value in ['480p','720p','1080p','4k']" :key="value" :value="value" :label="value" /></el-select></el-form-item>
+                <el-form-item :label="t('chat.mediaRatio')"><el-input v-model="generationOptions.ratio" placeholder="16:9" /></el-form-item>
+                <el-form-item :label="t('chat.mediaDuration')"><el-input-number v-model="generationOptions.duration" :min="1" :max="60" controls-position="right" /></el-form-item>
+                <el-form-item :label="t('chat.mediaAudio')"><el-switch v-model="generationOptions.generate_audio" /></el-form-item>
+                <el-form-item :label="t('chat.mediaLastFrame')"><el-switch v-model="generationOptions.return_last_frame" /></el-form-item>
+                <el-form-item :label="t('chat.mediaDraft')"><el-switch v-model="generationOptions.draft" /></el-form-item>
+              </template>
+            </div>
             <div class="mode-field">
               <span class="mode-field-label">{{ t('chat.mode') }}</span>
               <div class="mode-switch" role="radiogroup" :aria-label="t('chat.mode')">
@@ -303,11 +321,13 @@ const generationInput = ref(null)
 const generationInputs = ref([])
 const loading = ref(false)
 const MAX_IMAGES = 4
-const MAX_GENERATION_INPUTS = 4
+const MAX_GENERATION_INPUTS = 50
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime'])
 const MAX_GENERATION_VIDEO_SIZE = 6 * 1024 * 1024
+const AUDIO_TYPES = new Set(['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'])
+const MAX_GENERATION_AUDIO_SIZE = 15 * 1024 * 1024
 const MAX_PROMPT_FILE_SIZE = 1024 * 1024
 
 // 模型配置
@@ -320,6 +340,8 @@ const generationType = ref('image_model')
 const generationTypes = [{ value: 'image_model', label: '图片生成模型' }, { value: 'video_model', label: '视频生成模型' }]
 const generationModels = ref([])
 const generationModelId = ref(null)
+const generationOptions = ref({ sequential_image_generation_options: {} })
+const imageGroupEnabled = ref(false)
 const enableThinking = ref(false)
 const thinkingLevel = ref('MEDIUM')
 const routes = ref([])
@@ -335,7 +357,7 @@ const filteredProviders = computed(() => providers.value.filter(provider => prov
 const currentModels = computed(() => (providers.value.find(p => p.id === providerId.value)?.models || []).filter(matchesType))
 const generationModelOptions = computed(() => (Array.isArray(generationModels.value) ? generationModels.value : []).filter(model => model.modelType === generationType.value))
 const generationInputLimit = computed(() => MAX_GENERATION_INPUTS)
-const generationFileAccept = 'text/plain,text/markdown,.txt,.md,image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime'
+const generationFileAccept = 'text/plain,text/markdown,.txt,.md,image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav'
 const canGenerationSend = computed(() => optionsReady.value && !loading.value && !serverGenerating.value && !!generationModelId.value
   && (!!prompt.value.trim() || generationInputs.value.length > 0))
 
@@ -489,6 +511,8 @@ function onGenerationModeChange() {
 /** 切换图片或视频类型后只保留同类模型。 */
 function onGenerationTypeChange() {
   if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
+  generationOptions.value = { sequential_image_generation_options: {} }
+  imageGroupEnabled.value = false
 }
 /** 切换模型来源时只保留当前模式需要的配置，避免隐藏字段继续影响请求。 */
 function setMode(nextMode) {
@@ -571,9 +595,9 @@ async function onGenerationInputSelected(event) {
   for (const file of files) {
     // 部分浏览器不提供文本文件 MIME，仅在 MIME 缺失时按受控扩展名补齐。
     const contentType = file.type || (/\.txt$/i.test(file.name) ? 'text/plain' : /\.md$/i.test(file.name) ? 'text/markdown' : '')
-    const kind = contentType.startsWith('text/') ? 'TEXT' : contentType.startsWith('image/') ? 'IMAGE' : contentType.startsWith('video/') ? 'VIDEO' : ''
-    const allowed = kind === 'TEXT' ? new Set(['text/plain', 'text/markdown']) : kind === 'IMAGE' ? IMAGE_TYPES : VIDEO_TYPES
-    const maxSize = kind === 'TEXT' ? MAX_PROMPT_FILE_SIZE : kind === 'IMAGE' ? MAX_IMAGE_SIZE : MAX_GENERATION_VIDEO_SIZE
+    const kind = contentType.startsWith('text/') ? 'TEXT' : contentType.startsWith('image/') ? 'IMAGE' : contentType.startsWith('video/') ? 'VIDEO' : contentType.startsWith('audio/') ? 'AUDIO' : ''
+    const allowed = kind === 'TEXT' ? new Set(['text/plain', 'text/markdown']) : kind === 'IMAGE' ? IMAGE_TYPES : kind === 'VIDEO' ? VIDEO_TYPES : AUDIO_TYPES
+    const maxSize = kind === 'TEXT' ? MAX_PROMPT_FILE_SIZE : kind === 'IMAGE' ? MAX_IMAGE_SIZE : kind === 'VIDEO' ? MAX_GENERATION_VIDEO_SIZE : MAX_GENERATION_AUDIO_SIZE
     if (!kind || !allowed.has(contentType)) { ElMessage.warning(t('chat.generationInputType')); continue }
     if (file.size <= 0 || file.size > maxSize) { ElMessage.warning(t('chat.generationInputSize')); continue }
     try {
@@ -920,7 +944,7 @@ async function sendGeneration() {
     let result = await http.post('/ai/chat/generation', {
       model_type: generationType.value, modelId: generationModelId.value, prompt: content,
       conversationId: conversationId.value, generationMode: 'MULTIMODAL',
-      inputs: draftInputs, options: {}
+      inputs: draftInputs, options: normalizedGenerationOptions()
     })
     result = result.data
     while (result.status === 'RUNNING' || result.status === 'QUEUED') {
@@ -948,6 +972,14 @@ async function sendGeneration() {
     loading.value = false
     await refreshHistory()
   }
+}
+
+/** 只提交用户实际填写的方舟参数，空值交给模型默认配置处理。 */
+function normalizedGenerationOptions() {
+  const source = { ...generationOptions.value }
+  if (imageGroupEnabled.value) source.sequential_image_generation = 'auto'
+  else { delete source.sequential_image_generation; delete source.sequential_image_generation_options }
+  return Object.fromEntries(Object.entries(source).filter(([key, value]) => value !== undefined && value !== null && value !== ''))
 }
 </script>
 
