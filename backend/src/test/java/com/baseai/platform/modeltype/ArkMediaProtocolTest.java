@@ -36,10 +36,11 @@ class ArkMediaProtocolTest {
             Map.of("resolution", "720p", "ratio", "16:9", "duration", 5, "generate_audio", true));
         assertEquals("doubao-seedance-2-0-260128", request.get("model"));
         List<?> content = (List<?>) request.get("content");
-        assertEquals(3, content.size());
-        assertEquals("image_url", ((Map<?, ?>) content.get(0)).get("type"));
-        assertEquals("first_frame", ((Map<?, ?>) content.get(0)).get("role"));
-        assertEquals("audio_url", ((Map<?, ?>) content.get(2)).get("type"));
+        assertEquals(4, content.size());
+        assertEquals("text", ((Map<?, ?>) content.get(0)).get("type"));
+        assertEquals("image_url", ((Map<?, ?>) content.get(1)).get("type"));
+        assertEquals("first_frame", ((Map<?, ?>) content.get(1)).get("role"));
+        assertEquals("audio_url", ((Map<?, ?>) content.get(3)).get("type"));
         assertEquals("720p", request.get("resolution"));
     }
 
