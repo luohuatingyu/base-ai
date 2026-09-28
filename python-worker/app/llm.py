@@ -63,22 +63,8 @@ class LlmClient:
                    candidates: list[LlmCandidate] | None = None, enable_thinking: bool | None = None,
                    model_type: str = "text_model", route_configured: bool = False) -> ChatResponse:
         """依次尝试候选模型和 API Key，首个成功结果立即返回。"""
-        configured = candidates
-        thinking = bool(enable_thinking)
-        if not configured:
-            raise RuntimeError("未配置可用的模型能力路由")
-        failures: list[str] = []
-        for candidate in configured:
-            for api_key in await self._ordered_keys(candidate):
-                try:
-                    return await self._invoke(candidate, api_key, messages, temperature, thinking)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exception:
-                    failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
-                    logger.warning("event=llm_candidate_failed provider=%s model=%s error=%s",
-                                   candidate.providerCode, candidate.model, sanitize_log_text(exception, 1000), exc_info=True)
-        raise RuntimeError("全部候选模型调用失败: " + "; ".join(failures[-10:]))
+        return await self.protocols.resolve("chat").call(
+            self, messages, temperature, candidates, enable_thinking, model_type, route_configured)
 
     async def test(self, candidate: LlmCandidate, enable_thinking: bool = False,
                    embedding: bool = False, protocol: str | None = None) -> dict:
@@ -95,19 +81,7 @@ class LlmClient:
 
     async def embed(self, values: list[str], candidates: list[LlmCandidate]) -> EmbeddingResponse:
         """依次尝试候选及密钥，调用 OpenAI 兼容 embeddings 接口并保持输入顺序。"""
-        failures: list[str] = []
-        for candidate in candidates:
-            for api_key in await self._ordered_keys(candidate):
-                try:
-                    return await self._invoke_embedding(candidate, api_key, values)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exception:
-                    failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
-                    logger.warning("event=embedding_candidate_failed provider=%s model=%s error=%s",
-                                   candidate.providerCode, candidate.model,
-                                   sanitize_log_text(exception, 1000), exc_info=True)
-        raise RuntimeError("全部候选向量模型调用失败: " + "; ".join(failures[-10:]))
+        return await self.protocols.resolve("embedding").call(self, values, candidates)
 
     async def agent_step(self, messages: list[AgentMessage], tools: list[ToolDefinition],
                          candidates: list[LlmCandidate], temperature: float = 0,

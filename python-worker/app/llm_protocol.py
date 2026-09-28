@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.models import LlmCandidate
+from app.logging_config import sanitize_log_text
+from app.models import AgentMessage, ChatMessage, ChatResponse, EmbeddingResponse, LlmCandidate
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.llm import LlmClient
@@ -15,6 +20,10 @@ class LlmProtocolAdapter:
     """定义一种模型协议的最小健康检查行为。"""
 
     name: str
+
+    async def call(self, client: "LlmClient", *args, **kwargs):
+        """执行协议调用；具体适配器负责候选遍历和故障切换。"""
+        raise NotImplementedError
 
     async def test(self, client: "LlmClient", candidate: LlmCandidate,
                    enable_thinking: bool) -> dict:
@@ -28,11 +37,32 @@ class ChatProtocolAdapter(LlmProtocolAdapter):
 
     name: str = "chat"
 
+    async def call(self, client: "LlmClient", messages: list[ChatMessage], temperature: float,
+                   candidates: list[LlmCandidate] | None, enable_thinking: bool | None = None,
+                   model_type: str = "text_model", route_configured: bool = False) -> ChatResponse:
+        """依次调用聊天候选，隔离聊天协议的故障切换逻辑。"""
+        configured = candidates
+        if not configured:
+            raise RuntimeError("未配置可用的模型能力路由")
+        failures: list[str] = []
+        for candidate in configured:
+            for api_key in await client._ordered_keys(candidate):
+                try:
+                    return await client._invoke(candidate, api_key, messages, temperature, bool(enable_thinking))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exception:
+                    failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
+                    logger.warning("event=llm_candidate_failed provider=%s model=%s error=%s",
+                                   candidate.providerCode, candidate.model,
+                                   sanitize_log_text(exception, 1000), exc_info=True)
+        raise RuntimeError("全部候选模型调用失败: " + "; ".join(failures[-10:]))
+
     async def test(self, client: "LlmClient", candidate: LlmCandidate,
                    enable_thinking: bool) -> dict:
         """发送最小聊天请求，不触碰向量协议。"""
-        result = await client.chat(
-            client.health_chat_messages(), 0, [candidate], enable_thinking,
+        result = await self.call(
+            client, client.health_chat_messages(), 0, [candidate], enable_thinking,
             model_type="text_model", route_configured=True,
         )
         return {"success": True, "model": result.model}
@@ -44,10 +74,27 @@ class EmbeddingProtocolAdapter(LlmProtocolAdapter):
 
     name: str = "embedding"
 
+    async def call(self, client: "LlmClient", values: list[str],
+                   candidates: list[LlmCandidate]) -> EmbeddingResponse:
+        """依次调用向量候选，隔离 embeddings 协议的故障切换逻辑。"""
+        failures: list[str] = []
+        for candidate in candidates:
+            for api_key in await client._ordered_keys(candidate):
+                try:
+                    return await client._invoke_embedding(candidate, api_key, values)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exception:
+                    failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
+                    logger.warning("event=embedding_candidate_failed provider=%s model=%s error=%s",
+                                   candidate.providerCode, candidate.model,
+                                   sanitize_log_text(exception, 1000), exc_info=True)
+        raise RuntimeError("全部候选向量模型调用失败: " + "; ".join(failures[-10:]))
+
     async def test(self, client: "LlmClient", candidate: LlmCandidate,
                    enable_thinking: bool) -> dict:
         """发送最小向量请求并返回维度，不调用聊天端点。"""
-        result = await client.embed(["embedding health check"], [candidate])
+        result = await self.call(client, ["embedding health check"], [candidate])
         return {"success": True, "model": result.model, "dimension": len(result.embeddings[0])}
 
 
