@@ -61,9 +61,8 @@ public class MediaGenerationService {
         return management.models().stream()
             .filter(item -> Boolean.TRUE.equals(item.getEnabled()) && providers.containsKey(item.getProviderId()))
             .filter(item -> item.getSupportedModelTypes().size() == 1
-                && modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.IMAGE_GENERATION)
-                || item.getSupportedModelTypes().size() == 1
-                && modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.VIDEO_GENERATION))
+                && (modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.IMAGE_GENERATION)
+                    || modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.VIDEO_GENERATION)))
             .map(item -> new ModelOption(item.getId(), item.getName(), item.getModelName(), item.getSupportedModelTypes().get(0),
                 providers.get(item.getProviderId()).code(), providers.get(item.getProviderId()).name())).toList();
     }
