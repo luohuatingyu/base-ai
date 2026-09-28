@@ -1,5 +1,47 @@
 # 最近分支覆盖测试报告
 
+## 仪表盘 Trace ID 原地日志弹窗（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `4a5d5a91e64fb9c46feb84fcb6172a8e62678e6e`（Show trace logs in dashboard modal）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Vue 3 / Element Plus：点击有效主请求 Trace ID 在 dashboard 当前页面打开日志弹窗，不再跳转任务页。弹窗显示 Trace ID、日志时间、级别、来源、消息和异常堆栈，支持刷新、失败重试、空状态和关闭。
+- 请求使用既有 `/system/tasks/{traceId}/logs` 接口；关闭、切换记录和组件卸载均取消未完成请求，迟到响应不会覆盖新记录。原筛选、分页和调用明细状态保持不变。
+- 仅 Python Trace ID、非法 ID 或无任务查看权限时不显示链接；历史记录继续提示缺少主任务关联。未修改后端、配置、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 点击主 Trace 在当前页打开日志弹窗 | 真实 Vue 组件、管理员、常规/空白/边界 ID | 页面仍为 `/dashboard`，弹窗显示清理后的 ID，调用正确 logs 接口并逆序呈现 | 4 项通过 |
+| 关闭弹窗不重置 dashboard 状态 | 设置日期、未提交筛选、已应用参数、分页后打开并关闭 | 所有 dashboard 状态和调用明细保留 | 通过 |
+| 日志失败可重试 | 超时、403、404、500、畸形响应 | 清空旧日志，显示错误和重试入口，重试成功后恢复内容 | 5 项通过 |
+| 关闭、切换、卸载隔离异步响应 | 两个 Trace 并发请求；关闭/卸载前保留未完成请求 | AbortSignal 取消旧请求，迟到成功或失败不回填、不污染新日志 | 4 项通过 |
+| 日志内容安全且可读 | 新旧两条日志，消息和异常包含 HTML 字符 | 新日志在前，纯文本转义，保留级别、来源、时间和异常内容 | 通过 |
+| 权限与历史记录兼容 | 无任务权限、Python Trace、非法主 Trace | 不显示链接、不请求接口、不打开弹窗，并保留明确提示 | 相关用例通过 |
+| 桌面和窄屏实际交互 | Firefox 1440px 中文、390px 英文 | 弹窗适配视口、无整体横向溢出；刷新、关闭、重新打开和筛选保留通过 | 2 个视口通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/dashboard-usage.test.mjs`：75/75 通过，失败 0、跳过 0。
+- `cd frontend && npm test`：lint、类型检查通过；覆盖测试 596/596、E2E 3/3 通过，失败 0、跳过 0，通过率 100%。覆盖率行 98.24%、分支 82.05%、函数 95.74%。
+- `docker compose up --build -d`：9 个镜像全部构建成功；整栈启动仍因既有 docker-socket-proxy unhealthy / adapter-manager 依赖失败退出 1。
+- `docker compose up -d --no-deps frontend`：退出 0，新版 frontend healthy；`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`。
+- `node /tmp/baseai-trace-modal-check/browser.mjs`：退出 0；桌面中文和手机英文均留在 `/dashboard`，弹窗显示 7 条日志，刷新、关闭重开和筛选保留通过，弹窗在视口内且无页面横向溢出。
+- `git diff --check`：通过；未执行 git push。
+
+### 已知问题、未执行项与清理
+
+- 整栈启动仍受既有 Docker socket proxy 健康问题阻断；前端单独启动并完成真实交互验证。
+- 本次弹窗只展示已有任务日志接口返回的内容，不为历史缺失主 Trace ID 的 Python 记录猜测父任务。
+- 未修改后端，因此未重新执行 Maven 测试；未验证 Chrome/Safari。
+- 临时脚本、截图及 Firefox 配置目录 `/tmp/baseai-trace-modal-check` 已清理，测试登录会话已注销。
+
+### 重测触发条件与下次建议
+
+- 修改弹窗、日志请求取消、Trace 权限判断或日志展示时，重跑 dashboard-usage.test.mjs、完整 npm test 和桌面/窄屏实际点击。
+- 修改 `/system/tasks/{traceId}/logs` 响应结构或任务日志权限时，补跑后端接口和前端弹窗集成验证。
+
 ## 仪表盘 Trace ID 跳转任务日志（2026-09-28）
 
 ### Git 基准与变更范围
