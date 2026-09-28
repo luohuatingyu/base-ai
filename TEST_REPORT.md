@@ -1,5 +1,34 @@
 # 最近分支覆盖测试报告
 
+## AI视频首页主按钮可读性修复（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `574e876`（Fix AI video hero button contrast）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- 首页深色横幅中的“开始创建项目”按钮改为白色背景、深蓝文字，并补充悬停和键盘聚焦状态；点击逻辑和目标路由保持不变。
+- 仅修改 `frontend/src/views/AiVideoView.vue` 与 `frontend/test/ai-video-navigation.test.mjs`，未修改后端、配置、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 默认状态按钮文字清晰 | 前端静态回归测试，首页主按钮样式 | 存在独立样式类，白色背景与深蓝文字同时定义 | 通过；正常、回归 |
+| 交互状态保持可读并可访问 | 前端静态回归测试，悬停与键盘聚焦规则 | 悬停背景/文字仍有对比度，聚焦显示可见轮廓 | 通过；边界、可访问性 |
+| 既有 AI 视频页面行为不回归 | 完整前端测试套件 | 原有导航、工作台和代理行为全部通过 | 通过；兼容、回归 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-video-navigation.test.mjs`：7/7 通过，失败 0、跳过 0；实现前新增回归用例按预期失败，修复后通过。
+- `cd frontend && npm test`：lint、类型检查通过；覆盖测试 597/597、E2E 3/3 通过，失败 0、跳过 0，通过率 100%。覆盖率行 98.24%、分支 82.05%、函数 95.74%。
+- `docker compose up --build -d`：9 个镜像构建成功；首次启动因 `.env` 中失效的 `/run/user/501/docker.sock` 导致 socket proxy 不健康。使用当前 Docker Desktop socket 执行 `DEPLOYMENT_DOCKER_SOCKET=/Users/xyzc/.docker/run/docker.sock docker compose up --build -d` 后，Frontend、Backend 均 healthy，`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`；整栈仍因既有 adapter-manager rootless Docker 校验失败退出。
+- `git diff --check`：通过；未执行 git push。
+
+### 已知问题与下次测试建议
+
+- adapter-manager 仍受环境中的 rootless Docker 校验失败影响，插件相关依赖未完成整栈启动；不影响本次前端构建和前端/后端健康检查。
+- 工作区中存在其他未提交的 AI 视频引导文案和布局改动，本次未纳入提交；后续提交这些改动时应重新运行前端套件并更新基准点。
+- 后续修改 AI 视频首页横幅或按钮主题时，重跑 `ai-video-navigation.test.mjs`、完整 `npm test` 和 Compose 前端健康检查。
+
 ## 仪表盘 Trace ID 原地日志弹窗（2026-09-28）
 
 ### Git 基准与变更范围
