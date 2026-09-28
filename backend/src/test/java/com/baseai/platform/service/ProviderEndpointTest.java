@@ -28,6 +28,7 @@ class ProviderEndpointTest {
     }
     private void model(String type) { var m=new LlmModel(); m.setProviderId(1L); m.setEnabled(true); m.setModelName("model"); m.setSupportedModelTypes(List.of(type)); when(models.findById(9L)).thenReturn(Optional.of(m)); }
     @Test void acceptsAnySingleEndpointAndRejectsEmpty() {
+        when(providers.save(any())).thenAnswer(i->i.getArgument(0));
         for (var values: List.of(command("https://base.example",null,null,false,false),command(null,"https://image.example",null,false,false),command(null,null,"https://video.example",false,false))) {
             when(providers.findByCode("P")).thenReturn(Optional.empty()); assertDoesNotThrow(() -> service.createProvider(values));
         }
