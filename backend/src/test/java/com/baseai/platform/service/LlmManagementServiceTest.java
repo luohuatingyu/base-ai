@@ -228,6 +228,66 @@ class LlmManagementServiceTest {
         assertEquals("视觉模型", service.modelTypes().get(1).label());
         assertEquals("embedding_model", service.modelTypes().get(2).value());
         assertEquals("向量模型", service.modelTypes().get(2).label());
+        assertEquals(new LlmManagementService.ModelTypeOption("image_model", "图片生成模型"), service.modelTypes().get(3));
+        assertEquals(new LlmManagementService.ModelTypeOption("video_model", "视频生成模型"), service.modelTypes().get(4));
+    }
+
+    /** 两种生成模型分别保存，不再依赖管理员手工添加字典。 */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"image_model", "video_model"})
+    void savesIndependentGenerationModel(String type) {
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider("encrypted")));
+        when(modelRepository.save(any(LlmModel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        LlmModel saved = service.createModel(new LlmManagementService.ModelCommand(
+            "MEDIA", "生成模型", 1L, "media-v1", List.of(type), "MIDDLE", "", true));
+        assertEquals(List.of(type), saved.getSupportedModelTypes());
+        verify(modelRepository).save(saved);
+    }
+
+    /** 图片和视频能力不能与彼此或聊天能力混存在同一模型配置中。 */
+    @ParameterizedTest
+    @CsvSource({"image_model,video_model", "image_model,vision_model", "video_model,text_model"})
+    void rejectsMixedGenerationModelTypes(String first, String second) {
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider("encrypted")));
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createModel(
+            new LlmManagementService.ModelCommand("MEDIA", "生成模型", 1L, "media-v1", List.of(first, second), "MIDDLE", "", true)));
+        assertEquals("llm.generationTypeExclusive", error.getMessageKey());
+        verify(modelRepository, never()).save(any());
+    }
+
+    /** 没有生成适配器时必须明确拒绝探测，不能误发聊天请求或解密密钥。 */
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"image_model", "video_model"})
+    void generationHealthCheckDoesNotUseChat(String type) {
+        LlmModel model = model(1L, "MIDDLE");
+        model.setSupportedModelTypes(List.of(type));
+        when(modelRepository.findById(10L)).thenReturn(Optional.of(model));
+        BusinessException error = assertThrows(BusinessException.class, () -> service.testModel(10L));
+        assertEquals("llm.generationAdapterUnavailable", error.getMessageKey());
+        verifyNoInteractions(providerRepository, cryptoService);
+    }
+
+    /** 同一供应商下图片、视频与视觉理解候选必须按能力分别筛选。 */
+    @Test
+    void generationCandidatesRemainSeparate() {
+        LlmProvider enabled = provider("secret");
+        ReflectionTestUtils.setField(enabled, "id", 1L);
+        enabled.setEnabled(true);
+        List<String> types = List.of("image_model", "video_model", "vision_model");
+        List<LlmModel> models = new java.util.ArrayList<>();
+        for (int index = 0; index < types.size(); index++) {
+            LlmModel item = model(1L, "MIDDLE");
+            ReflectionTestUtils.setField(item, "id", (long) index + 1);
+            item.setSupportedModelTypes(List.of(types.get(index)));
+            models.add(item);
+        }
+        when(providerRepository.findAll()).thenReturn(List.of(enabled));
+        when(modelRepository.findAll()).thenReturn(models);
+        for (int index = 0; index < types.size(); index++) {
+            assertEquals(List.of((long) index + 1), service.workflowModelOptions(List.of(types.get(index)), types.get(index))
+                .stream().map(LlmManagementService.WorkflowModelOption::id).toList());
+        }
+        verifyNoInteractions(cryptoService);
     }
 
     /** 模型连接测试应按声明能力选择聊天或向量健康检查。 */

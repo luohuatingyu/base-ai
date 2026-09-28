@@ -18,6 +18,32 @@ import static org.mockito.Mockito.*;
 
 /** 验证公开聊天接口由 stream 参数切换 JSON 与 SSE，并保持统一事件格式。 */
 class AiChatControllerTest {
+    /** 聊天类型目录排除两种生成能力，同时保留已有视觉和扩展类型。 */
+    @Test
+    void chatCatalogExcludesGenerationTypes() {
+        LlmManagementService management = mock(LlmManagementService.class);
+        when(management.modelTypes()).thenReturn(List.of(
+            new LlmManagementService.ModelTypeOption("image_model", "图片生成"),
+            new LlmManagementService.ModelTypeOption("video_model", "视频生成"),
+            new LlmManagementService.ModelTypeOption("vision_model", "视觉理解"),
+            new LlmManagementService.ModelTypeOption("audio_model", "扩展类型")));
+        var controller = new AiChatController(mock(AiChatClient.class), management);
+        assertEquals(List.of("vision_model", "audio_model"), controller.getAvailableModelTypes().stream()
+            .map(LlmManagementService.ModelTypeOption::value).toList());
+    }
+
+    /** 生成专用路由不可选，混合供应商池仅暴露可聊天的能力。 */
+    @Test
+    void chatRoutesExcludeGenerationOnlyPools() {
+        LlmManagementService management = mock(LlmManagementService.class);
+        when(management.routes()).thenReturn(List.of(
+            new LlmManagementService.RouteView(1L, "IMAGE", "图片", List.of(1L), "MIDDLE", null, false, true),
+            new LlmManagementService.RouteView(2L, "MIXED", "混合池", List.of(1L), "MIDDLE", null, false, true)));
+        when(management.routeModelTypes("IMAGE")).thenReturn(List.of("image_model"));
+        when(management.routeModelTypes("MIXED")).thenReturn(List.of("text_model", "video_model"));
+        var controller = new AiChatController(mock(AiChatClient.class), management);
+        assertEquals(List.of(new AiChatController.RouteOption(2L, "MIXED", "混合池", List.of("text_model"))), controller.getAvailableRoutes());
+    }
     /** stream=false 或缺省时返回一次性 JSON，不调用流式客户端。 */
     @Test
     void returnsJsonWhenStreamingDisabled() throws Exception {

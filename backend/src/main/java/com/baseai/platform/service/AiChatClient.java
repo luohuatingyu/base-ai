@@ -116,12 +116,14 @@ public class AiChatClient {
         String normalizedFeature = featureCode == null || featureCode.isBlank() ? "chat" : featureCode.trim();
         String requestedModelType = modelType == null ? "" : modelType.trim();
         String normalizedModelType = requestedModelType.isBlank() ? "text_model" : requestedModelType;
+        LlmManagementService.requireChatCapabilities(requestedModelType, null);
 
         // 解析路由配置：指定了 modelId 走单模型直连，否则走按类型筛选后的能力路由
         LlmManagementService.WorkerRoute route = modelId==null
             ?llmManagementService.resolveActive(normalizedFeature,normalizedModelType)
             :llmManagementService.resolveModel(modelId,requestedModelType,Boolean.TRUE.equals(enableThinking),thinkingLevel);
         if (modelId != null && requestedModelType.isBlank()) normalizedModelType = preferredModelType(route);
+        LlmManagementService.requireChatCapabilities(normalizedModelType, route);
 
         // 获取当前追踪ID作为父追踪ID
         String parentTraceId = TraceContextHolder.currentTraceId().orElse(null);

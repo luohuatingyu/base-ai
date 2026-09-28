@@ -324,6 +324,8 @@ public class DataInitializer implements ApplicationRunner {
         seedModelType("text_model","文本模型",10);
         seedModelType("vision_model","视觉模型",20);
         seedModelType("embedding_model","向量模型",30);
+        seedModelType("image_model","图片生成模型",40);
+        seedModelType("video_model","视频生成模型",50);
     }
 
     /** 初始化两个系统托管适配器开关，已有期望状态不会被应用重启覆盖。 */

@@ -46,6 +46,8 @@ public class WorkflowAgentClient {
         LlmManagementService.WorkerRoute route = modelId == null
             ? llmManagementService.resolveActive(featureCode, modelType)
             : llmManagementService.resolveModel(modelId, modelType, thinking, thinkingLevel);
+        // 包括历史混合类型配置在内，生成模型不得进入工具决策的聊天协议。
+        LlmManagementService.requireChatCapabilities(modelType, route);
         String pythonTraceId = UUID.randomUUID().toString().replace("-", "");
         taskTraceService.registerPython(TraceContextHolder.currentTraceId().orElse(null), pythonTraceId, "/llm/agent-step");
         String usageId = llmUsageService == null ? null : llmUsageService.start(

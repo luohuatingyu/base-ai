@@ -126,6 +126,7 @@ public class ChatStreamClient {
 
     /** 执行指定来源和温度的流式调用，保持会话和公开接口共用生命周期。 */
     private void stream(ChatConversationService.Turn turn, EventConsumer consumer, String source, Double temperature) {
+        LlmManagementService.requireChatCapabilities(turn.settings().modelType(), null);
         if (!turn.settings().effectiveAgentToolCodes().isEmpty()
             || !turn.settings().effectiveWorkflowToolCodes().isEmpty()) {
             streamAgent(turn, consumer);
@@ -136,6 +137,7 @@ public class ChatStreamClient {
         String feature = settings.featureCode() == null || settings.featureCode().isBlank() ? "chat" : settings.featureCode();
         var route = settings.modelId() == null ? management.resolveActive(feature, settings.modelType()) :
             management.resolveModel(settings.modelId(), settings.modelType(), Boolean.TRUE.equals(settings.enableThinking()), settings.thinkingLevel());
+        LlmManagementService.requireChatCapabilities(settings.modelType(), route);
         if (route != null && route.candidates() != null && !route.candidates().isEmpty()) {
             var selected = route.candidates().get(0);
             if (selected != null && selected.model() != null && !selected.model().isBlank()) {

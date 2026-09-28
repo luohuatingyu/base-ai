@@ -27,6 +27,18 @@ import static org.mockito.Mockito.*;
 
 /** 使用真实 HTTP 服务验证 Java 增量读取与错误终态。 */
 class ChatStreamClientTest {
+    /** 流式生成请求必须在发出事件、登记用量或访问 Worker 前被拒绝。 */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"image_model", "video_model"})
+    void rejectsGenerationTypeBeforeStreaming(String type) {
+        var turn = new ChatConversationService.Turn(1L, 1L, 2L, List.of(new AiChatClient.Message("user", "test")),
+            new ChatConversationService.Settings(type, "chat", null, false, "", ""));
+        var error = assertThrows(com.baseai.platform.common.BusinessException.class,
+            () -> client.stream(turn, event -> fail("不得向客户端发送生成模型的聊天事件")));
+        assertEquals("llm.generationChatUnsupported", error.getMessageKey());
+        verifyNoInteractions(traces, usage);
+        assertNull(requestBody);
+    }
     HttpServer server;
     ChatStreamClient client;
     TaskTraceService traces;

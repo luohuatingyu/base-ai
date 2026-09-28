@@ -181,6 +181,19 @@ public class LlmManagementService {
     /** 规范可选的单个模型类型查询参数。 */
     private String normalizedModelType(String value){return LlmModel.normalizeModelTypes(List.of(value==null?"":value)).stream().findFirst().orElse("");}
 
+    /** 聊天目录排除生成能力，仍保留已有动态类型的扩展行为。 */
+    public static List<String> chatModelTypes(Collection<String> types){
+        return LlmModel.normalizeModelTypes(types).stream().filter(type->!LlmModel.isGenerationType(type)).toList();
+    }
+
+    /** 在向聊天 Worker 发送请求前同时检查请求类型与实际候选，防止省略类型绕过隔离。 */
+    public static void requireChatCapabilities(String type,WorkerRoute route){
+        if(LlmModel.normalizeModelTypes(List.of(type==null?"":type)).stream().anyMatch(LlmModel::isGenerationType)
+            || route!=null&&route.candidates()!=null&&route.candidates().stream().anyMatch(candidate->candidate!=null
+                &&LlmModel.normalizeModelTypes(candidate.supportedModelTypes()).stream().anyMatch(LlmModel::isGenerationType)))
+            throw new BusinessException("llm.generationChatUnsupported");
+    }
+
     /** 查询启用的模型类型目录；字典尚未初始化时回退到内置的首批类型。 */
     public List<ModelTypeOption> modelTypes(){
         List<ModelTypeOption> result=dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type").stream()
@@ -188,7 +201,7 @@ public class LlmManagementService {
             .map(item->new ModelTypeOption(LlmModel.normalizeModelTypes(List.of(item.getDictValue())).stream().findFirst().orElse(""),item.getLabel()))
             .filter(item->!item.value().isBlank())
             .toList();
-        return result.isEmpty()?List.of(new ModelTypeOption("text_model","文本模型"),new ModelTypeOption("vision_model","视觉模型"),new ModelTypeOption("embedding_model","向量模型")):result;
+        return result.isEmpty()?List.of(new ModelTypeOption("text_model","文本模型"),new ModelTypeOption("vision_model","视觉模型"),new ModelTypeOption("embedding_model","向量模型"),new ModelTypeOption("image_model","图片生成模型"),new ModelTypeOption("video_model","视频生成模型")):result;
     }
 
     /**
@@ -479,9 +492,12 @@ public class LlmManagementService {
     public Map<String,Object> testModel(Long modelId){return testModel(modelId,null);}
     /** 使用可选思考等级测试模型，仅允许模型自身声明的等级参与调用。 */
     public Map<String,Object> testModel(Long modelId,String thinkingLevel){
+        LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound"));
+        // 生成协议尚未接入时明确拒绝，避免健康检查向聊天接口发送错误请求。
+        if(model.getSupportedModelTypes().stream().anyMatch(LlmModel::isGenerationType))throw new BusinessException("llm.generationAdapterUnavailable");
         // 构建候选模型配置，包含解密后的API密钥
         String normalizedThinking=blank(thinkingLevel)?null:thinkingLevel.trim().toUpperCase(Locale.ROOT);
-        WorkerCandidate candidate=candidate(modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound")),normalizedThinking);
+        WorkerCandidate candidate=candidate(model,normalizedThinking);
         if(candidate==null)throw new BusinessException("llm.providerUnavailable");
 
         // 调用Worker的测试接口
@@ -569,6 +585,8 @@ public class LlmManagementService {
         model.setModelName(require(command.modelName(),"llm.modelIdentifierRequired"));
         List<String> requestedTypes=LlmModel.normalizeModelTypes(command.supportedModelTypes());
         if(requestedTypes.isEmpty())throw new BusinessException("llm.modelTypeRequired");
+        // 一个生成配置只能声明一种生成能力；文本与视觉理解的既有组合保持兼容。
+        if(requestedTypes.stream().anyMatch(LlmModel::isGenerationType)&&requestedTypes.size()!=1)throw new BusinessException("llm.generationTypeExclusive");
         Set<String> availableTypes=modelTypes().stream().map(ModelTypeOption::value).collect(java.util.stream.Collectors.toSet());
         if(!availableTypes.containsAll(requestedTypes))throw new BusinessException("llm.modelTypeUnavailable");
         model.setSupportedModelTypes(requestedTypes);

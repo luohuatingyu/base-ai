@@ -45,6 +45,11 @@ public class LlmModel {
     public java.time.LocalDateTime getLastCheckedAt() { return lastCheckedAt; } public void setLastCheckedAt(java.time.LocalDateTime value) { lastCheckedAt=value; }
     public Boolean getEnabled() { return enabled; } public void setEnabled(Boolean value) { enabled=value; }
 
+    /** 图片与视频生成是独立能力，不属于聊天或视觉理解协议。 */
+    public static boolean isGenerationType(String type) {
+        return type != null && ("image_model".equalsIgnoreCase(type.trim()) || "video_model".equalsIgnoreCase(type.trim()));
+    }
+
     /** 将当前模型类型编码统一为小写并去重。 */
     public static List<String> normalizeModelTypes(Collection<String> values) {
         LinkedHashSet<String> result=new LinkedHashSet<>();

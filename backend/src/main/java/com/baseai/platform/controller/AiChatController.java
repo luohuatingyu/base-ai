@@ -70,8 +70,9 @@ public class AiChatController {
             .map(r -> {
                 log.debug("route: id={} featureCode={} name={} enabled={}",
                     r.id(), r.featureCode(), r.name(), r.enabled());
-                return new RouteOption(r.id(), r.featureCode(), r.name(), llmManagementService.routeModelTypes(r.featureCode()));
+                return new RouteOption(r.id(), r.featureCode(), r.name(), LlmManagementService.chatModelTypes(llmManagementService.routeModelTypes(r.featureCode())));
             })
+            .filter(route -> !route.supportedModelTypes().isEmpty())
             .toList();
 
         log.info("event=get_chat_routes_result count={}", result.size());
@@ -87,6 +88,7 @@ public class AiChatController {
 
         java.util.Map<Long, List<ModelOption>> modelsByProvider = llmManagementService.models().stream()
             .filter(m -> Boolean.TRUE.equals(m.getEnabled()) && providers.containsKey(m.getProviderId()))
+            .filter(m -> m.getSupportedModelTypes().stream().noneMatch(com.baseai.platform.domain.LlmModel::isGenerationType))
             .collect(java.util.stream.Collectors.groupingBy(
                 com.baseai.platform.domain.LlmModel::getProviderId,
                 java.util.stream.Collectors.mapping(
@@ -105,7 +107,10 @@ public class AiChatController {
 
     /** 获取启用的动态模型类型，供对话页生成类型单选项。 */
     @GetMapping("/model-types")
-    public List<LlmManagementService.ModelTypeOption> getAvailableModelTypes() { return llmManagementService.modelTypes(); }
+    public List<LlmManagementService.ModelTypeOption> getAvailableModelTypes() {
+        return llmManagementService.modelTypes().stream()
+            .filter(type -> !com.baseai.platform.domain.LlmModel.isGenerationType(type.value())).toList();
+    }
 
     /** 建立任务上下文并代理一次通用模型对话。 */
     @PostMapping
