@@ -1,5 +1,7 @@
 package com.baseai.platform.modeltype;
 
+import org.springframework.stereotype.Component;
+
 import java.util.*;
 
 /**
@@ -8,6 +10,7 @@ import java.util.*;
  * <p>路由、聊天、向量和媒体服务只依赖这里的能力查询，不再复制类型编码判断。
  * 未显式注册的历史字典类型保留聊天兼容处理器，避免升级后已有配置突然失效。</p>
  */
+@Component
 public final class LlmModelTypeRegistry {
     private final Map<String, LlmModelTypeHandler> handlers;
     private final LlmModelTypeHandler legacyChatHandler = new BasicLlmModelTypeHandler(
