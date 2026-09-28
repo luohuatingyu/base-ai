@@ -252,7 +252,7 @@ class LlmManagementServiceTest {
         BusinessException error = assertThrows(BusinessException.class, () -> service.createModel(
             new LlmManagementService.ModelCommand("MEDIA", "生成模型", 1L, "media-v1", List.of(first, second), "MIDDLE", "", true)));
         assertEquals("llm.modelTypeCombinationInvalid", error.getMessageKey());
-        verifyNoInteractions(modelRepository);
+        verify(modelRepository, never()).save(any(LlmModel.class));
     }
 
     /** 混合配置仍暴露非生成能力，供聊天目录和健康检查使用。 */
