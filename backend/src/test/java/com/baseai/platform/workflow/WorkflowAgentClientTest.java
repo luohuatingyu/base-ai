@@ -16,11 +16,11 @@ import static org.mockito.Mockito.*;
 
 /** 验证工具决策客户端不会把生成模型误发到聊天协议。 */
 class WorkflowAgentClientTest {
-    /** 升级前的混合类型配置也不能绕过工具决策的候选校验。 */
+    /** 历史混合类型配置保留文本能力时可以进入工具决策聊天协议。 */
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"image_model", "video_model"})
-    void rejectsLegacyMixedCandidate(String type) {
-        RestClient worker = mock(RestClient.class);
+    void acceptsLegacyMixedCandidate(String type) {
+        RestClient worker = mock(RestClient.class, RETURNS_DEEP_STUBS);
         TaskTraceService traces = mock(TaskTraceService.class);
         LlmManagementService management = mock(LlmManagementService.class);
         var candidate = new LlmManagementService.WorkerCandidate("provider", "https://example.com", List.of("key"),
@@ -29,12 +29,14 @@ class WorkflowAgentClientTest {
             .thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), false, true));
         var mapper = new ObjectMapper();
         var config = mapper.createObjectNode().put("modelId", 1L).put("modelType", "text_model");
+        when(worker.post().uri("/llm/agent-step").header(anyString(), anyString()).contentType(any())
+            .body(any()).retrieve().body(com.fasterxml.jackson.databind.JsonNode.class))
+            .thenReturn(mapper.createObjectNode().put("content", "ok"));
         var client = new WorkflowAgentClient(worker, management, traces, mapper, null);
 
-        var error = assertThrows(BusinessException.class, () -> client.step(config, List.of(), List.of()));
-
-        assertEquals("llm.generationChatUnsupported", error.getMessageKey());
-        verifyNoInteractions(worker, traces);
+        assertEquals("ok", client.step(config, List.of(), List.of()).content());
+        verify(worker).post();
+        verify(traces).registerPython(any(), any(), eq("/llm/agent-step"));
     }
     /** 显式类型和省略类型的直连都应在追踪与网络请求前被拒绝。 */
     @ParameterizedTest
