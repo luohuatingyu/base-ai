@@ -1,5 +1,42 @@
 # 最近分支覆盖测试报告
 
+## 修复文本模型误出现在图片/视频模型选择器（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+- Commit: `0a9027b`（Clarify generation model configuration）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- 根因是模型配置页允许把 `image_model`/`video_model` 与文本或另一种生成类型混合保存；生成目录虽已过滤纯文本模型，但混合历史配置会造成能力目录误导。
+- 后端保存现在拒绝生成能力混合，前端选择框按协议互斥；纯文本模型不会进入媒体生成目录，图片和视频也不能互相混选。中英文提示同步说明独立配置。
+- 未新增依赖、数据库迁移或数据清理；现有数据库中的纯文本 DeepSeek 配置保持不变。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 纯文本模型不出现在媒体目录 | `MediaGenerationServiceTest.generationModelDirectoryIsTypeSpecific` 加入 text-only DeepSeek；目录只返回单一 image/video 模型 | 正常、兼容、隔离 | 通过 |
+| 生成能力不能与其他类型混合保存 | `LlmManagementServiceTest.rejectsMixedGenerationModelTypes` 覆盖 image+video、image+vision、video+text；后端拒绝且不保存 | 边界、异常、安全 | 通过 |
+| 配置页选择互斥 | `frontend/test/localization.test.mjs` 使用真实 ModelsView setup；文本、图片、视频及历史混合值 | 正常、边界、回归 | 通过 |
+| AI 对话和既有模型功能保持兼容 | 完整后端/前端套件、生产构建与 E2E | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=LlmManagementServiceTest,MediaGenerationServiceTest test`：56/56 通过，失败 0、错误 0、跳过 0。
+- 同一 Docker Maven 环境执行 `mvn -B -ntp test`：**1007/1007 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 648/648、生产构建及 E2E 3/3 全部通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `node --test frontend/test/localization.test.mjs`：19/19 通过；修复前新增互斥断言稳定复现 3 个失败，修复后全部通过。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像构建成功；整栈启动仍受既有 `docker-socket-proxy` unhealthy 导致 `adapter-manager` 依赖失败影响，命令退出 1，无端口冲突。
+- `docker compose up -d --no-deps backend frontend`：退出 0；Backend、Frontend healthy；`curl -fsS http://localhost:8080/api/open/health/ready` 返回 `{"status":"UP"}`。
+
+### 已知问题与后续建议
+
+- 未执行真实供应商图片/视频请求，当前验证覆盖模型目录和配置约束；真实供应商协议、密钥及异步任务仍需单独联调。
+- 已存在的历史混合模型不会被自动改写；编辑并保存时后端会拒绝混合值，管理员需拆成独立模型配置。
+- 修复类型保存、媒体目录或 AI 对话选择逻辑时，应重跑相关测试及后端完整 Maven、前端完整 npm 套件。
+
 ## AI 对话图片与视频生成及 Token 记录（2026-09-28）
 
 ### Git 基准、范围与交付状态
