@@ -4,7 +4,7 @@
 
 ### Git 基准、范围与交付状态
 
-- Commit: `473944f`（Declare agent response content type）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次任务提交链还包含 `3654c1c`、`a24fead`、`2aedbcf`、`b3781b6`、`c19a459`。
+- Commit: `45ecf6c`（Test mixed model chat capability）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次任务提交链还包含 `3654c1c`、`a24fead`、`2aedbcf`、`b3781b6`、`c19a459`、`473944f`、`94b1be1`。
 - 模型配置不再把 `image_model`、`video_model` 与彼此或文本、视觉能力视为互斥；前端复选框允许混合能力，后端保存校验仅保留非空和有效类型校验。
 - 混合配置继续向聊天目录暴露其中的非生成能力；纯图片或纯视频配置仍不会误发到聊天或尚未接入的生成健康检查协议。
 - 未新增依赖、数据库迁移或配置；本次没有修改图片/视频真实供应商适配器。
@@ -20,8 +20,8 @@
 
 ### 实际测试命令与结果
 
-- `node --test frontend/test/localization.test.mjs`：18/18 通过。
-- `cd frontend && npm test`：lint、类型检查、覆盖测试 647/647、生产构建及 E2E 3/3 全部通过；失败 0、错误 0、跳过 0。
+- `node --test frontend/test/localization.test.mjs`：最终 19/19 通过，包含混合生成与文本能力模型测试。
+- `cd frontend && npm test`：最终 lint、类型检查、覆盖测试 647/647、生产构建及 E2E 3/3 全部通过；新增混合连通性测试后的定向 `node --test` 为 19/19 通过。
 - `docker compose build backend`：在临时移出工作区中另一项未完成改动的 `LlmUsageControllerTest.java` 与 `MessageBundleTest.java` 后，后端剩余 **995/995** 通过，包含本次相关 `LlmManagementServiceTest` 与 `WorkflowAgentClientTest`；临时文件已恢复并清理。
 - `docker compose up --build -d`：未通过。构建首次因本次新增的混合 Agent 测试 stub 失败，修复后再次执行时被工作区其他未提交改动阻塞：`LlmUsageController` 的既有测试仍使用旧六参数签名，且新增消息键 `llm.generationCallFailed` 缺少英文资源。上述文件不属于本次任务，均未修改。
 - `git diff --check`：通过（已提交文件）。
@@ -30,7 +30,7 @@
 
 - 当前工作区保留其他任务的未提交媒体生成和用量监控改动：`AiChatController.java`、`LlmUsageController.java`、`LlmUsageService.java`、`MediaGenerationService.java`、`V45__add_media_generation_tasks.sql`。它们未纳入本次提交，待其测试同步后应执行未删减的 `mvn test -B` 和 `docker compose up --build -d`。
 - 本次未执行真实图片/视频供应商调用；生成适配器仍是后续工作。
-- 回滚本次行为可依次 revert `473944f`、`c19a459`、`b3781b6`、`2aedbcf`、`a24fead`、`3654c1c`、`b90f650`，不涉及数据库迁移。
+- 回滚本次行为可依次 revert `45ecf6c`、`94b1be1`、`473944f`、`c19a459`、`b3781b6`、`2aedbcf`、`a24fead`、`3654c1c`、`b90f650`，不涉及数据库迁移。
 
 ## 图片与视频模型独立配置及聊天隔离（2026-09-28）
 
