@@ -7,7 +7,7 @@
         <p>{{ section.description }}</p>
       </div>
       <div class="ai-video-hero-actions">
-        <el-button v-if="isDashboard" type="primary" plain @click="goTo('projects')">{{ t('aiVideo.startProject') }}</el-button>
+        <el-button v-if="isDashboard" class="ai-video-start-button" type="primary" plain @click="goTo('projects')">{{ t('aiVideo.startProject') }}</el-button>
         <div class="ai-video-mark">AI<br>VIDEO</div>
       </div>
     </section>
@@ -548,7 +548,10 @@ onMounted(load)
 .ai-video-hero h2 { margin: 10px 0 8px; font-size: clamp(26px, 4vw, 42px); letter-spacing: -.03em; }
 .ai-video-hero p { max-width: 720px; margin: 0; color: rgb(239 245 255 / 82%); }
 .ai-video-hero-actions { display: flex; align-items: center; gap: 18px; }
-.ai-video-hero-actions :deep(.el-button) { border-color: rgb(255 255 255 / 55%); color: #fff; }
+.ai-video-hero-actions :deep(.el-button) { border-color: rgb(255 255 255 / 55%); }
+.ai-video-hero-actions :deep(.ai-video-start-button) { border-color: #fff; background: #fff; color: #24447d; font-weight: 700; }
+.ai-video-hero-actions :deep(.ai-video-start-button:hover) { border-color: #edf3ff; background: #edf3ff; color: #1f3b70; }
+.ai-video-hero-actions :deep(.ai-video-start-button:focus-visible) { outline: 2px solid #fff; outline-offset: 3px; }
 .ai-video-mark { width: 132px; height: 132px; display: grid; place-content: center; border: 1px solid rgb(255 255 255 / 35%); border-radius: 50%; color: rgb(255 255 255 / 88%); font-size: 16px; font-weight: 800; line-height: 1.4; letter-spacing: .18em; text-align: center; transform: rotate(-8deg); }
 .ai-video-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .ai-video-summary-card { display: grid; gap: 6px; }
