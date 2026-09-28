@@ -1,6 +1,16 @@
 package com.baseai.platform.chat;
 
 import com.baseai.platform.service.*;
+import com.baseai.platform.controller.AiChatController;
+import com.baseai.platform.trace.TraceContext;
+import com.baseai.platform.trace.TraceContextHolder;
+import com.baseai.platform.trace.TraceRuntime;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -20,6 +30,7 @@ class ChatStreamClientTest {
     HttpServer server;
     ChatStreamClient client;
     TaskTraceService traces;
+    LlmManagementService management;
     LlmUsageService usage;
     CountDownLatch delivered;
     String response;
@@ -42,7 +53,7 @@ class ChatStreamClientTest {
             }
         });
         server.start();
-        var management = mock(LlmManagementService.class);
+        management = mock(LlmManagementService.class);
         var candidate = new LlmManagementService.WorkerCandidate("test-provider", "http://provider.example",
             List.of("key"), "test-model", 2, "PROVIDER", 30, null, null, List.of("text_model"));
         when(management.resolveActive("chat", "text_model")).thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), false, true));
@@ -102,6 +113,115 @@ class ChatStreamClientTest {
         var start = org.mockito.ArgumentCaptor.forClass(LlmUsageService.Start.class);
         verify(usage).start(start.capture());
         assertEquals("CHAT_STREAM", start.getValue().source());
+    }
+
+
+    /** 请求线程退出后，真实流式客户端写入的用量记录仍使用原始 Trace ID，成功和异常路径均清理线程状态。 */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void publicAsyncStreamPersistsRequestTraceAndRestoresWorkerContext(boolean success) throws Exception {
+        JdbcTemplate jdbc = usePersistentUsage();
+        response = success ? "data: {\"type\":\"done\",\"model\":\"test-model\",\"totalTokens\":3}\n\n" : "";
+        delivered.countDown();
+        ResponseEntity<StreamingResponseBody> pending = publicResponse("request-trace");
+        assertTrue(TraceContextHolder.current().isEmpty());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            String body = executor.submit(() -> {
+                TraceContext previous = context("worker-previous");
+                try (var ignored = TraceContextHolder.bind(previous)) {
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    pending.getBody().writeTo(output);
+                    assertSame(previous, TraceContextHolder.current().orElseThrow());
+                    assertEquals("worker-previous", org.slf4j.MDC.get("traceId"));
+                    return output.toString(StandardCharsets.UTF_8);
+                }
+            }).get(5, TimeUnit.SECONDS);
+            assertTrue(body.contains("\"traceId\":\"request-trace\""));
+            assertTrue(body.contains(success ? "\"type\":\"done\"" : "\"type\":\"error\""));
+            assertTrue(executor.submit(() -> TraceContextHolder.current().isEmpty()).get(5, TimeUnit.SECONDS));
+            var args = org.mockito.ArgumentCaptor.forClass(Object[].class);
+            verify(jdbc).update(contains("INSERT INTO llm_usage_record"), args.capture());
+            assertEquals("request-trace", args.getValue()[1]);
+            assertEquals(7L, args.getValue()[3]);
+            verify(traces).registerPython(eq("request-trace"), eq((String) args.getValue()[2]), eq("/llm/chat/stream"));
+        } finally { executor.shutdownNow(); }
+    }
+
+    /** 同时生成的两个异步响应不能互相使用对方的链路编号。 */
+    @Test
+    void concurrentPublicResponsesKeepDistinctTraceIds() throws Exception {
+        JdbcTemplate jdbc = usePersistentUsage();
+        response = "data: {\"type\":\"done\",\"model\":\"test-model\"}\n\n";
+        delivered.countDown();
+        var first = publicResponse("request-first");
+        var second = publicResponse("request-second");
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<String>> results = new ArrayList<>();
+            for (var pending : List.of(first, second)) {
+                results.add(executor.submit(() -> {
+                    assertTrue(start.await(3, TimeUnit.SECONDS));
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    pending.getBody().writeTo(output);
+                    assertTrue(TraceContextHolder.current().isEmpty());
+                    assertNull(org.slf4j.MDC.get("traceId"));
+                    return output.toString(StandardCharsets.UTF_8);
+                }));
+            }
+            start.countDown();
+            assertTrue(results.get(0).get(5, TimeUnit.SECONDS).contains("request-first"));
+            assertTrue(results.get(1).get(5, TimeUnit.SECONDS).contains("request-second"));
+            var args = org.mockito.ArgumentCaptor.forClass(Object[].class);
+            verify(jdbc, times(2)).update(contains("INSERT INTO llm_usage_record"), args.capture());
+            assertEquals(Set.of("request-first", "request-second"),
+                new HashSet<>(args.getAllValues().stream().map(values -> values[1]).toList()));
+        } finally { executor.shutdownNow(); }
+    }
+
+    /** 首帧输出失败也必须恢复工作线程的上下文，不得触发后续模型调用。 */
+    @Test
+    void disconnectedOutputRestoresTraceWithoutCallingWorker() throws Exception {
+        var pending = publicResponse("disconnected-trace");
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            executor.submit(() -> {
+                assertThrows(IOException.class, () -> pending.getBody().writeTo(new OutputStream() {
+                    /** 模拟浏览器在首帧前断开连接。 */
+                    @Override public void write(int value) throws IOException { throw new IOException("disconnected"); }
+                }));
+                assertTrue(TraceContextHolder.current().isEmpty());
+                assertNull(org.slf4j.MDC.get("traceId"));
+            }).get(5, TimeUnit.SECONDS);
+            verifyNoInteractions(usage);
+        } finally { executor.shutdownNow(); }
+    }
+
+    /** 仅替换数据库边界，保留控制器、流式 HTTP 客户端和用量持久化逻辑。 */
+    private JdbcTemplate usePersistentUsage() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(anyString(), eq(Long.class), anyString())).thenReturn(7L);
+        client.close();
+        client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build(),
+            management, traces, new ObjectMapper(), retry(), CircuitBreaker.ofDefaults("trace-test"),
+            null, null, null, null, new LlmUsageService(jdbc));
+        return jdbc;
+    }
+
+    /** 在独立请求作用域中生成延迟执行的 SSE 响应。 */
+    private ResponseEntity<StreamingResponseBody> publicResponse(String traceId) {
+        var controller = new AiChatController(mock(AiChatClient.class), management, client, new ObjectMapper());
+        try (var ignored = TraceContextHolder.bind(context(traceId))) {
+            return controller.chat(new AiChatController.ChatRequest("text_model", "chat",
+                List.of(new AiChatClient.Message("user", "hello")), 0D, false, "MEDIUM", null, true));
+        }
+    }
+
+    /** 创建具有独立日志和取消状态的请求上下文。 */
+    private TraceContext context(String traceId) {
+        TraceRuntime runtime = new TraceRuntime(traceId);
+        return new TraceContext(traceId, 7L, "AI_CHAT", "WEB_UI", runtime.token(), runtime);
     }
 
     /** Agent 模式先执行授权工作流，再把工具结果交给模型并输出最终回答。 */

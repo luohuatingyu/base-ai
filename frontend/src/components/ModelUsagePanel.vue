@@ -81,6 +81,11 @@
       </el-alert>
       <el-table v-if="records.length" :data="records" size="small" stripe>
         <el-table-column prop="startedAt" :label="t('modelUsage.time')" min-width="170" />
+        <el-table-column :label="t('modelUsage.traceId')" min-width="250">
+          <template #default="scope">
+            <div class="usage-trace"><small>{{ traceDetails(scope.row).label }}</small><code>{{ traceDetails(scope.row).value }}</code></div>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('modelUsage.source')" width="120"><template #default="scope">{{ sourceLabel(scope.row.source) }}</template></el-table-column>
         <el-table-column prop="providerCode" :label="t('modelUsage.provider')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="modelName" :label="t('modelUsage.model')" min-width="180" show-overflow-tooltip />
@@ -90,7 +95,6 @@
         <el-table-column :label="t('modelUsage.inputTokens')" width="110" align="right"><template #default="scope">{{ number(scope.row.inputTokens) }}</template></el-table-column>
         <el-table-column :label="t('modelUsage.outputTokens')" width="110" align="right"><template #default="scope">{{ number(scope.row.outputTokens) }}</template></el-table-column>
         <el-table-column :label="t('modelUsage.duration')" width="140" align="right"><template #default="scope">{{ milliseconds(scope.row.durationMs) }}</template></el-table-column>
-        <el-table-column prop="traceId" :label="t('modelUsage.traceId')" min-width="220" show-overflow-tooltip />
       </el-table>
       <el-empty v-else-if="!loading && !recordsLoading && !error && !recordsError" :image-size="64" :description="t('modelUsage.empty')" />
       <el-pagination v-if="pagination.total > 0 && !recordsError" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize"
@@ -228,6 +232,15 @@ async function reset() {
   await load()
 }
 
+/** 优先显示请求链路，历史记录回退到明确标识的 Python 链路，不伪造缺失关联。 */
+function traceDetails(row) {
+  for (const key of ['traceId', 'pythonTraceId']) {
+    const value = row[key]
+    if (typeof value === 'string' && value.trim()) return { value: value.trim(), label: t(`modelUsage.${key}`) }
+  }
+  return { value: '—', label: t('modelUsage.noTraceId') }
+}
+
 /** 使用当前语言格式化计数。 */
 function number(value) { return formatCount(value, locale.value) }
 /** 缺失或非法延迟使用占位符，合法延迟保留毫秒单位。 */
@@ -284,6 +297,9 @@ onUnmounted(() => {
 .usage-card-heading > span { color: #56637a; font-size: 12px; }
 .usage-unavailable { padding: 24px 16px; text-align: center; color: #56637a; font-size: 13px; }
 .model-usage-records { min-width: 0; margin-top: 20px; border: 1px solid var(--app-border); border-radius: 10px; overflow: hidden; }
+.usage-trace { display: flex; flex-direction: column; gap: 3px; padding: 3px 0; }
+.usage-trace small { color: #56637a; font-size: 11px; }
+.usage-trace code { color: var(--app-text); font-size: 12px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; user-select: all; }
 .model-usage-records .el-pagination { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
 .model-usage-panel :deep(.el-table th.el-table__cell) { background: #f7f9fc; color: #56637a; font-weight: 500; }
 .model-usage-panel :deep(.el-table .cell) { font-variant-numeric: tabular-nums; }

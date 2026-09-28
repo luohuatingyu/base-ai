@@ -4,6 +4,8 @@ import com.baseai.platform.chat.ChatStreamClient;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baseai.platform.trace.TraceType;
+import com.baseai.platform.trace.TraceContext;
+import com.baseai.platform.trace.TraceContextHolder;
 import com.baseai.platform.security.RequiredPermission;
 import com.baseai.platform.security.ApiKeyEndpoint;
 import com.baseai.platform.security.ApiKeyField;
@@ -168,25 +170,11 @@ public class AiChatController {
     /** 返回公开 SSE 协议，事件格式与会话接口保持一致并立即刷新每个事件。 */
     private ResponseEntity<StreamingResponseBody> stream(ChatRequest request) {
         if (streamClient == null) throw new IllegalStateException("Streaming chat client is unavailable");
-        String traceId = com.baseai.platform.trace.TraceContextHolder.currentTraceId().orElse("");
+        // StreamingResponseBody 在请求线程退出后执行，显式传递上下文才能保留用量记录的父 Trace。
+        TraceContext context = TraceContextHolder.current().orElse(null);
         StreamingResponseBody body = output -> {
-            writeSse(output, Map.of("type", "start", "traceId", traceId));
-            java.util.concurrent.atomic.AtomicBoolean hasOutput = new java.util.concurrent.atomic.AtomicBoolean();
-            try {
-                AiChatClient.ChatRequest workerRequest = new AiChatClient.ChatRequest(
-                    request.featureCode(), request.modelType(), request.messages(),
-                    request.temperature() == null ? 0D : request.temperature(), List.of(),
-                    request.enableThinking(), request.thinkingLevel(), false);
-                streamClient.stream(workerRequest, request.modelId(), "CHAT_STREAM", event -> {
-                    String type = event.path("type").asText();
-                    if ("delta".equals(type)) hasOutput.set(true);
-                    if (!Set.of("model", "delta", "done", "heartbeat").contains(type))
-                        throw new IOException("Invalid stream event");
-                    writeSse(output, event);
-                });
-                if (!hasOutput.get()) throw new IOException("Empty answer");
-            } catch (Exception exception) {
-                writeSse(output, Map.of("type", "error", "message", "ai.serviceCallFailed"));
+            try (TraceContextHolder.Scope ignored = context == null ? null : TraceContextHolder.bind(context)) {
+                writeStream(request, output, context == null ? "" : context.traceId());
             }
         };
         HttpHeaders headers = new HttpHeaders();
@@ -194,6 +182,28 @@ public class AiChatController {
         headers.setCacheControl("no-cache, no-transform");
         headers.set("X-Accel-Buffering", "no");
         return ResponseEntity.ok().headers(headers).body(body);
+    }
+
+    /** 在已绑定的调用上下文中输出事件，异常只返回安全提示。 */
+    private void writeStream(ChatRequest request, OutputStream output, String traceId) throws IOException {
+        writeSse(output, Map.of("type", "start", "traceId", traceId));
+        java.util.concurrent.atomic.AtomicBoolean hasOutput = new java.util.concurrent.atomic.AtomicBoolean();
+        try {
+            AiChatClient.ChatRequest workerRequest = new AiChatClient.ChatRequest(
+                request.featureCode(), request.modelType(), request.messages(),
+                request.temperature() == null ? 0D : request.temperature(), List.of(),
+                request.enableThinking(), request.thinkingLevel(), false);
+            streamClient.stream(workerRequest, request.modelId(), "CHAT_STREAM", event -> {
+                String type = event.path("type").asText();
+                if ("delta".equals(type)) hasOutput.set(true);
+                if (!Set.of("model", "delta", "done", "heartbeat").contains(type))
+                    throw new IOException("Invalid stream event");
+                writeSse(output, event);
+            });
+            if (!hasOutput.get()) throw new IOException("Empty answer");
+        } catch (Exception exception) {
+            writeSse(output, Map.of("type", "error", "message", "ai.serviceCallFailed"));
+        }
     }
 
     /** 将对象编码为 SSE data 帧，避免 Servlet 或代理缓冲整个回答。 */

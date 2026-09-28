@@ -282,3 +282,30 @@ test('日期范围内部输入框应用容器宽度，避免手机端被裁切',
   assert.deepEqual(compiled.errors, [])
   assert.match(compiled.code, /\.model-usage-filters\[data-v-dashboard-test\] \.el-date-editor[^{}]*\{[^}]*width: 100%;[^}]*min-width: 0;[^}]*max-width: 100%;/)
 })
+
+for (const [traceId, pythonTraceId, expected, label] of [
+  ['request-trace', 'worker-trace', 'request-trace', 'Trace ID'],
+  [null, 'worker-trace', 'worker-trace', 'Python Trace ID'],
+  ['', 'worker-trace', 'worker-trace', 'Python Trace ID'],
+  ['   ', ' worker-trace ', 'worker-trace', 'Python Trace ID'],
+  [null, null, '—', '未记录 Trace ID'],
+  [false, {}, '—', '未记录 Trace ID']
+]) {
+  test(`调用明细展示真实链路来源：${JSON.stringify([traceId, pythonTraceId])}`, async () => {
+    const c = component(panelSource, { get: async url => url.endsWith('summary') ? summary() : { data: { total: 1, records: [{ traceId, pythonTraceId }] } } })
+    await c.state.load()
+    assert.deepEqual(c.state.traceDetails(c.state.records.value[0]), { value: expected, label })
+    const html = await c.html()
+    assert.ok(html.includes(expected))
+    assert.ok(html.includes(label))
+    if (traceId === 'request-trace') assert.ok(!html.includes('worker-trace'))
+    c.i18n.global.locale.value = 'en-US'
+    if (expected === '—') assert.equal(c.state.traceDetails({}).label, 'Trace ID not recorded')
+  })
+}
+
+test('调用明细将 Trace 列置于时间之后且完整换行展示', () => {
+  const columns = panelSource.slice(panelSource.indexOf('<div class="model-usage-records"'))
+  assert.ok(columns.indexOf("t('modelUsage.traceId')") < columns.indexOf("t('modelUsage.source')"))
+  assert.match(panelSource, /\.usage-trace code[^}]*overflow-wrap: anywhere/)
+})
