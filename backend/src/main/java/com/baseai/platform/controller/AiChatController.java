@@ -89,6 +89,27 @@ public class AiChatController {
         return mediaGenerationService.status(id);
     }
 
+    /** 取消当前用户拥有的排队或运行媒体任务。 */
+    @PostMapping("/generation/{id}/cancel")
+    public Map<String, Object> cancelGeneration(@PathVariable long id) {
+        if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
+        return mediaGenerationService.cancel(id);
+    }
+
+    /** 删除当前用户已经结束的媒体任务及其历史记录。 */
+    @DeleteMapping("/generation/{id}")
+    public void deleteGeneration(@PathVariable long id) {
+        if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
+        mediaGenerationService.delete(id);
+    }
+
+    /** 分页前的会话媒体历史，沿用当前用户权限和任务状态过滤。 */
+    @GetMapping("/generations")
+    public List<Map<String, Object>> generationHistory(@RequestParam long conversationId) {
+        if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
+        return mediaGenerationService.history(conversationId);
+    }
+
     /** 获取可用的路由列表，供对话页面选择模型池。 */
     @GetMapping("/routes")
     public List<RouteOption> getAvailableRoutes() {
