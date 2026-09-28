@@ -1,5 +1,58 @@
 # 最近分支覆盖测试报告
 
+## 仪表盘调用明细 Trace ID 修复（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `7b41191e75099c0fa6235d31aec61d5e1af6f39d`（Preserve trace IDs in asynchronous chat usage）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- 根因：公开 SSE 在 StreamingResponseBody 异步线程执行，原请求的 ThreadLocal TraceContext 未传递；实查近 24 小时 35 条记录中 34 条 CHAT_STREAM 的 traceId 为空，但 pythonTraceId 均存在；1 条 STREAM 记录正常。
+- AiChatController 在创建 SSE 响应时捕获 TraceContext，回调执行时绑定并通过 Scope 恢复原线程上下文及 MDC。保留原 SSE 事件、错误消息和非流式协议。
+- 前端将 Trace 列移动到开始时间之后，优先显示请求 Trace ID；历史缺失记录回退到明确标识的 Python Trace ID，两者都缺失时显示占位符。ID 完整换行、可选择复制。
+- 技术栈：Java 17 / Spring MVC、Vue 3 / Element Plus。仅修改控制器、ChatStreamClientTest、ModelUsagePanel、两份语言文件及 dashboard-usage.test.mjs；未修改数据库、全局 Trace 切面、部署配置、第三方代码或依赖。
+- 相对上次报告基准的 backend/src/main/java/ 有业务代码差异，已执行完整后端测试。本节作为新的测试基准，报告本身单独提交。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 异步公开流保存原请求 Trace ID | Java 集成测试；真实控制器、真实 ChatStreamClient 和 LlmUsageService，HTTP Worker 测试服务器，仅数据库为 Mock；请求上下文退出后在线程池执行 SSE | INSERT 参数使用请求 traceId；Python 子链路关联同一父链路；保存 owner；正常、回归 | 通过 |
+| 成功与上游异常都恢复线程状态 | 参数化 Java 测试；工作线程已有不同 Trace，分别返回 done 或提前断流 | 请求内使用捕获的上下文，结束后恢复原 Trace 和 MDC；失败返回安全 error 帧；异常、隔离 | 通过 |
+| 并发请求不串链路 | Java 测试；两个不同上下文构造响应，两个线程同时执行 | 两条真实持久化调用参数分别包含各自 Trace ID，线程状态清空；并发、安全 | 通过 |
+| 首帧前断连不泄漏上下文 | Java 测试；OutputStream 写入即抛 IOException | 上下文及 MDC 清理，未发起模型调用；异常、资源清理 | 通过 |
+| 无上下文及非流式兼容 | 既有 AiChatControllerTest；无请求 Trace 的直接调用、stream=false、上游失败 | JSON/SSE 协议保持原行为，异常细节不泄露；兼容、回归 | 通过 |
+| 历史记录正确显示来源 | Vue 组件渲染参数化测试；请求 Trace、Python Trace、空白、空值、非法类型，中英文切换 | 优先请求 Trace，缺失时标注 Python Trace ID，均无有效值时提示未记录；边界、兼容 | 通过 |
+| Trace 列便于查找 | 模板及样式回归、真实 Firefox 页面 | 列位于时间之后，完整 ID 不用省略号替代，可横向滚动查看；展示、回归 | 通过 |
+| 新调用端到端关联正确 | 部署后登录会话调用 /api/ai/chat（stream=true），查询 /operations/llm-usage/records | SSE start 的 traceId 与持久化记录相同，状态 SUCCESS，子 Trace 与 owner 存在；真实集成 | 通过 |
+
+### 实际命令、失败复现与最终结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=ChatStreamClientTest test`：首次因 Maven Central TLS 握手失败，未执行测试。改用 Docker BuildKit 已有 Maven 缓存离线运行，未修改项目配置。
+- 使用 stdin Dockerfile 的 `docker build --progress=plain -t baseai-trace-tests -f - backend`，在 Maven 镜像中执行 `RUN --mount=type=cache,target=/root/.m2 mvn -o -B -ntp -Dtest=ChatStreamClientTest test`：初次新增测试因 Mockito 参数类型编译失败，修正测试类型后稳定复现缺陷，15 项中 3 失败（异步使用 worker-previous 或 null），12 通过。
+- 修复后同方式执行 `mvn -o -B -ntp -Dtest=ChatStreamClientTest,AiChatControllerTest,LlmUsageServiceTest,TraceContextHolderTest test`：24/24 通过，失败 0、错误 0、跳过 0。
+- 同一测试镜像缓存中执行 `mvn -o -B -ntp test`：150 个测试类、975/975 用例通过（100%），失败 0、错误 0、跳过 0；已读取全部 Surefire XML 汇总并核对测试镜像源码与提交源码一致。
+- 关键模块：Chat 47/47、Controller 32/32、Service 176/176、Trace 4/4、Security 59/59、Web 21/21；其余模块也全部通过。此处为测试用例结果，不是 Java 行覆盖率。
+- 前端新增的 7 项 Trace 展示测试在实现前失败；最终 `node --test frontend/test/dashboard-usage.test.mjs`：47/47 通过。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 568/568、E2E 3/3 全部通过；失败 0、跳过 0。行覆盖率 98.24%、分支 82.06%、函数 95.74%。
+- `docker compose up --build -d`：全部 9 个自建镜像构建成功，构建内 Maven package 再次执行 975 项测试并全部通过；整栈启动仍因既有 docker-socket-proxy unhealthy / adapter-manager 重启而退出 1。
+- `docker compose up -d --no-deps frontend`：新版前端启动成功；最终 Frontend、Backend 均 healthy；`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`。
+- `node /tmp/baseai-trace-check/api.mjs`：真实调用 HTTP 200，事件顺序 start → model → delta → done；请求 Trace ID 和用量 Trace ID 均为 `17e251517fdb4119a83f72d5a34d4ec7`，Python Trace ID 为 `0b76187f904047ff84662658caa5ee4c`；状态 SUCCESS，owner 存在。34 条历史缺失父 Trace 记录保持原数据，供页面标识后回退显示。
+- `node /tmp/baseai-trace-check/browser.mjs`：1440px 中文和 390px 英文真实页面验证通过，表头均为时间 → Trace ID → 来源；第一页包含 1 条请求 Trace 和 19 条 Python Trace，页面无整体横向溢出。窄屏表格仍通过表内横向滚动查看完整列。
+- `git diff --check`：通过；未执行 git push。
+
+### 已知限制、未执行项与清理
+
+- 历史未保存的请求 Trace ID 无法可靠还原，本次不猜测或回填；界面展示已有的 Python 子链路编号并明确标注，二者不可视为同一编号。
+- 既有全局任务终态管理及取消生命周期不在本次变更范围；本次修复的是公开 SSE 调用的 Trace 传递和明细展示。
+- 整栈启动验收受原有 socket proxy / adapter manager 故障阻断；本次前后端部署与真实调用已通过独立验证。未执行 Chrome/Safari 验证，亦未新增 Java 行覆盖率工具。
+- 真实端到端验证产生了 1 条正常模型调用与对应审计记录，保留在调用明细中。
+- 临时脚本、隔离 Firefox 配置及截图位于 `/tmp/baseai-trace-check`，验证后全部清理，浏览器进程已停止、测试登录会话已注销；临时测试镜像 baseai-trace-tests 已移除。
+
+### 重测触发条件与下次建议
+
+- 修改公开 SSE、TraceContext 传递、ChatStreamClient 或用量持久化逻辑时，重跑相关 24 项测试及完整 Maven 测试，并核对真实 SSE 与明细记录的同一 Trace ID。
+- 修改明细 Trace 展示与回退规则时，重跑 dashboard-usage.test.mjs 和完整前端测试，复查中英文及窄屏。
+- 修复既有 Docker 服务依赖健康问题后重跑整栈启动验收；如扩展全局异步任务生命周期，应独立覆盖完成、超时、取消与断连场景。
+
 ## AI 视频分类新增表单改造（2026-09-28）
 
 ### Git 基准与范围
