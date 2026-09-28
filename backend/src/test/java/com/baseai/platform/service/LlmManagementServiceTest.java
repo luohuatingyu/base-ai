@@ -315,6 +315,7 @@ class LlmManagementServiceTest {
         when(cryptoService.decrypt("encrypted")).thenReturn("secret");
         server.expect(requestTo("http://worker/llm/test"))
             .andExpect(jsonPath("$.embedding").value(embedding))
+            .andExpect(jsonPath("$.protocol").value(embedding ? "embedding" : "chat"))
             .andRespond(withSuccess("{\"success\":true}", MediaType.APPLICATION_JSON));
 
         assertEquals(true, connectedService.testModel(10L).get("success"));
