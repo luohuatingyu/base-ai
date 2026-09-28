@@ -2,6 +2,8 @@ package com.baseai.platform.service;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.modeltype.LlmModelTypeRegistry;
+import com.baseai.platform.modeltype.LlmOperation;
 import com.baseai.platform.trace.TraceContextHolder;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +45,8 @@ public class AiChatClient {
     /** LLM管理服务，用于模型路由解析 */
     private final LlmManagementService llmManagementService;
     private final LlmUsageService llmUsageService;
+    /** 聊天客户端只依赖聊天能力处理器，不感知向量和媒体协议。 */
+    private final LlmModelTypeRegistry modelTypeRegistry;
 
     /**
      * 构造函数，通过依赖注入初始化所需服务
@@ -53,17 +57,25 @@ public class AiChatClient {
      */
     @Autowired
     public AiChatClient(@Qualifier("pythonWorkerRestClient") RestClient restClient, TaskTraceService taskTraceService,
-                        LlmManagementService llmManagementService, LlmUsageService llmUsageService) {
+                        LlmManagementService llmManagementService, LlmUsageService llmUsageService,
+                        LlmModelTypeRegistry modelTypeRegistry) {
         this.restClient = restClient;
         this.taskTraceService = taskTraceService;
         this.llmManagementService = llmManagementService;
         this.llmUsageService = llmUsageService;
+        this.modelTypeRegistry = modelTypeRegistry;
+    }
+
+    /** 兼容既有生产测试构造方式。 */
+    public AiChatClient(@Qualifier("pythonWorkerRestClient") RestClient restClient, TaskTraceService taskTraceService,
+                        LlmManagementService llmManagementService, LlmUsageService llmUsageService) {
+        this(restClient, taskTraceService, llmManagementService, llmUsageService, new LlmModelTypeRegistry());
     }
 
     /** 兼容不需要监控服务的轻量单元测试构造方式。 */
     public AiChatClient(@Qualifier("pythonWorkerRestClient") RestClient restClient, TaskTraceService taskTraceService,
                         LlmManagementService llmManagementService) {
-        this(restClient, taskTraceService, llmManagementService, null);
+        this(restClient, taskTraceService, llmManagementService, null, new LlmModelTypeRegistry());
     }
 
     /**
@@ -116,6 +128,7 @@ public class AiChatClient {
         String normalizedFeature = featureCode == null || featureCode.isBlank() ? "chat" : featureCode.trim();
         String requestedModelType = modelType == null ? "" : modelType.trim();
         String normalizedModelType = requestedModelType.isBlank() ? "text_model" : requestedModelType;
+        requireChatType(normalizedModelType);
         LlmManagementService.requireChatCapabilities(requestedModelType, null);
 
         // 解析路由配置：指定了 modelId 走单模型直连，否则走按类型筛选后的能力路由
@@ -228,6 +241,12 @@ public class AiChatClient {
                 failure(Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", exception));
             throw exception;
         }
+    }
+
+    /** 在创建追踪和用量记录前确认请求类型属于聊天协议。 */
+    private void requireChatType(String modelType) {
+        if (!modelTypeRegistry.supports(modelType, LlmOperation.CHAT))
+            throw new BusinessException("llm.generationChatUnsupported");
     }
 
     /** 根据实际返回模型匹配供应商，避免把候选列表首项误记为实际使用项。 */
