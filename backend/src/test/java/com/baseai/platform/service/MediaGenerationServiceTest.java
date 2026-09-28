@@ -64,7 +64,10 @@ class MediaGenerationServiceTest {
         var mixed = new com.baseai.platform.domain.LlmModel();
         mixed.setProviderId(2L); mixed.setName("mixed"); mixed.setModelName("mixed");
         mixed.setEnabled(true); mixed.setSupportedModelTypes(List.of("image_model", "video_model"));
-        when(management.models()).thenReturn(List.of(image, mixed));
+        var text = new com.baseai.platform.domain.LlmModel();
+        text.setProviderId(2L); text.setName("text"); text.setModelName("deepseek-chat");
+        text.setEnabled(true); text.setSupportedModelTypes(List.of("text_model"));
+        when(management.models()).thenReturn(List.of(image, mixed, text));
         assertEquals(List.of("image"), service.models().stream().map(MediaGenerationService.ModelOption::name).toList());
     }
 }
