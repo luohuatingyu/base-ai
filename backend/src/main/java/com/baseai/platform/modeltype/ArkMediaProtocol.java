@@ -119,9 +119,12 @@ public final class ArkMediaProtocol {
         options.put("watermark", Map.of("type", "boolean", "default", false)); options.put("background", Map.of("type", "string", "enum", List.of("opaque", "transparent")));
         options.put("sequential_image_generation", Map.of("type", "string", "enum", List.of("auto", "disabled")));
         options.put("sequential_image_generation_options", Map.of("type", "object")); options.put("tools", Map.of("type", "array"));
-        return Map.of("profile", profile, "label", profile, "type", type, "modes", modes, "imageLimit", imageLimit, "videoLimit", videoLimit,
-            "audioLimit", audioLimit, "totalLimit", totalLimit, "imageMaxBytes", 30 * 1024 * 1024, "videoMaxBytes", 50 * 1024 * 1024,
-            "audioMaxBytes", 15 * 1024 * 1024, "features", features, "options", options);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("profile", profile); result.put("label", profile); result.put("type", type); result.put("modes", modes);
+        result.put("imageLimit", imageLimit); result.put("videoLimit", videoLimit); result.put("audioLimit", audioLimit); result.put("totalLimit", totalLimit);
+        result.put("imageMaxBytes", 30 * 1024 * 1024); result.put("videoMaxBytes", 50 * 1024 * 1024); result.put("audioMaxBytes", 15 * 1024 * 1024);
+        result.put("features", features); result.put("options", options);
+        return result;
     }
 
     /** 规范化模型画像名称，允许直接传模型 ID 或人工选择的 profile。 */
