@@ -213,3 +213,10 @@ test('文本与视觉理解仍可组合选择并调用既有模型测试接口',
   await Promise.resolve()
   assert.equal(requests[0][0], '/models/7/test')
 })
+
+test('混合生成与文本能力可使用文本模型测试接口', async () => {
+  const { state, requests } = modelEditor()
+  state.startTest({ id: 8, supportedModelTypes: ['image_model', 'text_model'], thinkingLevels: '' })
+  await Promise.resolve()
+  assert.equal(requests[0][0], '/models/8/test')
+})
