@@ -59,8 +59,12 @@ public final class ArkMediaProtocol {
                 30, 10, 10, 50,
                 Map.of("streaming", false, "groups", false, "search", false, "layers", false, "transparent", false, "draft", true, "audio", true));
         }
-        return Map.of("profile", value, "type", "", "modes", List.of(), "imageLimit", 0, "videoLimit", 0, "audioLimit", 0,
-            "totalLimit", 0, "imageMaxBytes", 0, "videoMaxBytes", 0, "audioMaxBytes", 0, "features", Map.of(), "options", Map.of());
+        Map<String, Object> unknown = new LinkedHashMap<>();
+        unknown.put("profile", value); unknown.put("type", ""); unknown.put("modes", List.of());
+        unknown.put("imageLimit", 0); unknown.put("videoLimit", 0); unknown.put("audioLimit", 0); unknown.put("totalLimit", 0);
+        unknown.put("imageMaxBytes", 0); unknown.put("videoMaxBytes", 0); unknown.put("audioMaxBytes", 0);
+        unknown.put("features", Map.of()); unknown.put("options", Map.of());
+        return unknown;
     }
 
     /** 判断是否应由方舟适配器处理官方模型名称。 */
