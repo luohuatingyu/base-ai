@@ -5,6 +5,7 @@ import * as Vue from 'vue'
 import { compileScript, compileTemplate, compileStyle, parse } from '@vue/compiler-sfc'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import * as icons from '@element-plus/icons-vue'
 import * as ElementPlus from 'element-plus'
 import { ID_INJECTION_KEY, ZINDEX_INJECTION_KEY } from 'element-plus'
@@ -19,11 +20,13 @@ const dashboardSource = readFileSync(new URL('../src/views/DashboardView.vue', i
 /** 编译真实单文件组件，注入 HTTP 边界与生命周期调度，保留 Vue 响应式和模板逻辑。 */
 function component(source = panelSource, { user = { roles: ['ADMIN'] }, get = async () => ({ data: {} }), language = 'zh-CN' } = {}) {
   const hooks = { mounted: [], unmounted: [], interval: null, cleared: null }
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/tasks', component: { render: () => null } }] })
   const i18n = createI18n({ legacy: false, locale: language, messages: { 'zh-CN': zh, 'en-US': en } })
   const auth = { isAdmin: user?.roles?.includes('ADMIN') || false, hasPermission: permission => hasEffectivePermission(user, permission) }
   const dependencies = {
     vue: { ...Vue, onMounted: callback => hooks.mounted.push(callback), onUnmounted: callback => hooks.unmounted.push(callback) },
     'vue-i18n': { useI18n: () => i18n.global },
+    'vue-router': { useRouter: () => router },
     '@element-plus/icons-vue': icons,
     '../api/http': { get },
     '../stores/auth': { useAuthStore: () => auth },
@@ -44,7 +47,7 @@ function component(source = panelSource, { user = { roles: ['ADMIN'] }, get = as
   const state = definition.setup({}, { expose() {} })
   const render = new Function('dependencies', `${imports(template.code).replace('export function render', 'function render')}\nreturn render`)(dependencies)
   return {
-    state, hooks, i18n,
+    state, hooks, i18n, router,
     async html() {
       const app = Vue.createSSRApp({ render: () => render({}, [], {}, Vue.proxyRefs(state), {}, {}) })
       app.provide(ID_INJECTION_KEY, { prefix: 100, current: 0 })
@@ -294,7 +297,8 @@ for (const [traceId, pythonTraceId, expected, label] of [
   test(`调用明细展示真实链路来源：${JSON.stringify([traceId, pythonTraceId])}`, async () => {
     const c = component(panelSource, { get: async url => url.endsWith('summary') ? summary() : { data: { total: 1, records: [{ traceId, pythonTraceId }] } } })
     await c.state.load()
-    assert.deepEqual(c.state.traceDetails(c.state.records.value[0]), { value: expected, label })
+    assert.equal(c.state.traceDetails(c.state.records.value[0]).value, expected)
+    assert.equal(c.state.traceDetails(c.state.records.value[0]).label, label)
     const html = await c.html()
     assert.ok(html.includes(expected))
     assert.ok(html.includes(label))
@@ -309,3 +313,48 @@ test('调用明细将 Trace 列置于时间之后且完整换行展示', () => {
   assert.ok(columns.indexOf("t('modelUsage.traceId')") < columns.indexOf("t('modelUsage.source')"))
   assert.match(panelSource, /\.usage-trace code[^}]*overflow-wrap: anywhere/)
 })
+
+for (const traceId of ['request-trace', '  trace.a:1_2-3  ', 'x', 'x'.repeat(64)]) {
+  test(`请求 Trace ID 可打开对应任务日志：${traceId}`, async () => {
+    const c = component()
+    const row = { traceId, pythonTraceId: 'worker-trace' }
+    c.state.records.value = [row]
+    assert.match(await c.html(), /class="[^"]*el-link/)
+    await c.state.openTraceLogs(row)
+    assert.equal(c.router.currentRoute.value.path, '/tasks')
+    assert.deepEqual(c.router.currentRoute.value.query, { traceId: traceId.trim(), openLogs: 'true' })
+  })
+}
+
+for (const traceId of [null, undefined, '', '  ', 123, 'x'.repeat(65), '../tasks', '<script>', 'a?b', 'a b']) {
+  test(`空值或非法 Trace ID 不跳转：${String(traceId)}`, async () => {
+    const c = component()
+    const row = { traceId }
+    c.state.records.value = [row]
+    assert.doesNotMatch(await c.html(), /class="[^"]*el-link/)
+    await c.state.openTraceLogs(row)
+    assert.equal(c.router.currentRoute.value.path, '/')
+  })
+}
+
+test('无任务查看权限时不提供链接且调用处理函数也无法导航', async () => {
+  const c = component(panelSource, { user: { roles: ['USER'], permissions: ['operations:dashboard:view'] } })
+  c.state.records.value = [{ traceId: 'private-trace' }]
+  assert.doesNotMatch(await c.html(), /private-trace|el-link/)
+  await c.state.openTraceLogs(c.state.records.value[0])
+  assert.equal(c.router.currentRoute.value.path, '/')
+})
+
+for (const [language, hint] of [['zh-CN', '缺少主任务关联，无法跳转'], ['en-US', 'No parent task is linked; navigation is unavailable']]) {
+  test(`仅 Python Trace ID 保留文本并说明无法跳转：${language}`, async () => {
+    const c = component(panelSource, { language })
+    const row = { traceId: null, pythonTraceId: 'worker-trace' }
+    c.state.records.value = [row]
+    const html = await c.html()
+    assert.match(html, /worker-trace/)
+    assert.ok(html.includes(hint))
+    assert.doesNotMatch(html, /class="[^"]*el-link/)
+    await c.state.openTraceLogs(row)
+    assert.equal(c.router.currentRoute.value.path, '/')
+  })
+}

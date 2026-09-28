@@ -83,7 +83,12 @@
         <el-table-column prop="startedAt" :label="t('modelUsage.time')" min-width="170" />
         <el-table-column :label="t('modelUsage.traceId')" min-width="250">
           <template #default="scope">
-            <div class="usage-trace"><small>{{ traceDetails(scope.row).label }}</small><code>{{ traceDetails(scope.row).value }}</code></div>
+            <div class="usage-trace">
+              <small>{{ traceDetails(scope.row).label }}</small>
+              <el-link v-if="canOpenTrace(scope.row)" type="primary" @click="openTraceLogs(scope.row)"><code>{{ traceDetails(scope.row).value }}</code></el-link>
+              <code v-else>{{ traceDetails(scope.row).value }}</code>
+              <small v-if="traceDetails(scope.row).hint">{{ traceDetails(scope.row).hint }}</small>
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('modelUsage.source')" width="120"><template #default="scope">{{ sourceLabel(scope.row.source) }}</template></el-table-column>
@@ -107,6 +112,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { CircleCheck, Clock, Coin, DataAnalysis, Loading, Refresh, Search, Timer } from '@element-plus/icons-vue'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
@@ -114,6 +120,7 @@ import { formatCount, formatMilliseconds, formatSuccessRate } from '../utils/das
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
+const router = useRouter()
 const loading = ref(false)
 const recordsLoading = ref(false)
 const error = ref(false)
@@ -236,9 +243,22 @@ async function reset() {
 function traceDetails(row) {
   for (const key of ['traceId', 'pythonTraceId']) {
     const value = row[key]
-    if (typeof value === 'string' && value.trim()) return { value: value.trim(), label: t(`modelUsage.${key}`) }
+    if (typeof value === 'string' && value.trim()) {
+      return { value: value.trim(), label: t(`modelUsage.${key}`), hint: key === 'pythonTraceId' ? t('modelUsage.noParentTrace') : '' }
+    }
   }
   return { value: '—', label: t('modelUsage.noTraceId') }
+}
+
+/** 仅允许有任务查看权限的用户打开格式有效的主请求链路，Python ID 不作为父任务 ID。 */
+function canOpenTrace(row) {
+  return auth.hasPermission('operations:task:view') && typeof row.traceId === 'string' && /^[A-Za-z0-9._:-]{1,64}$/.test(row.traceId.trim())
+}
+
+/** 复用任务页的路由参数，筛选主请求链路并自动展开对应日志。 */
+function openTraceLogs(row) {
+  if (!canOpenTrace(row)) return
+  return router.push({ path: '/tasks', query: { traceId: row.traceId.trim(), openLogs: 'true' } })
 }
 
 /** 使用当前语言格式化计数。 */
@@ -300,6 +320,8 @@ onUnmounted(() => {
 .usage-trace { display: flex; flex-direction: column; gap: 3px; padding: 3px 0; }
 .usage-trace small { color: #56637a; font-size: 11px; }
 .usage-trace code { color: var(--app-text); font-size: 12px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; user-select: all; }
+.usage-trace .el-link { align-self: flex-start; max-width: 100%; text-align: left; }
+.usage-trace .el-link code { color: inherit; user-select: text; }
 .model-usage-records .el-pagination { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
 .model-usage-panel :deep(.el-table th.el-table__cell) { background: #f7f9fc; color: #56637a; font-weight: 500; }
 .model-usage-panel :deep(.el-table .cell) { font-variant-numeric: tabular-nums; }

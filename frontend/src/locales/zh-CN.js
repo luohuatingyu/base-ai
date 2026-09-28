@@ -180,6 +180,7 @@ export default {
     updatedAt: '更新于 {time}', startTime: '开始时间', endTime: '结束时间', provider: '供应商', model: '模型', source: '来源', status: '状态',
     calls: '调用次数', successRate: '成功率', totalTokens: '总 Token', firstToken: '平均首 Token 延迟', duration: '平均耗时', running: '运行中',
     modelRanking: '模型排行', errors: '错误分布', errorType: '错误类型', errorCode: '错误码', count: '次数', records: '调用明细', time: '开始时间', inputTokens: '输入 Token', outputTokens: '输出 Token', traceId: 'Trace ID', pythonTraceId: 'Python Trace ID', noTraceId: '未记录 Trace ID',
+    noParentTrace: '缺少主任务关联，无法跳转',
     empty: '当前范围没有使用记录', noErrors: '当前范围没有错误', loadFailed: '模型使用数据加载失败',
     sources: { CHAT_STREAM: '公开 API 流式对话', CHAT: '对话', STREAM: '流式对话', EMBEDDING: '向量化', AGENT: 'Agent' },
     statuses: { SUCCESS: '成功', FAILED: '失败', INTERRUPTED: '中断', CANCELLED: '取消', RUNNING: '运行中' },
