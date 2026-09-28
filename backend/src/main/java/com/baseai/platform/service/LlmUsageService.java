@@ -78,7 +78,8 @@ public class LlmUsageService {
         try {
             jdbcTemplate.update("""
                 UPDATE llm_usage_record SET provider_code=?, model_name=?, status=?, has_output=?,
-                    input_tokens=?, output_tokens=?, total_tokens=?, finished_at=?,
+                    input_tokens=COALESCE(?, input_tokens), output_tokens=COALESCE(?, output_tokens),
+                    total_tokens=COALESCE(?, total_tokens), finished_at=?,
                     duration_ms=TIMESTAMPDIFF(MICROSECOND, started_at, ? ) DIV 1000,
                     error_type=?, error_code=? WHERE usage_id=?
                 """, normalize(completion.providerCode(), null, 64), normalize(completion.modelName(), null, 160),
@@ -87,6 +88,20 @@ public class LlmUsageService {
                 Timestamp.from(finishedAt), normalize(completion.errorType(), null, 100), normalize(completion.errorCode(), null, 100), usageId);
         } catch (RuntimeException exception) {
             log.warn("event=llm_usage_finish_failed error_type={}", exception.getClass().getSimpleName());
+        }
+    }
+
+    /** 在异步媒体任务仍运行时保存供应商已经返回的 Token，终态继续复用同一条记录。 */
+    public void updateTokens(String usageId, TokenUsage usage) {
+        if (usageId == null || usage == null || !usage.hasAny()) return;
+        try {
+            jdbcTemplate.update("""
+                UPDATE llm_usage_record SET input_tokens=COALESCE(?, input_tokens),
+                    output_tokens=COALESCE(?, output_tokens), total_tokens=COALESCE(?, total_tokens)
+                WHERE usage_id=?
+                """, usage.inputTokens(), usage.outputTokens(), usage.totalTokens(), usageId);
+        } catch (RuntimeException exception) {
+            log.warn("event=llm_usage_token_update_failed error_type={}", exception.getClass().getSimpleName());
         }
     }
 
@@ -123,11 +138,11 @@ public class LlmUsageService {
         List<Object> dimensionArgs = new ArrayList<>();
         String dimensionWhere = filters(query, dimensionArgs);
         result.put("models", jdbcTemplate.queryForList("""
-            SELECT COALESCE(provider_code, 'unknown') providerCode, COALESCE(model_name, 'unknown') modelName,
+            SELECT COALESCE(model_type, 'unknown') modelType, COALESCE(provider_code, 'unknown') providerCode, COALESCE(model_name, 'unknown') modelName,
                 COUNT(*) calls, SUM(status='SUCCESS') success, SUM(status IN ('FAILED','INTERRUPTED','CANCELLED')) failures,
                 COALESCE(SUM(total_tokens), 0) totalTokens, AVG(duration_ms) averageDurationMs
             FROM llm_usage_record""" + " WHERE " + dimensionWhere
-            + " GROUP BY provider_code, model_name ORDER BY calls DESC LIMIT 20", dimensionArgs.toArray()));
+            + " GROUP BY model_type, provider_code, model_name ORDER BY calls DESC LIMIT 20", dimensionArgs.toArray()));
 
         List<Object> errorArgs = new ArrayList<>();
         String errorWhere = filters(query, errorArgs);
@@ -167,6 +182,7 @@ public class LlmUsageService {
         args.add(Timestamp.from(query.to()));
         if (query.providerCode() != null && !query.providerCode().isBlank()) { sql.append(" AND provider_code=?"); args.add(query.providerCode().trim()); }
         if (query.modelName() != null && !query.modelName().isBlank()) { sql.append(" AND model_name=?"); args.add(query.modelName().trim()); }
+        if (query.modelType() != null && !query.modelType().isBlank()) { sql.append(" AND model_type=?"); args.add(query.modelType().trim()); }
         if (query.source() != null && !query.source().isBlank()) { sql.append(" AND source=?"); args.add(query.source().trim()); }
         if (query.status() != null && !query.status().isBlank()) { sql.append(" AND status=?"); args.add(query.status().trim().toUpperCase()); }
         return sql.toString();
@@ -204,18 +220,28 @@ public class LlmUsageService {
                              Long inputTokens, Long outputTokens, Long totalTokens,
                              String errorType, String errorCode, Instant finishedAt) {}
 
+    /** 供应商可选返回的 Token 用量；未返回的字段保持 NULL，避免伪造零值。 */
+    public record TokenUsage(Long inputTokens, Long outputTokens, Long totalTokens) {
+        /** 判断响应是否至少提供了一项可记录的用量。 */
+        public boolean hasAny() { return inputTokens != null || outputTokens != null || totalTokens != null; }
+    }
+
     /** 管理端聚合查询条件。 */
-    public record Query(Instant from, Instant to, String providerCode, String modelName, String source, String status) {
+    public record Query(Instant from, Instant to, String providerCode, String modelName, String modelType, String source, String status) {
+        /** 兼容已有调用方，未指定模型类型时查询全部能力。 */
+        public Query(Instant from, Instant to, String providerCode, String modelName, String source, String status) {
+            this(from, to, providerCode, modelName, null, source, status);
+        }
         /** 创建最近 24 小时的默认查询。 */
         public static Query last24Hours() {
             Instant to = Instant.now();
-            return new Query(to.minus(24, ChronoUnit.HOURS), to, null, null, null, null);
+            return new Query(to.minus(24, ChronoUnit.HOURS), to, null, null, null, null, null);
         }
         /** 校验时间窗口和状态，避免查询过大的历史范围。 */
         public Query validated() {
             if (from == null || to == null || !from.isBefore(to)) throw new IllegalArgumentException("Invalid usage time range");
             if (Duration.between(from, to).compareTo(Duration.ofDays(90)) > 0) throw new IllegalArgumentException("Usage range exceeds 90 days");
-            return new Query(from, to, providerCode, modelName, source, status);
+            return new Query(from, to, providerCode, modelName, modelType, source, status);
         }
     }
 

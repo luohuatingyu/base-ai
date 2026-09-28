@@ -23,7 +23,7 @@
       <el-tab-pane :label="t('chat.conversationTab')" name="conversation">
         <!-- 紧凑模型摘要固定在消息区上方，完整设置通过抽屉展示。 -->
         <div class="model-toolbar">
-          <div class="model-summary"><span class="model-summary-type">{{ localizeModelType(modelType, modelTypes, t) }}</span><span class="model-summary-value" :title="mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider')">{{ mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider') }}</span></div>
+          <div class="model-summary"><span class="model-summary-type">{{ generationMode === 'generation' ? localizeModelType(generationType, generationTypes, t) : localizeModelType(modelType, modelTypes, t) }}</span><span class="model-summary-value" :title="generationMode === 'generation' ? (generationModels.find(model => model.id === generationModelId && model.modelType === generationType)?.name || t('chat.selectModel')) : mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider')">{{ generationMode === 'generation' ? (generationModels.find(model => model.id === generationModelId && model.modelType === generationType)?.name || t('chat.selectModel')) : mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider') }}</span></div>
           <el-button size="small" :icon="Setting" aria-haspopup="dialog" :aria-expanded="settingsOpen" @click="settingsOpen = true">{{ t('chat.settings') }}</el-button>
         </div>
 
@@ -60,6 +60,12 @@
           <span v-else-if="item.traceId">{{ t('chat.traceId') }}: {{ item.traceId }}</span>
         </div>
         </details>
+        <div v-if="item.media?.length" class="message-media">
+          <template v-for="media in item.media" :key="media.value">
+            <el-image v-if="media.kind === 'image'" :src="media.value" :preview-src-list="item.media.filter(value => value.kind === 'image').map(value => value.value)" fit="contain" preview-teleported />
+            <video v-else controls preload="metadata" :src="media.value" />
+          </template>
+        </div>
       </div>
       <div v-if="!messages.length" class="chat-empty"><div class="chat-empty-icon"><el-icon><ChatLineRound /></el-icon></div><h3>{{ t('chat.empty') }}</h3><p>{{ t('chat.emptyHint') }}</p><div class="chat-suggestions"><button v-for="key in ['explain', 'write', 'plan']" :key="key" :disabled="loading || !!prompt.trim()" @click="useSuggestion(t('chat.suggestions.' + key + 'Prompt'))"><span>{{ t('chat.suggestions.' + key) }}</span><el-icon><Right /></el-icon></button></div></div>
         </div>
@@ -109,8 +115,17 @@
         <el-form class="model-settings-form" :inline="true" size="small" :disabled="loading">
           <h3 class="model-section-title">{{ t('chat.modelSelection') }}</h3>
           <div class="model-basic-fields" :class="mode === 'single' ? 'single-model' : 'multi-model'">
-            <el-form-item :label="t('chat.modelType')">
+            <el-form-item :label="t('chat.callType')">
+              <el-radio-group v-model="generationMode" @change="onGenerationModeChange"><el-radio-button value="chat">{{ t('chat.chatCall') }}</el-radio-button><el-radio-button value="generation">{{ t('chat.mediaGeneration') }}</el-radio-button></el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="generationMode === 'chat'" :label="t('chat.modelType')">
               <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-radio-button></el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="generationMode === 'generation'" :label="t('chat.generationType')">
+              <el-radio-group v-model="generationType" @change="onGenerationTypeChange"><el-radio-button v-for="type in generationTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, generationTypes, t) }}</el-radio-button></el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="generationMode === 'generation'" :label="t('chat.model')">
+              <el-select v-model="generationModelId" :placeholder="t('chat.selectModel')" filterable><el-option v-for="model in generationModels.filter(item => item.modelType === generationType)" :key="model.id + ':' + model.modelType" :value="model.id" :label="model.name + ' (' + model.modelName + ')'" /></el-select>
             </el-form-item>
             <div class="mode-field">
               <span class="mode-field-label">{{ t('chat.mode') }}</span>
@@ -278,6 +293,11 @@ const mode = ref('multi') // multi=模型池(能力路由) / single=供应商+�
 const featureCode = ref('')
 const modelType = ref('text_model')
 const modelTypes = ref([])
+const generationMode = ref('chat')
+const generationType = ref('image_model')
+const generationTypes = [{ value: 'image_model', label: '图片生成模型' }, { value: 'video_model', label: '视频生成模型' }]
+const generationModels = ref([])
+const generationModelId = ref(null)
 const enableThinking = ref(false)
 const thinkingLevel = ref('MEDIUM')
 const routes = ref([])
@@ -291,9 +311,10 @@ const defaultRouteSupportsType = computed(() => routes.value.some(route => route
 const filteredRoutes = computed(() => routes.value.filter(route => route.featureCode !== 'DEFAULT' && route.supportedModelTypes?.includes(modelType.value)))
 const filteredProviders = computed(() => providers.value.filter(provider => provider.models.some(matchesType)))
 const currentModels = computed(() => (providers.value.find(p => p.id === providerId.value)?.models || []).filter(matchesType))
+const generationModelOptions = computed(() => (Array.isArray(generationModels.value) ? generationModels.value : []).filter(model => model.modelType === generationType.value))
 
 const canSend = computed(() => optionsReady.value && !loading.value && !serverGenerating.value && !!prompt.value.trim()
-  && (mode.value === 'single' ? !!modelId.value : featureCode.value
+  && (generationMode.value === 'generation' ? !!generationModelId.value : mode.value === 'single' ? !!modelId.value : featureCode.value
     ? filteredRoutes.value.some(route => route.featureCode === featureCode.value) : defaultRouteSupportsType.value))
 
 const toolsLocked = computed(() => loading.value || serverGenerating.value)
@@ -432,6 +453,17 @@ function stopGeneration() {
 function onProviderChange() {
   modelId.value = null
 }
+/** 切换调用类型时清理另一类模型选择，避免媒体参数进入普通聊天请求。 */
+function onGenerationModeChange() {
+  if (generationMode.value === 'generation') {
+    pendingImages.value = []
+    if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
+  }
+}
+/** 切换图片或视频类型后只保留同类模型。 */
+function onGenerationTypeChange() {
+  if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
+}
 /** 切换模型来源时只保留当前模式需要的配置，避免隐藏字段继续影响请求。 */
 function setMode(nextMode) {
   if (loading.value || mode.value === nextMode) return
@@ -560,6 +592,14 @@ async function loadOptions() {
     routes.value = routesRes.data
     providers.value = providersRes.data
     modelTypes.value = typesRes.data
+    try {
+      const generationRes = await http.get('/ai/chat/generation-models')
+      generationModels.value = Array.isArray(generationRes.data) ? generationRes.data : []
+    } catch {
+      // 生成模型目录不可用不影响既有文本/视觉对话。
+      generationModels.value = []
+    }
+    if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
     if (!modelTypes.value.some(type => type.value === modelType.value)) modelType.value = modelTypes.value[0]?.value || 'text_model'
     optionsReady.value = true
     const selected = Number(route.query.conversation)
@@ -705,6 +745,7 @@ async function syncGeneration(id) {
 /** 只发送新问题，立即分离当前草稿，避免首个流事件清空下一条输入。 */
 async function send() {
   if (!canSend.value) return
+  if (generationMode.value === 'generation') return sendGeneration()
   const content = prompt.value.trim()
   const draft = prompt.value
   const images = [...pendingImages.value]
@@ -785,6 +826,54 @@ async function send() {
     if (!unmounted && turnConversationId) await refreshHistory()
   }
 }
+
+/** 在 AI 对话页发起媒体生成并展示结果；视频任务按后端返回的任务编号轮询。 */
+async function sendGeneration() {
+  const content = prompt.value.trim()
+  const draft = prompt.value
+  const previousLength = messages.value.length
+  loading.value = true
+  pageError.value = ''
+  prompt.value = ''
+  try {
+    if (!conversationId.value) {
+      const created = await http.post('/ai/conversations')
+      conversationId.value = created.data.id
+      await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
+    }
+    const user = { role: 'user', content }
+    const assistant = { role: 'assistant', content: '', status: 'GENERATING', media: [] }
+    messages.value.push(user, assistant)
+    await scrollToLatest()
+    let result = await http.post('/ai/chat/generation', {
+      model_type: generationType.value, modelId: generationModelId.value, prompt: content,
+      conversationId: conversationId.value, options: {}
+    })
+    result = result.data
+    while (result.status === 'RUNNING' || result.status === 'QUEUED') {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      result = (await http.get('/ai/chat/generation/' + result.id)).data
+    }
+    if (result.status !== 'SUCCEEDED') throw new Error(result.errorMessage || 'generation failed')
+    assistant.status = 'COMPLETED'
+    assistant.model = result.modelName
+    assistant.providerCode = result.providerCode
+    assistant.inputTokens = result.inputTokens ?? null
+    assistant.outputTokens = result.outputTokens ?? null
+    assistant.totalTokens = result.totalTokens ?? null
+    assistant.traceId = result.traceId
+    const payload = typeof result.outputJson === 'string' ? JSON.parse(result.outputJson || '{}') : (result.outputJson || {})
+    assistant.media = (payload.outputs || []).map(item => ({ kind: generationType.value === 'image_model' ? 'image' : 'video', value: item.kind === 'base64' ? 'data:image/png;base64,' + item.value : item.value }))
+  } catch (error) {
+    messages.value.splice(previousLength)
+    prompt.value = draft
+    pageError.value = t('chat.generationFailed')
+    showHttpError(error, 'chat.callFailed')
+  } finally {
+    loading.value = false
+    await refreshHistory()
+  }
+}
 </script>
 
 <style scoped>
@@ -825,6 +914,8 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 .model-summary { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; font-size: 12px; }
 .model-summary-type { flex-shrink: 0; color: var(--app-muted); }
 .model-summary-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text); }
+.message-media { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.message-media :deep(.el-image), .message-media video { width: min(360px, 100%); max-height: 360px; border: 1px solid var(--app-border); border-radius: 8px; background: #111827; object-fit: contain; }
 .model-config { min-width: 0; }
 
 .prompt-settings {

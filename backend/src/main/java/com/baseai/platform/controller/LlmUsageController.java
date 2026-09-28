@@ -32,7 +32,7 @@ public class LlmUsageController {
                                        @RequestParam(required = false) String source,
                                        @RequestParam(required = false) String status) {
         AuthContext.requireAdmin();
-        return service.summary(query(from, to, providerCode, modelName, source, status));
+        return service.summary(query(from, to, providerCode, modelName, null, source, status));
     }
 
     /** 返回管理员可见的模型使用明细，统一限制分页大小。 */
@@ -46,17 +46,17 @@ public class LlmUsageController {
                                         @RequestParam(defaultValue = "1") int page,
                                         @RequestParam(defaultValue = "20") int pageSize) {
         AuthContext.requireAdmin();
-        return service.records(query(from, to, providerCode, modelName, source, status), page, pageSize);
+        return service.records(query(from, to, providerCode, modelName, null, source, status), page, pageSize);
     }
 
     /** 将前端时间参数转换为受限查询对象。 */
     private LlmUsageService.Query query(String from, String to, String providerCode, String modelName,
-                                        String source, String status) {
+                                        String modelType, String source, String status) {
         LlmUsageService.Query defaults = LlmUsageService.Query.last24Hours();
         try {
             Instant start = from == null || from.isBlank() ? defaults.from() : Instant.parse(from);
             Instant end = to == null || to.isBlank() ? defaults.to() : Instant.parse(to);
-            return new LlmUsageService.Query(start, end, providerCode, modelName, source, status).validated();
+            return new LlmUsageService.Query(start, end, providerCode, modelName, modelType, source, status).validated();
         } catch (DateTimeParseException exception) {
             throw new BusinessException("error.badRequest");
         } catch (IllegalArgumentException exception) {

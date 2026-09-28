@@ -177,16 +177,17 @@ export default {
   },
   modelUsage: {
     eyebrow: '模型可观测性', title: '模型使用监控', description: '查看调用量、Token 消耗与响应表现，快速定位模型使用中的异常。',
-    updatedAt: '更新于 {time}', startTime: '开始时间', endTime: '结束时间', provider: '供应商', model: '模型', source: '来源', status: '状态',
+    updatedAt: '更新于 {time}', startTime: '开始时间', endTime: '结束时间', provider: '供应商', model: '模型', modelType: '模型类型', source: '来源', status: '状态',
     calls: '调用次数', successRate: '成功率', totalTokens: '总 Token', firstToken: '平均首 Token 延迟', duration: '平均耗时', running: '运行中',
     modelRanking: '模型排行', errors: '错误分布', errorType: '错误类型', errorCode: '错误码', count: '次数', records: '调用明细', time: '开始时间', inputTokens: '输入 Token', outputTokens: '输出 Token', traceId: 'Trace ID', pythonTraceId: 'Python Trace ID', noTraceId: '未记录 Trace ID',
     noParentTrace: '缺少主任务关联，无法查看日志',
     empty: '当前范围没有使用记录', noErrors: '当前范围没有错误', loadFailed: '模型使用数据加载失败',
-    sources: { CHAT_STREAM: '公开 API 流式对话', CHAT: '对话', STREAM: '流式对话', EMBEDDING: '向量化', AGENT: 'Agent' },
+    sources: { CHAT_STREAM: '公开 API 流式对话', CHAT: '对话', STREAM: '流式对话', EMBEDDING: '向量化', AGENT: 'Agent', AI_IMAGE_GENERATION: '图片生成', AI_VIDEO_GENERATION: '视频生成' },
+    modelTypes: { text_model: '文本模型', vision_model: '视觉模型', embedding_model: '向量模型', image_model: '图片生成模型', video_model: '视频生成模型' },
     statuses: { SUCCESS: '成功', FAILED: '失败', INTERRUPTED: '中断', CANCELLED: '取消', RUNNING: '运行中' },
     timeRange: '时间范围（默认近 24 小时）',
     allProviders: '全部供应商',
-    allModels: '全部模型',
+    allModels: '全部模型', allModelTypes: '全部模型类型',
     allSources: '全部来源',
     allStatuses: '全部状态',
     appliedRange: '已应用时间范围',
@@ -440,6 +441,7 @@ export default {
     user: '你', assistant: 'AI', empty: '输入问题开始对话', emptyHint: '从一个示例开始，或直接在下方输入你的问题。',
     placeholder: '请输入问题，Ctrl/Cmd + Enter 发送', traceId: 'Trace ID', send: '发送',
     callFailed: '模型调用失败',
+    callType: '调用类型', chatCall: 'AI 对话', mediaGeneration: '媒体生成', generationType: '生成类型',
     mode: '模式',
     multiModel: '多模型',
     singleModel: '单模型',
@@ -491,7 +493,7 @@ export default {
     promptFileReadFailed: '提示词文件读取失败',
     uploadImage: '上传图片', imageUploadHint: '支持 PNG、JPEG、WEBP，最多 4 张', removeImage: '移除图片', imageLimit: '最多上传 {count} 张图片',
     imageType: '仅支持 PNG、JPEG、WEBP 图片', imageSize: '单张图片不能超过 10 MB',
-    imageReadFailed: '图片读取失败', imageVisionOnly: '图片只能发送给视觉模型', shortcutHint: 'Ctrl/Cmd + Enter 发送 · Shift + Enter 换行', composerHint: '回答会自动保存到当前会话', draftHint: '你可以继续编辑下一条问题', loadingOptions: '正在加载模型配置…', waitingForSync: '正在同步会话状态…', stopGeneration: '停止生成', backToLatest: '回到最新', retry: '重试', optionsFailed: '模型配置加载失败，请重试。', historyFailed: '历史会话加载失败，请重试。', conversationFailed: '会话加载失败，当前内容已保留。', newConversationFailed: '新建会话失败，请重试。', deleteFailed: '删除会话失败，请重试。', syncFailed: '会话状态同步失败，请稍后重试。', sendFailed: '发送失败，问题草稿已恢复。', interruptedHint: '回答已中断，已收到的内容仍然保留。', suggestions: { explain: '解释一段代码', explainPrompt: '请解释这段代码的作用，并指出潜在问题。', write: '帮我写一份方案', writePrompt: '请帮我写一份清晰、可执行的实施方案。', plan: '规划下一步工作', planPrompt: '请根据当前目标给出下一步行动计划。' }
+    imageReadFailed: '图片读取失败', imageVisionOnly: '图片只能发送给视觉模型', generationFailed: '媒体生成失败，请检查模型配置和供应商响应。', shortcutHint: 'Ctrl/Cmd + Enter 发送 · Shift + Enter 换行', composerHint: '回答会自动保存到当前会话', draftHint: '你可以继续编辑下一条问题', loadingOptions: '正在加载模型配置…', waitingForSync: '正在同步会话状态…', stopGeneration: '停止生成', backToLatest: '回到最新', retry: '重试', optionsFailed: '模型配置加载失败，请重试。', historyFailed: '历史会话加载失败，请重试。', conversationFailed: '会话加载失败，当前内容已保留。', newConversationFailed: '新建会话失败，请重试。', deleteFailed: '删除会话失败，请重试。', syncFailed: '会话状态同步失败，请稍后重试。', sendFailed: '发送失败，问题草稿已恢复。', interruptedHint: '回答已中断，已收到的内容仍然保留。', suggestions: { explain: '解释一段代码', explainPrompt: '请解释这段代码的作用，并指出潜在问题。', write: '帮我写一份方案', writePrompt: '请帮我写一份清晰、可执行的实施方案。', plan: '规划下一步工作', planPrompt: '请根据当前目标给出下一步行动计划。' }
   },
   logs: {
     loginTitle: '登录日志', loginDescription: '记录登录成功与失败事件。',

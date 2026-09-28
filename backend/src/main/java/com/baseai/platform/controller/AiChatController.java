@@ -12,6 +12,7 @@ import com.baseai.platform.security.ApiKeyField;
 import com.baseai.platform.security.ApiKeyRisk;
 import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.LlmManagementService;
+import com.baseai.platform.service.MediaGenerationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -41,20 +42,51 @@ public class AiChatController {
     private final LlmManagementService llmManagementService;
     private final ChatStreamClient streamClient;
     private final ObjectMapper mapper;
+    private final MediaGenerationService mediaGenerationService;
 
     /** 注入同步客户端、流式客户端和统一 JSON 编解码器。 */
     @org.springframework.beans.factory.annotation.Autowired
     public AiChatController(AiChatClient client, LlmManagementService llmManagementService,
-                            ChatStreamClient streamClient, ObjectMapper mapper) {
+                            ChatStreamClient streamClient, ObjectMapper mapper, MediaGenerationService mediaGenerationService) {
         this.client = client;
         this.llmManagementService = llmManagementService;
         this.streamClient = streamClient;
         this.mapper = mapper;
+        this.mediaGenerationService = mediaGenerationService;
     }
 
     /** 兼容只测试非流式调用的轻量构造方式。 */
     public AiChatController(AiChatClient client, LlmManagementService llmManagementService) {
-        this(client, llmManagementService, null, new ObjectMapper());
+        this(client, llmManagementService, null, new ObjectMapper(), null);
+    }
+
+    /** 兼容现有控制器单元测试和仅关注流式行为的轻量构造方式。 */
+    public AiChatController(AiChatClient client, LlmManagementService llmManagementService,
+                            ChatStreamClient streamClient, ObjectMapper mapper) {
+        this(client, llmManagementService, streamClient, mapper, null);
+    }
+
+    /** 返回 AI 对话页可调用的图片和视频模型，不与文本对话模型目录混用。 */
+    @GetMapping("/generation-models")
+    public List<MediaGenerationService.ModelOption> getGenerationModels() {
+        if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
+        return mediaGenerationService.models();
+    }
+
+    /** 在 AI 对话入口发起图片或视频生成，并记录统一用量 ID。 */
+    @PostMapping("/generation")
+    public Map<String, Object> generate(@RequestBody GenerationRequest request) {
+        if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
+        if (request == null) return mediaGenerationService.generate(null);
+        return mediaGenerationService.generate(new MediaGenerationService.GenerateRequest(
+            request.modelType(), request.modelId(), request.prompt(), request.conversationId(), request.options()));
+    }
+
+    /** 轮询视频供应商状态并返回当前进度、媒体结果和 Token 元数据。 */
+    @GetMapping("/generation/{id}")
+    public Map<String, Object> generationStatus(@PathVariable long id) {
+        if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
+        return mediaGenerationService.status(id);
     }
 
     /** 获取可用的路由列表，供对话页面选择模型池。 */
@@ -239,4 +271,7 @@ public class AiChatController {
     }
     /** AI 对话业务响应，仅包含模型结果和 Token 统计。 */
     public record ChatResponse(String content, String model, int inputTokens, int outputTokens, int totalTokens) {}
+    /** AI 对话页媒体生成请求；options 只接受供应商协议的白名单参数。 */
+    public record GenerationRequest(@JsonProperty("model_type") String modelType, Long modelId,
+                                    String prompt, Long conversationId, Map<String, Object> options) {}
 }

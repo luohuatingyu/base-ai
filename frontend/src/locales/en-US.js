@@ -152,16 +152,17 @@ export default {
   },
   modelUsage: {
     eyebrow: 'MODEL OBSERVABILITY', title: 'Model usage monitoring', description: 'Track calls, token consumption, and response times to spot issues in model activity.',
-    updatedAt: 'Updated {time}', startTime: 'Start time', endTime: 'End time', provider: 'Provider', model: 'Model', source: 'Source', status: 'Status',
+    updatedAt: 'Updated {time}', startTime: 'Start time', endTime: 'End time', provider: 'Provider', model: 'Model', modelType: 'Model type', source: 'Source', status: 'Status',
     calls: 'Calls', successRate: 'Success rate', totalTokens: 'Total tokens', firstToken: 'Avg first token latency', duration: 'Avg duration', running: 'Running',
     modelRanking: 'Model ranking', errors: 'Error distribution', errorType: 'Error type', errorCode: 'Error code', count: 'Count', records: 'Call records', time: 'Started at', inputTokens: 'Input tokens', outputTokens: 'Output tokens', traceId: 'Trace ID', pythonTraceId: 'Python Trace ID', noTraceId: 'Trace ID not recorded',
     noParentTrace: 'No parent task is linked; logs are unavailable',
     empty: 'No usage records in this range', noErrors: 'No errors in this range', loadFailed: 'Failed to load model usage',
-    sources: { CHAT_STREAM: 'Public API stream', CHAT: 'Chat', STREAM: 'Streaming chat', EMBEDDING: 'Embedding', AGENT: 'Agent' },
+    sources: { CHAT_STREAM: 'Public API stream', CHAT: 'Chat', STREAM: 'Streaming chat', EMBEDDING: 'Embedding', AGENT: 'Agent', AI_IMAGE_GENERATION: 'Image generation', AI_VIDEO_GENERATION: 'Video generation' },
+    modelTypes: { text_model: 'Text model', vision_model: 'Vision model', embedding_model: 'Embedding model', image_model: 'Image generation model', video_model: 'Video generation model' },
     statuses: { SUCCESS: 'Success', FAILED: 'Failed', INTERRUPTED: 'Interrupted', CANCELLED: 'Cancelled', RUNNING: 'Running' },
     timeRange: 'Time range (last 24 hours by default)',
     allProviders: 'All providers',
-    allModels: 'All models',
+    allModels: 'All models', allModelTypes: 'All model types',
     allSources: 'All sources',
     allStatuses: 'All statuses',
     appliedRange: 'Applied time range',
@@ -414,6 +415,7 @@ export default {
     user: 'You', assistant: 'AI', empty: 'Enter a question to start chatting', emptyHint: 'Start with an example or type your own question below.',
     placeholder: 'Enter a question, then press Ctrl/Cmd + Enter to send', traceId: 'Trace ID', send: 'Send',
     callFailed: 'Model call failed',
+    callType: 'Call Type', chatCall: 'AI Chat', mediaGeneration: 'Media Generation', generationType: 'Generation Type',
     mode: 'Mode',
     multiModel: 'Multi-Model',
     singleModel: 'Single Model',
@@ -465,7 +467,7 @@ export default {
     promptFileReadFailed: 'Failed to read prompt file',
     uploadImage: 'Upload Image', imageUploadHint: 'PNG, JPEG, or WEBP, up to 4 images', removeImage: 'Remove image', imageLimit: 'You can upload up to {count} images',
     imageType: 'Only PNG, JPEG, and WEBP images are supported', imageSize: 'Each image must be no larger than 10 MB',
-    imageReadFailed: 'Failed to read image', imageVisionOnly: 'Images can only be sent to vision models', shortcutHint: 'Ctrl/Cmd + Enter to send · Shift + Enter for a new line', composerHint: 'Replies are saved to the current conversation', draftHint: 'You can keep editing your next question', loadingOptions: 'Loading model options…', waitingForSync: 'Syncing conversation state…', stopGeneration: 'Stop generating', backToLatest: 'Back to latest', retry: 'Retry', optionsFailed: 'Model options failed to load. Try again.', historyFailed: 'Conversation history failed to load. Try again.', conversationFailed: 'Conversation failed to load. Your current content is preserved.', newConversationFailed: 'Could not start a new conversation. Try again.', deleteFailed: 'Could not delete the conversation. Try again.', syncFailed: 'Conversation state could not be synced. Try again later.', sendFailed: 'Send failed. Your draft has been restored.', interruptedHint: 'The response was interrupted; received content is preserved.', suggestions: { explain: 'Explain code', explainPrompt: 'Explain what this code does and point out potential issues.', write: 'Draft a plan', writePrompt: 'Write a clear, actionable implementation plan.', plan: 'Plan next steps', planPrompt: 'Based on this goal, suggest the next steps.' }
+    imageReadFailed: 'Failed to read image', imageVisionOnly: 'Images can only be sent to vision models', generationFailed: 'Media generation failed. Check the model configuration and provider response.', shortcutHint: 'Ctrl/Cmd + Enter to send · Shift + Enter for a new line', composerHint: 'Replies are saved to the current conversation', draftHint: 'You can keep editing your next question', loadingOptions: 'Loading model options…', waitingForSync: 'Syncing conversation state…', stopGeneration: 'Stop generating', backToLatest: 'Back to latest', retry: 'Retry', optionsFailed: 'Model options failed to load. Try again.', historyFailed: 'Conversation history failed to load. Try again.', conversationFailed: 'Conversation failed to load. Your current content is preserved.', newConversationFailed: 'Could not start a new conversation. Try again.', deleteFailed: 'Could not delete the conversation. Try again.', syncFailed: 'Conversation state could not be synced. Try again later.', sendFailed: 'Send failed. Your draft has been restored.', interruptedHint: 'The response was interrupted; received content is preserved.', suggestions: { explain: 'Explain code', explainPrompt: 'Explain what this code does and point out potential issues.', write: 'Draft a plan', writePrompt: 'Write a clear, actionable implementation plan.', plan: 'Plan next steps', planPrompt: 'Based on this goal, suggest the next steps.' }
   },
   logs: {
     loginTitle: 'Login Logs', loginDescription: 'Records successful and failed login events.',

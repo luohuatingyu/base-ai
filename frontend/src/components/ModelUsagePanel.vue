@@ -52,6 +52,7 @@
         <div class="usage-card-heading"><h3>{{ t('modelUsage.modelRanking') }}</h3><span>{{ t('modelUsage.rankingHint') }}</span></div>
         <el-table v-if="models.length" :data="models" size="small" stripe>
           <el-table-column prop="providerCode" :label="t('modelUsage.provider')" min-width="110" show-overflow-tooltip />
+          <el-table-column prop="modelType" :label="t('modelUsage.modelType')" min-width="130" show-overflow-tooltip />
           <el-table-column prop="modelName" :label="t('modelUsage.model')" min-width="150" show-overflow-tooltip />
           <el-table-column :label="t('modelUsage.calls')" width="90" align="right"><template #default="scope">{{ number(scope.row.calls) }}</template></el-table-column>
           <el-table-column :label="t('modelUsage.totalTokens')" width="120" align="right"><template #default="scope">{{ number(scope.row.totalTokens) }}</template></el-table-column>
@@ -93,12 +94,14 @@
         </el-table-column>
         <el-table-column :label="t('modelUsage.source')" width="120"><template #default="scope">{{ sourceLabel(scope.row.source) }}</template></el-table-column>
         <el-table-column prop="providerCode" :label="t('modelUsage.provider')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="modelType" :label="t('modelUsage.modelType')" min-width="130" show-overflow-tooltip />
         <el-table-column prop="modelName" :label="t('modelUsage.model')" min-width="180" show-overflow-tooltip />
         <el-table-column :label="t('modelUsage.status')" width="110">
           <template #default="scope"><el-tag :type="statusType(scope.row.status)" size="small" effect="light">{{ statusLabel(scope.row.status) }}</el-tag></template>
         </el-table-column>
         <el-table-column :label="t('modelUsage.inputTokens')" width="110" align="right"><template #default="scope">{{ number(scope.row.inputTokens) }}</template></el-table-column>
         <el-table-column :label="t('modelUsage.outputTokens')" width="110" align="right"><template #default="scope">{{ number(scope.row.outputTokens) }}</template></el-table-column>
+        <el-table-column :label="t('modelUsage.totalTokens')" width="110" align="right"><template #default="scope">{{ number(scope.row.totalTokens) }}</template></el-table-column>
         <el-table-column :label="t('modelUsage.duration')" width="140" align="right"><template #default="scope">{{ milliseconds(scope.row.durationMs) }}</template></el-table-column>
       </el-table>
       <el-empty v-else-if="!loading && !recordsLoading && !error && !recordsError" :image-size="64" :description="t('modelUsage.empty')" />
@@ -160,7 +163,7 @@ const models = ref([])
 const errors = ref([])
 const records = ref([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const sources = ['CHAT', 'STREAM', 'CHAT_STREAM', 'EMBEDDING', 'AGENT']
+const sources = ['CHAT', 'STREAM', 'CHAT_STREAM', 'EMBEDDING', 'AGENT', 'AI_IMAGE_GENERATION', 'AI_VIDEO_GENERATION']
 const statuses = ['SUCCESS', 'FAILED', 'INTERRUPTED', 'CANCELLED', 'RUNNING']
 const appliedParams = ref({})
 const recordParams = ref(null)
