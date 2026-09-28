@@ -1,5 +1,50 @@
 # 最近分支覆盖测试报告
 
+## AI 视频分类新增表单改造（2026-09-28）
+
+### Git 基准与范围
+
+- Commit: `b2a6f93a89dca54c733f97bc28009218d69d7da8`（Fix dashboard mobile date filter and stream labels）；功能提交 `3868bbc`（Improve AI video creation forms and asset settings）；分支 `emdash/codex-vlzfy`。
+- Vue 3、Element Plus、vue-i18n：新增/编辑表单分为基础信息、内容配置和可折叠高级区，双栏与窄屏布局、固定底部操作区域。
+- 八类资产通过既有 metadataJson 保存专属属性；任务 inputJson、合成 configJson 与可视配置同步并保留未知属性。未修改后端、数据库结构、配置或依赖。
+- 支持素材链接主动预览、URL 校验、失败保留输入、重复提交防护、关闭前确认；提交资源快照防止导航期间发往错误模块。
+
+### 验收标准—测试用例映射
+
+正式测试：`frontend/test/ai-video-form.test.mjs`，使用真实组件 setup、Vue 响应式状态和 async-validator；只隔离接口、会话和弹窗边界。
+
+| 验收标准 | 层级、前置条件及输入 | 预期结果 | 场景及结果 |
+| --- | --- | --- | --- |
+| 资产各分类字段可保存、回显 | 单元+组件；八类资产旧扩展数据，编辑专属属性 | 正确 metadataJson，保留未知键，编辑 ID 正确 | 正常、兼容；通过 |
+| 新增保存正确分类 | 组件；物品、项目 ID、名称、材质 | assets 请求携带 ITEM，JSON 回显材质 | 正常；通过 |
+| 分区及默认参数可用 | 组件；新项目，空必填/有效名称编码 | 三组字段、25fps、16:9；无效不提交，有效提交 | 正常、边界；通过 |
+| JSON 配置安全且不会静默丢失 | 单元+组件；空值、数组、null、非法语法、20000/20001 字符、未知键 | 合法对象保留；非法和超长阻止提交，展开高级区保留输入 | 边界、异常、兼容；通过 |
+| 预览地址安全 | 单元+组件；HTTP(S)、站内路径、javascript/data/协议相对路径 | 安全地址可用，不安全地址拦截；原型键不污染全局对象 | 安全；通过 |
+| 重复提交、接口失败、关闭保护 | 组件；双击、请求失败、确认取消、无修改关闭 | 仅一次请求，保留草稿并解除 loading，按确认结果关闭 | 异常、回归；通过 |
+| 权限及导航一致 | 组件；无权限、保存校验期间切换到项目页 | 无权限无请求；物品仍提交到 assets/ITEM | 权限、回归；通过 |
+| 既有路由及任务看板保留 | ai-video-navigation 专项 | 既有菜单、接口、状态/进度与超时逻辑断言通过 | 兼容、回归；通过 |
+
+### 实际执行结果
+
+- `node --test frontend/test/ai-video-form.test.mjs frontend/test/ai-video-navigation.test.mjs`：36/36 通过，失败/跳过 0。
+- `cd frontend && npm test`：lint、typecheck 通过；覆盖套件 561/561 通过，失败/跳过 0；构建通过；前端服务 E2E 3/3 通过，失败/跳过 0。
+- 全局工具覆盖率：行 98.24%、分支 82.06%、函数 95.74%；ai-video-form.js 行/分支/函数均 100%。
+- 首轮组件测试发现数字项目 ID 被当作字符串校验，修复类型规则后全部通过。全量测试期间另一项日期输入框样式用例短暂失败，相关工作区改动更新后重跑全套通过；未删除或跳过测试。
+- `APP_IMAGE_REVISION=ai-video-forms docker compose up --build -d`：9 个镜像构建成功，统一启动因既有 docker-socket-proxy unhealthy 返回 1。未宣称整栈启动成功。
+- `APP_IMAGE_REVISION=ai-video-forms docker compose up -d --no-deps frontend`：成功；前端及后端 ai-video-forms 容器均 healthy。
+- HTTP 运行验证：`/health` 为 200、UP；`/ai-video/assets/items` 返回 200，所引用 `/assets/index-BIhH6Ers.js` 包含分组表单、metadataJson 和关闭保护逻辑。
+- `git diff --check`：通过。没有临时测试/调试文件；保留正式回归测试。未执行 git push。
+
+### 已知限制、未执行项与下次建议
+
+- 未执行浏览器视觉截图和逐页人工点击；组件测试验证真实 setup 与校验逻辑，现有 E2E 验证生产服务，均不等同于浏览器视觉验收。建议登录后分别检查桌面/手机宽度的新增与编辑弹窗，并以可访问的图片、音视频地址验证播放。
+- 未请求真实供应商生成，也未增加上传接口；扩展参数的生成效果取决于供应商服务支持。当前记录保存与前端录入优化不能代表生成能力已打通。
+- 前端变更未触发后端业务重测；Docker Maven 层命中缓存，未计入本次新执行的后端测试。
+- docker-socket-proxy 及其依赖服务仍需单独排查，完整编排验收尚未通过。
+- 再次修改表单、配置序列化、权限校验或语言包时重跑专项及完整前端测试；后端业务变化按项目规则执行完整 Maven 测试。
+- 回滚方式：revert 功能提交 3868bbc 后按仓库要求重建并启动；不涉及数据迁移，已保存的扩展 JSON 仍保留在原字段。
+
+
 ## 仪表盘信息与样式优化（2026-09-28）
 
 ### Git 基准与变更范围
