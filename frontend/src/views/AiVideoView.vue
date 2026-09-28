@@ -21,21 +21,49 @@
         </div>
       </section>
       <section v-if="isDashboard" class="panel ai-video-guide">
-        <div class="section-head">
-          <div><h3>{{ t('aiVideo.workflowTitle') }}</h3><p>{{ t('aiVideo.workflowHint') }}</p></div>
-          <el-tag type="success" effect="plain">{{ t('aiVideo.liveData') }}</el-tag>
+        <div class="guide-heading">
+          <div class="section-head guide-heading-main">
+            <div><h3>{{ t('aiVideo.workflowTitle') }}</h3><p>{{ t('aiVideo.workflowHint') }}</p></div>
+            <el-tag type="success" effect="plain">{{ t('aiVideo.liveData') }}</el-tag>
+          </div>
+          <div class="guide-progress-card">
+            <div class="guide-progress-copy"><strong>{{ guideCompletedCount }}/{{ workflowSteps.length }}</strong><span>{{ t('aiVideo.guide.progressLabel') }}</span></div>
+            <el-progress :percentage="guideProgress" :show-text="false" :stroke-width="8" />
+            <small>{{ guideNextStep ? t('aiVideo.guide.nextStep', { step: guideNextStep.title }) : t('aiVideo.guide.allDone') }}</small>
+          </div>
         </div>
+        <div class="guide-preparation">
+          <div class="guide-subsection-head"><div><h4>{{ t('aiVideo.guide.preparationTitle') }}</h4><p>{{ t('aiVideo.guide.preparationHint') }}</p></div></div>
+          <div class="guide-preparation-grid">
+            <article v-for="item in guidePreparation" :key="item.key" class="guide-preparation-item">
+              <span class="guide-preparation-icon">{{ item.icon }}</span>
+              <div><strong>{{ item.title }}</strong><p>{{ item.description }}</p></div>
+              <el-button link type="primary" @click="goTo(item.path)">{{ item.action }}</el-button>
+            </article>
+          </div>
+        </div>
+        <div class="guide-flow-head"><div><h4>{{ t('aiVideo.guide.flowTitle') }}</h4><p>{{ t('aiVideo.guide.flowHint') }}</p></div><span>{{ t('aiVideo.guide.flowCount', { count: workflowSteps.length }) }}</span></div>
         <div class="ai-video-steps">
-          <button v-for="(step, index) in workflowSteps" :key="step.title" type="button" class="ai-video-step" @click="goTo(step.path)">
-            <b>{{ index + 1 }}</b><div><strong>{{ step.title }}</strong><p>{{ step.description }}</p></div>
-          </button>
+          <article v-for="(step, index) in workflowSteps" :key="step.key" class="ai-video-step" :class="`is-${step.status}`">
+            <div class="ai-video-step-head"><div class="ai-video-step-index">{{ String(index + 1).padStart(2, '0') }}</div><el-tag size="small" effect="plain" :type="step.status === 'done' ? 'success' : step.status === 'locked' ? 'info' : 'warning'">{{ step.statusLabel }}</el-tag></div>
+            <h4>{{ step.title }}</h4><p class="ai-video-step-goal">{{ step.goal }}</p>
+            <dl class="ai-video-step-details"><div><dt>{{ t('aiVideo.guide.prepareLabel') }}</dt><dd>{{ step.prepare }}</dd></div><div><dt>{{ t('aiVideo.guide.actionLabel') }}</dt><dd>{{ step.action }}</dd></div><div><dt>{{ t('aiVideo.guide.outputLabel') }}</dt><dd>{{ step.output }}</dd></div></dl>
+            <div class="ai-video-step-checks"><span>{{ t('aiVideo.guide.checklistLabel') }}</span><ul><li v-for="check in step.checks" :key="check">{{ check }}</li></ul></div>
+            <el-button class="ai-video-step-action" type="primary" plain @click="goTo(step.path)">{{ step.cta }}<el-icon><ArrowRight /></el-icon></el-button>
+          </article>
         </div>
         <div class="production-paths">
           <div class="production-paths-head"><div><h4>{{ t('aiVideo.pathsTitle') }}</h4><p>{{ t('aiVideo.pathsHint') }}</p></div><el-tag effect="plain">{{ productionPaths.length }} {{ t('aiVideo.pathsUnit') }}</el-tag></div>
           <div class="production-path-grid">
             <button v-for="path in productionPaths" :key="path.key" type="button" class="production-path" @click="goTo(path.route, path.mode)">
-              <span class="production-path-icon">{{ path.icon }}</span><span><strong>{{ path.title }}</strong><small>{{ path.description }}</small></span><el-icon><ArrowRight /></el-icon>
+              <span class="production-path-icon">{{ path.icon }}</span><span><strong>{{ path.title }}</strong><small>{{ path.description }}</small><em>{{ path.next }}</em></span><el-icon><ArrowRight /></el-icon>
             </button>
+          </div>
+        </div>
+        <div class="guide-delivery">
+          <div class="guide-subsection-head"><div><h4>{{ t('aiVideo.guide.deliveryTitle') }}</h4><p>{{ t('aiVideo.guide.deliveryHint') }}</p></div></div>
+          <div class="guide-delivery-grid">
+            <article v-for="item in guideDelivery" :key="item.key" class="guide-delivery-item"><div class="guide-delivery-index">{{ item.index }}</div><div><strong>{{ item.title }}</strong><p>{{ item.description }}</p><small>{{ item.check }}</small></div><el-button link type="primary" @click="goTo(item.path)">{{ item.action }}</el-button></article>
           </div>
         </div>
       </section>
@@ -322,19 +350,52 @@ const summary = computed(() => [
   { key: 'tasks', label: t('aiVideo.summary.tasks'), hint: t('aiVideo.summary.tasksHint') },
   { key: 'videos', label: t('aiVideo.summary.videos'), hint: t('aiVideo.summary.videosHint') }
 ])
+
+/** 根据当前统计判断引导环节是否已具备、正在处理或等待前置步骤。 */
+function guideStepStatus(key) {
+  const hasProject = Number(overview.projects) > 0
+  const hasAsset = Number(overview.assets) > 0
+  const hasTask = Number(overview.tasks) > 0
+  const hasVideo = Number(overview.videos) > 0
+  const ready = { project: hasProject, content: hasProject && hasTask, asset: hasAsset, generate: hasTask, publish: hasVideo }
+  const available = { project: true, content: hasProject, asset: hasProject, generate: hasProject && (hasAsset || hasTask), publish: hasVideo || hasTask }
+  if (ready[key]) return 'done'
+  return available[key] ? 'current' : 'locked'
+}
+
+/** 构造首页的详细制作步骤，把每个跳转入口解释为可执行的工作成果。 */
 const workflowSteps = computed(() => [
-  { title: t('aiVideo.steps.project'), description: t('aiVideo.steps.projectHint'), path: 'projects' },
-  { title: t('aiVideo.steps.content'), description: t('aiVideo.steps.contentHint'), path: 'scripts' },
-  { title: t('aiVideo.steps.asset'), description: t('aiVideo.steps.assetHint'), path: 'assets/items' },
-  { title: t('aiVideo.steps.generate'), description: t('aiVideo.steps.generateHint'), path: 'tasks' },
-  { title: t('aiVideo.steps.publish'), description: t('aiVideo.steps.publishHint'), path: 'reviews' }
+  { key: 'project', title: t('aiVideo.steps.project'), description: t('aiVideo.steps.projectHint'), goal: t('aiVideo.steps.projectGoal'), prepare: t('aiVideo.steps.projectPrepare'), action: t('aiVideo.steps.projectAction'), output: t('aiVideo.steps.projectOutput'), checks: [t('aiVideo.steps.projectCheckOne'), t('aiVideo.steps.projectCheckTwo'), t('aiVideo.steps.projectCheckThree')], cta: t('aiVideo.steps.projectCta'), path: 'projects' },
+  { key: 'content', title: t('aiVideo.steps.content'), description: t('aiVideo.steps.contentHint'), goal: t('aiVideo.steps.contentGoal'), prepare: t('aiVideo.steps.contentPrepare'), action: t('aiVideo.steps.contentAction'), output: t('aiVideo.steps.contentOutput'), checks: [t('aiVideo.steps.contentCheckOne'), t('aiVideo.steps.contentCheckTwo'), t('aiVideo.steps.contentCheckThree')], cta: t('aiVideo.steps.contentCta'), path: 'scripts' },
+  { key: 'asset', title: t('aiVideo.steps.asset'), description: t('aiVideo.steps.assetHint'), goal: t('aiVideo.steps.assetGoal'), prepare: t('aiVideo.steps.assetPrepare'), action: t('aiVideo.steps.assetAction'), output: t('aiVideo.steps.assetOutput'), checks: [t('aiVideo.steps.assetCheckOne'), t('aiVideo.steps.assetCheckTwo'), t('aiVideo.steps.assetCheckThree')], cta: t('aiVideo.steps.assetCta'), path: 'assets/items' },
+  { key: 'generate', title: t('aiVideo.steps.generate'), description: t('aiVideo.steps.generateHint'), goal: t('aiVideo.steps.generateGoal'), prepare: t('aiVideo.steps.generatePrepare'), action: t('aiVideo.steps.generateAction'), output: t('aiVideo.steps.generateOutput'), checks: [t('aiVideo.steps.generateCheckOne'), t('aiVideo.steps.generateCheckTwo'), t('aiVideo.steps.generateCheckThree')], cta: t('aiVideo.steps.generateCta'), path: 'tasks' },
+  { key: 'publish', title: t('aiVideo.steps.publish'), description: t('aiVideo.steps.publishHint'), goal: t('aiVideo.steps.publishGoal'), prepare: t('aiVideo.steps.publishPrepare'), action: t('aiVideo.steps.publishAction'), output: t('aiVideo.steps.publishOutput'), checks: [t('aiVideo.steps.publishCheckOne'), t('aiVideo.steps.publishCheckTwo'), t('aiVideo.steps.publishCheckThree')], cta: t('aiVideo.steps.publishCta'), path: 'reviews' }
+].map(step => ({ ...step, status: guideStepStatus(step.key), statusLabel: t(`aiVideo.guide.status.${guideStepStatus(step.key)}`) })))
+const guideCompletedCount = computed(() => workflowSteps.value.filter(step => step.status === 'done').length)
+const guideProgress = computed(() => Math.round((guideCompletedCount.value / workflowSteps.value.length) * 100))
+const guideNextStep = computed(() => workflowSteps.value.find(step => step.status !== 'done'))
+
+/** 展示开始制作前需要确认的输入，减少用户在空页面中反复试错。 */
+const guidePreparation = computed(() => [
+  { key: 'brief', icon: '01', title: t('aiVideo.guide.preparation.briefTitle'), description: t('aiVideo.guide.preparation.briefDescription'), action: t('aiVideo.guide.preparation.briefAction'), path: 'projects' },
+  { key: 'model', icon: '02', title: t('aiVideo.guide.preparation.modelTitle'), description: t('aiVideo.guide.preparation.modelDescription'), action: t('aiVideo.guide.preparation.modelAction'), path: 'tasks' },
+  { key: 'materials', icon: '03', title: t('aiVideo.guide.preparation.materialsTitle'), description: t('aiVideo.guide.preparation.materialsDescription'), action: t('aiVideo.guide.preparation.materialsAction'), path: 'assets/items' },
+  { key: 'delivery', icon: '04', title: t('aiVideo.guide.preparation.deliveryTitle'), description: t('aiVideo.guide.preparation.deliveryDescription'), action: t('aiVideo.guide.preparation.deliveryAction'), path: 'publishes' }
+])
+
+/** 展示生成之后的质量与发布检查，帮助用户明确成片何时可以交付。 */
+const guideDelivery = computed(() => [
+  { key: 'task', index: '01', title: t('aiVideo.guide.delivery.taskTitle'), description: t('aiVideo.guide.delivery.taskDescription'), check: t('aiVideo.guide.delivery.taskCheck'), action: t('aiVideo.guide.delivery.taskAction'), path: 'tasks' },
+  { key: 'video', index: '02', title: t('aiVideo.guide.delivery.videoTitle'), description: t('aiVideo.guide.delivery.videoDescription'), check: t('aiVideo.guide.delivery.videoCheck'), action: t('aiVideo.guide.delivery.videoAction'), path: 'videos' },
+  { key: 'review', index: '03', title: t('aiVideo.guide.delivery.reviewTitle'), description: t('aiVideo.guide.delivery.reviewDescription'), check: t('aiVideo.guide.delivery.reviewCheck'), action: t('aiVideo.guide.delivery.reviewAction'), path: 'reviews' },
+  { key: 'publish', index: '04', title: t('aiVideo.guide.delivery.publishTitle'), description: t('aiVideo.guide.delivery.publishDescription'), check: t('aiVideo.guide.delivery.publishCheck'), action: t('aiVideo.guide.delivery.publishAction'), path: 'publishes' }
 ])
 const productionPaths = computed(() => [
-  { key: 'text', icon: '文', title: t('aiVideo.paths.textTitle'), description: t('aiVideo.paths.textHint'), route: 'tasks', mode: 'VIDEO' },
-  { key: 'storyboard', icon: '镜', title: t('aiVideo.paths.storyboardTitle'), description: t('aiVideo.paths.storyboardHint'), route: 'renders', mode: 'STORYBOARD' },
-  { key: 'asset', icon: '物', title: t('aiVideo.paths.assetTitle'), description: t('aiVideo.paths.assetHint'), route: 'tasks', mode: 'IMAGE' },
-  { key: 'audio', icon: '声', title: t('aiVideo.paths.audioTitle'), description: t('aiVideo.paths.audioHint'), route: 'tasks', mode: 'TTS' },
-  { key: 'template', icon: '模', title: t('aiVideo.paths.templateTitle'), description: t('aiVideo.paths.templateHint'), route: 'renders', mode: 'TEMPLATE' }
+  { key: 'text', icon: '文', title: t('aiVideo.paths.textTitle'), description: t('aiVideo.paths.textHint'), next: t('aiVideo.paths.textNext'), route: 'tasks', mode: 'VIDEO' },
+  { key: 'storyboard', icon: '镜', title: t('aiVideo.paths.storyboardTitle'), description: t('aiVideo.paths.storyboardHint'), next: t('aiVideo.paths.storyboardNext'), route: 'renders', mode: 'STORYBOARD' },
+  { key: 'asset', icon: '物', title: t('aiVideo.paths.assetTitle'), description: t('aiVideo.paths.assetHint'), next: t('aiVideo.paths.assetNext'), route: 'tasks', mode: 'IMAGE' },
+  { key: 'audio', icon: '声', title: t('aiVideo.paths.audioTitle'), description: t('aiVideo.paths.audioHint'), next: t('aiVideo.paths.audioNext'), route: 'tasks', mode: 'TTS' },
+  { key: 'template', icon: '模', title: t('aiVideo.paths.templateTitle'), description: t('aiVideo.paths.templateHint'), next: t('aiVideo.paths.templateNext'), route: 'renders', mode: 'TEMPLATE' }
 ])
 
 /** 判断当前用户是否拥有指定资源操作权限。 */
@@ -627,4 +688,54 @@ onMounted(load)
 @media (max-width: 800px) { .ai-video-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .task-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .task-grid { grid-template-columns: 1fr; } .ai-video-mark { width: 96px; height: 96px; font-size: 12px; } .production-path-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .ai-video-hero { align-items: flex-start; } .ai-video-mark { display: none; } .ai-video-hero-actions { align-items: flex-start; } .ai-video-steps { grid-template-columns: 1fr; } .ai-video-filters { align-items: stretch; flex-direction: column; } .ai-video-filters :deep(.el-input), .ai-video-filters :deep(.el-select) { width: 100%; } .ai-video-result-count { margin-left: 0; } }
 @media (max-width: 520px) { .production-path-grid { grid-template-columns: 1fr; } }
+.guide-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 280px); gap: 20px; align-items: start; }
+.guide-heading-main { margin-bottom: 0; }
+.guide-progress-card { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid #d9e4f8; border-radius: 12px; background: #f6f9ff; }
+.guide-progress-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.guide-progress-copy strong { color: var(--app-primary); font-size: 24px; line-height: 1; }
+.guide-progress-copy span, .guide-progress-card small { color: var(--app-muted); font-size: 12px; }
+.guide-progress-card small { line-height: 1.4; }
+.guide-preparation, .guide-delivery { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--app-border); }
+.guide-subsection-head, .guide-flow-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+.guide-subsection-head h4, .guide-subsection-head p, .guide-flow-head h4, .guide-flow-head p { margin: 0; }
+.guide-subsection-head h4, .guide-flow-head h4 { color: var(--app-text); font-size: 16px; }
+.guide-subsection-head p, .guide-flow-head p { margin-top: 4px; color: var(--app-muted); font-size: 12px; line-height: 1.5; }
+.guide-preparation-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.guide-preparation-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 14px; border: 1px solid var(--app-border); border-radius: 11px; background: var(--app-surface-soft); }
+.guide-preparation-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 9px; background: #eaf1ff; color: var(--app-primary); font-size: 11px; font-weight: 700; }
+.guide-preparation-item strong { color: var(--app-text); font-size: 13px; }
+.guide-preparation-item p { min-height: 54px; margin: 5px 0 8px; color: var(--app-muted); font-size: 12px; line-height: 1.5; }
+.guide-preparation-item :deep(.el-button) { grid-column: 2; justify-self: start; padding: 0; }
+.guide-flow-head { align-items: center; margin-top: 24px; }
+.guide-flow-head > span { flex: 0 0 auto; color: var(--app-muted); font-size: 12px; }
+.ai-video-steps { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.ai-video-step { display: flex; min-width: 0; flex-direction: column; gap: 10px; width: auto; cursor: default; }
+.ai-video-step.is-done { border-color: #b9e2d0; background: #f5fcf8; }
+.ai-video-step.is-locked { background: #fafbfc; }
+.ai-video-step-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ai-video-step-index { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: var(--app-primary); color: #fff; font-size: 11px; font-weight: 700; }
+.ai-video-step.is-done .ai-video-step-index { background: #1f9d68; }
+.ai-video-step.is-locked .ai-video-step-index { background: #9aa8ba; }
+.ai-video-step h4 { margin: 0; color: var(--app-text); font-size: 16px; }
+.ai-video-step-goal { min-height: 42px; margin: 0; color: var(--app-muted); font-size: 12px; line-height: 1.5; }
+.ai-video-step-details { display: grid; gap: 8px; margin: 0; }
+.ai-video-step-details div { display: grid; gap: 2px; }
+.ai-video-step-details dt, .ai-video-step-checks > span { color: var(--app-text); font-size: 11px; font-weight: 700; }
+.ai-video-step-details dd { margin: 0; color: var(--app-muted); font-size: 11px; line-height: 1.45; }
+.ai-video-step-checks { padding-top: 10px; border-top: 1px solid rgb(130 150 180 / 20%); }
+.ai-video-step-checks ul { display: grid; gap: 4px; margin: 6px 0 0; padding-left: 16px; color: var(--app-muted); font-size: 11px; line-height: 1.4; }
+.ai-video-step-action { justify-content: center; width: 100%; margin-top: auto; }
+.ai-video-step-action :deep(.el-icon) { margin-left: 5px; }
+.production-path strong, .production-path small, .production-path em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.production-path em { color: var(--app-primary); font-size: 10px; font-style: normal; }
+.guide-delivery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.guide-delivery-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 13px; border: 1px solid var(--app-border); border-radius: 11px; background: #fff; }
+.guide-delivery-index { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; background: #eef3fb; color: var(--app-primary); font-size: 11px; font-weight: 700; }
+.guide-delivery-item strong { color: var(--app-text); font-size: 13px; }
+.guide-delivery-item p { min-height: 36px; margin: 5px 0; color: var(--app-muted); font-size: 11px; line-height: 1.5; }
+.guide-delivery-item small { display: block; color: var(--app-muted); font-size: 10px; line-height: 1.45; }
+.guide-delivery-item :deep(.el-button) { grid-column: 2; justify-self: start; padding: 0; }
+@media (max-width: 1200px) { .ai-video-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); } .guide-preparation-grid, .guide-delivery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .guide-heading { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .guide-preparation-grid, .guide-delivery-grid, .ai-video-steps { grid-template-columns: 1fr; } }
 </style>

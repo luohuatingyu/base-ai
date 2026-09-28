@@ -7,6 +7,8 @@ const navigation = await readFile(new URL('../src/utils/navigation.js', import.m
 const initializer = await readFile(new URL('../../backend/src/main/java/com/baseai/platform/service/DataInitializer.java', import.meta.url), 'utf8')
 const view = await readFile(new URL('../src/views/AiVideoView.vue', import.meta.url), 'utf8')
 const api = await readFile(new URL('../src/api/aiVideo.js', import.meta.url), 'utf8')
+const zhLocale = await readFile(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
+const enLocale = await readFile(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
 
 const permissions = [
   'ai:video:dashboard:list', 'ai:video:project:list', 'ai:video:script:list', 'ai:video:storyboard:list',
@@ -68,6 +70,32 @@ test('AI视频生成任务使用任务看板展示状态和进度', () => {
   assert.match(view, /cancelTask\(row\)/)
   assert.match(view, /retryTask\(row\)/)
   assert.match(view, /taskTypeLabel\(row\.taskType\)/)
+})
+
+test('AI视频首页提供可执行的详细制作向导', () => {
+  for (const section of ['guide-preparation', 'guide-progress-card', 'guide-delivery', 'ai-video-step-details', 'ai-video-step-checks']) {
+    assert.match(view, new RegExp(section), section)
+  }
+  for (const binding of ['guideStepStatus', 'guideCompletedCount', 'guideProgress', 'guidePreparation', 'guideDelivery']) {
+    assert.match(view, new RegExp(binding), binding)
+  }
+  for (const key of ['goal', 'prepare', 'action', 'output', 'checks', 'cta', 'status']) assert.match(view, new RegExp(`step[.]${key}`), key)
+  for (const key of ['preparationTitle', 'flowTitle', 'prepareLabel', 'actionLabel', 'outputLabel', 'checklistLabel', 'deliveryTitle']) {
+    assert.match(view, new RegExp(`aiVideo[.]guide[.]${key}`), key)
+  }
+  assert.match(view, /path\.next/)
+})
+
+test('AI视频首页详细向导同时维护中英文内容', () => {
+  for (const locale of [zhLocale, enLocale]) {
+    assert.match(locale, /guide: \{ progressLabel:/)
+    for (const key of ['projectGoal', 'contentAction', 'assetOutput', 'generateCheckThree', 'publishCta']) {
+      assert.match(locale, new RegExp(`${key}:`), key)
+    }
+    for (const key of ['briefDescription', 'modelDescription', 'materialsDescription', 'deliveryDescription']) {
+      assert.match(locale, new RegExp(`${key}:`), key)
+    }
+  }
 })
 
 test('AI视频首页主按钮在深色横幅上保持可读性', () => {
