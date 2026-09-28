@@ -3,6 +3,7 @@ package com.baseai.platform.service;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.modeltype.LlmModelTypeRegistry;
 import com.baseai.platform.modeltype.LlmOperation;
+import com.baseai.platform.modeltype.MediaGenerationProtocolRegistry;
 import com.baseai.platform.security.AuthContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,17 +35,31 @@ public class MediaGenerationService {
     private final LlmUsageService usage;
     private final ObjectMapper mapper;
     private final LlmModelTypeRegistry modelTypeRegistry;
+    private final MediaGenerationProtocolRegistry protocolRegistry;
+    private static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    /** JSON 请求需要为 Base64 膨胀和请求元数据预留空间，视频上传默认限制在 6 MB。 */
+    private static final int MAX_VIDEO_BYTES = 6 * 1024 * 1024;
+    private static final int MAX_INPUTS = 4;
 
     /** 注入任务存储、可信模型配置、用量服务、JSON 编解码器和类型协议注册表。 */
     @org.springframework.beans.factory.annotation.Autowired
     public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
-                                  LlmModelTypeRegistry modelTypeRegistry) {
+                                  LlmModelTypeRegistry modelTypeRegistry,
+                                  MediaGenerationProtocolRegistry protocolRegistry) {
         this.jdbc = jdbc;
         this.management = management;
         this.usage = usage;
         this.mapper = mapper;
         this.modelTypeRegistry = modelTypeRegistry;
+        this.protocolRegistry = protocolRegistry;
+    }
+
+    /** 兼容已注入模型类型注册表的调用方。 */
+    public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
+                                  LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
+                                  LlmModelTypeRegistry modelTypeRegistry) {
+        this(jdbc, management, usage, mapper, modelTypeRegistry, new MediaGenerationProtocolRegistry());
     }
 
     /** 兼容既有单元测试构造方式。 */
@@ -84,7 +99,7 @@ public class MediaGenerationService {
             throw exception;
         }
         Map<String, Object> task = task(id, owner);
-        try { apply(task, invoke(candidate, request.modelType(), request.prompt().trim(), request.options(), null)); }
+        try { apply(task, invoke(candidate, request, null)); }
         catch (RuntimeException exception) { fail(task, "PROVIDER_REQUEST_FAILED"); }
         return publicTask(task(id, owner));
     }
@@ -125,15 +140,15 @@ public class MediaGenerationService {
             if (!candidate.providerCode().equals(task.get("providerCode")) || !candidate.model().equals(task.get("modelName"))) {
                 fail(task, "MODEL_CONFIG_CHANGED"); return;
             }
-            apply(task, invoke(candidate, (String) task.get("generationType"), null, Map.of(), remoteId));
+            apply(task, invoke(candidate, storedRequest(task), remoteId));
         } catch (RestClientException exception) {
             // 临时 HTTP/网络错误仍保留运行态；到达总时限后才结束记录。
         } catch (RuntimeException exception) { fail(task, "PROVIDER_RESPONSE_INVALID"); }
     }
 
     /** 固定相对路径并禁止重定向，用户只能传递生成参数，不能更改凭据发送目的地。 */
-    private JsonNode invoke(LlmManagementService.WorkerCandidate candidate, String type, String prompt,
-                            Map<String, Object> options, String remoteId) {
+    private JsonNode invoke(LlmManagementService.WorkerCandidate candidate, GenerateRequest request, String remoteId) {
+        String type = request.modelType();
         var factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER).build());
         factory.setReadTimeout(Duration.ofSeconds(Math.min(300, Math.max(1, candidate.timeoutSeconds() == null ? 60 : candidate.timeoutSeconds()))));
@@ -146,12 +161,34 @@ public class MediaGenerationService {
             return client.get().uri(URI.create(base + statusPath))
                 .headers(headers -> headers.setBearerAuth(key)).retrieve().body(JsonNode.class);
         }
-        Map<String, Object> body = new LinkedHashMap<>(options == null ? Map.of() : options);
-        body.put("model", candidate.model()); body.put("prompt", prompt);
         String path = modelTypeRegistry.generationPath(type);
         if (path == null) throw new BusinessException("llm.modelTypeUnsupported");
+        Map<String, Object> body = protocolRegistry.request(type, candidate.model(), request.prompt(), normalizedMode(request), inputPayload(request.inputs()), request.options());
+        if (body.isEmpty()) throw new BusinessException("llm.modelTypeUnsupported");
         return client.post().uri(URI.create(base + path))
             .contentType(MediaType.APPLICATION_JSON).headers(headers -> headers.setBearerAuth(key)).body(body).retrieve().body(JsonNode.class);
+    }
+
+    /** 将平台输入转换为协议层可扩展的媒体字段，避免服务直接拼装供应商 JSON。 */
+    private List<Map<String, Object>> inputPayload(List<MediaInput> inputs) {
+        if (inputs == null) return List.of();
+        return inputs.stream().map(input -> {
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("kind", input.kind());
+            value.put("name", input.fileName());
+            value.put("content_type", input.contentType());
+            value.put("data", input.dataUrl());
+            return value;
+        }).toList();
+    }
+
+    /** 从任务元数据恢复轮询所需的请求，不把上传内容再次保存或复制进数据库。 */
+    private GenerateRequest storedRequest(Map<String, Object> task) {
+        String type = (String) task.get("generationType");
+        String mode = task.get("generationMode") == null ? defaultMode(type) : (String) task.get("generationMode");
+        return new GenerateRequest(type, ((Number) task.get("modelId")).longValue(), (String) task.get("prompt"),
+            task.get("conversationId") == null ? null : ((Number) task.get("conversationId")).longValue(), mode,
+            List.of(), Map.of());
     }
 
     /** 响应使用替换而非累加语义保存 Token，错误状态优先于媒体字段。 */
@@ -235,7 +272,7 @@ public class MediaGenerationService {
                 """, Statement.RETURN_GENERATED_KEYS);
             statement.setLong(1, owner); statement.setObject(2, request.conversationId()); statement.setLong(3, request.modelId());
             statement.setString(4, request.modelType()); statement.setString(5, candidate.providerCode()); statement.setString(6, candidate.model());
-            statement.setString(7, request.prompt().trim()); statement.setString(8, json(request.options())); statement.setString(9, usageId);
+            statement.setString(7, request.prompt() == null ? "" : request.prompt().trim()); statement.setString(8, json(storageRequest(request))); statement.setString(9, usageId);
             return statement;
         }, holder);
         return Objects.requireNonNull(holder.getKey()).longValue();
@@ -247,7 +284,7 @@ public class MediaGenerationService {
             return jdbc.queryForMap("""
                 SELECT t.id,t.conversation_id conversationId,t.model_id modelId,t.generation_type generationType,
                     t.provider_code providerCode,t.model_name modelName,t.prompt,t.provider_task_id providerTaskId,
-                    t.output_json outputJson,t.usage_id usageId,t.status,t.progress,t.error_message errorMessage,
+                    t.output_json outputJson,t.request_json requestJson,t.usage_id usageId,t.status,t.progress,t.error_message errorMessage,
                     t.created_at createdAt,TIMESTAMPDIFF(SECOND,t.started_at,NOW(6)) ageSeconds,
                     u.trace_id traceId,u.input_tokens inputTokens,u.output_tokens outputTokens,u.total_tokens totalTokens
                 FROM ai_media_generation_task t LEFT JOIN llm_usage_record u ON u.usage_id=t.usage_id
@@ -263,6 +300,14 @@ public class MediaGenerationService {
         Object output = result.get("outputJson");
         try { result.put("outputJson", output == null ? Map.of() : mapper.readTree(output.toString())); }
         catch (Exception exception) { throw new IllegalStateException("Invalid stored media", exception); }
+        try {
+            Object request = result.remove("requestJson");
+            if (request != null) {
+                JsonNode node = mapper.readTree(request.toString());
+                result.put("generationMode", node.path("generationMode").asText(defaultMode((String) result.get("generationType"))));
+                result.put("inputCount", node.path("inputs").isArray() ? node.path("inputs").size() : 0);
+            } else result.put("generationMode", defaultMode((String) result.get("generationType")));
+        } catch (Exception exception) { throw new IllegalStateException("Invalid stored media request", exception); }
         return result;
     }
 
@@ -278,10 +323,14 @@ public class MediaGenerationService {
         String requestedType = request == null ? "" : request.modelType();
         boolean generationType = modelTypeRegistry.supports(requestedType, LlmOperation.IMAGE_GENERATION)
             || modelTypeRegistry.supports(requestedType, LlmOperation.VIDEO_GENERATION);
+        String mode = request == null ? "" : normalizedMode(request);
+        boolean promptOptional = Set.of("IMAGE_TO_IMAGE", "VIDEO_TO_VIDEO").contains(mode);
         if (request == null || !generationType
             || request.modelId() == null || request.modelId() <= 0 || request.prompt() == null
-            || request.prompt().isBlank() || request.prompt().length() > 100000
+            || (!promptOptional && request.prompt().isBlank()) || request.prompt().length() > 100000
             || request.conversationId() != null && request.conversationId() <= 0) throw new BusinessException("llm.generationRequestInvalid");
+        if (!validMode(request.modelType(), mode)) throw new BusinessException("llm.generationRequestInvalid");
+        validateInputs(mode, request.inputs());
         Map<String, Object> options = request.options() == null ? Map.of() : request.options();
         Set<String> allowed = modelTypeRegistry.supports(request.modelType(), LlmOperation.IMAGE_GENERATION)
             ? Set.of("size", "quality", "style", "n", "response_format")
@@ -296,6 +345,73 @@ public class MediaGenerationService {
                 throw new BusinessException("llm.generationRequestInvalid");
         }
     }
+
+    /** 兼容旧请求并为新请求提供明确的生成模式。 */
+    private String normalizedMode(GenerateRequest request) {
+        return request.generationMode() == null || request.generationMode().isBlank()
+            ? defaultMode(request.modelType()) : request.generationMode().trim().toUpperCase(Locale.ROOT);
+    }
+
+    /** 按图片或视频模型限制生成模式，阻止跨类型参数伪造。 */
+    private boolean validMode(String modelType, String mode) {
+        return "image_model".equals(modelType)
+            ? Set.of("TEXT_TO_IMAGE", "IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE").contains(mode)
+            : "video_model".equals(modelType)
+                && Set.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO").contains(mode);
+    }
+
+    /** 校验参考媒体类型、数量、Data URL 格式和解码后大小，拒绝远程 URL 造成的 SSRF。 */
+    private void validateInputs(String mode, List<MediaInput> inputs) {
+        List<MediaInput> values = inputs == null ? List.of() : inputs;
+        if (values.size() > MAX_INPUTS) throw new BusinessException("llm.generationRequestInvalid");
+        boolean imageMode = mode.startsWith("IMAGE_");
+        boolean videoMode = mode.startsWith("VIDEO_");
+        if (Set.of("IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE", "IMAGE_TO_VIDEO").contains(mode)
+            && (values.isEmpty() || values.stream().anyMatch(input -> !"IMAGE".equals(input.kind()))))
+            throw new BusinessException("llm.generationRequestInvalid");
+        if ("VIDEO_TO_VIDEO".equals(mode) && (values.size() != 1 || !"VIDEO".equals(values.get(0).kind())))
+            throw new BusinessException("llm.generationRequestInvalid");
+        if (Set.of("TEXT_TO_IMAGE", "TEXT_TO_VIDEO").contains(mode) && !values.isEmpty())
+            throw new BusinessException("llm.generationRequestInvalid");
+        if (imageMode && values.stream().anyMatch(input -> !"IMAGE".equals(input.kind()))) throw new BusinessException("llm.generationRequestInvalid");
+        if (videoMode && values.stream().anyMatch(input -> !Set.of("IMAGE", "VIDEO").contains(input.kind()))) throw new BusinessException("llm.generationRequestInvalid");
+        for (MediaInput input : values) validateInput(input);
+    }
+
+    /** 验证单个上传对象的名称、MIME 类型、Data URL 和实际 Base64 大小。 */
+    private void validateInput(MediaInput input) {
+        if (input == null || input.kind() == null || input.fileName() == null || input.fileName().isBlank()
+            || input.fileName().length() > 200 || input.fileName().contains("/") || input.fileName().contains("\\")
+            || input.contentType() == null || input.dataUrl() == null) throw new BusinessException("llm.generationRequestInvalid");
+        Set<String> allowed = "IMAGE".equals(input.kind())
+            ? Set.of("image/png", "image/jpeg", "image/webp")
+            : Set.of("video/mp4", "video/webm", "video/quicktime");
+        if (!allowed.contains(input.contentType().toLowerCase(Locale.ROOT))) throw new BusinessException("llm.generationRequestInvalid");
+        String prefix = "data:" + input.contentType().toLowerCase(Locale.ROOT) + ";base64,";
+        if (!input.dataUrl().startsWith(prefix)) throw new BusinessException("llm.generationRequestInvalid");
+        String encoded = input.dataUrl().substring(prefix.length());
+        int maxBytes = "IMAGE".equals(input.kind()) ? MAX_IMAGE_BYTES : MAX_VIDEO_BYTES;
+        if (encoded.isBlank() || encoded.length() > ((maxBytes + 2) / 3) * 4 || !encoded.matches("[A-Za-z0-9+/]+=*"))
+            throw new BusinessException("llm.generationRequestInvalid");
+        try {
+            byte[] decoded = Base64.getDecoder().decode(encoded);
+            if (decoded.length == 0 || decoded.length > maxBytes) throw new BusinessException("llm.generationRequestInvalid");
+        } catch (IllegalArgumentException exception) { throw new BusinessException("llm.generationRequestInvalid"); }
+    }
+
+    /** 任务只保存输入元数据，避免数据库持久化大段 Base64；供应商调用使用当前请求内容。 */
+    private Map<String, Object> storageRequest(GenerateRequest request) {
+        List<Map<String, Object>> metadata = (request.inputs() == null ? List.<MediaInput>of() : request.inputs()).stream().map(input -> {
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("kind", input.kind()); value.put("name", input.fileName()); value.put("contentType", input.contentType());
+            value.put("bytes", input.dataUrl() == null ? 0 : Math.max(0, (input.dataUrl().length() - input.dataUrl().indexOf(',') - 1) * 3 / 4));
+            return value;
+        }).toList();
+        return Map.of("generationMode", normalizedMode(request), "inputs", metadata, "options", request.options() == null ? Map.of() : request.options());
+    }
+
+    /** 返回历史请求的默认模式。 */
+    private String defaultMode(String modelType) { return "video_model".equals(modelType) ? "TEXT_TO_VIDEO" : "TEXT_TO_IMAGE"; }
 
     /** 拒绝历史混合类型配置，图片与视频不能通过篡改参数互相调用。 */
     private LlmManagementService.WorkerCandidate candidate(Long modelId, String type) {
@@ -315,6 +431,15 @@ public class MediaGenerationService {
         catch (Exception exception) { throw new IllegalStateException("Cannot serialize media task", exception); }
     }
 
-    public record GenerateRequest(String modelType, Long modelId, String prompt, Long conversationId, Map<String, Object> options) {}
+    public record GenerateRequest(String modelType, Long modelId, String prompt, Long conversationId,
+                                  String generationMode, List<MediaInput> inputs, Map<String, Object> options) {
+        /** 兼容原有纯 prompt 调用方。 */
+        public GenerateRequest(String modelType, Long modelId, String prompt, Long conversationId, Map<String, Object> options) {
+            this(modelType, modelId, prompt, conversationId, null, List.of(), options);
+        }
+    }
+
+    /** 统一媒体输入；前端只提交受控 Data URL，不接受任意远程地址。 */
+    public record MediaInput(String kind, String fileName, String contentType, String dataUrl) {}
     public record ModelOption(Long id, String name, String modelName, String modelType, String providerCode, String providerName) {}
 }

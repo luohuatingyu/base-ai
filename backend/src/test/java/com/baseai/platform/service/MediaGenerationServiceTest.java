@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -69,5 +70,52 @@ class MediaGenerationServiceTest {
         text.setEnabled(true); text.setSupportedModelTypes(List.of("text_model"));
         when(management.models()).thenReturn(List.of(image, mixed, text));
         assertEquals(List.of("image"), service.models().stream().map(MediaGenerationService.ModelOption::name).toList());
+    }
+
+    /** 图片三种生成模式分别接受文生图、图生图和图文生图输入。 */
+    @Test
+    void acceptsImageGenerationModesAndInputs() throws Exception {
+        var image = imageInput();
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "cat", null, "TEXT_TO_IMAGE", List.of(), Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "", null, "IMAGE_TO_IMAGE", List.of(image), Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "make it blue", null, "IMAGE_TEXT_TO_IMAGE", List.of(image), Map.of())));
+    }
+
+    /** 视频模式可以分别接收图片或视频，并拒绝错误的参考媒体类型。 */
+    @Test
+    void acceptsVideoImageOrVideoInputsAndRejectsMismatch() throws Exception {
+        var image = imageInput();
+        var video = new MediaGenerationService.MediaInput("VIDEO", "clip.mp4", "video/mp4", dataUrl("video/mp4", 3));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("video_model", 1L, "animate", null, "IMAGE_TO_VIDEO", List.of(image), Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("video_model", 1L, "", null, "VIDEO_TO_VIDEO", List.of(video), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("video_model", 1L, "video", null, "VIDEO_TO_VIDEO", List.of(image), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "image", null, "IMAGE_TO_IMAGE", List.of(video), Map.of())));
+    }
+
+    /** 上传内容必须使用受控 Data URL，并限制类型、名称和解码后大小。 */
+    @Test
+    void rejectsUnsafeGenerationInputs() throws Exception {
+        var image = imageInput();
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "image", null, "IMAGE_TO_IMAGE", List.of(new MediaGenerationService.MediaInput("IMAGE", "../x.png", "image/png", image.dataUrl())), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "image", null, "IMAGE_TO_IMAGE", List.of(new MediaGenerationService.MediaInput("IMAGE", "x.png", "image/png", "https://example.com/x.png")), Map.of())));
+    }
+
+    /** 通过反射只测试纯校验分支，避免为边界测试伪造数据库和供应商调用。 */
+    private void validate(MediaGenerationService.GenerateRequest request) throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("validate", MediaGenerationService.GenerateRequest.class);
+        method.setAccessible(true);
+        try { method.invoke(service, request); }
+        catch (java.lang.reflect.InvocationTargetException exception) {
+            if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw exception;
+        }
+    }
+
+    /** 返回最小合法 PNG Data URL。 */
+    private MediaGenerationService.MediaInput imageInput() { return new MediaGenerationService.MediaInput("IMAGE", "reference.png", "image/png", dataUrl("image/png", 3)); }
+
+    /** 生成指定字节数的 Base64 Data URL，测试不依赖磁盘文件。 */
+    private String dataUrl(String contentType, int bytes) {
+        return "data:" + contentType + ";base64," + java.util.Base64.getEncoder().encodeToString(new byte[bytes]);
     }
 }

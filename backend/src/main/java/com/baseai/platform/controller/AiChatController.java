@@ -79,7 +79,7 @@ public class AiChatController {
         if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
         if (request == null) return mediaGenerationService.generate(null);
         return mediaGenerationService.generate(new MediaGenerationService.GenerateRequest(
-            request.modelType(), request.modelId(), request.prompt(), request.conversationId(), request.options()));
+            request.modelType(), request.modelId(), request.prompt(), request.conversationId(), request.generationMode(), request.inputs(), request.options()));
     }
 
     /** 轮询视频供应商状态并返回当前进度、媒体结果和 Token 元数据。 */
@@ -273,5 +273,6 @@ public class AiChatController {
     public record ChatResponse(String content, String model, int inputTokens, int outputTokens, int totalTokens) {}
     /** AI 对话页媒体生成请求；options 只接受供应商协议的白名单参数。 */
     public record GenerationRequest(@JsonProperty("model_type") String modelType, Long modelId,
-                                    String prompt, Long conversationId, Map<String, Object> options) {}
+                                    String prompt, Long conversationId, String generationMode,
+                                    List<MediaGenerationService.MediaInput> inputs, Map<String, Object> options) {}
 }

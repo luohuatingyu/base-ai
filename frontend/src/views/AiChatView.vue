@@ -37,6 +37,12 @@
         <div v-if="item.images?.length" class="message-images">
           <el-image v-for="(image, imageIndex) in item.images" :key="image.name + image.dataUrl" :src="image.dataUrl" :alt="image.name" :preview-src-list="item.images.map(value => value.dataUrl)" :initial-index="imageIndex" fit="cover" preview-teleported :tabindex="0" />
         </div>
+        <div v-if="item.generationInputs?.length" class="message-images">
+          <template v-for="input in item.generationInputs" :key="input.fileName + input.dataUrl">
+            <el-image v-if="input.kind === 'IMAGE'" :src="input.dataUrl" :alt="input.fileName" fit="cover" preview-teleported />
+            <video v-else controls muted preload="metadata" :src="input.dataUrl" />
+          </template>
+        </div>
         <div v-if="item.toolCalls?.length" class="message-tools" :aria-label="t('chat.toolProgress')" aria-live="polite">
           <span v-for="tool in item.toolCalls" :key="tool.toolCallId" class="message-tool" :class="{ 'is-running': tool.success === null && item.status === 'GENERATING', 'is-failed': tool.success === false }">
             <span class="tool-progress-dot" aria-hidden="true" />{{ tool.toolName }} · {{ t('chat.toolStatus.' + toolStatus(tool, item)) }}
@@ -80,12 +86,21 @@
         <el-button circle size="small" type="danger" :aria-label="t('chat.removeImage')" @click="removeImage(image)">×</el-button>
       </div>
         </div>
+        <div v-if="generationMode === 'generation' && generationInputs.length" class="pending-generation-inputs">
+          <div v-for="input in generationInputs" :key="input.fileName + input.dataUrl" class="pending-generation-input">
+            <img v-if="input.kind === 'IMAGE'" :src="input.dataUrl" :alt="input.fileName" />
+            <video v-else controls muted preload="metadata" :src="input.dataUrl" />
+            <el-button circle size="small" type="danger" :aria-label="t('chat.removeGenerationInput')" @click="removeGenerationInput(input)">×</el-button>
+          </div>
+        </div>
         <el-input ref="questionInput" v-model="prompt" class="chat-question-input" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" resize="none" :aria-label="t('chat.placeholder')" :placeholder="t('chat.placeholder')" @keydown.meta.enter.prevent="sendFromKeyboard" @keydown.ctrl.enter.prevent="sendFromKeyboard" />
         <div class="chat-actions">
           <div class="chat-action-buttons">
             <el-button text :icon="Tools" aria-haspopup="dialog" :aria-expanded="toolsOpen" @click="toolsOpen = true">{{ t('chat.tools') }}<span v-if="selectedTools.length"> · {{ selectedTools.length }}</span></el-button>
             <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
             <el-button text :icon="Picture" :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" :title="modelType === 'vision_model' ? t('chat.imageUploadHint') : t('chat.imageVisionOnly')" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
+            <input ref="generationInput" type="file" :accept="generationFileAccept" :multiple="generationType === 'image_model'" hidden @change="onGenerationInputSelected" />
+            <el-button v-if="generationMode === 'generation' && generationNeedsInput" text :icon="Picture" :disabled="generationInputs.length >= generationInputLimit" :title="t('chat.generationInputHint')" @click="openGenerationInputPicker">{{ t('chat.uploadGenerationInput') }}</el-button>
             <span class="composer-shortcut">{{ t('chat.shortcutHint') }}</span><el-button v-if="generating" class="stop-button" :icon="VideoPause" @click="stopGeneration">{{ t('chat.stopGeneration') }}</el-button><el-button v-else type="primary" :icon="Top" :disabled="!canSend" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
           </div>
         </div><div class="composer-status" aria-live="polite">{{ optionsLoading ? t('chat.loadingOptions') : serverGenerating && !generating ? t('chat.waitingForSync') : generating ? t('chat.draftHint') : t('chat.composerHint') }}</div>
@@ -126,6 +141,11 @@
             </el-form-item>
             <el-form-item v-if="generationMode === 'generation'" :label="t('chat.model')">
               <el-select v-model="generationModelId" :placeholder="t('chat.selectModel')" filterable><el-option v-for="model in generationModels.filter(item => item.modelType === generationType)" :key="model.id + ':' + model.modelType" :value="model.id" :label="model.name + ' (' + model.modelName + ')'" /></el-select>
+            </el-form-item>
+            <el-form-item v-if="generationMode === 'generation'" :label="t('chat.generationMode')">
+              <el-radio-group v-model="generationInputMode" @change="onGenerationInputModeChange">
+                <el-radio-button v-for="item in generationInputModeOptions" :key="item.value" :value="item.value">{{ item.label }}</el-radio-button>
+              </el-radio-group>
             </el-form-item>
             <div class="mode-field">
               <span class="mode-field-label">{{ t('chat.mode') }}</span>
@@ -282,10 +302,14 @@ const workflowTools = ref([])
 const agentToolCodes = ref([])
 const workflowToolCodes = ref([])
 const imageInput = ref(null)
+const generationInput = ref(null)
+const generationInputs = ref([])
 const loading = ref(false)
 const MAX_IMAGES = 4
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime'])
+const MAX_GENERATION_VIDEO_SIZE = 6 * 1024 * 1024
 const MAX_PROMPT_FILE_SIZE = 1024 * 1024
 
 // 模型配置
@@ -296,6 +320,7 @@ const modelTypes = ref([])
 const generationMode = ref('chat')
 const generationType = ref('image_model')
 const generationTypes = [{ value: 'image_model', label: '图片生成模型' }, { value: 'video_model', label: '视频生成模型' }]
+const generationInputMode = ref('TEXT_TO_IMAGE')
 const generationModels = ref([])
 const generationModelId = ref(null)
 const enableThinking = ref(false)
@@ -312,9 +337,19 @@ const filteredRoutes = computed(() => routes.value.filter(route => route.feature
 const filteredProviders = computed(() => providers.value.filter(provider => provider.models.some(matchesType)))
 const currentModels = computed(() => (providers.value.find(p => p.id === providerId.value)?.models || []).filter(matchesType))
 const generationModelOptions = computed(() => (Array.isArray(generationModels.value) ? generationModels.value : []).filter(model => model.modelType === generationType.value))
+const generationInputModeOptions = computed(() => generationType.value === 'image_model'
+  ? [{ value: 'TEXT_TO_IMAGE', label: t('chat.textToImage') }, { value: 'IMAGE_TO_IMAGE', label: t('chat.imageToImage') }, { value: 'IMAGE_TEXT_TO_IMAGE', label: t('chat.imageTextToImage') }]
+  : [{ value: 'TEXT_TO_VIDEO', label: t('chat.textToVideo') }, { value: 'IMAGE_TO_VIDEO', label: t('chat.imageToVideo') }, { value: 'VIDEO_TO_VIDEO', label: t('chat.videoToVideo') }])
+const generationNeedsInput = computed(() => !['TEXT_TO_IMAGE', 'TEXT_TO_VIDEO'].includes(generationInputMode.value))
+const generationInputLimit = computed(() => generationType.value === 'image_model' ? MAX_IMAGES : 1)
+const generationFileAccept = computed(() => generationType.value === 'image_model' || generationInputMode.value === 'IMAGE_TO_VIDEO'
+  ? 'image/png,image/jpeg,image/webp' : 'video/mp4,video/webm,video/quicktime')
+const generationPromptOptional = computed(() => ['IMAGE_TO_IMAGE', 'VIDEO_TO_VIDEO'].includes(generationInputMode.value))
+const canGenerationSend = computed(() => optionsReady.value && !loading.value && !serverGenerating.value && !!generationModelId.value
+  && (generationPromptOptional.value || !!prompt.value.trim()) && (!generationNeedsInput.value || generationInputs.value.length > 0))
 
-const canSend = computed(() => optionsReady.value && !loading.value && !serverGenerating.value && !!prompt.value.trim()
-  && (generationMode.value === 'generation' ? !!generationModelId.value : mode.value === 'single' ? !!modelId.value : featureCode.value
+const canSend = computed(() => generationMode.value === 'generation' ? canGenerationSend.value : optionsReady.value && !loading.value && !serverGenerating.value && !!prompt.value.trim()
+  && (mode.value === 'single' ? !!modelId.value : featureCode.value
     ? filteredRoutes.value.some(route => route.featureCode === featureCode.value) : defaultRouteSupportsType.value))
 
 const toolsLocked = computed(() => loading.value || serverGenerating.value)
@@ -458,11 +493,17 @@ function onGenerationModeChange() {
   if (generationMode.value === 'generation') {
     pendingImages.value = []
     if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
-  }
+  } else generationInputs.value = []
 }
 /** 切换图片或视频类型后只保留同类模型。 */
 function onGenerationTypeChange() {
   if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
+  generationInputMode.value = generationType.value === 'image_model' ? 'TEXT_TO_IMAGE' : 'TEXT_TO_VIDEO'
+  generationInputs.value = []
+}
+/** 切换媒体生成模式时清理不再适用的参考文件。 */
+function onGenerationInputModeChange() {
+  generationInputs.value = []
 }
 /** 切换模型来源时只保留当前模式需要的配置，避免隐藏字段继续影响请求。 */
 function setMode(nextMode) {
@@ -527,6 +568,47 @@ function readImage(file) {
 /** 从待发送列表移除图片。 */
 function removeImage(image) {
   pendingImages.value = pendingImages.value.filter(item => item !== image)
+}
+
+/** 打开媒体生成专用文件选择器，图片和视频输入使用不同白名单。 */
+function openGenerationInputPicker() {
+  if (generationMode.value === 'generation' && generationNeedsInput.value) generationInput.value?.click()
+}
+
+/** 读取生成参考媒体并将其转换为受控 Data URL，避免上传任意远程地址。 */
+async function onGenerationInputSelected(event) {
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+  if (!generationNeedsInput.value) return
+  if (generationInputs.value.length + files.length > generationInputLimit.value) {
+    ElMessage.warning(t('chat.generationInputLimit', { count: generationInputLimit.value }))
+    return
+  }
+  for (const file of files) {
+    const isImage = generationType.value === 'image_model' || generationInputMode.value === 'IMAGE_TO_VIDEO'
+    const allowed = isImage ? IMAGE_TYPES : VIDEO_TYPES
+    const maxSize = isImage ? MAX_IMAGE_SIZE : MAX_GENERATION_VIDEO_SIZE
+    if (!allowed.has(file.type)) { ElMessage.warning(t(isImage ? 'chat.imageType' : 'chat.videoType')); continue }
+    if (file.size > maxSize) { ElMessage.warning(t(isImage ? 'chat.imageSize' : 'chat.videoSize')); continue }
+    try {
+      generationInputs.value.push({ kind: isImage ? 'IMAGE' : 'VIDEO', fileName: file.name, contentType: file.type, dataUrl: await readMediaFile(file) })
+    } catch { /* readMediaFile 已展示安全错误提示。 */ }
+  }
+}
+
+/** 读取图片或视频文件，统一使用浏览器 Data URL 供协议适配器转换。 */
+function readMediaFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => { ElMessage.error(t('chat.generationInputReadFailed')); reject(reader.error) }
+    reader.readAsDataURL(file)
+  })
+}
+
+/** 从媒体生成草稿移除一个参考文件。 */
+function removeGenerationInput(input) {
+  generationInputs.value = generationInputs.value.filter(item => item !== input)
 }
 
 /** 打开系统文件选择器，读取 Markdown 或纯文本提示词文件。 */
@@ -647,6 +729,7 @@ async function newConversation() {
   messages.value = []
   prompt.value = ''
   pendingImages.value = []
+  generationInputs.value = []
   historyPage.value = 0
   await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
   await refreshHistory()
@@ -682,6 +765,7 @@ async function selectConversation(id) {
     promptFileName.value = ''
     prompt.value = ''
     pendingImages.value = []
+    generationInputs.value = []
     await router.replace({ query: { ...route.query, conversation: String(id) } })
     await scrollToLatest()
     if (serverGenerating.value) scheduleSync(id)
@@ -831,6 +915,7 @@ async function send() {
 async function sendGeneration() {
   const content = prompt.value.trim()
   const draft = prompt.value
+  const draftInputs = generationInputs.value.map(input => ({ ...input }))
   const previousLength = messages.value.length
   loading.value = true
   pageError.value = ''
@@ -841,13 +926,14 @@ async function sendGeneration() {
       conversationId.value = created.data.id
       await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
     }
-    const user = { role: 'user', content }
+    const user = { role: 'user', content, generationInputs: draftInputs }
     const assistant = { role: 'assistant', content: '', status: 'GENERATING', media: [] }
     messages.value.push(user, assistant)
     await scrollToLatest()
     let result = await http.post('/ai/chat/generation', {
       model_type: generationType.value, modelId: generationModelId.value, prompt: content,
-      conversationId: conversationId.value, options: {}
+      conversationId: conversationId.value, generationMode: generationInputMode.value,
+      inputs: draftInputs, options: {}
     })
     result = result.data
     while (result.status === 'RUNNING' || result.status === 'QUEUED') {
@@ -864,9 +950,11 @@ async function sendGeneration() {
     assistant.traceId = result.traceId
     const payload = typeof result.outputJson === 'string' ? JSON.parse(result.outputJson || '{}') : (result.outputJson || {})
     assistant.media = (payload.outputs || []).map(item => ({ kind: generationType.value === 'image_model' ? 'image' : 'video', value: item.kind === 'base64' ? 'data:image/png;base64,' + item.value : item.value }))
+    generationInputs.value = []
   } catch (error) {
     messages.value.splice(previousLength)
     prompt.value = draft
+    generationInputs.value = draftInputs
     pageError.value = t('chat.generationFailed')
     showHttpError(error, 'chat.callFailed')
   } finally {
@@ -1089,6 +1177,10 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
   top: -8px;
   right: -8px;
 }
+.pending-generation-inputs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; padding: 6px; max-height: 150px; overflow-y: auto; }
+.pending-generation-input { position: relative; }
+.pending-generation-input img, .pending-generation-input video { width: 96px; height: 96px; object-fit: cover; border: 1px solid #dcdfe6; border-radius: 6px; background: #111827; }
+.pending-generation-input .el-button { position: absolute; top: -8px; right: -8px; }
 
 .chat-action-buttons {
   display: flex;

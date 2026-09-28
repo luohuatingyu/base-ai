@@ -231,6 +231,38 @@ test('工具运行态不会误报失败，辅助详情默认折叠且输入保�
   assert.match(source, /:disabled="!canSend"/)
 })
 
+test('媒体生成提交图片模式、参考图片以及失败草稿恢复字段', async t => {
+  let generationPayload
+  const { state } = await createChat(t, {
+    http: {
+      async get(url) {
+        if (url === '/ai/chat/generation-models') return { data: [{ id: 7, modelType: 'image_model', name: 'Image', modelName: 'image-1' }] }
+        if (url.startsWith('/ai/chat/generation/')) return { data: { id: 10, status: 'SUCCEEDED', modelName: 'image-1', outputJson: { outputs: [] } } }
+        return url === '/ai/conversations' ? { data: { items: [], total: 0 } } : { data: [] }
+      },
+      async post(url, body) {
+        if (url === '/ai/conversations') return { data: { id: 3 } }
+        if (url === '/ai/chat/generation') { generationPayload = body; return { data: { id: 10, status: 'SUCCEEDED', modelName: 'image-1', outputJson: { outputs: [] } } } }
+        return { data: { id: 3 } }
+      }
+    }
+  })
+  state.generationMode.value = 'generation'
+  state.generationType.value = 'image_model'
+  state.generationModelId.value = 7
+  state.generationInputMode.value = 'IMAGE_TEXT_TO_IMAGE'
+  state.generationInputs.value = [{ kind: 'IMAGE', fileName: 'reference.png', contentType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }]
+  state.prompt.value = 'make it blue'
+  assert.equal(state.canSend.value, true)
+  await state.send()
+  assert.equal(generationPayload.generationMode, 'IMAGE_TEXT_TO_IMAGE')
+  assert.equal(generationPayload.inputs[0].kind, 'IMAGE')
+  assert.equal(generationPayload.prompt, 'make it blue')
+  assert.equal(state.generationInputs.value.length, 0)
+  assert.match(source, /video\/mp4,video\/webm,video\/quicktime/)
+  assert.match(source, /generationInputModeOptions/)
+})
+
 test('模型来源切换显示上下文选项并清理不适用配置', async t => {
   const { state } = await createChat(t)
   state.providerId.value = 12
