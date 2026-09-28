@@ -183,17 +183,18 @@ function modelEditor() {
 }
 
 for (const type of ['image_model', 'video_model']) {
-  test(type + ': 可与其他模型类型共同选择，编辑保留混合配置', () => {
+  test(type + ': 与文本、视觉及另一种生成类型互斥', () => {
     const { state } = modelEditor()
     state.form.supportedModelTypes = []
     assert.equal(state.modelTypeDisabled(type), false)
     state.form.supportedModelTypes = [type]
     for (const candidate of ['image_model', 'video_model', 'text_model', 'vision_model']) {
-      assert.equal(state.modelTypeDisabled(candidate), false)
+      assert.equal(state.modelTypeDisabled(candidate), candidate !== type)
     }
     state.open({ id: 1, supportedModelTypes: ['image_model', 'video_model'] })
     assert.equal(state.modelTypeDisabled('image_model'), false)
     assert.equal(state.modelTypeDisabled('video_model'), false)
+    assert.equal(state.modelTypeDisabled('text_model'), true)
   })
   test(type + ': 模型测试显示未接入提示且不发送聊天请求', () => {
     const { state, requests, warnings } = modelEditor()
@@ -207,8 +208,8 @@ test('文本与视觉理解仍可组合选择并调用既有模型测试接口',
   const { state, requests } = modelEditor()
   state.form.supportedModelTypes = ['text_model']
   assert.equal(state.modelTypeDisabled('vision_model'), false)
-  assert.equal(state.modelTypeDisabled('image_model'), false)
-  assert.equal(state.modelTypeDisabled('video_model'), false)
+  assert.equal(state.modelTypeDisabled('image_model'), true)
+  assert.equal(state.modelTypeDisabled('video_model'), true)
   state.startTest({ id: 7, supportedModelTypes: ['text_model'], thinkingLevels: '' })
   await Promise.resolve()
   assert.equal(requests[0][0], '/models/7/test')
