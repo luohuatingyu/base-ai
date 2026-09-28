@@ -100,6 +100,16 @@ class MediaGenerationServiceTest {
         assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "image", null, "IMAGE_TO_IMAGE", List.of(new MediaGenerationService.MediaInput("IMAGE", "x.png", "image/png", "https://example.com/x.png")), Map.of())));
     }
 
+    /** 各参考媒体模式中的空元素均返回业务校验错误，不触发空指针异常。 */
+    @Test
+    void rejectsNullMediaElementsAsBusinessErrors() {
+        for (String mode : List.of("IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO")) {
+            String type = mode.endsWith("VIDEO") ? "video_model" : "image_model";
+            assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(
+                type, 1L, "reference", null, mode, java.util.Collections.singletonList(null), Map.of())), mode);
+        }
+    }
+
     /** 通过反射只测试纯校验分支，避免为边界测试伪造数据库和供应商调用。 */
     private void validate(MediaGenerationService.GenerateRequest request) throws Exception {
         var method = MediaGenerationService.class.getDeclaredMethod("validate", MediaGenerationService.GenerateRequest.class);

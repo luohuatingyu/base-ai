@@ -363,7 +363,8 @@ public class MediaGenerationService {
     /** 校验参考媒体类型、数量、Data URL 格式和解码后大小，拒绝远程 URL 造成的 SSRF。 */
     private void validateInputs(String mode, List<MediaInput> inputs) {
         List<MediaInput> values = inputs == null ? List.of() : inputs;
-        if (values.size() > MAX_INPUTS) throw new BusinessException("llm.generationRequestInvalid");
+        if (values.size() > MAX_INPUTS || values.stream().anyMatch(Objects::isNull))
+            throw new BusinessException("llm.generationRequestInvalid");
         boolean imageMode = mode.startsWith("IMAGE_");
         boolean videoMode = mode.startsWith("VIDEO_");
         if (Set.of("IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE", "IMAGE_TO_VIDEO").contains(mode)
