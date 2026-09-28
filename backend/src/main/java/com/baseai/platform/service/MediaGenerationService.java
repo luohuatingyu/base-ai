@@ -37,6 +37,7 @@ public class MediaGenerationService {
     private final LlmModelTypeRegistry modelTypeRegistry;
     private final MediaGenerationProtocolRegistry protocolRegistry;
     private static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    private static final int MAX_TEXT_BYTES = 1024 * 1024;
     /** JSON 请求需要为 Base64 膨胀和请求元数据预留空间，视频上传默认限制在 6 MB。 */
     private static final int MAX_VIDEO_BYTES = 6 * 1024 * 1024;
     private static final int MAX_INPUTS = 4;
@@ -324,13 +325,14 @@ public class MediaGenerationService {
         boolean generationType = modelTypeRegistry.supports(requestedType, LlmOperation.IMAGE_GENERATION)
             || modelTypeRegistry.supports(requestedType, LlmOperation.VIDEO_GENERATION);
         String mode = request == null ? "" : normalizedMode(request);
-        boolean promptOptional = Set.of("IMAGE_TO_IMAGE", "VIDEO_TO_VIDEO").contains(mode);
+        boolean hasInputs = request != null && request.inputs() != null && !request.inputs().isEmpty();
+        String prompt = request == null ? null : request.prompt();
         if (request == null || !generationType
-            || request.modelId() == null || request.modelId() <= 0 || request.prompt() == null
-            || (!promptOptional && request.prompt().isBlank()) || request.prompt().length() > 100000
+            || request.modelId() == null || request.modelId() <= 0
+            || ((prompt == null || prompt.isBlank()) && !hasInputs) || prompt != null && prompt.length() > 100000
             || request.conversationId() != null && request.conversationId() <= 0) throw new BusinessException("llm.generationRequestInvalid");
         if (!validMode(request.modelType(), mode)) throw new BusinessException("llm.generationRequestInvalid");
-        validateInputs(mode, request.inputs());
+        validateInputs(request.inputs());
         Map<String, Object> options = request.options() == null ? Map.of() : request.options();
         Set<String> allowed = modelTypeRegistry.supports(request.modelType(), LlmOperation.IMAGE_GENERATION)
             ? Set.of("size", "quality", "style", "n", "response_format")
@@ -352,30 +354,20 @@ public class MediaGenerationService {
             ? defaultMode(request.modelType()) : request.generationMode().trim().toUpperCase(Locale.ROOT);
     }
 
-    /** 按图片或视频模型限制生成模式，阻止跨类型参数伪造。 */
+    /** 接受新的多模态模式，并兼容历史图片或视频生成模式。 */
     private boolean validMode(String modelType, String mode) {
+        if ("MULTIMODAL".equals(mode)) return true;
         return "image_model".equals(modelType)
             ? Set.of("TEXT_TO_IMAGE", "IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE").contains(mode)
             : "video_model".equals(modelType)
                 && Set.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO").contains(mode);
     }
 
-    /** 校验参考媒体类型、数量、Data URL 格式和解码后大小，拒绝远程 URL 造成的 SSRF。 */
-    private void validateInputs(String mode, List<MediaInput> inputs) {
+    /** 校验文本、图片和视频输入的数量、Data URL 格式和解码后大小，拒绝远程 URL 造成的 SSRF。 */
+    private void validateInputs(List<MediaInput> inputs) {
         List<MediaInput> values = inputs == null ? List.of() : inputs;
         if (values.size() > MAX_INPUTS || values.stream().anyMatch(Objects::isNull))
             throw new BusinessException("llm.generationRequestInvalid");
-        boolean imageMode = mode.startsWith("IMAGE_");
-        boolean videoMode = mode.startsWith("VIDEO_");
-        if (Set.of("IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE", "IMAGE_TO_VIDEO").contains(mode)
-            && (values.isEmpty() || values.stream().anyMatch(input -> !"IMAGE".equals(input.kind()))))
-            throw new BusinessException("llm.generationRequestInvalid");
-        if ("VIDEO_TO_VIDEO".equals(mode) && (values.size() != 1 || !"VIDEO".equals(values.get(0).kind())))
-            throw new BusinessException("llm.generationRequestInvalid");
-        if (Set.of("TEXT_TO_IMAGE", "TEXT_TO_VIDEO").contains(mode) && !values.isEmpty())
-            throw new BusinessException("llm.generationRequestInvalid");
-        if (imageMode && values.stream().anyMatch(input -> !"IMAGE".equals(input.kind()))) throw new BusinessException("llm.generationRequestInvalid");
-        if (videoMode && values.stream().anyMatch(input -> !Set.of("IMAGE", "VIDEO").contains(input.kind()))) throw new BusinessException("llm.generationRequestInvalid");
         for (MediaInput input : values) validateInput(input);
     }
 
@@ -384,14 +376,21 @@ public class MediaGenerationService {
         if (input == null || input.kind() == null || input.fileName() == null || input.fileName().isBlank()
             || input.fileName().length() > 200 || input.fileName().contains("/") || input.fileName().contains("\\")
             || input.contentType() == null || input.dataUrl() == null) throw new BusinessException("llm.generationRequestInvalid");
-        Set<String> allowed = "IMAGE".equals(input.kind())
-            ? Set.of("image/png", "image/jpeg", "image/webp")
-            : Set.of("video/mp4", "video/webm", "video/quicktime");
+        Set<String> allowed = switch (input.kind()) {
+            case "TEXT" -> Set.of("text/plain", "text/markdown");
+            case "IMAGE" -> Set.of("image/png", "image/jpeg", "image/webp");
+            case "VIDEO" -> Set.of("video/mp4", "video/webm", "video/quicktime");
+            default -> Set.of();
+        };
         if (!allowed.contains(input.contentType().toLowerCase(Locale.ROOT))) throw new BusinessException("llm.generationRequestInvalid");
         String prefix = "data:" + input.contentType().toLowerCase(Locale.ROOT) + ";base64,";
         if (!input.dataUrl().startsWith(prefix)) throw new BusinessException("llm.generationRequestInvalid");
         String encoded = input.dataUrl().substring(prefix.length());
-        int maxBytes = "IMAGE".equals(input.kind()) ? MAX_IMAGE_BYTES : MAX_VIDEO_BYTES;
+        int maxBytes = switch (input.kind()) {
+            case "TEXT" -> MAX_TEXT_BYTES;
+            case "IMAGE" -> MAX_IMAGE_BYTES;
+            default -> MAX_VIDEO_BYTES;
+        };
         if (encoded.isBlank() || encoded.length() > ((maxBytes + 2) / 3) * 4 || !encoded.matches("[A-Za-z0-9+/]+=*"))
             throw new BusinessException("llm.generationRequestInvalid");
         try {

@@ -231,7 +231,7 @@ test('工具运行态不会误报失败，辅助详情默认折叠且输入保�
   assert.match(source, /:disabled="!canSend"/)
 })
 
-test('媒体生成提交图片模式、参考图片以及失败草稿恢复字段', async t => {
+test('媒体生成组合提交文本、图片、视频输入以及失败草稿恢复字段', async t => {
   let generationPayload
   const { state } = await createChat(t, {
     http: {
@@ -250,17 +250,21 @@ test('媒体生成提交图片模式、参考图片以及失败草稿恢复字�
   state.generationMode.value = 'generation'
   state.generationType.value = 'image_model'
   state.generationModelId.value = 7
-  state.generationInputMode.value = 'IMAGE_TEXT_TO_IMAGE'
-  state.generationInputs.value = [{ kind: 'IMAGE', fileName: 'reference.png', contentType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }]
+  state.generationInputs.value = [
+    { kind: 'TEXT', fileName: 'reference.txt', contentType: 'text/plain', dataUrl: 'data:text/plain;base64,AA==' },
+    { kind: 'IMAGE', fileName: 'reference.png', contentType: 'image/png', dataUrl: 'data:image/png;base64,AA==' },
+    { kind: 'VIDEO', fileName: 'reference.mp4', contentType: 'video/mp4', dataUrl: 'data:video/mp4;base64,AA==' }
+  ]
   state.prompt.value = 'make it blue'
   assert.equal(state.canSend.value, true)
   await state.send()
-  assert.equal(generationPayload.generationMode, 'IMAGE_TEXT_TO_IMAGE')
-  assert.equal(generationPayload.inputs[0].kind, 'IMAGE')
+  assert.equal(generationPayload.generationMode, 'MULTIMODAL')
+  assert.deepEqual(generationPayload.inputs.map(input => input.kind), ['TEXT', 'IMAGE', 'VIDEO'])
   assert.equal(generationPayload.prompt, 'make it blue')
   assert.equal(state.generationInputs.value.length, 0)
-  assert.match(source, /video\/mp4,video\/webm,video\/quicktime/)
-  assert.match(source, /generationInputModeOptions/)
+  assert.match(source, /text\/plain,text\/markdown/)
+  assert.match(source, /generationInputType/)
+  assert.doesNotMatch(source, /generationInputModeOptions/)
 })
 
 test('模型来源切换显示上下文选项并清理不适用配置', async t => {
