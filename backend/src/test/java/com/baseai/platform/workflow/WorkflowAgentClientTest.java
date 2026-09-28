@@ -8,6 +8,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.web.client.RestClient;
 
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,8 +22,14 @@ class WorkflowAgentClientTest {
     /** 历史混合类型配置保留文本能力时可以进入工具决策聊天协议。 */
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"image_model", "video_model"})
-    void acceptsLegacyMixedCandidate(String type) {
-        RestClient worker = mock(RestClient.class, RETURNS_DEEP_STUBS);
+    void acceptsLegacyMixedCandidate(String type) throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/llm/agent-step", exchange -> {
+            byte[] response = "{\"content\":\"ok\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            try (var output = exchange.getResponseBody()) { output.write(response); }
+        });
+        server.start();
         TaskTraceService traces = mock(TaskTraceService.class);
         LlmManagementService management = mock(LlmManagementService.class);
         var candidate = new LlmManagementService.WorkerCandidate("provider", "https://example.com", List.of("key"),
@@ -29,15 +38,15 @@ class WorkflowAgentClientTest {
             .thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), false, true));
         var mapper = new ObjectMapper();
         var config = mapper.createObjectNode().put("modelId", 1L).put("modelType", "text_model");
-        when(worker.post().uri("/llm/agent-step").header(anyString(), any(String[].class))
-            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-            .body(any()).retrieve().body(com.fasterxml.jackson.databind.JsonNode.class))
-            .thenReturn(mapper.createObjectNode().put("content", "ok"));
+        RestClient worker = RestClient.builder().baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build();
         var client = new WorkflowAgentClient(worker, management, traces, mapper, null);
 
-        assertEquals("ok", client.step(config, List.of(), List.of()).content());
-        verify(worker).post();
-        verify(traces).registerPython(any(), any(), eq("/llm/agent-step"));
+        try {
+            assertEquals("ok", client.step(config, List.of(), List.of()).content());
+            verify(traces).registerPython(any(), any(), eq("/llm/agent-step"));
+        } finally {
+            server.stop(0);
+        }
     }
     /** 显式类型和省略类型的直连都应在追踪与网络请求前被拒绝。 */
     @ParameterizedTest
