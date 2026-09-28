@@ -47,6 +47,8 @@ import { parse, compileScript } from '@vue/compiler-sfc'
 import * as vue from 'vue'
 import * as formHelpers from '../src/utils/ai-video-form.js'
 import zh from '../src/locales/zh-CN.js'
+import en from '../src/locales/en-US.js'
+import { createI18n } from 'vue-i18n'
 import SchemaModule from 'async-validator'
 const Schema = SchemaModule.default || SchemaModule
 const component = compileScript(parse(readFileSync(new URL('../src/views/AiVideoView.vue', import.meta.url), 'utf8')).descriptor, { id: 'video-form-test' })
@@ -55,12 +57,13 @@ const component = compileScript(parse(readFileSync(new URL('../src/views/AiVideo
 function createEditor(t, section, options = {}) {
   const requests = []
   const notices = []
+  const i18n = createI18n({ legacy: false, locale: options.locale || 'zh', messages: { zh, en } }).global
   const route = vue.reactive({ path: `/ai-video/${section}`, fullPath: `/ai-video/${section}`, query: {} })
   const modules = {
     vue: { ...vue, onMounted() {} },
     'element-plus': { ElMessage: { success: value => notices.push(value), warning() {} }, ElMessageBox: { confirm: options.confirm || (async () => {}) } },
     '@element-plus/icons-vue': {},
-    'vue-i18n': { useI18n: () => ({ t: key => key.split('.').reduce((value, part) => value?.[part], zh) || key }) },
+    'vue-i18n': { useI18n: () => i18n },
     'vue-router': { useRoute: () => route, useRouter: () => ({ replace() {}, push() {} }) },
     '../stores/auth': { useAuthStore: () => ({ isAdmin: options.admin !== false, hasPermission: () => false }) },
     '../utils/ai-video-form': formHelpers,
@@ -83,7 +86,7 @@ function createEditor(t, section, options = {}) {
     const rules = Object.fromEntries(state.formGroups.value.flatMap(group => group.fields).filter(field => !field.config).map(field => [field.key, state.fieldRules(field)]))
     await new Schema(rules).validate(state.form)
   } }
-  return { state, requests, notices, route }
+  return { state, requests, notices, route, i18n }
 }
 
 for (const section of Object.keys(assetAttributes)) {
@@ -203,4 +206,75 @@ test('无修改可直接关闭，确认放弃后关闭，旧配置异常自动�
   state.form.name = '修改'
   await state.closeEditor()
   assert.equal(state.dialogVisible.value, false)
+})
+
+// 每类真实表单都校验说明内容、示例和编辑隔离，避免只覆盖统一模板。
+for (const section of ['scripts', 'storyboards', ...Object.keys(assetAttributes), 'tasks', 'renders', 'videos', 'reviews', 'publishes']) {
+  for (const [locale, messages] of Object.entries({ zh, en })) {
+    test(`${section}/${locale}: 新建指南与字段提示完整，编辑不携带示例`, t => {
+      const { state } = createEditor(t, section, { locale })
+      state.openCreate()
+      assert.equal(state.showCreationGuide.value, true)
+      const expected = messages.aiVideo.creation.modules[section]
+      assert.equal(state.creationGuide.value.purpose, expected.purpose)
+      assert.deepEqual(state.creationGuide.value.steps.map(step => step.description), [expected.prepare, expected.fill, expected.next])
+      const fields = state.formGroups.value.flatMap(group => group.fields)
+      for (const field of fields) {
+        assert.equal(typeof field.hint, 'string', field.key)
+        assert.ok(field.hint.length > 8, field.key)
+        assert.doesNotMatch(field.hint, /^aiVideo\./, field.key)
+        if (['name', 'title'].includes(field.key)) {
+          assert.equal(field.placeholder, expected.example)
+          assert.equal(state.form[field.key], '')
+        }
+      }
+      for (const key of assetAttributes[section] || []) {
+        assert.equal(fields.find(field => field.key === key).hint, messages.aiVideo.creation.attributes[key])
+      }
+      state.openEdit({ id: 1, name: '原名称', title: '原标题', projectId: 2, metadataJson: '{"custom":true}' })
+      assert.equal(state.showCreationGuide.value, false)
+      const editableName = state.formGroups.value.flatMap(group => group.fields).find(field => ['name', 'title'].includes(field.key))
+      if (editableName) assert.equal(editableName.placeholder, undefined)
+      if (assetAttributes[section]) assert.equal(state.form.metadataJson, '{"custom":true}')
+    })
+  }
+}
+
+test('分类指南响应路由与语言切换，工作台和编辑不显示新增向导', t => {
+  const { state, route, i18n } = createEditor(t, 'characters')
+  state.openCreate()
+  assert.match(state.creationGuide.value.purpose, /角色/)
+  route.path = '/ai-video/assets/sounds'
+  assert.match(state.creationGuide.value.purpose, /音效/)
+  i18n.locale.value = 'en'
+  assert.equal(state.creationGuide.value.purpose, en.aiVideo.creation.modules.sounds.purpose)
+  assert.equal(state.assetTypeLabel.value, en.aiVideo.sections.sounds.title)
+  for (const section of ['dashboard', 'analytics', 'projects', 'unknown']) {
+    route.path = '/ai-video/' + section
+    assert.equal(state.showCreationGuide.value, false)
+    assert.equal(state.creationGuide.value.purpose, '')
+    assert.equal(state.assetTypeLabel.value, '')
+  }
+})
+
+for (const mode of ['SCRIPT', 'IMAGE', 'VIDEO', 'TTS', 'MUSIC', 'UPSCALE', 'STORYBOARD', 'TEMPLATE']) {
+  test(`${mode}: 快捷创建保留参数且展示完整引导`, t => {
+    const render = ['STORYBOARD', 'TEMPLATE'].includes(mode)
+    const { state } = createEditor(t, render ? 'renders' : 'tasks')
+    state.openCreate(mode)
+    assert.equal(state.showCreationGuide.value, true)
+    assert.equal(state.creationGuide.value.steps.length, 3)
+    assert.equal(render ? JSON.parse(state.form.configJson).mode : state.form.taskType, mode)
+    for (const field of state.formGroups.value.flatMap(group => group.fields)) {
+      assert.doesNotMatch(field.hint, /^aiVideo\./, field.key)
+    }
+  })
+}
+
+test('新增引导不绕过创建权限、不自动填充示例或产生 API 请求', t => {
+  const { state, requests } = createEditor(t, 'scenes', { admin: false })
+  state.openCreate()
+  assert.equal(state.dialogVisible.value, false)
+  assert.deepEqual({ ...state.form }, {})
+  assert.equal(requests.length, 0)
 })

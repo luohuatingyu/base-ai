@@ -87,6 +87,16 @@
         </div>
       </div>
       <div v-if="assetType" class="asset-context"><el-tag>{{ assetTypeLabel }}</el-tag><span>{{ t('aiVideo.assetContextHint') }}</span></div>
+      <section v-if="assetType" class="asset-guide" aria-labelledby="asset-guide-title">
+        <h3 id="asset-guide-title">{{ t('aiVideo.creation.labels.assetTitle') }}</h3>
+        <p>{{ creationGuide.purpose }}</p>
+        <div class="creation-guide-grid">
+          <article v-for="step in creationGuide.steps" :key="step.key">
+            <strong>{{ step.title }}</strong><p>{{ step.description }}</p>
+          </article>
+        </div>
+        <small>{{ t('aiVideo.creation.labels.example') }}：{{ creationGuide.example }}</small>
+      </section>
       <el-alert v-if="loadError" class="ai-video-error" :title="t('aiVideo.loadFailed')" type="error" show-icon :closable="false">
         <template #default><el-button size="small" type="danger" plain @click="load">{{ t('common.retry') }}</el-button></template>
       </el-alert>
@@ -156,6 +166,15 @@
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="min(920px, 94vw)" top="5vh" class="video-editor" destroy-on-close :close-on-click-modal="false" :before-close="closeEditor">
       <div class="editor-intro"><span class="editor-badge">{{ section.title }}</span><p>{{ section.description }}</p></div>
+      <section v-if="showCreationGuide" class="creation-guide" aria-labelledby="creation-guide-title">
+        <h3 id="creation-guide-title">{{ t('aiVideo.creation.labels.createTitle') }}</h3>
+        <p>{{ creationGuide.purpose }}</p>
+        <div class="creation-guide-grid">
+          <article v-for="(step, index) in creationGuide.steps" :key="step.key">
+            <strong><span>{{ index + 1 }}.</span> {{ step.title }}</strong><p>{{ step.description }}</p>
+          </article>
+        </div>
+      </section>
       <section v-if="isProjectCreate" class="project-create-guide" aria-labelledby="project-create-guide-title">
         <div class="project-create-guide-head">
           <div>
@@ -256,7 +275,6 @@ let initialForm = ''
 
 // 路由兼容测试保留 items: 'items' 这一业务路径标识；接口分类仍使用 ITEM 枚举。
 const assetTypes = { characters: 'CHARACTER', scenes: 'SCENE', items: 'ITEM', costumes: 'COSTUME', motions: 'MOTION', styles: 'STYLE', voices: 'VOICE', sounds: 'SOUND' }
-const assetLabels = { CHARACTER: '角色', SCENE: '场景', ITEM: '物品', COSTUME: '服装', MOTION: '动作', STYLE: '画风', VOICE: '声音', SOUND: '音效' }
 const statusOptions = values => values.map(value => ({ value, label: t(`aiVideo.statuses.${value}`) }))
 const taskTypeOptions = values => values.map(value => ({ value, label: t(`aiVideo.taskTypes.${value}`) }))
 const field = (key, label, type = 'input', extra = {}) => ({ key, label, type, ...extra })
@@ -287,13 +305,23 @@ const isAnalytics = computed(() => sectionKey.value === 'analytics')
 const current = computed(() => modules[sectionKey.value] || modules.projects)
 const isTaskModule = computed(() => current.value.resource === 'tasks')
 const assetType = computed(() => assetTypes[sectionKey.value] || '')
-const assetTypeLabel = computed(() => assetLabels[assetType.value] || '')
+const assetTypeLabel = computed(() => assetType.value ? t(`aiVideo.sections.${sectionKey.value}.title`) : '')
 const section = computed(() => ({ title: t(`aiVideo.sections.${sectionKey.value}.title`), description: t(`aiVideo.sections.${sectionKey.value}.description`) }))
 const columns = computed(() => current.value.columns.map(([key, label]) => ({ key, label: key.endsWith('At') ? t('common.time') : label })))
 const configKey = computed(() => configurationKey(sectionKey.value))
 const configurationValid = computed(() => { try { parseConfiguration(form[configKey.value]); return true } catch { return false } })
 const dialogTitle = computed(() => t(editingId.value ? 'aiVideo.editor.editTitle' : 'aiVideo.editor.createTitle', { module: section.value.title }))
 const isProjectCreate = computed(() => current.value.resource === 'projects' && !editingId.value)
+const showCreationGuide = computed(() => !editingId.value && !!modules[sectionKey.value] && sectionKey.value !== 'projects')
+/** 按实际业务模块提供准备、填写和后续使用说明，分类页与新建弹窗共用。 */
+const creationGuide = computed(() => {
+  if (!modules[sectionKey.value] || sectionKey.value === 'projects') return { purpose: '', example: '', steps: [] }
+  const prefix = `aiVideo.creation.modules.${sectionKey.value}`
+  return {
+    purpose: t(`${prefix}.purpose`), example: t(`${prefix}.example`),
+    steps: ['prepare', 'fill', 'next'].map(key => ({ key, title: t(`aiVideo.creation.labels.${key}`), description: t(`${prefix}.${key}`) }))
+  }
+})
 /** 为首次创建项目提供按填写顺序组织的说明，避免用户只看到一组空字段。 */
 const projectCreateGuide = computed(() => [
   { key: 'identity', index: '01', title: t('aiVideo.editor.projectGuide.identityTitle'), description: t('aiVideo.editor.projectGuide.identityDescription'), fields: t('aiVideo.editor.projectGuide.identityFields') },
@@ -333,6 +361,14 @@ const formGroups = computed(() => {
     const options = sectionKey.value === 'renders' ? ['STORYBOARD', 'TEMPLATE'] : []
     if (options.length) fields.push({ key: 'mode', label: t('aiVideo.editor.renderMode'), type: 'select', options: options.map(value => ({ value, label: t('aiVideo.editor.' + value) })), config: true, group: 'content' })
     for (const key of (sectionKey.value === 'renders' || ['VIDEO', 'IMAGE', 'UPSCALE'].includes(form.taskType) ? ['aspectRatio', 'resolution'] : [])) fields.push({ key, label: t('aiVideo.fields.' + key), type: 'select', options: presets[key].map(value => ({ value, label: value })), custom: true, config: true, group: 'content' })
+  }
+  // 新建时显示与真实字段匹配的示例，示例只作提示，不写入表单或覆盖已有数据。
+  if (showCreationGuide.value) {
+    for (const item of fields) {
+      const category = item.config && attributes.includes(item.key) ? 'attributes' : 'hints'
+      item.hint = t(`aiVideo.creation.${category}.${item.key}`)
+      if (['name', 'title'].includes(item.key)) item.placeholder = creationGuide.value.example
+    }
   }
   return ['basic', 'content', 'advanced'].map((key, index) => ({ key, number: index + 1, title: t('aiVideo.editor.' + key), hint: t('aiVideo.editor.' + key + 'Hint'), fields: fields.filter(item => item.group === key) })).filter(group => group.fields.length)
 })
@@ -629,6 +665,15 @@ onMounted(load)
 .editor-intro { display: flex; align-items: center; gap: 12px; padding: 0 0 20px; }
 .editor-intro p, .editor-section-hint, .editor-field-hint { margin: 0; color: var(--app-muted); font-size: 12px; line-height: 1.7; }
 .editor-badge { flex-shrink: 0; padding: 5px 10px; border-radius: 8px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
+.asset-guide, .creation-guide { margin: 16px 0; padding: 16px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-surface-soft); }
+.asset-guide h3, .creation-guide h3 { margin: 0; font-size: 15px; color: var(--app-text); }
+.asset-guide p, .creation-guide p { margin: 8px 0; color: var(--app-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.asset-guide > small { display: block; margin-top: 12px; color: var(--app-muted); }
+.creation-guide-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.creation-guide-grid article { min-width: 0; padding: 12px; border: 1px solid var(--app-border); border-radius: 8px; }
+.creation-guide-grid strong { font-size: 13px; color: var(--app-text); }
+.creation-guide-grid strong span { color: var(--el-color-primary); }
+@media (max-width: 760px) { .creation-guide-grid { grid-template-columns: 1fr; } }
 .project-create-guide { margin-bottom: 16px; padding: 16px; border: 1px solid #cbdcf8; border-radius: 12px; background: linear-gradient(135deg, #f5f8ff, #fbfdff); }
 .project-create-guide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .project-create-guide-kicker { color: var(--app-primary); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }

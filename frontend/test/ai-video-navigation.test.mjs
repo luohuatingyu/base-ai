@@ -114,3 +114,13 @@ test('AI视频首页主按钮在深色横幅上保持可读性', () => {
   assert.match(view, /\.ai-video-start-button:hover[^}]*background:\s*#edf3ff/)
   assert.match(view, /\.ai-video-start-button:focus-visible[^}]*outline/)
 })
+
+test('资产说明与新建向导绑定分类数据，窄屏按单列展示', () => {
+  assert.match(view, /v-if="assetType" class="asset-guide"/)
+  assert.match(view, /v-if="showCreationGuide" class="creation-guide"/)
+  for (const binding of ['creationGuide.purpose', 'creationGuide.steps', 'creationGuide.example', 'step.description']) {
+    assert.ok(view.includes(binding), binding)
+  }
+  assert.match(view, /@media \(max-width: 760px\) \{ \.creation-guide-grid \{ grid-template-columns: 1fr;/)
+  assert.doesNotMatch(view, /v-html=/)
+})

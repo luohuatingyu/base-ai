@@ -180,6 +180,179 @@ export default {
     recordsHint: 'Most recent calls first'
   },
   aiVideo: {
+    creation: {
+      "labels": {
+        "assetTitle": "Asset guide",
+        "createTitle": "Before you create",
+        "prepare": "What to prepare",
+        "fill": "How to fill it in",
+        "next": "After saving",
+        "example": "Example name"
+      },
+      "modules": {
+        "scripts": {
+          "purpose": "Turn a story into a script that can be split into shots.",
+          "prepare": "Prepare a project, outline, character relationships, dialogue and narration.",
+          "fill": "Select a project and title. Organize content by scene, start at version 1 and keep unfinished work as a draft.",
+          "next": "Open Storyboards and split each scene into shots with durations.",
+          "example": "Episode 1 · A letter in the rain"
+        },
+        "storyboards": {
+          "purpose": "Define the visuals, sound and timing of each shot.",
+          "prepare": "Prepare the script excerpt, shot order, character actions and duration.",
+          "fill": "Set the shot number and title. Describe subjects, environment and action; separate dialogue from narration. 5000 milliseconds means 5 seconds.",
+          "next": "Check shot order, then use the descriptions and references in generation tasks.",
+          "example": "Shot 01 · Entering the bookshop"
+        },
+        "characters": {
+          "purpose": "Keep a character’s appearance and personality consistent across shots.",
+          "prepare": "Prepare reference images, appearance, personality and source notes.",
+          "fill": "Use a recognizable name. Describe hair, build, clothing and identifying details. Use an image for the preview and the actual material for the resource.",
+          "next": "Reference this character in the same project’s shots or task inputs. Maintain voice assets separately; linking depends on the generation service.",
+          "example": "Lin · Young detective"
+        },
+        "scenes": {
+          "purpose": "Reuse space and lighting settings across shots.",
+          "prepare": "Prepare location images, time, lighting, weather and spatial layout.",
+          "fill": "Describe indoor or outdoor location details. Fill time, lighting and weather separately, with key furnishings in the description.",
+          "next": "Reuse descriptions and images to keep layout and lighting consistent.",
+          "example": "Rainy night · Old bookshop"
+        },
+        "items": {
+          "purpose": "Preserve a prop’s appearance and story purpose.",
+          "prepare": "Prepare images, material, color, dimensions and intended use.",
+          "fill": "Name the item clearly. Record material, color and dimensions separately; describe usage and important details.",
+          "next": "Reference the prop in shots or task inputs and check its scale relative to characters.",
+          "example": "Brass bell · Key ring"
+        },
+        "costumes": {
+          "purpose": "Define a character’s clothing, hair and accessories.",
+          "prepare": "Prepare outfit references, suitable characters, style and colors.",
+          "fill": "Use one record per outfit. Describe hair, makeup, accessories and story context; identify the character by name.",
+          "next": "Use the outfit in matching shots and give alternate outfits distinct names.",
+          "example": "Lin · Raincoat outfit"
+        },
+        "motions": {
+          "purpose": "Reuse action, expression and timing references.",
+          "prepare": "Prepare a reference video, start and end poses, duration and intensity.",
+          "fill": "Describe the start, movement and finish. Use seconds for duration and describe intensity as subtle, natural or exaggerated.",
+          "next": "Reference the action in shots or video tasks and align action duration with shot timing.",
+          "example": "Turning back · Surprise"
+        },
+        "styles": {
+          "purpose": "Keep visual direction, colors and texture consistent.",
+          "prepare": "Prepare reference images, visual keywords, main colors and textures.",
+          "fill": "Specify realism or illustration in keywords, list primary and accent colors, and describe lighting and texture.",
+          "next": "Reuse keywords and colors across tasks. Extended parameters depend on the connected service.",
+          "example": "Warm tones · Vintage film"
+        },
+        "voices": {
+          "purpose": "Maintain character and narrator voice references.",
+          "prepare": "Prepare usable audio samples, tone, emotion and sample dialogue.",
+          "fill": "Use audio for the resource and an optional cover image for the preview. Describe pitch, pace and texture; use sample dialogue to compare.",
+          "next": "Use the description or a supported voice identifier in speech tasks. Saving an asset does not clone a voice.",
+          "example": "Lin · Calm narration"
+        },
+        "sounds": {
+          "purpose": "Organize music, ambience and action sounds.",
+          "prepare": "Prepare audio, sound type, duration, emotion and usage notes.",
+          "fill": "Distinguish music, ambience and effects. Record seconds and describe suitable shots and transitions.",
+          "next": "Select resources for shot timing during composition and check volume, transitions and usage rights.",
+          "example": "Rainy night · Street ambience"
+        },
+        "tasks": {
+          "purpose": "Save trackable generation tasks and input parameters.",
+          "prepare": "Prepare a project, task type, prompt and required service parameters.",
+          "fill": "Choose a type and name. Describe the goal, subject and constraints. Set the route and input JSON to match the actual service.",
+          "next": "Check task status after saving. Execution requires a connected service; saving a record alone does not produce a video.",
+          "example": "Shot 1 · Video generation"
+        },
+        "renders": {
+          "purpose": "Record composition settings for shots, subtitles and audio.",
+          "prepare": "Prepare ordered shot media, subtitles, tracks and output specifications.",
+          "fill": "Choose storyboard or template composition. Check aspect ratio and resolution, then supply supported shot or template parameters in Advanced settings.",
+          "next": "Check status and output URL. Rendering requires an execution service; register the finished version after completion.",
+          "example": "Episode 1 · Preview render"
+        },
+        "videos": {
+          "purpose": "Register a finished version for preview, review and publishing.",
+          "prepare": "Prepare the video URL, project, version, cover and duration.",
+          "fill": "Identify the purpose in the title. Use the actual video URL and milliseconds for duration. An optional render ID should belong to the same project.",
+          "next": "Check the video and version, then use its ID for review and publication records.",
+          "example": "Episode 1 · Preview"
+        },
+        "reviews": {
+          "purpose": "Record a manual review of a specific video.",
+          "prepare": "Prepare the correct video ID and inspect picture, sound, subtitles and material usage.",
+          "fill": "Confirm the version, choose pending, approved or rejected, and explain the decision and required changes.",
+          "next": "Revise if needed; register publication after approval. Saving a review does not publish to a platform.",
+          "example": ""
+        },
+        "publishes": {
+          "purpose": "Record publication of a video on a target channel.",
+          "prepare": "Prepare a video ID, channel and review outcome. Add external IDs and links after publication.",
+          "fill": "Use the actual platform name and matching status. Record failures and a reachable external link.",
+          "next": "This saves a publication record. Upload and publish on the target platform, then update status and links here.",
+          "example": ""
+        }
+      },
+      "hints": {
+        "projectId": "Choose the owning project. If no options appear, create a project or ask an administrator for project viewing access.",
+        "name": "Use a name that distinguishes purpose and version.",
+        "title": "Use a recognizable content, shot or version title.",
+        "description": "Describe usage, key details and material sources.",
+        "previewUrl": "Use a reference or cover image URL: HTTP(S) or a site / path. Preview before saving.",
+        "resourceUrl": "Use the actual image, video or audio URL for this category. Saving a URL does not upload a local file.",
+        "tags": "Use short searchable keywords, for example: lead, rain, realism.",
+        "status": "Match the actual preparation or processing state; recording status does not execute external actions.",
+        "content": "Organize by scene and separate character dialogue from narration.",
+        "version": "Start at 1 and use a clear number for each version.",
+        "shotNo": "Start shot order at 1 and check for duplicates.",
+        "sceneDescription": "Describe subject, location, action, light and composition.",
+        "dialogue": "Include character names and dialogue; leave blank if unused.",
+        "narration": "Enter voice-over narration; leave blank if unused.",
+        "camera": "Choose a shot size or enter a custom camera position and movement.",
+        "durationMs": "Milliseconds: 5000 means 5 seconds.",
+        "taskType": "Choose the output type and adjust prompts and inputs accordingly.",
+        "prompt": "Specify output, subject, environment and constraints, beyond the task name.",
+        "providerRouteId": "Optional configured capability route ID, not a model name.",
+        "inputJson": "Use a valid JSON object matching the service contract. Leave blank if unsure; never enter secrets.",
+        "configJson": "Use a valid JSON object with shot, subtitle, audio or template fields supported by the execution service.",
+        "metadataJson": "Optional properties synchronized with the category fields; existing custom keys are preserved.",
+        "renderId": "Optional source render ID from the same project.",
+        "videoId": "Use the actual video ID; confirm its version in Finished videos first.",
+        "channel": "Enter the actual publishing platform or channel.",
+        "externalId": "ID returned by the publishing platform; leave blank before publication.",
+        "externalUrl": "The published video’s HTTP(S) link on the external platform.",
+        "errorMessage": "Record failure causes and follow-up actions without secrets.",
+        "mode": "Choose composition from existing shots or a template.",
+        "aspectRatio": "Match the project and target platform aspect ratio.",
+        "resolution": "Match the aspect ratio and source media specifications.",
+        "mediaUrl": "Use the actual finished video URL and preview picture and sound.",
+        "coverUrl": "Optional HTTP(S) or site / path for a cover image.",
+        "comment": "Describe review scope, reasoning and specific required changes."
+      },
+      "attributes": {
+        "appearance": "For example: short hair, round glasses, scar above the left eyebrow.",
+        "personality": "For example: calm, cautious, concise speech; describe observable behavior.",
+        "location": "For example: a wooden bookshop on a street corner, entrance facing south.",
+        "timeOfDay": "For example: dusk, warm side lighting and indoor lamps.",
+        "weather": "For example: light rain, wet pavement and distant mist.",
+        "material": "For example: worn brass with fine scratches.",
+        "color": "For example: dark blue with silver accents.",
+        "dimensions": "For example: 8 cm tall, palm-sized; specify units or relative scale.",
+        "style": "For example: a vintage raincoat, casual wear or futuristic utility clothing.",
+        "character": "Enter the character name. This is a note, not an automatic relationship.",
+        "duration": "Use seconds, for example 2.5, rather than the shot’s millisecond unit.",
+        "intensity": "For example: a subtle head lift, natural walk or exaggerated jump.",
+        "keywords": "For example: realism, film grain, soft backlight.",
+        "palette": "For example: ivory, warm brown and small green accents.",
+        "voice": "For example: low-mid pitch, slow pace and a warm tone.",
+        "emotion": "For example: calm, tense or cheerful; describe transitions if needed.",
+        "sampleText": "Use a consistent line, such as: The rain has stopped. Let’s go.",
+        "soundType": "For example: background music, ambience or transition effect."
+      }
+    },
     editor: {"camera":{"close":"Close-up","medium":"Medium shot","wide":"Wide shot"},"createTitle":"Create · {module}","editTitle":"Edit · {module}","create":"Create and save","basic":"Basic information","basicHint":"Set ownership and a clear name for linking and discovery.","content":"Content settings","contentHint":"Set content and parameters. Support for extended parameters depends on the generation service.","advanced":"Advanced settings","advancedHint":"Version, status and extended configuration. JSON stays in sync; existing custom properties are preserved.","requiredHint":"* Required. You can edit after saving.","urlHint":"Use HTTP(S) URLs or site / paths. Preview before saving.","preview":"Preview media","previewFailed":"Unable to preview. Check the URL and access permissions.","extended":"Extended properties JSON","renderMode":"Render mode","STORYBOARD":"Storyboard composition","TEMPLATE":"Template composition","discardHint":"Discard your unsaved changes?","discardTitle":"Discard changes","invalidJson":"Configuration must be a valid JSON object. Correct it in Advanced settings.","configTooLong":"Configuration cannot exceed 20000 characters.","invalidUrl":"Enter an HTTP(S) URL or an absolute site path.","saveFailed":"Save failed. Your input is preserved. Check and retry.","projectGuide":{"kicker":"Before you create","title":"Set the direction before filling the form","description":"A project is the production container shared by scripts, storyboards, assets, generation tasks, and finished videos. Set the goal and output specs first to keep later work consistent.","requiredTag":"Recommended order","identityTitle":"Define the project identity","identityDescription":"Use a clear code and name for discovery, then describe the theme, audience, or delivery goal.","identityFields":"Fill in: code, name, description","outputTitle":"Confirm the output specs","outputDescription":"Choose the aspect ratio and resolution for the target platform, and keep the frame rate consistent.","outputFields":"Fill in: aspect ratio, resolution, frame rate","directionTitle":"Add the visual direction","directionDescription":"Use the style and cover to give the team a quick visual reference. Keep the project as a draft until the brief is ready.","directionFields":"Fill in: style; optional cover and status","nextTitle":"After you create it","nextDescription":"Write the script and split it into shots, add characters and scenes, then submit generation tasks.","codeHint":"The code links and identifies the project. Use a unique, stable identifier with letters or numbers.","codePlaceholder":"For example: spring-story-01","nameHint":"Choose a name the team can recognize; scripts, assets, and videos will show it later.","namePlaceholder":"For example: Spring story short","descriptionHint":"Record the theme, audience, duration, or delivery platform for collaboration and review.","descriptionPlaceholder":"For example: a 60-second mobile brand story","aspectRatioHint":"Choose for the target platform. Short-form vertical video commonly uses 9:16; landscape uses 16:9.","resolutionHint":"Keep it aligned with the aspect ratio and the final platform requirements.","fpsHint":"Keep one frame rate across the project. Use the default 25 fps when unsure.","styleHint":"Describe the visual style, palette, and texture to keep generation consistent.","stylePlaceholder":"For example: warm realism with muted film texture","statusHint":"Keep the project as a draft while preparing; switch to active when the brief is confirmed."},"attributes":{"appearance":"Appearance","personality":"Personality","location":"Location","timeOfDay":"Time and lighting","weather":"Weather","material":"Material","color":"Color","dimensions":"Dimensions","style":"Costume style","character":"Suitable character","duration":"Duration (seconds)","intensity":"Motion intensity","keywords":"Visual keywords","palette":"Palette","voice":"Voice tone","emotion":"Emotion","sampleText":"Sample dialogue","soundType":"Sound type"}},
     workflowTitle: 'AI video production loop', workflowHint: 'Start with a project, script, and assets, then submit generation, rendering, review, and publishing records.', liveData: 'Live data', analyticsTitle: 'AI video operations', analyticsHint: 'Statistics are calculated from saved projects, tasks, assets, and finished videos.', runningTasks: 'Running tasks', failedTasks: 'Failed tasks', assetCoverage: 'Assets', videoCoverage: 'Finished videos', assetsUnit: 'items', videosUnit: 'records', assetContextHint: 'Only this asset category is shown.', noRows: 'No data yet. Use Add to create the first record.', noResults: 'No matching records. Adjust the filters and try again.', selectProject: 'Select a project', cancelTask: 'Cancel task', retryTask: 'Retry task', completePublish: 'Complete publish', taskCancelled: 'Task cancelled', taskRetried: 'Task queued again', publishCompleted: 'Publishing completed', loadFailed: 'Data failed to load. Try again.', searchPlaceholder: 'Search names, titles, codes, or descriptions', allStatuses: 'All statuses', resultCount: '{count} records', startProject: 'Create a project', fieldRequired: 'Enter {field}',
     statuses: { DRAFT: 'Draft', ACTIVE: 'Active', ARCHIVED: 'Archived', READY: 'Ready', LOCKED: 'Locked', QUEUED: 'Queued', RUNNING: 'Running', SUCCEEDED: 'Completed', FAILED: 'Failed', CANCELLED: 'Cancelled', PREVIEW: 'Preview', REVIEW: 'In review', PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', PUBLISHING: 'Publishing', PUBLISHED: 'Published' },
