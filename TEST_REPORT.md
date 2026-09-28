@@ -4,8 +4,8 @@
 
 ### Git 基准、范围与交付状态
 
-Commit: `dee6268`
-- 提交说明：Add image and video generation inputs；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+Commit: `cd8eee4`
+- 提交说明：Reject null media input elements；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次功能实现代码提交为 `dee6268`，边界校验修复提交为 `cd8eee4`。
 - 图片生成支持文生图、图生图、图文生图；视频生成支持文生视频、图生视频、视频生视频，并在前端提供上传、预览、删除和失败恢复。
 - 后端将媒体请求拆为图片/视频协议适配器和注册表，统一传递 `generationMode` 与受校验的输入媒体，任务仅保存输入元数据，避免将 Base64 内容持久化到数据库。
 - 未新增依赖、数据库迁移或供应商专用配置；默认适配器输出统一 JSON 字段，供应商需要 multipart、远程文件 URL 或专用字段时可在对应适配器扩展。
@@ -21,21 +21,21 @@ Commit: `dee6268`
 
 ### 实际测试命令与结果
 
-- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -o -Dtest=MediaGenerationServiceTest,MediaGenerationProtocolRegistryTest test`：**8/8 通过，失败 0、错误 0、跳过 0**。
-- 同一 Docker Maven 环境执行 `mvn -o test -B`：**1012/1012 通过，失败 0、错误 0、跳过 0**。
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -o -Dtest=MediaGenerationServiceTest,MediaGenerationProtocolRegistryTest test`：**9/9 通过，失败 0、错误 0、跳过 0**。
+- 同一 Docker Maven 环境执行 `mvn -o test -B`：**1013/1013 通过，失败 0、错误 0、跳过 0**。
 - `cd frontend && npm test`：lint、类型检查、覆盖测试 **649/649**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
 - `git diff --check`：通过；未新增临时调试文件。
 
 ### 构建与运行验证
 
-- `docker compose up --build -d`：9 个镜像均构建成功，后端镜像构建阶段的 **1012/1012** 测试通过；整栈启动受已有 `baseai-local-docker-socket-proxy` 持续返回 HTTP 503、健康检查失败影响，命令退出 1，无端口冲突。
+- `docker compose up --build -d`：9 个镜像均构建成功，后端镜像构建阶段的 **1013/1013** 测试通过；整栈启动受已有 `baseai-local-docker-socket-proxy` 持续返回 HTTP 503、健康检查失败影响，命令退出 1，无端口冲突。
 - 重启该代理容器并再次执行 `docker compose up -d` 后仍因同一健康检查失败退出；Backend、Python Worker、Document Parser 和 Frontend 镜像已成功构建并运行，Adapter Manager 受依赖阻断。
 
 ### 已知问题、重测触发与回滚
 
 - 当前统一适配器使用受控 Data URL 作为请求内容，单张图片最大 10 MB、视频最大 6 MB、最多 4 个输入；视频限制受现有 JSON 请求体和 Base64 膨胀约束。真实供应商协议仍需在图片/视频适配器中补充映射和联调。
 - 修改媒体协议、生成模式校验、上传限制或前端提交逻辑时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建；修复 Docker Socket Proxy 后应重新执行整栈健康检查。
-- 回滚代码可执行 `git revert dee6268`，不涉及数据库迁移。
+- 回滚代码可依次执行 `git revert cd8eee4 dee6268`，不涉及数据库迁移。
 
 ## 模型类型接入协议细化拆分（2026-09-28）
 
