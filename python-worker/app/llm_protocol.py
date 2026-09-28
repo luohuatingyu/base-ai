@@ -61,8 +61,8 @@ class ChatProtocolAdapter(LlmProtocolAdapter):
     async def test(self, client: "LlmClient", candidate: LlmCandidate,
                    enable_thinking: bool) -> dict:
         """发送最小聊天请求，不触碰向量协议。"""
-        result = await self.call(
-            client, client.health_chat_messages(), 0, [candidate], enable_thinking,
+        result = await client.chat(
+            client.health_chat_messages(), 0, [candidate], enable_thinking,
             model_type="text_model", route_configured=True,
         )
         return {"success": True, "model": result.model}
@@ -94,7 +94,7 @@ class EmbeddingProtocolAdapter(LlmProtocolAdapter):
     async def test(self, client: "LlmClient", candidate: LlmCandidate,
                    enable_thinking: bool) -> dict:
         """发送最小向量请求并返回维度，不调用聊天端点。"""
-        result = await self.call(client, ["embedding health check"], [candidate])
+        result = await client.embed(["embedding health check"], [candidate])
         return {"success": True, "model": result.model, "dimension": len(result.embeddings[0])}
 
 
