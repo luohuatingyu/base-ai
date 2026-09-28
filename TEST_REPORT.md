@@ -1,5 +1,48 @@
 # 最近分支覆盖测试报告
 
+## 仪表盘 Trace ID 跳转任务日志（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `9033b2dd453575329d4082d8b38560afc4bb7b95`（Link dashboard trace IDs to task logs）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Vue 3 / Vue Router / Element Plus：调用明细中有效的主请求 Trace ID 显示为链接，点击进入 `/tasks?traceId=…&openLogs=true`，由既有任务页筛选并展开日志。沿用 `operations:task:view` 权限和任务页 ID 校验规则。
+- 仅 Python Trace ID 的历史记录保持纯文本，并提供中英文缺少主任务关联提示；空值、非法 ID、无权限均不导航。未修改后端、配置、数据库或依赖。
+- 范围：ModelUsagePanel.vue、中英文语言文件、dashboard-usage.test.mjs。与上一基准 `7b41191` 比较，`backend/src/main/java/` 无差异，本次未重新运行后端 Maven 测试。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入 | 预期结果 | 场景与结果 |
+| --- | --- | --- | --- | --- |
+| 点击主 Trace 打开对应日志 | 真实 Vue 组件编译、SSR 和内存路由，管理员权限 | 常规 ID、两端空白、1 字符和 64 字符 ID，同时存在 Python ID | 渲染链接；路由为 /tasks，query 使用清理后的主 ID 和 openLogs=true | 正常、边界、兼容；4 项通过 |
+| 无效 ID 不产生跳转 | 同上 | null、undefined、空串、空白、数值、65 字符、路径片段、脚本标签、查询分隔符和内部空格 | 无链接，处理函数不改变路由 | 边界、异常、安全；10 项通过 |
+| 权限校验不可绕过 | 真实权限函数，普通用户仅有仪表盘查看权限 | 主 Trace ID | 面板不泄漏记录，直接调用点击处理函数也不导航 | 权限、安全；1 项通过 |
+| 历史 Python ID 不跳错任务 | 真实组件，中英文各一次 | 主 ID 为空、Python ID 非空 | 保留 Python ID，显示缺少主任务关联提示，无链接且不导航 | 历史兼容、回归；2 项通过 |
+| 部署后的实际点击有效 | Firefox，管理员登录；1440px 中文与 390px 英文 | 点击真实记录 17e251517fdb4119a83f72d5a34d4ec7 | URL 与筛选值一致、日志抽屉可见、请求对应 /logs 接口、无页面错误提示 | 浏览器集成；2 个视口通过 |
+| 保留现有仪表盘行为 | 原 47 项仪表盘测试与完整前端套件 | 指标、筛选、分页、权限、状态、Trace 展示和语言切换 | 原有业务断言通过，无回归 | 回归；通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/dashboard-usage.test.mjs`：实现前新增 17 项失败（缺少链接、处理函数及历史提示），原 47 项通过；实现后 64/64 通过，失败 0、跳过 0。测试保留真实 Vue 响应式、模板、权限函数与内存路由。
+- `cd frontend && npm test`：lint、类型检查通过；覆盖测试 585/585、E2E 3/3 通过，失败 0、跳过 0，通过率 100%。为准确核对最初截断输出的统计，完整套件再次运行并通过。
+- utils 覆盖率：行 98.24%、分支 82.05%、函数 95.74%；这是现有工具函数覆盖范围，不代表所有 Vue 组件的行覆盖率。
+- `docker compose up --build -d`：9 个镜像全部构建成功；后端构建复用缓存，未作为本次后端测试结果。整栈启动退出 1，原因仍是既有 docker-socket-proxy unhealthy 和 adapter-manager 启动依赖失败。
+- `docker compose up -d --no-deps frontend`：退出 0，新前端启动成功；`curl -fsS http://localhost:8080/health` 返回 UP。frontend、backend 均 healthy。
+- `node /tmp/baseai-trace-link-check/browser.mjs`：退出 0；1440px 中文及 390px 英文均成功跳转并打开正确日志；各视口第一页 19 条历史 Python ID 无链接且有说明；页面无整体横向溢出，无错误消息。使用已有调用记录，没有新增模型调用。
+- `git diff --check`：通过；业务提交仅包含本次 4 个前端文件，测试报告单独提交。未执行 git push。
+
+### 已知问题、未执行项与清理
+
+- 整栈启动验收仍受原有 Docker 依赖健康问题阻断，不能视为整栈启动成功；本次前端部署和真实点击已独立验证。
+- 构建保留既有 runtime-config script、第三方 PURE 注释和大包体积警告，没有新增依赖或修改构建配置。
+- 历史未记录主 Trace ID 的调用无法可靠定位主任务，本次不回填或猜测。任务不存在、日志已清理时沿用任务页既有处理；本次未制造删除数据来验证该场景。
+- 未重新运行后端 Maven 套件（无后端变更），未验证 Chrome/Safari。没有修改全局任务生命周期或权限体系。
+- 临时脚本及隔离 Firefox 配置目录 `/tmp/baseai-trace-link-check` 已清理；验证登录会话已注销，独立浏览器进程已停止。
+
+### 重测触发条件与下次建议
+
+- 修改 Trace 展示、可点击条件、权限判断或路由参数时，重跑 dashboard-usage.test.mjs、完整 npm test 及真实点击验证。
+- 修改任务页路由初始化、日志抽屉或日志接口时，联动验证仪表盘与聊天页入口；修复 Docker 依赖健康问题后重新执行整栈启动验收。
+
 ## 仪表盘调用明细 Trace ID 修复（2026-09-28）
 
 ### Git 基准与变更范围
