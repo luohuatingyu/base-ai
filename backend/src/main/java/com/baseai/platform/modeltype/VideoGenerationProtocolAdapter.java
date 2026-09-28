@@ -13,6 +13,9 @@ public final class VideoGenerationProtocolAdapter implements MediaGenerationProt
     /** 构造兼容 JSON 视频生成请求，并保留参考媒体类型。 */
     @Override public Map<String, Object> request(String model, String prompt, String generationMode,
                                                  List<Map<String, Object>> inputs, Map<String, Object> options) {
+        if (ArkMediaProtocol.supports(model)) {
+            return ArkMediaProtocol.request(modelType(), model, model, prompt, inputs, options);
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         if (options != null) body.putAll(options);
         body.put("model", model);

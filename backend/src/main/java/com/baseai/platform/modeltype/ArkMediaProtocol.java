@@ -1,0 +1,139 @@
+package com.baseai.platform.modeltype;
+
+import com.baseai.platform.common.BusinessException;
+
+import java.net.URI;
+import java.util.*;
+
+/** 将平台媒体输入转换为火山方舟 Seedream/Seedance 请求，并公开可供前端渲染的能力目录。 */
+public final class ArkMediaProtocol {
+    private static final Set<String> IMAGE_OPTIONS = Set.of("size", "response_format", "sequential_image_generation",
+        "sequential_image_generation_options", "stream", "tools", "background", "output_format", "watermark",
+        "seed", "optimize_prompt_options", "layer_decomposition", "interactive_edit");
+    private static final Set<String> VIDEO_OPTIONS = Set.of("callback_url", "return_last_frame", "generate_audio", "draft",
+        "tools", "safety_identifier", "service_tier", "execution_expires_after", "resolution", "ratio", "duration",
+        "frames", "seed", "camera_fixed", "watermark");
+    private static final Set<String> SAFE_SCHEMES = Set.of("http", "https");
+
+    private ArkMediaProtocol() {}
+
+    /** 构造官方图片或视频请求；平台内部的 inputs、文件名和控制字段不会透传。 */
+    public static Map<String, Object> request(String type, String model, String profile, String prompt,
+                                               List<Map<String, Object>> inputs, Map<String, Object> options) {
+        String normalizedType = normalize(type);
+        if (!Set.of("image_model", "video_model").contains(normalizedType) || blank(model)) invalid();
+        Map<String, Object> safeOptions = options == null ? Map.of() : new LinkedHashMap<>(options);
+        Set<String> allowed = "image_model".equals(normalizedType) ? IMAGE_OPTIONS : VIDEO_OPTIONS;
+        if (!allowed.containsAll(safeOptions.keySet())) invalid();
+        validateOptions(normalizedType, safeOptions);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        if (prompt != null && !prompt.isBlank()) body.put("prompt", prompt);
+        List<Map<String, Object>> values = inputs == null ? List.of() : inputs;
+        if ("image_model".equals(normalizedType)) {
+            List<String> images = values.stream().filter(item -> "IMAGE".equalsIgnoreCase(text(item, "kind")))
+                .map(item -> resource(item.get("data"))).toList();
+            if (!images.isEmpty()) body.put("image", images.size() == 1 ? images.get(0) : images);
+        } else {
+            List<Map<String, Object>> content = new ArrayList<>();
+            for (Map<String, Object> input : values) content.add(videoContent(input));
+            if (prompt != null && !prompt.isBlank()) content.add(0, Map.of("type", "text", "text", prompt));
+            if (!content.isEmpty()) body.put("content", content);
+        }
+        body.putAll(safeOptions);
+        return body;
+    }
+
+    /** 返回 profile 的完整能力描述，供前端按模型能力显示参数和输入限制。 */
+    public static Map<String, Object> capabilities(String model) {
+        String value = normalizeProfile(model);
+        boolean image = value.startsWith("seedream") || value.contains("seedream");
+        if (image) {
+            boolean pro = value.contains("5.0-pro") || value.contains("5-0-pro") || value.contains("5.0-flash") || value.contains("5-0-flash");
+            return capability("image_model", value, List.of("TEXT_TO_IMAGE", "IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE"),
+                pro ? 10 : 14, 0, 0, pro ? 10 : 14,
+                Map.of("streaming", !pro, "groups", !pro, "search", !pro, "layers", pro, "transparent", pro, "draft", false, "audio", false));
+        }
+        if (value.startsWith("seedance") || value.contains("seedance")) {
+            return capability("video_model", value, List.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO", "IMAGE_VIDEO_AUDIO_TO_VIDEO", "FIRST_LAST_FRAME_TO_VIDEO", "EXTEND_VIDEO", "EDIT_VIDEO"),
+                30, 10, 10, 50,
+                Map.of("streaming", false, "groups", false, "search", false, "layers", false, "transparent", false, "draft", true, "audio", true));
+        }
+        return Map.of("profile", value, "type", "", "modes", List.of(), "imageLimit", 0, "videoLimit", 0, "audioLimit", 0,
+            "totalLimit", 0, "imageMaxBytes", 0, "videoMaxBytes", 0, "audioMaxBytes", 0, "features", Map.of(), "options", Map.of());
+    }
+
+    /** 判断是否应由方舟适配器处理官方模型名称。 */
+    public static boolean supports(String model) {
+        String value = normalizeProfile(model);
+        return value.contains("seedream") || value.contains("seedance");
+    }
+
+    /** 视频输入映射为官方 content 类型和角色，避免把供应商专用字段留在服务层。 */
+    private static Map<String, Object> videoContent(Map<String, Object> input) {
+        String kind = text(input, "kind").toUpperCase(Locale.ROOT);
+        String data = resource(input.get("data"));
+        String role = text(input, "role");
+        return switch (kind) {
+            case "TEXT" -> Map.of("type", "text", "text", data);
+            case "IMAGE" -> role.isBlank() ? Map.of("type", "image_url", "image_url", Map.of("url", data))
+                : Map.of("type", "image_url", "image_url", Map.of("url", data), "role", role);
+            case "VIDEO" -> role.isBlank() ? Map.of("type", "video_url", "video_url", Map.of("url", data))
+                : Map.of("type", "video_url", "video_url", Map.of("url", data), "role", role);
+            case "AUDIO" -> role.isBlank() ? Map.of("type", "audio_url", "audio_url", Map.of("url", data))
+                : Map.of("type", "audio_url", "audio_url", Map.of("url", data), "role", role);
+            case "TASK" -> Map.of("type", "draft_task", "draft_task", Map.of("id", data));
+            default -> { invalid(); yield Map.of(); }
+        };
+    }
+
+    /** 过滤并验证所有官方公共参数，防止调用方借 options 注入 URL、模型和认证字段。 */
+    private static void validateOptions(String type, Map<String, Object> options) {
+        if (options.containsKey("stream") && !(options.get("stream") instanceof Boolean)) invalid();
+        for (String key : List.of("seed", "duration", "frames", "execution_expires_after")) if (options.containsKey(key)) {
+            Object value = options.get(key);
+            if (!(value instanceof Number number) || number.longValue() < 0 || number.doubleValue() != number.longValue()) invalid();
+        }
+        if (options.containsKey("duration") && ((Number) options.get("duration")).intValue() < 1) invalid();
+        if (options.containsKey("frames") && ((Number) options.get("frames")).intValue() < 1) invalid();
+        if (options.containsKey("response_format") && !Set.of("url", "b64_json").contains(String.valueOf(options.get("response_format")))) invalid();
+        if (options.containsKey("sequential_image_generation") && !Set.of("auto", "disabled").contains(String.valueOf(options.get("sequential_image_generation")))) invalid();
+        if (options.containsKey("background") && !Set.of("transparent", "opaque").contains(String.valueOf(options.get("background")))) invalid();
+        if (options.containsKey("service_tier") && !Set.of("default", "flex").contains(String.valueOf(options.get("service_tier")))) invalid();
+        if (options.containsKey("ratio") && !String.valueOf(options.get("ratio")).matches("(?:auto|[0-9]+(?::[0-9]+))")) invalid();
+        if (options.containsKey("callback_url")) validUrl(String.valueOf(options.get("callback_url")));
+        if (options.containsKey("sequential_image_generation_options") && !(options.get("sequential_image_generation_options") instanceof Map<?, ?> map
+            && map.get("max_images") instanceof Number n && n.intValue() >= 1 && n.intValue() <= 15)) invalid();
+        if ("image_model".equals(type) && options.containsKey("duration")) invalid();
+    }
+
+    /** 统一描述前端可用的公共选项。 */
+    private static Map<String, Object> capability(String type, String profile, List<String> modes, int imageLimit, int videoLimit,
+                                                  int audioLimit, int totalLimit, Map<String, Object> features) {
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("size", Map.of("type", "string")); options.put("response_format", Map.of("type", "string", "enum", List.of("url", "b64_json")));
+        options.put("seed", Map.of("type", "integer", "min", 0)); options.put("stream", Map.of("type", "boolean", "default", false));
+        options.put("duration", Map.of("type", "integer", "min", 1, "max", 60)); options.put("frames", Map.of("type", "integer", "min", 1));
+        options.put("resolution", Map.of("type", "string")); options.put("ratio", Map.of("type", "string"));
+        options.put("generate_audio", Map.of("type", "boolean", "default", true)); options.put("return_last_frame", Map.of("type", "boolean", "default", false));
+        options.put("watermark", Map.of("type", "boolean", "default", false)); options.put("background", Map.of("type", "string", "enum", List.of("opaque", "transparent")));
+        options.put("sequential_image_generation", Map.of("type", "string", "enum", List.of("auto", "disabled")));
+        options.put("sequential_image_generation_options", Map.of("type", "object")); options.put("tools", Map.of("type", "array"));
+        return Map.of("profile", profile, "label", profile, "type", type, "modes", modes, "imageLimit", imageLimit, "videoLimit", videoLimit,
+            "audioLimit", audioLimit, "totalLimit", totalLimit, "imageMaxBytes", 30 * 1024 * 1024, "videoMaxBytes", 50 * 1024 * 1024,
+            "audioMaxBytes", 15 * 1024 * 1024, "features", features, "options", options);
+    }
+
+    /** 规范化模型画像名称，允许直接传模型 ID 或人工选择的 profile。 */
+    private static String normalizeProfile(String value) { return value == null ? "" : value.toLowerCase(Locale.ROOT).replace('_', '-'); }
+    private static String normalize(String value) { return value == null ? "" : value.trim().toLowerCase(Locale.ROOT); }
+    private static String text(Map<String, Object> input, String key) { return input == null || input.get(key) == null ? "" : String.valueOf(input.get(key)); }
+    private static String resource(Object value) {
+        String text = value == null ? "" : String.valueOf(value).trim();
+        if (text.startsWith("data:")) { if (!text.matches("data:[a-z0-9.+-]+/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+")) invalid(); return text; }
+        validUrl(text); return text;
+    }
+    private static void validUrl(String value) { try { URI uri = URI.create(value); if (!SAFE_SCHEMES.contains(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null) invalid(); } catch (Exception e) { invalid(); } }
+    private static boolean blank(String value) { return value == null || value.isBlank(); }
+    private static void invalid() { throw new BusinessException("llm.generationRequestInvalid"); }
+}
