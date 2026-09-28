@@ -1,5 +1,35 @@
 # 最近分支覆盖测试报告
 
+## AI 对话图片与视频生成及 Token 记录（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+- Commit: `7407424`（Add image and video generation calls）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- AI 对话新增媒体生成入口：`image_model` 与 `video_model` 分开选型；图片同步返回产物，视频持久化供应商任务编号并由前端/后台轮询。
+- 新增 V45 `ai_media_generation_task`；调用均写入 `llm_usage_record`，视频轮询继续更新同一 `usage_id`。Token 仅记录供应商实际返回值，缺失字段保持空值。
+- 未提供具体供应商文档，本次按 OpenAI 兼容的 `/images/generations`、`/videos/generations` 约定接入；真实供应商若协议不同，需在适配层调整。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片/视频入口分开且不能混用 | `MediaGenerationServiceTest.rejectsUnauthenticatedAndMixedTypeRequests`、模型目录过滤 | 正常、边界、安全 | 通过 |
+| 视频任务可持久化并轮询 | V45 迁移、`MediaGenerationService` 状态接口与后台定时轮询；同一 usage ID 更新 | 正常、异常、恢复 | 通过编译与单元测试；未执行真实供应商调用 |
+| 记录图片/视频 Token | `LlmUsageService` 的 `updateTokens`/终态 COALESCE；管理面板展示模型类型及总 Token | 正常、缺失 usage、回归 | 通过 |
+| AI 对话页面可发起媒体调用 | `AiChatView.vue` 生成模式、图片/视频预览和视频状态轮询；普通聊天回归测试 41/41 | 正常、兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm ... mvn -o -B -ntp -Dtest=MediaGenerationServiceTest,LlmUsageServiceTest,AiChatControllerTest,LlmUsageControllerTest test`：15/15 通过。
+- `docker run --rm ... mvn -o -B -ntp test`：**1003/1003 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试、生产构建及 E2E 全部通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%；媒体改动后的聊天回归 `node --test test/chat-interaction.test.mjs` 为 41/41 通过。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：镜像构建成功；整栈启动受既有 `docker-socket-proxy` unhealthy / `adapter-manager` 依赖失败影响，命令退出 1。Backend、Frontend、Python Worker、Document Parser 等服务已启动；Backend `/api/open/health/ready` 返回 `{"status":"UP"}`，Frontend 容器 healthy。
+- 未执行真实供应商图片/视频请求：当前环境没有配置供应商协议和可用生成模型密钥。
+
 ## 模型配置允许图片、视频及其他能力共存（2026-09-28）
 
 ### Git 基准、范围与交付状态
