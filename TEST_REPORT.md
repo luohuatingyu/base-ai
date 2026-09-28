@@ -1,5 +1,42 @@
 # 最近分支覆盖测试报告
 
+## 图片与视频生成统一多模态输入（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+Commit: `de555f5`
+- 提交说明：Handle text attachments and verify combined inputs；测试日期 2026-09-28（Asia/Shanghai）。本次规则调整基于 `97666f9`。
+- 图片模型和视频模型统一接受文本、图片、视频输入，可单独或组合提交；输出类型仍由所选模型决定。
+- 新增文本附件 MIME 缺失时按 `.txt/.md` 扩展名识别，文本附件单独预览；后端允许无 prompt 的纯附件请求，并继续兼容旧生成模式字段。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片模型可接收文本、图片、视频的任意非空组合 | `MediaGenerationServiceTest` 参数化覆盖 1 至 3 类输入组合及空 prompt；前端 image_model 组合提交和上传测试 | 正常、边界、兼容 | 通过 |
+| 视频模型可接收文本、图片、视频的任意非空组合 | `MediaGenerationServiceTest` 参数化覆盖视频输出组合；前端 video_model 组合提交和上传测试 | 正常、边界、兼容 | 通过 |
+| 统一协议保留输入顺序和内容 | `MediaGenerationProtocolRegistryTest.preservesCombinedInputs` 覆盖两类输出协议 | 正常、回归 | 通过 |
+| 输入安全边界和失败恢复保持有效 | 后端 MIME/Data URL/数量/大小参数化测试；前端空文件、超限、伪 MIME、读取失败及草稿恢复测试 | 异常、安全、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -o -B -Dtest=MediaGenerationServiceTest,MediaGenerationProtocolRegistryTest test`：**18/18 通过**。
+- 同一 Docker Maven 环境执行 `mvn -o test -B`：**1022/1022 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **654/654**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `node --test frontend/test/chat-interaction.test.mjs`：**47/47 通过**。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d` 已执行并完成镜像构建；整栈启动仍受已有 `docker-socket-proxy` 返回 503、健康检查失败影响，Adapter Manager 持续重启。
+- 随后执行 `docker compose up -d --no-deps backend frontend`，Backend、Frontend 均 healthy；`curl -fsS http://localhost:8080/api/open/health/ready` 返回 `{"status":"UP"}`。
+
+### 已知问题与重测触发
+
+- 供应商是否接受同时存在文本、图片、视频仍取决于其协议；平台统一适配器已保留完整输入，供应商专用 multipart 或字段映射需在适配器中扩展。
+- 单个文本 1 MB、图片 10 MB、视频 6 MB，最多 4 个输入；限制受当前 JSON/Base64 请求链路约束。
+- 修改媒体输入校验、协议适配器或上传组件时，应重新运行后端完整 Maven、前端完整 npm 和 Compose 重建。
+
 ## 图片与视频生成输入协议拆分（2026-09-28）
 
 ### Git 基准、范围与交付状态
