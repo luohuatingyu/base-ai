@@ -10214,7 +10214,7 @@ Commit: e4589863626fb2d5e7975d6a4795d5b8babcf32d
 - docker run ... mvn -o test -B：后端 1029/1029 通过，失败 0、错误 0、跳过 0。
 - docker run ... mvn -o -Dmaven.main.skip=true -Dtest=ProviderEndpointTest test -B：供应商地址定向测试 3/3 通过。
 - cd frontend && npm test：覆盖测试 657/657 通过，生产构建通过，E2E 3/3 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
-- docker compose up --build -d：本次首次执行受后台 Ark 协议提交期间的构建状态影响；随后完整 Maven 套件已通过，需在最终提交版本重新执行 Compose 验证。
+- docker compose up --build -d：镜像构建完成并启动基础服务；整栈启动受已有 `baseai-local-docker-socket-proxy` unhealthy 阻断，Adapter Manager 依赖未达到健康状态。Backend、Document Parser、Python Worker 和 Outbound Gateway 保持运行。
 
 ### 已知问题与下次测试建议
 
