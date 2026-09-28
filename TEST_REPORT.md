@@ -1,5 +1,45 @@
 # 最近分支覆盖测试报告
 
+## 项目创建说明与引导（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `523ffb4713f6a039d769b6cf7c45c1688a066aaf`（Add project creation guidance）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Vue 3 / Element Plus / vue-i18n：项目新增弹窗展示项目身份、输出规格、视觉方向三步说明，补充字段提示、示例和创建后建议；编辑项目不展示新增引导。中英文同步维护，窄屏引导改为单列。
+- 仅修改 AiVideoView.vue、中英文语言文件和两份既有前端测试；未修改接口、数据库、权限、依赖或配置。
+- `git diff 144d181 HEAD -- backend/src/main/java/` 无输出，无后端重测触发变更；本报告单独提交。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件及输入 | 预期结果和场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 新建项目提供三步说明 | 真实 Vue setup 组件测试；管理员打开 projects 新增表单 | 提供三个步骤及项目主题说明，默认画幅、帧率和分组保持；正常、兼容 | 通过 |
+| 编辑项目隐藏新增引导 | 组件测试；保存后打开 id=9 的已有项目 | isProjectCreate 为 false；模板通过该条件控制引导；回归 | 通过 |
+| 提供字段说明和下一步 | 静态回归；检查组件绑定和两份 locale | 项目身份、输出规格、视觉方向、创建后动作及字段提示键存在；正常 | 通过 |
+| 双语文案完整 | 静态回归；中文和英文资源 | 新增引导关键文案键均存在；兼容 | 通过 |
+| 保留校验、权限及原有功能 | 组件及完整前端套件；空必填、恶意 URL、依赖失败、重复提交、无权限等输入 | 非法输入不请求、失败保留表单、重复提交受控、既有导航与保存正常；边界、异常、安全、回归 | 通过 |
+| 桌面与窄屏布局适配 | CSS 规则人工检查及生产构建 | 桌面三列，760px 以下单列；620px 以下标题纵向排列 | 构建通过；未执行浏览器视觉验收 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-video-navigation.test.mjs frontend/test/ai-video-form.test.mjs`（根目录）：最终 40/40 通过，失败 0、跳过 0。
+- `cd frontend && node --test test/ai-video-navigation.test.mjs test/ai-video-form.test.mjs`：最终版本 40/40 通过。
+- `cd frontend && npm run lint && npm run typecheck`：通过。
+- `cd frontend && npm test`：最终版本 lint、类型检查、600/600 覆盖测试、3/3 E2E 和 E2E 内置生产构建全部通过；失败 0、跳过 0，通过率 100%。utils 行覆盖率 98.24%、分支 82.05%、函数 95.74%，不代表 Vue 组件整体覆盖率。
+- 首轮相关测试 38/40 通过：新增测试错误地要求编辑时步骤数据清空，以及文案正则未兼容带引号的键；改为验证实际隐藏条件、修正键匹配后通过。既有有效测试未删除或跳过。
+- 一次从 frontend 目录执行带 frontend/ 前缀的测试路径导致未找到文件，未运行用例；修正路径后完整重跑通过。
+- `docker compose up --build -d`：最终版本 9 个镜像构建完成；整栈启动退出 1，原有 docker-socket-proxy unhealthy 导致依赖失败，并非端口冲突。
+- `docker compose up -d --no-deps frontend`：退出 0，最终前端镜像已启动；`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`。
+- `git diff --check`：通过；实现提交后工作区干净；未执行 git push。
+
+### 已知限制、未执行项与后续建议
+
+- 整栈启动验收仍受既有 Docker socket proxy / adapter-manager 依赖健康问题阻断，不能将本次结果视为整栈启动成功。修复该环境问题后重跑 Compose 启动和健康检查。
+- 未执行真实浏览器逐项点击、桌面/手机视觉验收及 Chrome/Safari 兼容性验证；建议在项目管理打开新增与编辑弹窗，分别以中英文及窄屏检查说明、滚动与保存操作。
+- 未执行后端 Maven 测试（后端无变更）。构建保留既有 runtime-config、第三方 PURE 注释和大包体积警告。
+- 本次没有保留临时调试文件、临时测试脚本或新增 Markdown 文件；正式用例留在原测试文件。
+- 后续修改项目引导、字段提示、编辑可见性、双语内容或布局时，重跑上述相关测试、完整 npm test 和 Docker 验证；修改后端约束时联动执行后端套件。
+
 ## AI视频工作台首页详细引导（2026-09-28）
 
 ### Git 基准与变更范围
