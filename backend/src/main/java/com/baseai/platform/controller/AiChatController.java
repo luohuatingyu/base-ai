@@ -88,7 +88,7 @@ public class AiChatController {
 
         java.util.Map<Long, List<ModelOption>> modelsByProvider = llmManagementService.models().stream()
             .filter(m -> Boolean.TRUE.equals(m.getEnabled()) && providers.containsKey(m.getProviderId()))
-            .filter(m -> m.getSupportedModelTypes().stream().noneMatch(com.baseai.platform.domain.LlmModel::isGenerationType))
+            .filter(m -> !LlmManagementService.chatModelTypes(m.getSupportedModelTypes()).isEmpty())
             .collect(java.util.stream.Collectors.groupingBy(
                 com.baseai.platform.domain.LlmModel::getProviderId,
                 java.util.stream.Collectors.mapping(

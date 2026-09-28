@@ -256,6 +256,13 @@ class LlmManagementServiceTest {
         verify(modelRepository).save(saved);
     }
 
+    /** 混合配置仍暴露非生成能力，供聊天目录和健康检查使用。 */
+    @Test
+    void mixedGenerationModelRetainsChatCapabilities() {
+        assertEquals(List.of("text_model", "vision_model"), LlmManagementService.chatModelTypes(
+            List.of("image_model", "text_model", "video_model", "vision_model")));
+    }
+
     /** 没有生成适配器时必须明确拒绝探测，不能误发聊天请求或解密密钥。 */
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"image_model", "video_model"})

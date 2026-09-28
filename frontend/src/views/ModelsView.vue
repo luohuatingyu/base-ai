@@ -28,7 +28,7 @@
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('models.provider')"><el-select v-model="form.providerId"><el-option v-for="item in providers" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
         <el-form-item :label="t('models.identifier')"><el-input v-model="form.modelName" /></el-form-item>
-        <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value" :disabled="modelTypeDisabled(type.value)">{{ localizeModelType(type.value, modelTypes, t) }}</el-checkbox></el-checkbox-group><small>{{ t('models.generationTypeHint') }}</small></el-form-item>
+        <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-checkbox></el-checkbox-group><small>{{ t('models.generationTypeHint') }}</small></el-form-item>
         <el-alert v-if="form.supportedModelTypes.some(isGenerationType)" :title="t('models.generationUnavailable')" type="info" :closable="false" show-icon />
         <el-form-item :label="t('models.capability')"><el-select v-model="form.capabilityLevel"><el-option :label="t('models.low')" value="LOW" /><el-option :label="t('models.middle')" value="MIDDLE" /><el-option :label="t('models.high')" value="HIGH" /></el-select></el-form-item>
         <el-form-item :label="t('models.thinkingLevels')" class="thinking-level-form-item">
@@ -81,13 +81,10 @@ const thinkingMapping = reactive({})
 function normalizeTypes(row) {
   return Array.isArray(row?.supportedModelTypes) ? [...row.supportedModelTypes] : []
 }
-/** 区分图片、视频生成与原有聊天模型能力。 */
+/** 区分图片、视频生成与原有聊天模型能力，用于提示尚未接入的生成协议。 */
 function isGenerationType(type) { return ['image_model', 'video_model'].includes(type) }
-/** 已选项可取消，生成类型不能与其他类型同时勾选。 */
-function modelTypeDisabled(type) {
-  const selected = form.supportedModelTypes
-  return !selected.includes(type) && selected.length > 0 && (isGenerationType(type) || selected.some(isGenerationType))
-}
+/** 模型类型是能力声明，允许同时选择模型实际支持的多种能力。 */
+function modelTypeDisabled() { return false }
 /** 获取思考等级的本地化名称，并保留标准编码便于识别配置。 */
 function thinkingLevelLabel(level) { return `${t(`models.thinkingLevelLabels.${level}`)} (${level})` }
 /** 将后端映射转换为列表使用的有序展示条目。 */

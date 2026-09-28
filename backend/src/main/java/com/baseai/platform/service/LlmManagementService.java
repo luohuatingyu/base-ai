@@ -190,7 +190,7 @@ public class LlmManagementService {
     public static void requireChatCapabilities(String type,WorkerRoute route){
         if(LlmModel.normalizeModelTypes(List.of(type==null?"":type)).stream().anyMatch(LlmModel::isGenerationType)
             || route!=null&&route.candidates()!=null&&route.candidates().stream().anyMatch(candidate->candidate!=null
-                &&LlmModel.normalizeModelTypes(candidate.supportedModelTypes()).stream().anyMatch(LlmModel::isGenerationType)))
+                &&chatModelTypes(candidate.supportedModelTypes()).isEmpty()))
             throw new BusinessException("llm.generationChatUnsupported");
     }
 
@@ -494,7 +494,7 @@ public class LlmManagementService {
     public Map<String,Object> testModel(Long modelId,String thinkingLevel){
         LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound"));
         // 生成协议尚未接入时明确拒绝，避免健康检查向聊天接口发送错误请求。
-        if(model.getSupportedModelTypes().stream().anyMatch(LlmModel::isGenerationType))throw new BusinessException("llm.generationAdapterUnavailable");
+        if(chatModelTypes(model.getSupportedModelTypes()).isEmpty())throw new BusinessException("llm.generationAdapterUnavailable");
         // 构建候选模型配置，包含解密后的API密钥
         String normalizedThinking=blank(thinkingLevel)?null:thinkingLevel.trim().toUpperCase(Locale.ROOT);
         WorkerCandidate candidate=candidate(model,normalizedThinking);
@@ -585,8 +585,6 @@ public class LlmManagementService {
         model.setModelName(require(command.modelName(),"llm.modelIdentifierRequired"));
         List<String> requestedTypes=LlmModel.normalizeModelTypes(command.supportedModelTypes());
         if(requestedTypes.isEmpty())throw new BusinessException("llm.modelTypeRequired");
-        // 一个生成配置只能声明一种生成能力；文本与视觉理解的既有组合保持兼容。
-        if(requestedTypes.stream().anyMatch(LlmModel::isGenerationType)&&requestedTypes.size()!=1)throw new BusinessException("llm.generationTypeExclusive");
         Set<String> availableTypes=modelTypes().stream().map(ModelTypeOption::value).collect(java.util.stream.Collectors.toSet());
         if(!availableTypes.containsAll(requestedTypes))throw new BusinessException("llm.modelTypeUnavailable");
         model.setSupportedModelTypes(requestedTypes);
