@@ -2,6 +2,7 @@ package com.baseai.platform.service;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.modeltype.LlmModelTypeRegistry;
+import com.baseai.platform.modeltype.ArkMediaProtocol;
 import com.baseai.platform.modeltype.LlmOperation;
 import com.baseai.platform.modeltype.MediaGenerationProtocolRegistry;
 import com.baseai.platform.security.AuthContext;
@@ -79,7 +80,9 @@ public class MediaGenerationService {
                 && (modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.IMAGE_GENERATION)
                     || modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.VIDEO_GENERATION)))
             .map(item -> new ModelOption(item.getId(), item.getName(), item.getModelName(), item.getSupportedModelTypes().get(0),
-                providers.get(item.getProviderId()).code(), providers.get(item.getProviderId()).name())).toList();
+                providers.get(item.getProviderId()).code(), providers.get(item.getProviderId()).name(),
+                ArkMediaProtocol.supports(item.getModelName()) ? "ARK" : "GENERIC",
+                ArkMediaProtocol.supports(item.getModelName()) ? ArkMediaProtocol.capabilities(item.getModelName()) : Map.of())).toList();
     }
 
     /** 校验归属和模型后创建一次调用；失败重试必须由用户重新提交并产生新的任务及用量。 */
@@ -110,6 +113,23 @@ public class MediaGenerationService {
         Long owner = AuthContext.require().id();
         poll(task(id, owner));
         return publicTask(task(id, owner));
+    }
+
+    /** 取消当前用户的排队或运行任务，状态更新使用条件避免重复计费。 */
+    public synchronized Map<String, Object> cancel(long id) {
+        Long owner = AuthContext.require().id();
+        Map<String, Object> value = task(id, owner);
+        int updated = jdbc.update("UPDATE ai_media_generation_task SET status='CANCELLED',error_message='CANCELLED',finished_at=NOW(6),updated_at=NOW(6) WHERE id=? AND owner_user_id=? AND status IN ('QUEUED','RUNNING')", id, owner);
+        if (updated > 0) usage.finish((String) value.get("usageId"), new LlmUsageService.Completion("CANCELLED", (String) value.get("providerCode"),
+            (String) value.get("modelName"), false, null, null, null, "MediaGenerationException", "CANCELLED", Instant.now()));
+        return publicTask(task(id, owner));
+    }
+
+    /** 删除已结束的媒体任务，禁止通过删除绕过运行中任务的计费状态。 */
+    public void delete(long id) {
+        Long owner = AuthContext.require().id();
+        int updated = jdbc.update("DELETE FROM ai_media_generation_task WHERE id=? AND owner_user_id=? AND status IN ('SUCCEEDED','FAILED','CANCELLED')", id, owner);
+        if (updated == 0) throw new BusinessException(404, "llm.generationTaskNotFound");
     }
 
     /** 从会话恢复媒体历史；任务与文本消息分别存储，生成产物不进入聊天上下文。 */
@@ -465,5 +485,11 @@ public class MediaGenerationService {
         /** 兼容历史四字段请求，默认没有供应商角色。 */
         public MediaInput(String kind, String fileName, String contentType, String dataUrl) { this(kind, fileName, contentType, dataUrl, ""); }
     }
-    public record ModelOption(Long id, String name, String modelName, String modelType, String providerCode, String providerName) {}
+    public record ModelOption(Long id, String name, String modelName, String modelType, String providerCode, String providerName,
+                              String mediaProtocol, Map<String, Object> capabilities) {
+        /** 兼容仅关注模型基本信息的旧构造方。 */
+        public ModelOption(Long id, String name, String modelName, String modelType, String providerCode, String providerName) {
+            this(id, name, modelName, modelType, providerCode, providerName, "GENERIC", Map.of());
+        }
+    }
 }
