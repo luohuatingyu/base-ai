@@ -4,7 +4,8 @@
 
 ### Git 基准、范围与交付状态
 
-Commit: `31679ff`（Preserve Worker protocol test compatibility）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次实现代码提交包括 `0393259`、`2407260`、`4a7cda2`、`757bedc`、`12c9f21`、`18ff88c`、`707d4ac`、`c6c3de1`、`2a463b7`、`31679ff` 及对应回归测试提交。
+Commit: `31679ff`
+- 提交说明：Preserve Worker protocol test compatibility；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次实现代码提交包括 `0393259`、`2407260`、`4a7cda2`、`757bedc`、`12c9f21`、`18ff88c`、`707d4ac`、`c6c3de1`、`2a463b7`、`31679ff` 及对应回归测试提交。
 - 新增 `modeltype` 能力注册表和协议处理器：文本/视觉走聊天、向量走 embeddings、图片/视频走独立生成协议；未知字典类型保留历史聊天兼容策略，并可通过注册新处理器扩展。
 - `LlmManagementService` 的健康检查通过协议注册表选择，不再以生成类型判断误走聊天接口；聊天客户端和媒体服务分别只依赖自身协议能力，媒体生成/轮询路径由协议处理器提供。
 - Python Worker 新增聊天与向量协议适配器，`/llm/test` 支持显式 `protocol`，旧 `embedding` 布尔字段继续兼容；未新增依赖、数据库迁移或外部供应商协议。
