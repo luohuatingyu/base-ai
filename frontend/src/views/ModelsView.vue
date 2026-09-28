@@ -85,6 +85,8 @@ function normalizeTypes(row) {
 function isGenerationType(type) { return ['image_model', 'video_model'].includes(type) }
 /** 模型类型是能力声明，允许同时选择模型实际支持的多种能力。 */
 function modelTypeDisabled() { return false }
+/** 混合配置只要声明文本或视觉能力，仍可执行对应的聊天协议测试。 */
+function supportsChat(row) { return normalizeTypes(row).some(type => !isGenerationType(type)) }
 /** 获取思考等级的本地化名称，并保留标准编码便于识别配置。 */
 function thinkingLevelLabel(level) { return `${t(`models.thinkingLevelLabels.${level}`)} (${level})` }
 /** 将后端映射转换为列表使用的有序展示条目。 */
@@ -107,7 +109,7 @@ function open(row) {
 async function save() { form.thinkingLevels = serializeThinkingMappings(thinkingMapping); form.id ? await http.put(`/models/${form.id}`, form) : await http.post('/models', form); visible.value = false; await load(); ElMessage.success(t('common.successSaved')) }
 /** 打开模型测试窗口，并仅提供当前模型已配置的思考等级。 */
 function startTest(row) {
-  if (normalizeTypes(row).some(isGenerationType)) { ElMessage.warning(t('models.generationUnavailable')); return }
+  if (!supportsChat(row)) { ElMessage.warning(t('models.generationUnavailable')); return }
   testModel.value = row; testLevels.value = thinkingMappingEntries(row.thinkingLevels).map(entry => entry.level); testThinkingLevel.value = ''; if (testLevels.value.length) testVisible.value = true; else runTest()
 }
 async function runTest() { const result = (await http.post(`/models/${testModel.value.id}/test`, null, { params: testThinkingLevel.value ? { thinkingLevel: testThinkingLevel.value } : {} })).data; testVisible.value = false; ElMessage.success(t('models.connected', { duration: result.durationMs })) }
