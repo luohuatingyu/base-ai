@@ -105,6 +105,8 @@ for (const section of Object.keys(assetAttributes)) {
 test('项目默认参数和分组；空必填及恶意 URL 不产生请求', async t => {
   const { state, requests } = createEditor(t, 'projects')
   state.openCreate()
+  assert.equal(state.projectCreateGuide.value.length, 3)
+  assert.match(state.projectCreateGuide.value[0].description, /主题|theme/i)
   assert.deepEqual(state.formGroups.value.map(group => group.key), ['basic', 'content', 'advanced'])
   assert.equal(state.form.fps, 25)
   assert.equal(state.form.aspectRatio, '16:9')
@@ -117,6 +119,8 @@ test('项目默认参数和分组；空必填及恶意 URL 不产生请求', asy
   state.form.coverUrl = 'https://example.com/image.png'
   await state.save()
   assert.equal(requests.length, 1)
+  state.openEdit({ id: 9, code: 'demo', name: '测试项目' })
+  assert.equal(state.isProjectCreate.value, false)
 })
 
 test('非法 JSON 展开高级区且保留输入，修正后可保存', async t => {

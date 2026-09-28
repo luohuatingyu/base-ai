@@ -98,6 +98,15 @@ test('AI视频首页详细向导同时维护中英文内容', () => {
   }
 })
 
+test('项目创建弹窗提供专属说明和后续操作引导', () => {
+  assert.match(view, /isProjectCreate/)
+  assert.match(view, /project-create-guide/)
+  assert.match(view, /projectCreateGuide/)
+  for (const key of ['identityTitle', 'outputDescription', 'directionFields', 'nextDescription', 'codeHint', 'aspectRatioHint', 'statusHint']) {
+    for (const locale of [zhLocale, enLocale]) assert.match(locale, new RegExp(`["']?${key}["']?\\s*:`), key)
+  }
+})
+
 test('AI视频首页主按钮在深色横幅上保持可读性', () => {
   assert.match(view, /class="ai-video-start-button"/)
   assert.match(view, /\.ai-video-start-button[^}]*background:\s*#fff/)

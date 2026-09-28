@@ -156,6 +156,30 @@
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="min(920px, 94vw)" top="5vh" class="video-editor" destroy-on-close :close-on-click-modal="false" :before-close="closeEditor">
       <div class="editor-intro"><span class="editor-badge">{{ section.title }}</span><p>{{ section.description }}</p></div>
+      <section v-if="isProjectCreate" class="project-create-guide" aria-labelledby="project-create-guide-title">
+        <div class="project-create-guide-head">
+          <div>
+            <span class="project-create-guide-kicker">{{ t('aiVideo.editor.projectGuide.kicker') }}</span>
+            <h3 id="project-create-guide-title">{{ t('aiVideo.editor.projectGuide.title') }}</h3>
+            <p>{{ t('aiVideo.editor.projectGuide.description') }}</p>
+          </div>
+          <el-tag type="primary" effect="plain">{{ t('aiVideo.editor.projectGuide.requiredTag') }}</el-tag>
+        </div>
+        <div class="project-create-guide-steps">
+          <article v-for="step in projectCreateGuide" :key="step.key" class="project-create-guide-step">
+            <span class="project-create-guide-index">{{ step.index }}</span>
+            <div>
+              <strong>{{ step.title }}</strong>
+              <p>{{ step.description }}</p>
+              <small>{{ step.fields }}</small>
+            </div>
+          </article>
+        </div>
+        <div class="project-create-guide-next">
+          <strong>{{ t('aiVideo.editor.projectGuide.nextTitle') }}</strong>
+          <span>{{ t('aiVideo.editor.projectGuide.nextDescription') }}</span>
+        </div>
+      </section>
       <el-alert v-if="saveError" :title="saveError" type="error" show-icon :closable="false" class="editor-alert" />
       <el-form ref="formRef" :model="form" label-position="top" status-icon class="ai-video-form" :disabled="saving">
         <section v-for="group in formGroups" :key="group.key" class="editor-section">
@@ -269,6 +293,13 @@ const columns = computed(() => current.value.columns.map(([key, label]) => ({ ke
 const configKey = computed(() => configurationKey(sectionKey.value))
 const configurationValid = computed(() => { try { parseConfiguration(form[configKey.value]); return true } catch { return false } })
 const dialogTitle = computed(() => t(editingId.value ? 'aiVideo.editor.editTitle' : 'aiVideo.editor.createTitle', { module: section.value.title }))
+const isProjectCreate = computed(() => current.value.resource === 'projects' && !editingId.value)
+/** 为首次创建项目提供按填写顺序组织的说明，避免用户只看到一组空字段。 */
+const projectCreateGuide = computed(() => [
+  { key: 'identity', index: '01', title: t('aiVideo.editor.projectGuide.identityTitle'), description: t('aiVideo.editor.projectGuide.identityDescription'), fields: t('aiVideo.editor.projectGuide.identityFields') },
+  { key: 'output', index: '02', title: t('aiVideo.editor.projectGuide.outputTitle'), description: t('aiVideo.editor.projectGuide.outputDescription'), fields: t('aiVideo.editor.projectGuide.outputFields') },
+  { key: 'direction', index: '03', title: t('aiVideo.editor.projectGuide.directionTitle'), description: t('aiVideo.editor.projectGuide.directionDescription'), fields: t('aiVideo.editor.projectGuide.directionFields') }
+])
 // 在原接口字段之上增强布局与输入方式，分类属性使用现有 JSON 扩展字段。
 const formGroups = computed(() => {
   const advanced = ['version', 'status', 'providerRouteId', 'renderId', 'externalId', 'errorMessage', 'inputJson', 'configJson', 'metadataJson']
@@ -280,6 +311,19 @@ const formGroups = computed(() => {
     if (item.key.endsWith('Url')) Object.assign(result, { maxlength: 500, hint: t('aiVideo.editor.urlHint'), placeholder: 'https://…', wide: true })
     if (['coverUrl', 'previewUrl'].includes(item.key)) result.media = 'image'
     if (item.key === 'mediaUrl' || item.key === 'resourceUrl') result.media = ['voices', 'sounds'].includes(sectionKey.value) ? 'audio' : sectionKey.value === 'motions' || item.key === 'mediaUrl' ? 'video' : 'image'
+    if (isProjectCreate.value && current.value.resource === 'projects') {
+      const guidance = {
+        code: { hint: t('aiVideo.editor.projectGuide.codeHint'), placeholder: t('aiVideo.editor.projectGuide.codePlaceholder') },
+        name: { hint: t('aiVideo.editor.projectGuide.nameHint'), placeholder: t('aiVideo.editor.projectGuide.namePlaceholder') },
+        description: { hint: t('aiVideo.editor.projectGuide.descriptionHint'), placeholder: t('aiVideo.editor.projectGuide.descriptionPlaceholder') },
+        aspectRatio: { hint: t('aiVideo.editor.projectGuide.aspectRatioHint') },
+        resolution: { hint: t('aiVideo.editor.projectGuide.resolutionHint') },
+        fps: { hint: t('aiVideo.editor.projectGuide.fpsHint') },
+        style: { hint: t('aiVideo.editor.projectGuide.styleHint'), placeholder: t('aiVideo.editor.projectGuide.stylePlaceholder') },
+        status: { hint: t('aiVideo.editor.projectGuide.statusHint') }
+      }[item.key]
+      if (guidance) Object.assign(result, guidance)
+    }
     return result
   })
   const attributes = assetAttributes[sectionKey.value] || []
@@ -585,6 +629,20 @@ onMounted(load)
 .editor-intro { display: flex; align-items: center; gap: 12px; padding: 0 0 20px; }
 .editor-intro p, .editor-section-hint, .editor-field-hint { margin: 0; color: var(--app-muted); font-size: 12px; line-height: 1.7; }
 .editor-badge { flex-shrink: 0; padding: 5px 10px; border-radius: 8px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
+.project-create-guide { margin-bottom: 16px; padding: 16px; border: 1px solid #cbdcf8; border-radius: 12px; background: linear-gradient(135deg, #f5f8ff, #fbfdff); }
+.project-create-guide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.project-create-guide-kicker { color: var(--app-primary); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.project-create-guide-head h3 { margin: 4px 0 0; color: var(--app-text); font-size: 16px; }
+.project-create-guide-head p { max-width: 680px; margin: 6px 0 0; color: var(--app-muted); font-size: 12px; line-height: 1.6; }
+.project-create-guide-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.project-create-guide-step { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 12px; border: 1px solid #dce7f8; border-radius: 10px; background: rgb(255 255 255 / 76%); }
+.project-create-guide-index { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 8px; background: #e5efff; color: var(--app-primary); font-size: 10px; font-weight: 700; }
+.project-create-guide-step strong { color: var(--app-text); font-size: 13px; }
+.project-create-guide-step p, .project-create-guide-step small { display: block; color: var(--app-muted); font-size: 11px; line-height: 1.5; }
+.project-create-guide-step p { margin: 4px 0; }
+.project-create-guide-step small { color: var(--app-primary); }
+.project-create-guide-next { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 12px; padding-top: 11px; border-top: 1px solid #dce7f8; color: var(--app-muted); font-size: 11px; line-height: 1.5; }
+.project-create-guide-next strong { color: var(--app-text); }
 .editor-section { margin-bottom: 16px; padding: 20px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-surface-soft); }
 .editor-section-heading { display: flex; align-items: center; gap: 10px; }
 .editor-section-heading span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-weight: 600; }
@@ -602,7 +660,8 @@ onMounted(load)
 .editor-footer > span { color: var(--app-muted); font-size: 12px; }
 .editor-alert { margin-bottom: 16px; }
 .ai-video-form { max-height: 62vh; overflow-y: auto; padding-right: 8px; }
-@media (max-width: 620px) { .editor-field-grid { grid-template-columns: 1fr; } .editor-section { padding: 14px; } .editor-intro { align-items: flex-start; flex-direction: column; } .editor-footer > span { display: none; } .editor-footer { justify-content: flex-end; } }
+@media (max-width: 760px) { .project-create-guide-steps { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .editor-field-grid { grid-template-columns: 1fr; } .editor-section { padding: 14px; } .editor-intro { align-items: flex-start; flex-direction: column; } .project-create-guide { padding: 14px; } .project-create-guide-head { flex-direction: column; gap: 8px; } .editor-footer > span { display: none; } .editor-footer { justify-content: flex-end; } }
 
 .ai-video-page { display: grid; gap: 18px; }
 .ai-video-hero { display: flex; align-items: center; justify-content: space-between; min-height: 160px; overflow: hidden; background: linear-gradient(125deg, #101b3a, #263d7a 58%, #4c78bc); color: #fff; }
