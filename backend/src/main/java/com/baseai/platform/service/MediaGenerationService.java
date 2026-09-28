@@ -1,6 +1,8 @@
 package com.baseai.platform.service;
 
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.modeltype.LlmModelTypeRegistry;
+import com.baseai.platform.modeltype.LlmOperation;
 import com.baseai.platform.security.AuthContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,14 +34,24 @@ public class MediaGenerationService {
     private final LlmManagementService management;
     private final LlmUsageService usage;
     private final ObjectMapper mapper;
+    private final LlmModelTypeRegistry modelTypeRegistry;
 
-    /** 注入任务存储、可信模型配置、用量服务和 JSON 编解码器。 */
+    /** 注入任务存储、可信模型配置、用量服务、JSON 编解码器和类型协议注册表。 */
+    @org.springframework.beans.factory.annotation.Autowired
     public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
-                                  LlmManagementService management, LlmUsageService usage, ObjectMapper mapper) {
+                                  LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
+                                  LlmModelTypeRegistry modelTypeRegistry) {
         this.jdbc = jdbc;
         this.management = management;
         this.usage = usage;
         this.mapper = mapper;
+        this.modelTypeRegistry = modelTypeRegistry;
+    }
+
+    /** 兼容既有单元测试构造方式。 */
+    public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
+                                  LlmManagementService management, LlmUsageService usage, ObjectMapper mapper) {
+        this(jdbc, management, usage, mapper, new LlmModelTypeRegistry());
     }
 
     /** 返回启用且只声明一种生成能力的模型，不向浏览器暴露供应商密钥。 */
@@ -48,7 +60,10 @@ public class MediaGenerationService {
             .collect(java.util.stream.Collectors.toMap(LlmManagementService.ProviderView::id, item -> item));
         return management.models().stream()
             .filter(item -> Boolean.TRUE.equals(item.getEnabled()) && providers.containsKey(item.getProviderId()))
-            .filter(item -> item.getSupportedModelTypes().size() == 1 && TYPES.contains(item.getSupportedModelTypes().get(0)))
+            .filter(item -> item.getSupportedModelTypes().size() == 1
+                && modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.IMAGE_GENERATION)
+                || item.getSupportedModelTypes().size() == 1
+                && modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.VIDEO_GENERATION))
             .map(item -> new ModelOption(item.getId(), item.getName(), item.getModelName(), item.getSupportedModelTypes().get(0),
                 providers.get(item.getProviderId()).code(), providers.get(item.getProviderId()).name())).toList();
     }
@@ -111,7 +126,7 @@ public class MediaGenerationService {
             if (!candidate.providerCode().equals(task.get("providerCode")) || !candidate.model().equals(task.get("modelName"))) {
                 fail(task, "MODEL_CONFIG_CHANGED"); return;
             }
-            apply(task, invoke(candidate, "video_model", null, Map.of(), remoteId));
+            apply(task, invoke(candidate, (String) task.get("generationType"), null, Map.of(), remoteId));
         } catch (RestClientException exception) {
             // 临时 HTTP/网络错误仍保留运行态；到达总时限后才结束记录。
         } catch (RuntimeException exception) { fail(task, "PROVIDER_RESPONSE_INVALID"); }
@@ -130,7 +145,9 @@ public class MediaGenerationService {
             .headers(headers -> headers.setBearerAuth(key)).retrieve().body(JsonNode.class);
         Map<String, Object> body = new LinkedHashMap<>(options == null ? Map.of() : options);
         body.put("model", candidate.model()); body.put("prompt", prompt);
-        return client.post().uri(URI.create(base + (type.equals("image_model") ? "/images/generations" : "/videos/generations")))
+        String path = modelTypeRegistry.generationPath(type);
+        if (path == null) throw new BusinessException("llm.modelTypeUnsupported");
+        return client.post().uri(URI.create(base + path))
             .contentType(MediaType.APPLICATION_JSON).headers(headers -> headers.setBearerAuth(key)).body(body).retrieve().body(JsonNode.class);
     }
 
@@ -255,12 +272,16 @@ public class MediaGenerationService {
 
     /** 验证两类生成的请求边界和可透传参数，禁止调用路径、认证等控制参数。 */
     private void validate(GenerateRequest request) {
-        if (request == null || !TYPES.contains(request.modelType() == null ? "" : request.modelType())
+        String requestedType = request == null ? "" : request.modelType();
+        boolean generationType = modelTypeRegistry.supports(requestedType, LlmOperation.IMAGE_GENERATION)
+            || modelTypeRegistry.supports(requestedType, LlmOperation.VIDEO_GENERATION);
+        if (request == null || !generationType
             || request.modelId() == null || request.modelId() <= 0 || request.prompt() == null
             || request.prompt().isBlank() || request.prompt().length() > 100000
             || request.conversationId() != null && request.conversationId() <= 0) throw new BusinessException("llm.generationRequestInvalid");
         Map<String, Object> options = request.options() == null ? Map.of() : request.options();
-        Set<String> allowed = request.modelType().equals("image_model") ? Set.of("size", "quality", "style", "n", "response_format")
+        Set<String> allowed = modelTypeRegistry.supports(request.modelType(), LlmOperation.IMAGE_GENERATION)
+            ? Set.of("size", "quality", "style", "n", "response_format")
             : Set.of("duration", "aspect_ratio", "resolution", "fps");
         if (!allowed.containsAll(options.keySet()) || options.values().stream().anyMatch(value -> value == null
             || !(value instanceof String || value instanceof Number) || value.toString().length() > 100))
@@ -278,7 +299,9 @@ public class MediaGenerationService {
         var route = management.resolveModel(modelId, type, false, null);
         if (route == null || route.candidates() == null || route.candidates().size() != 1) throw new BusinessException("llm.modelTypeUnsupported");
         var candidate = route.candidates().get(0);
-        if (candidate == null || !List.of(type).equals(candidate.supportedModelTypes()) || candidate.apiKeys() == null || candidate.apiKeys().isEmpty())
+        boolean supported = modelTypeRegistry.supports(type, LlmOperation.IMAGE_GENERATION)
+            || modelTypeRegistry.supports(type, LlmOperation.VIDEO_GENERATION);
+        if (!supported || candidate == null || !List.of(type).equals(candidate.supportedModelTypes()) || candidate.apiKeys() == null || candidate.apiKeys().isEmpty())
             throw new BusinessException("llm.modelTypeUnsupported");
         return candidate;
     }
