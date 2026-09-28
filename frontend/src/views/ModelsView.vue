@@ -28,7 +28,7 @@
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('models.provider')"><el-select v-model="form.providerId"><el-option v-for="item in providers" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
         <el-form-item :label="t('models.identifier')"><el-input v-model="form.modelName" /></el-form-item>
-        <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-checkbox></el-checkbox-group><small>{{ t('models.generationTypeHint') }}</small></el-form-item>
+        <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value" :disabled="modelTypeDisabled(type.value)">{{ localizeModelType(type.value, modelTypes, t) }}</el-checkbox></el-checkbox-group><small>{{ t('models.generationTypeHint') }}</small></el-form-item>
         <el-alert v-if="form.supportedModelTypes.some(isGenerationType)" :title="t('models.generationUnavailable')" type="info" :closable="false" show-icon />
         <el-form-item :label="t('models.capability')"><el-select v-model="form.capabilityLevel"><el-option :label="t('models.low')" value="LOW" /><el-option :label="t('models.middle')" value="MIDDLE" /><el-option :label="t('models.high')" value="HIGH" /></el-select></el-form-item>
         <el-form-item :label="t('models.thinkingLevels')" class="thinking-level-form-item">
