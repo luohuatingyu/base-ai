@@ -29,7 +29,8 @@ class WorkflowAgentClientTest {
             .thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), false, true));
         var mapper = new ObjectMapper();
         var config = mapper.createObjectNode().put("modelId", 1L).put("modelType", "text_model");
-        when(worker.post().uri("/llm/agent-step").header(anyString(), anyString()).contentType(any())
+        when(worker.post().uri("/llm/agent-step").header(anyString(), any(String[].class))
+            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
             .body(any()).retrieve().body(com.fasterxml.jackson.databind.JsonNode.class))
             .thenReturn(mapper.createObjectNode().put("content", "ok"));
         var client = new WorkflowAgentClient(worker, management, traces, mapper, null);
