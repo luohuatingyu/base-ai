@@ -587,6 +587,9 @@ public class LlmManagementService {
         if(requestedTypes.isEmpty())throw new BusinessException("llm.modelTypeRequired");
         Set<String> availableTypes=modelTypes().stream().map(ModelTypeOption::value).collect(java.util.stream.Collectors.toSet());
         if(!availableTypes.containsAll(requestedTypes))throw new BusinessException("llm.modelTypeUnavailable");
+        // 图片和视频使用独立生成协议，生成能力不能与聊天、向量或另一种生成能力混合保存。
+        if(requestedTypes.stream().anyMatch(LlmModel::isGenerationType) && requestedTypes.size() != 1)
+            throw new BusinessException("llm.modelTypeCombinationInvalid");
         model.setSupportedModelTypes(requestedTypes);
         model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT)); // 默认MIDDLE能力级别
         model.setThinkingLevels(normalizeThinkingLevels(command.thinkingLevels()));

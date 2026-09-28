@@ -81,11 +81,15 @@ const thinkingMapping = reactive({})
 function normalizeTypes(row) {
   return Array.isArray(row?.supportedModelTypes) ? [...row.supportedModelTypes] : []
 }
-/** 区分图片、视频生成与原有聊天模型能力，用于提示尚未接入的生成协议。 */
+/** 区分图片、视频生成与原有聊天模型能力。 */
 function isGenerationType(type) { return ['image_model', 'video_model'].includes(type) }
-/** 模型类型是能力声明，允许同时选择模型实际支持的多种能力。 */
-function modelTypeDisabled() { return false }
-/** 混合配置只要声明文本或视觉能力，仍可执行对应的聊天协议测试。 */
+/** 生成协议必须单独配置，编辑历史混合值时保留已选项以便管理员拆分保存。 */
+function modelTypeDisabled(type) {
+  const selected = normalizeTypes(form)
+  if (!selected.length || selected.includes(type)) return false
+  return selected.some(isGenerationType) ? true : isGenerationType(type)
+}
+/** 历史混合配置只要声明聊天能力，仍可执行对应的聊天协议测试。 */
 function supportsChat(row) { return normalizeTypes(row).some(type => !isGenerationType(type)) }
 /** 获取思考等级的本地化名称，并保留标准编码便于识别配置。 */
 function thinkingLevelLabel(level) { return `${t(`models.thinkingLevelLabels.${level}`)} (${level})` }
