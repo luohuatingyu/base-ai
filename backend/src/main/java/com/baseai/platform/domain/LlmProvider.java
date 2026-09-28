@@ -8,7 +8,13 @@ public class LlmProvider {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @Column(nullable = false, length = 64) private String code;
     @Column(nullable = false, length = 120) private String name;
-    @Column(nullable = false, length = 500) private String baseUrl;
+    @Column(length = 500) private String baseUrl;
+    @Column(length = 500) private String imageUrl;
+    @Column(length = 500) private String videoUrl;
+    /** 图片是否跟随 Base URL。 */
+    @Column(nullable = false) private Boolean imageSameAsBase = true;
+    /** 视频是否跟随图片 URL。 */
+    @Column(nullable = false) private Boolean videoSameAsImage = true;
     @Column(nullable = false, columnDefinition = "MEDIUMTEXT") private String apiKeysEncrypted;
     @Column(nullable = false) private Integer concurrencyLimit = 4;
     @Column(nullable = false, length = 24) private String concurrencyLevel = "PROVIDER";
@@ -19,6 +25,18 @@ public class LlmProvider {
     public Long getId() { return id; } public String getCode() { return code; } public void setCode(String value) { code=value; }
     public String getName() { return name; } public void setName(String value) { name=value; }
     public String getBaseUrl() { return baseUrl; } public void setBaseUrl(String value) { baseUrl=value; }
+    /** 读取和更新图片 URL。 */
+    public String getImageUrl() { return imageUrl; } public void setImageUrl(String value) { imageUrl=value; }
+    /** 读取和更新视频 URL。 */
+    public String getVideoUrl() { return videoUrl; } public void setVideoUrl(String value) { videoUrl=value; }
+    /** 读取和更新图片同步标记。 */
+    public Boolean getImageSameAsBase() { return imageSameAsBase; } public void setImageSameAsBase(Boolean value) { imageSameAsBase=value; }
+    /** 读取和更新视频同步标记。 */
+    public Boolean getVideoSameAsImage() { return videoSameAsImage; } public void setVideoSameAsImage(Boolean value) { videoSameAsImage=value; }
+    /** 返回图片实际调用地址。 */
+    public String effectiveImageUrl() { return Boolean.TRUE.equals(imageSameAsBase) ? baseUrl : imageUrl; }
+    /** 返回视频实际调用地址。 */
+    public String effectiveVideoUrl() { return Boolean.TRUE.equals(videoSameAsImage) ? effectiveImageUrl() : videoUrl; }
     public String getApiKeysEncrypted() { return apiKeysEncrypted; } public void setApiKeysEncrypted(String value) { apiKeysEncrypted=value; }
     public Integer getConcurrencyLimit() { return concurrencyLimit; } public void setConcurrencyLimit(Integer value) { concurrencyLimit=value; }
     public String getConcurrencyLevel() { return concurrencyLevel; } public void setConcurrencyLevel(String value) { concurrencyLevel=value; }
