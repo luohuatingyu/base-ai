@@ -72,6 +72,12 @@ public final class LlmModelTypeRegistry {
     /** 返回图片或视频生成类型对应的供应商路径。 */
     public String generationPath(String type) { return resolve(type).generationPath(); }
 
+    /** 返回异步生成任务查询路径；目前只有视频协议产生远端任务编号。 */
+    public String generationStatusPath(String type, String remoteId) {
+        if (!supports(type, LlmOperation.VIDEO_GENERATION) || remoteId == null || remoteId.isBlank()) return null;
+        return "/videos/" + remoteId;
+    }
+
     /** 返回规范化、去重后的模型类型列表。 */
     public List<String> normalize(Collection<String> types) {
         LinkedHashSet<String> result = new LinkedHashSet<>();

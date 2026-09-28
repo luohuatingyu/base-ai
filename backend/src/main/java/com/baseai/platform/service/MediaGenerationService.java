@@ -26,7 +26,6 @@ import java.util.*;
 /** 图片与视频各自调用独立 JSON 协议，持久化任务并复用统一的 Token 用量记录。 */
 @Service
 public class MediaGenerationService {
-    private static final Set<String> TYPES = Set.of("image_model", "video_model");
     private static final Set<String> SUCCESS = Set.of("SUCCEEDED", "SUCCESS", "COMPLETED", "DONE");
     private static final Set<String> FAILURE = Set.of("FAILED", "ERROR", "CANCELLED", "CANCELED");
     private static final Set<String> PENDING = Set.of("QUEUED", "PENDING", "RUNNING", "PROCESSING", "IN_PROGRESS");
@@ -74,7 +73,8 @@ public class MediaGenerationService {
         requireConversation(owner, request.conversationId());
         var candidate = candidate(request.modelId(), request.modelType());
         String usageId = usage.start(LlmUsageService.Start.current(null, owner, request.conversationId(),
-            request.modelType().equals("image_model") ? "AI_IMAGE_GENERATION" : "AI_VIDEO_GENERATION", "media_generation", request.modelType()));
+            modelTypeRegistry.supports(request.modelType(), LlmOperation.IMAGE_GENERATION)
+                ? "AI_IMAGE_GENERATION" : "AI_VIDEO_GENERATION", "media_generation", request.modelType()));
         if (usageId == null) throw new BusinessException("llm.generationRecordFailed");
         long id;
         try { id = insertTask(owner, request, candidate, usageId); }
@@ -140,8 +140,12 @@ public class MediaGenerationService {
         RestClient client = RestClient.builder().requestFactory(factory).build();
         String base = candidate.baseUrl().replaceAll("/+$", "");
         String key = candidate.apiKeys().get(0);
-        if (remoteId != null) return client.get().uri(URI.create(base + "/videos/" + remoteId))
-            .headers(headers -> headers.setBearerAuth(key)).retrieve().body(JsonNode.class);
+        if (remoteId != null) {
+            String statusPath = modelTypeRegistry.generationStatusPath(type, remoteId);
+            if (statusPath == null) throw new BusinessException("llm.modelTypeUnsupported");
+            return client.get().uri(URI.create(base + statusPath))
+                .headers(headers -> headers.setBearerAuth(key)).retrieve().body(JsonNode.class);
+        }
         Map<String, Object> body = new LinkedHashMap<>(options == null ? Map.of() : options);
         body.put("model", candidate.model()); body.put("prompt", prompt);
         String path = modelTypeRegistry.generationPath(type);
