@@ -179,6 +179,7 @@ class LlmTestRequest(BaseModel):
     candidate: LlmCandidate
     enableThinking: bool = False
     embedding: bool = False
+    protocol: Literal["chat", "embedding"] | None = None
 
 
 class EmbeddingRequest(BaseModel):

@@ -55,7 +55,7 @@ async def chat_stream(request: ChatRequest):
 @app.post("/llm/test")
 async def test_llm(request: LlmTestRequest):
     """测试模型中心下发的单个候选配置。"""
-    return await llm_client.test(request.candidate, request.enableThinking, request.embedding)
+    return await llm_client.test(request.candidate, request.enableThinking, request.embedding, request.protocol)
 
 
 @app.post("/llm/embeddings", response_model=EmbeddingResponse)

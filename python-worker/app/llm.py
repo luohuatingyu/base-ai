@@ -8,6 +8,7 @@ from collections import defaultdict
 import httpx
 
 from app.config import Settings
+from app.llm_protocol import LlmProtocolRegistry
 from app.llm_provider import strategy_for
 from app.logging_config import sanitize_log_text
 from app.models import (AgentMessage, AgentStepResponse, AgentToolCall, ChatMessage,
@@ -56,6 +57,7 @@ class LlmClient:
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._key_offsets: defaultdict[str, int] = defaultdict(int)
         self._lock = asyncio.Lock()
+        self.protocols = LlmProtocolRegistry()
 
     async def chat(self, messages: list[ChatMessage], temperature: float,
                    candidates: list[LlmCandidate] | None = None, enable_thinking: bool | None = None,
@@ -79,15 +81,17 @@ class LlmClient:
         raise RuntimeError("全部候选模型调用失败: " + "; ".join(failures[-10:]))
 
     async def test(self, candidate: LlmCandidate, enable_thinking: bool = False,
-                   embedding: bool = False) -> dict:
-        """使用最小请求测试模型连接并返回耗时。"""
+                   embedding: bool = False, protocol: str | None = None) -> dict:
+        """按注册协议使用最小请求测试模型连接，并兼容旧 embedding 参数。"""
         started = time.perf_counter()
-        if embedding:
-            result = await self.embed(["embedding health check"], [candidate])
-            return {"success": True, "model": result.model, "dimension": len(result.embeddings[0]),
-                    "durationMs": round(self._elapsed(started), 2)}
-        result = await self.chat([ChatMessage(role="user", content="reply OK")], 0, [candidate], enable_thinking, route_configured=True)
-        return {"success": True, "model": result.model, "durationMs": round(self._elapsed(started), 2)}
+        adapter = self.protocols.resolve(protocol, embedding)
+        result = await adapter.test(self, candidate, enable_thinking)
+        result["durationMs"] = round(self._elapsed(started), 2)
+        return result
+
+    def health_chat_messages(self) -> list[ChatMessage]:
+        """返回聊天协议健康检查使用的固定最小消息。"""
+        return [ChatMessage(role="user", content="reply OK")]
 
     async def embed(self, values: list[str], candidates: list[LlmCandidate]) -> EmbeddingResponse:
         """依次尝试候选及密钥，调用 OpenAI 兼容 embeddings 接口并保持输入顺序。"""
