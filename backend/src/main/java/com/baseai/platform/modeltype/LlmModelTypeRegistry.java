@@ -75,7 +75,7 @@ public final class LlmModelTypeRegistry {
     /** 返回异步生成任务查询路径；目前只有视频协议产生远端任务编号。 */
     public String generationStatusPath(String type, String remoteId) {
         if (!supports(type, LlmOperation.VIDEO_GENERATION) || remoteId == null || remoteId.isBlank()) return null;
-        return "/videos/" + remoteId;
+        return ArkMediaProtocol.supports(type) ? "/contents/generations/tasks/" + remoteId : "/videos/" + remoteId;
     }
 
     /** 返回规范化、去重后的模型类型列表。 */

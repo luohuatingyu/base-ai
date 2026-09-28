@@ -85,9 +85,9 @@ public class MediaGenerationService {
     /** 校验归属和模型后创建一次调用；失败重试必须由用户重新提交并产生新的任务及用量。 */
     public Map<String, Object> generate(GenerateRequest request) {
         Long owner = AuthContext.require().id();
-        validate(request);
+        var candidate = request == null ? null : candidate(request.modelId(), request.modelType());
+        validate(request, candidate);
         requireConversation(owner, request.conversationId());
-        var candidate = candidate(request.modelId(), request.modelType());
         String usageId = usage.start(LlmUsageService.Start.current(null, owner, request.conversationId(),
             modelTypeRegistry.supports(request.modelType(), LlmOperation.IMAGE_GENERATION)
                 ? "AI_IMAGE_GENERATION" : "AI_VIDEO_GENERATION", "media_generation", request.modelType()));
@@ -157,12 +157,14 @@ public class MediaGenerationService {
         String base = candidate.baseUrl().replaceAll("/+$", "");
         String key = candidate.apiKeys().get(0);
         if (remoteId != null) {
-            String statusPath = modelTypeRegistry.generationStatusPath(type, remoteId);
+            String statusPath = com.baseai.platform.modeltype.ArkMediaProtocol.supports(candidate.model())
+                ? "/contents/generations/tasks/" + remoteId : modelTypeRegistry.generationStatusPath(type, remoteId);
             if (statusPath == null) throw new BusinessException("llm.modelTypeUnsupported");
             return client.get().uri(URI.create(base + statusPath))
                 .headers(headers -> headers.setBearerAuth(key)).retrieve().body(JsonNode.class);
         }
-        String path = modelTypeRegistry.generationPath(type);
+        String path = com.baseai.platform.modeltype.ArkMediaProtocol.supports(candidate.model()) && "video_model".equals(type)
+            ? "/contents/generations/tasks" : modelTypeRegistry.generationPath(type);
         if (path == null) throw new BusinessException("llm.modelTypeUnsupported");
         Map<String, Object> body = protocolRegistry.request(type, candidate.model(), request.prompt(), normalizedMode(request), inputPayload(request.inputs()), request.options());
         if (body.isEmpty()) throw new BusinessException("llm.modelTypeUnsupported");
@@ -179,6 +181,7 @@ public class MediaGenerationService {
             value.put("name", input.fileName());
             value.put("content_type", input.contentType());
             value.put("data", input.dataUrl());
+            value.put("role", input.role());
             return value;
         }).toList();
     }
@@ -320,7 +323,10 @@ public class MediaGenerationService {
     }
 
     /** 验证两类生成的请求边界和可透传参数，禁止调用路径、认证等控制参数。 */
-    private void validate(GenerateRequest request) {
+    private void validate(GenerateRequest request) { validate(request, null); }
+
+    /** 按供应商画像选择输入上限，通用适配器继续保持历史边界。 */
+    private void validate(GenerateRequest request, LlmManagementService.WorkerCandidate candidate) {
         String requestedType = request == null ? "" : request.modelType();
         boolean generationType = modelTypeRegistry.supports(requestedType, LlmOperation.IMAGE_GENERATION)
             || modelTypeRegistry.supports(requestedType, LlmOperation.VIDEO_GENERATION);
@@ -332,17 +338,18 @@ public class MediaGenerationService {
             || ((prompt == null || prompt.isBlank()) && !hasInputs) || prompt != null && prompt.length() > 100000
             || request.conversationId() != null && request.conversationId() <= 0) throw new BusinessException("llm.generationRequestInvalid");
         if (!validMode(request.modelType(), mode)) throw new BusinessException("llm.generationRequestInvalid");
-        validateInputs(request.inputs());
+        validateInputs(request.inputs(), candidate != null && com.baseai.platform.modeltype.ArkMediaProtocol.supports(candidate.model()));
         Map<String, Object> options = request.options() == null ? Map.of() : request.options();
-        Set<String> allowed = modelTypeRegistry.supports(request.modelType(), LlmOperation.IMAGE_GENERATION)
-            ? Set.of("size", "quality", "style", "n", "response_format")
-            : Set.of("duration", "aspect_ratio", "resolution", "fps");
-        if (!allowed.containsAll(options.keySet()) || options.values().stream().anyMatch(value -> value == null
-            || !(value instanceof String || value instanceof Number) || value.toString().length() > 100))
+        Set<String> allowed = Set.of("size", "quality", "style", "n", "response_format", "sequential_image_generation",
+            "sequential_image_generation_options", "stream", "tools", "background", "output_format", "watermark", "seed",
+            "optimize_prompt_options", "layer_decomposition", "interactive_edit", "duration", "aspect_ratio", "resolution", "fps",
+            "callback_url", "return_last_frame", "generate_audio", "draft", "safety_identifier", "service_tier", "execution_expires_after",
+            "ratio", "frames", "camera_fixed");
+        if (!allowed.containsAll(options.keySet()) || options.values().stream().anyMatch(value -> value == null || !safeOption(value, 0)))
             throw new BusinessException("llm.generationRequestInvalid");
         for (String field : List.of("n", "duration", "fps")) if (options.containsKey(field)) {
             JsonNode number = mapper.valueToTree(options.get(field));
-            int max = field.equals("n") ? 4 : field.equals("duration") ? 60 : 120;
+            int max = field.equals("n") ? 15 : field.equals("duration") ? 60 : 240;
             if (!number.isIntegralNumber() || !number.canConvertToInt() || number.intValue() < 1 || number.intValue() > max)
                 throw new BusinessException("llm.generationRequestInvalid");
         }
@@ -364,22 +371,24 @@ public class MediaGenerationService {
     }
 
     /** 校验文本、图片和视频输入的数量、Data URL 格式和解码后大小，拒绝远程 URL 造成的 SSRF。 */
-    private void validateInputs(List<MediaInput> inputs) {
+    private void validateInputs(List<MediaInput> inputs, boolean ark) {
         List<MediaInput> values = inputs == null ? List.of() : inputs;
-        if (values.size() > MAX_INPUTS || values.stream().anyMatch(Objects::isNull))
+        if (values.size() > (ark ? 50 : MAX_INPUTS) || values.stream().anyMatch(Objects::isNull))
             throw new BusinessException("llm.generationRequestInvalid");
-        for (MediaInput input : values) validateInput(input);
+        for (MediaInput input : values) validateInput(input, ark);
     }
 
     /** 验证单个上传对象的名称、MIME 类型、Data URL 和实际 Base64 大小。 */
-    private void validateInput(MediaInput input) {
+    private void validateInput(MediaInput input, boolean ark) {
         if (input == null || input.kind() == null || input.fileName() == null || input.fileName().isBlank()
             || input.fileName().length() > 200 || input.fileName().contains("/") || input.fileName().contains("\\")
-            || input.contentType() == null || input.dataUrl() == null) throw new BusinessException("llm.generationRequestInvalid");
+            || input.contentType() == null || input.dataUrl() == null || input.role() == null || input.role().length() > 64) throw new BusinessException("llm.generationRequestInvalid");
         Set<String> allowed = switch (input.kind()) {
             case "TEXT" -> Set.of("text/plain", "text/markdown");
             case "IMAGE" -> Set.of("image/png", "image/jpeg", "image/webp");
             case "VIDEO" -> Set.of("video/mp4", "video/webm", "video/quicktime");
+            case "AUDIO" -> Set.of("audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav");
+            case "TASK" -> Set.of("text/plain");
             default -> Set.of();
         };
         if (!allowed.contains(input.contentType().toLowerCase(Locale.ROOT))) throw new BusinessException("llm.generationRequestInvalid");
@@ -399,11 +408,23 @@ public class MediaGenerationService {
         } catch (IllegalArgumentException exception) { throw new BusinessException("llm.generationRequestInvalid"); }
     }
 
+    /** 递归限制供应商参数结构，允许方舟的对象、数组和布尔字段但拒绝超长注入内容。 */
+    private boolean safeOption(Object value, int depth) {
+        if (depth > 4 || value == null) return false;
+        if (value instanceof String text) return text.length() <= 10000;
+        if (value instanceof Number || value instanceof Boolean) return true;
+        if (value instanceof Map<?, ?> map) return map.size() <= 32 && map.entrySet().stream()
+            .allMatch(entry -> entry.getKey() instanceof String key && key.length() <= 80 && safeOption(entry.getValue(), depth + 1));
+        if (value instanceof Collection<?> collection) return collection.size() <= 50 && collection.stream().allMatch(item -> safeOption(item, depth + 1));
+        return false;
+    }
+
     /** 任务只保存输入元数据，避免数据库持久化大段 Base64；供应商调用使用当前请求内容。 */
     private Map<String, Object> storageRequest(GenerateRequest request) {
         List<Map<String, Object>> metadata = (request.inputs() == null ? List.<MediaInput>of() : request.inputs()).stream().map(input -> {
             Map<String, Object> value = new LinkedHashMap<>();
             value.put("kind", input.kind()); value.put("name", input.fileName()); value.put("contentType", input.contentType());
+            value.put("role", input.role());
             value.put("bytes", input.dataUrl() == null ? 0 : Math.max(0, (input.dataUrl().length() - input.dataUrl().indexOf(',') - 1) * 3 / 4));
             return value;
         }).toList();
@@ -440,6 +461,9 @@ public class MediaGenerationService {
     }
 
     /** 统一媒体输入；前端只提交受控 Data URL，不接受任意远程地址。 */
-    public record MediaInput(String kind, String fileName, String contentType, String dataUrl) {}
+    public record MediaInput(String kind, String fileName, String contentType, String dataUrl, String role) {
+        /** 兼容历史四字段请求，默认没有供应商角色。 */
+        public MediaInput(String kind, String fileName, String contentType, String dataUrl) { this(kind, fileName, contentType, dataUrl, ""); }
+    }
     public record ModelOption(Long id, String name, String modelName, String modelType, String providerCode, String providerName) {}
 }
