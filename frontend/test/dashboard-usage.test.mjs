@@ -56,12 +56,16 @@ function component(source = panelSource, { user = { roles: ['ADMIN'] }, get = as
       const table = { props: ['data'], setup(props, { slots }) { Vue.provide('testRows', props.data); return () => Vue.h('table', slots.default?.()) } }
       const column = { props: ['prop'], setup(props, { slots }) { const rows = Vue.inject('testRows'); return () => Vue.h('tbody', rows.map(row => Vue.h('tr', slots.default ? slots.default({ row }) : String(row[props.prop] ?? '')))) } }
       for (const [name, entry] of Object.entries(ElementPlus)) {
-        if (name.startsWith('El') && name !== 'ElTable' && name !== 'ElTableColumn') app.component(name, entry)
+        if (name.startsWith('El') && !['ElTable', 'ElTableColumn', 'ElDialog'].includes(name)) app.component(name, entry)
       }
       app.component('ElTable', table)
       app.component('ElTableColumn', column)
+      // Dialog 的内容仅在浏览器挂载后创建；SSR 适配显示条件与插槽，真实弹窗交互另做浏览器验证。
+      app.component('ElDialog', { props: ['modelValue'], setup(props, { slots }) { return () => props.modelValue ? Vue.h('section', [slots.default?.(), slots.footer?.()]) : null } })
       app.directive('loading', { getSSRProps: () => ({}) })
-      return renderToString(app)
+      const context = {}
+      const html = await renderToString(app, context)
+      return html + Object.values(context.teleports || {}).join('')
     }
   }
 }
@@ -315,38 +319,51 @@ test('调用明细将 Trace 列置于时间之后且完整换行展示', () => {
 })
 
 for (const traceId of ['request-trace', '  trace.a:1_2-3  ', 'x', 'x'.repeat(64)]) {
-  test(`请求 Trace ID 可打开对应任务日志：${traceId}`, async () => {
-    const c = component()
+  test(`请求 Trace ID 原地打开日志弹窗：${traceId}`, async () => {
+    const calls = []
+    const c = component(panelSource, { get: async (url, options) => { calls.push({ url, options }); return { data: [{ id: 1, message: 'request log', level: 'INFO', source: 'java' }] } } })
     const row = { traceId, pythonTraceId: 'worker-trace' }
     c.state.records.value = [row]
     assert.match(await c.html(), /class="[^"]*el-link/)
     await c.state.openTraceLogs(row)
-    assert.equal(c.router.currentRoute.value.path, '/tasks')
-    assert.deepEqual(c.router.currentRoute.value.query, { traceId: traceId.trim(), openLogs: 'true' })
+    assert.equal(c.router.currentRoute.value.path, '/')
+    assert.equal(c.state.traceDialogVisible.value, true)
+    assert.equal(c.state.activeTraceId.value, traceId.trim())
+    assert.equal(calls[0].url, `/system/tasks/${encodeURIComponent(traceId.trim())}/logs`)
+    assert.equal(calls[0].options.silentError, true)
+    assert.equal(c.state.traceLogs.value[0].message, 'request log')
+    assert.match(await c.html(), /request log/)
   })
 }
 
 for (const traceId of [null, undefined, '', '  ', 123, 'x'.repeat(65), '../tasks', '<script>', 'a?b', 'a b']) {
   test(`空值或非法 Trace ID 不跳转：${String(traceId)}`, async () => {
-    const c = component()
+    const calls = []
+    const c = component(panelSource, { get: async url => { calls.push(url); return { data: [] } } })
     const row = { traceId }
     c.state.records.value = [row]
     assert.doesNotMatch(await c.html(), /class="[^"]*el-link/)
     await c.state.openTraceLogs(row)
     assert.equal(c.router.currentRoute.value.path, '/')
+    assert.equal(c.state.traceDialogVisible.value, false)
+    assert.deepEqual(calls, [])
   })
 }
 
 test('无任务查看权限时不提供链接且调用处理函数也无法导航', async () => {
-  const c = component(panelSource, { user: { roles: ['USER'], permissions: ['operations:dashboard:view'] } })
+  const calls = []
+  const c = component(panelSource, { user: { roles: ['USER'], permissions: ['operations:dashboard:view'] }, get: async url => { calls.push(url); return { data: [] } } })
   c.state.records.value = [{ traceId: 'private-trace' }]
   assert.doesNotMatch(await c.html(), /private-trace|el-link/)
   await c.state.openTraceLogs(c.state.records.value[0])
   assert.equal(c.router.currentRoute.value.path, '/')
+  assert.equal(c.state.traceDialogVisible.value, false)
+  await c.state.loadTraceLogs()
+  assert.deepEqual(calls, [])
 })
 
-for (const [language, hint] of [['zh-CN', '缺少主任务关联，无法跳转'], ['en-US', 'No parent task is linked; navigation is unavailable']]) {
-  test(`仅 Python Trace ID 保留文本并说明无法跳转：${language}`, async () => {
+for (const [language, hint] of [['zh-CN', '缺少主任务关联，无法查看日志'], ['en-US', 'No parent task is linked; logs are unavailable']]) {
+  test(`仅 Python Trace ID 保留文本并说明无法查看日志：${language}`, async () => {
     const c = component(panelSource, { language })
     const row = { traceId: null, pythonTraceId: 'worker-trace' }
     c.state.records.value = [row]
@@ -356,5 +373,100 @@ for (const [language, hint] of [['zh-CN', '缺少主任务关联，无法跳转'
     assert.doesNotMatch(html, /class="[^"]*el-link/)
     await c.state.openTraceLogs(row)
     assert.equal(c.router.currentRoute.value.path, '/')
+    assert.equal(c.state.traceDialogVisible.value, false)
   })
 }
+
+test('关闭日志弹窗保留日期、筛选、已应用条件、分页及调用明细', async () => {
+  const c = component(panelSource, { get: async () => ({ data: [] }) })
+  c.state.dateRange.value = ['2026-09-27', '2026-09-28']
+  c.state.filters.modelName = 'draft-model'
+  c.state.appliedParams.value = { modelName: 'applied-model' }
+  c.state.pagination.page = 3
+  c.state.records.value = [{ traceId: 'trace-a' }]
+  await c.state.openTraceLogs(c.state.records.value[0])
+  assert.match(await c.html(), /暂无日志/)
+  c.state.closeTraceLogs()
+  assert.equal(c.state.traceDialogVisible.value, false)
+  assert.equal(c.state.activeTraceId.value, '')
+  assert.deepEqual(c.state.dateRange.value, ['2026-09-27', '2026-09-28'])
+  assert.equal(c.state.filters.modelName, 'draft-model')
+  assert.deepEqual(c.state.appliedParams.value, { modelName: 'applied-model' })
+  assert.equal(c.state.pagination.page, 3)
+  assert.deepEqual(c.state.records.value, [{ traceId: 'trace-a' }])
+})
+
+for (const failure of [new Error('timeout'), { response: { status: 403 } }, { response: { status: 404 } }, { response: { status: 500 } }, 'malformed']) {
+  test(`日志失败可重试且不会显示旧内容：${failure.message || failure.response?.status || failure}`, async () => {
+    let failed = true
+    const c = component(panelSource, { get: async () => {
+      if (failed) { if (failure === 'malformed') return { data: {} }; throw failure }
+      return { data: [{ id: 2, message: 'recovered log' }] }
+    } })
+    await c.state.openTraceLogs({ traceId: 'trace-a' })
+    assert.equal(c.state.traceLogsError.value, true)
+    assert.equal(c.state.traceLogsLoading.value, false)
+    assert.deepEqual(c.state.traceLogs.value, [])
+    assert.match(await c.html(), /加载日志失败/)
+    assert.doesNotMatch(await c.html(), /暂无日志/)
+    failed = false
+    await c.state.loadTraceLogs()
+    assert.equal(c.state.traceLogsError.value, false)
+    assert.equal(c.state.traceLogs.value[0].message, 'recovered log')
+  })
+}
+
+for (const obsoleteFails of [false, true]) {
+  test(`切换 Trace 后忽略旧请求的${obsoleteFails ? '失败' : '成功'}响应并取消旧请求`, async () => {
+    const pending = []
+    const c = component(panelSource, { get: (url, options) => new Promise((resolve, reject) => pending.push({ url, options, resolve, reject })) })
+    const first = c.state.openTraceLogs({ traceId: 'trace-a' })
+    assert.equal(c.state.traceLogsLoading.value, true)
+    assert.doesNotMatch(await c.html(), /暂无日志/)
+    await c.state.loadTraceLogs()
+    assert.equal(pending.length, 1)
+    const second = c.state.openTraceLogs({ traceId: 'trace-b' })
+    assert.equal(pending[0].options.signal.aborted, true)
+    pending[1].resolve({ data: [{ id: 2, message: 'second log' }] })
+    await second
+    if (obsoleteFails) pending[0].reject(new Error('late failure'))
+    else pending[0].resolve({ data: [{ id: 1, message: 'obsolete log' }] })
+    await first
+    assert.equal(c.state.activeTraceId.value, 'trace-b')
+    assert.equal(c.state.traceLogs.value[0].message, 'second log')
+    assert.equal(c.state.traceLogsError.value, false)
+    assert.equal(c.state.traceLogsLoading.value, false)
+  })
+}
+
+for (const action of ['close', 'unmount']) {
+  test(`${action} 取消请求且迟到响应不回填日志`, async () => {
+    let resolveRequest, signal
+    const c = component(panelSource, { get: (_, options) => { signal = options.signal; return new Promise(resolve => { resolveRequest = resolve }) } })
+    const request = c.state.openTraceLogs({ traceId: 'trace-a' })
+    if (action === 'close') c.state.closeTraceLogs()
+    else for (const hook of c.hooks.unmounted) hook()
+    assert.equal(signal.aborted, true)
+    resolveRequest({ data: [{ message: 'late log' }] })
+    await request
+    assert.equal(c.state.traceDialogVisible.value, false)
+    assert.deepEqual(c.state.traceLogs.value, [])
+    await c.state.loadTraceLogs()
+    assert.equal(c.state.traceLogsLoading.value, false)
+  })
+}
+
+test('日志内容按新到旧呈现且 HTML 与异常文本安全转义', async () => {
+  const data = [{ id: 1, message: 'earlier' }, { id: 2, message: '<img src=x onerror=alert(1)>', throwable: '<script>alert(2)</script>', level: 'ERROR', source: 'python', logged_at: '2026-09-28 10:00:00' }]
+  const c = component(panelSource, { get: async () => ({ data }) })
+  await c.state.openTraceLogs({ traceId: 'trace-a' })
+  assert.equal(c.state.traceLogs.value[0].id, 2)
+  assert.equal(data[0].id, 1)
+  const html = await c.html()
+  assert.match(html, /&lt;img/)
+  assert.match(html, /&lt;script/)
+  assert.doesNotMatch(html, /<img src=x|<script>alert/)
+  assert.match(html, /ERROR/)
+  assert.match(html, /python/)
+  assert.match(html, /2026-09-28 10:00:00/)
+})

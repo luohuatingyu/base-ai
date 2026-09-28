@@ -106,13 +106,34 @@
         :disabled="loading || recordsLoading" :page-sizes="[10, 20, 50, 100]" :total="pagination.total" :pager-count="5"
         layout="total, sizes, prev, pager, next" @change="loadRecords" />
     </div>
+    <el-dialog :model-value="traceDialogVisible" :title="t('tasks.log.title')" width="min(960px, calc(100vw - 32px))"
+      align-center destroy-on-close class="usage-log-dialog" @update:model-value="value => { if (!value) closeTraceLogs() }">
+      <div class="usage-log-toolbar">
+        <code>{{ activeTraceId }}</code>
+        <el-button :icon="Refresh" :loading="traceLogsLoading" @click="loadTraceLogs">{{ t('common.refresh') }}</el-button>
+      </div>
+      <div class="usage-log-content" :aria-busy="traceLogsLoading">
+        <p v-if="traceLogsLoading" role="status">{{ t('common.loading') }}</p>
+        <el-alert v-else-if="traceLogsError" :title="t('tasks.loadLogsFailed')" type="error" show-icon :closable="false">
+          <el-button text type="primary" @click="loadTraceLogs">{{ t('common.retry') }}</el-button>
+        </el-alert>
+        <template v-else>
+          <article v-for="(item, index) in traceLogs" :key="item.id ?? index" class="usage-log-entry">
+            <div class="usage-log-meta"><time>{{ item.logged_at || '—' }}</time><el-tag size="small" :type="item.level === 'ERROR' ? 'danger' : item.level === 'WARN' ? 'warning' : 'info'">{{ item.level || '—' }}</el-tag><span>{{ item.source || '—' }}</span></div>
+            <pre>{{ item.message || '—' }}</pre>
+            <pre v-if="item.throwable" class="usage-log-exception">{{ item.throwable }}</pre>
+          </article>
+          <el-empty v-if="!traceLogs.length" :description="t('tasks.log.noLogs')" />
+        </template>
+      </div>
+      <template #footer><el-button @click="closeTraceLogs">{{ t('common.close') }}</el-button></template>
+    </el-dialog>
   </section>
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import { CircleCheck, Clock, Coin, DataAnalysis, Loading, Refresh, Search, Timer } from '@element-plus/icons-vue'
 import http from '../api/http'
 import { useAuthStore } from '../stores/auth'
@@ -120,7 +141,12 @@ import { formatCount, formatMilliseconds, formatSuccessRate } from '../utils/das
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
-const router = useRouter()
+const traceDialogVisible = ref(false)
+const activeTraceId = ref('')
+const traceLogs = ref([])
+const traceLogsLoading = ref(false)
+const traceLogsError = ref(false)
+let traceRequest = null
 const loading = ref(false)
 const recordsLoading = ref(false)
 const error = ref(false)
@@ -255,10 +281,48 @@ function canOpenTrace(row) {
   return auth.hasPermission('operations:task:view') && typeof row.traceId === 'string' && /^[A-Za-z0-9._:-]{1,64}$/.test(row.traceId.trim())
 }
 
-/** 复用任务页的路由参数，筛选主请求链路并自动展开对应日志。 */
+/** 在当前仪表盘打开链路日志，保留原有筛选和分页状态。 */
 function openTraceLogs(row) {
-  if (!canOpenTrace(row)) return
-  return router.push({ path: '/tasks', query: { traceId: row.traceId.trim(), openLogs: 'true' } })
+  if (disposed || !canOpenTrace(row)) return
+  closeTraceLogs()
+  activeTraceId.value = row.traceId.trim()
+  traceDialogVisible.value = true
+  return loadTraceLogs()
+}
+
+/** 查询当前弹窗日志；请求身份校验防止关闭或切换后迟到的响应回填。 */
+async function loadTraceLogs() {
+  if (disposed || !traceDialogVisible.value || traceLogsLoading.value || !canOpenTrace({ traceId: activeTraceId.value })) return
+  const request = new AbortController()
+  traceRequest = request
+  traceLogsLoading.value = true
+  traceLogsError.value = false
+  traceLogs.value = []
+  try {
+    const { data } = await http.get(`/system/tasks/${encodeURIComponent(activeTraceId.value)}/logs`, { signal: request.signal, silentError: true })
+    if (traceRequest !== request) return
+    if (!Array.isArray(data)) throw new Error('Invalid log response')
+    traceLogs.value = [...data].reverse()
+  } catch {
+    if (traceRequest === request) traceLogsError.value = true
+  } finally {
+    if (traceRequest === request) {
+      traceLogsLoading.value = false
+      traceRequest = null
+    }
+  }
+}
+
+/** 关闭时取消请求并清空日志，仅保留仪表盘自身状态。 */
+function closeTraceLogs() {
+  const request = traceRequest
+  traceRequest = null
+  request?.abort()
+  traceDialogVisible.value = false
+  activeTraceId.value = ''
+  traceLogs.value = []
+  traceLogsLoading.value = false
+  traceLogsError.value = false
 }
 
 /** 使用当前语言格式化计数。 */
@@ -279,6 +343,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   disposed = true
+  closeTraceLogs()
   if (timer) window.clearInterval(timer)
 })
 </script>
@@ -322,6 +387,13 @@ onUnmounted(() => {
 .usage-trace code { color: var(--app-text); font-size: 12px; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; user-select: all; }
 .usage-trace .el-link { align-self: flex-start; max-width: 100%; text-align: left; }
 .usage-trace .el-link code { color: inherit; user-select: text; }
+.usage-log-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.usage-log-toolbar code { min-width: 0; overflow-wrap: anywhere; }
+.usage-log-content { max-height: 60vh; overflow: auto; }
+.usage-log-entry { padding: 14px; margin-bottom: 12px; border: 1px solid var(--app-border); border-radius: 8px; }
+.usage-log-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: #56637a; font-size: 12px; }
+.usage-log-entry pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; margin-bottom: 0; }
+.usage-log-exception { color: var(--el-color-danger); }
 .model-usage-records .el-pagination { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
 .model-usage-panel :deep(.el-table th.el-table__cell) { background: #f7f9fc; color: #56637a; font-weight: 500; }
 .model-usage-panel :deep(.el-table .cell) { font-variant-numeric: tabular-nums; }
