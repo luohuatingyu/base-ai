@@ -10188,3 +10188,35 @@ git diff --check
 - 令牌轮换需同步调用端并重建服务；旧令牌过短，不应回滚为旧值。需要再次轮换时生成新的合规令牌并重复本节验证。
 - 后续修改令牌、Worker 鉴权或 Compose 环境传递时，应重新执行本节验证；修改业务代码时按项目规则另行执行后端完整测试。
 - 工作区原有未跟踪 `docs/` 保留，未纳入本次提交。
+
+## 模型供应商图片与视频地址配置（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: e4589863626fb2d5e7975d6a4795d5b8babcf32d
+- 变更提交：d9483b2、d9d5225；当前分支 emdash/codex-vlzfy。
+- 供应商支持 Base URL、图片 URL、视频 URL，三者至少配置一个；图片可同步 Base，视频可同步图片。
+- 文本、视觉、向量使用 Base URL；图片生成使用图片 URL；视频生成和轮询使用视频 URL。
+- 旧供应商迁移后默认保持两级同步，API Key 脱敏和权限控制不变；新增 MySQL 迁移 V46。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 三类地址至少配置一个 | ProviderEndpointTest.acceptsAnySingleEndpointAndRejectsEmpty、前端供应商地址测试 | 正常、边界、异常 | 通过 |
+| 图片和视频同步联动 | ProviderEndpointTest.resolvesMediaEndpointsAndSynchronization、前端同步字段测试 | 正常、兼容、回归 | 通过 |
+| 按模型类型选择调用地址 | ProviderEndpointTest.resolvesMediaEndpointsAndSynchronization | 正常、兼容 | 通过 |
+| URL 安全校验 | ProviderEndpointTest.rejectsUnsafeMediaEndpoint 及既有 URL 校验测试 | 异常、安全 | 通过 |
+| 旧 API 和密钥安全行为不回退 | LlmManagementServiceTest 回归、完整 Maven 套件 | 权限、兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- docker run ... mvn -o test -B：后端 1029/1029 通过，失败 0、错误 0、跳过 0。
+- docker run ... mvn -o -Dmaven.main.skip=true -Dtest=ProviderEndpointTest test -B：供应商地址定向测试 3/3 通过。
+- cd frontend && npm test：覆盖测试 657/657 通过，生产构建通过，E2E 3/3 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- docker compose up --build -d：本次首次执行受后台 Ark 协议提交期间的构建状态影响；随后完整 Maven 套件已通过，需在最终提交版本重新执行 Compose 验证。
+
+### 已知问题与下次测试建议
+
+- 本次未联调真实图片或视频供应商，仅验证地址选择、协议路径和安全校验；接入具体供应商时需用其凭据执行端到端生成和轮询。
+- 后续修改供应商字段、媒体协议、迁移或调用路由时，需重新执行后端完整 Maven、前端完整 npm 套件及 Compose 重建。
