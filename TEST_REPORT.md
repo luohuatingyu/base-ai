@@ -1,5 +1,43 @@
 # 最近分支覆盖测试报告
 
+## 模型类型接入协议细化拆分（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+- Commit: `fc96fc8`（Update test report for model type isolation）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次实现代码提交包括 `0393259`、`2407260`、`4a7cda2`、`757bedc`、`12c9f21`、`18ff88c`、`707d4ac`、`c6c3de1` 及对应回归测试提交。
+- 新增 `modeltype` 能力注册表和协议处理器：文本/视觉走聊天、向量走 embeddings、图片/视频走独立生成协议；未知字典类型保留历史聊天兼容策略，并可通过注册新处理器扩展。
+- `LlmManagementService` 的健康检查通过协议注册表选择，不再以生成类型判断误走聊天接口；聊天客户端和媒体服务分别只依赖自身协议能力，媒体生成/轮询路径由协议处理器提供。
+- Python Worker 新增聊天与向量协议适配器，`/llm/test` 支持显式 `protocol`，旧 `embedding` 布尔字段继续兼容；未新增依赖、数据库迁移或外部供应商协议。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 各模型类型由独立注册处理器声明能力和协议 | `LlmModelTypeRegistryTest` 4 项；内置类型、未知类型兼容、自定义处理器和混合能力筛选 | 正常、边界、兼容 | 通过 |
+| 健康检查不会跨类型调用 | `LlmManagementServiceTest.testModelSelectsHealthCheckByModelType`；聊天/向量分别断言 `protocol` 与旧 `embedding` 字段 | 正常、隔离、回归 | 通过 |
+| 聊天与媒体/向量入口互不串用 | `AiChatClient` 类型前置校验、`MediaGenerationService` 注册表路径和单类型候选过滤；后端完整回归 | 异常、安全、回归 | 通过 |
+| Worker 协议接入可扩展且兼容旧请求 | `test_llm_protocol.py`、`test_llm.py`、`test_llm_stream.py`；显式协议、旧布尔参数、未知协议拒绝 | 正常、边界、兼容、安全 | 通过 |
+| 既有前端和接口行为不回退 | Frontend 完整 lint/type/coverage/build/E2E；后端完整测试 | 回归、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker build --target build --progress=plain -t baseai-model-refactor-build backend`：Java 17 Maven package、业务和测试代码编译成功；读取镜像 Surefire 报告为 **1007/1007 通过，失败 0、错误 0、跳过 0**，新增 `LlmModelTypeRegistryTest` 为 4/4。
+- `docker run --rm ... python:3.12-slim ... pytest -q --rootdir=/app tests`：Python Worker **90/90 通过，失败 0**；定向协议/聊天/向量套件 56/56 通过。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **648/648**、生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过；调试日志已清理，未新增临时文件。
+
+### 构建与运行验证
+
+- 已按仓库要求执行 `docker compose up --build -d`。Docker Desktop BuildKit 在拉取 `golang`/`eclipse-temurin` 基础镜像元数据阶段持续无输出，等待约 90 秒后终止孤立构建进程；因此本次未将 Compose 整栈启动判定为通过，也未因端口占用停止容器。
+- 已完成后端构建阶段测试和 Python 3.12 测试；当前已有运行中的旧 Backend/Worker 容器未替换为本次镜像。待基础镜像元数据可访问后，应重新执行 Compose 构建、启动和健康检查。
+
+### 已知问题、重测触发与回滚
+
+- 未执行真实图片、视频或向量供应商请求；本次验证使用协议边界和 Mock/单元测试，供应商差异仍需由新增处理器承接。
+- 新增模型类型若需要非聊天协议，应注册对应 `LlmModelTypeHandler`，并补充协议处理器与健康检查测试；未知类型默认保持历史聊天兼容。
+- 修改类型注册表、健康检查、Worker 协议、媒体路径或聊天前置校验时，重跑 Backend 完整 Maven、Python Worker 完整 Pytest、Frontend 完整 npm 套件和 Compose 重建。
+- 回滚代码可依次 revert 本次模型类型协议提交（`c6c3de1`、`707d4ac`、`18ff88c`、`12c9f21`、`757bedc`、`4a7cda2`、`2407260`、`0393259`）并重新执行上述测试；不涉及数据库迁移。
+
 ## 修复文本模型误出现在图片/视频模型选择器（2026-09-28）
 
 ### Git 基准、范围与交付状态
