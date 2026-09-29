@@ -19,6 +19,17 @@ class ArkGenerationCapabilitiesTest {
         assertFalse(((Map<?, ?>) pro.get("features")).containsKey("groups") && Boolean.TRUE.equals(((Map<?, ?>) pro.get("features")).get("groups")));
     }
 
+    /** Seedream 4.x 不支持 output_format，旧客户端携带该参数时必须在供应商调用前拒绝。 */
+    @Test
+    void excludesOutputFormatFromSeedream4Capabilities() {
+        var seedream4 = ArkGenerationCapabilities.describe("doubao-seedream-4-0-20260415");
+        var seedream5 = ArkGenerationCapabilities.describe("doubao-seedream-5-0-pro-260628");
+        assertFalse(((Map<?, ?>) seedream4.get("options")).containsKey("output_format"));
+        assertTrue(((Map<?, ?>) seedream5.get("options")).containsKey("output_format"));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options(
+            "doubao-seedream-4-0-20260415", "image_model", "TEXT_TO_IMAGE", "cat", List.of(), Map.of("output_format", "png")));
+    }
+
     /** 首尾帧、视频参考和样片模式均由 Seedance 2.5 能力目录声明。 */
     @Test
     void describesVersionSpecificVideoModes() {

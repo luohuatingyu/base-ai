@@ -50,7 +50,8 @@ public final class ArkGenerationCapabilities {
         if (image) {
             options.put("size", Map.of("type", "string"));
             options.put("response_format", choice("url", "b64_json"));
-            options.put("output_format", choice("jpeg", "png"));
+            // Seedream 4.0/4.5 不接受 output_format；该参数仅对 Seedream 5.0 系列开放。
+            if (profile.startsWith("seedream-5.0")) options.put("output_format", choice("jpeg", "png"));
             options.put("optimize_prompt_options", Map.of("type", "object"));
             if (pro) {
                 options.put("layer_decomposition", Map.of("type", "boolean"));
@@ -103,6 +104,8 @@ public final class ArkGenerationCapabilities {
         var options = new LinkedHashMap<>(supplied == null ? Map.<String, Object>of() : supplied);
         var values = inputs == null ? List.<Map<String, Object>>of() : inputs;
         if (values.stream().anyMatch(Objects::isNull)) invalid();
+        Map<String, Object> supportedOptions = (Map<String, Object>) caps.get("options");
+        if (options.keySet().stream().anyMatch(key -> !supportedOptions.containsKey(key))) invalid();
         String normalized = mode == null ? "MULTIMODAL" : mode;
         List<String> modes = (List<String>) caps.get("modes");
         boolean legacy = Set.of("MULTIMODAL", "IMAGE_TO_IMAGE").contains(normalized);
