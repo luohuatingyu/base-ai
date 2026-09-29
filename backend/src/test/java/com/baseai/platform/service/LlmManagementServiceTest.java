@@ -268,6 +268,40 @@ class LlmManagementServiceTest {
         verify(modelRepository).save(saved);
     }
 
+    /** 编辑带有视频 profile 的组合媒体模型时，profile 类型只需覆盖组合中的请求类型。 */
+    @Test
+    void updatesCombinedGenerationModelWithVideoProfile() {
+        LlmModel existing = model(1L, "MIDDLE");
+        existing.setGenerationProfile("seedance-2.0-mini");
+        when(modelRepository.findById(2L)).thenReturn(Optional.of(existing));
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider("encrypted")));
+        when(modelRepository.save(any(LlmModel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LlmModel saved = service.updateModel(2L, new LlmManagementService.ModelCommand(
+            "MEDIA", "多媒体生成模型", 1L, "doubao-seedance-2-0-mini-260615",
+            List.of("image_model", "video_model"), "MIDDLE", "", true));
+
+        assertEquals(List.of("image_model", "video_model"), saved.getSupportedModelTypes());
+        assertEquals("seedance-2.0-mini", saved.getGenerationProfile());
+        verify(modelRepository).save(saved);
+    }
+
+    /** 组合媒体模型仍拒绝与声明类型完全不匹配的 profile，避免错误能力画像进入运行时。 */
+    @Test
+    void rejectsCombinedGenerationModelWithMismatchedProfile() {
+        LlmModel existing = model(1L, "MIDDLE");
+        existing.setGenerationProfile("seedream-4.5");
+        when(modelRepository.findById(2L)).thenReturn(Optional.of(existing));
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider("encrypted")));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.updateModel(2L,
+            new LlmManagementService.ModelCommand("MEDIA", "多媒体生成模型", 1L, "media-v1",
+                List.of("video_model"), "MIDDLE", "", true)));
+
+        assertEquals("llm.generationRequestInvalid", error.getMessageKey());
+        verify(modelRepository, never()).save(any(LlmModel.class));
+    }
+
     /** 混合配置仍暴露非生成能力，供聊天目录和健康检查使用。 */
     @Test
     void mixedGenerationModelRetainsChatCapabilities() {

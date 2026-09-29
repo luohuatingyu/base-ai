@@ -625,8 +625,10 @@ public class LlmManagementService {
             throw new BusinessException("llm.modelTypeCombinationInvalid");
         model.setSupportedModelTypes(requestedTypes);
         String profile = command.generationProfile() == null ? model.getGenerationProfile() : command.generationProfile().trim();
+        // 组合媒体模型可以复用单一方舟 profile；实际生成时仍按请求类型再次校验 profile 能力。
+        String profileType = profile == null || profile.isBlank() ? "" : String.valueOf(com.baseai.platform.modeltype.ArkMediaProtocol.capabilities(profile).get("type"));
         if (profile != null && !profile.isBlank() && (!com.baseai.platform.modeltype.ArkMediaProtocol.profiles().contains(profile)
-            || !requestedTypes.equals(List.of(com.baseai.platform.modeltype.ArkMediaProtocol.capabilities(profile).get("type")))))
+            || !requestedTypes.contains(profileType)))
             throw new BusinessException("llm.generationRequestInvalid");
         model.setGenerationProfile(profile == null ? "" : profile);
         model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT)); // 默认MIDDLE能力级别
