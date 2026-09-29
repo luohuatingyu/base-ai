@@ -27,7 +27,7 @@ test('AI 生成 page keeps image and video generation controls', () => {
   assert.match(source, /first_frame/)
   assert.match(source, /last_frame/)
   assert.match(source, /generate_audio/)
-  assert.match(source, /poll\(result\.id\)/)
+  assert.match(source, /poll\(result\.value\.id\)/)
 })
 
 /** 每种模式必须声明可接受的素材类型，文生模式不得因残留上传素材改变任务语义。 */
@@ -176,9 +176,19 @@ test('AI 生成 history exposes localized failure reasons', () => {
   assert.equal(generationFailureReasonKey('NEW_PROVIDER_CODE'), '')
   assert.match(source, /v-if="task\.errorMessage" class="history-item-error"/)
   assert.match(source, /failureReason\(task\.errorMessage\)/)
-  assert.match(source, /failureReason\(result\.errorMessage\)/)
+  assert.match(source, /failureReason\(selectedHistoryTask\.errorMessage\)/)
   assert.match(zhLocale, /failureReasons: \{[^}]*PROVIDER_FAILED: '供应商返回失败'/)
   assert.match(enLocale, /failureReasons: \{[^}]*PROVIDER_FAILED: 'Provider reported a failure'/)
+})
+
+/** 生成完成后结果必须弹窗展示，页面正文不得重新插入固定输出预览区。 */
+test('AI 生成 submit opens a result dialog instead of an inline preview', () => {
+  assert.doesNotMatch(source, /<section v-if="result" class="generation-result">/)
+  assert.match(source, /result\.value = \(await http\.post\('\/ai\/generation', payload\)\)\.data\n\s+openResultDialog\(result\.value\)/)
+  assert.match(source, /function openResultDialog\(task\) \{ dialogError\.value = ''; dialogMode\.value = 'result'; selectedHistoryTask\.value = task; historyDialogVisible\.value = true \}/)
+  assert.match(source, /dialogError\.value = t\('generation\.submitFailed'\)[\s\S]*historyDialogVisible\.value = true/)
+  assert.match(source, /v-else-if="dialogError" class="history-dialog-content"/)
+  assert.match(source, /@click="poll\(selectedHistoryTask\.id\)"/)
 })
 
 /** 工作台布局必须将控制栏、提示词、素材/参数双栏和结果预览分成可识别的区域。 */
@@ -197,8 +207,8 @@ test('AI 生成 history opens a modal without nested page scrolling', () => {
   assert.match(source, /class="generation-history-dialog"/)
   assert.match(source, /v-model="historyDialogVisible"/)
   assert.match(source, /const historyOutputs = computed\(\(\) => selectedHistoryTask\.value\?\.outputJson\?\.outputs \|\| \[\]\)/)
-  assert.match(source, /function selectHistory\(task\) \{ selectedHistoryTask\.value = task; historyDialogVisible\.value = true \}/)
-  assert.match(source, /function clearHistorySelection\(\) \{ selectedHistoryTask\.value = null \}/)
+  assert.match(source, /function selectHistory\(task\) \{ dialogError\.value = ''; dialogMode\.value = 'history'; selectedHistoryTask\.value = task; historyDialogVisible\.value = true \}/)
+  assert.match(source, /function clearHistorySelection\(\) \{ selectedHistoryTask\.value = null; dialogMode\.value = 'history' \}/)
   assert.doesNotMatch(source, /function selectHistory\(task\) \{ result\.value = task \}/)
   assert.match(source, /\.generation-sidebar \{ position: static/)
   assert.match(source, /:deep\(\.generation-history-dialog \.el-dialog__body\) \{ max-height: none; overflow: visible; \}/)

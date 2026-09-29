@@ -184,26 +184,6 @@
           </div>
         </el-form>
 
-        <section v-if="result" class="generation-result">
-          <div class="result-heading">
-            <div><span class="card-eyebrow">{{ t('generation.resultKicker') }}</span><h3>{{ t('generation.result') }}</h3></div>
-            <el-tag :type="statusType(result.status)" effect="light">{{ statusLabel(result.status) }}</el-tag>
-          </div>
-          <div class="result-meta"><span>{{ modeLabel(result.generationMode || mode) }}</span><span v-if="result.modelName">{{ result.modelName }}</span><span v-if="result.createdAt">{{ result.createdAt }}</span></div>
-          <p v-if="result.status === 'RUNNING' || result.status === 'QUEUED'" class="generation-progress"><span class="progress-dot"></span>{{ t('generation.resultProgress') }}</p>
-          <p v-if="result.errorMessage" class="generation-error">{{ failureReason(result.errorMessage) }}</p>
-          <div v-if="outputs.length" class="result-grid">
-            <article v-for="(output, index) in outputs" :key="output.value + index" class="result-card">
-              <el-image v-if="output.mediaType === 'image'" class="result-media" :src="outputSource(output)" :alt="outputCaption(output, index)" fit="contain" preview-teleported />
-              <video v-else class="result-media" controls preload="metadata" :src="outputSource(output)" />
-              <div class="result-card-footer"><strong>{{ outputCaption(output, index) }}</strong><small v-if="output.output_format || output.size">{{ output.output_format || '' }}<span v-if="output.output_format && output.size"> · </span>{{ output.size || '' }}</small></div>
-            </article>
-          </div>
-          <div v-else-if="result.status === 'RUNNING' || result.status === 'QUEUED'" class="result-empty result-loading"><span class="loading-spark">✦</span><strong>{{ t('generation.resultWaiting') }}</strong><small>{{ t('generation.resultWaitingHint') }}</small></div>
-          <div v-else class="result-empty"><span class="result-empty-icon">✦</span><strong>{{ t('generation.resultEmpty') }}</strong><small>{{ t('generation.resultEmptyHint') }}</small></div>
-          <div v-if="result.outputJson?.errors?.length" class="generation-error generation-alert">{{ t('generation.partialFailure', { count: result.outputJson.errors.length }) }}</div>
-          <el-button v-if="result.status === 'RUNNING' || result.status === 'QUEUED'" text @click="poll(result.id)">{{ t('generation.refresh') }}</el-button>
-        </section>
         </div>
       </main>
     </div>
@@ -211,7 +191,7 @@
     <el-dialog
       v-model="historyDialogVisible"
       class="generation-history-dialog"
-      :title="t('generation.history')"
+      :title="dialogTitle"
       width="min(860px, calc(100vw - 32px))"
       destroy-on-close
       @closed="clearHistorySelection"
@@ -239,6 +219,10 @@
         </div>
         <div v-else class="result-empty"><span class="result-empty-icon">✦</span><strong>{{ selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED' ? t('generation.resultWaiting') : t('generation.resultEmpty') }}</strong><small>{{ selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED' ? t('generation.resultWaitingHint') : t('generation.resultEmptyHint') }}</small></div>
         <div v-if="selectedHistoryTask.outputJson?.errors?.length" class="generation-error generation-alert">{{ t('generation.partialFailure', { count: selectedHistoryTask.outputJson.errors.length }) }}</div>
+        <el-button v-if="selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED'" text :loading="busy" @click="poll(selectedHistoryTask.id)">{{ t('generation.refresh') }}</el-button>
+      </div>
+      <div v-else-if="dialogError" class="history-dialog-content">
+        <p class="generation-error generation-alert">{{ dialogError }}</p>
       </div>
     </el-dialog>
   </div>
@@ -265,6 +249,8 @@ const history = ref([])
 const result = ref(null)
 const historyDialogVisible = ref(false)
 const selectedHistoryTask = ref(null)
+const dialogError = ref('')
+const dialogMode = ref('history')
 const busy = ref(false)
 const error = ref('')
 const filePicker = ref(null)
@@ -295,7 +281,7 @@ const accept = computed(() => {
   return modeInputPolicy.value.kinds.map(kind => formats[kind]).filter(Boolean).join(',')
 })
 const canSubmit = computed(() => !busy.value && !!modelId.value && !!mode.value && (!!prompt.value.trim() || inputs.value.length > 0) && (assetsAllowed.value || inputs.value.length === 0))
-const outputs = computed(() => result.value?.outputJson?.outputs || [])
+const dialogTitle = computed(() => t(dialogMode.value === 'result' ? 'generation.result' : 'generation.history'))
 const historyOutputs = computed(() => selectedHistoryTask.value?.outputJson?.outputs || [])
 const draftMode = computed(() => mode.value === 'DRAFT_VIDEO')
 const draftToVideo = computed(() => mode.value === 'DRAFT_TO_VIDEO')
@@ -445,18 +431,38 @@ function addDraftTask() { const draft = history.value.find(item => item.modelId 
 /** 提交任务并轮询异步视频，图片响应直接完成。 */
 async function submit() {
   if (!canSubmit.value) return
-  busy.value = true; error.value = ''; result.value = null
+  busy.value = true; error.value = ''; dialogError.value = ''; result.value = null
   const payload = { modelType: type.value, modelId: modelId.value, prompt: prompt.value, generationMode: mode.value, inputs: inputs.value, options: requestOptions.value }
-  try { result.value = (await http.post('/ai/generation', payload)).data; if (result.value.status === 'RUNNING' || result.value.status === 'QUEUED') await poll(result.value.id); await loadHistory() } catch (cause) { error.value = t('generation.submitFailed'); showHttpError(cause, 'generation.submitFailed') } finally { busy.value = false }
+  try {
+    result.value = (await http.post('/ai/generation', payload)).data
+    openResultDialog(result.value)
+    if (result.value.status === 'RUNNING' || result.value.status === 'QUEUED') await poll(result.value.id)
+    await loadHistory()
+  } catch (cause) {
+    error.value = t('generation.submitFailed')
+    dialogError.value = t('generation.submitFailed')
+    selectedHistoryTask.value = null
+    dialogMode.value = 'result'
+    historyDialogVisible.value = true
+    showHttpError(cause, 'generation.submitFailed')
+  } finally { busy.value = false }
 }
 /** 查询任务终态，不重新创建任务。 */
-async function poll(id) { const response = (await http.get(`/ai/generation/${id}`)).data; result.value = response; if (response.status === 'RUNNING' || response.status === 'QUEUED') { await new Promise(resolve => setTimeout(resolve, 1500)); return poll(id) } await loadHistory() }
+async function poll(id) {
+  const response = (await http.get(`/ai/generation/${id}`)).data
+  result.value = response
+  openResultDialog(response)
+  if (response.status === 'RUNNING' || response.status === 'QUEUED') { await new Promise(resolve => setTimeout(resolve, 1500)); return poll(id) }
+  await loadHistory()
+}
 /** 查询当前用户可见的历史任务。 */
 async function loadHistory() { try { history.value = ((await http.get('/ai/generation', { params: { type: type.value, page: 0 } })).data.items || []) } catch { history.value = [] } }
 /** 打开历史任务详情弹窗，不覆盖当前创作草稿和结果。 */
-function selectHistory(task) { selectedHistoryTask.value = task; historyDialogVisible.value = true }
+function selectHistory(task) { dialogError.value = ''; dialogMode.value = 'history'; selectedHistoryTask.value = task; historyDialogVisible.value = true }
+/** 打开生成结果弹窗，并在轮询时同步弹窗内的任务状态。 */
+function openResultDialog(task) { dialogError.value = ''; dialogMode.value = 'result'; selectedHistoryTask.value = task; historyDialogVisible.value = true }
 /** 关闭历史任务详情后清理选择状态，避免保留大媒体数据。 */
-function clearHistorySelection() { selectedHistoryTask.value = null }
+function clearHistorySelection() { selectedHistoryTask.value = null; dialogMode.value = 'history' }
 /** 加载可用模型目录。 */
 async function loadModels() {
   try {
@@ -564,8 +570,7 @@ onMounted(loadModels)
 .history-card,
 .composer-card,
 .asset-section,
-.options-section,
-.generation-result { border: 1px solid var(--el-border-color-lighter); border-radius: 14px; background: var(--el-bg-color); box-shadow: 0 7px 22px color-mix(in srgb, #243b68 5%, transparent); }
+.options-section { border: 1px solid var(--el-border-color-lighter); border-radius: 14px; background: var(--el-bg-color); box-shadow: 0 7px 22px color-mix(in srgb, #243b68 5%, transparent); }
 .setup-card,
 .history-card { padding: 17px; }
 .setup-card { background: linear-gradient(160deg, var(--el-bg-color), color-mix(in srgb, var(--el-color-primary) 3%, var(--el-bg-color))); }
@@ -616,8 +621,7 @@ onMounted(loadModels)
 .composer-card { border-color: color-mix(in srgb, var(--el-color-primary) 22%, var(--el-border-color-lighter)); background: linear-gradient(145deg, color-mix(in srgb, var(--el-color-primary) 5%, var(--el-bg-color)), var(--el-bg-color) 50%); }
 .composer-card h3,
 .asset-section h3,
-.options-section h3,
-.generation-result h3 { margin: 5px 0 0; color: var(--el-text-color-primary); font-size: 17px; letter-spacing: -.015em; }
+.options-section h3 { margin: 5px 0 0; color: var(--el-text-color-primary); font-size: 17px; letter-spacing: -.015em; }
 .section-hint { max-width: 250px; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; text-align: right; }
 .prompt-input { margin-top: 15px; }
 .prompt-input :deep(.el-textarea__inner) { min-height: 150px !important; padding: 15px 16px; border: 1px solid var(--el-border-color); border-radius: 11px; background: color-mix(in srgb, var(--el-fill-color-light) 70%, var(--el-bg-color)); box-shadow: inset 0 1px 2px rgb(31 48 82 / 3%); line-height: 1.7; transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease; }
@@ -630,7 +634,6 @@ onMounted(loadModels)
 .generation-input-grid .asset-section,
 .generation-input-grid .options-section { min-width: 0; margin-top: 0; }
 .generation-input-grid .options-section { background: color-mix(in srgb, var(--el-fill-color-light) 34%, var(--el-bg-color)); }
-.generation-result { margin-top: 0; }
 .asset-count { min-width: 48px; padding: 5px 9px; border: 1px solid var(--el-color-primary-light-8); border-radius: 999px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-size: 12px; font-weight: 700; text-align: center; }
 .asset-count.is-full { border-color: var(--el-color-warning-light-8); background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
 .asset-dropzone { display: grid; justify-items: center; gap: 6px; min-height: 148px; margin-top: 15px; padding: 24px 16px; border: 1px dashed color-mix(in srgb, var(--el-color-primary) 52%, var(--el-border-color)); border-radius: 12px; background: linear-gradient(145deg, var(--el-color-primary-light-9), color-mix(in srgb, var(--el-color-primary) 3%, var(--el-bg-color))); color: var(--el-text-color-secondary); text-align: center; cursor: pointer; transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease, transform .2s ease; }
@@ -690,7 +693,6 @@ onMounted(loadModels)
 .submit-hint { flex: 1; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.45; }
 .generation-actions :deep(.el-button--primary) { min-width: 112px; }
 
-.generation-result { padding: 19px; border-color: color-mix(in srgb, var(--el-color-primary) 18%, var(--el-border-color-lighter)); background: linear-gradient(150deg, var(--el-bg-color), color-mix(in srgb, var(--el-color-primary) 3%, var(--el-bg-color))); }
 .result-heading { align-items: center; }
 .result-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-top: 9px; color: var(--el-text-color-secondary); font-size: 12px; }
 .result-meta span + span::before { content: '·'; margin-right: 14px; color: var(--el-border-color); }
@@ -758,7 +760,6 @@ onMounted(loadModels)
   .composer-card,
   .asset-section,
   .options-section,
-  .generation-result,
   .setup-card,
   .history-card { padding: 15px; border-radius: 12px; }
   .section-title-row { display: block; }
