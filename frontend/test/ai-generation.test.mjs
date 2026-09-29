@@ -102,6 +102,16 @@ test('AI 生成 workspace uses selectable sizes and grouped output settings', ()
   assert.match(source, /options: requestOptions\.value/)
 })
 
+/** 能力目录的输入数量、时长和模式素材要求必须在当前表单中可见。 */
+test('AI 生成 workspace shows model limits and mode requirements', () => {
+  assert.match(source, /capabilityHint/)
+  assert.match(source, /modeHint/)
+  assert.match(source, /generation\.imageLimit/)
+  assert.match(source, /generation\.durationLimit/)
+  assert.match(zhLocale, /constraints: \{ promptOnly:/)
+  assert.match(enLocale, /constraints: \{ promptOnly:/)
+})
+
 /** 整页视觉需要保持主次层级、交互反馈和窄屏布局，避免样式回退为无层次的表单堆叠。 */
 test('AI 生成 workspace keeps full-page visual hierarchy and responsive states', () => {
   assert.match(source, /\.generation-hero::before/)
@@ -117,18 +127,6 @@ test('AI 生成 workspace keeps full-page visual hierarchy and responsive states
   assert.match(source, /@media \(max-width: 560px\)/)
 })
 
-/** 工作台布局必须将控制栏、提示词、素材/参数双栏和结果预览分成可识别的区域。 */
-test('AI 生成 workspace uses a canvas layout instead of a flat form stack', () => {
-  assert.match(source, /class="generation-canvas"/)
-  assert.match(source, /class="generation-input-grid"/)
-  assert.match(source, /class="prompt-footer"/)
-  assert.match(source, /\.generation-canvas \{ display: grid/)
-  assert.match(source, /\.generation-input-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.18fr\) minmax\(300px, \.82fr\)/)
-  assert.match(source, /\.generation-sidebar \{ position: sticky/)
-  assert.match(source, /\.generation-actions \{ display: flex[\s\S]*border: 1px solid/)
-})
-
-
 /** 历史失败任务必须直接显示失败原因，未知稳定码保留原值供排查。 */
 test('AI 生成 history exposes localized failure reasons', () => {
   assert.equal(generationFailureReasonKey('PROVIDER_FAILED'), 'generation.failureReasons.PROVIDER_FAILED')
@@ -139,4 +137,15 @@ test('AI 生成 history exposes localized failure reasons', () => {
   assert.match(source, /failureReason\(result\.errorMessage\)/)
   assert.match(zhLocale, /failureReasons: \{[^}]*PROVIDER_FAILED: '供应商返回失败'/)
   assert.match(enLocale, /failureReasons: \{[^}]*PROVIDER_FAILED: 'Provider reported a failure'/)
+})
+
+/** 工作台布局必须将控制栏、提示词、素材/参数双栏和结果预览分成可识别的区域。 */
+test('AI 生成 workspace uses a canvas layout instead of a flat form stack', () => {
+  assert.match(source, /class="generation-canvas"/)
+  assert.match(source, /class="generation-input-grid"/)
+  assert.match(source, /class="prompt-footer"/)
+  assert.match(source, /\.generation-canvas \{ display: grid/)
+  assert.match(source, /\.generation-input-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.18fr\) minmax\(300px, \.82fr\)/)
+  assert.match(source, /\.generation-sidebar \{ position: sticky/)
+  assert.match(source, /\.generation-actions \{ display: flex[\s\S]*border: 1px solid/)
 })

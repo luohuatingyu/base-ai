@@ -67,6 +67,7 @@
               <span v-if="capability.features?.layers" class="capability-chip">{{ t('generation.layersSupported') }}</span>
               <span v-if="capability.features?.draft" class="capability-chip">{{ t('generation.draftSupported') }}</span>
             </div>
+            <div v-if="capabilityHint" class="capability-limits">{{ capabilityHint }}</div>
           </div>
         </section>
 
@@ -165,6 +166,7 @@
                 <div class="output-setting-fields"><el-form-item :label="t('generation.watermark')"><el-switch v-model="options.watermark" /></el-form-item></div>
               </section>
             </div>
+            <p v-if="modeHint" class="generation-hint">{{ modeHint }}</p>
             <p v-if="lockedVideoSettings" class="generation-hint">{{ t('generation.lockedSettings') }}</p>
           </section>
           </div>
@@ -245,6 +247,35 @@ const imageSizeOptions = computed(() => capability.value.options?.size?.enum || 
 const resolutionOptions = computed(() => draftMode.value ? ['480p'] : capability.value.options?.resolution?.enum || ['480p', '720p', '1080p'])
 const ratioOptions = computed(() => lockedRatio.value ? ['adaptive'] : capability.value.options?.ratio?.enum || ['adaptive', '16:9', '9:16'])
 const outputFormatOptions = computed(() => capability.value.options?.output_format?.enum || ['mp4', 'mov'])
+/** 将模型能力目录中的数量、时长和帧数限制直接展示给用户。 */
+const capabilityHint = computed(() => {
+  const value = capability.value
+  const parts = []
+  if (value.imageLimit !== undefined) parts.push(t('generation.imageLimit', { count: value.imageLimit }))
+  if (value.videoLimit) parts.push(t('generation.videoLimit', { count: value.videoLimit }))
+  if (value.audioLimit) parts.push(t('generation.audioLimit', { count: value.audioLimit }))
+  const duration = value.options?.duration
+  if (duration?.min !== undefined && duration?.max !== undefined) parts.push(t('generation.durationLimit', { min: Number(duration.min) < 1 ? value.durationMin : duration.min, max: duration.max }))
+  const frames = value.options?.frames
+  if (frames?.min !== undefined && frames?.max !== undefined) parts.push(t('generation.framesLimit', { min: frames.min, max: frames.max }))
+  const resolution = value.options?.resolution?.enum
+  if (resolution?.length) parts.push(t('generation.resolutionLimit', { values: resolution.join(' / ') }))
+  const ratio = value.options?.ratio?.enum
+  if (ratio?.length) parts.push(t('generation.ratioLimit', { values: ratio.join(' / ') }))
+  return parts.join(' · ')
+})
+/** 说明当前模式所需素材，避免用户只看到通用控件。 */
+const modeHint = computed(() => {
+  const messages = {
+    TEXT_TO_IMAGE: 'generation.constraints.promptOnly', TEXT_TO_VIDEO: 'generation.constraints.promptOnly',
+    IMAGE_TEXT_TO_IMAGE: 'generation.constraints.referenceImage', IMAGE_TO_GROUP: 'generation.constraints.referenceImage',
+    IMAGE_TO_VIDEO: 'generation.constraints.referenceImage', REFERENCE_IMAGE_TO_VIDEO: 'generation.constraints.referenceImage',
+    FIRST_LAST_FRAME_TO_VIDEO: 'generation.constraints.firstLastFrame', VIDEO_TO_VIDEO: 'generation.constraints.referenceVideo',
+    EDIT_VIDEO: 'generation.constraints.referenceVideo', EXTEND_VIDEO: 'generation.constraints.referenceVideo',
+    VIDEO_TRANSITION: 'generation.constraints.transition', DRAFT_TO_VIDEO: 'generation.constraints.draftOnly'
+  }
+  return messages[mode.value] ? t(messages[mode.value]) : ''
+})
 /** 只提交当前模型能力目录声明的参数，避免隐藏控件的默认值污染请求。 */
 const requestOptions = computed(() => {
   const result = Object.fromEntries(Object.entries(options).filter(([key, value]) => capability.value.options?.[key] && value !== '' && value !== undefined && value !== null))
@@ -467,6 +498,7 @@ onMounted(loadModels)
 .capability-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--el-color-primary); box-shadow: 0 0 0 4px var(--el-color-primary-light-8); }
 .capability-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .capability-chip { padding: 4px 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 999px; background: color-mix(in srgb, var(--el-bg-color) 80%, transparent); font-size: 11px; }
+.capability-limits { color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.5; }
 .history-card { flex: 1; min-height: 230px; background: var(--el-fill-color-light); }
 .history-heading,
 .section-title-row,

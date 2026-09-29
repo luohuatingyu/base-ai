@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -178,6 +179,22 @@ class MediaGenerationServiceTest {
         var result = service.readImageStream(new ByteArrayInputStream(stream.getBytes(StandardCharsets.UTF_8)));
         assertEquals("YQ==", result.path("data").get(0).path("b64_json").asText());
         assertFalse(result.path("incomplete").asBoolean(false));
+    }
+
+    /** Seedance 完成响应的 content 对象或数组都必须提取视频 URL，不能把成功任务标记为无结果。 */
+    @Test
+    void extractsVideoUrlsFromArkContentShapes() throws Exception {
+        Method method = MediaGenerationService.class.getDeclaredMethod("outputs", com.fasterxml.jackson.databind.JsonNode.class, boolean.class);
+        method.setAccessible(true);
+        var objectResponse = new ObjectMapper().readTree("{\"status\":\"succeeded\",\"content\":{\"video_url\":\"https://cdn.example/video.mp4\",\"last_frame_url\":\"https://cdn.example/frame.png\"}}");
+        @SuppressWarnings("unchecked") List<Map<String, Object>> objectOutputs = (List<Map<String, Object>>) method.invoke(service, objectResponse, true);
+        assertEquals(2, objectOutputs.size());
+        assertEquals("video", objectOutputs.get(0).get("mediaType"));
+        assertEquals("image", objectOutputs.get(1).get("mediaType"));
+
+        var arrayResponse = new ObjectMapper().readTree("{\"status\":\"succeeded\",\"content\":[{\"video_url\":\"https://cdn.example/video.mp4\"}]}");
+        @SuppressWarnings("unchecked") List<Map<String, Object>> arrayOutputs = (List<Map<String, Object>>) method.invoke(service, arrayResponse, true);
+        assertEquals(1, arrayOutputs.size());
     }
 
     /** 通过反射只测试纯校验分支，避免为边界测试伪造数据库和供应商调用。 */

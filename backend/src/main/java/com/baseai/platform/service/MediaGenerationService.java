@@ -308,7 +308,7 @@ public class MediaGenerationService {
         if (response == null || !response.isObject()) throw new IllegalArgumentException("Empty response");
         var tokens = tokens(response.path("usage"));
         usage.updateTokens((String) task.get("usageId"), tokens);
-        String status = response.path("status").asText("").toUpperCase(Locale.ROOT);
+        String status = firstText(response, "status", "task_status", "state").toUpperCase(Locale.ROOT);
         if (FAILURE.contains(status) || response.hasNonNull("error")) { fail(task, "PROVIDER_FAILED"); return; }
         boolean video = "video_model".equals(task.get("generationType"));
         List<Map<String, Object>> outputs = outputs(response, video);
@@ -319,39 +319,53 @@ public class MediaGenerationService {
                 (String) task.get("modelName"), true, tokens.inputTokens(), tokens.outputTokens(), tokens.totalTokens(), null, null, Instant.now()));
             return;
         }
-        String remoteId = response.path("id").asText(response.path("task_id").asText((String) task.get("providerTaskId")));
+        String remoteId = firstText(response, "id", "task_id", "taskId");
+        if (remoteId.isBlank()) remoteId = (String) task.get("providerTaskId");
         if (!video || SUCCESS.contains(status) || !status.isEmpty() && !PENDING.contains(status)
             || remoteId == null || !remoteId.matches("[A-Za-z0-9_-]{1,200}")) throw new IllegalArgumentException("Invalid generation response");
         int progress = Math.max(0, Math.min(99, response.path("progress").asInt(0)));
         jdbc.update("UPDATE ai_media_generation_task SET provider_task_id=?,progress=?,updated_at=NOW(6) WHERE id=? AND status='RUNNING'", remoteId, progress, task.get("id"));
     }
 
+    /** 兼容方舟任务状态字段的历史命名，空值表示响应未携带状态。 */
+    private String firstText(JsonNode node, String... fields) {
+        for (String field : fields) if (node.path(field).isTextual()) return node.path(field).asText();
+        return "";
+    }
+
     /** 只提取安全 HTTP(S) 地址或图片 Base64，拒绝脚本链接和未知内嵌格式。 */
     private List<Map<String, Object>> outputs(JsonNode response, boolean video) {
         List<Map<String, Object>> result = new ArrayList<>();
-        List<JsonNode> nodes = new ArrayList<>(List.of(response, response.path("video"), response.path("result"), response.path("content")));
-        if (response.path("data").isArray()) response.path("data").forEach(nodes::add);
-        for (JsonNode node : nodes) {
-            for (String field : List.of("url", "output_url", "video_url", "last_frame_url")) {
-                JsonNode value = node.path(field);
-                if (!value.isTextual()) continue;
-                URI uri = URI.create(value.asText());
-                if (!Set.of("http", "https").contains(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null)
-                    throw new IllegalArgumentException("Invalid media URL");
-                Map<String, Object> output = new LinkedHashMap<>(Map.of("kind", "url", "value", value.asText(), "mediaType", field.equals("last_frame_url") || !video ? "image" : "video"));
-                copyOutputMetadata(node, output);
-                if (!result.contains(output)) result.add(output);
-            }
-            if (!video && node.path("b64_json").isTextual()) {
-                String encoded = node.path("b64_json").asText();
+        collectOutputs(response, video, result, new HashSet<>());
+        return result;
+    }
+
+    /** 递归读取方舟 content、result、data 等响应容器，兼容对象和数组两种视频结果形态。 */
+    private void collectOutputs(JsonNode node, boolean video, List<Map<String, Object>> result, Set<JsonNode> visited) {
+        if (node == null || node.isNull() || !visited.add(node)) return;
+        if (node.isArray()) { node.forEach(item -> collectOutputs(item, video, result, visited)); return; }
+        if (!node.isObject()) return;
+        for (String field : List.of("url", "output_url", "video_url", "last_frame_url")) {
+            JsonNode value = node.path(field);
+            if (!value.isTextual()) continue;
+            URI uri = URI.create(value.asText());
+            if (!Set.of("http", "https").contains(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null)
+                throw new IllegalArgumentException("Invalid media URL");
+            Map<String, Object> output = new LinkedHashMap<>(Map.of("kind", "url", "value", value.asText(), "mediaType", field.equals("last_frame_url") || !video ? "image" : "video"));
+            copyOutputMetadata(node, output);
+            if (!result.contains(output)) result.add(output);
+        }
+        if (!video && node.path("b64_json").isTextual()) {
+            String encoded = node.path("b64_json").asText();
+            try {
                 if (encoded.isBlank() || encoded.length() > 20 * 1024 * 1024 || Base64.getDecoder().decode(encoded).length == 0)
                     throw new IllegalArgumentException("Invalid image data");
-                Map<String, Object> output = new LinkedHashMap<>(Map.of("kind", "base64", "value", encoded, "mediaType", "image"));
-                copyOutputMetadata(node, output);
-                result.add(output);
-            }
+            } catch (IllegalArgumentException exception) { throw new IllegalArgumentException("Invalid image data", exception); }
+            Map<String, Object> output = new LinkedHashMap<>(Map.of("kind", "base64", "value", encoded, "mediaType", "image"));
+            copyOutputMetadata(node, output);
+            if (!result.contains(output)) result.add(output);
         }
-        return result;
+        for (String child : List.of("data", "content", "result", "video", "output")) collectOutputs(node.get(child), video, result, visited);
     }
 
     /** 保留图层位置、层级、名称和格式，支持生成页还原结果语义。 */
