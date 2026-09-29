@@ -1,5 +1,73 @@
 # 最近分支覆盖测试报告
 
+## 图片与视频模型共用配置（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `d590b3b`
+- 提交说明：Allow combined media model capabilities；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 同一模型可同时声明 `image_model` 和 `video_model`，但仍禁止与聊天、视觉或向量能力混合；生成页面按模型类型分别展示。
+- 模型配置不再要求手工选择 generation profile，后端根据 Ark 模型标识自动解析 Seedream/Seedance 能力档案，减少配置与实际模型不一致的情况。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片和视频能力可以复用同一模型配置 | `LlmManagementServiceTest.savesCombinedGenerationModelTypes` 保存并回显两种生成类型 | 正常、兼容 | 通过 |
+| 生成能力不能与聊天、视觉或向量能力混合 | `LlmManagementServiceTest.rejectsMixedGenerationModelTypes` 参数化拒绝混合类型 | 边界、安全、异常 | 通过 |
+| 配置页不再请求或展示手工 profile 选择器 | `frontend/test/localization.test.mjs` 检查编辑器、加载接口和互斥选择 | 正常、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/app" -v "$HOME/.m2:/root/.m2" -w /app maven:3.9-eclipse-temurin-21 mvn -B -Dtest=LlmManagementServiceTest test`：**53/53 通过**。
+- `cd frontend && node --test test/localization.test.mjs`：**20/20 通过**。
+- 同一 Docker Maven 环境执行完整 `mvn -B test`：**1037/1037 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **661/661**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像构建成功，后端镜像阶段 **1037/1037** 测试通过；启动阶段仍因既有 `baseai-local-docker-socket-proxy` 健康检查 HTTP 503 导致 Adapter Manager 依赖失败，命令退出 1。
+- 随后执行 `docker compose up -d --no-deps frontend`，Backend、Frontend、Document Parser、Python Worker 和 Outbound Gateway healthy；`curl http://localhost:8080/ai-generation` 返回 HTTP 200。
+
+## Ark 图片与视频生成模式校正（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `23fda1f`
+- 提交说明：Fix Ark media generation modes；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 对齐 Seedream/Seedance 能力目录：补充分镜、 一键成片、无缝转场模式；修正 Seedance 2.x 编辑、延长、样片和样片转正式视频的参数锁定；移除未被方舟 API 接受的 `interactive_edit` 虚假请求字段。
+- 图片非组图请求不再携带组图默认参数；组图自动提交 `sequential_image_generation=auto`。视频支持输出格式、返回尾帧，并对流式图片响应兼容顶层和 `data` 嵌套事件。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片文生图、图文生图、多图融合和组图请求符合模型能力 | `ArkGenerationCapabilitiesTest` 覆盖图片模式、组图数量边界及非组图参数清理；`ArkMediaProtocolTest` 覆盖图片字段映射 | 正常、边界、兼容 | 通过 |
+| 视频分镜、一键成片、无缝转场可按参考素材组合提交 | `ArkGenerationCapabilitiesTest.validatesExtendedSeedanceModes` 覆盖有效输入和不足转场输入拒绝 | 正常、异常 | 通过 |
+| 编辑、延长、样片和样片转正式视频不会提交互相冲突的默认参数 | `ArkGenerationCapabilitiesTest.acceptsLockedVideoModesAndRemovesSyntheticInteractiveOption`、前端 AI 生成契约测试覆盖 `-1` 时长、480p、adaptive 比例、样片任务引用 | 正常、边界、安全 | 通过 |
+| 图片流式组图结果不会因嵌套响应被误判为空 | `MediaGenerationServiceTest.readsNestedImageStreamEvents` 覆盖嵌套 `data` 事件和 `[DONE]` 完成标记 | 正常、异常恢复 | 通过 |
+| 未知供应商字段、伪造交互编辑字段和越权样片引用被拒绝 | `ArkMediaProtocolTest` 未知字段拒绝；能力校验和服务层样片归属测试 | 安全、异常 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/app" -v "$HOME/.m2:/root/.m2" -w /app maven:3.9-eclipse-temurin-21 mvn -B -Dtest=MediaGenerationServiceTest,ArkGenerationCapabilitiesTest,ArkMediaProtocolTest test`：**26/26 通过，失败 0、错误 0、跳过 0**。
+- 同一 Docker Maven 环境执行完整 `mvn -B test`：**1037/1037 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **660/660**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像构建成功，后端镜像阶段 **1037/1037** 测试通过；启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查持续失败（HTTP 503）导致 Adapter Manager 依赖失败，命令退出 1，非端口占用问题。
+- 随后执行 `docker compose up -d --no-deps frontend`，Frontend healthy；Backend、Document Parser、Python Worker 和 Outbound Gateway healthy。`curl http://localhost:8080/ai-generation` 返回 HTTP 200。
+
+### 已知问题、重测触发与回滚
+
+- 未使用真实 Ark API Key 执行供应商请求；本次验证覆盖官方能力目录、参数组合、协议映射、流式响应和前端交互。配置 Seedream/Seedance 模型及有效 API Key 后仍需进行供应商联调。
+- 当前 Docker Socket Proxy 的既有 HTTP 503 健康检查仍阻断整栈自动启动；修复该代理后应重新执行 `docker compose up --build -d` 和完整健康检查。
+- 修改 Ark 能力档案、媒体协议、生成任务或 AI 生成页面时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 23fda1f`；不涉及数据库迁移。
+
 ## AI 对话与 AI 生成模式拆分（2026-09-29）
 
 ### Git 基准、范围与交付状态
