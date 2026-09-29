@@ -52,10 +52,11 @@
                 <el-button text type="primary" size="small" @click="goModelManagement">{{ t('generation.openModels') }}</el-button>
               </div>
             </el-form-item>
-            <el-form-item v-if="capability.modes?.length" :label="t('generation.mode')">
-              <el-select v-model="mode" class="mode-select" @change="onModeChange">
+            <el-form-item :label="t('generation.mode')">
+              <el-select v-model="mode" class="mode-select" :disabled="!capability.modes?.length || busy" @change="onModeChange">
                 <el-option v-for="value in capability.modes" :key="value" :label="modeLabel(value)" :value="value" />
               </el-select>
+              <div v-if="!capability.modes?.length" class="generation-empty">{{ t('generation.modeUnavailable') }}</div>
             </el-form-item>
           </el-form>
           <div v-if="capability.profile" class="capability-card">
@@ -130,20 +131,33 @@
           <section class="options-section">
             <div class="section-title-row"><div><span class="card-eyebrow">{{ t('generation.optionsKicker') }}</span><h3>{{ t('generation.mediaOptions') }}</h3></div><span class="section-hint">{{ t('generation.optionsHint') }}</span></div>
             <div class="generation-options" :class="{ 'is-video': type === 'video_model' }">
-              <el-form-item v-if="type === 'image_model'" :label="t('generation.imageSize')"><el-input v-model="options.size" placeholder="2K" /></el-form-item>
-              <el-form-item v-if="type === 'image_model' && capability.features?.groups" :label="t('generation.groupOutput')"><el-switch v-model="groupOutput" @change="syncGroupOptions" /></el-form-item>
-              <el-form-item v-if="groupOutput" :label="t('generation.maxImages')"><el-input-number v-model="options.sequential_image_generation_options.max_images" :min="1" :max="15" /></el-form-item>
-              <el-form-item v-if="type === 'image_model' && capability.features?.layers" :label="t('generation.layerDecomposition')"><el-switch v-model="options.layer_decomposition" /></el-form-item>
-              <el-form-item v-if="type === 'image_model' && capability.features?.transparent" :label="t('generation.transparentBackground')"><el-switch v-model="transparent" @change="syncTransparent" /></el-form-item>
-              <el-form-item v-if="type === 'video_model'" :label="t('generation.resolution')"><el-select v-model="options.resolution" :disabled="draftMode"><el-option v-for="value in resolutionOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
-              <el-form-item v-if="type === 'video_model'" :label="t('generation.ratio')"><el-select v-model="options.ratio" :disabled="lockedRatio"><el-option v-for="value in ratioOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
-              <el-form-item v-if="type === 'video_model' && !lockedVideoSettings" :label="t('generation.duration')"><el-input-number v-model="options.duration" :min="durationMin" :max="durationMax" /></el-form-item>
-              <el-form-item v-if="type === 'video_model' && lockedVideoSettings" :label="t('generation.duration')"><el-input :model-value="lockedDurationLabel" disabled /></el-form-item>
-              <el-form-item v-if="type === 'video_model' && capability.options?.output_format" :label="t('generation.outputFormat')"><el-select v-model="options.output_format"><el-option v-for="value in outputFormatOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
-              <el-form-item v-if="type === 'video_model' && capability.options?.return_last_frame" :label="t('generation.returnLastFrame')"><el-switch v-model="options.return_last_frame" /></el-form-item>
-              <el-form-item v-if="type === 'video_model' && capability.features?.audio && !draftToVideo" :label="t('generation.generateAudio')"><el-switch v-model="options.generate_audio" /></el-form-item>
-              <el-form-item v-if="type === 'video_model' && mode === 'DRAFT_VIDEO'" :label="t('generation.draft')"><el-switch v-model="options.draft" /></el-form-item>
-              <el-form-item :label="t('generation.watermark')"><el-switch v-model="options.watermark" /></el-form-item>
+              <section v-if="type === 'image_model'" class="output-setting-group">
+                <div class="output-setting-heading"><span class="output-setting-icon">✦</span><div><strong>{{ t('generation.imageOutput') }}</strong><small>{{ t('generation.imageOutputHint') }}</small></div></div>
+                <div class="output-setting-fields">
+                  <el-form-item :label="t('generation.imageSize')"><el-select v-model="options.size"><el-option v-for="value in imageSizeOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+                  <el-form-item v-if="capability.features?.groups" :label="t('generation.groupOutput')"><el-switch v-model="groupOutput" @change="syncGroupOptions" /></el-form-item>
+                  <el-form-item v-if="groupOutput" :label="t('generation.maxImages')"><el-input-number v-model="options.sequential_image_generation_options.max_images" :min="1" :max="15" /></el-form-item>
+                  <el-form-item v-if="capability.features?.layers" :label="t('generation.layerDecomposition')"><el-switch v-model="options.layer_decomposition" /></el-form-item>
+                  <el-form-item v-if="capability.features?.transparent" :label="t('generation.transparentBackground')"><el-switch v-model="transparent" @change="syncTransparent" /></el-form-item>
+                </div>
+              </section>
+              <section v-if="type === 'video_model'" class="output-setting-group">
+                <div class="output-setting-heading"><span class="output-setting-icon">▶</span><div><strong>{{ t('generation.videoOutput') }}</strong><small>{{ t('generation.videoOutputHint') }}</small></div></div>
+                <div class="output-setting-fields">
+                  <el-form-item :label="t('generation.resolution')"><el-select v-model="options.resolution" :disabled="draftMode"><el-option v-for="value in resolutionOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+                  <el-form-item :label="t('generation.ratio')"><el-select v-model="options.ratio" :disabled="lockedRatio"><el-option v-for="value in ratioOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+                  <el-form-item v-if="!lockedVideoSettings" :label="t('generation.duration')"><el-input-number v-model="options.duration" :min="durationMin" :max="durationMax" /></el-form-item>
+                  <el-form-item v-if="lockedVideoSettings" :label="t('generation.duration')"><el-input :model-value="lockedDurationLabel" disabled /></el-form-item>
+                  <el-form-item v-if="capability.options?.output_format" :label="t('generation.outputFormat')"><el-select v-model="options.output_format"><el-option v-for="value in outputFormatOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+                  <el-form-item v-if="capability.options?.return_last_frame" :label="t('generation.returnLastFrame')"><el-switch v-model="options.return_last_frame" /></el-form-item>
+                  <el-form-item v-if="capability.features?.audio && !draftToVideo" :label="t('generation.generateAudio')"><el-switch v-model="options.generate_audio" /></el-form-item>
+                  <el-form-item v-if="mode === 'DRAFT_VIDEO'" :label="t('generation.draft')"><el-switch v-model="options.draft" /></el-form-item>
+                </div>
+              </section>
+              <section class="output-setting-group output-setting-group-common">
+                <div class="output-setting-heading"><span class="output-setting-icon">⚙</span><div><strong>{{ t('generation.commonOutput') }}</strong><small>{{ t('generation.commonOutputHint') }}</small></div></div>
+                <div class="output-setting-fields"><el-form-item :label="t('generation.watermark')"><el-switch v-model="options.watermark" /></el-form-item></div>
+              </section>
             </div>
             <p v-if="lockedVideoSettings" class="generation-hint">{{ t('generation.lockedSettings') }}</p>
           </section>
@@ -203,7 +217,7 @@ const error = ref('')
 const filePicker = ref(null)
 const groupOutput = ref(false)
 const transparent = ref(false)
-const options = reactive({ size: '', response_format: 'url', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: 'opaque', output_format: 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false })
+const options = reactive({ size: '2K', response_format: 'url', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: 'opaque', output_format: 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false })
 const modelsForType = computed(() => models.value.filter(item => item.modelType === type.value))
 const selectedModel = computed(() => models.value.find(item => item.id === modelId.value))
 const accept = computed(() => type.value === 'image_model' ? 'image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,text/plain,text/markdown,.txt,.md' : 'image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,.mp3,.wav')
@@ -218,6 +232,7 @@ const lockedRatio = computed(() => type.value === 'video_model' && (lockedVideoS
 const durationMin = computed(() => { const min = Number(capability.value.options?.duration?.min ?? capability.value.durationMin ?? 2); return min < 1 ? Number(capability.value.durationMin || 2) : min })
 const durationMax = computed(() => Number(capability.value.options?.duration?.max ?? 30))
 const lockedDurationLabel = computed(() => editVideo.value ? t('generation.editLockedDuration') : t('generation.draftLockedDuration'))
+const imageSizeOptions = computed(() => capability.value.options?.size?.enum || ['1K', '2K', '4K'])
 const resolutionOptions = computed(() => draftMode.value ? ['480p'] : capability.value.options?.resolution?.enum || ['480p', '720p', '1080p'])
 const ratioOptions = computed(() => lockedRatio.value ? ['adaptive'] : capability.value.options?.ratio?.enum || ['adaptive', '16:9', '9:16'])
 const outputFormatOptions = computed(() => capability.value.options?.output_format?.enum || ['mp4', 'mov'])
@@ -276,7 +291,7 @@ function syncGroupOptions(value) { options.sequential_image_generation = value ?
 /** 透明背景要求 PNG，关闭时恢复默认不透明。 */
 function syncTransparent(value) { options.background = value ? 'transparent' : 'opaque'; if (value) options.output_format = 'png' }
 /** 清空所有生成选项并恢复安全默认值。 */
-function resetOptions() { Object.assign(options, { size: '', response_format: 'url', sequential_image_generation: groupOutput.value ? 'auto' : 'disabled', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: transparent.value ? 'transparent' : 'opaque', output_format: type.value === 'video_model' ? 'mp4' : 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false }) }
+function resetOptions() { Object.assign(options, { size: imageSizeOptions.value[1] || imageSizeOptions.value[0] || '2K', response_format: 'url', sequential_image_generation: groupOutput.value ? 'auto' : 'disabled', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: transparent.value ? 'transparent' : 'opaque', output_format: type.value === 'video_model' ? 'mp4' : 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false }) }
 /** 按方舟任务类型同步被锁定的参数，避免隐藏控件的默认值污染请求。 */
 function syncModeOptions() {
   if (draftMode.value) { options.resolution = '480p'; options.draft = true }
@@ -404,9 +419,17 @@ onMounted(loadModels)
 .asset-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .asset-item .el-select, .asset-item .el-button { grid-column: 2; width: 100%; }
 .asset-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
-.generation-options { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; margin-top: 16px; }
-.generation-options.is-video { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
-.generation-options :deep(.el-form-item) { margin-bottom: 0; }
+.generation-options { display: grid; gap: 12px; margin-top: 16px; }
+.output-setting-group { padding: 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-fill-color-light); }
+.output-setting-group-common { background: var(--el-bg-color); }
+.output-setting-heading { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 12px; }
+.output-setting-icon { display: grid; flex: 0 0 27px; place-items: center; width: 27px; height: 27px; border-radius: 8px; background: var(--el-color-primary-light-8); color: var(--el-color-primary); font-size: 13px; }
+.output-setting-heading strong, .output-setting-heading small { display: block; }
+.output-setting-heading strong { color: var(--el-text-color-primary); font-size: 13px; }
+.output-setting-heading small { margin-top: 3px; color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.4; }
+.output-setting-fields { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; }
+.generation-options.is-video .output-setting-fields { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+.output-setting-fields :deep(.el-form-item) { margin-bottom: 0; }
 .generation-hint { margin: 12px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .generation-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .submit-hint { flex: 1; color: var(--el-text-color-secondary); font-size: 12px; }
@@ -432,7 +455,7 @@ onMounted(loadModels)
 .generation-empty p { margin: 0 0 2px; }
 @keyframes generation-pulse { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
 @keyframes generation-spin { to { transform: rotate(360deg); } }
-@media (max-width: 1000px) { .generation-layout { grid-template-columns: 235px minmax(0, 1fr); } .generation-options, .generation-options.is-video { grid-template-columns: repeat(2, minmax(130px, 1fr)); } }
+@media (max-width: 1000px) { .generation-layout { grid-template-columns: 235px minmax(0, 1fr); } .output-setting-fields, .generation-options.is-video .output-setting-fields { grid-template-columns: repeat(2, minmax(130px, 1fr)); } }
 @media (max-width: 780px) { .generation-hero { align-items: stretch; flex-direction: column; } .generation-type-switch { align-self: flex-start; } .generation-layout { grid-template-columns: 1fr; } .generation-sidebar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } .history-card { min-height: 0; } }
-@media (max-width: 560px) { .generation-workflow { gap: 6px; font-size: 11px; } .workflow-line { flex-basis: 18px; } .generation-sidebar { display: flex; } .generation-type-switch { width: 100%; } .generation-type-switch :deep(.el-radio-button) { flex: 1; } .generation-type-switch :deep(.el-radio-button__inner) { min-width: 0; width: 100%; } .section-title-row { display: block; } .section-hint { display: block; max-width: none; margin-top: 5px; text-align: left; } .generation-options, .generation-options.is-video { grid-template-columns: 1fr; } .generation-actions { flex-wrap: wrap; } .submit-hint { flex-basis: 100%; } .result-grid { grid-template-columns: 1fr 1fr; } .result-media { height: 170px; } }
+@media (max-width: 560px) { .generation-workflow { gap: 6px; font-size: 11px; } .workflow-line { flex-basis: 18px; } .generation-sidebar { display: flex; } .generation-type-switch { width: 100%; } .generation-type-switch :deep(.el-radio-button) { flex: 1; } .generation-type-switch :deep(.el-radio-button__inner) { min-width: 0; width: 100%; } .section-title-row { display: block; } .section-hint { display: block; max-width: none; margin-top: 5px; text-align: left; } .output-setting-fields, .generation-options.is-video .output-setting-fields { grid-template-columns: 1fr; } .generation-actions { flex-wrap: wrap; } .submit-hint { flex-basis: 100%; } .result-grid { grid-template-columns: 1fr 1fr; } .result-media { height: 170px; } }
 </style>

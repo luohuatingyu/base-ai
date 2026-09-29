@@ -81,3 +81,22 @@ test('AI 生成 workspace exposes asset dropzone and result states', () => {
   assert.match(zhLocale, /dropAssets: '拖拽素材到这里'/)
   assert.match(enLocale, /dropAssets: 'Drop assets here'/)
 })
+
+/** 图片生成模式必须始终可发现，能力为空时也要给出明确状态而不是静默隐藏。 */
+test('AI 生成 workspace keeps image mode selection visible', () => {
+  assert.match(source, /<el-form-item :label="t\('generation\.mode'\)">/)
+  assert.match(source, /class="mode-select" :disabled="!capability\.modes\?\.length \|\| busy"/)
+  assert.match(source, /generation\.modeUnavailable/)
+  assert.match(zhLocale, /modeUnavailable: '当前模型未返回可用的生成模式/)
+})
+
+/** 图片尺寸使用受控选择，图片和视频输出设置均按媒体类型分组，提交仍复用同一 options 对象。 */
+test('AI 生成 workspace uses selectable sizes and grouped output settings', () => {
+  assert.match(source, /const imageSizeOptions = computed\(\(\) => capability\.value\.options\?\.size\?\.enum \|\| \['1K', '2K', '4K'\]\)/)
+  assert.match(source, /<el-select v-model="options\.size">/)
+  assert.match(source, /class="output-setting-group"/)
+  assert.match(source, /generation\.imageOutputHint/)
+  assert.match(source, /generation\.videoOutputHint/)
+  assert.match(source, /output-setting-group-common/)
+  assert.match(source, /options: requestOptions\.value/)
+})
