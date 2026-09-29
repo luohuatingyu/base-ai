@@ -37,7 +37,7 @@ test('AI 生成 page restricts assets by generation mode', () => {
   assert.match(source, /TEXT_TO_IMAGE: \{ kinds: \[\], max: 0 \}/)
   assert.match(source, /IMAGE_TO_VIDEO: \{ kinds: \['IMAGE'\], max: 1 \}/)
   assert.match(source, /FIRST_LAST_FRAME_TO_VIDEO: \{ kinds: \['IMAGE'\], max: 2 \}/)
-  assert.match(source, /VIDEO_TRANSITION: \{ kinds: \['VIDEO'\], max: 2 \}/)
+  assert.match(source, /VIDEO_TRANSITION: \{ kinds: \['VIDEO'\], max: 3 \}/)
   assert.match(source, /:disabled="assetsDisabled"/)
   assert.match(source, /function reconcileInputsForMode\(\)/)
   assert.match(source, /if \(!assetsAllowed\.value\) inputs\.value = \[\]/)
