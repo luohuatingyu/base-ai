@@ -168,6 +168,18 @@ class MediaGenerationServiceTest {
             "video_model", 1L, "prompt", null, "TEXT_TO_IMAGE", List.of(), Map.of())));
     }
 
+    /** Seedream 的融合、组图和图层模式仍属于图片生成，不能被类型隔离误伤。 */
+    @Test
+    void acceptsSeedreamImageModes() {
+        var image = imageInput();
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "prompt", null, "MULTI_IMAGE_FUSION", List.of(image, image), Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "prompt", null, "TEXT_TO_GROUP", List.of(), Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "prompt", null, "LAYER_DECOMPOSITION", List.of(image), Map.of())));
+    }
+
     /** 文本、图片和视频分别校验解码后最大字节数，覆盖临界值与超限值。 */
     @ParameterizedTest
     @CsvSource({"TEXT,text/plain,1048576", "IMAGE,image/png,10485760", "VIDEO,video/mp4,6291456"})
