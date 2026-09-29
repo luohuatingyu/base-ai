@@ -5,7 +5,7 @@
 Commit: `ce1c746`
 - 提交说明：Add generation history result dialog；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
 - 图片生成继续按 Seedream 请求协议提交；视频生成兼容 Ark 异步任务的 `id`、`task_id`、`taskId`、状态别名以及 `content` 对象/数组、`video_url`、`last_frame_url` 等结果形态，修复成功任务无视频输出的问题。
-- 前端在模型能力区域显示输入数量、时长、帧数、分辨率和宽高比限制，并按生成模式提示必需素材和样片锁定规则；历史任务在独立弹窗中查看结果，不覆盖当前创作草稿。未新增依赖、数据库迁移或外部配置。
+- 前端在模型能力区域显示输入数量、时长、帧数、分辨率和宽高比限制，并按生成模式提示必需素材和样片锁定规则；历史任务在独立弹窗中查看结果，不覆盖当前创作草稿；工作台取消粘性侧栏和内部滚动容器，保持页面自然流动。未新增依赖、数据库迁移或外部配置。
 
 ### 验收标准—测试用例映射
 
@@ -24,8 +24,8 @@ Commit: `ce1c746`
 - 同一 Maven 容器执行完整 `mvn -B -ntp test`：**1039/1039 通过**，失败 0、错误 0、跳过 0。
 - `cd frontend && node --test test/ai-generation.test.mjs test/ai-video-form.test.mjs`：**81/81 通过**；历史弹窗变更后的单文件回归 `ai-generation.test.mjs`：**14/14 通过**。
 - `cd frontend && npm run lint`：通过；`npm run typecheck`：通过。
-- `cd frontend && npm test`：覆盖测试 **670/670 通过**；覆盖率行 **98.25%**、分支 **82.04%**、函数 **95.76%**；生产构建及 E2E **3/3 通过**。
-- `docker compose up --build -d`：镜像构建成功；启动因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用。前端镜像已完成重建。
+- `cd frontend && npm test`：覆盖测试 **672/672 通过**；覆盖率行 **98.25%**、分支 **82.04%**、函数 **95.76%**；生产构建及 E2E **3/3 通过**。
+- `docker compose --progress plain up --build -d`：全部镜像构建成功；启动因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用。随后 `docker compose up -d --no-deps frontend` 成功，前端容器启动并返回 `http://localhost:8080/ai-generation` HTTP 200。
 - `git diff --check`：通过。
 
 ### 实际供应商调用验证、已知问题与下次建议
