@@ -10914,3 +10914,33 @@ Commit: `5ec84fd`
 - 覆盖提交成功、图片即时结果、视频异步轮询、运行中刷新、提交异常、历史成功/失败任务和弹窗关闭清理；未新增后端业务逻辑。
 - 当前 Docker Socket Proxy 健康检查仍阻断整栈 compose 命令返回成功；修复代理后应重新执行 `docker compose up --build -d` 并检查全服务健康状态。
 - 未执行真实供应商图片/视频生成；配置有效 API Key 后应补一次真实成功和失败任务联调。
+## Seedream 4.x 参数能力对齐（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `623c2ef`
+- 提交说明：Align Seedream options with provider capabilities；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- Seedream 4.0/4.5 能力目录移除供应商不支持的 `output_format`；后端拒绝能力目录之外的参数，避免把已知无效参数发送给供应商。
+- 未新增依赖、数据库迁移或配置；Seedream 5.0 和视频模型的既有 `output_format` 能力保持不变。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| Seedream 4.x 不再展示或发送 `output_format` | `ArkGenerationCapabilitiesTest.excludesOutputFormatFromSeedream4Capabilities` 验证 4.0 能力不含该参数、5.0 仍含该参数 | 正常、兼容、回归 | 通过 |
+| 旧客户端携带不支持参数时在供应商调用前拒绝 | 同一测试验证 Seedream 4.0 携带 `output_format` 抛出业务校验异常 | 异常、边界、安全 | 通过 |
+| 不带无效参数的真实图片生成请求可完成 | Compose 运行环境 POST `modelId=3`、`size=1K`、`response_format=url` 返回 `SUCCEEDED` 和图片 URL | 正常、集成、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker compose up --build -d`：镜像构建成功；后端 Maven 完整套件 **1050/1050 通过**，失败 0、错误 0、跳过 0；前端生产构建成功。整栈启动随后受既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
+- `docker compose up -d --no-deps backend frontend`：成功启动，Backend healthy，Frontend 启动成功。
+- 运行环境真实 POST `/api/ai/generation`（Seedream 4.0，不含 `output_format`）：HTTP 200，任务状态 `SUCCEEDED`，返回图片 URL。
+- 同一接口携带 `output_format=png`：HTTP 400，在供应商调用前被平台能力校验拒绝；不再产生供应商参数错误任务。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 覆盖 Seedream 4.x/5.x 参数目录、非法参数前置校验、真实图片生成回归及完整后端套件。
+- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理后应重新执行 `docker compose up --build -d` 和健康检查。
+- 供应商图片 URL 为带时效签名的临时地址，应用仍按现有输出协议保存和展示。
