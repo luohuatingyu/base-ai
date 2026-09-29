@@ -10977,3 +10977,32 @@ Commit: `5ec84fd`
 - 覆盖提交成功、图片即时结果、视频异步轮询、运行中刷新、提交异常、历史成功/失败任务和弹窗关闭清理；未新增后端业务逻辑。
 - 当前 Docker Socket Proxy 健康检查仍阻断整栈 compose 命令返回成功；修复代理后应重新执行 `docker compose up --build -d` 并检查全服务健康状态。
 - 未执行真实供应商图片/视频生成；配置有效 API Key 后应补一次真实成功和失败任务联调。
+## 方舟视频提交地址解析修复（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `e9c9b8b`
+- 提交说明：Fix media submission endpoint resolution；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 视频提交请求与状态查询均支持供应商配置的完整接口地址，避免重复追加 `/contents/generations/tasks` 导致提交阶段等待至网络超时。
+- 未修改数据库结构、供应商协议字段或前端轮询逻辑。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 完整视频提交地址不会重复拼接协议路径 | `MediaGenerationServiceTest.resolvesConfiguredMediaEndpointWithoutDuplicatingProtocolPath` 验证提交和查询地址均保持 `/contents/generations/tasks` 单次出现 | 正常、边界、兼容、回归 | 通过 |
+| 供应商异步提交继续使用任务 ID 进入查询流程 | `MediaGenerationServiceTest` 既有媒体响应测试验证任务 ID 保存和视频结果解析 | 正常、异步、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -q -Dtest=MediaGenerationServiceTest test -B`：通过。
+- `docker compose up --build -d`：镜像构建成功；后端完整 Maven 套件 **1050/1050 通过**，失败 0、错误 0、跳过 0；启动阶段受既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
+- `docker compose up -d --no-deps backend frontend`：成功启动，Backend healthy，Frontend healthy。
+- `cd frontend && node --test test/ai-generation.test.mjs test/ai-video-form.test.mjs`：**89/89 通过**。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 覆盖方舟完整提交地址、异步任务 ID、视频状态查询地址、首尾帧协议回归及前端视频工作台回归。
+- 本次未执行真实供应商首尾帧生成：对话附件未映射为工作区文件，且真实任务需要当前环境的可用供应商密钥；应在界面重新提交两张图片确认任务返回 ID 后进入轮询。
+- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理后应重新执行 Compose 健康检查。
