@@ -1,5 +1,37 @@
 # 最近分支覆盖测试报告
 
+## AI 生成页面可用性与使用引导（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `12436d8`
+- 提交说明：Improve AI generation page guidance；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- AI 生成页会根据已配置模型自动选择可用的图片或视频类型；无模型时提供模型管理入口；新增中英文使用步骤和模型切换时的选项清理。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 仅有视频模型时页面直接进入可用类型 | `frontend/test/ai-generation.test.mjs` 的 `AI 生成 page guides setup and selects an available type` 检查可用类型自动选择 | 正常、边界 | 通过 |
+| 无模型时用户能跳转模型管理 | 同一契约测试检查空状态、模型管理入口和禁用选择器 | 异常、可操作恢复 | 通过 |
+| 页面提供中英文使用说明 | 同一契约测试检查使用指南键；前端完整本地化测试验证语言资源 | 正常、兼容 | 通过 |
+| 切换模型或清空表单不携带旧能力开关 | `AI 生成 page clears capability-specific toggles when selection changes` 检查组图和透明背景状态清理 | 回归、边界 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/ai-generation.test.mjs`：**5/5 通过**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **663/663**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `cd frontend && npm run typecheck && npm run build`：通过；仅有既有 Vite 运行配置和 chunk 大小提示。
+- `docker compose up --build -d`：镜像全部构建成功；启动阶段仍被既有 `docker-socket-proxy` 健康检查 HTTP 503 阻断。
+- `docker compose up -d --no-deps frontend`：前端容器启动并 healthy；`curl http://localhost:8080/ai-generation` 返回 HTTP 200。
+- 本次仅修改前端代码，未触发后端业务代码重测条件。
+
+### 已知问题、重测触发与回滚
+
+- 当前本地环境的 `docker-socket-proxy` 返回 503，导致整栈 Compose 启动命令退出 1；前端容器已独立启动并验证健康。
+- 真实供应商 API Key 和媒体生成请求仍需在模型管理中配置有效供应商后联调。
+- 回滚代码可执行 `git revert 12436d8`；不涉及数据库迁移。
+
 ## 修复组合媒体模型更新的 profile 校验（2026-09-29）
 
 ### Git 基准、范围与交付状态
