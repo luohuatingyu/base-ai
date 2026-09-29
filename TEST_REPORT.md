@@ -1,5 +1,36 @@
 # 最近分支覆盖测试报告
 
+## AI 生成任务历史显示失败原因（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `7619c8c`
+- 提交说明：Show AI generation failure reasons in history；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 任务历史条目直接显示失败或取消原因；稳定失败码提供中英文文案，未知码保留原始值；结果区复用同一映射。后端接口、数据库和生成状态逻辑未修改。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 失败任务历史记录直接显示原因 | `frontend/test/ai-generation.test.mjs` 的 `AI 生成 history exposes localized failure reasons` 检查历史条目绑定 `errorMessage` 并渲染失败原因 | 正常、异常、回归 | 通过 |
+| 已知失败码按当前语言展示 | 同一测试及 `generationFailureReasonKey` 覆盖供应商失败、超时、配置变更、取消等稳定码 | 国际化、兼容 | 通过 |
+| 未知失败码不丢失排查信息 | 同一测试验证未知码回退为空映射，页面保留原始码 | 边界、异常 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/ai-generation.test.mjs`：**13/13 通过**。
+- `cd frontend && npx eslint src/views/AiGenerationView.vue src/utils/generationFailure.js test/ai-generation.test.mjs`：通过。
+- `cd frontend && npx vue-tsc --noEmit -p jsconfig.json`：通过。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 **670/670 通过**；覆盖率行 **98.25%**、分支 **82.04%**、函数 **95.76%**；生产构建及 E2E **3/3 通过**。
+- `docker compose up --build -d`：全部镜像构建成功；后端镜像构建阶段完整 Maven **1041/1041 通过**。整栈启动因既有 `docker-socket-proxy` unhealthy 依赖失败，非端口占用；随后 `docker compose up -d --no-deps frontend` 成功。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 本次仅修改前端历史展示、错误码映射、双语文案和契约测试，未修改 `backend/src/main/java/`，不触发后端业务代码重测条件；Compose 构建仍验证了当前工作区后端测试。
+- 未调用真实图片或视频供应商；配置有效 API Key 后应进行一次真实失败任务联调，确认供应商异常最终映射到历史记录。
+- 当前 Docker Socket Proxy 健康检查仍阻断整栈自动启动；切换到项目要求的 Docker 环境后，应重新执行 `docker compose up --build -d` 和健康检查。
+
 ## AI 生成工作台组件布局重构（2026-09-29）
 
 ### Git 基准、范围与交付状态
