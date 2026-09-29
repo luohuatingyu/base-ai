@@ -9,7 +9,7 @@ import java.util.*;
 public final class ArkMediaProtocol {
     private static final Set<String> IMAGE_OPTIONS = Set.of("size", "response_format", "sequential_image_generation",
         "sequential_image_generation_options", "stream", "tools", "background", "output_format", "watermark",
-        "seed", "optimize_prompt_options", "layer_decomposition", "interactive_edit");
+        "seed", "optimize_prompt_options", "layer_decomposition");
     private static final Set<String> VIDEO_OPTIONS = Set.of("callback_url", "return_last_frame", "generate_audio", "draft",
         "tools", "safety_identifier", "service_tier", "execution_expires_after", "resolution", "ratio", "duration",
         "frames", "seed", "camera_fixed", "watermark", "output_format", "omni_reference_task_type");

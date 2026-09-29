@@ -23,8 +23,8 @@ class ArkGenerationCapabilitiesTest {
     @Test
     void describesVersionSpecificVideoModes() {
         var value = ArkGenerationCapabilities.describe("doubao-seedance-2-5-260628");
-        assertTrue(((List<?>) value.get("modes")).containsAll(List.of("TEXT_TO_VIDEO", "FIRST_LAST_FRAME_TO_VIDEO", "EDIT_VIDEO", "EXTEND_VIDEO", "DRAFT_TO_VIDEO")));
-        assertEquals(2, value.get("durationMin"));
+        assertTrue(((List<?>) value.get("modes")).containsAll(List.of("TEXT_TO_VIDEO", "FIRST_LAST_FRAME_TO_VIDEO", "STORYBOARD_TO_VIDEO", "ONE_CLICK_VIDEO", "VIDEO_TRANSITION", "EDIT_VIDEO", "EXTEND_VIDEO", "DRAFT_TO_VIDEO")));
+        assertEquals(4, value.get("durationMin"));
         assertEquals(50, value.get("totalLimit"));
     }
 
@@ -44,6 +44,41 @@ class ArkGenerationCapabilitiesTest {
     void rejectsUnsafeCombinations() {
         assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2.5", "video_model", "TEXT_TO_VIDEO", "x", List.of(input("VIDEO", "reference_video")), Map.of("ratio", "bad")));
         assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2.5", "video_model", "DRAFT_TO_VIDEO", "", List.of(input("TASK", "")), Map.of("duration", 5)));
+    }
+
+    /** 编辑、样片和扩展模式必须能在其锁定参数下通过服务层校验。 */
+    @Test
+    void acceptsLockedVideoModesAndRemovesSyntheticInteractiveOption() {
+        var video = List.of(input("VIDEO", "reference_video"));
+        var edit = ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "EDIT_VIDEO", "编辑视频", video,
+            Map.of("ratio", "adaptive", "duration", -1, "output_format", "mov"));
+        assertEquals(-1, edit.get("duration"));
+        assertEquals("adaptive", edit.get("ratio"));
+        assertEquals("mov", edit.get("output_format"));
+
+        var draft = ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "DRAFT_VIDEO", "draft", List.of(),
+            Map.of("resolution", "480p", "duration", 5, "draft", true));
+        assertEquals(Boolean.TRUE, draft.get("draft"));
+
+        var draftToVideo = ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "DRAFT_TO_VIDEO", "", List.of(input("TASK", "")),
+            Map.of("watermark", false));
+        assertEquals(Boolean.FALSE, draftToVideo.get("watermark"));
+
+        var interactive = ArkGenerationCapabilities.options("doubao-seedream-5-0-pro-260628", "image_model", "INTERACTIVE_EDIT", "edit", List.of(input("IMAGE", "reference_image")), Map.of());
+        assertFalse(interactive.containsKey("interactive_edit"));
+    }
+
+    /** 分镜、一键成片和无缝转场必须接受官方参考素材组合，并拒绝不足的转场输入。 */
+    @Test
+    void validatesExtendedSeedanceModes() {
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "STORYBOARD_TO_VIDEO", "storyboard",
+            List.of(input("IMAGE", "reference_image")), Map.of("ratio", "16:9", "duration", 5)));
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "ONE_CLICK_VIDEO", "one click",
+            List.of(input("VIDEO", "reference_video")), Map.of("duration", 5)));
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "VIDEO_TRANSITION", "transition",
+            List.of(input("VIDEO", "reference_video"), input("VIDEO", "reference_video")), Map.of("duration", 5)));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "VIDEO_TRANSITION", "transition",
+            List.of(input("VIDEO", "reference_video")), Map.of("duration", 5)));
     }
 
     /** 构造协议层输入，内容本身由服务层另行验证。 */

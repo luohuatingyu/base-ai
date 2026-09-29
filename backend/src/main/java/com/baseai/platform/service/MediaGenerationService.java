@@ -195,7 +195,7 @@ public class MediaGenerationService {
                 String raw = event.toString(); event.setLength(0);
                 if (raw.equals("[DONE]")) { completed = true; continue; }
                 JsonNode value = mapper.readTree(raw);
-                if (value.has("url") || value.has("b64_json") || value.has("error")) data.add(value);
+                appendImageStreamData(data, value);
                 if (value.has("usage")) result.set("usage", value.get("usage"));
                 if (value.path("type").asText().endsWith("completed")) completed = true;
             }
@@ -203,6 +203,16 @@ public class MediaGenerationService {
         if (!completed) result.put("incomplete", true);
         if (data.isEmpty()) throw new java.io.IOException("Image stream has no result");
         return result;
+    }
+
+    /** 兼容方舟流式事件的顶层和 data 嵌套结果，避免组图流式响应被误判为空。 */
+    private void appendImageStreamData(com.fasterxml.jackson.databind.node.ArrayNode target, JsonNode event) {
+        if (event.has("url") || event.has("b64_json") || event.has("error")) target.add(event);
+        JsonNode nested = event.path("data");
+        if (nested.isObject() && (nested.has("url") || nested.has("b64_json") || nested.has("error"))) target.add(nested);
+        if (nested.isArray()) nested.forEach(item -> {
+            if (item.isObject() && (item.has("url") || item.has("b64_json") || item.has("error"))) target.add(item);
+        });
     }
 
     /** 浏览器关闭后继续轮询持久化任务；重启后可恢复已取得供应商编号的任务。 */
@@ -450,7 +460,7 @@ public class MediaGenerationService {
         Map<String, Object> options = request.options() == null ? Map.of() : request.options();
         Set<String> allowed = Set.of("size", "quality", "style", "n", "response_format", "sequential_image_generation",
             "sequential_image_generation_options", "stream", "tools", "background", "output_format", "watermark", "seed",
-            "optimize_prompt_options", "layer_decomposition", "interactive_edit", "duration", "aspect_ratio", "resolution", "fps",
+            "optimize_prompt_options", "layer_decomposition", "duration", "aspect_ratio", "resolution", "fps",
             "callback_url", "return_last_frame", "generate_audio", "draft", "safety_identifier", "service_tier", "execution_expires_after",
             "ratio", "frames", "camera_fixed", "omni_reference_task_type");
         if (!allowed.containsAll(options.keySet()) || options.values().stream().anyMatch(value -> value == null || !safeOption(value, 0)))

@@ -76,6 +76,8 @@ class ArkMediaProtocolTest {
             List.of(), Map.of("endpoint", "/internal")));
         assertThrows(BusinessException.class, () -> ArkMediaProtocol.request("video_model", "seedance", "seedance-2.0", "x",
             List.of(), Map.of("duration", 0)));
+        assertThrows(BusinessException.class, () -> ArkMediaProtocol.request("image_model", "seedream", "seedream-5.0-pro", "x",
+            List.of(input("IMAGE", "x", "image/png", "https://cdn.example/x.png", "reference_image")), Map.of("interactive_edit", true)));
     }
 
     /** 构造测试输入，所有数据值均为明确的 URL 或 Data URL。 */

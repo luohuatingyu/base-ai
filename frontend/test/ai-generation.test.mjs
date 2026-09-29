@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const source = readFileSync(new URL('../src/views/AiGenerationView.vue', import.meta.url), 'utf8')
+const zhLocale = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
 const router = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const navigation = readFileSync(new URL('../src/utils/navigation.js', import.meta.url), 'utf8')
 
@@ -25,4 +26,16 @@ test('AI 生成 page keeps image and video generation controls', () => {
   assert.match(source, /last_frame/)
   assert.match(source, /generate_audio/)
   assert.match(source, /poll\(result\.id\)/)
+})
+
+/** 所有已声明的视频任务必须在前端生成与方舟一致的锁定参数。 */
+test('AI 生成 page handles Ark locked and extended video modes', () => {
+  assert.match(zhLocale, /STORYBOARD_TO_VIDEO/)
+  assert.match(zhLocale, /ONE_CLICK_VIDEO/)
+  assert.match(zhLocale, /VIDEO_TRANSITION/)
+  assert.match(source, /if \(draftToVideo\.value\) return \{ watermark: Boolean\(options\.watermark\) \}/)
+  assert.match(source, /if \(editVideo\.value\) result\.duration = -1/)
+  assert.match(source, /options\.resolution = '480p'/)
+  assert.match(source, /delete result\.sequential_image_generation_options/)
+  assert.match(source, /generation\.editLockedDuration/)
 })

@@ -16,6 +16,7 @@
             <el-select v-model="modelId" filterable @change="onModelChange">
               <el-option v-for="model in modelsForType" :key="model.id" :label="`${model.name} · ${model.modelName}`" :value="model.id" />
             </el-select>
+            <p v-if="!modelsForType.length" class="generation-empty">{{ t('generation.noModels') }}</p>
           </el-form-item>
           <el-form-item v-if="capability.modes?.length" :label="t('generation.mode')">
             <el-select v-model="mode" @change="onModeChange">
@@ -65,11 +66,15 @@
             <el-form-item v-if="groupOutput" :label="t('generation.maxImages')"><el-input-number v-model="options.sequential_image_generation_options.max_images" :min="1" :max="15" /></el-form-item>
             <el-form-item v-if="type === 'image_model' && capability.features?.layers" :label="t('generation.layerDecomposition')"><el-switch v-model="options.layer_decomposition" /></el-form-item>
             <el-form-item v-if="type === 'image_model' && capability.features?.transparent" :label="t('generation.transparentBackground')"><el-switch v-model="transparent" @change="syncTransparent" /></el-form-item>
-            <el-form-item v-if="type === 'video_model'" :label="t('generation.resolution')"><el-select v-model="options.resolution"><el-option v-for="value in resolutionOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
-            <el-form-item v-if="type === 'video_model'" :label="t('generation.ratio')"><el-select v-model="options.ratio"><el-option v-for="value in ratioOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
-            <el-form-item v-if="type === 'video_model'" :label="t('generation.duration')"><el-input-number v-model="options.duration" :min="capability.durationMin || 2" :max="30" /></el-form-item>
-            <el-form-item v-if="type === 'video_model' && capability.features?.audio" :label="t('generation.generateAudio')"><el-switch v-model="options.generate_audio" /></el-form-item>
-            <el-form-item v-if="type === 'video_model' && capability.features?.draft" :label="t('generation.draft')"><el-switch v-model="options.draft" /></el-form-item>
+            <el-form-item v-if="type === 'video_model'" :label="t('generation.resolution')"><el-select v-model="options.resolution" :disabled="draftMode"><el-option v-for="value in resolutionOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+            <el-form-item v-if="type === 'video_model'" :label="t('generation.ratio')"><el-select v-model="options.ratio" :disabled="lockedRatio"><el-option v-for="value in ratioOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+            <el-form-item v-if="type === 'video_model' && !lockedVideoSettings" :label="t('generation.duration')"><el-input-number v-model="options.duration" :min="durationMin" :max="durationMax" /></el-form-item>
+            <el-form-item v-if="type === 'video_model' && lockedVideoSettings" :label="t('generation.duration')"><el-input :model-value="lockedDurationLabel" disabled /></el-form-item>
+            <el-form-item v-if="type === 'video_model' && capability.options?.output_format" :label="t('generation.outputFormat')"><el-select v-model="options.output_format"><el-option v-for="value in outputFormatOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+            <el-form-item v-if="type === 'video_model' && capability.options?.return_last_frame" :label="t('generation.returnLastFrame')"><el-switch v-model="options.return_last_frame" /></el-form-item>
+            <el-form-item v-if="type === 'video_model' && capability.features?.audio && !draftToVideo" :label="t('generation.generateAudio')"><el-switch v-model="options.generate_audio" /></el-form-item>
+            <el-form-item v-if="type === 'video_model' && mode === 'DRAFT_VIDEO'" :label="t('generation.draft')"><el-switch v-model="options.draft" /></el-form-item>
+            <p v-if="lockedVideoSettings" class="generation-hint">{{ t('generation.lockedSettings') }}</p>
             <el-form-item :label="t('generation.watermark')"><el-switch v-model="options.watermark" /></el-form-item>
           </div>
           <div class="generation-actions"><el-button type="primary" :loading="busy" :disabled="!canSubmit" @click="submit">{{ t('generation.submit') }}</el-button><el-button @click="reset">{{ t('generation.reset') }}</el-button></div>
@@ -107,16 +112,45 @@ const error = ref('')
 const filePicker = ref(null)
 const groupOutput = ref(false)
 const transparent = ref(false)
-const options = reactive({ size: '', response_format: 'url', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: 'opaque', output_format: 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, watermark: false })
+const options = reactive({ size: '', response_format: 'url', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: 'opaque', output_format: 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false })
 const modelsForType = computed(() => models.value.filter(item => item.modelType === type.value))
 const selectedModel = computed(() => models.value.find(item => item.id === modelId.value))
 const accept = computed(() => type.value === 'image_model' ? 'image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,text/plain,text/markdown,.txt,.md' : 'image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,.mp3,.wav')
 const canSubmit = computed(() => !busy.value && !!modelId.value && !!mode.value && (!!prompt.value.trim() || inputs.value.length > 0))
 const outputs = computed(() => result.value?.outputJson?.outputs || [])
-const resolutionOptions = computed(() => capability.value.options?.resolution?.enum || ['480p', '720p', '1080p'])
-const ratioOptions = computed(() => capability.value.options?.ratio?.enum || ['adaptive', '16:9', '9:16'])
+const draftMode = computed(() => mode.value === 'DRAFT_VIDEO')
+const draftToVideo = computed(() => mode.value === 'DRAFT_TO_VIDEO')
+const editVideo = computed(() => mode.value === 'EDIT_VIDEO')
+const extendVideo = computed(() => mode.value === 'EXTEND_VIDEO')
+const lockedVideoSettings = computed(() => editVideo.value || draftToVideo.value)
+const lockedRatio = computed(() => type.value === 'video_model' && (lockedVideoSettings.value || extendVideo.value || mode.value.includes('FRAME')))
+const durationMin = computed(() => { const min = Number(capability.value.options?.duration?.min ?? capability.value.durationMin ?? 2); return min < 1 ? Number(capability.value.durationMin || 2) : min })
+const durationMax = computed(() => Number(capability.value.options?.duration?.max ?? 30))
+const lockedDurationLabel = computed(() => editVideo.value ? t('generation.editLockedDuration') : t('generation.draftLockedDuration'))
+const resolutionOptions = computed(() => draftMode.value ? ['480p'] : capability.value.options?.resolution?.enum || ['480p', '720p', '1080p'])
+const ratioOptions = computed(() => lockedRatio.value ? ['adaptive'] : capability.value.options?.ratio?.enum || ['adaptive', '16:9', '9:16'])
+const outputFormatOptions = computed(() => capability.value.options?.output_format?.enum || ['mp4', 'mov'])
 /** 只提交当前模型能力目录声明的参数，避免隐藏控件的默认值污染请求。 */
-const requestOptions = computed(() => Object.fromEntries(Object.entries(options).filter(([key, value]) => capability.value.options?.[key] && value !== '' && value !== undefined && value !== null)))
+const requestOptions = computed(() => {
+  const result = Object.fromEntries(Object.entries(options).filter(([key, value]) => capability.value.options?.[key] && value !== '' && value !== undefined && value !== null))
+  if (type.value === 'image_model') {
+    const grouped = mode.value.endsWith('GROUP')
+    if (grouped) {
+      result.sequential_image_generation = 'auto'
+    } else {
+      delete result.sequential_image_generation_options
+      delete result.sequential_image_generation
+    }
+  }
+  if (type.value === 'video_model') {
+    if (draftToVideo.value) return { watermark: Boolean(options.watermark) }
+    if (draftMode.value) result.resolution = '480p'
+    if (lockedRatio.value) result.ratio = 'adaptive'
+    if (editVideo.value) result.duration = -1
+    if ((editVideo.value || extendVideo.value) && capability.value.options?.output_format) result.output_format = 'mov'
+  }
+  return result
+})
 
 /** 将后端模式编码转换为用户可理解的生成方式。 */
 function modeLabel(value) { return t(`generation.modes.${value}`, value.replaceAll('_', ' ')) }
@@ -130,17 +164,24 @@ function onModelChange() {
   capability.value = item?.capabilities || { modes: [], features: {}, options: {}, totalLimit: 0 }
   mode.value = capability.value.modes?.[0] || ''
   resetOptions()
+  syncModeOptions()
 }
 /** 切换图片或视频时只显示同类模型并清理不兼容素材。 */
 function onTypeChange() { modelId.value = modelsForType.value[0]?.id || null; inputs.value = []; result.value = null; onModelChange(); loadHistory() }
 /** 切换模式时清除旧角色，避免角色与任务类型混用。 */
-function onModeChange() { inputs.value.forEach(input => { input.role = type.value === 'video_model' ? (mode.value.includes('FRAME') ? '' : input.role) : '' }) }
+function onModeChange() { inputs.value.forEach(input => { input.role = type.value === 'video_model' ? (mode.value.includes('FRAME') ? '' : input.role) : '' }); syncModeOptions() }
 /** 根据组图开关同步供应商参数。 */
 function syncGroupOptions(value) { options.sequential_image_generation = value ? 'auto' : 'disabled' }
 /** 透明背景要求 PNG，关闭时恢复默认不透明。 */
 function syncTransparent(value) { options.background = value ? 'transparent' : 'opaque'; if (value) options.output_format = 'png' }
 /** 清空所有生成选项并恢复安全默认值。 */
-function resetOptions() { Object.assign(options, { size: '', response_format: 'url', sequential_image_generation: groupOutput.value ? 'auto' : 'disabled', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: transparent.value ? 'transparent' : 'opaque', output_format: 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, watermark: false }) }
+function resetOptions() { Object.assign(options, { size: '', response_format: 'url', sequential_image_generation: groupOutput.value ? 'auto' : 'disabled', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: transparent.value ? 'transparent' : 'opaque', output_format: type.value === 'video_model' ? 'mp4' : 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false }) }
+/** 按方舟任务类型同步被锁定的参数，避免隐藏控件的默认值污染请求。 */
+function syncModeOptions() {
+  if (draftMode.value) { options.resolution = '480p'; options.draft = true }
+  if (editVideo.value) { options.duration = -1; options.ratio = 'adaptive'; options.output_format = 'mov' }
+  if (extendVideo.value || mode.value.includes('FRAME')) { options.ratio = 'adaptive'; if (extendVideo.value) options.output_format = 'mov' }
+}
 /** 清空当前草稿和结果。 */
 function reset() { prompt.value = ''; inputs.value = []; result.value = null; error.value = ''; resetOptions() }
 /** 读取文件并转换为后端接受的 Data URL。 */
@@ -161,7 +202,7 @@ async function onFiles(event) {
 /** 删除已选素材。 */
 function removeInput(index) { inputs.value.splice(index, 1) }
 /** 加入历史样片任务作为正式视频的唯一输入。 */
-function addDraftTask() { const draft = history.value.find(item => item.status === 'SUCCEEDED' && item.outputJson?.outputs?.length && item.options?.draft); if (draft) inputs.value = [{ kind: 'TASK', fileName: `draft-${draft.id}`, contentType: 'text/plain', dataUrl: String(draft.id), role: '' }]; else ElMessage.warning(t('generation.noDraft')) }
+function addDraftTask() { const draft = history.value.find(item => item.modelId === modelId.value && item.status === 'SUCCEEDED' && item.outputJson?.outputs?.length && item.options?.draft); if (draft) inputs.value = [{ kind: 'TASK', fileName: `draft-${draft.id}`, contentType: 'text/plain', dataUrl: String(draft.id), role: '' }]; else ElMessage.warning(t('generation.noDraft')) }
 /** 提交任务并轮询异步视频，图片响应直接完成。 */
 async function submit() {
   if (!canSubmit.value) return
@@ -200,6 +241,7 @@ onMounted(loadModels)
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
 .result-grid :deep(.el-image), .result-grid video { width: 100%; height: 220px; object-fit: contain; background: var(--el-fill-color-light); }
 .generation-error { margin: 10px 0; color: var(--el-color-danger); }
+.generation-empty, .generation-hint { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 @media (max-width: 900px) { .generation-layout { grid-template-columns: 1fr; } .generation-sidebar { border-right: 0; border-bottom: 1px solid var(--el-border-color-lighter); padding: 0 0 16px; } .generation-options { grid-template-columns: repeat(2, minmax(140px, 1fr)); } }
 @media (max-width: 560px) { .generation-options { grid-template-columns: 1fr; } }
 </style>

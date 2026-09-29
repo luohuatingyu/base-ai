@@ -15,9 +15,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -164,6 +167,16 @@ class MediaGenerationServiceTest {
             "", null, "MULTIMODAL", List.of(atLimit), Map.of())));
         assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("video_model", 1L,
             "", null, "MULTIMODAL", List.of(tooLarge), Map.of())));
+    }
+
+    /** 图片流同时兼容顶层和 data 嵌套事件，并保留完成标记。 */
+    @Test
+    void readsNestedImageStreamEvents() throws Exception {
+        String stream = "data: {\"type\":\"image.completed\",\"data\":{\"b64_json\":\"YQ==\"}}\n\n"
+            + "data: [DONE]\n\n";
+        var result = service.readImageStream(new ByteArrayInputStream(stream.getBytes(StandardCharsets.UTF_8)));
+        assertEquals("YQ==", result.path("data").get(0).path("b64_json").asText());
+        assertFalse(result.path("incomplete").asBoolean(false));
     }
 
     /** 通过反射只测试纯校验分支，避免为边界测试伪造数据库和供应商调用。 */

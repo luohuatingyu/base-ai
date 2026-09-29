@@ -41,7 +41,7 @@ public final class ArkGenerationCapabilities {
             if (!profile.endsWith("t2v")) modes.add("IMAGE_TO_VIDEO");
             if (!profile.endsWith("t2v") && !profile.equals("seedance-1.0-pro-fast")) modes.add("FIRST_LAST_FRAME_TO_VIDEO");
             if (v2 || v25 || profile.endsWith("i2v")) modes.add("REFERENCE_IMAGE_TO_VIDEO");
-            if (v2 || v25) modes.addAll(List.of("VIDEO_TO_VIDEO", "IMAGE_VIDEO_AUDIO_TO_VIDEO", "EDIT_VIDEO", "EXTEND_VIDEO"));
+            if (v2 || v25) modes.addAll(List.of("VIDEO_TO_VIDEO", "IMAGE_VIDEO_AUDIO_TO_VIDEO", "STORYBOARD_TO_VIDEO", "ONE_CLICK_VIDEO", "VIDEO_TRANSITION", "EDIT_VIDEO", "EXTEND_VIDEO"));
             if (v25 || profile.equals("seedance-1.5-pro")) modes.addAll(List.of("DRAFT_VIDEO", "DRAFT_TO_VIDEO"));
         }
         Map<String, Object> options = new LinkedHashMap<>();
@@ -54,7 +54,6 @@ public final class ArkGenerationCapabilities {
             options.put("optimize_prompt_options", Map.of("type", "object"));
             if (pro) {
                 options.put("layer_decomposition", Map.of("type", "boolean"));
-                options.put("interactive_edit", Map.of("type", "boolean"));
                 options.put("background", choice("opaque", "transparent"));
             } else {
                 options.put("stream", Map.of("type", "boolean"));
@@ -65,7 +64,10 @@ public final class ArkGenerationCapabilities {
         } else {
             options.put("resolution", fast ? choice("480p", "720p") : profile.equals("seedance-2.0") ? choice("480p", "720p", "1080p", "4k") : choice("480p", "720p", "1080p"));
             options.put("ratio", choice("adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9"));
-            options.put("duration", number(-1, v25 ? 30 : v2 ? 15 : 12));
+            boolean v15 = profile.equals("seedance-1.5-pro");
+            int durationMin = v2 || v25 || v15 ? -1 : 2;
+            int durationMax = v25 ? 30 : v2 ? 15 : 12;
+            options.put("duration", number(durationMin, durationMax));
             if (!v2) options.put("frames", number(29, 289));
             if (v2 || profile.equals("seedance-1.5-pro")) options.put("generate_audio", Map.of("type", "boolean"));
             options.put("return_last_frame", Map.of("type", "boolean"));
@@ -85,7 +87,7 @@ public final class ArkGenerationCapabilities {
         result.put("totalLimit", image ? pro ? 10 : 14 : v25 ? 50 : v2 ? 12 : lite ? 4 : 2);
         result.put("imageMaxBytes", image ? 30 * 1024 * 1024 : 30 * 1024 * 1024);
         result.put("videoMaxBytes", 50 * 1024 * 1024); result.put("audioMaxBytes", 15 * 1024 * 1024);
-        result.put("durationMin", v2 ? 4 : 2);
+        result.put("durationMin", v2 || v25 || profile.equals("seedance-1.5-pro") ? 4 : 2);
         result.put("features", Map.of("groups", image && !pro, "streaming", image && !pro, "search", profile.equals("seedream-5.0-lite"),
             "layers", pro, "transparent", pro, "draft", v25 || profile.equals("seedance-1.5-pro"), "audio", v2 || v25 || profile.equals("seedance-1.5-pro")));
         result.put("options", options);
@@ -113,14 +115,12 @@ public final class ArkGenerationCapabilities {
         if (type.equals("image_model")) {
             if (videos + audio + tasks > 0) invalid();
             if (normalized.equals("LAYER_DECOMPOSITION")) options.put("layer_decomposition", true);
-            if (normalized.equals("INTERACTIVE_EDIT")) options.put("interactive_edit", true);
             if (normalized.equals("TRANSPARENT_IMAGE")) { options.put("background", "transparent"); options.put("output_format", "png"); }
             if (normalized.endsWith("GROUP")) options.put("sequential_image_generation", "auto");
             if (!text && !Boolean.TRUE.equals(options.get("layer_decomposition"))) invalid();
             if (normalized.startsWith("TEXT_TO_") && images != 0 || Set.of("IMAGE_TEXT_TO_IMAGE", "IMAGE_TO_GROUP", "LAYER_DECOMPOSITION", "TRANSPARENT_IMAGE", "INTERACTIVE_EDIT").contains(normalized) && images != 1
                 || normalized.startsWith("MULTI_IMAGE") && images < 2) invalid();
-            if (Boolean.TRUE.equals(options.get("layer_decomposition")) && (images != 1 || Boolean.TRUE.equals(options.get("interactive_edit")))) invalid();
-            if (Boolean.TRUE.equals(options.get("interactive_edit")) && images != 1) invalid();
+            if (Boolean.TRUE.equals(options.get("layer_decomposition")) && images != 1) invalid();
             if ("transparent".equals(options.get("background")) && (images != 1 || "jpeg".equals(options.get("output_format")))) invalid();
             if (options.get("sequential_image_generation_options") instanceof Map<?, ?> group) {
                 if (!"auto".equals(options.get("sequential_image_generation")) || group.size() != 1 || !(group.get("max_images") instanceof Number n)
@@ -145,7 +145,10 @@ public final class ArkGenerationCapabilities {
                 || normalized.equals("FIRST_LAST_FRAME_TO_VIDEO") && (first != 1 || last != 1)
                 || normalized.equals("REFERENCE_IMAGE_TO_VIDEO") && (images < 1 || frames || videos + audio > 0)
                 || Set.of("VIDEO_TO_VIDEO", "EDIT_VIDEO", "EXTEND_VIDEO").contains(normalized) && (videos < 1 || frames)
-                || normalized.equals("IMAGE_VIDEO_AUDIO_TO_VIDEO") && (images + videos + audio == 0 || frames)) invalid();
+                || normalized.equals("IMAGE_VIDEO_AUDIO_TO_VIDEO") && (images + videos + audio == 0 || frames)
+                || normalized.equals("STORYBOARD_TO_VIDEO") && (images + videos + audio < 1 || frames)
+                || normalized.equals("ONE_CLICK_VIDEO") && (images + videos < 1 || frames)
+                || normalized.equals("VIDEO_TRANSITION") && (videos < 2 || frames)) invalid();
             if (frames && !modes.contains(last > 0 ? "FIRST_LAST_FRAME_TO_VIDEO" : "IMAGE_TO_VIDEO")) invalid();
             if (normalized.equals("DRAFT_VIDEO")) options.put("draft", true);
             if (normalized.equals("DRAFT_TO_VIDEO")) {
@@ -153,12 +156,14 @@ public final class ArkGenerationCapabilities {
                 if (options.keySet().stream().anyMatch(key -> Set.of("duration", "ratio", "generate_audio", "frames", "draft").contains(key))) invalid();
             } else if (tasks > 0) invalid();
             boolean v25 = caps.get("profile").equals("seedance-2.5");
-            if (v25 && (frames || Set.of("EDIT_VIDEO", "EXTEND_VIDEO").contains(normalized))) {
+            boolean v2 = caps.get("profile").toString().startsWith("seedance-2.") && !v25;
+            boolean lockedVideoTask = v2 || v25;
+            if (lockedVideoTask && (frames || Set.of("EDIT_VIDEO", "EXTEND_VIDEO").contains(normalized))) {
                 if (options.containsKey("ratio") && !"adaptive".equals(options.get("ratio"))) invalid();
                 options.put("ratio", "adaptive");
             }
             if (v25 && Set.of("EDIT_VIDEO", "EXTEND_VIDEO").contains(normalized)) options.put("omni_reference_task_type", normalized.equals("EDIT_VIDEO") ? "edit" : "extend");
-            if (v25 && normalized.equals("EDIT_VIDEO")) {
+            if (lockedVideoTask && normalized.equals("EDIT_VIDEO")) {
                 if (options.containsKey("duration") && !Objects.equals(options.get("duration"), -1)) invalid();
                 options.put("duration", -1);
             }
