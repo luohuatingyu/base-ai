@@ -221,6 +221,30 @@ class MediaGenerationServiceTest {
         assertFalse(result.path("incomplete").asBoolean(false));
     }
 
+    /** 供应商 HTTP 错误保留状态、错误码和消息，但不得把完整响应中的密钥字段写入任务错误。 */
+    @Test
+    void preservesProviderHttpErrorDetailsWithoutSecrets() throws Exception {
+        Method parser = MediaGenerationService.class.getDeclaredMethod("providerRequestException", int.class, String.class);
+        parser.setAccessible(true);
+        Object failure = parser.invoke(service, 404,
+            "{\"error\":{\"code\":\"InvalidEndpointOrModel.NotFound\",\"message\":\"model|not found\\nplease check\",\"api_key\":\"secret-key\"}}");
+        Method message = failure.getClass().getDeclaredMethod("failureMessage");
+        message.setAccessible(true);
+        String value = (String) message.invoke(failure);
+        assertEquals("PROVIDER_REQUEST_FAILED|HTTP_404|InvalidEndpointOrModel.NotFound|model not found please check", value);
+        assertFalse(value.contains("secret-key"));
+    }
+
+    /** 用量记录只使用稳定错误码，任务接口仍可展示供应商的具体诊断信息。 */
+    @Test
+    void keepsStableFailureCodeForUsageRecords() throws Exception {
+        Method method = MediaGenerationService.class.getDeclaredMethod("stableFailureCode", String.class);
+        method.setAccessible(true);
+        assertEquals("PROVIDER_REQUEST_FAILED", method.invoke(service,
+            "PROVIDER_REQUEST_FAILED|HTTP_404|InvalidEndpointOrModel.NotFound|model unavailable"));
+        assertEquals("PROVIDER_RESPONSE_INVALID", method.invoke(service, "PROVIDER_RESPONSE_INVALID"));
+    }
+
     /** Seedance 完成响应的 content 对象或数组都必须提取视频 URL，不能把成功任务标记为无结果。 */
     @Test
     void extractsVideoUrlsFromArkContentShapes() throws Exception {

@@ -234,7 +234,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import http, { showHttpError } from '../api/http'
-import { generationFailureReasonKey } from '../utils/generationFailure.js'
+import { generationFailureReasonKey, parseGenerationFailure } from '../utils/generationFailure.js'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -360,8 +360,16 @@ function roleLabel(value) { return t(`generation.roles.${value}`, value.replaceA
 function statusType(status) { return status === 'SUCCEEDED' ? 'success' : status === 'FAILED' || status === 'CANCELLED' ? 'danger' : 'warning' }
 /** 将后端状态本地化，避免页面直接展示英文枚举。 */
 function statusLabel(status) { return t(`generation.status.${status}`, status || 'UNKNOWN') }
-/** 将任务失败码转换为当前语言的说明，未知码仍展示原始稳定码便于排查。 */
-function failureReason(code) { const value = String(code || '').trim(); const key = generationFailureReasonKey(value); return value ? t(key || 'generation.failureReasons.UNKNOWN', key ? undefined : value) : '' }
+/** 将后端失败码转换为当前语言的说明，并保留供应商状态、错误码和详情。 */
+function failureReason(code) {
+  const parsed = parseGenerationFailure(code)
+  if (!parsed.code) return ''
+  const key = generationFailureReasonKey(parsed.code)
+  const label = t(key || 'generation.failureReasons.UNKNOWN', key ? undefined : parsed.code)
+  if (!parsed.detail) return label
+  const context = [parsed.status, parsed.providerCode].filter(Boolean).join(' · ')
+  return `${label}${context ? ` (${context})` : ''}: ${parsed.detail}`
+}
 /** 统一处理 URL 和 Base64 图片输出，结果卡片只负责展示。 */
 function outputSource(output) { return output.kind === 'base64' ? `data:image/png;base64,${output.value}` : output.value }
 /** 为没有名称的结果生成稳定的可读标题。 */

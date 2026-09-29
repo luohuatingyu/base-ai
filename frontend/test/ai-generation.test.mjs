@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { generationFailureReasonKey } from '../src/utils/generationFailure.js'
+import { generationFailureReasonKey, parseGenerationFailure } from '../src/utils/generationFailure.js'
 
 const source = readFileSync(new URL('../src/views/AiGenerationView.vue', import.meta.url), 'utf8')
 const zhLocale = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
@@ -174,9 +174,17 @@ test('AI 生成 history exposes localized failure reasons', () => {
   assert.equal(generationFailureReasonKey('PROVIDER_FAILED'), 'generation.failureReasons.PROVIDER_FAILED')
   assert.equal(generationFailureReasonKey(' GENERATION_TIMEOUT '), 'generation.failureReasons.GENERATION_TIMEOUT')
   assert.equal(generationFailureReasonKey('NEW_PROVIDER_CODE'), '')
+  assert.deepEqual(parseGenerationFailure('PROVIDER_REQUEST_FAILED|HTTP_404|InvalidEndpointOrModel.NotFound|model unavailable'), {
+    code: 'PROVIDER_REQUEST_FAILED', status: 'HTTP_404', providerCode: 'InvalidEndpointOrModel.NotFound', detail: 'model unavailable'
+  })
+  assert.deepEqual(parseGenerationFailure('PROVIDER_REQUEST_FAILED'), {
+    code: 'PROVIDER_REQUEST_FAILED', status: '', providerCode: '', detail: ''
+  })
   assert.match(source, /v-if="task\.errorMessage" class="history-item-error"/)
   assert.match(source, /failureReason\(task\.errorMessage\)/)
   assert.match(source, /failureReason\(selectedHistoryTask\.errorMessage\)/)
+  assert.match(source, /parseGenerationFailure\(code\)/)
+  assert.match(source, /parsed\.providerCode/)
   assert.match(zhLocale, /failureReasons: \{[^}]*PROVIDER_FAILED: '供应商返回失败'/)
   assert.match(enLocale, /failureReasons: \{[^}]*PROVIDER_FAILED: 'Provider reported a failure'/)
 })

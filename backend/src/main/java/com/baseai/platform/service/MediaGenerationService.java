@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpClient;
@@ -46,6 +48,9 @@ public class MediaGenerationService {
     private static final int ARK_MAX_VIDEO_BYTES = 50 * 1024 * 1024;
     private static final int ARK_MAX_AUDIO_BYTES = 15 * 1024 * 1024;
     private static final int MAX_INPUTS = 4;
+    private static final int MAX_PROVIDER_ERROR_BYTES = 16 * 1024;
+    private static final int MAX_PROVIDER_ERROR_CODE_LENGTH = 120;
+    private static final int MAX_PROVIDER_ERROR_MESSAGE_LENGTH = 600;
 
     /** 注入任务存储、可信模型配置、用量服务、JSON 编解码器和类型协议注册表。 */
     @org.springframework.beans.factory.annotation.Autowired
@@ -126,6 +131,8 @@ public class MediaGenerationService {
         }
         Map<String, Object> task = task(id, owner);
         try { apply(task, invoke(candidate, request, null)); }
+        catch (ProviderRequestException exception) { fail(task, exception.failureMessage()); }
+        catch (RestClientException exception) { fail(task, networkFailureMessage(exception)); }
         catch (RuntimeException exception) { fail(task, "PROVIDER_REQUEST_FAILED"); }
         return publicTask(task(id, owner));
     }
@@ -259,6 +266,8 @@ public class MediaGenerationService {
                 fail(task, "MODEL_CONFIG_CHANGED"); return;
             }
             apply(task, invoke(candidate, storedRequest(task), remoteId));
+        } catch (ProviderRequestException exception) {
+            fail(task, exception.failureMessage());
         } catch (RestClientException exception) {
             // 临时 HTTP/网络错误仍保留运行态；到达总时限后才结束记录。
         } catch (RuntimeException exception) { fail(task, "PROVIDER_RESPONSE_INVALID"); }
@@ -292,10 +301,69 @@ public class MediaGenerationService {
         return client.post().uri(endpointUri(base, path))
             .contentType(MediaType.APPLICATION_JSON).headers(headers -> headers.setBearerAuth(key)).body(body)
             .exchange((httpRequest, response) -> {
-                if (!response.getStatusCode().is2xxSuccessful()) throw new IllegalStateException("Provider request failed");
+                if (!response.getStatusCode().is2xxSuccessful()) {
+                    String errorBody = readProviderErrorBody(response.getBody());
+                    throw providerRequestException(response.getStatusCode().value(), errorBody);
+                }
                 if (Boolean.TRUE.equals(body.get("stream"))) return readImageStream(response.getBody());
                 return mapper.readTree(response.getBody());
             });
+    }
+
+    /** 读取有限长度的供应商错误正文，避免把大响应或敏感原文写入任务记录。 */
+    private String readProviderErrorBody(InputStream stream) {
+        if (stream == null) return "";
+        try (InputStream input = stream; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[1024];
+            int remaining = MAX_PROVIDER_ERROR_BYTES;
+            int count;
+            while (remaining > 0 && (count = input.read(buffer, 0, Math.min(buffer.length, remaining))) >= 0) {
+                if (count == 0) continue;
+                output.write(buffer, 0, count);
+                remaining -= count;
+            }
+            return output.toString(java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException ignored) {
+            return "";
+        }
+    }
+
+    /** 将供应商非 2xx 响应转换为可展示但不泄露凭据的稳定错误描述。 */
+    private ProviderRequestException providerRequestException(int status, String body) {
+        JsonNode root;
+        try { root = body == null || body.isBlank() ? mapper.createObjectNode() : mapper.readTree(body); }
+        catch (Exception ignored) { root = mapper.createObjectNode(); }
+        JsonNode error = root.path("error");
+        String code = firstNonBlank(error.path("code").asText(null), root.path("code").asText(null), "HTTP_" + status);
+        String message = firstNonBlank(error.path("message").asText(null), root.path("message").asText(null), "供应商返回 HTTP " + status);
+        return new ProviderRequestException(status, cleanProviderText(code, MAX_PROVIDER_ERROR_CODE_LENGTH, "HTTP_" + status),
+            cleanProviderText(message, MAX_PROVIDER_ERROR_MESSAGE_LENGTH, "供应商返回 HTTP " + status));
+    }
+
+    /** 将网络异常归类为有限的公开错误，不把内部 URL、请求头或堆栈写入任务记录。 */
+    private String networkFailureMessage(RestClientException exception) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof java.net.http.HttpTimeoutException || cause instanceof java.net.SocketTimeoutException
+                || cause instanceof java.util.concurrent.TimeoutException) {
+                return "PROVIDER_REQUEST_FAILED|NETWORK_TIMEOUT|NETWORK_TIMEOUT|供应商请求超时";
+            }
+            cause = cause.getCause();
+        }
+        return "PROVIDER_REQUEST_FAILED|NETWORK_ERROR|NETWORK_ERROR|无法连接供应商";
+    }
+
+    /** 统一压缩供应商文本并移除分隔符与控制字符，保证错误记录可安全解析。 */
+    private String cleanProviderText(String value, int limit, String fallback) {
+        String cleaned = value == null ? "" : value.replaceAll("[\\r\\n\\t|]", " ").replaceAll("\\s+", " ").trim();
+        if (cleaned.isBlank()) cleaned = fallback;
+        return cleaned.length() <= limit ? cleaned : cleaned.substring(0, limit);
+    }
+
+    /** 从候选字段中取首个非空文本，兼容不同供应商的错误结构。 */
+    private String firstNonBlank(String... values) {
+        for (String value : values) if (value != null && !value.isBlank()) return value;
+        return "";
     }
 
     /** 将供应商根地址与协议路径拼接；若管理员已填写完整接口地址则避免重复追加路径。 */
@@ -448,11 +516,34 @@ public class MediaGenerationService {
         return null;
     }
 
-    /** 保存固定错误码；供应商异常正文、密钥和提示词均不进入错误提示。 */
-    private void fail(Map<String, Object> task, String code) {
-        int updated = jdbc.update("UPDATE ai_media_generation_task SET status='FAILED',error_message=?,finished_at=NOW(6),updated_at=NOW(6) WHERE id=? AND status='RUNNING'", code, task.get("id"));
+    /** 保存稳定错误码或有限供应商详情；凭据、提示词和完整响应正文均不进入任务记录。 */
+    private void fail(Map<String, Object> task, String errorMessage) {
+        int updated = jdbc.update("UPDATE ai_media_generation_task SET status='FAILED',error_message=?,finished_at=NOW(6),updated_at=NOW(6) WHERE id=? AND status='RUNNING'", errorMessage, task.get("id"));
         if (updated > 0) usage.finish((String) task.get("usageId"), new LlmUsageService.Completion("FAILED", (String) task.get("providerCode"),
-            (String) task.get("modelName"), false, null, null, null, "MediaGenerationException", code, Instant.now()));
+            (String) task.get("modelName"), false, null, null, null, "MediaGenerationException", stableFailureCode(errorMessage), Instant.now()));
+    }
+
+    /** 供应商详情使用稳定前缀，避免用量记录把可变的供应商正文当作错误码。 */
+    private String stableFailureCode(String errorMessage) {
+        int separator = errorMessage == null ? -1 : errorMessage.indexOf('|');
+        return separator > 0 ? errorMessage.substring(0, separator) : errorMessage;
+    }
+
+    /** 将供应商错误详情封装为运行时异常，供创建和轮询流程分别处理。 */
+    private static final class ProviderRequestException extends RuntimeException {
+        private final int status;
+        private final String code;
+        private final String detail;
+
+        private ProviderRequestException(int status, String code, String detail) {
+            super(code + ": " + detail);
+            this.status = status;
+            this.code = code;
+            this.detail = detail;
+        }
+
+        /** 返回任务和前端共用的结构化错误文本。 */
+        private String failureMessage() { return "PROVIDER_REQUEST_FAILED|HTTP_" + status + "|" + code + "|" + detail; }
     }
 
     /** 插入持久任务；凭据只驻留于模型配置，不随任务保存。 */
