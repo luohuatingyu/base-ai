@@ -1,5 +1,36 @@
 # 最近分支覆盖测试报告
 
+## AI 生成模式、尺寸与输出设置优化（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `a4c6120`
+- 提交说明：Improve media output settings UI；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 图片生成模式始终保留可选控件；能力目录为空时显示明确提示。图片尺寸改为 `1K / 2K / 4K` 下拉选择，并优先使用模型能力目录声明的枚举。
+- 图片、视频和通用输出参数按媒体类型分组展示，保留组图、图层、透明背景、分辨率、比例、时长、格式、音频、首帧和锁定模式等原有请求规则。新增中英文文案和契约测试，无后端接口、数据库或依赖变更。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片生成可选择模式，能力为空时有明确状态 | `frontend/test/ai-generation.test.mjs` 的 `AI 生成 workspace keeps image mode selection visible` 检查模式下拉、禁用边界和空能力提示 | 正常、边界、兼容 | 通过 |
+| 图片尺寸使用选择控件 | 同一文件的 `AI 生成 workspace uses selectable sizes and grouped output settings` 检查尺寸枚举、下拉绑定和请求 options 保持一致 | 正常、兼容 | 通过 |
+| 图片和视频输出设置层级清晰且现有参数兼容 | 同一契约测试检查图片、视频、通用输出分组；既有锁定参数测试继续覆盖草稿、编辑、首尾帧和扩展模式 | 正常、回归、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/ai-generation.test.mjs`：**9/9 通过**。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 **667/667 通过**；覆盖率行 **98.24%**、分支 **82.06%**、函数 **95.74%**；生产构建及 E2E **3/3 通过**。
+- `git diff --check`：通过。
+- `docker compose up --build -d`：9 个镜像全部构建成功；整栈启动因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用或本次前端改动错误。随后 `docker compose up -d --no-deps frontend` 成功，Frontend healthy，HTTP 检查通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 本次只修改前端页面、语言资源、契约测试和测试报告，未修改 `backend/src/main/java/`，不触发后端 Maven 自动重测条件。
+- 未调用真实 Seedream/Seedance 供应商；配置有效 API Key 后仍需执行真实图片和视频联调，重点确认供应商可用尺寸、模式和输出 URL。
+- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理或切换 Docker context 后，应重新执行 `docker compose up --build -d` 和健康检查。
+- 后续修改媒体能力、生成协议或后端任务状态时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+
 ## AI 生成图片与视频工作台 UI 优化（2026-09-29）
 
 ### Git 基准、范围与交付状态
