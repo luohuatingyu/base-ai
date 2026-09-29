@@ -1,5 +1,40 @@
 # 最近分支覆盖测试报告
 
+## AI 生成工作台整页视觉样式优化（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `a24c59f`
+- 提交说明：Polish AI generation workspace styling；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 重整 AI 生成页整页视觉层级，覆盖创作主视觉、图片/视频切换、流程提示、使用引导、模型能力、任务历史、提示词、素材、输出设置和结果预览。
+- 补充悬停、键盘聚焦、禁用、生成中、错误和空结果状态反馈，完善 1000px、780px、560px 响应式布局；未修改生成请求、能力判断、素材角色、轮询、后端接口、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 整个页面形成清晰的创作层级，既有入口和文案保持可用 | `frontend/test/ai-generation.test.mjs` 的 `AI 生成 workspace keeps full-page visual hierarchy and responsive states` 检查 hero、流程、侧栏、编辑区、素材区和结果区样式挂钩 | 正常、兼容 | 通过 |
+| 生成前、生成中、成功、失败、空结果和禁用状态视觉可辨 | 同一契约测试检查焦点、悬停、空结果和响应式选择器；既有结果状态、轮询和错误断言继续覆盖 | 正常、异常、无障碍、回归 | 通过 |
+| 图片和视频模式、参数分组、素材角色与结果展示保持兼容 | 既有 AI 生成契约测试覆盖接口、能力目录、锁定参数、图片尺寸、视频参数和输出请求 | 回归、兼容 | 通过 |
+| 桌面、平板、手机布局可读可操作 | 契约测试检查 1000px、780px、560px 断点；生产 E2E 保持通过 | 响应式、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/ai-generation.test.mjs`：**10/10 通过**。
+- `cd frontend && npx eslint src/views/AiGenerationView.vue test/ai-generation.test.mjs`：通过。
+- `cd frontend && npx vue-tsc --noEmit -p jsconfig.json`：通过。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 **668/668 通过**；生产构建及 E2E **3/3 通过**。
+- `git diff --check`：通过。
+- `docker compose --progress plain up --build -d`：全部镜像构建成功；启动阶段因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用或本次前端改动错误。
+- `docker compose up -d --no-deps frontend`：前端镜像重新启动并 healthy；`curl http://localhost:8080/ai-generation` 返回 HTTP 200，`/health` 返回 `{"status":"UP"}`。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 本次只修改前端页面样式和前端契约测试，未修改 `backend/src/main/java/`，不触发后端 Maven 自动重测条件。
+- 未调用真实 Seedream/Seedance 供应商；配置有效 API Key 后仍需执行真实图片和视频联调，重点确认外部媒体 URL、异步时延和供应商错误提示。
+- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理或切换 Docker context 后，应重新执行 `docker compose up --build -d` 和健康检查。
+- 后续修改媒体能力、生成协议或后端任务状态时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+
 ## AI 生成模式、尺寸与输出设置优化（2026-09-29）
 
 ### Git 基准、范围与交付状态
