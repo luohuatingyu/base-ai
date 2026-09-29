@@ -1,5 +1,35 @@
 # 最近分支覆盖测试报告
 
+## 组合媒体模型目录展开（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `c285b5b`
+- 提交说明：Expand combined media model directory；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 组合模型在生成模型目录中按 `image_model`、`video_model` 分别展开，前端可选择对应输出类型；后端提交校验确认候选模型声明了所选类型，避免通过参数跨类型调用。
+- 模型编辑回显仅复制允许字段，避免历史扩展属性污染生成配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 同一模型的图片和视频入口均可见 | `MediaGenerationServiceTest.generationModelDirectoryIsTypeSpecific` 断言组合模型展开为两条类型目录项 | 正常、兼容 | 通过 |
+| 生成调用只允许模型声明的输出类型 | `MediaGenerationService.candidate` 类型归属校验及 `LlmManagementServiceTest` 组合能力测试 | 安全、异常 | 通过 |
+| 模型编辑不回显未知扩展字段 | `frontend/test/localization.test.mjs` 断言编辑表单只复制白名单字段 | 边界、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/app" -v "$HOME/.m2:/root/.m2" -w /app maven:3.9-eclipse-temurin-21 mvn -B -Dtest=MediaGenerationServiceTest,LlmManagementServiceTest test`：**68/68 通过**。
+- `cd frontend && node --test test/localization.test.mjs test/ai-generation.test.mjs`：**23/23 通过**。
+- 同一 Docker Maven 环境执行完整 `mvn -B test`：**1037/1037 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **661/661**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像构建成功，后端镜像阶段 **1037/1037** 测试通过；启动阶段仍因既有 `baseai-local-docker-socket-proxy` 健康检查 HTTP 503 导致 Adapter Manager 依赖失败，命令退出 1。
+- Compose 重建后 Backend、Frontend、Document Parser、Python Worker 和 Outbound Gateway healthy；`curl http://localhost:8080/ai-generation` 返回 HTTP 200。
+
 ## 图片与视频模型共用配置（2026-09-29）
 
 ### Git 基准、范围与交付状态
