@@ -22,7 +22,8 @@ export async function readChatStream(response, onEvent) {
         const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
         if (!data) continue
         const event = JSON.parse(data)
-        if (!['start', 'delta', 'heartbeat', 'agent_tool_start', 'agent_tool_done', 'done', 'error'].includes(event.type)) throw new Error('chat.callFailed')
+        if (!['start', 'model', 'delta', 'heartbeat', 'agent_tool_start', 'agent_tool_done', 'done', 'error'].includes(event.type)) throw new Error('chat.callFailed')
+        if (event.type === 'model' && (typeof event.model !== 'string' || !event.model.trim())) throw new Error('chat.callFailed')
         if (event.type === 'delta' && typeof event.content !== 'string') throw new Error('chat.callFailed')
         if (event.type === 'error') {
           // 只展示服务端明确允许的路由错误，未知异常继续使用通用提示。

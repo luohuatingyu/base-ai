@@ -2,8 +2,8 @@ server:
   port: 8080
   max-http-request-header-size: ${APP_MAX_REQUEST_HEADER_SIZE:16KB}
   tomcat:
-    max-http-form-post-size: ${APP_MAX_REQUEST_BYTES:20971520}
-    max-swallow-size: ${APP_MAX_REQUEST_BYTES:20971520}
+    max-http-form-post-size: ${APP_MAX_REQUEST_BYTES:67108864}
+    max-swallow-size: ${APP_MAX_REQUEST_BYTES:67108864}
 
 spring:
   application:
@@ -96,7 +96,7 @@ app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}
   resource-limits:
-    request-max-bytes: ${APP_MAX_REQUEST_BYTES:20971520}
+    request-max-bytes: ${APP_MAX_REQUEST_BYTES:67108864}
     authentication-request-max-bytes: ${APP_AUTH_REQUEST_MAX_BYTES:65536}
   document-parser:
     socket-path: ${DOCUMENT_PARSER_SOCKET:/run/document-parser/parser.sock}
@@ -128,6 +128,8 @@ app:
     retention-days: ${TRACE_LOG_RETENTION_DAYS:7}
   audit:
     operation-log-retention-days: ${AUDIT_OPERATION_LOG_RETENTION_DAYS:90}
+  llm-usage:
+    retention-days: ${LLM_USAGE_RETENTION_DAYS:90}
   trace-tracking:
     heartbeat-timeout-seconds: ${TRACE_HEARTBEAT_TIMEOUT_SECONDS:120}
     excluded-methods: GET,OPTIONS

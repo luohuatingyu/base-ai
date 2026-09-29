@@ -16,9 +16,10 @@ function response(text, size = 1) {
 for (const size of [1, 2, 10000]) {
   test(`SSE 中文跨块、CRLF 和合并事件：${size}`, async () => {
     const events = []
-    await readChatStream(response(': comment\r\n\r\ndata: {"type":"start"}\r\n\r\ndata: {"type":"delta","content":"你好"}\r\n\r\ndata: {"type":"done","totalTokens":3}\r\n\r\n', size), event => events.push(event))
-    assert.equal(events[1].content, '你好')
-    assert.equal(events[2].totalTokens, 3)
+    await readChatStream(response(': comment\r\n\r\ndata: {"type":"start"}\r\n\r\ndata: {"type":"model","model":"test-model","providerCode":"test-provider"}\r\n\r\ndata: {"type":"delta","content":"你好"}\r\n\r\ndata: {"type":"done","totalTokens":3}\r\n\r\n', size), event => events.push(event))
+    assert.equal(events[1].model, 'test-model')
+    assert.equal(events[2].content, '你好')
+    assert.equal(events[3].totalTokens, 3)
   })
 }
 

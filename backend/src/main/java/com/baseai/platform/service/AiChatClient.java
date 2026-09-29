@@ -2,8 +2,11 @@ package com.baseai.platform.service;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.modeltype.LlmModelTypeRegistry;
+import com.baseai.platform.modeltype.LlmOperation;
 import com.baseai.platform.trace.TraceContextHolder;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -41,6 +44,9 @@ public class AiChatClient {
 
     /** LLM管理服务，用于模型路由解析 */
     private final LlmManagementService llmManagementService;
+    private final LlmUsageService llmUsageService;
+    /** 聊天客户端只依赖聊天能力处理器，不感知向量和媒体协议。 */
+    private final LlmModelTypeRegistry modelTypeRegistry;
 
     /**
      * 构造函数，通过依赖注入初始化所需服务
@@ -49,11 +55,27 @@ public class AiChatClient {
      * @param taskTraceService 任务追踪服务实例
      * @param llmManagementService LLM管理服务实例
      */
+    @Autowired
     public AiChatClient(@Qualifier("pythonWorkerRestClient") RestClient restClient, TaskTraceService taskTraceService,
-                        LlmManagementService llmManagementService) {
+                        LlmManagementService llmManagementService, LlmUsageService llmUsageService,
+                        LlmModelTypeRegistry modelTypeRegistry) {
         this.restClient = restClient;
         this.taskTraceService = taskTraceService;
         this.llmManagementService = llmManagementService;
+        this.llmUsageService = llmUsageService;
+        this.modelTypeRegistry = modelTypeRegistry;
+    }
+
+    /** 兼容既有生产测试构造方式。 */
+    public AiChatClient(@Qualifier("pythonWorkerRestClient") RestClient restClient, TaskTraceService taskTraceService,
+                        LlmManagementService llmManagementService, LlmUsageService llmUsageService) {
+        this(restClient, taskTraceService, llmManagementService, llmUsageService, new LlmModelTypeRegistry());
+    }
+
+    /** 兼容不需要监控服务的轻量单元测试构造方式。 */
+    public AiChatClient(@Qualifier("pythonWorkerRestClient") RestClient restClient, TaskTraceService taskTraceService,
+                        LlmManagementService llmManagementService) {
+        this(restClient, taskTraceService, llmManagementService, null, new LlmModelTypeRegistry());
     }
 
     /**
@@ -85,6 +107,20 @@ public class AiChatClient {
      */
     public ChatResult chat(String featureCode, String modelType, List<Message> messages, Double temperature,
                           Boolean enableThinking, String thinkingLevel, Long modelId) {
+        return chat(featureCode, modelType, messages, temperature, enableThinking, thinkingLevel, modelId, "CHAT");
+    }
+
+    /** 执行指定来源的模型调用，工作流和聊天共用同一套路由及监控逻辑。 */
+    public ChatResult chat(String featureCode, String modelType, List<Message> messages, Double temperature,
+                          Boolean enableThinking, String thinkingLevel, Long modelId, String source) {
+        return chat(featureCode, modelType, messages, temperature, enableThinking, thinkingLevel, modelId,
+            source, null, null);
+    }
+
+    /** 执行带归属信息的模型调用，确保会话非流式请求也能关联用户和会话用量。 */
+    public ChatResult chat(String featureCode, String modelType, List<Message> messages, Double temperature,
+                           Boolean enableThinking, String thinkingLevel, Long modelId, String source,
+                           Long ownerUserId, Long conversationId) {
         // 设置追踪检查点，记录当前执行位置
         TraceContextHolder.checkpoint();
 
@@ -92,12 +128,15 @@ public class AiChatClient {
         String normalizedFeature = featureCode == null || featureCode.isBlank() ? "chat" : featureCode.trim();
         String requestedModelType = modelType == null ? "" : modelType.trim();
         String normalizedModelType = requestedModelType.isBlank() ? "text_model" : requestedModelType;
+        requireChatType(normalizedModelType);
+        LlmManagementService.requireChatCapabilities(requestedModelType, null);
 
         // 解析路由配置：指定了 modelId 走单模型直连，否则走按类型筛选后的能力路由
         LlmManagementService.WorkerRoute route = modelId==null
             ?llmManagementService.resolveActive(normalizedFeature,normalizedModelType)
             :llmManagementService.resolveModel(modelId,requestedModelType,Boolean.TRUE.equals(enableThinking),thinkingLevel);
         if (modelId != null && requestedModelType.isBlank()) normalizedModelType = preferredModelType(route);
+        LlmManagementService.requireChatCapabilities(normalizedModelType, route);
 
         // 获取当前追踪ID作为父追踪ID
         String parentTraceId = TraceContextHolder.currentTraceId().orElse(null);
@@ -107,6 +146,9 @@ public class AiChatClient {
 
         // 注册Python调用追踪记录，关联父追踪ID
         taskTraceService.registerPython(parentTraceId, pythonTraceId, "/llm/chat");
+        String usageId = llmUsageService == null ? null : llmUsageService.start(
+            LlmUsageService.Start.current(pythonTraceId, ownerUserId, conversationId, source,
+                normalizedFeature, normalizedModelType));
 
         // 确定最终的思考模式开关：优先使用请求参数，其次使用路由配置
         Boolean finalEnableThinking = enableThinking != null ? enableThinking : route.enableThinking();
@@ -125,6 +167,9 @@ public class AiChatClient {
 
             // 更新追踪记录为成功状态
             taskTraceService.updatePython(pythonTraceId, "SUCCESS", null, null);
+            if (llmUsageService != null) llmUsageService.finish(usageId,
+                new LlmUsageService.Completion("SUCCESS", providerFor(route, result.model()), result.model(),
+                    true, (long) result.inputTokens(), (long) result.outputTokens(), (long) result.totalTokens(), null, null, null));
 
             // 设置追踪检查点，记录返回前的位置
             TraceContextHolder.checkpoint();
@@ -133,20 +178,32 @@ public class AiChatClient {
         } catch (RestClientException exception) {
             // 根据线程中断状态判断是取消还是失败
             taskTraceService.updatePython(pythonTraceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, exception.getMessage());
+            if (llmUsageService != null) llmUsageService.finish(usageId,
+                failure(Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", exception));
 
             // 将REST客户端异常转换为业务异常，返回502状态码
             throw new BusinessException(502, "ai.serviceCallFailed");
+        } catch (RuntimeException exception) {
+            taskTraceService.updatePython(pythonTraceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, exception.getMessage());
+            if (llmUsageService != null) llmUsageService.finish(usageId,
+                failure(Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", exception));
+            throw exception;
         }
     }
 
     /** 使用固定向量模型调用 Worker，并保持批量输入和响应顺序一致。 */
     public EmbeddingResult embed(Long modelId, List<String> input) {
         if (modelId == null) throw new BusinessException("knowledge.embeddingInputInvalid");
-        return embed("", modelId, input);
+        return embed("", modelId, input, "EMBEDDING");
     }
 
     /** 使用向量能力路由或指定模型调用 Worker，并保持批量响应顺序一致。 */
     public EmbeddingResult embed(String featureCode, Long modelId, List<String> input) {
+        return embed(featureCode, modelId, input, "EMBEDDING");
+    }
+
+    /** 执行指定来源的向量调用，区分工作流向量节点与知识库索引。 */
+    public EmbeddingResult embed(String featureCode, Long modelId, List<String> input, String source) {
         TraceContextHolder.checkpoint();
         if (input == null || input.isEmpty() || input.size() > 256) {
             throw new BusinessException("knowledge.embeddingInputInvalid");
@@ -157,6 +214,8 @@ public class AiChatClient {
         String parentTraceId = TraceContextHolder.currentTraceId().orElse(null);
         String pythonTraceId = UUID.randomUUID().toString().replace("-", "");
         taskTraceService.registerPython(parentTraceId, pythonTraceId, "/llm/embeddings");
+        String usageId = llmUsageService == null ? null : llmUsageService.start(
+            LlmUsageService.Start.current(pythonTraceId, null, null, source, featureCode, "embedding_model"));
         try {
             EmbeddingResult result = restClient.post().uri("/llm/embeddings").header("X-Python-Trace-Id", pythonTraceId)
                 .contentType(MediaType.APPLICATION_JSON).body(new EmbeddingRequest(input, route.candidates()))
@@ -164,11 +223,43 @@ public class AiChatClient {
             if (result == null || result.embeddings() == null || result.embeddings().size() != input.size()) {
                 throw new BusinessException("knowledge.embeddingResponseInvalid");
             }
-            taskTraceService.updatePython(pythonTraceId, "SUCCESS", null, null); TraceContextHolder.checkpoint(); return result;
+            taskTraceService.updatePython(pythonTraceId, "SUCCESS", null, null);
+            if (llmUsageService != null) llmUsageService.finish(usageId,
+                new LlmUsageService.Completion("SUCCESS", providerFor(route, result.model()), result.model(), true,
+                    result.inputTokens() == null ? null : result.inputTokens().longValue(),
+                    result.outputTokens() == null ? null : result.outputTokens().longValue(),
+                    result.totalTokens() == null ? null : result.totalTokens().longValue(), null, null, null));
+            TraceContextHolder.checkpoint(); return result;
         } catch (RestClientException exception) {
             taskTraceService.updatePython(pythonTraceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, exception.getMessage());
+            if (llmUsageService != null) llmUsageService.finish(usageId,
+                failure(Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", exception));
             throw new BusinessException(502, "ai.serviceCallFailed");
+        } catch (RuntimeException exception) {
+            taskTraceService.updatePython(pythonTraceId, Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", null, exception.getMessage());
+            if (llmUsageService != null) llmUsageService.finish(usageId,
+                failure(Thread.currentThread().isInterrupted() ? "CANCELLED" : "FAILED", exception));
+            throw exception;
         }
+    }
+
+    /** 在创建追踪和用量记录前确认请求类型属于聊天协议。 */
+    private void requireChatType(String modelType) {
+        if (!modelTypeRegistry.supports(modelType, LlmOperation.CHAT))
+            throw new BusinessException("llm.generationChatUnsupported");
+    }
+
+    /** 根据实际返回模型匹配供应商，避免把候选列表首项误记为实际使用项。 */
+    private String providerFor(LlmManagementService.WorkerRoute route, String model) {
+        if (route == null || model == null) return null;
+        return route.candidates().stream().filter(candidate -> model.equals(candidate.model()))
+            .map(LlmManagementService.WorkerCandidate::providerCode).findFirst().orElse(null);
+    }
+
+    /** 将内部异常转换为不泄漏供应商响应正文的监控终态。 */
+    private LlmUsageService.Completion failure(String status, RuntimeException exception) {
+        return new LlmUsageService.Completion(status, null, null, false, null, null, null,
+            exception.getClass().getSimpleName(), exception instanceof BusinessException business ? business.getMessageKey() : null, null);
     }
 
     /**
@@ -210,7 +301,13 @@ public class AiChatClient {
     /** Worker embeddings 请求，只包含固定模型候选和待向量化文本。 */
     public record EmbeddingRequest(List<String> input, List<LlmManagementService.WorkerCandidate> candidates) {}
     /** Worker embeddings 响应。 */
-    public record EmbeddingResult(List<List<Double>> embeddings, String model) {}
+    public record EmbeddingResult(List<List<Double>> embeddings, String model, Integer inputTokens,
+                                  Integer outputTokens, Integer totalTokens) {
+        /** 兼容历史 Worker 响应和现有业务测试。 */
+        public EmbeddingResult(List<List<Double>> embeddings, String model) {
+            this(embeddings, model, null, null, null);
+        }
+    }
 
     /**
      * LLM对话结果对象

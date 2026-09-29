@@ -18,6 +18,9 @@ The platform provides identity and access management, OpenAI-compatible model ro
 - MySQL-backed macOS Device Agent pairing, anonymous iOS device pools, IDA/Appium automation, Remote XPC Registry, and health diagnostics.
 - Versioned visual workflows with reusable node templates, conditional branches, iteration, loops, tool-calling agents, manual runs, and API-key invocation.
 - Runtime platform branding and language configuration.
+- AI video workspace management for projects, scripts, storyboards, character/scene/item assets, generation tasks, rendering, review, and publishing records.
+
+See [AI_VIDEO_GUIDE.md](docs/AI_VIDEO_GUIDE.md) for the complete AI video workflow, API, permissions, schema, and troubleshooting guide.
 
 ## Technology Stack
 

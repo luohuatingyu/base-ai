@@ -5,6 +5,8 @@ import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.domain.*;
+import com.baseai.platform.modeltype.LlmModelTypeRegistry;
+import com.baseai.platform.modeltype.LlmOperation;
 import com.baseai.platform.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.http.MediaType;
@@ -58,6 +60,9 @@ public class LlmManagementService {
 
     /** Python Worker服务客户端，用于模型连接测试 */
     private final RestClient workerClient;
+
+    /** 模型类型能力注册表，隔离不同协议的接入细节。 */
+    private final LlmModelTypeRegistry modelTypeRegistry;
     /** 经健康检查后可参与真实调用的不可变路由快照。 */
     private final AtomicReference<Map<String, WorkerRoute>> activeRoutes = new AtomicReference<>(Map.of());
 
@@ -70,11 +75,22 @@ public class LlmManagementService {
      * @param cryptoService 加密服务
      * @param workerClient Python Worker REST客户端（通过pythonWorkerRestClient限定符注入）
      */
+    @org.springframework.beans.factory.annotation.Autowired
+    public LlmManagementService(LlmProviderRepository providerRepository, LlmModelRepository modelRepository,
+                                LlmRouteRepository routeRepository, DictionaryDataRepository dictionaryDataRepository,
+                                ConfigCryptoService cryptoService,
+                                @org.springframework.beans.factory.annotation.Qualifier("pythonWorkerRestClient") RestClient workerClient,
+                                LlmModelTypeRegistry modelTypeRegistry) {
+        this.providerRepository=providerRepository;this.modelRepository=modelRepository;this.routeRepository=routeRepository;this.dictionaryDataRepository=dictionaryDataRepository;this.cryptoService=cryptoService;this.workerClient=workerClient;this.modelTypeRegistry=modelTypeRegistry;
+    }
+
+    /** 兼容既有单元测试和嵌入式调用方的构造方式。 */
     public LlmManagementService(LlmProviderRepository providerRepository, LlmModelRepository modelRepository,
                                 LlmRouteRepository routeRepository, DictionaryDataRepository dictionaryDataRepository,
                                 ConfigCryptoService cryptoService,
                                 @org.springframework.beans.factory.annotation.Qualifier("pythonWorkerRestClient") RestClient workerClient) {
-        this.providerRepository=providerRepository;this.modelRepository=modelRepository;this.routeRepository=routeRepository;this.dictionaryDataRepository=dictionaryDataRepository;this.cryptoService=cryptoService;this.workerClient=workerClient;
+        this(providerRepository, modelRepository, routeRepository, dictionaryDataRepository, cryptoService, workerClient,
+            new LlmModelTypeRegistry());
     }
 
     /**
@@ -181,6 +197,19 @@ public class LlmManagementService {
     /** 规范可选的单个模型类型查询参数。 */
     private String normalizedModelType(String value){return LlmModel.normalizeModelTypes(List.of(value==null?"":value)).stream().findFirst().orElse("");}
 
+    /** 聊天目录排除生成能力，仍保留已有动态类型的扩展行为。 */
+    public static List<String> chatModelTypes(Collection<String> types){
+        return LlmModel.normalizeModelTypes(types).stream().filter(type->!LlmModel.isGenerationType(type)).toList();
+    }
+
+    /** 在向聊天 Worker 发送请求前同时检查请求类型与实际候选，防止省略类型绕过隔离。 */
+    public static void requireChatCapabilities(String type,WorkerRoute route){
+        if(LlmModel.normalizeModelTypes(List.of(type==null?"":type)).stream().anyMatch(LlmModel::isGenerationType)
+            || route!=null&&route.candidates()!=null&&route.candidates().stream().anyMatch(candidate->candidate!=null
+                &&chatModelTypes(candidate.supportedModelTypes()).isEmpty()))
+            throw new BusinessException("llm.generationChatUnsupported");
+    }
+
     /** 查询启用的模型类型目录；字典尚未初始化时回退到内置的首批类型。 */
     public List<ModelTypeOption> modelTypes(){
         List<ModelTypeOption> result=dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type").stream()
@@ -188,7 +217,7 @@ public class LlmManagementService {
             .map(item->new ModelTypeOption(LlmModel.normalizeModelTypes(List.of(item.getDictValue())).stream().findFirst().orElse(""),item.getLabel()))
             .filter(item->!item.value().isBlank())
             .toList();
-        return result.isEmpty()?List.of(new ModelTypeOption("text_model","文本模型"),new ModelTypeOption("vision_model","视觉模型"),new ModelTypeOption("embedding_model","向量模型")):result;
+        return result.isEmpty()?List.of(new ModelTypeOption("text_model","文本模型"),new ModelTypeOption("vision_model","视觉模型"),new ModelTypeOption("embedding_model","向量模型"),new ModelTypeOption("image_model","图片生成模型"),new ModelTypeOption("video_model","视频生成模型")):result;
     }
 
     /**
@@ -463,7 +492,7 @@ public class LlmManagementService {
         if(!Boolean.TRUE.equals(model.getEnabled()))throw new BusinessException("llm.selectedModelDisabled");
         if(!blank(modelType)&&!matchesModelType(model.getSupportedModelTypes(),modelType))throw new BusinessException("llm.modelTypeUnsupported");
         String normalizedThinking=enableThinking&&!blank(thinkingLevel)?thinkingLevel.trim().toUpperCase(Locale.ROOT):null;
-        WorkerCandidate candidate=candidate(model,normalizedThinking);
+        WorkerCandidate candidate=candidate(model,normalizedThinking,modelType,true);
         if(candidate==null)throw new BusinessException(enableThinking?"llm.thinkingLevelUnavailable":"llm.selectedModelProviderUnavailable");
         return new WorkerRoute(List.of(candidate),enableThinking,true);
     }
@@ -479,15 +508,19 @@ public class LlmManagementService {
     public Map<String,Object> testModel(Long modelId){return testModel(modelId,null);}
     /** 使用可选思考等级测试模型，仅允许模型自身声明的等级参与调用。 */
     public Map<String,Object> testModel(Long modelId,String thinkingLevel){
+        LlmModel model=modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound"));
+        // 由类型处理器选择健康检查协议，避免生成模型误走聊天接口。
+        String protocol=modelTypeRegistry.healthProtocol(model.getSupportedModelTypes());
+        if(protocol==null)throw new BusinessException("llm.generationAdapterUnavailable");
         // 构建候选模型配置，包含解密后的API密钥
         String normalizedThinking=blank(thinkingLevel)?null:thinkingLevel.trim().toUpperCase(Locale.ROOT);
-        WorkerCandidate candidate=candidate(modelRepository.findById(modelId).orElseThrow(()->BusinessException.notFound("llm.modelNotFound")),normalizedThinking);
+        WorkerCandidate candidate=candidate(model,normalizedThinking);
         if(candidate==null)throw new BusinessException("llm.providerUnavailable");
 
-        // 调用Worker的测试接口
+        // 调用Worker的测试接口；embedding 字段保留给旧 Worker 版本兼容。
         Map<String,Object> request=new LinkedHashMap<>();
         request.put("candidate",candidate);request.put("enableThinking",normalizedThinking!=null);
-        request.put("embedding",candidate.supportedModelTypes().contains("embedding_model"));
+        request.put("protocol",protocol);request.put("embedding","embedding".equals(protocol));
         Map<?,?> result=workerClient.post().uri("/llm/test").contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(Map.class);
         if(result==null)throw new BusinessException("llm.workerEmptyTestResult");
 
@@ -516,7 +549,18 @@ public class LlmManagementService {
     private LlmProvider saveProvider(LlmProvider provider,ProviderCommand command){
         provider.setCode(require(command.code(),"llm.providerCodeRequired"));
         provider.setName(require(command.name(),"llm.providerNameRequired"));
-        provider.setBaseUrl(validateProviderUrl(require(command.baseUrl(),"llm.serviceUrlRequired"))); // 去除末尾的斜杠
+        if(command.baseUrl()!=null) provider.setBaseUrl(optionalProviderUrl(command.baseUrl()));
+        // 地址同步关系持久化保存，更新旧接口时保留已有媒体配置。
+        if(command.imageUrl()!=null || command.imageSameAsBase()!=null) provider.setImageUrl(optionalProviderUrl(command.imageUrl()));
+        if(command.videoUrl()!=null || command.videoSameAsImage()!=null) provider.setVideoUrl(optionalProviderUrl(command.videoUrl()));
+        if(command.imageSameAsBase()!=null) provider.setImageSameAsBase(command.imageSameAsBase());
+        else if(provider.getId()==null && !blank(command.imageUrl())) provider.setImageSameAsBase(false);
+        if(command.videoSameAsImage()!=null) provider.setVideoSameAsImage(command.videoSameAsImage());
+        else if(provider.getId()==null && !blank(command.videoUrl())) provider.setVideoSameAsImage(false);
+        if(Boolean.TRUE.equals(provider.getVideoSameAsImage()) && blank(provider.effectiveImageUrl()))
+            throw new BusinessException("llm.syncSourceUrlRequired");
+        if(blank(provider.getBaseUrl()) && blank(provider.effectiveImageUrl()) && blank(provider.effectiveVideoUrl()))
+            throw new BusinessException("llm.serviceUrlRequired");
 
         // 仅在新建或提供了新密钥时才更新加密的API密钥
         if(provider.getId()==null||!blank(command.apiKeys()))
@@ -531,10 +575,13 @@ public class LlmManagementService {
         return providerRepository.save(provider);
     }
 
+    /** 将空地址存为 NULL，非空地址校验协议和安全属性。 */
+    private String optionalProviderUrl(String value){ return blank(value) ? null : validateProviderUrl(value.trim()); }
+
     /** 校验模型供应商为无内嵌凭证和片段的绝对 HTTP(S) 地址。 */
     private String validateProviderUrl(String value){
         try{
-            if(value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>2048)throw new BusinessException("llm.serviceUrlInvalid");
+            if(value.length()>500)throw new BusinessException("llm.serviceUrlInvalid");
             java.net.URI uri=java.net.URI.create(value);
             if(!Set.of("http","https").contains(String.valueOf(uri.getScheme()).toLowerCase(Locale.ROOT))
                 ||uri.getHost()==null||uri.getRawUserInfo()!=null||uri.getRawFragment()!=null||uri.getPort()==0)
@@ -571,7 +618,19 @@ public class LlmManagementService {
         if(requestedTypes.isEmpty())throw new BusinessException("llm.modelTypeRequired");
         Set<String> availableTypes=modelTypes().stream().map(ModelTypeOption::value).collect(java.util.stream.Collectors.toSet());
         if(!availableTypes.containsAll(requestedTypes))throw new BusinessException("llm.modelTypeUnavailable");
+        // 图片和视频可以共用一个模型配置，但生成能力不能与聊天、向量能力混合保存。
+        boolean hasGenerationType = requestedTypes.stream().anyMatch(LlmModel::isGenerationType);
+        boolean hasNonGenerationType = requestedTypes.stream().anyMatch(type -> !LlmModel.isGenerationType(type));
+        if(hasGenerationType && hasNonGenerationType)
+            throw new BusinessException("llm.modelTypeCombinationInvalid");
         model.setSupportedModelTypes(requestedTypes);
+        String profile = command.generationProfile() == null ? model.getGenerationProfile() : command.generationProfile().trim();
+        // 组合媒体模型可以复用单一方舟 profile；实际生成时仍按请求类型再次校验 profile 能力。
+        String profileType = profile == null || profile.isBlank() ? "" : String.valueOf(com.baseai.platform.modeltype.ArkMediaProtocol.capabilities(profile).get("type"));
+        if (profile != null && !profile.isBlank() && (!com.baseai.platform.modeltype.ArkMediaProtocol.profiles().contains(profile)
+            || !requestedTypes.contains(profileType)))
+            throw new BusinessException("llm.generationRequestInvalid");
+        model.setGenerationProfile(profile == null ? "" : profile);
         model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT)); // 默认MIDDLE能力级别
         model.setThinkingLevels(normalizeThinkingLevels(command.thinkingLevels()));
         model.setEnabled(command.enabled()==null||command.enabled()); // 默认启用
@@ -619,31 +678,21 @@ public class LlmManagementService {
      * @param model 模型实体对象
      * @return WorkerCandidate对象，如果供应商不存在或未启用则返回null
      */
-    private WorkerCandidate candidate(LlmModel model){return candidate(model,null);}
+    private WorkerCandidate candidate(LlmModel model){return candidate(model,null,null,false);}
     /** 根据路由所需思考等级构建候选；模型未配置该等级时不参与供应商池。 */
-    private WorkerCandidate candidate(LlmModel model,String thinkingLevel){
-        // 查找并验证供应商是否启用
-        LlmProvider provider=providerRepository.findById(model.getProviderId())
-            .filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
+    private WorkerCandidate candidate(LlmModel model,String thinkingLevel){return candidate(model,thinkingLevel,null,false);}
+    /** 按模型类型选择通用、图片或视频地址。 */
+    private WorkerCandidate candidate(LlmModel model,String thinkingLevel,String requestedType,boolean requireEndpoint){
+        LlmProvider provider=providerRepository.findById(model.getProviderId()).filter(item->Boolean.TRUE.equals(item.getEnabled())).orElse(null);
         if(provider==null)return null;
-
-        // 解密并解析API密钥列表（支持逗号或换行分隔）
-        List<String> keys=Arrays.stream(cryptoService.decrypt(provider.getApiKeysEncrypted()).split("[,\\n]"))
-            .map(String::trim)
-            .filter(value->!value.isBlank())
-            .toList();
-
+        String type=blank(requestedType)&&model.getSupportedModelTypes().size()==1?model.getSupportedModelTypes().get(0):requestedType;
+        String endpoint=modelTypeRegistry.supports(type,LlmOperation.IMAGE_GENERATION)?provider.effectiveImageUrl()
+            :modelTypeRegistry.supports(type,LlmOperation.VIDEO_GENERATION)?provider.effectiveVideoUrl():provider.getBaseUrl();
+        if(blank(endpoint)){if(requireEndpoint)throw new BusinessException("llm.operationUrlRequired");return null;}
+        List<String> keys=Arrays.stream(cryptoService.decrypt(provider.getApiKeysEncrypted()).split("[,\\n]")).map(String::trim).filter(value->!value.isBlank()).toList();
         String thinkingValue=thinkingLevel==null?null:thinkingMappings(model.getThinkingLevels()).get(thinkingLevel);
         if(thinkingLevel!=null&&blank(thinkingValue))return null;
-        return new WorkerCandidate(
-            provider.getCode(),
-            provider.getBaseUrl(),
-            keys,
-            model.getModelName(),
-            provider.getConcurrencyLimit(),
-            provider.getConcurrencyLevel(),
-            provider.getTimeoutSeconds(), provider.getThinkingParameter(), thinkingValue, model.getSupportedModelTypes()
-        );
+        return new WorkerCandidate(provider.getCode(),endpoint,keys,model.getModelName(),provider.getConcurrencyLimit(),provider.getConcurrencyLevel(),provider.getTimeoutSeconds(),provider.getThinkingParameter(),thinkingValue,model.getSupportedModelTypes(),model.getGenerationProfile());
     }
     /**
      * 构建供应商视图对象（内部方法）
@@ -664,7 +713,7 @@ public class LlmManagementService {
             item.getConcurrencyLevel(),
             item.getTimeoutSeconds(),
             item.getThinkingParameter(),
-            item.getEnabled()
+            item.getEnabled(), item.getImageUrl(), item.getVideoUrl(), item.getImageSameAsBase(), item.getVideoSameAsImage()
         );
     }
 
@@ -758,16 +807,35 @@ public class LlmManagementService {
         if(blank(value))throw new BusinessException(messageKey);
         return value.trim();
     }
-    public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
-    public record ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){}
+    /** 返回模型类型注册表，供独立协议服务复用同一能力定义。 */
+    public LlmModelTypeRegistry modelTypeRegistry(){return modelTypeRegistry;}
+
+    public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled,String imageUrl,String videoUrl,Boolean imageSameAsBase,Boolean videoSameAsImage){
+        /** 兼容已有调用方的旧构造签名。 */
+        public ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){this(code,name,baseUrl,apiKeys,concurrencyLimit,concurrencyLevel,timeoutSeconds,thinkingParameter,enabled,null,null,null,null);}
+    }
+    public record ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled,String imageUrl,String videoUrl,Boolean imageSameAsBase,Boolean videoSameAsImage){
+        /** 兼容已有测试和调用方的旧视图构造签名。 */
+        public ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){this(id,code,name,baseUrl,apiKeys,concurrencyLimit,concurrencyLevel,timeoutSeconds,thinkingParameter,enabled,null,null,true,true);}
+    }
     public record ProviderApiKeysView(Long id,String apiKeys){}
-    public record ModelCommand(String code,String name,Long providerId,String modelName,List<String> supportedModelTypes,String capabilityLevel,String thinkingLevels,Boolean enabled){}
+    public record ModelCommand(String code,String name,Long providerId,String modelName,List<String> supportedModelTypes,String capabilityLevel,String thinkingLevels,Boolean enabled,String generationProfile){
+        /** 保持既有调用方构造协议兼容，未传画像时保留已有配置。 */
+        public ModelCommand(String code,String name,Long providerId,String modelName,List<String> types,String capability,String thinking,Boolean enabled) {
+            this(code,name,providerId,modelName,types,capability,thinking,enabled,null);
+        }
+    }
     public record RouteCommand(String featureCode,String name,List<Long> providerIds,String capabilityLevel,Boolean enableThinking,String thinkingLevel,Boolean enabled){}
     public record RouteSyncCommand(Long routeId,List<Long> providerIds){}
     public record RouteBatchSyncCommand(List<Long> routeIds){}
     public record RouteView(Long id,String featureCode,String name,List<Long> providerIds,String capabilityLevel,String thinkingLevel,Boolean enableThinking,Boolean enabled){}
     public record RouteSyncView(Long routeId,List<ModelHealthView> results){}
-    public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,@JsonIgnore List<String> supportedModelTypes){}
+    public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,@JsonIgnore List<String> supportedModelTypes,@JsonIgnore String generationProfile){
+        /** 兼容历史聊天及通用供应商候选项。 */
+        public WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,List<String> types) {
+            this(providerCode,baseUrl,apiKeys,model,concurrencyLimit,concurrencyLevel,timeoutSeconds,thinkingParameter,thinkingValue,types,"");
+        }
+    }
     public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
     public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
     public record ModelTypeOption(String value,String label){}

@@ -29,6 +29,23 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AiChatClientTest {
+    /** 生成类型及省略类型的生成候选均不能进入聊天 Worker。 */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"image_model,false", "video_model,false", "image_model,true", "video_model,true"})
+    void rejectsGenerationBeforeWorkerCall(String type, boolean omitType) {
+        LlmManagementService management = mock(LlmManagementService.class);
+        TaskTraceService traces = mock(TaskTraceService.class);
+        LlmManagementService.WorkerCandidate candidate = new LlmManagementService.WorkerCandidate(
+            "provider", "https://example.com", List.of("secret"), "media", 1, "PROVIDER", 60, null, null, List.of(type));
+        when(management.resolveModel(1L, "", false, null))
+            .thenReturn(new LlmManagementService.WorkerRoute(List.of(candidate), false, true));
+        AiChatClient client = new AiChatClient(mock(RestClient.class), traces, management);
+        var error = org.junit.jupiter.api.Assertions.assertThrows(com.baseai.platform.common.BusinessException.class,
+            () -> client.chat("chat", omitType ? null : type, List.of(new AiChatClient.Message("user", "test")), 0D, false, null, 1L));
+        assertEquals("llm.generationChatUnsupported", error.getMessageKey());
+        org.mockito.Mockito.verifyNoInteractions(traces);
+        assertNull(requestBody);
+    }
     private HttpServer worker;
     private String requestBody;
     private String internalToken;

@@ -67,7 +67,7 @@ export default {
     expand: '展开侧边栏',
     theme: '侧边栏主题',
     themes: { midnight: '暗夜蓝', cloud: '云雾白', aurora: '极光紫' },
-    items: { ai: 'AI 能力', aiChat: 'AI 对话', automation: '自动化', workflow: '工作流', operations: '运维管理', monitoring: '监控审计', system: '系统管理', access: '访问控制', organization: '组织管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSources: '数据源管理', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowCanvas: '画布管理' }
+    items: { aiVideo: 'AI视频', aiVideoDashboard: '工作台首页', aiVideoContent: '内容创作', aiVideoAssets: '资产中心', aiVideoGeneration: '生成中心', aiVideoPublishing: '发布中心', aiVideoProjects: '项目管理', aiVideoScripts: '剧本管理', aiVideoStoryboards: '分镜管理', aiVideoCharacters: '角色资产', aiVideoScenes: '场景资产', aiVideoItems: '物品资产', aiVideoCostumes: '服装造型', aiVideoMotions: '动作表情', aiVideoStyles: '画风模板', aiVideoVoices: '声音管理', aiVideoSounds: '音乐音效', aiVideoTasks: '生成任务', aiVideoRenders: '视频合成', aiVideoVideos: '成片管理', aiVideoReviews: '审核管理', aiVideoPublishes: '发布管理', aiVideoAnalytics: '数据分析', ai: 'AI 能力', aiChat: 'AI 对话', aiGeneration: 'AI 生成', packageAdjustment: '套餐调整', automation: '自动化', workflow: '工作流', operations: '运维管理', monitoring: '监控审计', system: '系统管理', access: '访问控制', organization: '组织管理', users: '用户管理', roles: '角色管理', menus: '菜单管理', departments: '部门管理', positions: '岗位管理', dictionaries: '字典管理', settings: '系统参数', onlineUsers: '在线用户', operationLogs: '操作日志', loginLogs: '登录日志', tasks: '任务调度', dataSources: '数据源管理', dataSync: '数据同步', servers: '服务器管理', apiKeys: 'API Key 管理', mail: '邮件管理', mailAccounts: '邮箱配置', mailRoutes: '邮件路由', models: '模型管理', providers: '模型供应商', modelConfig: '模型配置', routes: '能力路由', knowledgeBases: '知识库', apiTriggers: '接口触发', apiTriggerSecurity: '触发安全配置', deviceAgents: '设备 Agent 管理', workflowNodes: '节点管理', workflowNodeDocs: '节点文档', workflowCanvas: '画布管理' }
   },
   common: {
     confirm: '确认',
@@ -78,6 +78,7 @@ export default {
     add: '添加',
     search: '搜索',
     reset: '重置',
+    retry: '重试',
     refresh: '刷新',
     query: '查询',
     detail: '详情',
@@ -146,15 +147,257 @@ export default {
     accountDisabled: '账号已停用',
     userNotFound: '登录用户不存在'
   },
+  packageAdjustment: {
+    eyebrow: 'JWT 套餐工具', title: '套餐调整', description: '解析 JWT 中的 ChatGPT 套餐字段，并使用 issuer 私钥生成新的 RS256 Token。',
+    securityNotice: 'Token 和私钥只在当前页面内存中处理，不会上传或保存。只有与 issuer 公钥匹配的 PKCS#8 私钥才能生成可验证 Token。',
+    inputTitle: '输入 Token', inputHint: '粘贴完整的 Header.Payload.Signature 字符串后点击解析。', parse: '解析 Token', tokenPlaceholder: '请粘贴 JWT Token',
+    resultTitle: '解析结果', resultHint: '以下信息来自 Token Payload；仅套餐字段可编辑。', email: '邮箱', accountId: '账号 ID', userId: '用户 ID', algorithm: '签名算法', issuedAt: '签发时间', expiresAt: '过期时间', notSet: '未设置',
+    keyNotice: '请粘贴 issuer 的 PKCS#8 RSA 私钥。私钥只用于本次浏览器内签名，不会上传或保存。', privateKey: 'Issuer 私钥', privateKeyPlaceholder: '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----',
+    planType: 'chatgpt_plan_type', planPlaceholder: '例如 plus、pro、team', generate: '生成并签名 Token', generatedTitle: '已签名 Token', generatedHint: '此 Token 使用输入的 issuer 私钥重新生成 RS256 签名。', copy: '复制', signatureReady: '签名已生成；只有对应公钥的验证方才能接受此 Token。',
+    parseSuccess: 'Token 解析成功', parseFailed: 'Token 解析失败', planMissing: 'Token 中未找到套餐字段，请输入新的套餐后生成。', generateSuccess: '新 Token 已生成', generateFailed: '新 Token 生成失败', copied: 'Token 已复制', copyFailed: '复制失败，请检查浏览器剪贴板权限。'
+  },
   dashboard: {
-    tasks24h: '近24小时任务', success24h: '近24小时成功', failed24h: '近24小时失败', running: '运行中任务',
-    eyebrow: 'AI PLATFORM READY',
-    title: '模型能力，统一接入。',
-    description: '系统数据存储于 MySQL，业务数据归属 PostgreSQL，Redis 提供缓存与令牌撤销能力。',
+    tasks24h: '任务总数', success24h: '成功任务', failed24h: '失败任务', running: '当前运行中',
+    eyebrow: '平台运行概览',
+    title: '运行状态，一目了然。',
+    description: '关注任务执行、模型调用与异常情况，掌握平台的日常运行表现。',
     systemPermissions: '系统权限与任务日志',
     businessDatabase: '从属业务数据库',
     cacheTokens: '缓存与令牌状态',
-    worker: 'OpenAI-compatible 调用'
+    worker: 'OpenAI-compatible 调用',
+    taskOverview: '任务概览',
+    last24Hours: '近 24 小时',
+    createdIn24Hours: '近 24 小时创建的任务',
+    runningHint: '包含运行、等待与取消中的任务',
+    alerts: '近一小时失败',
+    alertsHint: '按任务结束时间统计',
+    notUpdated: '尚未更新',
+    noPermission: '当前账号没有任务概览查看权限。',
+    loadFailed: '任务概览加载失败，请点击刷新重试。'
+  },
+  modelUsage: {
+    eyebrow: '模型可观测性', title: '模型使用监控', description: '查看调用量、Token 消耗与响应表现，快速定位模型使用中的异常。',
+    updatedAt: '更新于 {time}', startTime: '开始时间', endTime: '结束时间', provider: '供应商', model: '模型', modelType: '模型类型', source: '来源', status: '状态',
+    calls: '调用次数', successRate: '成功率', totalTokens: '总 Token', firstToken: '平均首 Token 延迟', duration: '平均耗时', running: '运行中',
+    modelRanking: '模型排行', errors: '错误分布', errorType: '错误类型', errorCode: '错误码', count: '次数', records: '调用明细', time: '开始时间', inputTokens: '输入 Token', outputTokens: '输出 Token', traceId: 'Trace ID', pythonTraceId: 'Python Trace ID', noTraceId: '未记录 Trace ID',
+    noParentTrace: '缺少主任务关联，无法查看日志',
+    empty: '当前范围没有使用记录', noErrors: '当前范围没有错误', loadFailed: '模型使用数据加载失败',
+    sources: { CHAT_STREAM: '公开 API 流式对话', CHAT: '对话', STREAM: '流式对话', EMBEDDING: '向量化', AGENT: 'Agent', AI_IMAGE_GENERATION: '图片生成', AI_VIDEO_GENERATION: '视频生成' },
+    modelTypes: { text_model: '文本模型', vision_model: '视觉模型', embedding_model: '向量模型', image_model: '图片生成模型', video_model: '视频生成模型' },
+    statuses: { SUCCESS: '成功', FAILED: '失败', INTERRUPTED: '中断', CANCELLED: '取消', RUNNING: '运行中' },
+    timeRange: '时间范围（默认近 24 小时）',
+    allProviders: '全部供应商',
+    allModels: '全部模型', allModelTypes: '全部模型类型',
+    allSources: '全部来源',
+    allStatuses: '全部状态',
+    appliedRange: '已应用时间范围',
+    autoRefresh: '每 30 秒刷新已查询条件',
+    invalidRange: '请选择有效的起止时间，结束时间须晚于开始时间，范围不超过 90 天。',
+    unavailable: '数据暂不可用，请刷新重试',
+    recordsFailed: '调用明细加载失败，请重试。',
+    callsHint: '所选范围内的全部调用',
+    successRateHint: '成功次数 / 全部调用次数',
+    totalTokensHint: '输入与输出 Token 合计',
+    firstTokenHint: '从发起请求到首个 Token',
+    durationHint: '单次调用平均总耗时',
+    runningHint: '所选范围内尚在运行的调用',
+    rankingHint: '按调用次数排序 · 最多 20 项',
+    errorsHint: '失败 / 中断 / 取消',
+    recordsHint: '按开始时间倒序'
+  },
+  aiVideo: {
+    creation: {
+      "labels": {
+        "assetTitle": "资产使用指南",
+        "createTitle": "创建前先了解",
+        "prepare": "准备什么",
+        "fill": "如何填写",
+        "next": "保存后怎么用",
+        "example": "名称示例"
+      },
+      "modules": {
+        "scripts": {
+          "purpose": "把故事整理为可拆分镜头的剧本。",
+          "prepare": "先准备所属项目、故事大纲、人物关系、对白和旁白。",
+          "fill": "选择项目并填写标题；内容按场景分段，版本从 1 开始，未定稿保留草稿。",
+          "next": "保存后进入分镜管理，把每段内容拆成镜头并标注时长。",
+          "example": "第一集 · 雨夜来信"
+        },
+        "storyboards": {
+          "purpose": "为每个镜头明确画面、声音和节奏。",
+          "prepare": "准备剧本段落、镜头顺序、角色动作及预计时长。",
+          "fill": "填写镜头序号和标题；画面描述写清主体、环境和动作，对白与旁白分别填写。时长以毫秒计，5000 表示 5 秒。",
+          "next": "核对镜头顺序后，在生成任务中使用画面描述和对应参考素材。",
+          "example": "镜头 01 · 推门进入书店"
+        },
+        "characters": {
+          "purpose": "固定角色的外观与性格，让多个镜头中的人物保持一致。",
+          "prepare": "准备角色参考图、外观要点、性格和素材来源说明。",
+          "fill": "使用明确的角色名；外观写发型、体态、服饰和辨识特征，性格写行为特点。预览地址放参考图，资源地址放实际素材。",
+          "next": "在同项目的分镜说明或生成任务输入中引用角色信息；声音素材在声音管理中单独维护，关联方式以生成服务支持为准。",
+          "example": "林晓 · 青年侦探"
+        },
+        "scenes": {
+          "purpose": "整理可复用的空间与光照设定。",
+          "prepare": "准备地点参考图、时间、光照、天气及空间布局。",
+          "fill": "地点说明室内外和空间特征；时间与光照、天气分别填写，描述中补充镜头可见的关键陈设。",
+          "next": "制作同一地点的镜头时复用场景描述和参考图，保持布局与光照一致。",
+          "example": "雨夜 · 老街书店"
+        },
+        "items": {
+          "purpose": "记录道具的外形与剧情用途，保持不同镜头中的细节一致。",
+          "prepare": "准备物品参考图、材质、颜色、尺寸和使用场景。",
+          "fill": "名称写清物品身份；材质、颜色、尺寸分别填写，描述中说明使用方式及需要保留的细节。",
+          "next": "在分镜或生成输入中引用道具描述和资源，核对尺寸与人物比例。",
+          "example": "铜铃 · 旧宅钥匙扣"
+        },
+        "costumes": {
+          "purpose": "建立角色的服装、发型与饰品组合。",
+          "prepare": "准备造型参考图、适用角色、服装风格与配色。",
+          "fill": "一条资产对应一套造型；描述中补充发型、妆容、饰品及适用剧情，适用角色填写名称。",
+          "next": "在角色分镜中使用对应造型，换装时保留不同名称以便区分。",
+          "example": "林晓 · 雨天风衣造型"
+        },
+        "motions": {
+          "purpose": "保存可复用的动作、表情和节奏参考。",
+          "prepare": "准备动作参考视频、起止姿态、持续时间及强度。",
+          "fill": "描述按起势、过程、结束写清动作；时长使用秒，强度说明轻微、自然或夸张。",
+          "next": "在分镜和视频任务中引用动作描述与参考视频，核对动作时长与镜头时长。",
+          "example": "回头 · 惊讶表情"
+        },
+        "styles": {
+          "purpose": "统一项目的视觉风格、配色和质感。",
+          "prepare": "准备风格参考图、视觉关键词、主辅色与材质倾向。",
+          "fill": "关键词写清写实或插画等方向；配色记录主色与点缀色，描述中说明光线和质感。",
+          "next": "将同一套关键词与配色用于多个生成任务；具体扩展参数由接入的服务解释。",
+          "example": "暖色 · 复古胶片"
+        },
+        "voices": {
+          "purpose": "维护角色配音与旁白的声音参考。",
+          "prepare": "准备可使用的音频样本、音色特点、情绪和示例台词。",
+          "fill": "资源地址填写音频，预览地址可填封面图；音色描述音高、语速和质感，示例台词用于比较效果。",
+          "next": "在配音任务中使用音色描述或服务支持的声音标识；保存资产本身不会自动克隆声音。",
+          "example": "林晓 · 平静叙述"
+        },
+        "sounds": {
+          "purpose": "整理背景音乐、环境音与动作音效。",
+          "prepare": "准备音频素材、声音类型、时长、情绪和使用说明。",
+          "fill": "声音类型区分音乐、环境音、动作音效；时长使用秒，描述中说明适用镜头及衔接方式。",
+          "next": "合成时按镜头时长选用资源，检查音量、衔接与素材使用范围。",
+          "example": "雨夜 · 街道环境音"
+        },
+        "tasks": {
+          "purpose": "保存可追踪的生成任务和输入参数。",
+          "prepare": "先准备项目、任务类型、提示词及接入服务要求的参数。",
+          "fill": "选择类型并为任务命名；提示词写清目标、主体和限制。高级设置中的能力路由和输入 JSON 按实际服务要求填写。",
+          "next": "保存后查看任务状态；当前页面维护任务记录，实际生成依赖执行服务，不会仅因保存而得到成片。",
+          "example": "第一镜头 · 视频生成"
+        },
+        "renders": {
+          "purpose": "记录镜头、字幕和声音的合成配置。",
+          "prepare": "准备镜头素材及顺序、字幕、音轨和输出规格。",
+          "fill": "选择分镜或模板合成，核对画幅和分辨率；在高级配置中填写执行服务支持的镜头或模板参数。",
+          "next": "保存后查看合成状态与输出地址；实际渲染需接入执行服务，完成后再登记成片版本。",
+          "example": "第一集 · 预览合成"
+        },
+        "videos": {
+          "purpose": "登记可预览、审核和发布的成片版本。",
+          "prepare": "准备成片地址、所属项目、版本号、封面和时长。",
+          "fill": "标题注明用途；视频地址填写实际成片，时长以毫秒计。渲染任务 ID 可选，填写时应属于同一项目。",
+          "next": "核对视频与版本后，使用成片 ID 登记审核，再维护发布记录。",
+          "example": "第一集 · 预览版"
+        },
+        "reviews": {
+          "purpose": "为指定成片记录人工审核结论。",
+          "prepare": "准备正确的成片 ID，并检查画面、声音、字幕和素材使用情况。",
+          "fill": "确认成片版本后选择待处理、已通过或已拒绝；意见中写清结论依据和需修改的内容。",
+          "next": "需修改时回到制作环节；通过后再登记发布，保存审核记录不会自动向平台发布。",
+          "example": ""
+        },
+        "publishes": {
+          "purpose": "记录成片在目标渠道的发布情况。",
+          "prepare": "准备成片 ID、发布渠道及审核结论，发布后补充外部编号和链接。",
+          "fill": "渠道填写实际平台；状态与外部平台保持一致，失败时记录原因，外部地址填写可访问链接。",
+          "next": "保存的是发布记录，上传及发布仍需在目标平台完成；之后更新状态和链接。",
+          "example": ""
+        }
+      },
+      "hints": {
+        "projectId": "选择当前内容归属的项目；若没有选项，请先创建项目或联系管理员获取项目查看权限。",
+        "name": "名称应能区分用途与版本，便于后续检索。",
+        "title": "用清晰的标题区分内容、镜头或成片版本。",
+        "description": "说明用途、关键细节和素材来源，便于后续复用。",
+        "previewUrl": "填写参考图或封面图地址；支持 HTTP(S) 或站内 / 路径，可点击预览。",
+        "resourceUrl": "填写实际图片、视频或音频素材地址；按当前分类预览，保存地址不会上传本地文件。",
+        "tags": "使用简短关键词，例如：主角、雨夜、写实，便于搜索。",
+        "status": "按实际准备或处理进度选择状态，状态记录不会自动执行外部操作。",
+        "content": "按场景组织故事内容，区分人物对白与旁白。",
+        "version": "版本从 1 开始；同一内容有新版本时使用明确编号。",
+        "shotNo": "填写镜头顺序，从 1 开始，保存前检查是否重复。",
+        "sceneDescription": "描述主体、地点、动作、光线与构图，让镜头可直接用于制作。",
+        "dialogue": "填写角色名和对白；没有对白可留空。",
+        "narration": "填写画外旁白；没有旁白可留空。",
+        "camera": "选择景别，或输入自定义机位与运动方式。",
+        "durationMs": "单位为毫秒，例如 5000 表示 5 秒。",
+        "taskType": "选择要生成的内容类型，并同步调整提示词和输入配置。",
+        "prompt": "说明期望输出、主体、环境与限制，避免只填写任务名称。",
+        "providerRouteId": "可选；填写实际配置的能力路由 ID，勿填写模型名称。",
+        "inputJson": "输入有效 JSON 对象；字段遵循接入服务要求，不确定时可留空，不要填写密钥。",
+        "configJson": "填写有效 JSON 对象；镜头、字幕、音轨或模板字段以执行服务支持为准。",
+        "metadataJson": "可选扩展属性，与上方分类字段同步；已有自定义属性会保留。",
+        "renderId": "可选的来源合成任务 ID，应与成片属于同一项目。",
+        "videoId": "填写要审核或发布的真实成片 ID，先在成片管理确认对应版本。",
+        "channel": "填写实际发布平台或渠道，例如：视频号。",
+        "externalId": "发布后填写外部平台返回的内容编号；未发布可留空。",
+        "externalUrl": "填写外部平台的成片链接，支持 HTTP(S) 地址。",
+        "errorMessage": "失败时记录原因及待处理事项，避免写入密钥等敏感信息。",
+        "mode": "按已有镜头或模板选择合成方式。",
+        "aspectRatio": "与项目和目标发布平台的画幅保持一致。",
+        "resolution": "与画幅及素材规格保持一致。",
+        "mediaUrl": "填写实际成片地址，可点击预览检查音视频。",
+        "coverUrl": "可选的封面图地址，支持 HTTP(S) 或站内 / 路径。",
+        "comment": "写明审核范围、结论依据及需要修改的具体内容。"
+      },
+      "attributes": {
+        "appearance": "例如：短发、圆框眼镜、左眉有疤；突出跨镜头需保持的特征。",
+        "personality": "例如：冷静谨慎、说话简短；写可体现在行为中的特点。",
+        "location": "例如：老街转角的木质书店，入口朝南。",
+        "timeOfDay": "例如：傍晚，暖色侧光，室内台灯亮起。",
+        "weather": "例如：小雨、路面湿润、远处薄雾。",
+        "material": "例如：磨旧黄铜，表面有细小划痕。",
+        "color": "例如：深蓝为主、银色点缀。",
+        "dimensions": "例如：高 8 厘米，能放在掌心；注明单位或相对比例。",
+        "style": "例如：复古风衣、日常休闲或未来机能风。",
+        "character": "填写适用角色的名称；这里只记录说明，不会自动建立关联。",
+        "duration": "以秒记录，例如 2.5；与镜头的毫秒单位区别。",
+        "intensity": "例如：轻微抬头、自然步行或夸张跳跃。",
+        "keywords": "例如：写实、胶片颗粒、柔和逆光。",
+        "palette": "例如：米白、暖棕、少量墨绿。",
+        "voice": "例如：中低音、语速平缓、声音温润。",
+        "emotion": "例如：平静、紧张、欢快；可说明变化过程。",
+        "sampleText": "例如：雨停了，我们出发吧。使用固定台词比较音色。",
+        "soundType": "例如：背景音乐、环境音、转场音效。"
+      }
+    },
+    editor: {"camera":{"close":"特写","medium":"中景","wide":"远景"},"createTitle":"新增 · {module}","editTitle":"编辑 · {module}","create":"创建并保存","basic":"基础信息","basicHint":"先明确归属和名称，便于后续关联与检索。","content":"内容配置","contentHint":"填写本模块的内容与参数；扩展参数是否生效取决于实际生成服务。","advanced":"高级设置","advancedHint":"版本、状态及扩展配置；JSON 与上方配置同步，已有自定义属性会保留。","requiredHint":"* 为必填项，保存后可继续编辑","urlHint":"支持 HTTP(S) 地址或站内 / 路径，保存前可点击预览。","preview":"预览素材","previewFailed":"素材无法预览，请检查地址与访问权限。","extended":"扩展属性 JSON","renderMode":"合成方式","STORYBOARD":"分镜合成","TEMPLATE":"模板合成","discardHint":"尚有未保存内容，确定放弃修改？","discardTitle":"放弃修改","invalidJson":"扩展配置须为有效的 JSON 对象，请在高级设置中修正。","configTooLong":"扩展配置不能超过 20000 字符。","invalidUrl":"请输入有效的 HTTP(S) 地址或站内绝对路径。","saveFailed":"保存失败，输入内容已保留，请检查后重试。","projectGuide":{"kicker":"创建前先了解","title":"先确定制作方向，再开始填写","description":"项目是剧本、分镜、资产、生成任务和成片共同引用的制作容器。先确定目标和规格，后续内容会更容易保持一致。","requiredTag":"建议按顺序填写","identityTitle":"明确项目身份","identityDescription":"用清晰的编码和名称建立可检索的项目，说明中写下主题、受众或交付目标。","identityFields":"填写：项目编码、名称、说明","outputTitle":"确认输出规格","outputDescription":"根据发布平台选择画幅和分辨率，帧率保持稳定，避免后续分镜和渲染反复调整。","outputFields":"填写：画幅、分辨率、帧率","directionTitle":"补充视觉方向","directionDescription":"用风格和封面帮助团队快速理解项目；准备阶段先保留草稿，确认后再设为进行中。","directionFields":"填写：风格；可选封面和状态","nextTitle":"创建后建议","nextDescription":"保存项目后，先写剧本并拆分分镜，再补充角色、场景等资产，最后提交生成任务。","codeHint":"编码用于关联和检索，建议使用唯一、稳定的英文或数字标识。","codePlaceholder":"例如：spring-story-01","nameHint":"使用团队容易理解的项目名称，后续剧本、资产和成片都会显示它。","namePlaceholder":"例如：春日故事短片","descriptionHint":"写下主题、受众、时长或交付平台，方便后续协作和检查。","descriptionPlaceholder":"例如：面向移动端的 60 秒品牌故事短片","aspectRatioHint":"按目标发布平台选择；竖屏短视频通常使用 9:16，横屏内容通常使用 16:9。","resolutionHint":"与画幅保持一致，并以最终发布平台支持的规格为准。","fpsHint":"保持项目内一致；不确定时可使用默认的 25 fps。","styleHint":"描述画面风格、色彩和质感，帮助后续生成保持统一。","stylePlaceholder":"例如：温暖写实、低饱和胶片质感","statusHint":"准备阶段保留草稿；基础信息确认后再切换为进行中。"},"attributes":{"appearance":"外观特征","personality":"性格特征","location":"场景地点","timeOfDay":"时间与光照","weather":"天气","material":"材质","color":"颜色","dimensions":"尺寸与比例","style":"服装风格","character":"适用角色","duration":"时长（秒）","intensity":"动作强度","keywords":"视觉关键词","palette":"配色","voice":"音色","emotion":"情绪","sampleText":"示例台词","soundType":"声音类型"}},
+    workflowTitle: 'AI 视频制作闭环', workflowHint: '从项目、剧本和资产开始，提交生成任务，再进行合成、审核和发布。', liveData: '实时数据', analyticsTitle: 'AI 视频运营数据', analyticsHint: '当前统计来自已保存的项目、任务、资产和成片记录。', runningTasks: '进行中任务', failedTasks: '失败任务', assetCoverage: '资产总量', videoCoverage: '成片总量', assetsUnit: '项', videosUnit: '条', assetContextHint: '当前列表仅展示该类资产。', noRows: '暂无数据，点击右上角新增。', noResults: '没有匹配的记录，请调整筛选条件。', selectProject: '请选择所属项目', cancelTask: '取消任务', retryTask: '重试任务', completePublish: '完成发布', taskCancelled: '任务已取消', taskRetried: '任务已重新排队', publishCompleted: '发布已完成', loadFailed: '数据加载失败，请重试。', searchPlaceholder: '搜索名称、标题、编码或描述', allStatuses: '全部状态', resultCount: '共 {count} 条', startProject: '开始创建项目', fieldRequired: '请填写{field}',
+    statuses: { DRAFT: '草稿', ACTIVE: '进行中', ARCHIVED: '已归档', READY: '就绪', LOCKED: '已锁定', QUEUED: '排队中', RUNNING: '运行中', SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消', PREVIEW: '预览版', REVIEW: '待审核', PENDING: '待处理', APPROVED: '已通过', REJECTED: '已拒绝', PUBLISHING: '发布中', PUBLISHED: '已发布' },
+    taskTypes: { SCRIPT: '剧本', IMAGE: '图片', VIDEO: '视频', TTS: '配音', MUSIC: '音乐', UPSCALE: '超分' }, taskBoard: { total: '全部任务', running: '运行中', queued: '排队中', failed: '需处理', progress: '执行进度', noPrompt: '暂无提示词或任务说明', noProject: '未关联项目', unnamed: '未命名任务', unknownType: '未知任务' },
+    guide: { progressLabel: '已具备的环节', nextStep: '下一步：{step}', allDone: '五个环节均已具备，可进入交付检查', preparationTitle: '开始前先确认这些输入', preparationHint: '准备充分会让后续生成更稳定，也方便团队复用。', flowTitle: '按顺序完成制作', flowHint: '每个环节都写明了要做什么、会得到什么，以及保存前需要检查的内容。', flowCount: '{count} 个环节', prepareLabel: '需要准备', actionLabel: '具体操作', outputLabel: '完成后得到', checklistLabel: '保存前检查', status: { done: '已具备', current: '建议现在做', locked: '等待前置' },
+      preparation: { briefTitle: '明确内容目标', briefDescription: '先确定平台、时长、画幅、受众和整体风格。', briefAction: '设置项目', modelTitle: '确认生成能力', modelDescription: '确认可用的模型路由和额度，避免任务提交后才发现不可用。', modelAction: '查看生成入口', materialsTitle: '整理参考素材', materialsDescription: '提前准备角色、场景、物品、声音和版权说明。', materialsAction: '准备资产', deliveryTitle: '提前规划交付', deliveryDescription: '确定审核人、发布渠道、封面和外部链接的维护方式。', deliveryAction: '设置发布' },
+      delivery: { taskTitle: '确认任务完成', taskDescription: '查看每个图像、视频、配音和合成任务的结果。', taskCheck: '失败任务先重试或修正输入，再进入审核。', taskAction: '查看任务', videoTitle: '整理成片版本', videoDescription: '为预览、审核和正式发布分别保留可追溯的版本。', videoCheck: '核对时长、画面、声音、字幕和版本号。', videoAction: '管理成片', reviewTitle: '完成内容审核', reviewDescription: '记录内容安全、版权和人工审核结论。', reviewCheck: '只有通过审核的版本才进入发布环节。', reviewAction: '进入审核', publishTitle: '记录发布结果', publishDescription: '维护发布渠道、外部编号、链接和失败原因。', publishCheck: '确认平台状态与工作台记录一致。', publishAction: '管理发布' } },
+    steps: { project: '建立项目', projectHint: '设置画幅、分辨率和整体风格。', projectGoal: '把需求固定成后续所有内容都能引用的制作容器。', projectPrepare: '准备项目名称、编码、目标画幅、分辨率、帧率和风格。', projectAction: '新建项目并填写基础参数，保存后将状态设为进行中。', projectOutput: '一个可关联剧本、分镜、资产、任务和成片的项目。', projectCheckOne: '项目编码唯一且便于搜索', projectCheckTwo: '画幅、分辨率与发布平台匹配', projectCheckThree: '状态和说明已填写', projectCta: '去创建项目', content: '创作内容', contentHint: '编写剧本并拆解成可执行分镜。', contentGoal: '把想法变成可执行的台词、旁白和镜头清单。', contentPrepare: '准备故事梗概、角色关系、对白、旁白和镜头节奏。', contentAction: '先保存剧本，再按镜头拆分分镜，补齐景别、动作、机位和时长。', contentOutput: '可直接交给图像、视频、配音和合成任务的内容规格。', contentCheckOne: '每个镜头有明确画面描述', contentCheckTwo: '对白、旁白和镜头顺序已核对', contentCheckThree: '镜头时长和项目画幅一致', contentCta: '去写剧本', asset: '准备资产', assetHint: '统一管理角色、场景、物品和声音。', assetGoal: '让同一项目中的角色、场景和声音在不同镜头保持一致。', assetPrepare: '准备参考图、材质、动作、音色、音乐和版权信息。', assetAction: '按类型创建资产，补充描述、标签和可访问的素材地址。', assetOutput: '可在生成任务中复用的角色、场景、物品和声音资产。', assetCheckOne: '资产归属到正确项目', assetCheckTwo: '名称、标签和参考素材可检索', assetCheckThree: '外部地址可访问且来源明确', assetCta: '去准备资产', generate: '提交生成', generateHint: '创建图像、视频、配音或合成任务。', generateGoal: '将内容规格和资产组合成可追踪、可重试的生成任务。', generatePrepare: '准备提示词、输入 JSON、能力路由和任务类型。', generateAction: '按任务类型提交图像、视频、配音、音乐或合成任务，并持续查看进度。', generateOutput: '带有状态、进度、错误信息和输出地址的任务记录。', generateCheckOne: '任务类型与输入内容匹配', generateCheckTwo: '能力路由和项目归属正确', generateCheckThree: '失败任务已处理，成功结果可预览', generateCta: '去提交任务', publish: '审核发布', publishHint: '通过审核后记录渠道发布结果。', publishGoal: '把可交付版本经过检查后安全地发布到目标渠道。', publishPrepare: '准备审核意见、封面、渠道、外部编号和发布链接。', publishAction: '先创建成片版本，再提交审核，审核通过后登记发布结果。', publishOutput: '完整的审核记录、发布状态和可追溯的外部链接。', publishCheckOne: '审核结论和版本号一致', publishCheckTwo: '封面、音视频和字幕已复核', publishCheckThree: '渠道状态、外部编号和链接已记录', publishCta: '去审核发布' },
+    pathsTitle: '选择成片路径', pathsHint: '按已有素材和目标选择入口，系统会自动打开对应的创建表单；每条路径都可以回到同一套任务和审核流程。', pathsUnit: '条路径',
+    paths: { textTitle: '文本生成视频', textHint: '从提示词创建视频任务。', textNext: '下一步：查看任务进度', storyboardTitle: '分镜合成视频', storyboardHint: '将镜头、字幕和声音组合成片。', storyboardNext: '下一步：预览合成结果', assetTitle: '资产驱动生成', assetHint: '从角色、场景或物品生成画面。', assetNext: '下一步：补齐项目资产', audioTitle: '配音与音乐', audioHint: '先生成旁白、配音或背景音乐。', audioNext: '下一步：绑定到分镜或合成', templateTitle: '模板批量合成', templateHint: '按模板配置批量渲染视频。', templateNext: '下一步：检查批量输出' },
+    fields: { project: '所属项目', code: '项目编码', name: '名称', title: '标题', description: '说明', coverUrl: '封面地址', mediaUrl: '视频地址', previewUrl: '预览地址', resourceUrl: '资源地址', aspectRatio: '画幅', resolution: '分辨率', fps: '帧率', style: '风格', content: '内容', version: '版本', shotNo: '镜头序号', sceneDescription: '画面描述', dialogue: '对白', narration: '旁白', camera: '机位景别', durationMs: '时长（毫秒）', tags: '标签', taskType: '任务类型', prompt: '提示词', providerRouteId: '能力路由 ID', inputJson: '输入 JSON', configJson: '合成配置 JSON', renderId: '渲染任务 ID', videoId: '成片 ID', comment: '审核意见', channel: '发布渠道', externalId: '外部编号', externalUrl: '外部地址', errorMessage: '错误信息' },
+    eyebrow: 'AI VIDEO WORKSPACE', currentModule: '当前模块', currentModuleHint: '使用列表、表单和任务操作完成 AI 视频制作流程。', permissionReady: '权限菜单已接入', empty: '暂无业务数据。',
+    summary: { projects: '项目数', projectsHint: '管理视频项目和剧集', assets: '资产数', assetsHint: '角色、场景和物品等资产', tasks: '生成任务', tasksHint: '图片、视频和配音任务', videos: '成片数', videosHint: '审核和发布版本' },
+    sections: {
+      dashboard: { title: 'AI视频', description: '统一管理 AI 视频项目、资产、生成任务和成片发布。' },
+      projects: { title: '项目管理', description: '维护视频项目、剧集、成员和项目版本。' }, scripts: { title: '剧本管理', description: '维护故事大纲、分集剧本、对白和旁白。' }, storyboards: { title: '分镜管理', description: '维护镜头、景别、动作、机位和镜头时长。' },
+      characters: { title: '角色资产', description: '维护角色外观、性格、声音和参考图。' }, scenes: { title: '场景资产', description: '维护地点、时间、天气和场景参考图。' }, items: { title: '物品资产', description: '维护道具、武器、车辆、家具和剧情物品。' }, costumes: { title: '服装造型', description: '维护服装、发型、妆容和饰品组合。' }, motions: { title: '动作表情', description: '维护角色动作、表情和可复用动作模板。' }, styles: { title: '画风模板', description: '维护视频项目使用的画风、色彩和生成参数。' }, voices: { title: '声音管理', description: '维护角色音色、配音和旁白声音版本。' }, sounds: { title: '音乐音效', description: '维护背景音乐、环境音和动作音效。' },
+      tasks: { title: '生成任务', description: '查看图片、视频、配音和字幕生成任务。' }, renders: { title: '视频合成', description: '管理镜头拼接、字幕、配音和视频渲染。' }, videos: { title: '成片管理', description: '维护草稿、预览版、审核版和正式成片。' }, reviews: { title: '审核管理', description: '处理内容安全、版权检查和人工审核记录。' }, publishes: { title: '发布管理', description: '维护平台发布配置、状态和发布记录。' }, analytics: { title: '数据分析', description: '查看播放、完播、互动和生成成本数据。' }
+    }
   },
   language: { zhCN: '简体中文', enUS: 'English' },
   apiKeyUsage: { title: '使用说明', introduction: '外部系统调用已授权 API 时，将完整 API Key 放入 X-API-Key 请求头。', exampleTitle: 'curl 示例', curlExample: `curl -X POST <BASE_URL>/api/ai/chat\n  -H "X-API-Key: sk-<your-api-key>"\n  -H "Content-Type: application/json"\n  -d '{'{'}"messages":[{'{'}"role":"user","content":"hello"{'}'}]{'}'}'`, rulesTitle: '调用规则', permissionRule: '实际可调用范围是 Key 勾选的开放 API 与绑定用户 RBAC 权限的交集。', credentialRule: '请求不能同时携带 Authorization 和 X-API-Key，否则会返回 401。', restrictionRule: 'Key 必须处于启用且未过期、未吊销状态，并同时满足来源 IP 白名单和调用频次限制。' },
@@ -174,6 +417,7 @@ export default {
       triggerId: '需要立即执行的接口触发器配置 ID。', success: '统一响应是否成功。', code: '业务响应码，与 HTTP 状态保持一致。', message: '当前语言的响应消息。', traceId: '当前 HTTP 请求的追踪标识，与 code 平级。', content: '模型生成的响应内容。', model: '实际提供响应的模型名称。', inputTokens: '输入 Token 数。', outputTokens: '输出 Token 数。', totalTokens: 'Token 总数。', httpStatus: '下游接口返回的 HTTP 状态。', durationMs: '下游调用耗时，单位毫秒。', responseBody: '下游接口返回的原始响应文本。', workflowCode: '已发布工作流的稳定编码。', workflowInputs: '符合工作流输入定义的 JSON 对象。', workflowRunId: '异步工作流运行 ID。', workflowStatus: '运行状态。', workflowOutput: '工作流成功后的结构化输出。', workflowError: '工作流失败原因。'
     }
   },
+  generation: { title: 'AI 生成', subtitle: '按模型能力生成图片和视频，支持参考素材、组图、首尾帧和视频编辑。', guideTitle: '如何使用', guideStepModel: '先在模型管理中启用图片或视频生成模型；页面会自动选择当前可用类型。', guideStepPrompt: '选择生成模式并填写提示词；提示词可以描述画面、动作、镜头和输出要求。', guideStepAssets: '按模式添加参考图片、视频、音频或文本，并为视频素材选择参考图、首帧或尾帧角色。', guideStepResult: '点击开始生成；视频任务会自动轮询，完成结果和任务历史会保留在当前页面。', guideTip: '如果没有可选模型，请点击模型管理，配置供应商、API Key 和生成模型后再返回。', image: '生成图片', video: '生成视频', model: '生成模型', mode: '生成模式', prompt: '提示词', promptPlaceholder: '描述画面、动作、镜头和输出要求…', assets: '参考素材', role: '素材角色', addAsset: '添加素材', useDraft: '使用样片', openModels: '前往模型管理', submit: '开始生成', reset: '清空', result: '生成结果', history: '任务历史', refresh: '刷新', noHistory: '暂无任务', noModels: '当前类型没有已配置的生成模型，请先配置 Seedream 或 Seedance。', inputLimit: '最多 {count} 个输入素材', groupsSupported: '支持组图输出', layersSupported: '支持图层拆分', draftSupported: '支持样片模式', imageSize: '图片尺寸', groupOutput: '组图输出', maxImages: '最大图片数', layerDecomposition: '图层拆分', transparentBackground: '透明背景', resolution: '分辨率', ratio: '宽高比', duration: '时长（秒）', editLockedDuration: '跟随原视频（-1）', draftLockedDuration: '由样片任务决定', outputFormat: '输出格式', returnLastFrame: '返回尾帧', generateAudio: '生成声音', draft: '样片模式', lockedSettings: '该模式会锁定部分输出参数，已按方舟规则设置。', watermark: '水印', fileRejected: '文件类型或大小超出当前模型限制', fileReadFailed: '素材读取失败', submitFailed: '生成失败，请检查模型配置和输入。', modelsFailed: '生成模型加载失败，请重试。', noDraft: '没有可用的样片任务', partialFailure: '有 {count} 个输出未成功', modes: { TEXT_TO_IMAGE: '文生图', IMAGE_TEXT_TO_IMAGE: '图文生图', MULTI_IMAGE_FUSION: '多图融合', TEXT_TO_GROUP: '文生组图', IMAGE_TO_GROUP: '单图生组图', MULTI_IMAGE_TO_GROUP: '多图生组图', LAYER_DECOMPOSITION: '图层拆分', INTERACTIVE_EDIT: '交互编辑', TRANSPARENT_IMAGE: '透明背景图片', TEXT_TO_VIDEO: '文生视频', IMAGE_TO_VIDEO: '图生视频', FIRST_LAST_FRAME_TO_VIDEO: '首尾帧生视频', REFERENCE_IMAGE_TO_VIDEO: '参考图生视频', VIDEO_TO_VIDEO: '视频生视频', IMAGE_VIDEO_AUDIO_TO_VIDEO: '全模态参考生视频', STORYBOARD_TO_VIDEO: '分镜/白模参考生视频', ONE_CLICK_VIDEO: '一键成片', VIDEO_TRANSITION: '无缝转场', EDIT_VIDEO: '编辑视频', EXTEND_VIDEO: '延长视频', DRAFT_VIDEO: '生成样片', DRAFT_TO_VIDEO: '样片转正式视频' }, roles: { reference_image: '参考图片', first_frame: '首帧', last_frame: '尾帧', reference_video: '参考视频', reference_audio: '参考音频' } },
   chat: {
     tools: '工具', selectedTools: '已选工具', browseTools: '查看工具用途与可用状态',
     toolsHint: '选择本轮允许 AI 使用的工具。发送后，AI 会按问题需要决定是否调用。',
@@ -198,6 +442,7 @@ export default {
     user: '你', assistant: 'AI', empty: '输入问题开始对话', emptyHint: '从一个示例开始，或直接在下方输入你的问题。',
     placeholder: '请输入问题，Ctrl/Cmd + Enter 发送', traceId: 'Trace ID', send: '发送',
     callFailed: '模型调用失败',
+    callType: '调用类型', chatCall: 'AI 对话', mediaGeneration: '媒体生成', generationType: '生成类型',
     mode: '模式',
     multiModel: '多模型',
     singleModel: '单模型',
@@ -248,8 +493,8 @@ export default {
     promptFileSize: '提示词文件不能超过 1 MB',
     promptFileReadFailed: '提示词文件读取失败',
     uploadImage: '上传图片', imageUploadHint: '支持 PNG、JPEG、WEBP，最多 4 张', removeImage: '移除图片', imageLimit: '最多上传 {count} 张图片',
-    imageType: '仅支持 PNG、JPEG、WEBP 图片', imageSize: '单张图片不能超过 10 MB',
-    imageReadFailed: '图片读取失败', imageVisionOnly: '图片只能发送给视觉模型', shortcutHint: 'Ctrl/Cmd + Enter 发送 · Shift + Enter 换行', composerHint: '回答会自动保存到当前会话', draftHint: '你可以继续编辑下一条问题', loadingOptions: '正在加载模型配置…', waitingForSync: '正在同步会话状态…', stopGeneration: '停止生成', backToLatest: '回到最新', retry: '重试', optionsFailed: '模型配置加载失败，请重试。', historyFailed: '历史会话加载失败，请重试。', conversationFailed: '会话加载失败，当前内容已保留。', newConversationFailed: '新建会话失败，请重试。', deleteFailed: '删除会话失败，请重试。', syncFailed: '会话状态同步失败，请稍后重试。', sendFailed: '发送失败，问题草稿已恢复。', interruptedHint: '回答已中断，已收到的内容仍然保留。', suggestions: { explain: '解释一段代码', explainPrompt: '请解释这段代码的作用，并指出潜在问题。', write: '帮我写一份方案', writePrompt: '请帮我写一份清晰、可执行的实施方案。', plan: '规划下一步工作', planPrompt: '请根据当前目标给出下一步行动计划。' }
+    imageType: '仅支持 PNG、JPEG、WEBP 图片', imageSize: '单张图片不能超过 10 MB', videoType: '仅支持 MP4、WEBM、MOV 视频', videoSize: '单个视频不能超过 6 MB',
+    imageReadFailed: '图片读取失败', imageVisionOnly: '图片只能发送给视觉模型', generationMode: '生成输入', uploadGenerationInput: '上传文本、图片、视频或音频', generationInputHint: '可组合上传文本、图片、视频和音频', generationInputLimit: '最多上传 {count} 个生成输入', removeGenerationInput: '移除生成输入', generationInputReadFailed: '生成输入读取失败', generationInputType: '仅支持文本、图片、视频或音频文件', mediaOptions: '生成参数', mediaSize: '尺寸', mediaResponseFormat: '返回格式', mediaGroups: '组图', mediaStream: '流式输出', mediaSeed: '随机种子', mediaResolution: '分辨率', mediaRatio: '宽高比', mediaDuration: '时长', mediaAudio: '生成音频', mediaLastFrame: '返回尾帧', mediaDraft: '样片模式', mediaAdvancedOptions: '高级参数 JSON', mediaAdvancedPlaceholder: '{"callback_url":"https://example.com/callback"}', mediaAdvancedInvalid: '高级参数必须是合法的 JSON 对象', generationInputSize: '生成输入文件超过大小限制', generationFailed: '媒体生成失败，请检查模型配置和供应商响应。', shortcutHint: 'Ctrl/Cmd + Enter 发送 · Shift + Enter 换行', composerHint: '回答会自动保存到当前会话', draftHint: '你可以继续编辑下一条问题', loadingOptions: '正在加载模型配置…', waitingForSync: '正在同步会话状态…', stopGeneration: '停止生成', backToLatest: '回到最新', retry: '重试', optionsFailed: '模型配置加载失败，请重试。', historyFailed: '历史会话加载失败，请重试。', conversationFailed: '会话加载失败，当前内容已保留。', newConversationFailed: '新建会话失败，请重试。', deleteFailed: '删除会话失败，请重试。', syncFailed: '会话状态同步失败，请稍后重试。', sendFailed: '发送失败，问题草稿已恢复。', interruptedHint: '回答已中断，已收到的内容仍然保留。', suggestions: { explain: '解释一段代码', explainPrompt: '请解释这段代码的作用，并指出潜在问题。', write: '帮我写一份方案', writePrompt: '请帮我写一份清晰、可执行的实施方案。', plan: '规划下一步工作', planPrompt: '请根据当前目标给出下一步行动计划。' }
   },
   logs: {
     loginTitle: '登录日志', loginDescription: '记录登录成功与失败事件。',
@@ -366,8 +611,8 @@ export default {
   apiKeys: { title: 'API Key 管理', description: '为外部系统创建无需登录 Token 的机器凭证，并限制可调用接口、来源 IP 和请求频率。', add: '新增 API Key', edit: '编辑 API Key', keyword: '名称或 Key 前缀', keyPrefix: 'Key 前缀', owner: '绑定用户', expiration: '有效期', expirationType: '有效期类型', scheduledExpiration: '指定有效期', neverExpires: '永久有效', neverExpiresWarning: '永久有效的 API Key 不会自动过期，请务必限制开放接口、来源 IP 和调用频率。', neverExpiresConfirm: '该 API Key 将永久有效，确认保存？', expiresAt: '过期时间', selectExpiresAt: '请选择未来时间', endpoints: '开放 API', workflows: '允许的工作流', workflowsHelp: '只能选择绑定用户拥有的工作流；开放接口权限和此白名单必须同时允许才能执行。', workflowDefaultDeny: '当前未选择工作流，默认拒绝工作流执行和运行结果查询。', allowedIps: 'IP 白名单', allowedIpsPlaceholder: '每行一个 IP 或 CIDR，例如 10.0.0.0/24', allowedIpsHelp: '留空表示不限制来源 IP；支持 IPv4、IPv6 和 CIDR。', rateLimit: '调用频次限制', rateLimitTypes: { SECOND: '每秒', MINUTE: '每分钟', HOUR: '每小时', DAY: '每天', UNLIMITED: '无限制' }, rateLimitUnits: { SECOND: '次/秒', MINUTE: '次/分钟', HOUR: '次/小时', DAY: '次/天' }, lastUsedAt: '最近调用时间', viewKey: '查看 Key', rotate: '轮换', revoke: '吊销', rotateConfirm: '轮换“{name}”后旧 Key 将立即失效，确认继续？', revokeConfirm: '永久吊销“{name}”？该操作不可恢复。', secretNotice: '完整 API Key 使用加密副本保存，仅系统管理员可以查看。', secretTitle: '查看 API Key', secretAdminNotice: '完整 Key 属于敏感凭证，请仅复制到安全的密钥管理系统中。', copy: '复制', copied: 'API Key 已复制', copyFailed: '复制失败，请检查浏览器剪贴板权限。', riskTitle: '高风险配置', endpointNames: { aiChatInvoke: 'AI 对话调用', apiTriggerExecute: '执行接口触发器', workflowExecute: '执行工作流', workflowRunRead: '查询工作流运行' }, endpointGroups: { ai: 'AI 能力', automation: '自动化', workflow: '工作流' }, risk: { NORMAL: '普通', SENSITIVE: '敏感', HIGH: '高风险' } },
   mailAccounts: { title: '邮箱配置', description: '独立维护 SMTP 邮箱账户，密码使用 AES-GCM 加密保存且仅向系统管理员回显。', add: '新增邮箱', edit: '编辑邮箱', code: '邮箱编码', host: 'SMTP 主机', port: '端口', username: '用户名', fromAddress: '发件地址', tlsMode: 'TLS 类型', password: '密码/授权码', keepPassword: '留空保留原密码', required: '请完整填写邮箱配置和密码' },
   mailRoutes: { title: '邮件路由', description: '按业务编码选择邮箱和收件人；具体业务缺失时回退不可删除、不可禁用的 DEFAULT。', add: '新增路由', edit: '编辑路由', test: '测试', testSent: '测试邮件已发送', testFailed: '测试邮件发送失败', businessCode: '业务编码', businessPlaceholder: '例如 ORDER_FAILURE', account: '邮箱账户', toAddresses: '收件人', ccAddresses: '抄送人', addressPlaceholder: '请输入一个邮箱地址', addRecipient: '添加收件人', addCc: '添加抄送人', deleteAddress: '删除', pendingConfiguration: '待配置', required: '请完整填写业务编码、名称、邮箱和收件人' },
-  providers: { title: '模型供应商', description: 'API Key 加密保存，列表仅显示脱敏值，只有系统管理员可查看明文。', add: '新增供应商', edit: '编辑供应商', viewKeys: '查看 Key', addKey: '添加 Key', deleteKey: '删除', keyPlaceholder: '留空保留原 Key，输入内容将替换全部 Key', copyKey: '复制', keyCopied: 'Key 已复制', copyFailed: '复制失败，请检查浏览器剪贴板权限', baseUrl: '服务地址', concurrencyLevel: '并发维度', concurrency: '并发数', timeout: '超时秒数', provider: '供应商', apiKeys: 'API Keys', keepKeys: '留空保留原密钥；多个密钥用逗号或换行分隔', multipleKeys: '多个密钥用逗号或换行分隔' },
-  models: { title: '模型配置', description: '维护供应商下的模型标识、能力和思考等级映射。', add: '新增模型', edit: '编辑模型', provider: '供应商', identifier: '模型标识', modelType: '模型类型', capability: '能力', text: '文本', vision: '视觉', low: '低', middle: '中', high: '高', thinkingLevels: '思考等级映射', thinkingPlaceholder: '例如 EXTRA_HIGH=xhigh, LOW=low', thinkingValuePlaceholder: '请输入供应商值', thinkingMappingHelp: '填写供应商实际接收的思考等级值；留空表示该模型不支持此等级。', standardThinkingLevel: '标准思考等级', providerThinkingValue: '供应商值', thinkingLevelLabels: { LOW: '低', MEDIUM: '中', HIGH: '高', EXTRA_HIGH: '超高', MAX: '最高', ULTRA: '极致' }, noThinking: '不启用思考', test: '测试', connected: '连接成功，耗时 {duration}ms', types: { text_model: '文本模型', vision_model: '视觉模型', embedding_model: '向量模型' } },
+  providers: { title: '模型供应商', description: 'API Key 加密保存，列表仅显示脱敏值，只有系统管理员可查看明文。', add: '新增供应商', edit: '编辑供应商', viewKeys: '查看 Key', addKey: '添加 Key', deleteKey: '删除', keyPlaceholder: '留空保留原 Key，输入内容将替换全部 Key', copyKey: '复制', keyCopied: 'Key 已复制', copyFailed: '复制失败，请检查浏览器剪贴板权限', baseUrl: 'Base URL', imageUrl: '图片 URL', videoUrl: '视频 URL', sameAsBase: '与 Base URL 相同', sameAsImage: '与图片 URL 相同', endpointRequired: 'Base、图片、视频 URL 至少填写一个', syncSourceRequired: '请先填写同步来源 URL 或取消同步', concurrencyLevel: '并发维度', concurrency: '并发数', timeout: '超时秒数', provider: '供应商', apiKeys: 'API Keys', keepKeys: '留空保留原密钥；多个密钥用逗号或换行分隔', multipleKeys: '多个密钥用逗号或换行分隔' },
+  models: { title: '模型配置', description: '维护供应商下的模型标识、能力和思考等级映射。', add: '新增模型', edit: '编辑模型', provider: '供应商', identifier: '模型标识', modelType: '模型类型', capability: '能力', text: '文本', vision: '视觉', low: '低', middle: '中', high: '高', generationProfile: '生成能力画像', thinkingLevels: '思考等级映射', thinkingPlaceholder: '例如 EXTRA_HIGH=xhigh, LOW=low', thinkingValuePlaceholder: '请输入供应商值', thinkingMappingHelp: '填写供应商实际接收的思考等级值；留空表示该模型不支持此等级。', standardThinkingLevel: '标准思考等级', providerThinkingValue: '供应商值', thinkingLevelLabels: { LOW: '低', MEDIUM: '中', HIGH: '高', EXTRA_HIGH: '超高', MAX: '最高', ULTRA: '极致' }, noThinking: '不启用思考', test: '测试', connected: '连接成功，耗时 {duration}ms', generationTypeHint: '图片和视频生成模型必须分别配置；文本、视觉和向量能力可按模型实际支持情况组合。', generationUnavailable: '图片和视频生成模型不能使用聊天测试接口，请在 AI 对话中使用媒体生成功能。', types: { text_model: '文本模型', vision_model: '视觉模型', embedding_model: '向量模型', image_model: '图片生成模型', video_model: '视频生成模型' } },
   routes: { title: '能力路由', description: '按供应商池、能力和思考等级筛选模型。', add: '新增路由', edit: '编辑路由', autoSyncEnabledNotice: '定时同步已开启，每 {interval} 自动同步一次，服务启动时也会同步一次。编辑后可等待定时同步，或手动点击“同步”立即生效。', autoSyncDisabledNotice: '定时同步当前已关闭。编辑能力路由后，请手动点击“同步”，同步完成后配置才会生效。', intervalUnits: { day: '{count}天', hour: '{count}小时', minute: '{count}分钟', second: '{count}秒' }, featureCode: '功能编码', candidates: '候选模型', providerPool: '供应商池', thinking: '思考模式', thinkingLevel: '思考等级', example: '例如 chat', sync: '同步', syncRoute: '同步路由「{name}」', syncRoutes: '同步路由', selectFeatureCodes: '请选择需要同步的功能编码', syncScopeHint: '将分别测试所选路由已配置的全部模型供应，并把数据库中的最新路由配置同步到内存。', startSync: '开始同步', syncingRoute: '正在同步功能编码 {code}…', waitingSync: '等待开始同步', syncCompleted: '同步完成', syncPartialCompleted: '同步完成，其中 {count} 个能力路由失败', syncDuration: '耗时 {duration}ms', syncFailed: '同步失败', noModelsToSync: '当前路由未配置模型供应，已同步成功', removeModelProvider: '删除当前模型供应', removeProviderConfirm: '确认从能力路由「{route}」删除供应商「{provider}」及其全部模型供应？供应商和模型主数据不会删除。', providerRemoved: '当前模型供应已删除', default: '默认能力路由' },
   apiTrigger: { title: '接口触发', description: '配置保存于 PostgreSQL，正式执行同步进入 MySQL 任务调度。', add: '新增配置', nameOrDescription: '名称或描述', enabledStatus: '启用状态', manualOnly: '仅手动', latestResult: '最近结果', execute: '执行', logs: '日志', disable: '停用', void: '作废', edit: '编辑接口触发', addTrigger: '新增接口触发', basic: '基础配置', business: '业务接口', auth: '令牌获取', authEnabled: '前置认证', authHelp: '启用后显示“令牌获取”页，调用业务接口前先获取 Token。', cronPlaceholder: '留空仅手动执行', httpMethod: 'HTTP 方法', timeoutSeconds: '超时秒数', targetUrl: '目标 URL', targetUrlPlaceholder: '请先在接口触发安全配置中允许目标 Host', headers: '请求头 JSON', queryParams: '查询参数 JSON', requestBody: '请求体', authMethod: '认证方法', authType: '认证类型', authUrl: '认证 URL', authBody: '认证请求体', tokenPath: 'Token 路径', tokenHeader: 'Token 请求头', tokenPrefix: 'Token 前缀', progress: '查进度', traceReturned: '目标接口返回的 Trace ID', traceHelp: '临时测试或正式执行返回 traceId 后自动显示，无需手工输入。', refreshProgress: '刷新进度与日志', noTrace: '目标接口响应中尚未识别到 Trace ID', pythonTask: 'Python 子任务', workerEndpoint: 'Worker 接口', unifiedLogs: '统一链路日志', entries: '{count} 条', noLogs: '暂无链路日志', level: '级别', source: '来源', logger: '记录器', content: '内容', temporaryTest: '临时测试', result: '调用结果', http: 'HTTP', duration: '耗时', executionLogs: '执行日志', trigger: '触发', summary: '结果摘要', save: '保存', testFailed: '测试失败', executeFailed: '执行失败', progressFailed: '任务进度与日志查询失败', disableConfirm: '确认停用 {name}？', voidConfirm: '作废后不再显示 {name}，是否继续？', voidTitle: '作废配置' },
   workflowNodes: { title: '节点管理', description: '按来源和功能类型维护可复用节点模板；n8n 与 Dify 插件由 Base AI 自研 ABI 在隔离 Worker 中探测和执行。', add: '新增节点模板', edit: '编辑节点模板', source: '节点来源', category: '功能类型', categoryDescription: '管理员可调整节点来源和功能类型', filteredDescription: '当前来源：{source}', system: '系统内置', custom: '自定义', systemDescription: '平台提供并保护的标准节点模板', customDescription: '按业务需要创建的可复用节点模板', noDescription: '暂无节点说明', n8nDescriptionUnavailable: 'n8n 市场未提供此节点的详细说明。', emptyGroup: '当前来源和功能类型下暂无节点', defaultConfig: '默认配置', required: '请填写节点模板编码、名称、节点类型、来源和功能类型', requiredHint: '编码、名称、节点类型、节点来源和功能类型为必填项；默认配置可由工作流实例补充，发布前会统一校验。', importFrom: '从 {source} 市场导入', marketplaceTitle: '{source} 官方节点市场', marketplaceSearch: '搜索节点或插件', marketplaceHint: '打开、搜索或翻页时会自动下载当前页未探测插件，并在隔离 Worker 中异步执行安全与 ABI 探测；导入只使用已完成结果。', marketplaceCapabilities: '可导入能力', marketplaceCapabilityHint: '仅可选择已经通过探测的插件能力', compatibleOnly: '仅显示已兼容', compatible: '可导入', imported: '已导入', probing: '探测中', probePending: '后台安全与 ABI 探测中', partialCompatibility: '部分组件兼容', nativeSubset: '原生能力子集', unsupported: '暂不支持', marketplaceEmpty: '没有匹配的市场节点', importSelected: '导入选中项（{count}）', importCompleted: '处理 {total} 个组件，新导入、恢复或更新 {created} 个', importFailed: '市场插件导入失败', updateConfirmTitle: '确认更新市场插件', updateAvailablePrompt: '检测到 {count} 个已导入插件的市场版本或 ABI Schema 已变化。确认后将固定为新版本并停用受影响模板，是否继续？', incompatibility: { NO_NATIVE_ADAPTER: '当前节点需要尚未实现的插件 ABI。', PROBE_PENDING: '插件包正在后台执行安全与 ABI 探测。', PACKAGE_REJECTED: '插件包未通过安全或结构检查。', PACKAGE_SIZE_LIMIT: '插件包超过允许的压缩体积。', PACKAGE_CONTENT_LIMIT: '插件解压后的文件数量或体积超过安全限制。', PACKAGE_DEPENDENCY_REJECTED: '插件声明了不受信任的依赖来源。', PACKAGE_ARCHIVE_INVALID: '插件包格式、结构或安全校验不通过。', ROUTING_UNSUPPORTED: '插件使用了尚未支持的 n8n 声明式路由。', PLUGIN_ABI_UNSUPPORTED: '插件需要尚未实现的运行时 ABI。', DEPENDENCY_UNAVAILABLE: '插件依赖缺失或暂时无法安装。', PROBE_FAILED: '插件探测失败，请稍后重新打开市场重试。', NO_EXECUTABLE_COMPONENT: '插件包中没有通过 ABI 探测的可执行组件。' } },

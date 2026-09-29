@@ -8,6 +8,7 @@ from collections import defaultdict
 import httpx
 
 from app.config import Settings
+from app.llm_protocol import LlmProtocolRegistry
 from app.llm_provider import strategy_for
 from app.logging_config import sanitize_log_text
 from app.models import (AgentMessage, AgentStepResponse, AgentToolCall, ChatMessage,
@@ -15,6 +16,32 @@ from app.models import (AgentMessage, AgentStepResponse, AgentToolCall, ChatMess
 from app.network_policy import PublicNetworkTransport
 
 logger = logging.getLogger(__name__)
+
+
+def usage_tokens(usage: dict | None) -> tuple[int | None, int | None, int | None]:
+    """统一解析供应商 Token 字段，并在总数缺失时补算输入与输出。"""
+    values = usage if isinstance(usage, dict) else {}
+
+    def read(*names: str) -> int | None:
+        """从多个兼容字段名读取非负整数。"""
+        for name in names:
+            value = values.get(name)
+            if value is None or isinstance(value, bool):
+                continue
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed >= 0:
+                return parsed
+        return None
+
+    input_tokens = read("prompt_tokens", "input_tokens", "promptTokens", "inputTokens")
+    output_tokens = read("completion_tokens", "output_tokens", "completionTokens", "outputTokens")
+    total_tokens = read("total_tokens", "totalTokens")
+    if total_tokens is None and (input_tokens is not None or output_tokens is not None):
+        total_tokens = (input_tokens or 0) + (output_tokens or 0)
+    return input_tokens, output_tokens, total_tokens
 
 
 class LlmClient:
@@ -30,54 +57,31 @@ class LlmClient:
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._key_offsets: defaultdict[str, int] = defaultdict(int)
         self._lock = asyncio.Lock()
+        self.protocols = LlmProtocolRegistry()
 
     async def chat(self, messages: list[ChatMessage], temperature: float,
                    candidates: list[LlmCandidate] | None = None, enable_thinking: bool | None = None,
                    model_type: str = "text_model", route_configured: bool = False) -> ChatResponse:
         """依次尝试候选模型和 API Key，首个成功结果立即返回。"""
-        configured = candidates
-        thinking = bool(enable_thinking)
-        if not configured:
-            raise RuntimeError("未配置可用的模型能力路由")
-        failures: list[str] = []
-        for candidate in configured:
-            for api_key in await self._ordered_keys(candidate):
-                try:
-                    return await self._invoke(candidate, api_key, messages, temperature, thinking)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exception:
-                    failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
-                    logger.warning("event=llm_candidate_failed provider=%s model=%s error=%s",
-                                   candidate.providerCode, candidate.model, sanitize_log_text(exception, 1000), exc_info=True)
-        raise RuntimeError("全部候选模型调用失败: " + "; ".join(failures[-10:]))
+        return await self.protocols.resolve("chat").call(
+            self, messages, temperature, candidates, enable_thinking, model_type, route_configured)
 
     async def test(self, candidate: LlmCandidate, enable_thinking: bool = False,
-                   embedding: bool = False) -> dict:
-        """使用最小请求测试模型连接并返回耗时。"""
+                   embedding: bool = False, protocol: str | None = None) -> dict:
+        """按注册协议使用最小请求测试模型连接，并兼容旧 embedding 参数。"""
         started = time.perf_counter()
-        if embedding:
-            result = await self.embed(["embedding health check"], [candidate])
-            return {"success": True, "model": result.model, "dimension": len(result.embeddings[0]),
-                    "durationMs": round(self._elapsed(started), 2)}
-        result = await self.chat([ChatMessage(role="user", content="reply OK")], 0, [candidate], enable_thinking, route_configured=True)
-        return {"success": True, "model": result.model, "durationMs": round(self._elapsed(started), 2)}
+        adapter = self.protocols.resolve(protocol, embedding)
+        result = await adapter.test(self, candidate, enable_thinking)
+        result["durationMs"] = round(self._elapsed(started), 2)
+        return result
+
+    def health_chat_messages(self) -> list[ChatMessage]:
+        """返回聊天协议健康检查使用的固定最小消息。"""
+        return [ChatMessage(role="user", content="reply OK")]
 
     async def embed(self, values: list[str], candidates: list[LlmCandidate]) -> EmbeddingResponse:
         """依次尝试候选及密钥，调用 OpenAI 兼容 embeddings 接口并保持输入顺序。"""
-        failures: list[str] = []
-        for candidate in candidates:
-            for api_key in await self._ordered_keys(candidate):
-                try:
-                    return await self._invoke_embedding(candidate, api_key, values)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exception:
-                    failures.append(f"{candidate.providerCode}/{candidate.model}: {type(exception).__name__}")
-                    logger.warning("event=embedding_candidate_failed provider=%s model=%s error=%s",
-                                   candidate.providerCode, candidate.model,
-                                   sanitize_log_text(exception, 1000), exc_info=True)
-        raise RuntimeError("全部候选向量模型调用失败: " + "; ".join(failures[-10:]))
+        return await self.protocols.resolve("embedding").call(self, values, candidates)
 
     async def agent_step(self, messages: list[AgentMessage], tools: list[ToolDefinition],
                          candidates: list[LlmCandidate], temperature: float = 0,
@@ -123,10 +127,10 @@ class LlmClient:
                 data = self._parse_response(bytes(response_body), response.status_code,
                                             response.headers.get("content-type", "未提供"), candidate)
             content = self._extract_content(data, candidate)
-            usage = data.get("usage", {})
-            input_tokens = int(usage.get("prompt_tokens", 0) or 0)
-            output_tokens = int(usage.get("completion_tokens", 0) or 0)
-            total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
+            input_tokens, output_tokens, total_tokens = usage_tokens(data.get("usage"))
+            input_tokens = input_tokens or 0
+            output_tokens = output_tokens or 0
+            total_tokens = total_tokens if total_tokens is not None else input_tokens + output_tokens
             self._log_success(candidate.model, messages, content, input_tokens, output_tokens, total_tokens, started_at)
             return ChatResponse(content=content, model=candidate.model, inputTokens=input_tokens,
                                 outputTokens=output_tokens, totalTokens=total_tokens)
@@ -177,7 +181,13 @@ class LlmClient:
             if not content and not calls:
                 raise RuntimeError("Agent 响应既无内容也无工具调用")
             logger.info("event=agent_step_succeeded model=%s tool_call_count=%d", candidate.model, len(calls))
-            return AgentStepResponse(content=content, toolCalls=calls, model=candidate.model)
+            input_tokens, output_tokens, total_tokens = usage_tokens(data.get("usage"))
+            input_tokens = input_tokens or 0
+            output_tokens = output_tokens or 0
+            total_tokens = total_tokens if total_tokens is not None else input_tokens + output_tokens
+            return AgentStepResponse(content=content, toolCalls=calls, model=candidate.model,
+                                     inputTokens=input_tokens, outputTokens=output_tokens,
+                                     totalTokens=total_tokens)
 
     async def _invoke_embedding(self, candidate: LlmCandidate, api_key: str,
                                 values: list[str]) -> EmbeddingResponse:
@@ -216,9 +226,14 @@ class LlmClient:
             indexed[index] = [float(value) for value in embedding]
         if len(indexed) != len(values):
             raise RuntimeError(f"供应商 {candidate.providerCode} 返回的向量索引不完整")
+        input_tokens, output_tokens, total_tokens = usage_tokens(data.get("usage"))
+        input_tokens = input_tokens or 0
+        output_tokens = output_tokens or 0
+        total_tokens = total_tokens if total_tokens is not None else input_tokens + output_tokens
         result = EmbeddingResponse(
             embeddings=[indexed[index] for index in range(len(values))],
             model=candidate.model,
+            inputTokens=input_tokens, outputTokens=output_tokens, totalTokens=total_tokens,
         )
         logger.info("event=embedding_succeeded model=%s input_count=%d dimension=%d", candidate.model,
                     len(values), len(result.embeddings[0]))

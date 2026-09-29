@@ -31,6 +31,7 @@ async function createChat(t, overrides = {}) {
   }
   const router = { async replace(value) { route.query = value.query }, async push(value) { requests.push(value) } }
   const globals = {
+    FileReader: overrides.FileReader,
     window: { matchMedia: () => ({ matches: true }) },
     fetch: overrides.fetch || (async () => streamResponse([{ type: 'start', messageId: 2 }, { type: 'delta', content: '回答' }, { type: 'done' }])),
     navigator: { clipboard: { writeText: overrides.writeText || (async () => {}) } }
@@ -229,6 +230,117 @@ test('工具运行态不会误报失败，辅助详情默认折叠且输入保�
   assert.match(source, /@keydown\.ctrl\.enter\.prevent=/)
   assert.match(source, /aria-live="polite"/)
   assert.match(source, /:disabled="!canSend"/)
+})
+
+for (const outputType of ['image_model', 'video_model']) test(`${outputType} 组合提交文本、图片、视频输入`, async t => {
+  let generationPayload
+  const { state } = await createChat(t, {
+    http: {
+      async get(url) {
+        if (url === '/ai/chat/generation-models') return { data: [{ id: 7, modelType: 'image_model', name: 'Image', modelName: 'image-1' }] }
+        if (url.startsWith('/ai/chat/generation/')) return { data: { id: 10, status: 'SUCCEEDED', modelName: 'image-1', outputJson: { outputs: [] } } }
+        return url === '/ai/conversations' ? { data: { items: [], total: 0 } } : { data: [] }
+      },
+      async post(url, body) {
+        if (url === '/ai/conversations') return { data: { id: 3 } }
+        if (url === '/ai/chat/generation') { generationPayload = body; return { data: { id: 10, status: 'SUCCEEDED', modelName: 'image-1', outputJson: { outputs: [] } } } }
+        return { data: { id: 3 } }
+      }
+    }
+  })
+  state.generationMode.value = 'generation'
+  state.generationType.value = outputType
+  state.generationModelId.value = 7
+  state.generationInputs.value = [
+    { kind: 'TEXT', fileName: 'reference.txt', contentType: 'text/plain', dataUrl: 'data:text/plain;base64,AA==' },
+    { kind: 'IMAGE', fileName: 'reference.png', contentType: 'image/png', dataUrl: 'data:image/png;base64,AA==' },
+    { kind: 'VIDEO', fileName: 'reference.mp4', contentType: 'video/mp4', dataUrl: 'data:video/mp4;base64,AA==' }
+  ]
+  state.prompt.value = 'make it blue'
+  assert.equal(state.canSend.value, true)
+  await state.send()
+  assert.equal(generationPayload.generationMode, 'MULTIMODAL')
+  assert.equal(generationPayload.model_type, outputType)
+  assert.deepEqual(generationPayload.inputs.map(input => input.kind), ['TEXT', 'IMAGE', 'VIDEO'])
+  assert.equal(generationPayload.prompt, 'make it blue')
+  assert.equal(state.generationInputs.value.length, 0)
+  assert.match(source, /text\/plain,text\/markdown/)
+  assert.match(source, /generationInputType/)
+  assert.doesNotMatch(source, /generationInputModeOptions/)
+})
+
+/** 只替换浏览器文件读取边界，组件仍执行实际分类、校验和 Data URL 规范化。 */
+class MediaFileReader {
+  readAsDataURL(file) {
+    this.result = `data:${file.type || 'application/octet-stream'};base64,YQ==`
+    this.onload()
+  }
+}
+
+for (const outputType of ['image_model', 'video_model']) test(`${outputType} 上传混合文件并兼容无 MIME 文本`, async t => {
+  const { state } = await createChat(t, { FileReader: MediaFileReader })
+  state.generationMode.value = 'generation'
+  state.generationType.value = outputType
+  state.generationModelId.value = 7
+  assert.equal(state.canSend.value, false)
+  const files = [
+    { name: 'note.TXT', type: '', size: 1 },
+    { name: 'note.md', type: '', size: 1 },
+    { name: 'picture.png', type: 'image/png', size: 1 },
+    { name: 'clip.mp4', type: 'video/mp4', size: 1 }
+  ]
+  await state.onGenerationInputSelected({ target: { files, value: 'selected' } })
+  assert.deepEqual(state.generationInputs.value.map(input => input.kind), ['TEXT', 'TEXT', 'IMAGE', 'VIDEO'])
+  assert.equal(state.generationInputs.value[0].dataUrl, 'data:text/plain;base64,YQ==')
+  assert.equal(state.generationInputs.value[1].contentType, 'text/markdown')
+  assert.equal(state.canSend.value, true)
+  await state.onGenerationInputSelected({ target: { files: [files[0]], value: '' } })
+  assert.equal(state.generationInputs.value.length, 4)
+  state.generationType.value = outputType === 'image_model' ? 'video_model' : 'image_model'
+  state.onGenerationTypeChange()
+  assert.equal(state.generationInputs.value.length, 4)
+  for (const input of [...state.generationInputs.value]) state.removeGenerationInput(input)
+  assert.equal(state.generationInputs.value.length, 0)
+})
+
+test('生成上传拒绝空文件、超限文件和 MIME 伪装；读取失败不加入附件', async t => {
+  const { state, notices } = await createChat(t, { FileReader: MediaFileReader })
+  for (const file of [
+    { name: 'empty.txt', type: 'text/plain', size: 0 },
+    { name: 'large.txt', type: 'text/plain', size: 1024 * 1024 + 1 },
+    { name: 'large.png', type: 'image/png', size: 30 * 1024 * 1024 + 1 },
+    { name: 'large.mp4', type: 'video/mp4', size: 50 * 1024 * 1024 + 1 },
+    { name: 'fake.txt', type: 'text/html', size: 1 }
+  ]) await state.onGenerationInputSelected({ target: { files: [file], value: '' } })
+  assert.equal(state.generationInputs.value.length, 0)
+  assert.equal(notices.length, 5)
+  class FailedReader {
+    readAsDataURL() { this.error = new Error('read failure'); this.onerror() }
+  }
+  const failed = await createChat(t, { FileReader: FailedReader })
+  await failed.state.onGenerationInputSelected({ target: { files: [{ name: 'note.txt', type: 'text/plain', size: 1 }], value: '' } })
+  assert.equal(failed.state.generationInputs.value.length, 0)
+  assert.equal(failed.notices.at(-1).type, 'error')
+})
+
+test('媒体生成失败恢复文本和全部混合附件', async t => {
+  const { state } = await createChat(t, { http: { async post(url) {
+    if (url === '/ai/conversations') return { data: { id: 3 } }
+    throw new Error('provider failure')
+  } } })
+  state.generationMode.value = 'generation'
+  state.generationModelId.value = 7
+  state.prompt.value = 'keep prompt'
+  state.generationInputs.value = [
+    { kind: 'TEXT', fileName: 'note.txt', contentType: 'text/plain', dataUrl: 'data:text/plain;base64,YQ==' },
+    { kind: 'VIDEO', fileName: 'clip.mp4', contentType: 'video/mp4', dataUrl: 'data:video/mp4;base64,YQ==' }
+  ]
+  const expected = structuredClone(vue.toRaw(state.generationInputs.value))
+  await state.send()
+  assert.equal(state.prompt.value, 'keep prompt')
+  assert.deepEqual(state.generationInputs.value, expected)
+  assert.equal(state.messages.value.length, 0)
+  assert.ok(state.pageError.value)
 })
 
 test('模型来源切换显示上下文选项并清理不适用配置', async t => {

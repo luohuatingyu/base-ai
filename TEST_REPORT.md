@@ -1,5 +1,1363 @@
 # 最近分支覆盖测试报告
 
+## master 二次合并 emdash/codex-vlzfy 验证（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: 82aa939
+- 合并前 master：`82aa939`；源分支尖端：`e5ecff5`；共同祖先：`b3b2e45`；分支 `master`；测试日期 2026-09-29（Asia/Shanghai）。
+- 本地合并，未执行 push。分支相对 master 领先 156 个提交，master 独有 17 个提交。
+- 冲突仅 `TEST_REPORT.md` 与 `ChatStreamClientTest.java`；其余 99 个文件由 Git 自动合并。
+- 合并带入的主要业务变更：AI 生成与 AI 视频工作台（`AiGenerationController`、`AiVideoController`、`MediaGenerationService`、`AiVideoService`）、模型类型协议注册表（`modeltype` 包）、LLM 用量监控（`LlmUsageService`、`LlmUsageController`、`LlmUsageRetentionJob`）、数据库迁移 V43–V47，以及前端 AI 对话/生成模式拆分。
+
+### 冲突处理与测试适配
+
+- `TEST_REPORT.md`：双方章节按时间倒序拼接，分支内容（2026-09-29）在前、master 内容（2026-09-26）在后，历史记录全部保留。
+- `ChatStreamClientTest.java`：双方各自新增了 `LlmManagementService management` 字段，自动合并产生重复声明，删除重复项保留一处；`resolveActive` 桩冲突取分支版本（含 `WorkerCandidate`），因合并后的 `deliversBeforeCompletion` 已断言路由下发的 `model` 事件。
+- 分支新增的路由 `model` 事件使 master 的 `malformedEventAfterDeltaNeverRetries`、`rejectsInvalidResponseBeforeAnyDelta` 两组用例的增量断言多出一条空内容事件。新增私有方法 `withoutRoutedModelEvent()` 在这两个用例中关闭路由模型事件，保留其原有断言语义，未删除、跳过或弱化任何断言。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件及输入 | 预期及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 冲突解决后的后端全量回归无回归 | Docker Maven 3.9.9 / JDK 17、H2；完整 `mvn test` | Domain、Repository、Service、Controller、安全与工作流用例全部通过 | 1132/1132；失败、错误、跳过均为 0 |
+| 聊天流夹具调整不削弱既有断言 | `ChatStreamClientTest` 定向执行 | 增量、重试、终态、用量与工具授权行为维持原判定 | 24/24 通过 |
+| 前端全量回归无回归 | Node、Vue、Playwright；Lint、类型、覆盖、生产 E2E、浏览器 | 聊天、工作流、认证、AI 视频、平台 Key 与本地化场景全部通过 | 覆盖 683/683；E2E 3/3；浏览器 18/18 |
+| 浏览器夹具适配新增接口 | Playwright 真实组件与路由 | 页面新增请求不被判为异常，原认证与聊天场景不变 | 补配 `generation-models` 后 18/18 通过 |
+| Python Worker 协议解析无回归 | Python 3.12 容器；`pytest tests` | 流式解析、协议适配与异常处理全部通过 | 90/90 通过 |
+
+### 实际命令与执行结果
+
+后端在 Docker Desktop 执行 `docker --context desktop-linux run --rm -v <repo>/backend:/workspace -v baseai-m2-test:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：
+
+- 1132/1132 通过，失败 0、错误 0、跳过 0；BUILD SUCCESS。
+- 冲突解决后首次定向执行 `mvn -B -ntp -Dtest=ChatStreamClientTest test`：24 项中 6 项失败，原因是路由 `model` 事件引入的空内容增量，非产品代码缺陷；调整夹具后 24/24 通过，完整套件随之通过。
+
+前端在 `frontend/` 执行 `npm test`：
+
+- ESLint、`vue-tsc` 类型检查通过。
+- `npm run test:coverage`：683/683 通过，失败 0、跳过 0。
+- `npm run test:e2e`：生产构建后 3/3 通过。
+- `npm run test:browser`：首次执行因 Playwright 未安装浏览器二进制 18 项全部失败；`npx playwright install chromium` 后为 10 项失败，均因夹具未声明分支新增的 `GET /api/ai/chat/generation-models`；在 `e2e/browser/fixtures.mjs` 补配该端点（返回空目录，与文本对话模型互不混用）后 18/18 通过。
+
+Python Worker 在 `python:3.12-slim` 容器挂载 `python-worker/` 执行 `python -m pytest -q tests`：90/90 通过。
+
+其他检查：
+
+- `git diff --check`、`git diff --cached --check` 通过；无遗留冲突标记；未新增 Markdown 文件，未提交临时调试代码。
+
+### 已知限制、未执行测试及下次建议
+
+- 未执行 `docker compose up --build -d` 部署重建与运行环境健康检查：主工作区缺少有效部署环境变量（此前记录为 Compose 插值缺少 `APP_PLATFORM_SHORT_NAME`），未降低配置要求强行构建。部署环境齐备后应补测并推进基准。
+- 未执行 `scripts/deployment-smoke.mjs` 冒烟：脚本要求外部 HTTPS 入口与 Secure Cookie，本地纯 HTTP 入口不满足。
+- 未重新执行 Go 套件：本次合并未改动其源码。
+- 未做真实供应商模型的端到端生成与流式聊天验证。
+- 后续修改后端业务代码、核心配置或前端聊天协议时，重跑对应套件与完整 Maven/前端测试并更新本基准。
+
+## 模型供应商查看 API Key 移除二次密码（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `007d501`
+- 提交说明：Remove provider API key reauthentication；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 模型供应商查看 Key 继续要求系统管理员身份和 `ai:model:provider:update` 权限，但点击“查看 Key”不再重复输入当前密码；响应继续禁止缓存，前端关闭窗口时清理明文。编辑供应商仍不自动回显 Key，留空保存继续保留原密钥。
+- 平台 API Key 和邮件凭据的二次密码校验未修改。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 管理员点击“查看 Key”后直接显示明文 | `frontend/test/platform-api-keys.test.mjs` 的“模型供应商向管理员直接显示明文 Key”检查不再调用 `requestRevealPassword`，仍通过 POST 加载密钥 | 正常、权限 | 通过 |
+| 编辑供应商不自动回显或泄漏已保存密钥 | 同一前端契约测试检查 `open` 只初始化空输入行；关闭查看弹窗清理 `keysContent` | 安全、回归 | 通过 |
+| 服务端保留权限边界和无缓存响应 | `LlmManagementControllerTest.providerApiKeysRequiresUpdatePermission` 检查更新权限、POST 和 `captureRequest=false`；`LlmManagementServiceTest` 保留管理员校验回归 | 权限、安全、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && npm test -- --runInBand test/platform-api-keys.test.mjs`：lint、类型检查、覆盖测试 **661/661 通过**；生产构建通过；E2E **13/13 通过**。命令中的额外参数被 npm 透传并产生既有 CLI 警告，不影响结果。
+- `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=LlmManagementControllerTest,LlmManagementServiceTest test`：**59/59 通过**。
+- 同一 Docker Maven 环境执行 `mvn -B -ntp test`：**1039/1039 通过，失败 0、错误 0、跳过 0**。
+- `git diff --check`：通过。
+- `docker compose up --build -d`：镜像构建成功；首次启动因 `.env` 的旧 Docker Socket 路径导致 `docker-socket-proxy` 返回 503。临时覆写为当前 Docker Desktop Socket 后，代理健康，但 Adapter Manager 因 Docker Desktop 不满足 rootless Docker 要求而无法健康启动。
+
+### 已知问题、重测触发与回滚
+
+- 当前 Compose 运行环境不是项目要求的 rootless Docker daemon，Adapter Manager 无法启动；Backend、Frontend、Document Parser、Python Worker、Outbound Gateway 和 Docker Socket Proxy 已构建/运行。需切换到 rootless Docker context 后重新执行整栈启动验证。
+- 未调用真实外部模型供应商，未暴露或写入真实 API Key。
+- 后续修改供应商密钥接口、管理员权限或敏感凭据展示策略时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 007d501`；不涉及数据库迁移。
+
+## AI 生成页面可用性与使用引导（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `12436d8`
+- 提交说明：Improve AI generation page guidance；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- AI 生成页会根据已配置模型自动选择可用的图片或视频类型；无模型时提供模型管理入口；新增中英文使用步骤和模型切换时的选项清理。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 仅有视频模型时页面直接进入可用类型 | `frontend/test/ai-generation.test.mjs` 的 `AI 生成 page guides setup and selects an available type` 检查可用类型自动选择 | 正常、边界 | 通过 |
+| 无模型时用户能跳转模型管理 | 同一契约测试检查空状态、模型管理入口和禁用选择器 | 异常、可操作恢复 | 通过 |
+| 页面提供中英文使用说明 | 同一契约测试检查使用指南键；前端完整本地化测试验证语言资源 | 正常、兼容 | 通过 |
+| 切换模型或清空表单不携带旧能力开关 | `AI 生成 page clears capability-specific toggles when selection changes` 检查组图和透明背景状态清理 | 回归、边界 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/ai-generation.test.mjs`：**5/5 通过**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **663/663**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `cd frontend && npm run typecheck && npm run build`：通过；仅有既有 Vite 运行配置和 chunk 大小提示。
+- `docker compose up --build -d`：镜像全部构建成功；启动阶段仍被既有 `docker-socket-proxy` 健康检查 HTTP 503 阻断。
+- `docker compose up -d --no-deps frontend`：前端容器启动并 healthy；`curl http://localhost:8080/ai-generation` 返回 HTTP 200。
+- 本次仅修改前端代码，未触发后端业务代码重测条件。
+
+### 已知问题、重测触发与回滚
+
+- 当前本地环境的 `docker-socket-proxy` 返回 503，导致整栈 Compose 启动命令退出 1；前端容器已独立启动并验证健康。
+- 真实供应商 API Key 和媒体生成请求仍需在模型管理中配置有效供应商后联调。
+- 回滚代码可执行 `git revert 12436d8`；不涉及数据库迁移。
+
+## 修复组合媒体模型更新的 profile 校验（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `4065a29`
+- 提交说明：Allow combined media profiles on model update；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 修复带有单一 Seedance/Seedream profile 的历史模型更新组合 `image_model`、`video_model` 时被错误拒绝的问题；profile 仍必须有效，且类型必须覆盖声明集合中的至少一个生成类型。
+- 生成+聊天、视觉或向量能力混合，以及 profile 类型完全不匹配的配置仍会被拒绝。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| Seedance 2.0 Mini 组合模型可更新 | `LlmManagementServiceTest.updatesCombinedGenerationModelWithVideoProfile` 使用该模型标识和历史视频 profile 更新为图片/视频组合并保存 | 正常、回归 | 通过 |
+| 错误 profile 不得进入模型配置 | `LlmManagementServiceTest.rejectsCombinedGenerationModelWithMismatchedProfile` 拒绝类型不匹配 profile | 异常、安全 | 通过 |
+| 既有组合能力和其他模块不回退 | 完整 Maven 测试套件及 Compose 镜像内测试 | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -B -Dtest=LlmManagementServiceTest test`：**55/55 通过**。
+- 同一 Docker Maven 环境执行完整 `mvn -B test`：**1039/1039 通过，失败 0、错误 0、跳过 0**。
+- `docker compose up --build -d`：后端镜像阶段 **1039/1039 通过**，9 个镜像构建成功。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- Compose 启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查失败而退出，非端口占用问题；Backend、Document Parser、Python Worker 和 Outbound Gateway 已启动/健康，Adapter Manager 受该依赖阻断。
+
+### 已知问题、重测触发与回滚
+
+- 未使用真实 Ark API Key 执行供应商请求；仍需配置有效供应商后联调图片和视频入口。
+- 修复 Docker Socket Proxy 健康检查后，应重新执行 `docker compose up --build -d` 和整栈健康检查。
+- 修改模型类型校验或媒体能力 profile 时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 4065a29`；不涉及数据库迁移。
+
+## 组合媒体模型目录展开（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `c285b5b`
+- 提交说明：Expand combined media model directory；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 组合模型在生成模型目录中按 `image_model`、`video_model` 分别展开，前端可选择对应输出类型；后端提交校验确认候选模型声明了所选类型，避免通过参数跨类型调用。
+- 模型编辑回显仅复制允许字段，避免历史扩展属性污染生成配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 同一模型的图片和视频入口均可见 | `MediaGenerationServiceTest.generationModelDirectoryIsTypeSpecific` 断言组合模型展开为两条类型目录项 | 正常、兼容 | 通过 |
+| 生成调用只允许模型声明的输出类型 | `MediaGenerationService.candidate` 类型归属校验及 `LlmManagementServiceTest` 组合能力测试 | 安全、异常 | 通过 |
+| 模型编辑不回显未知扩展字段 | `frontend/test/localization.test.mjs` 断言编辑表单只复制白名单字段 | 边界、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/app" -v "$HOME/.m2:/root/.m2" -w /app maven:3.9-eclipse-temurin-21 mvn -B -Dtest=MediaGenerationServiceTest,LlmManagementServiceTest test`：**68/68 通过**。
+- `cd frontend && node --test test/localization.test.mjs test/ai-generation.test.mjs`：**23/23 通过**。
+- 同一 Docker Maven 环境执行完整 `mvn -B test`：**1037/1037 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **661/661**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像构建成功，后端镜像阶段 **1037/1037** 测试通过；启动阶段仍因既有 `baseai-local-docker-socket-proxy` 健康检查 HTTP 503 导致 Adapter Manager 依赖失败，命令退出 1。
+- Compose 重建后 Backend、Frontend、Document Parser、Python Worker 和 Outbound Gateway healthy；`curl http://localhost:8080/ai-generation` 返回 HTTP 200。
+
+## 图片与视频模型共用配置（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `86ed3f5`
+- 提交说明：Expand combined media model directory；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 同一模型可同时声明 `image_model` 和 `video_model`，但仍禁止与聊天、视觉或向量能力混合；生成目录按图片、视频类型分别展开同一模型。
+- 模型配置不再要求手工选择 generation profile，后端根据 Ark 模型标识自动解析 Seedream/Seedance 能力档案，减少配置与实际模型不一致的情况。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片和视频能力可以复用同一模型配置 | `LlmManagementServiceTest.savesCombinedGenerationModelTypes` 保存并回显两种生成类型 | 正常、兼容 | 通过 |
+| 组合模型可以分别用于图片和视频生成 | `MediaGenerationServiceTest.generationModelDirectoryIsTypeSpecific` 检查目录展开和类型隔离 | 正常、兼容、安全 | 通过 |
+| 生成能力不能与聊天、视觉或向量能力混合 | `LlmManagementServiceTest.rejectsMixedGenerationModelTypes` 参数化拒绝混合类型 | 边界、安全、异常 | 通过 |
+| 配置页不再请求或展示手工 profile 选择器 | `frontend/test/localization.test.mjs` 检查编辑器、加载接口和互斥选择 | 正常、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -o -B -Dtest=LlmManagementServiceTest,MediaGenerationServiceTest test`：**68/68 通过**。
+- `cd frontend && node --test test/localization.test.mjs`：**20/20 通过**。
+- 同一 Docker Maven 环境执行完整 `mvn -B test`：**1037/1037 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **661/661**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像构建成功，后端镜像阶段 **1037/1037** 测试通过；启动阶段仍因既有 `baseai-local-docker-socket-proxy` 健康检查 HTTP 503 导致 Adapter Manager 依赖失败，命令退出 1。
+- Compose 状态检查确认 Backend、Frontend、Document Parser、Python Worker 和 Outbound Gateway healthy；Adapter Manager 受 Socket Proxy 依赖阻断。
+
+### 已知问题、重测触发与回滚
+
+- 未使用真实 Ark API Key 执行供应商请求；配置有效图片/视频供应商后仍需联调两个输出类型。
+- Docker Socket Proxy 的既有 HTTP 503 健康检查仍阻断整栈自动启动；修复该代理后应重新执行 `docker compose up --build -d` 和完整健康检查。
+- 修改模型类型校验、媒体模型目录或模型配置页时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 86ed3f5`；不涉及数据库迁移。
+
+## Ark 图片与视频生成模式校正（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `23fda1f`
+- 提交说明：Fix Ark media generation modes；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 对齐 Seedream/Seedance 能力目录：补充分镜、 一键成片、无缝转场模式；修正 Seedance 2.x 编辑、延长、样片和样片转正式视频的参数锁定；移除未被方舟 API 接受的 `interactive_edit` 虚假请求字段。
+- 图片非组图请求不再携带组图默认参数；组图自动提交 `sequential_image_generation=auto`。视频支持输出格式、返回尾帧，并对流式图片响应兼容顶层和 `data` 嵌套事件。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片文生图、图文生图、多图融合和组图请求符合模型能力 | `ArkGenerationCapabilitiesTest` 覆盖图片模式、组图数量边界及非组图参数清理；`ArkMediaProtocolTest` 覆盖图片字段映射 | 正常、边界、兼容 | 通过 |
+| 视频分镜、一键成片、无缝转场可按参考素材组合提交 | `ArkGenerationCapabilitiesTest.validatesExtendedSeedanceModes` 覆盖有效输入和不足转场输入拒绝 | 正常、异常 | 通过 |
+| 编辑、延长、样片和样片转正式视频不会提交互相冲突的默认参数 | `ArkGenerationCapabilitiesTest.acceptsLockedVideoModesAndRemovesSyntheticInteractiveOption`、前端 AI 生成契约测试覆盖 `-1` 时长、480p、adaptive 比例、样片任务引用 | 正常、边界、安全 | 通过 |
+| 图片流式组图结果不会因嵌套响应被误判为空 | `MediaGenerationServiceTest.readsNestedImageStreamEvents` 覆盖嵌套 `data` 事件和 `[DONE]` 完成标记 | 正常、异常恢复 | 通过 |
+| 未知供应商字段、伪造交互编辑字段和越权样片引用被拒绝 | `ArkMediaProtocolTest` 未知字段拒绝；能力校验和服务层样片归属测试 | 安全、异常 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/app" -v "$HOME/.m2:/root/.m2" -w /app maven:3.9-eclipse-temurin-21 mvn -B -Dtest=MediaGenerationServiceTest,ArkGenerationCapabilitiesTest,ArkMediaProtocolTest test`：**26/26 通过，失败 0、错误 0、跳过 0**。
+- 同一 Docker Maven 环境执行完整 `mvn -B test`：**1037/1037 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **660/660**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像构建成功，后端镜像阶段 **1037/1037** 测试通过；启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查持续失败（HTTP 503）导致 Adapter Manager 依赖失败，命令退出 1，非端口占用问题。
+- 随后执行 `docker compose up -d --no-deps frontend`，Frontend healthy；Backend、Document Parser、Python Worker 和 Outbound Gateway healthy。`curl http://localhost:8080/ai-generation` 返回 HTTP 200。
+
+### 已知问题、重测触发与回滚
+
+- 未使用真实 Ark API Key 执行供应商请求；本次验证覆盖官方能力目录、参数组合、协议映射、流式响应和前端交互。配置 Seedream/Seedance 模型及有效 API Key 后仍需进行供应商联调。
+- 当前 Docker Socket Proxy 的既有 HTTP 503 健康检查仍阻断整栈自动启动；修复该代理后应重新执行 `docker compose up --build -d` 和完整健康检查。
+- 修改 Ark 能力档案、媒体协议、生成任务或 AI 生成页面时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 23fda1f`；不涉及数据库迁移。
+
+## AI 对话与 AI 生成模式拆分（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `bc0ca28`
+- 提交说明：Split AI chat and generation modes；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- AI 对话页聚焦文本/多模态对话，AI 生成页独立承载图片和视频生成；新增生成权限、导航、路由、任务查询、取消和删除接口。
+- 按 Ark 能力档案支持 Seedream 4.0/4.5/5.0 lite/pro/flash 与 Seedance 1.0/1.5/2.0/2.5；图片覆盖文生图、图文生图、多图融合、组图、局部重绘、扩图、透明背景和图层拆分，视频覆盖文生视频、图生视频、首尾帧、参考视频、视频编辑、延长、草稿和音频等模式。
+- 模型配置页新增 generation profile；V47 为已有 AI 对话角色补充 AI 生成菜单权限。未新增第三方依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| AI 对话与 AI 生成入口独立，普通聊天不显示生成控件 | `frontend/test/ai-generation.test.mjs` 页面契约、`chat-interaction.test.mjs` 聊天回归；路由和导航权限检查 | 正常、兼容、回归 | 通过 |
+| 图片生成覆盖文生图、图文生图、多图融合、组图和编辑能力 | `ArkGenerationCapabilitiesTest` 能力档案及选项校验；`MediaGenerationServiceTest` 请求准备、输入边界和任务状态 | 正常、边界、异常 | 通过 |
+| 视频生成覆盖文生视频、图生视频、参考视频、首尾帧、编辑、延长、草稿和音频 | `ArkGenerationCapabilitiesTest` Seedance 档案分支；生成请求校验、取消和轮询测试 | 正常、边界、异常、恢复 | 通过 |
+| 未登录/越权、非法模型组合和草稿归属得到拒绝 | Controller 权限注解、服务层能力/归属校验测试；前端仅按能力目录提交选项 | 安全、异常 | 通过 |
+| 既有模型管理、聊天接口和默认行为保持兼容 | Backend 完整 Maven、Frontend 完整 npm、E2E 和构建验证 | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm ... mvn -o -B -Dtest=ArkGenerationCapabilitiesTest,ArkMediaProtocolTest,MediaGenerationServiceTest,LlmManagementServiceTest test`：**76/76 通过，失败 0、错误 0、跳过 0**。
+- 同一 Docker Maven 环境执行完整 `mvn -o -B test`：**1034/1034 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **659/659**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像完成构建，后端镜像阶段完整测试 **1034/1034** 通过；启动阶段因已有 `baseai-local-docker-socket-proxy` 健康检查持续返回 HTTP 503，命令退出 1。该失败不是端口占用，未停止其他容器。
+- 当前 Backend、Python Worker、Document Parser 和 Outbound Gateway 可运行；Adapter Manager 受 Socket Proxy 依赖阻断。修复该代理健康检查后应重新执行整栈启动和健康检查。
+
+### 已知问题、重测触发与回滚
+
+- 未使用真实 Ark 凭据执行供应商图片/视频请求；本次验证覆盖能力矩阵、请求结构、权限、任务状态和前端交互。供应商联调仍需在配置有效 Endpoint/API Key 后执行。
+- 外部供应商的异步任务时延、产物 URL 有效期及具体错误码未在本地环境验证。
+- 修改能力档案、媒体协议、生成任务、模型配置或生成页面时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert bc0ca28`；V47 数据库迁移需按项目迁移回滚流程处理。
+
+## 图片与视频生成统一多模态输入（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+Commit: `de555f5`
+- 提交说明：Handle text attachments and verify combined inputs；测试日期 2026-09-28（Asia/Shanghai）。本次规则调整基于 `97666f9`。
+- 图片模型和视频模型统一接受文本、图片、视频输入，可单独或组合提交；输出类型仍由所选模型决定。
+- 新增文本附件 MIME 缺失时按 `.txt/.md` 扩展名识别，文本附件单独预览；后端允许无 prompt 的纯附件请求，并继续兼容旧生成模式字段。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片模型可接收文本、图片、视频的任意非空组合 | `MediaGenerationServiceTest` 参数化覆盖 1 至 3 类输入组合及空 prompt；前端 image_model 组合提交和上传测试 | 正常、边界、兼容 | 通过 |
+| 视频模型可接收文本、图片、视频的任意非空组合 | `MediaGenerationServiceTest` 参数化覆盖视频输出组合；前端 video_model 组合提交和上传测试 | 正常、边界、兼容 | 通过 |
+| 统一协议保留输入顺序和内容 | `MediaGenerationProtocolRegistryTest.preservesCombinedInputs` 覆盖两类输出协议 | 正常、回归 | 通过 |
+| 输入安全边界和失败恢复保持有效 | 后端 MIME/Data URL/数量/大小参数化测试；前端空文件、超限、伪 MIME、读取失败及草稿恢复测试 | 异常、安全、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -o -B -Dtest=MediaGenerationServiceTest,MediaGenerationProtocolRegistryTest test`：**18/18 通过**。
+- 同一 Docker Maven 环境执行 `mvn -o test -B`：**1022/1022 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **654/654**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `node --test frontend/test/chat-interaction.test.mjs`：**47/47 通过**。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d` 已执行并完成镜像构建；整栈启动仍受已有 `docker-socket-proxy` 返回 503、健康检查失败影响，Adapter Manager 持续重启。
+- 随后执行 `docker compose up -d --no-deps backend frontend`，Backend、Frontend 均 healthy；`curl -fsS http://localhost:8080/api/open/health/ready` 返回 `{"status":"UP"}`。
+
+### 已知问题与重测触发
+
+- 供应商是否接受同时存在文本、图片、视频仍取决于其协议；平台统一适配器已保留完整输入，供应商专用 multipart 或字段映射需在适配器中扩展。
+- 单个文本 1 MB、图片 10 MB、视频 6 MB，最多 4 个输入；限制受当前 JSON/Base64 请求链路约束。
+- 修改媒体输入校验、协议适配器或上传组件时，应重新运行后端完整 Maven、前端完整 npm 和 Compose 重建。
+
+## 图片与视频生成输入协议拆分（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+Commit: `cd8eee4`
+- 提交说明：Reject null media input elements；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次功能实现代码提交为 `dee6268`，边界校验修复提交为 `cd8eee4`。
+- 图片生成支持文生图、图生图、图文生图；视频生成支持文生视频、图生视频、视频生视频，并在前端提供上传、预览、删除和失败恢复。
+- 后端将媒体请求拆为图片/视频协议适配器和注册表，统一传递 `generationMode` 与受校验的输入媒体，任务仅保存输入元数据，避免将 Base64 内容持久化到数据库。
+- 未新增依赖、数据库迁移或供应商专用配置；默认适配器输出统一 JSON 字段，供应商需要 multipart、远程文件 URL 或专用字段时可在对应适配器扩展。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片三种生成模式可用且按模式校验输入 | `MediaGenerationServiceTest` 覆盖三种图片模式、提示词可选规则和非法输入拒绝；前端媒体提交测试断言模式和图片载荷 | 正常、边界、异常、安全 | 通过 |
+| 视频支持图片或视频上传并阻止类型错配 | `MediaGenerationServiceTest` 覆盖图生视频、视频生视频及错配；前端源代码断言视频 accept、上传限制和预览 | 正常、边界、异常、安全 | 通过 |
+| 不同媒体类型接入方式通过独立协议适配器扩展 | `MediaGenerationProtocolRegistryTest` 覆盖图片/视频字段生成和未知类型拒绝；服务通过注册表调用 | 正常、兼容、回归 | 通过 |
+| 既有文本生成和页面行为不回退 | 后端完整 Maven、前端完整 lint/typecheck/coverage/build/E2E | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -o -Dtest=MediaGenerationServiceTest,MediaGenerationProtocolRegistryTest test`：**9/9 通过，失败 0、错误 0、跳过 0**。
+- 同一 Docker Maven 环境执行 `mvn -o test -B`：**1013/1013 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **649/649**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过；未新增临时调试文件。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像均构建成功，后端镜像构建阶段的 **1013/1013** 测试通过；整栈启动受已有 `baseai-local-docker-socket-proxy` 持续返回 HTTP 503、健康检查失败影响，命令退出 1，无端口冲突。
+- 重启该代理容器并再次执行 `docker compose up -d` 后仍因同一健康检查失败退出；Backend、Python Worker、Document Parser 和 Frontend 镜像已成功构建并运行，Adapter Manager 受依赖阻断。
+
+### 已知问题、重测触发与回滚
+
+- 当前统一适配器使用受控 Data URL 作为请求内容，单张图片最大 10 MB、视频最大 6 MB、最多 4 个输入；视频限制受现有 JSON 请求体和 Base64 膨胀约束。真实供应商协议仍需在图片/视频适配器中补充映射和联调。
+- 修改媒体协议、生成模式校验、上传限制或前端提交逻辑时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建；修复 Docker Socket Proxy 后应重新执行整栈健康检查。
+- 回滚代码可依次执行 `git revert cd8eee4 dee6268`，不涉及数据库迁移。
+
+## 模型类型接入协议细化拆分（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+Commit: `31679ff`
+- 提交说明：Preserve Worker protocol test compatibility；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次实现代码提交包括 `0393259`、`2407260`、`4a7cda2`、`757bedc`、`12c9f21`、`18ff88c`、`707d4ac`、`c6c3de1`、`2a463b7`、`31679ff` 及对应回归测试提交。
+- 新增 `modeltype` 能力注册表和协议处理器：文本/视觉走聊天、向量走 embeddings、图片/视频走独立生成协议；未知字典类型保留历史聊天兼容策略，并可通过注册新处理器扩展。
+- `LlmManagementService` 的健康检查通过协议注册表选择，不再以生成类型判断误走聊天接口；聊天客户端和媒体服务分别只依赖自身协议能力，媒体生成/轮询路径由协议处理器提供。
+- Python Worker 新增聊天与向量协议适配器，`/llm/test` 支持显式 `protocol`，旧 `embedding` 布尔字段继续兼容；未新增依赖、数据库迁移或外部供应商协议。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 各模型类型由独立注册处理器声明能力和协议 | `LlmModelTypeRegistryTest` 4 项；内置类型、未知类型兼容、自定义处理器和混合能力筛选 | 正常、边界、兼容 | 通过 |
+| 健康检查不会跨类型调用 | `LlmManagementServiceTest.testModelSelectsHealthCheckByModelType`；聊天/向量分别断言 `protocol` 与旧 `embedding` 字段 | 正常、隔离、回归 | 通过 |
+| 聊天与媒体/向量入口互不串用 | `AiChatClient` 类型前置校验、`MediaGenerationService` 注册表路径和单类型候选过滤；后端完整回归 | 异常、安全、回归 | 通过 |
+| Worker 协议接入可扩展且兼容旧请求 | `test_llm_protocol.py`、`test_llm.py`、`test_llm_stream.py`；显式协议、旧布尔参数、未知协议拒绝 | 正常、边界、兼容、安全 | 通过 |
+| 既有前端和接口行为不回退 | Frontend 完整 lint/type/coverage/build/E2E；后端完整测试 | 回归、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker build --target build --progress=plain -t baseai-model-refactor-build backend`：Java 17 Maven package、业务和测试代码编译成功；读取镜像 Surefire 报告为 **1007/1007 通过，失败 0、错误 0、跳过 0**，新增 `LlmModelTypeRegistryTest` 为 4/4。
+- `docker run --rm ... python:3.12-slim ... pytest -q --rootdir=/app tests`：Python Worker **90/90 通过，失败 0**；定向协议/聊天/向量套件 56/56 通过。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **648/648**、生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过；调试日志已清理，未新增临时文件。
+
+### 构建与运行验证
+
+- 已按仓库要求执行 `docker compose up --build -d`。Docker Desktop BuildKit 在拉取 `golang`/`eclipse-temurin` 基础镜像元数据阶段持续无输出，等待约 90 秒后终止孤立构建进程；因此本次未将 Compose 整栈启动判定为通过，也未因端口占用停止容器。
+- 已完成后端构建阶段测试和 Python 3.12 测试；当前已有运行中的旧 Backend/Worker 容器未替换为本次镜像。待基础镜像元数据可访问后，应重新执行 Compose 构建、启动和健康检查。
+
+### 已知问题、重测触发与回滚
+
+- 未执行真实图片、视频或向量供应商请求；本次验证使用协议边界和 Mock/单元测试，供应商差异仍需由新增处理器承接。
+- 新增模型类型若需要非聊天协议，应注册对应 `LlmModelTypeHandler`，并补充协议处理器与健康检查测试；未知类型默认保持历史聊天兼容。
+- 修改类型注册表、健康检查、Worker 协议、媒体路径或聊天前置校验时，重跑 Backend 完整 Maven、Python Worker 完整 Pytest、Frontend 完整 npm 套件和 Compose 重建。
+- 回滚代码可依次 revert 本次模型类型协议提交（`c6c3de1`、`707d4ac`、`18ff88c`、`12c9f21`、`757bedc`、`4a7cda2`、`2407260`、`0393259`）并重新执行上述测试；不涉及数据库迁移。
+
+## 修复文本模型误出现在图片/视频模型选择器（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+- Commit: `0a9027b`（Clarify generation model configuration）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- 根因是模型配置页允许把 `image_model`/`video_model` 与文本或另一种生成类型混合保存；生成目录虽已过滤纯文本模型，但混合历史配置会造成能力目录误导。
+- 后端保存现在拒绝生成能力混合，前端选择框按协议互斥；纯文本模型不会进入媒体生成目录，图片和视频也不能互相混选。中英文提示同步说明独立配置。
+- 未新增依赖、数据库迁移或数据清理；现有数据库中的纯文本 DeepSeek 配置保持不变。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 纯文本模型不出现在媒体目录 | `MediaGenerationServiceTest.generationModelDirectoryIsTypeSpecific` 加入 text-only DeepSeek；目录只返回单一 image/video 模型 | 正常、兼容、隔离 | 通过 |
+| 生成能力不能与其他类型混合保存 | `LlmManagementServiceTest.rejectsMixedGenerationModelTypes` 覆盖 image+video、image+vision、video+text；后端拒绝且不保存 | 边界、异常、安全 | 通过 |
+| 配置页选择互斥 | `frontend/test/localization.test.mjs` 使用真实 ModelsView setup；文本、图片、视频及历史混合值 | 正常、边界、回归 | 通过 |
+| AI 对话和既有模型功能保持兼容 | 完整后端/前端套件、生产构建与 E2E | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=LlmManagementServiceTest,MediaGenerationServiceTest test`：56/56 通过，失败 0、错误 0、跳过 0。
+- 同一 Docker Maven 环境执行 `mvn -B -ntp test`：**1007/1007 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 648/648、生产构建及 E2E 3/3 全部通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `node --test frontend/test/localization.test.mjs`：19/19 通过；修复前新增互斥断言稳定复现 3 个失败，修复后全部通过。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像构建成功；整栈启动仍受既有 `docker-socket-proxy` unhealthy 导致 `adapter-manager` 依赖失败影响，命令退出 1，无端口冲突。
+- `docker compose up -d --no-deps backend frontend`：退出 0；Backend、Frontend healthy；`curl -fsS http://localhost:8080/api/open/health/ready` 返回 `{"status":"UP"}`。
+
+### 已知问题与后续建议
+
+- 未执行真实供应商图片/视频请求，当前验证覆盖模型目录和配置约束；真实供应商协议、密钥及异步任务仍需单独联调。
+- 已存在的历史混合模型不会被自动改写；编辑并保存时后端会拒绝混合值，管理员需拆成独立模型配置。
+- 修复类型保存、媒体目录或 AI 对话选择逻辑时，应重跑相关测试及后端完整 Maven、前端完整 npm 套件。
+
+## AI 对话图片与视频生成及 Token 记录（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+- Commit: `7407424`（Add image and video generation calls）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- AI 对话新增媒体生成入口：`image_model` 与 `video_model` 分开选型；图片同步返回产物，视频持久化供应商任务编号并由前端/后台轮询。
+- 新增 V45 `ai_media_generation_task`；调用均写入 `llm_usage_record`，视频轮询继续更新同一 `usage_id`。Token 仅记录供应商实际返回值，缺失字段保持空值。
+- 未提供具体供应商文档，本次按 OpenAI 兼容的 `/images/generations`、`/videos/generations` 约定接入；真实供应商若协议不同，需在适配层调整。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片/视频入口分开且不能混用 | `MediaGenerationServiceTest.rejectsUnauthenticatedAndMixedTypeRequests`、模型目录过滤 | 正常、边界、安全 | 通过 |
+| 视频任务可持久化并轮询 | V45 迁移、`MediaGenerationService` 状态接口与后台定时轮询；同一 usage ID 更新 | 正常、异常、恢复 | 通过编译与单元测试；未执行真实供应商调用 |
+| 记录图片/视频 Token | `LlmUsageService` 的 `updateTokens`/终态 COALESCE；管理面板展示模型类型及总 Token | 正常、缺失 usage、回归 | 通过 |
+| AI 对话页面可发起媒体调用 | `AiChatView.vue` 生成模式、图片/视频预览和视频状态轮询；普通聊天回归测试 41/41 | 正常、兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm ... mvn -o -B -ntp -Dtest=MediaGenerationServiceTest,LlmUsageServiceTest,AiChatControllerTest,LlmUsageControllerTest test`：15/15 通过。
+- `docker run --rm ... mvn -o -B -ntp test`：**1003/1003 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试、生产构建及 E2E 全部通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%；媒体改动后的聊天回归 `node --test test/chat-interaction.test.mjs` 为 41/41 通过。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：镜像构建成功；整栈启动受既有 `docker-socket-proxy` unhealthy / `adapter-manager` 依赖失败影响，命令退出 1。Backend、Frontend、Python Worker、Document Parser 等服务已启动；Backend `/api/open/health/ready` 返回 `{"status":"UP"}`，Frontend 容器 healthy。
+- 未执行真实供应商图片/视频请求：当前环境没有配置供应商协议和可用生成模型密钥。
+
+## 模型配置允许图片、视频及其他能力共存（2026-09-28）
+
+### Git 基准、范围与交付状态
+
+- Commit: `45ecf6c`（Test mixed model chat capability）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。本次任务提交链还包含 `3654c1c`、`a24fead`、`2aedbcf`、`b3781b6`、`c19a459`、`473944f`、`94b1be1`。
+- 模型配置不再把 `image_model`、`video_model` 与彼此或文本、视觉能力视为互斥；前端复选框允许混合能力，后端保存校验仅保留非空和有效类型校验。
+- 混合配置继续向聊天目录暴露其中的非生成能力；纯图片或纯视频配置仍不会误发到聊天或尚未接入的生成健康检查协议。
+- 未新增依赖、数据库迁移或配置；本次没有修改图片/视频真实供应商适配器。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、输入与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片和视频可同时维护 | `LlmManagementServiceTest.acceptsMixedGenerationModelTypes`；image+video、image+vision、video+text；保存后保留类型顺序 | 正常、边界、兼容 | 通过 |
+| 前端允许混合选择并回显 | `frontend/test/localization.test.mjs`；空选择、单生成类型、文本类型和历史 image+video 编辑值 | 正常、边界、回归 | 通过 |
+| 混合配置保留聊天能力 | `mixedGenerationModelRetainsChatCapabilities`、`WorkflowAgentClientTest.acceptsLegacyMixedCandidate`；混合候选走聊天请求，纯生成候选仍拒绝 | 正常、异常、安全 | 通过 |
+| 中英文提示准确 | `ModelsView.vue`、中英文 `generationTypeHint`；两种语言均说明可按实际能力多选 | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `node --test frontend/test/localization.test.mjs`：最终 19/19 通过，包含混合生成与文本能力模型测试。
+- `cd frontend && npm test`：最终 lint、类型检查、覆盖测试 647/647、生产构建及 E2E 3/3 全部通过；新增混合连通性测试后的定向 `node --test` 为 19/19 通过。
+- `docker compose build backend`：在临时移出工作区中另一项未完成改动的 `LlmUsageControllerTest.java` 与 `MessageBundleTest.java` 后，后端剩余 **995/995** 通过，包含本次相关 `LlmManagementServiceTest` 与 `WorkflowAgentClientTest`；临时文件已恢复并清理。
+- `docker compose up --build -d`：未通过。构建首次因本次新增的混合 Agent 测试 stub 失败，修复后再次执行时被工作区其他未提交改动阻塞：`LlmUsageController` 的既有测试仍使用旧六参数签名，且新增消息键 `llm.generationCallFailed` 缺少英文资源。上述文件不属于本次任务，均未修改。
+- `git diff --check`：通过（已提交文件）。
+
+### 已知问题与下次测试建议
+
+- 当前工作区保留其他任务的未提交媒体生成和用量监控改动：`AiChatController.java`、`LlmUsageController.java`、`LlmUsageService.java`、`MediaGenerationService.java`、`V45__add_media_generation_tasks.sql`。它们未纳入本次提交，待其测试同步后应执行未删减的 `mvn test -B` 和 `docker compose up --build -d`。
+- 本次未执行真实图片/视频供应商调用；生成适配器仍是后续工作。
+- 回滚本次行为可依次 revert `45ecf6c`、`94b1be1`、`473944f`、`c19a459`、`b3781b6`、`2aedbcf`、`a24fead`、`3654c1c`、`b90f650`，不涉及数据库迁移。
+
+## 图片与视频模型独立配置及聊天隔离（2026-09-28）
+
+### Git 基准、范围与当前交付状态
+
+- Commit: `11e5d856d5ba0137b25730db88ca3ef6b06746b9`（Separate image and video model configuration）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Spring Boot / Java 17、Vue 3 / Element Plus / vue-i18n：分别初始化 `image_model` 与 `video_model`，保持 `vision_model` 的原有视觉理解含义。新增类型使用现有字典、供应商及模型表；没有新增依赖或数据库迁移。
+- 每条生成模型配置只允许一种类型，前后端共同校验；已有文本与视觉组合保留。聊天类型、供应商模型及路由候选排除生成能力；同步聊天、流式聊天、Agent 工具调用在发送请求前检查实际候选。
+- 生成模型健康测试明确拒绝尚未实现的协议，不向聊天接口误发请求、不解密或返回密钥。现有路由同步会将无法测试的生成模型记录为 FAILED，原因是适配器未接入，不代表已探测供应商故障。
+- **整体生成能力仍未完成**：本提交是配置与隔离部分。供应商协议尚未提供，未实现图片/视频适配器、生成任务选模、专用生成路由、任务消费、视频进度轮询、结果保存与预览；现有任务记录仍不会自动生成媒体。已向用户询问供应商/模型或官方文档，未收到具体信息。
+- 执行记录遵循项目约定，统一写入本文件；没有另建 Markdown 计划或调试记录。已在现有隔离 worktree 内工作。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果、场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片和视频类型独立可维护 | Java DataInitializerTest / LlmManagementServiceTest；空字典、已有自定义停用字典、两种类型分别保存 | 补齐缺项、保留管理员配置、保存原始独立编码；正常、边界、幂等、兼容 | 通过 |
+| 生成类型不能混选 | Java 参数化保存测试；image+video、image+vision、video+text；Vue 真实 setup 输入空选、已选及历史混合值 | 后端拒绝且不持久化；前端禁止新增冲突项但允许取消旧项；异常、边界、回归 | 通过 |
+| 按类型选择候选 | Java generationCandidatesRemainSeparate；同一供应商配置 image/video/vision | 每种筛选只返回对应模型，未解密凭据；正常、隔离、安全 | 通过 |
+| 聊天目录与调用隔离 | AiChatControllerTest、AiChatClientTest、ChatStreamClientTest；图片/视频、混合路由、省略请求类型直连 | 聊天目录不暴露生成类型；调用在 Worker 请求和用量登记前拒绝；正常、异常、安全、兼容 | 通过 |
+| 工具调用不能绕过隔离 | WorkflowAgentClientTest；显式类型、省略类型、历史 text+image/text+video 候选 | 统一业务错误，无 Worker 请求或追踪副作用；历史数据、分支、安全 | 通过 |
+| 未接入协议不伪报成功 | Java generationHealthCheckDoesNotUseChat；Vue startTest 两种生成类型 | 明确未接入提示，未调用聊天、不解密密钥；异常、安全 | 通过 |
+| 中英文及原有文本功能兼容 | frontend/test/localization.test.mjs；真实组件状态、两种语言、text+vision 组合与文本测试 | 标签正确、原组合可选、文本测试仍发送原接口；正常、回归 | 通过 |
+| 运行环境加载新类型 | 只读 MySQL 查询、前端 HTTP bundle、后端 ready 健康检查 | 数据库两种独立类型均启用、线上脚本有中英文标签、后端健康 | 通过；整栈依赖故障另列 |
+| 真实图片/视频调用 | 尚缺供应商及协议 | 需验证真实请求、轮询、产物、权限与失败恢复 | 未实现、未执行 |
+
+### 实际测试命令与结果
+
+- 后端通过 stdin Dockerfile 使用既有 `maven:3.9.9-eclipse-temurin-17` 和 BuildKit Maven 缓存执行（未保存临时 Dockerfile）：
+  - `mvn -o -B -ntp -Dtest=DataInitializerTest,LlmManagementServiceTest test`：实现前 71 项，6 失败、3 错误，复现目录缺项、无法保存与健康检查误走旧分支；随后修复。
+  - `mvn -o -B -ntp -Dtest=DataInitializerTest,LlmManagementServiceTest,AiChatClientTest,AiChatControllerTest,ChatStreamClientTest test`：105/105 通过。
+  - `mvn -o -B -ntp -Dtest=WorkflowAgentClientTest test`：修复前先 4/4、补充历史混合值后 6/6 失败，均已进入不应访问的 Worker 路径；修复后 6/6 通过。
+  - `mvn -o -B -ntp test`：最终 **999/999 通过，失败 0、错误 0、跳过 0，通过率 100%**。已读取 Surefire XML 汇总核对；前一版本为 993/993。
+- 关键模块：DataInitializerTest 19/19、LlmManagementServiceTest 52/52、AiChatClientTest 12/12、AiChatControllerTest 5/5、ChatStreamClientTest 17/17、WorkflowAgentClientTest 6/6。完整套件覆盖既有 Service、Controller、Workflow、Domain/Repository 集成及历史业务。
+- `node --test frontend/test/localization.test.mjs`：新增标签测试实现前 12 通过、1 失败；最终含真实 ModelsView setup 用例 **18/18 通过**。
+- `cd frontend && npm test`：lint、vue-tsc、完整覆盖测试及 3/3 HTTP/SSE/WebSocket E2E 全部通过，失败 0、跳过 0。utils 行覆盖率 98.24%、分支 82.06%、函数 95.74%；覆盖范围不等同于整个 Vue 页面。E2E 脚本内置生产构建通过。
+- 一次在 frontend 目录执行带 frontend/ 前缀的单测路径未找到文件，修正为 `node --test test/localization.test.mjs` 后通过。
+- Java 未配置 JaCoCo 等覆盖率插件，本次执行完整测试及分支用例映射，不宣称 Java 行覆盖率；未为覆盖率新增依赖。
+- `git diff --check`：通过。未删减、跳过或弱化已有有效测试。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：执行两次（第二次包含 Agent 最终修复），9 个镜像均构建成功，内置 Maven package 阶段最终 999/999 测试通过；两次整栈启动均退出 1，原因是原有 docker-socket-proxy unhealthy 和 adapter-manager 健康依赖失败。没有端口冲突。
+- `docker compose up -d --no-deps frontend`：恢复已成功构建的前端，退出 0；最终 Backend 与 Frontend 均 running / healthy。后端实际镜像为 `sha256:d31f1065b204900924075cb61df285f712ed7c751e5f1e0d083af2f7a79b1436`，包含最终 Agent 修复。
+- `docker compose exec -T backend curl -fsS http://localhost:8080/api/open/health/ready`：返回 `{"status":"UP"}`。首次误用 /actuator/health 返回 404，按项目实际 ready 路径验证通过。
+- Node 内联 HTTP 检查：/health 200；/models 返回 SPA；线上 `/assets/index-Celv4ok9.js` 包含 image_model、video_model 和两种语言的独立名称。
+- Node 内联只读 MySQL 查询：vision_model=视觉模型、image_model=图片生成模型、video_model=视频生成模型，三者启用值为 1；未输出连接凭据或创建业务数据。首次客户端字符集显示问号，指定 utf8mb4 后确认标签正确。
+- 临时测试镜像内的报告位于 /workspace/target/surefire-reports，JUnit 临时目录由测试框架回收；测试镜像标签在汇总后移除。没有创建宿主机临时脚本、调试文件或新的 Markdown 文件。
+
+### 审查、限制、后续与回滚
+
+- 独立只读审查发现历史混合能力模型可经过 Agent 工具分支绕过候选检查；已增加 WorkflowAgentClient 统一校验，6 个失败复现用例修复后通过，完整套件 999/999 通过。没有未处理的已确认重要审查问题。
+- 决策：先交付不依赖供应商协议的模型配置和类型隔离，真实调用保留待办；理由是缺少供应商契约，不能猜测通用视频协议。代价是用户此时可以维护模型，但仍不能生成媒体。
+- 整栈启动仍未验收通过，不能将局部服务健康描述为整体生成能力完成；需修复既有 socket proxy/rootless Docker 环境后重跑 Compose 和整栈检查。
+- 未执行真实付费生成、浏览器逐项点击与窄屏视觉验收；供应商适配完成后应补充图片/视频各自请求、异步轮询、幂等、超时、取消、鉴权、结果持久化和预览测试。
+- 重测触发：修改类型字典、模型保存、候选筛选、聊天/Agent 分支、健康检查或实际生成适配器时，重跑相关套件与后端完整测试；前端选择逻辑变更时运行完整 npm test。
+- 回滚代码可 revert 11e5d85 后重建；已初始化的两条字典数据不会自动删除，需要回滚时单独评估停用。供应商凭据、既有模型和任务数据未迁移。
+- 本报告单独提交；不执行 git push。
+
+## 资产中心与 AI 视频全模块新建引导（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `df9f530cc48d66590326ce28acd9723cec42f3c9`（Add asset guidance and AI video creation tips）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Vue 3 / Element Plus / vue-i18n：八类资产列表新增用途、准备内容、填写方法、保存后用途和名称示例；在已有项目向导基础上，为其余 15 个资源模块补充新建指南及字段提示，覆盖 AI 视频全部 16 类新建表单。
+- 中文、英文同步维护，760px 以下指南单列；示例仅作为 placeholder，不自动填充；编辑保持原表单行为。资产分类标签随语言切换更新。
+- 修改范围：AiVideoView.vue、中英语言文件、ai-video-form.test.mjs、ai-video-navigation.test.mjs；资产属性继续存入原 metadataJson。
+- `git diff 523ffb4 HEAD -- backend/src/main/java/` 无输出；没有修改后端、数据库、接口、配置或依赖，无后端重测触发变更。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级、前置条件和输入 | 预期结果与场景 | 结果 |
+| --- | --- | --- | --- |
+| 所有新建入口有指南 | 真实 Vue setup + Vue I18n 组件测试；管理员分别打开 15 类新增，中英文参数化；既有项目指南用例 | 对应模块显示具体目的、准备、填写和下一步；项目专属向导保留；正常、兼容 | 通过 |
+| 八类资产内容有区分 | 组件及模板测试；characters/scenes/items/costumes/motions/styles/voices/sounds | 分类页绑定正确指南；属性字段显示对应说明，名称示例不写入表单；正常、边界 | 通过 |
+| 关键字段提示无翻译键遗漏 | 组件测试；枚举每个模块全部基础/内容/高级字段、中英文 | 每个新建字段都有实际文案，分类属性包含具体示例；正常、兼容 | 通过 |
+| 新建与编辑隔离 | 组件测试；新建后打开已有 ID、名称和自定义 JSON 的记录 | 编辑隐藏新建指南和新建示例，原 JSON 不变；回归 | 通过 |
+| 路由、语言和快捷入口正确 | 组件测试；角色切到声音分类，中切英；6 种生成类型和 2 种合成模式 | 指南和分类标签更新，快捷创建保留 taskType/configJson.mode；正常、分支、兼容 | 通过 |
+| 权限和保存行为保持 | 组件测试；无创建权限、空必填、恶意 URL、非法 JSON、20000 字符边界、提交失败、重复提交、提交期间导航 | 无权限不打开或提交；非法输入不发请求；失败保留输入；旧扩展属性、分类及请求目标保持；安全、异常、边界、回归 | 通过 |
+| 首页/分析不显示新增向导 | 组件测试；dashboard/analytics/projects/unknown 路由 | 通用向导隐藏、无不适用的资产说明；边界、兼容 | 通过 |
+| 窄屏布局与模板安全 | 模板静态测试和生产构建 | 760px 以下三列切单列，不使用 v-html；布局规则、安全 | 通过；未执行浏览器视觉验收 |
+| 新前端实际运行 | Docker 构建、启动及 HTTP 检查 | 新镜像运行，健康接口 UP，线上入口 bundle 包含新增中英文指南 | 前端通过；整栈启动受阻 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-video-form.test.mjs frontend/test/ai-video-navigation.test.mjs`：81/81 通过，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：lint、vue-tsc 类型检查、641/641 覆盖测试、3/3 服务 E2E、E2E 内置生产构建全部通过；通过率 100%，失败 0、错误 0、跳过 0。没有删除、跳过或弱化已有测试。
+- utils 覆盖率：行 98.24%、分支 82.05%、函数 95.74%；ai-video-form.js 三项均为 100%。该覆盖率范围为 src/utils，不代表 Vue 页面整体覆盖率。
+- `docker compose up --build -d`：9 个镜像构建成功，前端包含最终代码；整栈启动退出 1，docker-socket-proxy unhealthy 与 adapter-manager 依赖健康失败。没有端口冲突。
+- `docker compose up -d --no-deps frontend`：退出 0，前端启动成功。
+- `docker compose ps frontend --format '{{.Name}} {{.State}} {{.Health}}'`：baseai-local-frontend running healthy。
+- Node 内联 HTTP 验证：GET /health 返回 200 和 {"status":"UP"}；GET /ai-video/assets/characters 返回生产页面，读取其 /assets/index-DBwor106.js，断言包含“资产使用指南”“创建前先了解”“林晓 · 青年侦探”“Asset guide”，全部通过。
+- `git diff --check`：通过。未执行 git push；没有创建临时调试或临时测试文件。
+
+### 已知问题、未执行项与后续建议
+
+- 整栈启动未通过，原因与此前报告一致：Docker socket proxy / adapter-manager 环境依赖健康故障。修复该环境后重跑 `docker compose up --build -d` 与全栈健康检查；本次没有修改相关配置。
+- 未执行真实浏览器逐项点击、窄屏视觉验收及 Chrome/Safari 兼容性验证；现有 E2E 验证生产 HTTP/SSE/WebSocket 服务，不是页面点击测试。建议在八类资产页与各新建弹窗切换中英文，检查滚动、提示与保存操作。
+- 未运行后端 Maven 测试，后端无改动。Vite 保留既有 runtime-config、第三方 PURE 注释与大包体积警告；Compose 提示现有网络不是由 Compose 创建，未为此改动配置。
+- 引导描述当前真实能力：记录素材地址不等于上传，创建任务/渲染记录依赖执行服务，登记发布记录不等于向平台发布。
+- 回滚：如需撤销本次功能，可 revert df9f530 并重新执行前端测试和 Compose 构建；不涉及迁移。
+- 重测触发：改变指南文案、字段映射、分类定义、可见性、快捷入口或布局时，重跑相关 81 项及完整 npm test；后端约束变更时补充后端完整测试。
+- 正式用例保留在原测试文件；测试报告单独提交，工作区不保留本次未跟踪文件。
+
+## 项目创建说明与引导（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `523ffb4713f6a039d769b6cf7c45c1688a066aaf`（Add project creation guidance）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Vue 3 / Element Plus / vue-i18n：项目新增弹窗展示项目身份、输出规格、视觉方向三步说明，补充字段提示、示例和创建后建议；编辑项目不展示新增引导。中英文同步维护，窄屏引导改为单列。
+- 仅修改 AiVideoView.vue、中英文语言文件和两份既有前端测试；未修改接口、数据库、权限、依赖或配置。
+- `git diff 144d181 HEAD -- backend/src/main/java/` 无输出，无后端重测触发变更；本报告单独提交。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件及输入 | 预期结果和场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 新建项目提供三步说明 | 真实 Vue setup 组件测试；管理员打开 projects 新增表单 | 提供三个步骤及项目主题说明，默认画幅、帧率和分组保持；正常、兼容 | 通过 |
+| 编辑项目隐藏新增引导 | 组件测试；保存后打开 id=9 的已有项目 | isProjectCreate 为 false；模板通过该条件控制引导；回归 | 通过 |
+| 提供字段说明和下一步 | 静态回归；检查组件绑定和两份 locale | 项目身份、输出规格、视觉方向、创建后动作及字段提示键存在；正常 | 通过 |
+| 双语文案完整 | 静态回归；中文和英文资源 | 新增引导关键文案键均存在；兼容 | 通过 |
+| 保留校验、权限及原有功能 | 组件及完整前端套件；空必填、恶意 URL、依赖失败、重复提交、无权限等输入 | 非法输入不请求、失败保留表单、重复提交受控、既有导航与保存正常；边界、异常、安全、回归 | 通过 |
+| 桌面与窄屏布局适配 | CSS 规则人工检查及生产构建 | 桌面三列，760px 以下单列；620px 以下标题纵向排列 | 构建通过；未执行浏览器视觉验收 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-video-navigation.test.mjs frontend/test/ai-video-form.test.mjs`（根目录）：最终 40/40 通过，失败 0、跳过 0。
+- `cd frontend && node --test test/ai-video-navigation.test.mjs test/ai-video-form.test.mjs`：最终版本 40/40 通过。
+- `cd frontend && npm run lint && npm run typecheck`：通过。
+- `cd frontend && npm test`：最终版本 lint、类型检查、600/600 覆盖测试、3/3 E2E 和 E2E 内置生产构建全部通过；失败 0、跳过 0，通过率 100%。utils 行覆盖率 98.24%、分支 82.05%、函数 95.74%，不代表 Vue 组件整体覆盖率。
+- 首轮相关测试 38/40 通过：新增测试错误地要求编辑时步骤数据清空，以及文案正则未兼容带引号的键；改为验证实际隐藏条件、修正键匹配后通过。既有有效测试未删除或跳过。
+- 一次从 frontend 目录执行带 frontend/ 前缀的测试路径导致未找到文件，未运行用例；修正路径后完整重跑通过。
+- `docker compose up --build -d`：最终版本 9 个镜像构建完成；整栈启动退出 1，原有 docker-socket-proxy unhealthy 导致依赖失败，并非端口冲突。
+- `docker compose up -d --no-deps frontend`：退出 0，最终前端镜像已启动；`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`。
+- `git diff --check`：通过；实现提交后工作区干净；未执行 git push。
+
+### 已知限制、未执行项与后续建议
+
+- 整栈启动验收仍受既有 Docker socket proxy / adapter-manager 依赖健康问题阻断，不能将本次结果视为整栈启动成功。修复该环境问题后重跑 Compose 启动和健康检查。
+- 未执行真实浏览器逐项点击、桌面/手机视觉验收及 Chrome/Safari 兼容性验证；建议在项目管理打开新增与编辑弹窗，分别以中英文及窄屏检查说明、滚动与保存操作。
+- 未执行后端 Maven 测试（后端无变更）。构建保留既有 runtime-config、第三方 PURE 注释和大包体积警告。
+- 本次没有保留临时调试文件、临时测试脚本或新增 Markdown 文件；正式用例留在原测试文件。
+- 后续修改项目引导、字段提示、编辑可见性、双语内容或布局时，重跑上述相关测试、完整 npm test 和 Docker 验证；修改后端约束时联动执行后端套件。
+
+## AI视频工作台首页详细引导（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `144d181`（Expand AI video workspace onboarding guide）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- 首页引导从 5 个简略流程卡扩展为可执行制作向导：每个环节展示目标、准备内容、具体操作、产出、保存前检查和入口状态；新增开始前准备、实时准备度、成片路径后续动作和交付检查。
+- 统计状态沿用现有 `/api/ai-video/overview` 的项目、资产、任务和成片数量，未修改后端接口、数据库、权限模型或依赖；中文和英文文案同步维护，窄屏使用响应式单列布局。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 首页提供完整可执行的制作步骤 | 前端静态回归；检查首页模板和步骤数据 | 存在准备区、进度区、5 个步骤卡；每步有目标、准备、操作、产出、检查项、状态和 CTA | 通过；正常、回归 |
+| 引导能反映已有数据并给出下一步 | Vue 组件逻辑静态检查；统计为空、有项目、有任务、有成片 | 使用项目/资产/任务/成片统计计算已具备、当前和等待前置状态，并显示下一步 | 通过；正常、边界、兼容 |
+| 成片路径和交付检查可继续操作 | 前端模板回归；5 条路径和 4 项交付检查 | 路径展示适用说明和后续动作，入口继续携带现有 `mode`；任务、成片、审核、发布入口可达 | 通过；正常、回归 |
+| 中英文内容完整且权限/路由不回归 | 双语 locale 静态检查、原有导航/表单组件测试 | 关键引导文案在中英文均存在，既有资源路由和权限行为保持 | 通过；兼容、权限 |
+| 桌面和窄屏布局可读 | CSS 响应式规则检查、生产构建 | 5 步在中等宽度分列、手机宽度单列，准备区和交付区不产生固定宽度溢出 | 通过；边界、可访问性 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-video-navigation.test.mjs frontend/test/ai-video-form.test.mjs`：39/39 通过，失败 0、跳过 0。
+- `cd frontend && npm run lint && npm run typecheck && npm run build`：全部通过；构建保留既有 runtime-config、PURE 注释和大包体积警告。
+- `cd frontend && npm test`：lint、类型检查通过；覆盖测试 599/599、E2E 3/3 通过，失败 0、跳过 0，通过率 100%；行覆盖率 98.24%、分支 82.05%、函数 95.74%。
+- `docker compose up --build -d`：9 个镜像全部构建成功，前端镜像包含本次向导；整栈启动仍因既有 `adapter-manager` / `docker-socket-proxy` 健康依赖失败退出 1，并非端口占用。
+- `docker compose up -d --no-deps frontend`：退出 0；`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`，前端容器运行正常。
+- `git diff --check`：通过；未执行 git push。
+
+### 已知问题、未执行项与清理
+
+- 全栈启动的阻断来自既有 adapter-manager rootless Docker socket 健康检查，本次前端构建和独立容器启动已验证；未修改该外部依赖。
+- 本次只依据已有概览统计推导引导状态，剧本和审核数量没有加入后端统计，因此内容环节的“已具备”使用任务存在作为可观察信号；未改变业务数据含义。
+- 未执行真实浏览器逐项点击和 Chrome/Safari 兼容性验证；生产构建、E2E、路由静态检查和窄屏 CSS 规则已通过。
+
+### 重测触发条件与下次建议
+
+- 修改首页引导模板、状态推导、入口 `mode`、双语文案或响应式布局时，重跑 `ai-video-navigation.test.mjs`、完整 `npm test` 和 Docker 前端容器验证。
+- 若后端新增剧本、审核或发布统计字段，应补充状态映射测试，避免用任务/成片数量作为间接信号。
+
+## AI视频首页主按钮可读性修复（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `574e876`（Fix AI video hero button contrast）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- 首页深色横幅中的“开始创建项目”按钮改为白色背景、深蓝文字，并补充悬停和键盘聚焦状态；点击逻辑和目标路由保持不变。
+- 仅修改 `frontend/src/views/AiVideoView.vue` 与 `frontend/test/ai-video-navigation.test.mjs`，未修改后端、配置、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 默认状态按钮文字清晰 | 前端静态回归测试，首页主按钮样式 | 存在独立样式类，白色背景与深蓝文字同时定义 | 通过；正常、回归 |
+| 交互状态保持可读并可访问 | 前端静态回归测试，悬停与键盘聚焦规则 | 悬停背景/文字仍有对比度，聚焦显示可见轮廓 | 通过；边界、可访问性 |
+| 既有 AI 视频页面行为不回归 | 完整前端测试套件 | 原有导航、工作台和代理行为全部通过 | 通过；兼容、回归 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-video-navigation.test.mjs`：7/7 通过，失败 0、跳过 0；实现前新增回归用例按预期失败，修复后通过。
+- `cd frontend && npm test`：lint、类型检查通过；覆盖测试 597/597、E2E 3/3 通过，失败 0、跳过 0，通过率 100%。覆盖率行 98.24%、分支 82.05%、函数 95.74%。
+- `docker compose up --build -d`：9 个镜像构建成功；首次启动因 `.env` 中失效的 `/run/user/501/docker.sock` 导致 socket proxy 不健康。使用当前 Docker Desktop socket 执行 `DEPLOYMENT_DOCKER_SOCKET=/Users/xyzc/.docker/run/docker.sock docker compose up --build -d` 后，Frontend、Backend 均 healthy，`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`；整栈仍因既有 adapter-manager rootless Docker 校验失败退出。
+- `git diff --check`：通过；未执行 git push。
+
+### 已知问题与下次测试建议
+
+- adapter-manager 仍受环境中的 rootless Docker 校验失败影响，插件相关依赖未完成整栈启动；不影响本次前端构建和前端/后端健康检查。
+- 工作区中存在其他未提交的 AI 视频引导文案和布局改动，本次未纳入提交；后续提交这些改动时应重新运行前端套件并更新基准点。
+- 后续修改 AI 视频首页横幅或按钮主题时，重跑 `ai-video-navigation.test.mjs`、完整 `npm test` 和 Compose 前端健康检查。
+
+## 仪表盘 Trace ID 原地日志弹窗（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `4a5d5a91e64fb9c46feb84fcb6172a8e62678e6e`（Show trace logs in dashboard modal）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Vue 3 / Element Plus：点击有效主请求 Trace ID 在 dashboard 当前页面打开日志弹窗，不再跳转任务页。弹窗显示 Trace ID、日志时间、级别、来源、消息和异常堆栈，支持刷新、失败重试、空状态和关闭。
+- 请求使用既有 `/system/tasks/{traceId}/logs` 接口；关闭、切换记录和组件卸载均取消未完成请求，迟到响应不会覆盖新记录。原筛选、分页和调用明细状态保持不变。
+- 仅 Python Trace ID、非法 ID 或无任务查看权限时不显示链接；历史记录继续提示缺少主任务关联。未修改后端、配置、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 点击主 Trace 在当前页打开日志弹窗 | 真实 Vue 组件、管理员、常规/空白/边界 ID | 页面仍为 `/dashboard`，弹窗显示清理后的 ID，调用正确 logs 接口并逆序呈现 | 4 项通过 |
+| 关闭弹窗不重置 dashboard 状态 | 设置日期、未提交筛选、已应用参数、分页后打开并关闭 | 所有 dashboard 状态和调用明细保留 | 通过 |
+| 日志失败可重试 | 超时、403、404、500、畸形响应 | 清空旧日志，显示错误和重试入口，重试成功后恢复内容 | 5 项通过 |
+| 关闭、切换、卸载隔离异步响应 | 两个 Trace 并发请求；关闭/卸载前保留未完成请求 | AbortSignal 取消旧请求，迟到成功或失败不回填、不污染新日志 | 4 项通过 |
+| 日志内容安全且可读 | 新旧两条日志，消息和异常包含 HTML 字符 | 新日志在前，纯文本转义，保留级别、来源、时间和异常内容 | 通过 |
+| 权限与历史记录兼容 | 无任务权限、Python Trace、非法主 Trace | 不显示链接、不请求接口、不打开弹窗，并保留明确提示 | 相关用例通过 |
+| 桌面和窄屏实际交互 | Firefox 1440px 中文、390px 英文 | 弹窗适配视口、无整体横向溢出；刷新、关闭、重新打开和筛选保留通过 | 2 个视口通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/dashboard-usage.test.mjs`：75/75 通过，失败 0、跳过 0。
+- `cd frontend && npm test`：lint、类型检查通过；覆盖测试 596/596、E2E 3/3 通过，失败 0、跳过 0，通过率 100%。覆盖率行 98.24%、分支 82.05%、函数 95.74%。
+- `docker compose up --build -d`：9 个镜像全部构建成功；整栈启动仍因既有 docker-socket-proxy unhealthy / adapter-manager 依赖失败退出 1。
+- `docker compose up -d --no-deps frontend`：退出 0，新版 frontend healthy；`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`。
+- `node /tmp/baseai-trace-modal-check/browser.mjs`：退出 0；桌面中文和手机英文均留在 `/dashboard`，弹窗显示 7 条日志，刷新、关闭重开和筛选保留通过，弹窗在视口内且无页面横向溢出。
+- `git diff --check`：通过；未执行 git push。
+
+### 已知问题、未执行项与清理
+
+- 整栈启动仍受既有 Docker socket proxy 健康问题阻断；前端单独启动并完成真实交互验证。
+- 本次弹窗只展示已有任务日志接口返回的内容，不为历史缺失主 Trace ID 的 Python 记录猜测父任务。
+- 未修改后端，因此未重新执行 Maven 测试；未验证 Chrome/Safari。
+- 临时脚本、截图及 Firefox 配置目录 `/tmp/baseai-trace-modal-check` 已清理，测试登录会话已注销。
+
+### 重测触发条件与下次建议
+
+- 修改弹窗、日志请求取消、Trace 权限判断或日志展示时，重跑 dashboard-usage.test.mjs、完整 npm test 和桌面/窄屏实际点击。
+- 修改 `/system/tasks/{traceId}/logs` 响应结构或任务日志权限时，补跑后端接口和前端弹窗集成验证。
+
+## 仪表盘 Trace ID 跳转任务日志（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `9033b2dd453575329d4082d8b38560afc4bb7b95`（Link dashboard trace IDs to task logs）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- Vue 3 / Vue Router / Element Plus：调用明细中有效的主请求 Trace ID 显示为链接，点击进入 `/tasks?traceId=…&openLogs=true`，由既有任务页筛选并展开日志。沿用 `operations:task:view` 权限和任务页 ID 校验规则。
+- 仅 Python Trace ID 的历史记录保持纯文本，并提供中英文缺少主任务关联提示；空值、非法 ID、无权限均不导航。未修改后端、配置、数据库或依赖。
+- 范围：ModelUsagePanel.vue、中英文语言文件、dashboard-usage.test.mjs。与上一基准 `7b41191` 比较，`backend/src/main/java/` 无差异，本次未重新运行后端 Maven 测试。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试层级与前置条件 | 输入 | 预期结果 | 场景与结果 |
+| --- | --- | --- | --- | --- |
+| 点击主 Trace 打开对应日志 | 真实 Vue 组件编译、SSR 和内存路由，管理员权限 | 常规 ID、两端空白、1 字符和 64 字符 ID，同时存在 Python ID | 渲染链接；路由为 /tasks，query 使用清理后的主 ID 和 openLogs=true | 正常、边界、兼容；4 项通过 |
+| 无效 ID 不产生跳转 | 同上 | null、undefined、空串、空白、数值、65 字符、路径片段、脚本标签、查询分隔符和内部空格 | 无链接，处理函数不改变路由 | 边界、异常、安全；10 项通过 |
+| 权限校验不可绕过 | 真实权限函数，普通用户仅有仪表盘查看权限 | 主 Trace ID | 面板不泄漏记录，直接调用点击处理函数也不导航 | 权限、安全；1 项通过 |
+| 历史 Python ID 不跳错任务 | 真实组件，中英文各一次 | 主 ID 为空、Python ID 非空 | 保留 Python ID，显示缺少主任务关联提示，无链接且不导航 | 历史兼容、回归；2 项通过 |
+| 部署后的实际点击有效 | Firefox，管理员登录；1440px 中文与 390px 英文 | 点击真实记录 17e251517fdb4119a83f72d5a34d4ec7 | URL 与筛选值一致、日志抽屉可见、请求对应 /logs 接口、无页面错误提示 | 浏览器集成；2 个视口通过 |
+| 保留现有仪表盘行为 | 原 47 项仪表盘测试与完整前端套件 | 指标、筛选、分页、权限、状态、Trace 展示和语言切换 | 原有业务断言通过，无回归 | 回归；通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/dashboard-usage.test.mjs`：实现前新增 17 项失败（缺少链接、处理函数及历史提示），原 47 项通过；实现后 64/64 通过，失败 0、跳过 0。测试保留真实 Vue 响应式、模板、权限函数与内存路由。
+- `cd frontend && npm test`：lint、类型检查通过；覆盖测试 585/585、E2E 3/3 通过，失败 0、跳过 0，通过率 100%。为准确核对最初截断输出的统计，完整套件再次运行并通过。
+- utils 覆盖率：行 98.24%、分支 82.05%、函数 95.74%；这是现有工具函数覆盖范围，不代表所有 Vue 组件的行覆盖率。
+- `docker compose up --build -d`：9 个镜像全部构建成功；后端构建复用缓存，未作为本次后端测试结果。整栈启动退出 1，原因仍是既有 docker-socket-proxy unhealthy 和 adapter-manager 启动依赖失败。
+- `docker compose up -d --no-deps frontend`：退出 0，新前端启动成功；`curl -fsS http://localhost:8080/health` 返回 UP。frontend、backend 均 healthy。
+- `node /tmp/baseai-trace-link-check/browser.mjs`：退出 0；1440px 中文及 390px 英文均成功跳转并打开正确日志；各视口第一页 19 条历史 Python ID 无链接且有说明；页面无整体横向溢出，无错误消息。使用已有调用记录，没有新增模型调用。
+- `git diff --check`：通过；业务提交仅包含本次 4 个前端文件，测试报告单独提交。未执行 git push。
+
+### 已知问题、未执行项与清理
+
+- 整栈启动验收仍受原有 Docker 依赖健康问题阻断，不能视为整栈启动成功；本次前端部署和真实点击已独立验证。
+- 构建保留既有 runtime-config script、第三方 PURE 注释和大包体积警告，没有新增依赖或修改构建配置。
+- 历史未记录主 Trace ID 的调用无法可靠定位主任务，本次不回填或猜测。任务不存在、日志已清理时沿用任务页既有处理；本次未制造删除数据来验证该场景。
+- 未重新运行后端 Maven 套件（无后端变更），未验证 Chrome/Safari。没有修改全局任务生命周期或权限体系。
+- 临时脚本及隔离 Firefox 配置目录 `/tmp/baseai-trace-link-check` 已清理；验证登录会话已注销，独立浏览器进程已停止。
+
+### 重测触发条件与下次建议
+
+- 修改 Trace 展示、可点击条件、权限判断或路由参数时，重跑 dashboard-usage.test.mjs、完整 npm test 及真实点击验证。
+- 修改任务页路由初始化、日志抽屉或日志接口时，联动验证仪表盘与聊天页入口；修复 Docker 依赖健康问题后重新执行整栈启动验收。
+
+## 仪表盘调用明细 Trace ID 修复（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `7b41191e75099c0fa6235d31aec61d5e1af6f39d`（Preserve trace IDs in asynchronous chat usage）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-28（Asia/Shanghai）。
+- 根因：公开 SSE 在 StreamingResponseBody 异步线程执行，原请求的 ThreadLocal TraceContext 未传递；实查近 24 小时 35 条记录中 34 条 CHAT_STREAM 的 traceId 为空，但 pythonTraceId 均存在；1 条 STREAM 记录正常。
+- AiChatController 在创建 SSE 响应时捕获 TraceContext，回调执行时绑定并通过 Scope 恢复原线程上下文及 MDC。保留原 SSE 事件、错误消息和非流式协议。
+- 前端将 Trace 列移动到开始时间之后，优先显示请求 Trace ID；历史缺失记录回退到明确标识的 Python Trace ID，两者都缺失时显示占位符。ID 完整换行、可选择复制。
+- 技术栈：Java 17 / Spring MVC、Vue 3 / Element Plus。仅修改控制器、ChatStreamClientTest、ModelUsagePanel、两份语言文件及 dashboard-usage.test.mjs；未修改数据库、全局 Trace 切面、部署配置、第三方代码或依赖。
+- 相对上次报告基准的 backend/src/main/java/ 有业务代码差异，已执行完整后端测试。本节作为新的测试基准，报告本身单独提交。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 异步公开流保存原请求 Trace ID | Java 集成测试；真实控制器、真实 ChatStreamClient 和 LlmUsageService，HTTP Worker 测试服务器，仅数据库为 Mock；请求上下文退出后在线程池执行 SSE | INSERT 参数使用请求 traceId；Python 子链路关联同一父链路；保存 owner；正常、回归 | 通过 |
+| 成功与上游异常都恢复线程状态 | 参数化 Java 测试；工作线程已有不同 Trace，分别返回 done 或提前断流 | 请求内使用捕获的上下文，结束后恢复原 Trace 和 MDC；失败返回安全 error 帧；异常、隔离 | 通过 |
+| 并发请求不串链路 | Java 测试；两个不同上下文构造响应，两个线程同时执行 | 两条真实持久化调用参数分别包含各自 Trace ID，线程状态清空；并发、安全 | 通过 |
+| 首帧前断连不泄漏上下文 | Java 测试；OutputStream 写入即抛 IOException | 上下文及 MDC 清理，未发起模型调用；异常、资源清理 | 通过 |
+| 无上下文及非流式兼容 | 既有 AiChatControllerTest；无请求 Trace 的直接调用、stream=false、上游失败 | JSON/SSE 协议保持原行为，异常细节不泄露；兼容、回归 | 通过 |
+| 历史记录正确显示来源 | Vue 组件渲染参数化测试；请求 Trace、Python Trace、空白、空值、非法类型，中英文切换 | 优先请求 Trace，缺失时标注 Python Trace ID，均无有效值时提示未记录；边界、兼容 | 通过 |
+| Trace 列便于查找 | 模板及样式回归、真实 Firefox 页面 | 列位于时间之后，完整 ID 不用省略号替代，可横向滚动查看；展示、回归 | 通过 |
+| 新调用端到端关联正确 | 部署后登录会话调用 /api/ai/chat（stream=true），查询 /operations/llm-usage/records | SSE start 的 traceId 与持久化记录相同，状态 SUCCESS，子 Trace 与 owner 存在；真实集成 | 通过 |
+
+### 实际命令、失败复现与最终结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=ChatStreamClientTest test`：首次因 Maven Central TLS 握手失败，未执行测试。改用 Docker BuildKit 已有 Maven 缓存离线运行，未修改项目配置。
+- 使用 stdin Dockerfile 的 `docker build --progress=plain -t baseai-trace-tests -f - backend`，在 Maven 镜像中执行 `RUN --mount=type=cache,target=/root/.m2 mvn -o -B -ntp -Dtest=ChatStreamClientTest test`：初次新增测试因 Mockito 参数类型编译失败，修正测试类型后稳定复现缺陷，15 项中 3 失败（异步使用 worker-previous 或 null），12 通过。
+- 修复后同方式执行 `mvn -o -B -ntp -Dtest=ChatStreamClientTest,AiChatControllerTest,LlmUsageServiceTest,TraceContextHolderTest test`：24/24 通过，失败 0、错误 0、跳过 0。
+- 同一测试镜像缓存中执行 `mvn -o -B -ntp test`：150 个测试类、975/975 用例通过（100%），失败 0、错误 0、跳过 0；已读取全部 Surefire XML 汇总并核对测试镜像源码与提交源码一致。
+- 关键模块：Chat 47/47、Controller 32/32、Service 176/176、Trace 4/4、Security 59/59、Web 21/21；其余模块也全部通过。此处为测试用例结果，不是 Java 行覆盖率。
+- 前端新增的 7 项 Trace 展示测试在实现前失败；最终 `node --test frontend/test/dashboard-usage.test.mjs`：47/47 通过。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 568/568、E2E 3/3 全部通过；失败 0、跳过 0。行覆盖率 98.24%、分支 82.06%、函数 95.74%。
+- `docker compose up --build -d`：全部 9 个自建镜像构建成功，构建内 Maven package 再次执行 975 项测试并全部通过；整栈启动仍因既有 docker-socket-proxy unhealthy / adapter-manager 重启而退出 1。
+- `docker compose up -d --no-deps frontend`：新版前端启动成功；最终 Frontend、Backend 均 healthy；`curl -fsS http://localhost:8080/health` 返回 `{"status":"UP"}`。
+- `node /tmp/baseai-trace-check/api.mjs`：真实调用 HTTP 200，事件顺序 start → model → delta → done；请求 Trace ID 和用量 Trace ID 均为 `17e251517fdb4119a83f72d5a34d4ec7`，Python Trace ID 为 `0b76187f904047ff84662658caa5ee4c`；状态 SUCCESS，owner 存在。34 条历史缺失父 Trace 记录保持原数据，供页面标识后回退显示。
+- `node /tmp/baseai-trace-check/browser.mjs`：1440px 中文和 390px 英文真实页面验证通过，表头均为时间 → Trace ID → 来源；第一页包含 1 条请求 Trace 和 19 条 Python Trace，页面无整体横向溢出。窄屏表格仍通过表内横向滚动查看完整列。
+- `git diff --check`：通过；未执行 git push。
+
+### 已知限制、未执行项与清理
+
+- 历史未保存的请求 Trace ID 无法可靠还原，本次不猜测或回填；界面展示已有的 Python 子链路编号并明确标注，二者不可视为同一编号。
+- 既有全局任务终态管理及取消生命周期不在本次变更范围；本次修复的是公开 SSE 调用的 Trace 传递和明细展示。
+- 整栈启动验收受原有 socket proxy / adapter manager 故障阻断；本次前后端部署与真实调用已通过独立验证。未执行 Chrome/Safari 验证，亦未新增 Java 行覆盖率工具。
+- 真实端到端验证产生了 1 条正常模型调用与对应审计记录，保留在调用明细中。
+- 临时脚本、隔离 Firefox 配置及截图位于 `/tmp/baseai-trace-check`，验证后全部清理，浏览器进程已停止、测试登录会话已注销；临时测试镜像 baseai-trace-tests 已移除。
+
+### 重测触发条件与下次建议
+
+- 修改公开 SSE、TraceContext 传递、ChatStreamClient 或用量持久化逻辑时，重跑相关 24 项测试及完整 Maven 测试，并核对真实 SSE 与明细记录的同一 Trace ID。
+- 修改明细 Trace 展示与回退规则时，重跑 dashboard-usage.test.mjs 和完整前端测试，复查中英文及窄屏。
+- 修复既有 Docker 服务依赖健康问题后重跑整栈启动验收；如扩展全局异步任务生命周期，应独立覆盖完成、超时、取消与断连场景。
+
+## AI 视频分类新增表单改造（2026-09-28）
+
+### Git 基准与范围
+
+- Commit: `b2a6f93a89dca54c733f97bc28009218d69d7da8`（Fix dashboard mobile date filter and stream labels）；功能提交 `3868bbc`（Improve AI video creation forms and asset settings）；分支 `emdash/codex-vlzfy`。
+- Vue 3、Element Plus、vue-i18n：新增/编辑表单分为基础信息、内容配置和可折叠高级区，双栏与窄屏布局、固定底部操作区域。
+- 八类资产通过既有 metadataJson 保存专属属性；任务 inputJson、合成 configJson 与可视配置同步并保留未知属性。未修改后端、数据库结构、配置或依赖。
+- 支持素材链接主动预览、URL 校验、失败保留输入、重复提交防护、关闭前确认；提交资源快照防止导航期间发往错误模块。
+
+### 验收标准—测试用例映射
+
+正式测试：`frontend/test/ai-video-form.test.mjs`，使用真实组件 setup、Vue 响应式状态和 async-validator；只隔离接口、会话和弹窗边界。
+
+| 验收标准 | 层级、前置条件及输入 | 预期结果 | 场景及结果 |
+| --- | --- | --- | --- |
+| 资产各分类字段可保存、回显 | 单元+组件；八类资产旧扩展数据，编辑专属属性 | 正确 metadataJson，保留未知键，编辑 ID 正确 | 正常、兼容；通过 |
+| 新增保存正确分类 | 组件；物品、项目 ID、名称、材质 | assets 请求携带 ITEM，JSON 回显材质 | 正常；通过 |
+| 分区及默认参数可用 | 组件；新项目，空必填/有效名称编码 | 三组字段、25fps、16:9；无效不提交，有效提交 | 正常、边界；通过 |
+| JSON 配置安全且不会静默丢失 | 单元+组件；空值、数组、null、非法语法、20000/20001 字符、未知键 | 合法对象保留；非法和超长阻止提交，展开高级区保留输入 | 边界、异常、兼容；通过 |
+| 预览地址安全 | 单元+组件；HTTP(S)、站内路径、javascript/data/协议相对路径 | 安全地址可用，不安全地址拦截；原型键不污染全局对象 | 安全；通过 |
+| 重复提交、接口失败、关闭保护 | 组件；双击、请求失败、确认取消、无修改关闭 | 仅一次请求，保留草稿并解除 loading，按确认结果关闭 | 异常、回归；通过 |
+| 权限及导航一致 | 组件；无权限、保存校验期间切换到项目页 | 无权限无请求；物品仍提交到 assets/ITEM | 权限、回归；通过 |
+| 既有路由及任务看板保留 | ai-video-navigation 专项 | 既有菜单、接口、状态/进度与超时逻辑断言通过 | 兼容、回归；通过 |
+
+### 实际执行结果
+
+- `node --test frontend/test/ai-video-form.test.mjs frontend/test/ai-video-navigation.test.mjs`：36/36 通过，失败/跳过 0。
+- `cd frontend && npm test`：lint、typecheck 通过；覆盖套件 561/561 通过，失败/跳过 0；构建通过；前端服务 E2E 3/3 通过，失败/跳过 0。
+- 全局工具覆盖率：行 98.24%、分支 82.06%、函数 95.74%；ai-video-form.js 行/分支/函数均 100%。
+- 首轮组件测试发现数字项目 ID 被当作字符串校验，修复类型规则后全部通过。全量测试期间另一项日期输入框样式用例短暂失败，相关工作区改动更新后重跑全套通过；未删除或跳过测试。
+- `APP_IMAGE_REVISION=ai-video-forms docker compose up --build -d`：9 个镜像构建成功，统一启动因既有 docker-socket-proxy unhealthy 返回 1。未宣称整栈启动成功。
+- `APP_IMAGE_REVISION=ai-video-forms docker compose up -d --no-deps frontend`：成功；前端及后端 ai-video-forms 容器均 healthy。
+- HTTP 运行验证：`/health` 为 200、UP；`/ai-video/assets/items` 返回 200，所引用 `/assets/index-BIhH6Ers.js` 包含分组表单、metadataJson 和关闭保护逻辑。
+- `git diff --check`：通过。没有临时测试/调试文件；保留正式回归测试。未执行 git push。
+
+### 已知限制、未执行项与下次建议
+
+- 未执行浏览器视觉截图和逐页人工点击；组件测试验证真实 setup 与校验逻辑，现有 E2E 验证生产服务，均不等同于浏览器视觉验收。建议登录后分别检查桌面/手机宽度的新增与编辑弹窗，并以可访问的图片、音视频地址验证播放。
+- 未请求真实供应商生成，也未增加上传接口；扩展参数的生成效果取决于供应商服务支持。当前记录保存与前端录入优化不能代表生成能力已打通。
+- 前端变更未触发后端业务重测；Docker Maven 层命中缓存，未计入本次新执行的后端测试。
+- docker-socket-proxy 及其依赖服务仍需单独排查，完整编排验收尚未通过。
+- 再次修改表单、配置序列化、权限校验或语言包时重跑专项及完整前端测试；后端业务变化按项目规则执行完整 Maven 测试。
+- 回滚方式：revert 功能提交 3868bbc 后按仓库要求重建并启动；不涉及数据迁移，已保存的扩展 JSON 仍保留在原字段。
+
+
+## 仪表盘信息与样式优化（2026-09-28）
+
+### Git 基准与变更范围
+
+- Commit: `72269d83a2fadb7d6d5641cc4a73c9eb901e9cc5`（Fix dashboard mobile date filter and stream labels）；主体实现提交 `a2e7c78`（Improve dashboard metrics and monitoring layout）。
+- 分支：`emdash/codex-vlzfy`；测试日期：2026-09-27 至 2026-09-28（Asia/Shanghai），最终复验于 2026-09-28。
+- 使用 Vue 3、Element Plus 和现有 CSS 设计令牌，优化任务概览、近一小时失败提示、模型指标、筛选、排行、错误分布和调用明细；同步中英文文案。
+- 补充权限控制、加载与失败状态、数值占位符；汇总和明细使用相同时间边界；自动刷新与分页使用已应用筛选；无调用时成功率显示占位符。
+- 修改范围：DashboardView.vue、ModelUsagePanel.vue、两份语言文件、dashboardMetrics.js 与 dashboard-usage.test.mjs。未修改后端、数据库、部署配置或第三方代码，未新增依赖。
+- `git diff 4341242 HEAD -- backend/src/main/java/` 无输出；本次仅前端变更，不触发后端业务代码重测。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果及覆盖场景 | 实际结果 |
+| --- | --- | --- | --- |
+| 指标准确且不把未知数据显示为零 | Node 单元测试；输入零、数字字符串、大数、空值、布尔值、负数、非数值与不一致汇总 | 正常计数按语言格式化；缺失延迟与无调用成功率为 —；正常、边界、异常 | 通过 |
+| 任务概览和失败告警可读 | 编译真实 Vue 组件；HTTP 返回统计、随后超时、再恢复 | 展示任务数及 alerts，失败清空旧值并提示，恢复后重新显示；正常、异常、回归 | 通过 |
+| 权限不会导致无权请求或数据展示 | Vue 组件测试；未登录、普通用户、仅有 dashboard:view 权限和管理员 | 普通用户不请求模型接口，无权限不请求任务接口；权限、安全、兼容 | 通过 |
+| 查询、刷新和分页条件一致 | Vue 组件测试；修改未提交模型名称、分页、刷新、查询、重置 | 未提交筛选不参与刷新和分页；新查询回第一页；明细复用汇总起止时间；正常、状态冲突、回归 | 通过 |
+| 日期输入受限且不会裁切 | 参数化日期测试及 scoped CSS 编译回归；无日期、非法日期、逆序、同一时刻、90 天和超限；真实浏览器 320/390px | 拒绝非法窗口；容器样式穿透 Element Plus 内部日期节点；边界、异常、兼容 | 通过 |
+| 空结果与依赖错误明确区分 | Vue 组件测试；汇总失败、明细失败、空结果、恢复重试 | 错误不显示为成功空状态；明细失败仍保留可用汇总；异常、回归 | 通过 |
+| 重复刷新和离开页面安全 | Vue 组件测试；挂起请求期间重复调用、离开后返回 | 阻止并发重复请求，清理定时器，忽略卸载后的结果；并发、生命周期 | 通过 |
+| 中英文、状态和恶意文本兼容 | Vue 模板渲染；切换语言、已知/未知来源及状态、含 HTML 的模型名 | 标签正确、未知值可读、文本被转义；公开 API 流式来源有本地化文案；兼容、安全 | 通过 |
+| 桌面和手机可读且真实查询可用 | Firefox headless + WebDriver BiDi；管理员会话连接真实后端；1440/390/320px 中文和 768/390px 英文 | 四张任务卡加载成功，无页面或主内容横向溢出，日期框不超过父容器；不存在模型筛选显示 0 次调用/— 成功率，重置恢复数据 | 通过 |
+| 前端历史功能不回归 | 完整 npm test（Lint、类型检查、覆盖测试、生产服务 E2E） | 所有检查通过，覆盖率达到既有门槛；回归 | 通过 |
+
+### 实际执行命令与结果
+
+- 修复前新增空值延迟回归用例，`node --test frontend/test/dashboard-usage.test.mjs` 初次结果 3 通过、6 失败：null、空字符串和布尔值被转换为数字；修复后全部通过。
+- 手机日期样式先添加 scoped CSS 编译回归用例，`node --test --test-name-pattern='日期范围内部' frontend/test/dashboard-usage.test.mjs` 在修复前断言失败，修复后通过。
+- 最终 `node --test frontend/test/dashboard-usage.test.mjs`：40/40 通过，失败 0、跳过 0。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 561/561、E2E 3/3 全部通过，失败 0、跳过 0；包含 SSE 增量转发、WebSocket 代理、SPA/API 代理回归。该命令中的构建属于 E2E 前置步骤，服务更新使用下述 Docker Compose 命令。
+- `cd frontend && npm run test:coverage`：最终复核 561/561 通过；行覆盖率 98.24%、分支 82.06%、函数 95.74%；dashboardMetrics.js 三项均为 100%。
+- `docker compose up --build -d`：全部 9 个自建镜像构建成功；随后启动因既有 docker-socket-proxy unhealthy、adapter-manager 重启而失败（退出码 1）。Backend 构建测试层使用缓存，不计作本次重新运行后端测试。
+- `docker compose up -d --no-deps frontend`：新版 Frontend 启动成功，随后容器为 healthy；Backend 也为 healthy。
+- `curl -fsS http://localhost:8080/health`：最终返回 `{"status":"UP"}`；启动瞬间的一次请求曾遇到连接重置，服务就绪后复验成功。
+- `DASHBOARD_ORIGIN=http://localhost:8080 node /tmp/baseai-dashboard-browser/check.mjs`：最终对部署页面执行上述 5 组语言/视口检查及筛选、重置验证，全部通过。390px 日期框与父容器均为 283px，320px 均为 213px。
+- `git diff --check`：通过；未执行 git push。
+
+### 测试限制、已知问题与环境处理
+
+- 整栈启动验收尚未通过：docker-socket-proxy 的既有健康检查失败及 adapter-manager 重启阻断其下游服务；本次未修改这些配置。新版仪表盘和它依赖的前后端已单独验证可用。
+- 最终继续工作时 Docker daemon 未运行，已启动 Docker Desktop，并恢复原有 mysql、redis 容器；数据库结构及数据未修改。
+- Safari 未开启远程自动化，因此改用本机 Firefox；未修改 Safari 设置。未执行 Chrome/Safari 跨浏览器验证。
+- 组件测试使用真实 Vue 编译器、响应式与模板；HTTP 为外部边界替身，Element Plus 表格在 SSR 中使用行插槽适配器。真实浏览器检查另行验证生产 Element Plus 渲染及真实接口。
+- 本次没有重新运行独立 Maven 测试：仅前端变更且业务基准差异为空。历史后端测试结果保留在下方报告，不能解释为本次新结果。
+- 构建存在既有的资源体积、runtime-config 脚本和第三方 PURE 注释提示，未阻断构建。
+- 临时 Firefox 配置、截图、验证脚本位于 `/tmp/baseai-dashboard-browser`，已全部清理；临时浏览器和 5191 验证服务已停止，无临时测试文件提交。
+
+### 重测触发条件与下次测试建议
+
+- 修改仪表盘字段、权限、格式化、筛选/分页/自动刷新、语言或组件样式时，重新运行 dashboard-usage.test.mjs 与完整前端测试，并复查窄屏日期控件。
+- 修改 backend/src/main/java/ 业务代码或影响业务逻辑的配置时，按仓库规则执行完整 Maven 测试并更新后端基准。
+- 修复既有 socket proxy / adapter manager 环境问题后重跑整栈 Compose 启动验收；补充 Chrome 和 Safari 显示检查。
+
+
+## JWT 套餐调整工具（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `4341242`（Fix Web Crypto test setup）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 套餐调整页面继续在浏览器内解析 JWT，并使用操作人员粘贴的 issuer PKCS#8 RSA 私钥通过 Web Crypto API 重新生成 RS256 签名；原签名不再复用。
+- Token 和私钥只保留在页面内存，不上传、不落库；未新增依赖、数据库表、后端接口或第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 正常 JWT 可提取套餐和关键字段 | Node 前端工具测试；输入三段式 RS256 JWT | 正确解析 Header/Payload，回显套餐、邮箱、账号和签名 | 通过；正常、回归 |
+| 修改套餐后生成可验证 Token | Node 前端工具测试；生成临时 RSA 密钥对，将 `plus` 改为 `team` 后用公钥验签 | 新 Payload 使用 issuer 私钥生成有效 RS256 签名，字段更新正确 | 通过；正常、密码学兼容 |
+| 非法算法、私钥和 Token 安全失败 | Node 前端工具测试；HS256、非法 PKCS#8、两段 Token、非法 Base64URL/JSON、空套餐 | 拒绝签发或解析，不产生误导性结果 | 通过；边界、异常、安全 |
+| 页面输入和权限入口可用 | 前端静态回归测试；检查私钥输入、签名流程和动态权限导航 | 页面仅在权限菜单中出现，私钥输入用于本地签名 | 通过；权限、兼容、回归 |
+| 时间信息可展示 | Node 前端工具测试；有效和非法 Unix 秒时间戳 | 有效时间本地化显示，非法值安全为空 | 通过；边界、兼容 |
+
+### 实际执行结果
+
+- `node --test frontend/test/package-adjustment.test.mjs`：7/7 通过。
+- `npm --prefix frontend test`：Lint、类型检查、覆盖测试 560/560、E2E 3/3 通过；失败 0、错误 0、跳过 0；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `docker compose up --build -d`：9 个自建镜像全部构建成功；统一启动因既有 `docker-socket-proxy` 健康检查不通过而退出。随后单独启动新构建 Frontend，容器 healthy，`curl http://localhost:8080/health` 返回 `{"status":"UP"}`；Backend 也 healthy。
+- `git diff --check`：通过；未执行 `git push`，未留下临时测试或调试文件。
+
+### 已知问题与下次测试建议
+
+- 生成可验证 Token 必须提供与验证方公钥匹配的 issuer PKCS#8 私钥；没有私钥时页面会拒绝生成。验证方仍需信任对应公钥，页面无法从旧 Token 反推出私钥。
+- Web Crypto 需要浏览器支持并运行在安全上下文（HTTPS 或 localhost）；不支持时页面会提示无法签名。
+- `baseai-local-docker-socket-proxy` 当前持续 unhealthy，导致部分 Compose 依赖服务不能由统一命令启动；修复健康检查后应重跑整栈启动验收。
+- 后续修改 JWT 字段、签名算法或套餐规则时，重跑前端完整套件和 Compose 健康检查，并更新本报告基准点。
+
+## 公开 AI Chat SSE HTTP 修复与压测（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `9248c2c`（Fix JSON stream test exception handling）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 修复 `/api/ai/chat` 真实 HTTP 流式响应的 Spring MVC 返回值转换问题：统一使用 `ResponseEntity<StreamingResponseBody>`，并保留 `stream=false` 的一次性 JSON 兼容行为。
+- 流式协议返回 `start → model → delta* → done`，首帧立即刷新，模型在正文前返回；Token 用量继续在完成或中断路径记录。
+- 未修改数据库结构、第三方代码或新增依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| `stream` 参数切换两种协议 | Java `AiChatControllerTest`；分别执行 false/true 分支 | false 返回 JSON，true 返回可持续读取的 SSE | 通过；正常、兼容、回归 |
+| 真实 HTTP 可流式返回并提前给出模型 | 本地登录会话 `curl -N` 调用 `/api/ai/chat` | HTTP 200、`text/event-stream`，事件含 start/model/delta/done | 通过；协议、性能 |
+| 3 秒每秒 10 次可稳定运行 | Python 3.12 容器并发压测 3 批×10 请求 | 30/30 成功、无 error、每次含 model/done | 通过；并发、异常恢复 |
+| 后端业务回归通过 | Docker 构建内 Maven 完整套件 | 971/971 通过 | 通过；回归 |
+
+### 实际执行结果
+
+- `docker compose up --build -d`：9 个自建镜像构建成功；Backend 镜像内 Maven 测试 971/971 通过，Backend 健康。统一启动仍因既有 `docker-socket-proxy` unhealthy 返回依赖错误。
+- 真实 `curl -N`：HTTP 200，`Content-Type: text/event-stream`，事件顺序为 `start`、`model`、`delta`、`done`；`model` 在回答正文前到达。
+- 压测：30 请求全部 HTTP 200，成功率 100%；model/done 均为 30/30。首个 SSE 帧延迟 p50 1728.0ms、p95 4029.8ms、最大 5350.3ms；总耗时 p50 1735.0ms、p95 4043.6ms、最大 5360.2ms。
+- `git diff --check`：通过；未执行 `git push`。
+
+### 首字延迟原因与已知限制
+
+- 本次修复已移除本地同步状态回调造成的首事件阻塞，并让响应使用正确的 Servlet 流式处理器。
+- 压测中首帧仍受模型供应商排队、网络往返和 Prefill 影响；这是上游首 Token 延迟，不能由 SSE 刷新消除。生产环境应结合 `first_token_latency_ms` 和上游耗时继续区分定位。
+- `docker-socket-proxy` 的既有健康检查问题仍会阻断部分依赖服务的 Compose 编排，不影响本次 Backend SSE 验证。
+
+### 下次测试建议
+
+- 修复 socket proxy 健康检查后重跑整栈启动验收。
+- 在不同模型和 thinking 配置下分别采集首帧、model、首 delta 时间，建立 Provider 延迟基线。
+
+
+## 首页模型使用监控显示优化（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `ba94ceb`（Fix dashboard usage test import，功能实现提交 `ded96d9`）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 修复模型使用监控首 Token 延迟的时区混算：首 Token 时间改为使用 Java 调用时间绑定，并对延迟计算增加非负保护；汇总查询忽略历史负延迟记录。
+- 首页模型使用面板显示标题和说明；模型排行、近期错误无数据时直接展示空状态；延迟格式化拒绝负数和非法值；筛选区、双列区域和操作区补充窄屏换行规则。
+- 未修改数据库结构、接口路径、权限逻辑或第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 首 Token 平均值不再被时区差异污染 | Java `LlmUsageServiceTest.recordsFirstTokenWithBoundTimestampAndClampsNegativeLatency`；固定首 Token 时间并检查 SQL 参数 | 首 Token 时间和延迟计算使用同一绑定时间，负延迟被限制为 0 | 通过；正常、边界、兼容 |
+| 历史负延迟不再污染首页平均值 | Java `LlmUsageServiceTest.summarySeparatesWhereKeywordFromFilters`；检查汇总 SQL | `AVG` 只统计非负首 Token 延迟 | 通过；异常、回归 |
+| 首页无数据区域有明确反馈 | 前端 `dashboard-usage.test.mjs`；检查模型排行和错误排行模板 | 无数据时隐藏空表并显示对应空状态 | 通过；边界、异常 |
+| 首页指标和筛选区适配窄屏 | 前端 `dashboard-usage.test.mjs`；检查响应式 CSS 规则 | 双列收缩为单列，筛选控件和操作按钮换行且不溢出 | 通过；兼容、回归 |
+
+### 实际执行结果
+
+- `node --test frontend/test/dashboard-usage.test.mjs`：3/3 通过。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 485/485、E2E 3/3 通过；覆盖率行 98.46%、分支 81.58%、函数 95.42%。
+- `docker run --rm -v "$PWD/backend:/workspace" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=LlmUsageServiceTest test`：5/5 通过。
+- `docker run --rm -v "$PWD/backend:/workspace" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：971/971 通过，失败 0、错误 0、跳过 0。
+- `docker compose up --build -d`：全部 9 个自建镜像构建成功；Backend、Frontend、Python Worker、Document Parser、Outbound Gateway 已启动并健康，Backend readiness 和 Frontend `/health` 返回 `{"status":"UP"}`。整栈命令因既有 `docker-socket-proxy` unhealthy 导致依赖链失败，Adapter Manager 持续重启；已单独启动新构建 Frontend 容器完成首页探活。
+- `git diff --check` 通过；未执行 `git push`，未留下临时测试或调试文件。
+
+### 已知问题与下次测试建议
+
+- `docker-socket-proxy` 的既有 rootless `/_ping` 健康检查仍返回 unhealthy，导致 Adapter Manager、Deployment Agent、插件 Worker 的 Compose 依赖链未完成整栈启动；不影响本次前后端代码测试和已健康核心服务。
+- 已存在的历史负延迟记录不会被回写，汇总会过滤这些值；配置可用模型后应再次执行真实流式调用，确认新记录的首 Token 延迟为非负值。
+- 后续修改模型使用记录、时间字段或 Dashboard 布局时，重跑 Java/Python/前端相关套件和 Compose 健康检查，并更新本报告基准点。
+
+## AI视频页面加载状态修复（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `d5eb700`（Prevent AI video page loading hangs）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- AI 视频列表加载改为当前资源优先，项目选择项独立后台加载；关键请求增加 12 秒超时和错误重试态；路由监听改为完整 `fullPath`，避免复用页面时筛选和加载状态不刷新。
+- 仅修改前端工作台及其导航回归测试，未修改后端业务代码、接口、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 关键请求异常时加载态可结束 | 前端静态回归测试检查超时包装和错误分支 | 12 秒内转为错误提示并可重试，不无限显示加载态 | 通过；异常、超时、回归 |
+| 项目选项失败不阻塞当前列表 | Vue 组件分支检查项目请求与当前资源请求独立 | 当前页面可继续展示，项目弹窗数据按需恢复 | 通过；权限、兼容 |
+| 路由复用时页面状态正确刷新 | 前端静态回归测试检查 `route.fullPath` 监听 | 切换同一工作台组件下的不同路径或模式会重新加载 | 通过；正常、回归 |
+
+### 实际执行结果
+
+- `cd frontend && npm test -- --runInBand`：Lint、类型检查、覆盖测试 486/486、E2E 3/3 通过，失败/跳过 0；覆盖率行 98.46%、分支 81.58%、函数 95.42%。
+- AI 视频 API 冒烟验证：概览、项目、脚本、分镜、物品资产、任务、渲染、成片、审核、发布共 10 个接口均 HTTP 200，响应耗时 11–31ms。
+- `APP_IMAGE_REVISION=ai-video-loading-fix docker compose up --build -d`：9 个自建镜像构建成功，后端 Maven 测试 971/971 通过，前端镜像构建成功；启动阶段仍因既有 `docker-socket-proxy` 健康检查不通过退出。直接启动本次构建的前端容器后，Frontend 健康，`/health` 返回 HTTP 200；Backend、Python Worker、Document Parser、Outbound Gateway 也健康。
+- `git diff --check` 通过；未执行 `git push`，未留下临时测试或调试文件。
+
+### 已知问题与下次测试建议
+
+- `baseai-local-docker-socket-proxy` 的 `/_ping` 当前持续返回 503，导致 Compose 依赖服务不能由统一命令完全拉起；该基础设施问题不涉及本次前端修复。修复健康检查后应重新执行整栈启动验收。
+- 当前超时只结束页面等待并提示重试，底层网络请求仍由 Axios 自身超时机制回收；后续如需降低资源占用，可为列表 API 增加 AbortController 取消请求。
+
+## 流式首帧与模型元数据优化（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `d5eb700`（Prevent AI video page loading hangs）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- Worker 不再在首个上游事件前同步等待 RUNNING 状态回调；状态上报改为异步任务，避免 Java 状态接口慢或超时拖延首字。
+- 路由确定优先模型后立即发送公开 SSE `model` 事件，顺序为 `start → model → delta* → done`；`done.model` 仍可在故障切换后修正为实际上游模型。
+- 会话和公开聊天 Controller、前端 SSE 解析器及聊天页均允许并展示提前到达的模型元数据；未新增依赖、配置或数据库迁移。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 首个流式事件不等待状态回调 | Python 3.12 `test_generator_tracks_until_done_and_closes`，让 RUNNING 回调异步执行并读取首个 delta | 首个 delta 立即交付，状态回报不阻塞，终态仍为 SUCCESS | 通过；正常、性能、回归 |
+| 模型在回答正文前返回 | Java `ChatStreamClientTest.deliversBeforeCompletion`，模拟路由模型和 Worker 增量 | 事件顺序为 model、delta、done，首个 model 含路由模型 | 通过；正常、协议兼容 |
+| 两个 SSE 接口接受模型事件 | Java `AiChatControllerTest`、`ChatConversationServiceTest` | SSE 包含 model 事件且继续持久化回答；失败仍返回安全 error | 通过；正常、异常、回归 |
+| 前端可解析并展示提前模型 | Node `chat-stream.test.mjs`，覆盖单字节、双字节和大块网络切分 | model 事件不被拒绝，回答开始前即可写入模型字段 | 通过；边界、兼容 |
+
+### 实际执行结果
+
+- Python 3.12 Docker 执行 `python -m pytest -q`：87/87 通过，失败 0、错误 0、跳过 0。
+- Maven 3.9 / Java 17 Docker 执行 `mvn -q -Dtest=AiChatControllerTest,ChatConversationServiceTest,ChatStreamClientTest test`：定向测试通过，失败 0、错误 0、跳过 0。
+- Maven 3.9 / Java 17 Docker 执行 `mvn -q test`：971/971 通过，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 482/482、E2E 3/3 通过，失败/跳过 0；`chatStream.js` 行覆盖率 100%、分支覆盖率 98.04%。
+- `docker compose up --build -d` 已执行；9 个自建镜像构建成功，后端 Maven 构建测试 971/971 通过，前端镜像构建成功；启动阶段因既有 `docker-socket-proxy` 健康检查不通过而退出，后端和 Python Worker 已启动并健康。该基础设施问题不涉及本次流式代码。
+- `git diff --check` 通过；未执行 `git push`，未留下临时测试或调试文件。
+
+### 首字延迟原因与已知限制
+
+- 已修复的本地可避免原因是 Worker 在首个事件前同步请求 Java RUNNING 状态接口；该接口超时上限为 5 秒，网络或后端繁忙时会直接表现为首字迟迟不出现。
+- 修复后仍可能存在供应商侧首 Token 延迟，包括 Provider 排队、网络往返、模型 Prefill，以及启用 thinking/reasoning 的计算时间。这些属于上游或模型本身，SSE 刷新无法消除；可通过 `first_token_latency_ms` 与总耗时记录区分定位。
+- 当前 Compose 整栈启动仍受既有 `docker-socket-proxy` unhealthy 阻断；修复该基础设施健康检查后应重新执行整栈健康验收。
+
+### 下次测试建议
+
+- 修复既有 `LlmUsageServiceTest` 编译错误后，重新执行后端完整套件和 `docker compose up --build -d`。
+- 在真实 Provider 配置下用 `curl -N` 验证 `start → model → delta → done` 的时间间隔，并核对 `llm_usage_record.first_token_latency_ms`。
+
+## AI视频多路径流程与交互优化（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `d4f7e5f`（Optimize AI video production workflows）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 工作台首页新增文本生成视频、分镜合成视频、资产驱动生成、配音与音乐、模板批量合成五种入口，点击后进入对应创建页面并自动带入任务类型或渲染模式。
+- 列表增加搜索、状态筛选、结果计数、加载失败重试和本地化状态标签；表单增加必填校验；无关权限不足时不再阻塞整页加载；流程卡片支持键盘聚焦和响应式布局。
+- 使用说明补充五种路径的适用场景、首个动作和后续步骤；未修改后端接口和数据库结构。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 五种路径可直接进入制作流程 | 前端静态测试检查 `productionPaths`、路由 query 和 `openCreate(mode)` | 入口路由正确，任务或渲染表单自动带入模式 | 通过；正常、兼容 |
+| 列表筛选和错误恢复可用 | Vue 组件构建，搜索、状态筛选、空结果和 retry 分支 | 显示过滤结果、数量和错误重试按钮 | 通过；边界、异常、回归 |
+| 表单在请求前拦截缺失字段 | Vue 表单规则和 `save()` 校验 | 缺少项目、名称、标题等字段时不发送请求 | 通过；边界、安全 |
+| 权限不足不影响可用页面 | `load()` 权限分支检查 | 不具备 dashboard/project 权限时只跳过对应数据，不误报整页失败 | 通过；权限、兼容 |
+| 桌面与移动端交互清晰 | 前端完整构建及响应式 CSS 检查 | 流程卡片、筛选栏和操作按钮在窄屏换行，键盘可聚焦 | 通过；兼容、回归 |
+
+### 实际执行结果
+
+- `cd frontend && npm test -- --runInBand`：Lint、类型检查、覆盖测试 482/482、E2E 3/3 通过，失败/跳过 0；覆盖率行 98.46%、分支 81.61%、函数 95.42%。
+- `node --test frontend/test/ai-video-navigation.test.mjs`：4/4 通过。
+- `APP_IMAGE_REVISION=ai-video-ux docker compose up --build -d`：9 个自建镜像构建成功，Maven 测试阶段 970/970 通过，前端镜像构建成功；启动阶段因既有 `docker-socket-proxy` 的 `/_ping` 健康检查持续返回 503，命令退出 1。直接启动已创建的前端容器后，Frontend 健康，`/health` 返回 HTTP 200；Backend、Python Worker、Document Parser 也健康。
+- `git diff --check` 通过；未执行 `git push`，未留下临时调试文件。
+
+### 已知问题与下次测试建议
+
+- Docker socket proxy 的 rootless 健康检查仍阻塞 Compose 依赖服务，修复该基础设施检查后应重新执行整栈启动验收。
+- 当前多路径入口负责流程编排和参数预填，真正的视频、图像、语音执行仍由 Provider Worker 推进；接入供应商后应增加每条路径的真实任务端到端测试。
+
+## 流式/非流式统一参数（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `d023be0`（Fix non-streaming failure assertion）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 会话发送请求和公开 `/api/ai/chat` 请求均支持顶层 `stream` 参数：会话接口缺省为流式，公开接口缺省为非流式，以兼容既有调用。
+- `stream=true` 返回立即刷新的 SSE `start/delta/heartbeat/done/error` 事件；`stream=false` 返回一次性 JSON，并持久化会话消息、模型和 Token 元数据。
+- 公开流式请求复用现有 `ChatStreamClient` 的路由、重试、断流处理和 Token 记录；未新增依赖、配置或数据库迁移。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 公开聊天可由参数切换 JSON/SSE | Java `AiChatControllerTest`，分别发送 `stream=false/true` 并模拟上游失败 | false 返回 JSON；true 返回 `text/event-stream`、包含 start/delta/done；失败只返回安全 error | 3/3 通过；正常、异常、兼容 |
+| 会话接口可由参数切换并保持持久化 | Java `ChatConversationServiceTest.controllerReturnsJsonForNonStreamingRequest`；会话请求 `stream=false` | 返回内容和 Token，助手消息状态为 `COMPLETED` 并保存 metadata | 通过；正常、回归 |
+| 非流式会话失败可恢复 | Java `ChatConversationServiceTest.controllerMarksNonStreamingFailureAsInterrupted`；模型抛出异常 | 助手消息标记 `INTERRUPTED`，不保存异常正文 | 通过；异常、安全、状态冲突 |
+| 公开流式请求使用真实增量读取 | Java `ChatStreamClientTest.streamsPublicChatRequest`；模拟 Worker SSE | 温度参数下发，事件逐个消费，用量来源为 `CHAT_STREAM` | 通过；正常、协议兼容 |
+| 中断和 Token 统计不回归 | 既有 `ChatStreamClientTest`、`LlmUsageServiceTest`、Python Worker 测试 | 中断仍保留已知 Token，别名和总数补算规则不变 | 通过；异常、边界、回归 |
+
+### 实际执行结果
+
+- Maven 3.9 / Java 17 容器执行 `mvn -q -Dtest=AiChatControllerTest,ChatConversationServiceTest,ChatStreamClientTest test`：42/42 通过，失败 0、错误 0、跳过 0。
+- Maven 3.9 / Java 17 容器执行 `mvn -q test`：981/981 通过，失败 0、错误 0、跳过 0。
+- Python 3.12 镜像执行 `python -m pytest -q`：87/87 通过，失败 0、错误 0、跳过 0。
+- `docker compose up --build -d` 已按要求执行并重试；前端、Worker、插件和后端 Maven 构建阶段通过，但后端运行镜像安装 `curl` 时 Ubuntu `ports.ubuntu.com` 的 `resolute-updates/backports` 持续返回 502，整栈未启动。无端口占用问题，未修改 Dockerfile 绕过外部源故障。
+- `git diff --check` 通过；未执行 `git push`，未留下临时测试或调试文件。
+
+### 已知问题与下次测试建议
+
+- 当前 Compose 受外部 Ubuntu 软件源故障阻断，尚未完成部署后真实 `/api/ai/chat` SSE/JSON curl 验收；代码级协议和用量回归已通过。
+- 配置可用 Provider/Model 且镜像源恢复后，分别使用 `stream=true`、`stream=false` 请求两个接口，核对 `Content-Type`、首帧/增量/终帧、会话状态和 `llm_usage_record` Token 字段。
+- 后续修改聊天路由、SSE 协议或用量记录时，重跑后端/Python 全量测试和 Compose 健康检查，并更新本报告基准点。
+
+## AI视频工作台完整功能（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `78d6725`（Implement AI video workspace workflow）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 将 AI视频页面从空白骨架升级为可操作工作台，覆盖项目、剧本、分镜、角色、场景、物品、服装、动作、画风、声音、音效、生成任务、渲染、成片、审核和发布。
+- 新增 MySQL Flyway v44 数据表、统一资源 API、任务取消/重试、审核和发布完成动作，并按资产分类实施细粒度权限和项目归属隔离。
+- 新增完整使用文档 `docs/AI_VIDEO_GUIDE.md`；未新增第三方依赖，未修改第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 工作台可以读取统计和资源列表 | 容器端到端：管理员登录并请求 `/api/ai-video/overview`、`projects`、`assets?assetType=ITEM` | 返回统计、项目和按资产分类过滤的物品列表 | 通过；正常、兼容 |
+| 项目和物品资产可以持久化 | 容器端到端：创建项目、创建 ITEM 资产、读取列表、删除项目 | HTTP 200，返回生成编号，级联清理临时数据 | 通过；正常、边界、回归 |
+| 任务生命周期可操作 | 容器端到端：创建 VIDEO 任务，执行 cancel、retry | 状态按 `QUEUED → CANCELLED → QUEUED` 变化 | 通过；正常、状态冲突 |
+| 资产分类权限不能越权 | Java `AiVideoServiceTest`：ITEM create 权限访问 ITEM/SCENE 两种分类 | ITEM 允许，SCENE 返回 403；未知资源返回业务错误 | 4/4 通过；权限、安全、异常、边界 |
+| 前端菜单和工作台操作真实接入 | `ai-video-navigation.test.mjs`：路由、API 导出、创建/取消/重试/发布调用 | 页面不再依赖静态空白状态，所有资源操作绑定真实 API | 4/4 通过；正常、兼容、回归 |
+
+### 实际执行结果
+
+- Docker Maven 3.9.9 / Java 17 构建阶段执行 `mvn -B -ntp package`：964/964 通过，失败 0、错误 0、跳过 0；新增 `AiVideoServiceTest` 4/4 通过。
+- `cd frontend && npm test -- --runInBand`：Lint、类型检查、覆盖测试 482/482、E2E 3/3 通过，失败/跳过 0；覆盖率行 98.46%、分支 81.61%、函数 95.42%。
+- `node --test frontend/test/ai-video-navigation.test.mjs`：4/4 通过。
+- `APP_IMAGE_REVISION=ai-video-workspace docker compose up --build -d`：全部 9 个自建镜像构建成功，后端测试阶段通过；整栈启动命令因既有 `docker-socket-proxy` unhealthy 退出 1。随后直接启动已创建的前端容器，Backend、Frontend、Document Parser、Python Worker 均 healthy，前端 `/health` 返回 HTTP 200。
+- 容器端到端接口冒烟：管理员登录 HTTP 200；overview HTTP 200；项目/物品资产创建和列表 HTTP 200；任务创建、取消、重试及项目删除 HTTP 200；临时数据已清理。Flyway 日志确认 schema version 44。
+- `git diff --check` 通过；未执行 `git push`，临时 Cookie 和接口响应文件均已清理。
+
+### 已知问题与下次测试建议
+
+- 当前工作台负责项目数据、任务队列和状态编排；具体供应商执行器需要后续接入 Worker/Provider Adapter，任务不会伪造成功状态。文档已说明接入点和状态约束。
+- 本机 Docker socket proxy 的 rootless `/_ping` 健康检查持续返回 503，导致 Compose 命令整体失败；不影响已经健康运行的 Backend、Frontend、Document Parser 和 Python Worker。修复该基础设施检查后，应重新执行整栈启动和健康验收。
+- 后续增加供应商适配器、任务消费进度或真实视频文件生成时，重跑后端完整套件、前端完整套件、数据库迁移和真实任务端到端测试，并更新本报告基准点。
+
+## Token 消耗记录与流式中断统计修复（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `0522a93`（Persist token usage across streaming failures）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 修正 LLM 使用监控查询动态 SQL 的 `WHERE` 拼接，恢复管理员 Token 汇总和明细查询。
+- Worker 统一兼容 snake_case、camelCase 及 input/output 别名 Token 字段；总数缺失时按输入加输出补算。
+- 流式 Worker 发送内部 usage 事件；Java 流客户端缓存已收到的统计，在连接中断时仍写入 Token 并标记 `INTERRUPTED`。非流式聊天、Embedding 和 Agent 共用同一解析规则。
+- 未新增依赖、配置或数据库迁移；未记录提示词和回答正文。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 管理端 Token 汇总/明细可查询 | Java `LlmUsageServiceTest.summarySeparatesWhereKeywordFromFilters`；模拟最近 24 小时查询 | SQL 包含 `WHERE started_at`，接口不再生成 `WHEREstarted_at` | 通过；正常、回归、异常 |
+| 完整流记录 Token | Python `test_streams_utf8_and_usage_and_fails_over_before_output`；delta、usage、`[DONE]` | usage 和 done 均返回规范化输入、输出、总 Token | 通过；正常、兼容 |
+| 中断流保留已知 Token | Java `ChatStreamClientTest.preservesUsageWhenStreamInterrupts`；delta 后 usage 后 EOF | 使用记录状态为 `INTERRUPTED`，Token 数值保留 | 通过；异常、状态冲突、回归 |
+| 多种供应商字段可用且总数可补算 | Python `test_normalizes_usage_aliases_and_calculates_total_tokens` | `input_tokens`/`outputTokens` 等别名得到正确统计，总数缺失时补算 | 通过；边界、兼容 |
+| 非流式调用不回归 | Python LLM 全量测试、Java 后端全量测试 | 普通聊天、Embedding、Agent 的既有响应和 Token 结果保持通过 | 通过；正常、异常、回归 |
+
+### 实际执行结果
+
+- Python 3.12 镜像执行 `python -m pytest -q tests/test_llm_stream.py`：10/10 通过。
+- Python 3.12 镜像执行 `python -m pytest -q`：87/87 通过，失败 0、错误 0、跳过 0。
+- Maven 3.9.9 / Java 17 容器执行 `mvn -q -Dtest=LlmUsageServiceTest,ChatStreamClientTest test`：14/14 通过。
+- Maven 3.9.9 / Java 17 容器执行 `mvn -q test`：960/960 通过，失败 0、错误 0、跳过 0。
+- 已执行 `docker compose up --build -d`：Backend、Python Worker、Document Parser 等核心服务构建并健康启动；命令整体因既有 `adapter-manager`/`docker-socket-proxy` 健康检查失败返回 1，未跳过该失败。后端 Flyway 已验证迁移至 v44。
+- 追加执行 `docker compose up --build -d backend python-worker document-parser`：退出码 0，Backend、Python Worker、Document Parser 均为 healthy，`/api/open/health/ready` 返回 HTTP 200。
+- 部署后在 Backend 容器内以管理员身份请求 `/api/operations/llm-usage/summary`：HTTP 200，返回合法 overview/trend/models/errors 结构；当前数据库没有实际模型调用记录，Token 合计为 0。
+- `git diff --check` 通过；未执行 `git push`，未留下调试文件。
+
+### 已知问题与下次测试建议
+
+- 当前本地默认模型路由为空，无法进行真实供应商流式调用和产生实际 Token 记录；需配置可用 Provider/Model 后验证 `start → delta* → usage → done` 以及真实中断落库。
+- Compose 整栈启动仍受既有 adapter-manager 和 Docker socket proxy 健康检查阻塞；核心后端与 Worker 已健康，需修复该环境依赖后再执行全栈健康验收。
+- 后续修改 Worker 供应商协议、流式 SSE、使用记录表或查询条件时，重跑 Python/后端全量测试并更新本报告基准点。
+
+## 模型使用监控与管理员交互（2026-09-27）
+
+### Git 基准与变更范围
+
+- Commit: `c84bfe3`（Preserve stream client test constructor，功能提交 `d88f34f`）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 为聊天、流式聊天、Embedding、工作流和 Agent 模型调用增加统一使用记录，保存 Trace、用户、供应商、模型、状态、Token、首字延迟、总耗时和安全错误元数据，不保存提示词或回答正文。
+- 新增管理员专用汇总/明细接口及 Dashboard 交互面板；接口使用 `operations:llm-usage:view` 和管理员角色双重保护，普通用户无权读取。
+- 新增 MySQL `llm_usage_record` 表和每日清理任务，默认保留 90 天，可由 `LLM_USAGE_RETENTION_DAYS` 配置；查询时间窗口最多 90 天。
+- Python Worker 的 Agent/Embedding 响应补充可选 Token 元数据，保持旧响应兼容；未新增第三方依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 五类模型调用均产生使用记录 | Java 客户端/流式客户端/工作流 Agent 单元，模拟成功、失败、首字和终止事件 | 记录来源、Trace、模型、状态、Token 和延迟；监控写入失败不阻断业务 | 通过编译及后端全量套件；正常、异常、回归 |
+| 管理员可看汇总和明细，普通用户被拒绝 | Controller 合约及权限单元；ADMIN 与 USER 两种 AuthContext | ADMIN 可访问 `/summary`、`/records`；USER 抛出禁止访问异常 | 通过；权限、安全、兼容 |
+| 使用记录只保留 90 天 | Flyway 迁移资源检查、保留任务单元、查询窗口边界测试 | 表结构存在索引；定时任务按配置删除过期记录；查询不得超过 90 天 | 通过；边界、异常、回归 |
+| 交互清晰且适配管理员监控 | Vue 组件静态构建、前端完整套件 | 管理员看到筛选、指标、排行、错误和分页明细；非管理员不渲染；加载失败/空数据有状态反馈 | 通过；正常、边界、权限、异常 |
+
+### 实际执行结果
+
+- Compose 构建内 `mvn -B -ntp package`：958/958 通过，失败 0、错误 0、跳过 0；包含新增 Controller、Service、RetentionJob、迁移资源和既有聊天/工作流回归。
+- Python 3.12 镜像执行 `python -m pytest -q`：86/86 通过。
+- `cd frontend && npm test -- --run`：Lint、类型检查、覆盖测试 481/481、E2E 3/3 通过，失败/跳过 0；覆盖率行 98.46%、分支 81.61%、函数 95.42%。
+- `APP_IMAGE_REVISION=c84bfe3 docker compose up --build -d`：9 个自建镜像均构建成功，后端 Maven 测试阶段通过；启动阶段受环境阻塞，MySQL 服务名 `mysql` 不可解析导致后端重启，adapter-manager 的 rootless Docker 校验失败。已执行 `docker compose down --remove-orphans` 清理容器和网络。
+- `git diff --check` 通过；无新增临时测试或调试文件，未执行 `git push`。
+
+### 已知问题与下次测试建议
+
+- 当前环境没有可用 MySQL/Redis/adapter-manager 运行栈，因此尚未完成部署后管理员登录、真实模型调用落库和清理任务实机验收；代码级和 H2/Mock 回归已通过。
+- 部署环境恢复后，使用管理员和普通用户分别访问监控面板与接口，验证 403/禁止访问、筛选分页、90 天边界和定时删除；再执行真实聊天、流式聊天、Embedding、工作流和 Agent 调用，核对记录数量及 Token/延迟指标。
+- 后续修改任一模型调用入口、监控表结构、权限编码或保留配置时，重跑后端完整测试、Python Worker 测试、前端完整套件并更新本报告基准点。
+
+## AI视频权限菜单与业务分组（2026-09-27）
+
+### Git 基准与变更范围
+
+- 代码提交：`461048e`（Add AI video permission menus）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 新增独立一级菜单“AI视频”，下设工作台首页、内容创作、资产中心、生成中心和发布中心；资产中心细化角色、场景、物品、服装、动作、画风、声音和音乐音效权限。
+- 增加前端路由、导航本地化、AI 视频页面骨架和菜单验收测试；未修改数据库结构、依赖或第三方代码。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| AI视频作为独立业务域展示 | 前端静态验收：检查后端菜单种子和菜单树 | 存在 `AI视频` 根目录，且不使用“AI视频工作台”名称 | 通过；正常、兼容 |
+| AI视频下包含内容、资产、生成、发布四组菜单 | 前端静态验收：读取 `DataInitializer` 菜单定义 | 四组目录和对应页面权限完整存在 | 通过；正常、边界 |
+| 物品资产拥有独立权限和页面入口 | 前端静态验收：检查 `ai:video:item:list`、`/ai-video/assets/items` | 物品资产路由、权限和导航本地化一一对应 | 通过；正常、权限 |
+| 权限菜单可访问页面骨架 | 前端完整套件：路由、导航、本地化和页面组件 | 有权限用户可进入 AI 视频页面，未知模块安全回退到首页 | 通过；兼容、异常 |
+
+### 实际执行结果
+
+- `node --test frontend/test/ai-video-navigation.test.mjs`：3/3 通过。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 481/481、E2E 3/3 通过，失败/跳过 0；前端覆盖率行 98.46%、分支 81.61%、函数 95.42%。
+- `docker build --progress plain --target backend --build-arg APP_IMAGE_REVISION=ai-video-menu-worktree backend`：主代码编译通过，但测试编译因工作区既有 `ChatStreamClientTest` 调用旧构造函数而失败，失败与本次菜单变更无关。
+- 使用 Maven 容器执行 `mvn -B -ntp -Dmaven.test.skip=true package`：主代码编译、打包通过；完整后端测试未通过，原因是上述既有测试源不匹配。
+- 宿主机直接执行 `mvn test -B` 未执行，环境没有 Maven；容器依赖直连执行曾因 Maven Central `Tag mismatch` 失败。
+
+### 已知问题与下次测试建议
+
+- 工作区已有聊天用量改动使 `ChatStreamClientTest` 与当前构造函数不一致，需先由对应变更修复测试后才能完成后端完整套件验收。本次未修改这些无关文件。
+- 业务接口、资产数据持久化、生成任务和发布接口尚未实现；当前提交完成权限菜单、路由和页面骨架，后续模块接入数据接口时应分别增加服务、控制器和集成测试。
+- `APP_IMAGE_REVISION=4c8c035 docker compose up --build -d`：未完成；后端镜像在 `mvn package` 的测试编译阶段因既有 `ChatStreamClientTest` 构造函数参数过少而失败，其余并行镜像构建被取消，未启动容器；`docker compose ps -a` 为空。无端口冲突。
+- 待聊天用量改动同步修复测试构造函数后，重新执行完整 Compose 构建、健康检查和 AI视频菜单登录后导航验收。
+
+## 兼容 OpenAI 流式终止帧（2026-09-27）
+
+### Git 基准与变更范围
+
+- 代码提交：`36770bb`（Clarify stream parser regression test name，包含实现提交 `3e46639`）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-27（Asia/Shanghai）。
+- 修改 `python-worker/app/llm_stream.py` 及对应测试：明确收到供应商 `[DONE]` 即视为完整终态，不再额外要求 `finish_reason`；兼容没有最后换行的终止帧；流失败日志仅记录异常类型并沿用既有脱敏链路。
+- 未修改 Java、前端、数据库、依赖或配置；未改变上游在正文输出后的故障切换和部分内容持久化规则。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 实际结果与场景 |
+| --- | --- | --- | --- |
+| 显式 `[DONE]` 不被误判为中断 | Python Worker 单元：正文增量后仅发送 `[DONE]`，且无末尾换行、无 `finish_reason` | 交付 `delta` 和 `done`；不产生错误事件 | 通过；正常、边界、兼容 |
+| 缺少显式终态仍安全失败 | Python Worker 单元：畸形帧、超大帧、正文后提前 EOF | 不发送成功终态；上游失败后不切换候选拼接回答 | 通过；异常、安全、回归 |
+| 已收到正文仍保留并可诊断 | Worker 失败日志与既有 Java 持久化链路 | 只记录异常类型和 Trace 上下文，不泄露上游正文或密钥 | 通过静态检查及既有流式回归；安全、回归 |
+
+### 实际执行结果
+
+- `python3 -m py_compile python-worker/app/llm_stream.py python-worker/tests/test_llm_stream.py`：通过；宿主机无 Python 3.12，因此未使用宿主解释器执行依赖测试。
+- 在构建出的 `baseai-local-python-worker:3e466393dfc201580c470594150eac04b2ccf68c` Python 3.12 镜像中执行 `pytest -q tests/test_llm_stream.py`：9/9 通过。
+- 同一镜像执行 `pytest -q tests`：86/86 通过。
+- `cd frontend && npm test`：Lint、类型检查通过；覆盖测试 478/478、E2E 3/3，失败/跳过 0。
+- 首次 `APP_IMAGE_REVISION=3e46639 docker compose up --build -d` 在 Python Worker 构建的 apt 阶段因 Docker 内存不足失败；按 `COMPOSE_PARALLEL_LIMIT=1` 重试后 9 个镜像均构建成功。
+- 重试后的 Compose 启动未完成：外部 MySQL 主机名 `mysql` 不可解析，后端反复重启；adapter-manager 的 rootless Docker 校验也失败。无端口冲突，已执行 `docker compose down --remove-orphans` 清理容器和网络。
+- 未取得 Trace `472716a008b54ba48fe3f06a59ac0707` 的运行日志；当前工作区无可用数据库/服务实例。没有创建或保留临时测试文件。
+
+### 已知问题与下次测试建议
+
+- 本次修复覆盖“完整正文已到达但供应商只用 `[DONE]` 结束”的协议差异；若该 Trace 的日志显示为供应商超时、连接断开或缺少上游终止帧以外的问题，需要在可用 MySQL、adapter-manager 和真实模型路由后继续联调。
+- 部署环境恢复后，使用同一 Trace 链路执行真实首字和全文验收：检查 `start → delta* → done`、正文一致、`COMPLETED` 和 `generating=false`，并验证 Agent 工具路径的首字等待与终态。
+- 下次涉及 `llm_stream.py`、供应商协议或 SSE 解析时，至少重跑 Python Worker 全量测试、聊天前端套件和 Compose 构建启动验证。
 ## master 合并 emdash/codex-vlzfy 验证（2026-09-26）
 
 ### 当前 Git 基准点
@@ -9453,3 +10811,35 @@ git diff --check
 - 令牌轮换需同步调用端并重建服务；旧令牌过短，不应回滚为旧值。需要再次轮换时生成新的合规令牌并重复本节验证。
 - 后续修改令牌、Worker 鉴权或 Compose 环境传递时，应重新执行本节验证；修改业务代码时按项目规则另行执行后端完整测试。
 - 工作区原有未跟踪 `docs/` 保留，未纳入本次提交。
+
+## 模型供应商图片与视频地址配置（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: e4589863626fb2d5e7975d6a4795d5b8babcf32d
+- 变更提交：d9483b2、d9d5225；当前分支 emdash/codex-vlzfy。
+- 供应商支持 Base URL、图片 URL、视频 URL，三者至少配置一个；图片可同步 Base，视频可同步图片。
+- 文本、视觉、向量使用 Base URL；图片生成使用图片 URL；视频生成和轮询使用视频 URL。
+- 旧供应商迁移后默认保持两级同步，API Key 脱敏和权限控制不变；新增 MySQL 迁移 V46。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 三类地址至少配置一个 | ProviderEndpointTest.acceptsAnySingleEndpointAndRejectsEmpty、前端供应商地址测试 | 正常、边界、异常 | 通过 |
+| 图片和视频同步联动 | ProviderEndpointTest.resolvesMediaEndpointsAndSynchronization、前端同步字段测试 | 正常、兼容、回归 | 通过 |
+| 按模型类型选择调用地址 | ProviderEndpointTest.resolvesMediaEndpointsAndSynchronization | 正常、兼容 | 通过 |
+| URL 安全校验 | ProviderEndpointTest.rejectsUnsafeMediaEndpoint 及既有 URL 校验测试 | 异常、安全 | 通过 |
+| 旧 API 和密钥安全行为不回退 | LlmManagementServiceTest 回归、完整 Maven 套件 | 权限、兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- docker run ... mvn -o test -B：后端 1029/1029 通过，失败 0、错误 0、跳过 0。
+- docker run ... mvn -o -Dmaven.main.skip=true -Dtest=ProviderEndpointTest test -B：供应商地址定向测试 3/3 通过。
+- cd frontend && npm test：覆盖测试 657/657 通过，生产构建通过，E2E 3/3 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- docker compose up --build -d：镜像构建完成并启动基础服务；整栈启动受已有 `baseai-local-docker-socket-proxy` unhealthy 阻断，Adapter Manager 依赖未达到健康状态。Backend、Document Parser、Python Worker 和 Outbound Gateway 保持运行。
+
+### 已知问题与下次测试建议
+
+- 本次未联调真实图片或视频供应商，仅验证地址选择、协议路径和安全校验；接入具体供应商时需用其凭据执行端到端生成和轮询。
+- 后续修改供应商字段、媒体协议、迁移或调用路由时，需重新执行后端完整 Maven、前端完整 npm 套件及 Compose 重建。

@@ -99,7 +99,7 @@ class DataInitializerTest {
             systemSettingRepository, systemSettingCacheService);
     }
 
-    /** 首次启动应同时补齐文本、视觉和向量三种内置模型类型。 */
+    /** 首次启动应独立补齐图片、视频生成类型，并保留原有三种能力。 */
     @Test
     void seedsEmbeddingModelTypeWithBuiltInCatalog() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.empty());
@@ -114,8 +114,29 @@ class DataInitializerTest {
         assertEquals(Map.of(
             "text_model", "文本模型",
             "vision_model", "视觉模型",
-            "embedding_model", "向量模型"
+            "embedding_model", "向量模型",
+            "image_model", "图片生成模型",
+            "video_model", "视频生成模型"
         ), labels);
+    }
+
+    /** 重复初始化只补缺失类型，保留管理员维护的名称和停用状态。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"image_model", "video_model"})
+    void preservesExistingGenerationModelType(String type) {
+        DictionaryData existing = new DictionaryData();
+        existing.setDictValue(type);
+        existing.setLabel("自定义名称");
+        existing.setEnabled(false);
+        when(dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type"))
+            .thenReturn(List.of(existing));
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
+
+        initializer.run(null);
+
+        verify(dictionaryDataRepository, never()).save(argThat(data -> type.equals(data.getDictValue())));
+        assertEquals("自定义名称", existing.getLabel());
+        assertFalse(existing.getEnabled());
     }
 
     /** 未配置同步开关时必须保留已有管理员密码。 */

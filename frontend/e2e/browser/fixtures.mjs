@@ -39,6 +39,8 @@ async function createApp() {
     if (path === '/api/ai/conversations/agent-tools' || path === '/api/workflow/chat-tools') return json({ message: 'Forbidden' }, 403)
     if (path === '/api/ai/chat/providers') return json([])
     if (path === '/api/ai/chat/model-types') return json([{ value: 'text_model', label: 'Text' }])
+    // 生成模型目录与文本对话模型互不混用；此处返回空目录，保持既有文本对话断言不变。
+    if (path === '/api/ai/chat/generation-models') return json([])
     if (path === '/api/ai/conversations') return json(request.method === 'POST' ? { id: 1 } : { items: [], total: 0 })
     if (path === '/api/ai/conversations/1') return json({ id: 1, messages: state.messages, settings: { modelType: 'text_model' } })
     if (path === '/api/ai/conversations/1/messages/stream') {

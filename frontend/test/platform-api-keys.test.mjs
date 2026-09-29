@@ -69,12 +69,14 @@ test('平台 API Key 的创建、轮换和回查入口仅向管理员展示并�
   assert.match(viewSource, /http\.delete\(`/)
 })
 
-test('模型供应商仅在二次验证后向管理员显示明文 Key，编辑不自动回显', () => {
+test('模型供应商向管理员直接显示明文 Key，编辑不自动回显', () => {
   assert.match(providerViewSource, /v-if="auth\.isAdmin"[^>]*@click="viewKeys\(scope\.row\)"/)
   assert.match(providerViewSource, /http\.post\(`/)
-  assert.match(providerViewSource, /requestRevealPassword\(\)/)
-  assert.match(providerViewSource, /function open\(row\)[\s\S]*keyRows\.value = \[''\]/)
-  assert.doesNotMatch(providerViewSource, /await loadKeys\(row\.id\)/)
+  assert.match(providerViewSource, /loadKeys\(row\.id\)/)
+  assert.doesNotMatch(providerViewSource, /requestRevealPassword\(\)/)
+  const openBody = providerViewSource.match(/function open\(row\) \{([\s\S]*?)\n\}/)?.[1] || ''
+  assert.match(openBody, /keyRows\.value = \[''\]/)
+  assert.doesNotMatch(openBody, /loadKeys\(/)
   assert.match(providerViewSource, /@closed="clearKeys"/)
   assert.match(providerViewSource, /keysContent\.value\s*=\s*\[\]/)
 })

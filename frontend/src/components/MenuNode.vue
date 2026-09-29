@@ -20,8 +20,10 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  Avatar, Briefcase, ChatDotRound, Collection, Connection, Cpu, Document, Guide, Link, List,
-  MagicStick, Menu as MenuIcon, OfficeBuilding, Operation, Promotion, Setting, Tickets, Tools, User
+  Aim, Avatar, Briefcase, Brush, ChatDotRound, Collection, Connection, Cpu, DataAnalysis, Document,
+  DocumentChecked, EditPen, Files, Film, FolderOpened, Goods, Guide, Headset, House, Link, List,
+  MagicStick, Menu as MenuIcon, Microphone, OfficeBuilding, Operation, Picture, Promotion, Setting,
+  Suitcase, Tickets, Tools, User, VideoCamera, VideoPlay
 } from '@element-plus/icons-vue'
 import { localizeMenuName } from '../utils/navigation'
 
@@ -29,7 +31,7 @@ defineOptions({ name: 'MenuNode' })
 const props = defineProps({ item: { type: Object, required: true } })
 const { t } = useI18n()
 const children = computed(() => props.item.children || [])
-const iconMap = { Avatar, Briefcase, ChatDotRound, Collection, Connection, Cpu, Document, Guide, Link, List, MagicStick, Menu: MenuIcon, OfficeBuilding, Operation, Promotion, Setting, Tickets, Tools, User }
+const iconMap = { Aim, Avatar, Briefcase, Brush, ChatDotRound, Collection, Connection, Cpu, DataAnalysis, Document, DocumentChecked, EditPen, Files, Film, FolderOpened, Goods, Guide, Headset, House, Link, List, MagicStick, Menu: MenuIcon, Microphone, OfficeBuilding, Operation, Picture, Promotion, Setting, Suitcase, Tickets, Tools, User, VideoCamera, VideoPlay }
 
 /** 优先展示菜单配置图标；配置缺失或错误时回退为通用菜单图标。 */
 const menuIcon = computed(() => iconMap[props.item.icon] || MenuIcon)

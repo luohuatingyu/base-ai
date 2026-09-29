@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+
+test('图片与视频生成模型分别显示中英文标签，视觉理解标签保持兼容', () => {
+  for (const [type, chinese, english] of [
+    ['image_model', '图片生成模型', 'Image Generation Model'],
+    ['video_model', '视频生成模型', 'Video Generation Model'],
+    ['vision_model', '视觉模型', 'Vision Model']
+  ]) {
+    assert.equal(localizeModelType(type, [], zh), chinese)
+    assert.equal(localizeModelType(type, [], en), english)
+  }
+})
 import {
   localizeDepartmentName,
   localizeDictionaryDataLabel,
@@ -142,4 +153,77 @@ test('空值和 null 安全回退', () => {
   assert.equal(localizeRouteName(null, en), '')
   assert.equal(localizeDictionaryTypeName(null, en), '')
   assert.equal(localizeDictionaryDataLabel(null, en), '')
+})
+
+// 使用真实 Vue setup 检查模型选择约束，仅隔离 HTTP 和界面通知。
+import { parse, compileScript } from '@vue/compiler-sfc'
+import * as vue from 'vue'
+import * as thinking from '../src/utils/thinkingLevels.js'
+
+/** 加载真实模型配置组件，保留状态和分支逻辑。 */
+function modelEditor() {
+  const requests = []
+  const warnings = []
+  const source = compileScript(parse(viewSources.ModelsView).descriptor, { id: 'model-types-test' })
+  const modules = {
+    vue: { ...vue, onMounted() {} },
+    'element-plus': { ElMessage: { warning: message => warnings.push(message), success() {} } },
+    'vue-i18n': { useI18n: () => ({ t: zh }) },
+    '../api/http': { default: { post: async (...args) => { requests.push(args); return { data: { durationMs: 1 } } } } },
+    '../utils/localization': { localizeModelType },
+    '../utils/thinkingLevels': thinking
+  }
+  const bindings = {}
+  for (const node of source.scriptSetupAst.filter(node => node.type === 'ImportDeclaration')) {
+    for (const spec of node.specifiers) bindings[spec.local.name] = modules[node.source.value][spec.type === 'ImportDefaultSpecifier' ? 'default' : spec.imported.name]
+  }
+  const code = source.content.replace(/^import[\s\S]*?from ['"][^'"]+['"];?$/gm, '').replace('export default', 'return')
+  const component = new Function(...Object.keys(bindings), code)(...Object.values(bindings))
+  return { state: component.setup({}, { expose() {} }), requests, warnings }
+}
+
+for (const type of ['image_model', 'video_model']) {
+  test(type + ': 可与另一种生成类型组合但不能与聊天类型组合', () => {
+    const { state } = modelEditor()
+    state.form.supportedModelTypes = []
+    assert.equal(state.modelTypeDisabled(type), false)
+    state.form.supportedModelTypes = [type]
+    for (const candidate of ['image_model', 'video_model', 'text_model', 'vision_model']) {
+      assert.equal(state.modelTypeDisabled(candidate), ['text_model', 'vision_model'].includes(candidate))
+    }
+    state.open({ id: 1, supportedModelTypes: ['image_model', 'video_model'] })
+    assert.equal(state.modelTypeDisabled('image_model'), false)
+    assert.equal(state.modelTypeDisabled('video_model'), false)
+    assert.equal(state.modelTypeDisabled('text_model'), true)
+    assert.equal(Object.hasOwn(state.form, 'generationProfile'), false)
+  })
+  test(type + ': 模型测试显示未接入提示且不发送聊天请求', () => {
+    const { state, requests, warnings } = modelEditor()
+    state.startTest({ id: 1, supportedModelTypes: [type] })
+    assert.deepEqual(requests, [])
+    assert.deepEqual(warnings, [zh('models.generationUnavailable')])
+  })
+}
+
+test('模型配置不再要求选择生成能力画像', () => {
+  assert.doesNotMatch(viewSources.ModelsView, /generationProfile/)
+  assert.doesNotMatch(viewSources.ModelsView, /ai\/generation\/profiles/)
+})
+
+test('文本与视觉理解仍可组合选择并调用既有模型测试接口', async () => {
+  const { state, requests } = modelEditor()
+  state.form.supportedModelTypes = ['text_model']
+  assert.equal(state.modelTypeDisabled('vision_model'), false)
+  assert.equal(state.modelTypeDisabled('image_model'), true)
+  assert.equal(state.modelTypeDisabled('video_model'), true)
+  state.startTest({ id: 7, supportedModelTypes: ['text_model'], thinkingLevels: '' })
+  await Promise.resolve()
+  assert.equal(requests[0][0], '/models/7/test')
+})
+
+test('混合生成与文本能力可使用文本模型测试接口', async () => {
+  const { state, requests } = modelEditor()
+  state.startTest({ id: 8, supportedModelTypes: ['image_model', 'text_model'], thinkingLevels: '' })
+  await Promise.resolve()
+  assert.equal(requests[0][0], '/models/8/test')
 })

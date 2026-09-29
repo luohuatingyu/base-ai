@@ -249,7 +249,16 @@ public class ChatConversationService {
             return agentToolCodes == null ? List.of() : agentToolCodes;
         }
     }
-    public record SendRequest(String requestId, JsonNode content, Settings settings) {}
+    /** 会话发送请求；缺省保持历史接口的流式行为。 */
+    public record SendRequest(String requestId, JsonNode content, Settings settings, Boolean stream) {
+        /** 兼容旧版未携带 stream 字段的请求。 */
+        public SendRequest(String requestId, JsonNode content, Settings settings) {
+            this(requestId, content, settings, true);
+        }
+
+        /** 将缺省值解释为流式，保证现有页面和 curl 不改变协议。 */
+        public boolean streaming() { return stream == null || stream; }
+    }
     public record Summary(Long id, String title, Instant updatedAt, boolean generating) {}
     public record MessageView(Long id, String role, JsonNode content, String status, JsonNode metadata, String traceId) {}
     public record Detail(Summary conversation, JsonNode settings, List<MessageView> messages) {}

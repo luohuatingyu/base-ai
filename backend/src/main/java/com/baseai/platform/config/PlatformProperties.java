@@ -39,6 +39,8 @@ public class PlatformProperties {
     private TraceLog traceLog = new TraceLog();
     /** 系统审计日志的保留策略。 */
     private Audit audit = new Audit();
+    /** 模型使用记录的保留策略。 */
+    private LlmUsage llmUsage = new LlmUsage();
     /** 追踪切面配置。 */
     private TraceTracking traceTracking = new TraceTracking();
     /** API 触发器配置。 */
@@ -97,6 +99,10 @@ public class PlatformProperties {
     public Audit getAudit() { return audit; }
     /** 设置系统审计日志保留策略。 */
     public void setAudit(Audit value) { audit = value; }
+    /** 返回模型使用记录保留策略。 */
+    public LlmUsage getLlmUsage() { return llmUsage; }
+    /** 设置模型使用记录保留策略。 */
+    public void setLlmUsage(LlmUsage value) { llmUsage = value; }
     public TraceTracking getTraceTracking() { return traceTracking; }
     public void setTraceTracking(TraceTracking traceTracking) { this.traceTracking = traceTracking; }
     public ApiTrigger getApiTrigger() { return apiTrigger; }
@@ -340,6 +346,15 @@ public class PlatformProperties {
         public int getOperationLogRetentionDays() { return operationLogRetentionDays; }
         /** 设置操作审计日志保留天数。 */
         public void setOperationLogRetentionDays(int value) { operationLogRetentionDays = value; }
+    }
+
+    /** 控制模型使用明细的保留时间。 */
+    public static class LlmUsage {
+        private int retentionDays = 90;
+        /** 返回模型使用记录保留天数。 */
+        public int getRetentionDays() { return retentionDays; }
+        /** 设置模型使用记录保留天数。 */
+        public void setRetentionDays(int value) { retentionDays = value; }
     }
 
     public static class TraceTracking {

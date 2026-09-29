@@ -35,7 +35,9 @@
       <el-form label-width="100px">
         <el-form-item :label="t('common.code')"><el-input v-model="form.code" /></el-form-item>
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="Base URL"><el-input v-model="form.baseUrl" /></el-form-item>
+        <el-form-item :label="t('providers.baseUrl')"><el-input v-model="form.baseUrl" /></el-form-item>
+        <el-form-item :label="t('providers.imageUrl')"><el-input v-model="form.imageUrl" :disabled="form.imageSameAsBase" /><el-checkbox v-model="form.imageSameAsBase">{{ t('providers.sameAsBase') }}</el-checkbox></el-form-item>
+        <el-form-item :label="t('providers.videoUrl')"><el-input v-model="form.videoUrl" :disabled="form.videoSameAsImage" :placeholder="videoEndpoint" /><el-checkbox v-model="form.videoSameAsImage">{{ t('providers.sameAsImage') }}</el-checkbox></el-form-item>
         <el-form-item :label="t('providers.apiKeys')">
           <div v-for="(_, index) in keyRows" :key="index" class="api-key-editor-row">
             <el-input v-model="keyRows[index]" :placeholder="t('providers.keyPlaceholder')" />
@@ -69,7 +71,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
@@ -90,15 +92,15 @@ async function load() {
   rows.value = (await http.get('/models/providers')).data
 }
 
-/** 通过当前管理员密码二次验证后读取并规范化指定供应商的 API Key。 */
-async function loadKeys(id, password) {
-  const response = await http.post(`/models/providers/${id}/api-keys`, { password })
+/** 在当前管理员权限范围内读取并规范化指定供应商的 API Key。 */
+async function loadKeys(id) {
+  const response = await http.post(`/models/providers/${id}/api-keys`)
   return normalizeApiKeys(response.data.apiKeys)
 }
 
 /** 打开编辑窗口时从不自动回读已保存的供应商密钥。 */
 function open(row) {
-  Object.assign(form, defaultForm(), row || {}, { apiKeys: '' })
+  Object.assign(form, defaultForm(), row || {}, { apiKeys: '', imageSameAsBase: row?.imageSameAsBase ?? true, videoSameAsImage: row?.videoSameAsImage ?? true })
   keyRows.value = ['']
   visible.value = true
 }
@@ -113,27 +115,14 @@ function deleteKey(index) {
   keyRows.value.splice(index, 1)
 }
 
-/** 二次验证后查看供应商的明文 API Key，并在关闭窗口时清除内存副本。 */
+/** 在管理员权限范围内查看供应商的明文 API Key，并在关闭窗口时清除内存副本。 */
 async function viewKeys(row) {
   try {
-    const password = await requestRevealPassword()
-    keysContent.value = splitApiKeys(await loadKeys(row.id, password))
+    keysContent.value = splitApiKeys(await loadKeys(row.id))
     keysVisible.value = true
   } catch (error) {
-    if (error !== 'cancel' && error !== 'close') showHttpError(error)
+    showHttpError(error)
   }
-}
-
-/** 弹出当前管理员密码输入框，避免仅凭被劫持会话导出长期凭据。 */
-async function requestRevealPassword() {
-  const { value } = await ElMessageBox.prompt(t('secretReveal.passwordPrompt'), t('secretReveal.title'), {
-    inputType: 'password',
-    inputAttributes: { autocomplete: 'current-password' },
-    inputValidator: value => value?.trim() ? true : t('secretReveal.passwordRequired'),
-    confirmButtonText: t('common.confirm'),
-    cancelButtonText: t('common.cancel')
-  })
-  return value
 }
 
 /** 关闭查看窗口后清除浏览器内存中的供应商 API Key。 */
@@ -153,6 +142,8 @@ async function copyKey(key) {
 
 /** 保存供应商；编辑时留空密钥代表保留现有加密值。 */
 async function save() {
+  if (!hasProviderEndpoint()) { ElMessage.error(t('providers.endpointRequired')); return }
+  if (form.videoSameAsImage && !String(imageEndpoint.value || '').trim()) { ElMessage.error(t('providers.syncSourceRequired')); return }
   form.apiKeys = serializeApiKeyRows(keyRows.value)
   if (form.id) await http.put(`/models/providers/${form.id}`, form)
   else await http.post('/models/providers', form)
@@ -171,8 +162,14 @@ async function remove(row) {
 
 /** 创建不含已保存 API Key 的供应商默认表单。 */
 function defaultForm() {
-  return { id: null, code: '', name: '', baseUrl: '', apiKeys: '', concurrencyLimit: 4, concurrencyLevel: 'PROVIDER', timeoutSeconds: 60, enabled: true }
+  return { id: null, code: '', name: '', baseUrl: '', imageUrl: '', videoUrl: '', imageSameAsBase: true, videoSameAsImage: true, apiKeys: '', concurrencyLimit: 4, concurrencyLevel: 'PROVIDER', timeoutSeconds: 60, enabled: true }
 }
+
+/** 返回联动后的图片和视频地址。 */
+const imageEndpoint = computed(() => form.imageSameAsBase ? form.baseUrl : form.imageUrl)
+const videoEndpoint = computed(() => form.videoSameAsImage ? imageEndpoint.value : form.videoUrl)
+/** 三类地址至少有一个有效输入。 */
+function hasProviderEndpoint() { return [form.baseUrl, form.imageUrl, form.videoUrl].some(value => String(value || '').trim()) }
 
 onMounted(load)
 </script>

@@ -28,7 +28,7 @@
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('models.provider')"><el-select v-model="form.providerId"><el-option v-for="item in providers" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
         <el-form-item :label="t('models.identifier')"><el-input v-model="form.modelName" /></el-form-item>
-        <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value" :disabled="modelTypeDisabled(type.value)">{{ localizeModelType(type.value, modelTypes, t) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('models.capability')"><el-select v-model="form.capabilityLevel"><el-option :label="t('models.low')" value="LOW" /><el-option :label="t('models.middle')" value="MIDDLE" /><el-option :label="t('models.high')" value="HIGH" /></el-select></el-form-item>
         <el-form-item :label="t('models.thinkingLevels')" class="thinking-level-form-item">
           <div class="thinking-mapping-editor">
@@ -80,6 +80,16 @@ const thinkingMapping = reactive({})
 function normalizeTypes(row) {
   return Array.isArray(row?.supportedModelTypes) ? [...row.supportedModelTypes] : []
 }
+/** 区分图片、视频生成与原有聊天模型能力。 */
+function isGenerationType(type) { return ['image_model', 'video_model'].includes(type) }
+/** 允许图片和视频生成能力组合，但生成能力仍不能与聊天能力混合。 */
+function modelTypeDisabled(type) {
+  const selected = normalizeTypes(form)
+  if (!selected.length || selected.includes(type)) return false
+  return selected.some(isGenerationType) ? !isGenerationType(type) : isGenerationType(type)
+}
+/** 历史混合配置只要声明聊天能力，仍可执行对应的聊天协议测试。 */
+function supportsChat(row) { return normalizeTypes(row).some(type => !isGenerationType(type)) }
 /** 获取思考等级的本地化名称，并保留标准编码便于识别配置。 */
 function thinkingLevelLabel(level) { return `${t(`models.thinkingLevelLabels.${level}`)} (${level})` }
 /** 将后端映射转换为列表使用的有序展示条目。 */
@@ -94,14 +104,23 @@ async function load() {
 }
 /** 打开新增或编辑窗口，并回显模型支持类型。 */
 function open(row) {
-  Object.assign(form, row ? { ...row, supportedModelTypes: normalizeTypes(row) } : { id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: modelTypes.value.length ? [modelTypes.value[0].value] : ['text_model'], capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true })
+  const values = row ? {
+    id: row.id, code: row.code, name: row.name, providerId: row.providerId, modelName: row.modelName,
+    supportedModelTypes: normalizeTypes(row), capabilityLevel: row.capabilityLevel, thinkingLevels: row.thinkingLevels, enabled: row.enabled
+  } : {
+    id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: modelTypes.value.length ? [modelTypes.value[0].value] : ['text_model'], capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true
+  }
+  Object.assign(form, values)
   Object.assign(thinkingMapping, Object.fromEntries(thinkingLevels.map(level => [level, ''])), parseThinkingMappings(form.thinkingLevels))
   visible.value = true
 }
 /** 按当前模型接口格式保存类型集合及思考等级映射。 */
 async function save() { form.thinkingLevels = serializeThinkingMappings(thinkingMapping); form.id ? await http.put(`/models/${form.id}`, form) : await http.post('/models', form); visible.value = false; await load(); ElMessage.success(t('common.successSaved')) }
 /** 打开模型测试窗口，并仅提供当前模型已配置的思考等级。 */
-function startTest(row) { testModel.value = row; testLevels.value = thinkingMappingEntries(row.thinkingLevels).map(entry => entry.level); testThinkingLevel.value = ''; if (testLevels.value.length) testVisible.value = true; else runTest() }
+function startTest(row) {
+  if (!supportsChat(row)) { ElMessage.warning(t('models.generationUnavailable')); return }
+  testModel.value = row; testLevels.value = thinkingMappingEntries(row.thinkingLevels).map(entry => entry.level); testThinkingLevel.value = ''; if (testLevels.value.length) testVisible.value = true; else runTest()
+}
 async function runTest() { const result = (await http.post(`/models/${testModel.value.id}/test`, null, { params: testThinkingLevel.value ? { thinkingLevel: testThinkingLevel.value } : {} })).data; testVisible.value = false; ElMessage.success(t('models.connected', { duration: result.durationMs })) }
 onMounted(load)
 </script>

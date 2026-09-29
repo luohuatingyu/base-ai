@@ -22,16 +22,18 @@ public class WorkflowAgentClient {
     private final RestClient restClient;
     private final LlmManagementService llmManagementService;
     private final TaskTraceService taskTraceService;
+    private final com.baseai.platform.service.LlmUsageService llmUsageService;
     private final ObjectMapper objectMapper;
 
     /** 注入 Worker、模型路由和追踪服务。 */
     public WorkflowAgentClient(@Qualifier("pythonWorkerRestClient") RestClient restClient,
                                LlmManagementService llmManagementService, TaskTraceService taskTraceService,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper, com.baseai.platform.service.LlmUsageService llmUsageService) {
         this.restClient = restClient;
         this.llmManagementService = llmManagementService;
         this.taskTraceService = taskTraceService;
         this.objectMapper = objectMapper;
+        this.llmUsageService = llmUsageService;
     }
 
     /** 根据节点模型配置请求一次 Agent 决策。 */
@@ -44,8 +46,13 @@ public class WorkflowAgentClient {
         LlmManagementService.WorkerRoute route = modelId == null
             ? llmManagementService.resolveActive(featureCode, modelType)
             : llmManagementService.resolveModel(modelId, modelType, thinking, thinkingLevel);
+        // 包括历史混合类型配置在内，生成模型不得进入工具决策的聊天协议。
+        LlmManagementService.requireChatCapabilities(modelType, route);
         String pythonTraceId = UUID.randomUUID().toString().replace("-", "");
         taskTraceService.registerPython(TraceContextHolder.currentTraceId().orElse(null), pythonTraceId, "/llm/agent-step");
+        String usageId = llmUsageService == null ? null : llmUsageService.start(
+            com.baseai.platform.service.LlmUsageService.Start.current(pythonTraceId, null, null,
+                "AGENT", featureCode, modelType));
         try {
             Map<String, Object> body = Map.of(
                 "messages", messages,
@@ -61,14 +68,41 @@ public class WorkflowAgentClient {
             List<ToolCall> calls = new java.util.ArrayList<>();
             response.path("toolCalls").forEach(call -> calls.add(new ToolCall(call.path("id").asText(),
                 call.path("name").asText(), parseArguments(call.path("arguments")))));
-            return new AgentStep(response.path("content").asText(""), calls, response.path("model").asText(""));
+            String model = response.path("model").asText("");
+            if (llmUsageService != null) llmUsageService.finish(usageId, new com.baseai.platform.service.LlmUsageService.Completion(
+                "SUCCESS", providerFor(route, model), model, !response.path("content").asText("").isBlank() || !calls.isEmpty(),
+                token(response, "inputTokens"), token(response, "outputTokens"), token(response, "totalTokens"), null, null, null));
+            return new AgentStep(response.path("content").asText(""), calls, model,
+                response.path("inputTokens").isNumber() ? response.path("inputTokens").asInt() : null,
+                response.path("outputTokens").isNumber() ? response.path("outputTokens").asInt() : null,
+                response.path("totalTokens").isNumber() ? response.path("totalTokens").asInt() : null);
         } catch (RestClientException exception) {
             taskTraceService.updatePython(pythonTraceId, "FAILED", null, exception.getMessage());
+            if (llmUsageService != null) llmUsageService.finish(usageId, failure(exception));
             throw new BusinessException(502, "workflow.agentCallFailed");
         } catch (RuntimeException exception) {
             taskTraceService.updatePython(pythonTraceId, "FAILED", null, exception.getMessage());
+            if (llmUsageService != null) llmUsageService.finish(usageId, failure(exception));
             throw exception;
         }
+    }
+
+    /** 根据实际模型名称匹配成功的供应商。 */
+    private String providerFor(LlmManagementService.WorkerRoute route, String model) {
+        return route.candidates().stream().filter(candidate -> model.equals(candidate.model()))
+            .map(LlmManagementService.WorkerCandidate::providerCode).findFirst().orElse(null);
+    }
+
+    /** 读取 Worker 返回的可选 Token 字段。 */
+    private Long token(JsonNode response, String name) {
+        return response.path(name).isNumber() ? response.path(name).asLong() : null;
+    }
+
+    /** 记录不暴露上游正文的失败信息。 */
+    private com.baseai.platform.service.LlmUsageService.Completion failure(RuntimeException exception) {
+        return new com.baseai.platform.service.LlmUsageService.Completion("FAILED", null, null, false,
+            null, null, null, exception.getClass().getSimpleName(),
+            exception instanceof BusinessException business ? business.getMessageKey() : null, null);
     }
 
     /** 兼容 Worker 返回的对象参数或 JSON 字符串参数。 */
@@ -80,5 +114,11 @@ public class WorkflowAgentClient {
 
     public record Tool(String name, String description, JsonNode parameters) {}
     public record ToolCall(String id, String name, JsonNode arguments) {}
-    public record AgentStep(String content, List<ToolCall> toolCalls, String model) {}
+    public record AgentStep(String content, List<ToolCall> toolCalls, String model,
+                            Integer inputTokens, Integer outputTokens, Integer totalTokens) {
+        /** 兼容没有 Token 元数据的历史 Worker 响应。 */
+        public AgentStep(String content, List<ToolCall> toolCalls, String model) {
+            this(content, toolCalls, model, null, null, null);
+        }
+    }
 }

@@ -324,6 +324,8 @@ public class DataInitializer implements ApplicationRunner {
         seedModelType("text_model","文本模型",10);
         seedModelType("vision_model","视觉模型",20);
         seedModelType("embedding_model","向量模型",30);
+        seedModelType("image_model","图片生成模型",40);
+        seedModelType("video_model","视频生成模型",50);
     }
 
     /** 初始化两个系统托管适配器开关，已有期望状态不会被应用重启覆盖。 */
@@ -369,6 +371,7 @@ public class DataInitializer implements ApplicationRunner {
      * <ul>
      *   <li>系统管理模块：访问控制、组织、字典和参数</li>
      *   <li>运维管理模块：数据源、数据同步、服务器、邮件和监控审计</li>
+     *   <li>AI 视频模块：内容创作、视觉资产、生成任务和发布</li>
      *   <li>AI 能力模块：AI 对话、模型和知识库</li>
      *   <li>自动化模块：接口触发、设备 Agent 和工作流</li>
      * </ul>
@@ -383,9 +386,15 @@ public class DataInitializer implements ApplicationRunner {
      * <p>该方法是幂等的，重复执行会更新现有菜单而不是创建重复数据。
      */
     private void seedMenus() {
+        // ========== AI 视频模块 ==========
+        seedAiVideoMenus();
+
         // ========== AI 能力模块 ==========
         Menu ai = menu(null, "AI 能力", "CATALOG", "/ai", null, "MagicStick", "ai:catalog", 30, true);
         menu(ai.getId(), "AI 对话", "MENU", "/ai-chat", "AiChatView", "ChatDotRound", "ai:chat:invoke", 11, true);
+        menu(ai.getId(), "AI 生成", "MENU", "/ai-generation", "AiGenerationView", "Picture", "ai:generation:invoke", 13, true);
+        menu(ai.getId(), "套餐调整", "MENU", "/package-adjustment", "PackageAdjustmentView", "Goods",
+            "ai:package-adjustment:list", 12, true);
         Menu model = menu(ai.getId(), "模型管理", "CATALOG", "/models", null, "Cpu",
             "ai:model:catalog", 20, true);
         seedCrud(model, "模型供应商", "/model-providers", "ModelProvidersView", "Link",
@@ -537,6 +546,47 @@ public class DataInitializer implements ApplicationRunner {
             "system:dictionary", 31);
         seedCrud(system, "系统参数", "/settings", "SettingsView", "Tools", "system:setting", 32);
 
+    }
+
+    /**
+     * 初始化 AI 视频工作台的菜单和细粒度权限。
+     *
+     * <p>AI 视频作为独立业务域，按内容创作、资产中心、生成中心和发布中心组织，
+     * 物品资产单独使用 {@code item} 权限前缀，便于后续配置独立角色授权。</p>
+     */
+    private void seedAiVideoMenus() {
+        Menu aiVideo = menu(null, "AI视频", "CATALOG", "/ai-video", null, "VideoCamera", "ai:video:catalog", 25, true);
+        menu(aiVideo.getId(), "工作台首页", "MENU", "/ai-video/dashboard", "AiVideoView", "House",
+            "ai:video:dashboard:list", 1, true);
+
+        Menu content = menu(aiVideo.getId(), "内容创作", "CATALOG", "/ai-video/content", null, "EditPen",
+            "ai:video:content:catalog", 10, true);
+        seedCrud(content, "项目管理", "/ai-video/projects", "AiVideoView", "FolderOpened", "ai:video:project", 11);
+        seedCrud(content, "剧本管理", "/ai-video/scripts", "AiVideoView", "Document", "ai:video:script", 12);
+        seedCrud(content, "分镜管理", "/ai-video/storyboards", "AiVideoView", "Film", "ai:video:storyboard", 13);
+
+        Menu assets = menu(aiVideo.getId(), "资产中心", "CATALOG", "/ai-video/assets", null, "Collection",
+            "ai:video:asset:catalog", 20, true);
+        seedCrud(assets, "角色资产", "/ai-video/assets/characters", "AiVideoView", "User", "ai:video:character", 21);
+        seedCrud(assets, "场景资产", "/ai-video/assets/scenes", "AiVideoView", "Picture", "ai:video:scene", 22);
+        seedCrud(assets, "物品资产", "/ai-video/assets/items", "AiVideoView", "Goods", "ai:video:item", 23);
+        seedCrud(assets, "服装造型", "/ai-video/assets/costumes", "AiVideoView", "Suitcase", "ai:video:costume", 24);
+        seedCrud(assets, "动作表情", "/ai-video/assets/motions", "AiVideoView", "Aim", "ai:video:motion", 25);
+        seedCrud(assets, "画风模板", "/ai-video/assets/styles", "AiVideoView", "Brush", "ai:video:style", 26);
+        seedCrud(assets, "声音管理", "/ai-video/assets/voices", "AiVideoView", "Microphone", "ai:video:voice", 27);
+        seedCrud(assets, "音乐音效", "/ai-video/assets/sounds", "AiVideoView", "Headset", "ai:video:sound", 28);
+
+        Menu generation = menu(aiVideo.getId(), "生成中心", "CATALOG", "/ai-video/generation", null, "VideoPlay",
+            "ai:video:generation:catalog", 30, true);
+        seedCrud(generation, "生成任务", "/ai-video/tasks", "AiVideoView", "List", "ai:video:task", 31);
+        seedCrud(generation, "视频合成", "/ai-video/renders", "AiVideoView", "VideoCamera", "ai:video:render", 32);
+
+        Menu publishing = menu(aiVideo.getId(), "发布中心", "CATALOG", "/ai-video/publishing", null, "Promotion",
+            "ai:video:publishing:catalog", 40, true);
+        seedCrud(publishing, "成片管理", "/ai-video/videos", "AiVideoView", "VideoCamera", "ai:video:video", 41);
+        seedCrud(publishing, "审核管理", "/ai-video/reviews", "AiVideoView", "DocumentChecked", "ai:video:review", 42);
+        seedCrud(publishing, "发布管理", "/ai-video/publishes", "AiVideoView", "Promotion", "ai:video:publish", 43);
+        seedCrud(publishing, "数据分析", "/ai-video/analytics", "AiVideoView", "DataAnalysis", "ai:video:analytics", 44);
     }
 
     /**

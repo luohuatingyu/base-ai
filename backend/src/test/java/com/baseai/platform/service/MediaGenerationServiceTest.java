@@ -1,0 +1,207 @@
+package com.baseai.platform.service;
+
+import com.baseai.platform.common.BusinessException;
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+/** 覆盖媒体生成入口的类型隔离、输入边界和模型目录脱敏行为。 */
+class MediaGenerationServiceTest {
+    private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    private final LlmManagementService management = mock(LlmManagementService.class);
+    private final LlmUsageService usage = mock(LlmUsageService.class);
+    private final MediaGenerationService service = new MediaGenerationService(jdbc, management, usage, new ObjectMapper());
+
+    @AfterEach
+    void clearAuth() { AuthContext.clear(); }
+
+    /** 未登录和非法模型类型在建立用量记录或访问供应商前被拒绝。 */
+    @Test
+    void rejectsUnauthenticatedAndMixedTypeRequests() {
+        assertThrows(BusinessException.class, () -> service.generate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "a cat", null, Map.of())));
+        AuthContext.set(new AuthUser(1L, "user", Set.of("USER"), Set.of(), AuthenticationType.TOKEN, null, null));
+        assertThrows(BusinessException.class, () -> service.generate(new MediaGenerationService.GenerateRequest(
+            "text_model", 1L, "a cat", null, Map.of())));
+        assertThrows(BusinessException.class, () -> service.generate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "a cat", null, Map.of("duration", 5))));
+    }
+
+    /** 不接受超长提示词、非正数或未知控制参数，防止请求绕过供应商隔离。 */
+    @Test
+    void rejectsBoundaryAndUnknownOptions() {
+        AuthContext.set(new AuthUser(1L, "user", Set.of("USER"), Set.of(), AuthenticationType.TOKEN, null, null));
+        assertThrows(BusinessException.class, () -> service.generate(new MediaGenerationService.GenerateRequest(
+            "video_model", 1L, " ", null, Map.of())));
+        assertThrows(BusinessException.class, () -> service.generate(new MediaGenerationService.GenerateRequest(
+            "video_model", 1L, "video", null, Map.of("fps", 121))));
+        assertThrows(BusinessException.class, () -> service.generate(new MediaGenerationService.GenerateRequest(
+            "video_model", 1L, "video", null, Map.of("endpoint", "/internal"))));
+    }
+
+    /** 生成模型目录按输出类型展开组合模型，不能把视觉模型误展示为生成模型。 */
+    @Test
+    void generationModelDirectoryIsTypeSpecific() {
+        when(management.providers()).thenReturn(List.of(new LlmManagementService.ProviderView(
+            2L, "provider", "Provider", "https://provider.example", "******", 4, "PROVIDER", 60,
+            "reasoning_effort", true)));
+        var image = new com.baseai.platform.domain.LlmModel();
+        image.setProviderId(2L); image.setName("image"); image.setModelName("image-1");
+        image.setEnabled(true); image.setSupportedModelTypes(List.of("image_model"));
+        var mixed = new com.baseai.platform.domain.LlmModel();
+        mixed.setProviderId(2L); mixed.setName("mixed"); mixed.setModelName("mixed");
+        mixed.setEnabled(true); mixed.setSupportedModelTypes(List.of("image_model", "video_model"));
+        var text = new com.baseai.platform.domain.LlmModel();
+        text.setProviderId(2L); text.setName("text"); text.setModelName("deepseek-chat");
+        text.setEnabled(true); text.setSupportedModelTypes(List.of("text_model"));
+        when(management.models()).thenReturn(List.of(image, mixed, text));
+        assertEquals(List.of("image:image_model", "mixed:image_model", "mixed:video_model"), service.models().stream()
+            .map(item -> item.name() + ":" + item.modelType()).toList());
+    }
+
+    /** 图片模型支持无附件提示词，也支持文本、图片和视频输入组合。 */
+    @Test
+    void acceptsImageGenerationModesAndInputs() throws Exception {
+        var image = imageInput();
+        var text = textInput();
+        var video = videoInput();
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "cat", null, "MULTIMODAL", List.of(), Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, null, null, "MULTIMODAL", List.of(text, image, video), Map.of())));
+    }
+
+    /** 视频模型同样支持文本、图片和视频输入组合，输入类型不再由生成结果类型限制。 */
+    @Test
+    void acceptsVideoImageOrVideoInputs() throws Exception {
+        var image = imageInput();
+        var text = textInput();
+        var video = videoInput();
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("video_model", 1L, "animate", null, "MULTIMODAL", List.of(image, text, video), Map.of())));
+    }
+
+    /** 上传内容必须使用受控 Data URL，并限制类型、名称和解码后大小。 */
+    @Test
+    void rejectsUnsafeGenerationInputs() throws Exception {
+        var image = imageInput();
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "image", null, "IMAGE_TO_IMAGE", List.of(new MediaGenerationService.MediaInput("IMAGE", "../x.png", "image/png", image.dataUrl())), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "image", null, "IMAGE_TO_IMAGE", List.of(new MediaGenerationService.MediaInput("IMAGE", "x.png", "image/png", "https://example.com/x.png")), Map.of())));
+    }
+
+    /** 各参考媒体模式中的空元素均返回业务校验错误，不触发空指针异常。 */
+    @Test
+    void rejectsNullMediaElementsAsBusinessErrors() {
+        for (String type : List.of("image_model", "video_model")) {
+            assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(
+                type, 1L, "reference", null, "MULTIMODAL", java.util.Collections.singletonList(null), Map.of())), type);
+        }
+    }
+
+    /** 两类输出均接收全部非空输入组合，并保留旧纯文本和模式字段兼容性。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"image_model", "video_model"})
+    void acceptsAllInputCombinationsAndLegacyRequests(String type) {
+        var all = List.of(textInput(), imageInput(), videoInput());
+        for (int mask = 1; mask < 8; mask++) {
+            var inputs = new java.util.ArrayList<MediaGenerationService.MediaInput>();
+            for (int index = 0; index < 3; index++) if ((mask & (1 << index)) != 0) inputs.add(all.get(index));
+            for (String prompt : new String[]{null, "", "instructions"})
+                assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(type, 1L, prompt, null,
+                    "MULTIMODAL", inputs, Map.of())));
+        }
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(type, 1L, "legacy", null, Map.of())));
+        String legacyMode = "image_model".equals(type) ? "IMAGE_TO_IMAGE" : "VIDEO_TO_VIDEO";
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(type, 1L, "legacy", null,
+            legacyMode, all, Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(type, 1L, "", null,
+            "MULTIMODAL", java.util.Collections.nCopies(4, textInput()), Map.of())));
+    }
+
+    /** 空请求、越界数量、未知种类、MIME 错配和非法 Base64 均在供应商调用前拒绝。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"image_model", "video_model"})
+    void rejectsInvalidCombinedInputs(String type) {
+        for (String prompt : new String[]{null, "", " "})
+            assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(type, 1L,
+                prompt, null, "MULTIMODAL", List.of(), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(type, 1L,
+            "", null, "MULTIMODAL", java.util.Collections.nCopies(5, textInput()), Map.of())));
+        for (var invalid : List.of(
+            new MediaGenerationService.MediaInput("UNKNOWN", "file.mp4", "video/mp4", videoInput().dataUrl()),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "video/mp4", videoInput().dataUrl()),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "text/html", "data:text/html;base64,YQ=="),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "text/plain", "data:text/plain;base64,"),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "text/plain", "data:text/plain;base64,A"),
+            new MediaGenerationService.MediaInput("TEXT", "file.txt", "text/plain", "data:text/plain;base64,***"))) {
+            assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(type, 1L,
+                "", null, "MULTIMODAL", List.of(invalid), Map.of())));
+        }
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(type, 1L,
+            "prompt", null, "INVALID", List.of(), Map.of())));
+    }
+
+    /** 文本、图片和视频分别校验解码后最大字节数，覆盖临界值与超限值。 */
+    @ParameterizedTest
+    @CsvSource({"TEXT,text/plain,1048576", "IMAGE,image/png,10485760", "VIDEO,video/mp4,6291456"})
+    void enforcesPerFileByteLimits(String kind, String contentType, int limit) {
+        var atLimit = new MediaGenerationService.MediaInput(kind, "reference", contentType, dataUrl(contentType, limit));
+        var tooLarge = new MediaGenerationService.MediaInput(kind, "reference", contentType, dataUrl(contentType, limit + 1));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L,
+            "", null, "MULTIMODAL", List.of(atLimit), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("video_model", 1L,
+            "", null, "MULTIMODAL", List.of(tooLarge), Map.of())));
+    }
+
+    /** 图片流同时兼容顶层和 data 嵌套事件，并保留完成标记。 */
+    @Test
+    void readsNestedImageStreamEvents() throws Exception {
+        String stream = "data: {\"type\":\"image.completed\",\"data\":{\"b64_json\":\"YQ==\"}}\n\n"
+            + "data: [DONE]\n\n";
+        var result = service.readImageStream(new ByteArrayInputStream(stream.getBytes(StandardCharsets.UTF_8)));
+        assertEquals("YQ==", result.path("data").get(0).path("b64_json").asText());
+        assertFalse(result.path("incomplete").asBoolean(false));
+    }
+
+    /** 通过反射只测试纯校验分支，避免为边界测试伪造数据库和供应商调用。 */
+    private void validate(MediaGenerationService.GenerateRequest request) throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("validate", MediaGenerationService.GenerateRequest.class);
+        method.setAccessible(true);
+        try { method.invoke(service, request); }
+        catch (java.lang.reflect.InvocationTargetException exception) {
+            if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw exception;
+        }
+    }
+
+    /** 返回最小合法 PNG Data URL。 */
+    private MediaGenerationService.MediaInput imageInput() { return new MediaGenerationService.MediaInput("IMAGE", "reference.png", "image/png", dataUrl("image/png", 3)); }
+
+    /** 返回最小合法文本 Data URL。 */
+    private MediaGenerationService.MediaInput textInput() { return new MediaGenerationService.MediaInput("TEXT", "reference.txt", "text/plain", dataUrl("text/plain", 3)); }
+
+    /** 返回最小合法视频 Data URL。 */
+    private MediaGenerationService.MediaInput videoInput() { return new MediaGenerationService.MediaInput("VIDEO", "clip.mp4", "video/mp4", dataUrl("video/mp4", 3)); }
+
+    /** 生成指定字节数的 Base64 Data URL，测试不依赖磁盘文件。 */
+    private String dataUrl(String contentType, int bytes) {
+        return "data:" + contentType + ";base64," + java.util.Base64.getEncoder().encodeToString(new byte[bytes]);
+    }
+}
