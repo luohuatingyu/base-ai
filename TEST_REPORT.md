@@ -4,9 +4,9 @@
 
 ### Git 基准、范围与交付状态
 
-Commit: `d590b3b`
-- 提交说明：Allow combined media model capabilities；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
-- 同一模型可同时声明 `image_model` 和 `video_model`，但仍禁止与聊天、视觉或向量能力混合；生成页面按模型类型分别展示。
+Commit: `86ed3f5`
+- 提交说明：Expand combined media model directory；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 同一模型可同时声明 `image_model` 和 `video_model`，但仍禁止与聊天、视觉或向量能力混合；生成目录按图片、视频类型分别展开同一模型。
 - 模型配置不再要求手工选择 generation profile，后端根据 Ark 模型标识自动解析 Seedream/Seedance 能力档案，减少配置与实际模型不一致的情况。
 
 ### 验收标准—测试用例映射
@@ -14,12 +14,13 @@ Commit: `d590b3b`
 | 验收标准 | 测试用例与预期 | 场景 | 结果 |
 | --- | --- | --- | --- |
 | 图片和视频能力可以复用同一模型配置 | `LlmManagementServiceTest.savesCombinedGenerationModelTypes` 保存并回显两种生成类型 | 正常、兼容 | 通过 |
+| 组合模型可以分别用于图片和视频生成 | `MediaGenerationServiceTest.generationModelDirectoryIsTypeSpecific` 检查目录展开和类型隔离 | 正常、兼容、安全 | 通过 |
 | 生成能力不能与聊天、视觉或向量能力混合 | `LlmManagementServiceTest.rejectsMixedGenerationModelTypes` 参数化拒绝混合类型 | 边界、安全、异常 | 通过 |
 | 配置页不再请求或展示手工 profile 选择器 | `frontend/test/localization.test.mjs` 检查编辑器、加载接口和互斥选择 | 正常、回归 | 通过 |
 
 ### 实际测试命令与结果
 
-- `docker run --rm -v "$PWD/backend:/app" -v "$HOME/.m2:/root/.m2" -w /app maven:3.9-eclipse-temurin-21 mvn -B -Dtest=LlmManagementServiceTest test`：**53/53 通过**。
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -o -B -Dtest=LlmManagementServiceTest,MediaGenerationServiceTest test`：**68/68 通过**。
 - `cd frontend && node --test test/localization.test.mjs`：**20/20 通过**。
 - 同一 Docker Maven 环境执行完整 `mvn -B test`：**1037/1037 通过，失败 0、错误 0、跳过 0**。
 - `cd frontend && npm test`：lint、类型检查、覆盖测试 **661/661**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
@@ -28,7 +29,14 @@ Commit: `d590b3b`
 ### 构建与运行验证
 
 - `docker compose up --build -d`：9 个镜像构建成功，后端镜像阶段 **1037/1037** 测试通过；启动阶段仍因既有 `baseai-local-docker-socket-proxy` 健康检查 HTTP 503 导致 Adapter Manager 依赖失败，命令退出 1。
-- 随后执行 `docker compose up -d --no-deps frontend`，Backend、Frontend、Document Parser、Python Worker 和 Outbound Gateway healthy；`curl http://localhost:8080/ai-generation` 返回 HTTP 200。
+- Compose 状态检查确认 Backend、Frontend、Document Parser、Python Worker 和 Outbound Gateway healthy；Adapter Manager 受 Socket Proxy 依赖阻断。
+
+### 已知问题、重测触发与回滚
+
+- 未使用真实 Ark API Key 执行供应商请求；配置有效图片/视频供应商后仍需联调两个输出类型。
+- Docker Socket Proxy 的既有 HTTP 503 健康检查仍阻断整栈自动启动；修复该代理后应重新执行 `docker compose up --build -d` 和完整健康检查。
+- 修改模型类型校验、媒体模型目录或模型配置页时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 86ed3f5`；不涉及数据库迁移。
 
 ## Ark 图片与视频生成模式校正（2026-09-29）
 
