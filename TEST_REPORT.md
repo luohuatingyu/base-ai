@@ -1,3 +1,37 @@
+## 媒体生成展示供应商具体错误（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `526febd`
+- 提交说明：Expose provider generation error details；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 供应商返回非 2xx 时保留 HTTP 状态、供应商错误码和安全错误消息；网络错误按超时或连接失败分类；用量记录继续使用稳定错误码。
+- 前端兼容历史错误码，并在媒体生成历史和结果弹窗显示供应商状态、错误码和具体详情。
+- 错误正文限制长度并过滤控制字符和分隔符，不保存 API Key、提示词或完整供应商响应；未新增依赖、数据库迁移或配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 供应商 HTTP 错误展示具体状态、错误码和消息 | `MediaGenerationServiceTest.preservesProviderHttpErrorDetailsWithoutSecrets` 验证 HTTP 404、供应商错误码和消息被保留 | 正常、异常、回归 | 通过 |
+| 错误详情不泄露敏感字段 | 同一测试使用 `api_key` 字段和控制字符，验证密钥不进入错误文本且文本可安全解析 | 安全、异常、边界 | 通过 |
+| 用量记录保持稳定错误码 | `MediaGenerationServiceTest.keepsStableFailureCodeForUsageRecords` 验证详细任务错误与稳定用量错误码分离 | 兼容、回归 | 通过 |
+| 前端兼容详细错误和历史纯错误码 | `ai-generation.test.mjs` 的 `AI 生成 history exposes localized failure reasons` 验证结构化错误解析、状态展示和旧码兼容 | 正常、异常、国际化、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker compose up --build -d`：镜像构建成功；后端 Maven 完整套件 **1049/1049 通过**，失败 0、错误 0、跳过 0；前端生产构建成功。整栈启动随后受既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
+- `docker compose up -d --no-deps backend frontend`：成功启动，Backend healthy，Frontend 启动成功。
+- `cd frontend && npm test`：lint、typecheck、覆盖测试 **676/676 通过**；覆盖率行 **98.25%**、分支 **82.03%**、函数 **95.77%**；生产构建及 E2E **3/3 通过**。
+- `cd frontend && node --test test/ai-generation.test.mjs`：**18/18 通过**。
+- `git diff --check`：通过。
+- 运行环境真实 POST `/api/ai/generation` 验证：返回 `PROVIDER_REQUEST_FAILED|HTTP_400|InvalidParameter|...`，已能看到供应商具体诊断；未输出凭据。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 覆盖媒体供应商非 2xx 响应解析、网络错误分类、错误脱敏、用量记录兼容、前端中英文错误展示及既有媒体生成回归。
+- 当前火山模型配置本身仍可能因模型权限或参数不匹配而失败；现在任务会显示供应商返回的具体原因，需要按该原因修正模型或参数。
+- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理后应重新执行 `docker compose up --build -d` 和健康检查。
+
 ## 媒体供应商完整地址拼接修复（2026-09-29）
 
 ### Git 基准、范围与交付状态
