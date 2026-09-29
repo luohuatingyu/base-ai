@@ -2,10 +2,10 @@
 
 ### Git 基准、范围与交付状态
 
-Commit: `ce1c746`
-- 提交说明：Add generation history result dialog；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+Commit: `63bdd47`
+- 提交说明：Compact generation model and output settings；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
 - 图片生成继续按 Seedream 请求协议提交；视频生成兼容 Ark 异步任务的 `id`、`task_id`、`taskId`、状态别名以及 `content` 对象/数组、`video_url`、`last_frame_url` 等结果形态，修复成功任务无视频输出的问题。
-- 前端在模型能力区域显示输入数量、时长、帧数、分辨率和宽高比限制，并按生成模式提示必需素材和样片锁定规则；历史任务在独立弹窗中查看结果，不覆盖当前创作草稿；工作台取消粘性侧栏和内部滚动容器，保持页面自然流动。未新增依赖、数据库迁移或外部配置。
+- 前端在模型能力区域显示输入数量、时长、帧数、分辨率和宽高比限制，并按生成模式提示必需素材和样片锁定规则；历史任务在独立弹窗中查看结果，不覆盖当前创作草稿；工作台取消粘性侧栏和内部滚动容器，保持页面自然流动；本次进一步压缩模型、模式和图片/视频输出设置的占用空间。未新增依赖、数据库迁移或外部配置。
 
 ### 验收标准—测试用例映射
 
@@ -17,14 +17,15 @@ Commit: `ce1c746`
 | 生成模式限制参数在页面可见 | `ai-generation.test.mjs` 的 `AI 生成 workspace shows model limits and mode requirements` 验证能力限制和中英文模式文案 | 正常、国际化、回归 | 通过 |
 | 不安全媒体地址仍被拒绝 | `MediaGenerationServiceTest` 既有 URL/Base64 校验覆盖未知协议、用户信息和非法数据 | 异常、安全 | 通过 |
 | 历史任务结果可独立查看 | `ai-generation.test.mjs` 的 `AI 生成 history opens a modal without nested page scrolling` 验证历史结果弹窗、失败信息和无嵌套滚动 | 正常、回归、响应式 | 通过 |
+| 模型、模式和输出设置紧凑可读 | `ai-generation.test.mjs` 的 `AI 生成 workspace keeps setup and media options compact` 验证紧凑网格、响应式单列和图片/视频共用布局 | 正常、响应式、回归 | 通过 |
 
 ### 实际测试命令与结果
 
 - `docker run --rm -v "$PWD/backend:/workspace" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test -Dtest=ArkMediaProtocolTest,ArkGenerationCapabilitiesTest,MediaGenerationServiceTest`：**28/28 通过**。
 - 同一 Maven 容器执行完整 `mvn -B -ntp test`：**1039/1039 通过**，失败 0、错误 0、跳过 0。
-- `cd frontend && node --test test/ai-generation.test.mjs test/ai-video-form.test.mjs`：**81/81 通过**；历史弹窗变更后的单文件回归 `ai-generation.test.mjs`：**14/14 通过**。
+- `cd frontend && node --test test/ai-generation.test.mjs test/ai-video-form.test.mjs`：**82/82 通过**；紧凑布局变更后的单文件回归 `ai-generation.test.mjs`：**15/15 通过**。
 - `cd frontend && npm run lint`：通过；`npm run typecheck`：通过。
-- `cd frontend && npm test`：覆盖测试 **672/672 通过**；覆盖率行 **98.25%**、分支 **82.04%**、函数 **95.76%**；生产构建及 E2E **3/3 通过**。
+- `cd frontend && npm test`：覆盖测试 **673/673 通过**；覆盖率行 **98.25%**、分支 **82.04%**、函数 **95.76%**；生产构建及 E2E **3/3 通过**。
 - `docker compose --progress plain up --build -d`：全部镜像构建成功；启动因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用。随后 `docker compose up -d --no-deps frontend` 成功，前端容器启动并返回 `http://localhost:8080/ai-generation` HTTP 200。
 - `git diff --check`：通过。
 
@@ -33,7 +34,7 @@ Commit: `ce1c746`
 - 已尝试通过当前运行环境调用模型配置和生成入口；登录/模型请求返回 **502 Bad Gateway**，同时当前 Compose 环境没有可用的本地 MySQL/Redis 依赖，因此无法取得有效 API Key 并完成真实 Seedream/Seedance 供应商调用。
 - 本次已完成请求结构、参数过滤、异步结果解析、安全 URL 校验和前端限制展示的自动化验证；拿到可用供应商配置后，应分别执行一次真实图片生成和真实视频生成，确认供应商侧任务状态、媒体 URL 和长轮询时延。
 - Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理或切换 Docker context 后，应重新执行 `docker compose up --build -d` 和健康检查。
-- 回滚代码可执行 `git revert ce1c746 b4521ba`；不涉及数据库迁移。
+- 回滚代码可执行 `git revert 63bdd47 ce1c746 b4521ba`；不涉及数据库迁移。
 
 # 最近分支覆盖测试报告
 
