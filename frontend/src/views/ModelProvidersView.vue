@@ -76,7 +76,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
-import { copyApiKey, normalizeApiKeys, serializeApiKeyRows, splitApiKeys } from '../utils/apiKeys'
+import { copyApiKey, normalizeApiKeys, serializeApiKeyRows, splitApiKeys, toApiKeyRows } from '../utils/apiKeys'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -98,10 +98,17 @@ async function loadKeys(id) {
   return normalizeApiKeys(response.data.apiKeys)
 }
 
-/** 打开编辑窗口时从不自动回读已保存的供应商密钥。 */
-function open(row) {
+/** 打开编辑窗口；管理员编辑已有供应商时回显密钥，其他情况保持空白。 */
+async function open(row) {
   Object.assign(form, defaultForm(), row || {}, { apiKeys: '', imageSameAsBase: row?.imageSameAsBase ?? true, videoSameAsImage: row?.videoSameAsImage ?? true })
   keyRows.value = ['']
+  if (row?.id && auth.isAdmin) {
+    try {
+      keyRows.value = toApiKeyRows(await loadKeys(row.id))
+    } catch (error) {
+      showHttpError(error)
+    }
+  }
   visible.value = true
 }
 
