@@ -78,7 +78,7 @@
           <div v-if="!history.length" class="history-empty">{{ t('generation.noHistory') }}</div>
           <button v-for="task in history" :key="task.id" class="generation-history-item" @click="selectHistory(task)">
             <span class="history-item-preview" :class="`history-${task.status?.toLowerCase()}`"><span v-if="task.generationType === 'video_model'">▶</span><span v-else>✦</span></span>
-            <span class="history-item-copy"><strong>{{ modeLabel(task.generationMode || '') }}</strong><small>#{{ task.id }} · {{ task.inputCount || 0 }} {{ t('generation.assetsShort') }}</small></span>
+            <span class="history-item-copy"><strong>{{ modeLabel(task.generationMode || '') }}</strong><small>#{{ task.id }} · {{ task.inputCount || 0 }} {{ t('generation.assetsShort') }}</small><small v-if="task.errorMessage" class="history-item-error">{{ failureReason(task.errorMessage) }}</small></span>
             <el-tag size="small" :type="statusType(task.status)">{{ statusLabel(task.status) }}</el-tag>
           </button>
         </section>
@@ -183,7 +183,7 @@
           </div>
           <div class="result-meta"><span>{{ modeLabel(result.generationMode || mode) }}</span><span v-if="result.modelName">{{ result.modelName }}</span><span v-if="result.createdAt">{{ result.createdAt }}</span></div>
           <p v-if="result.status === 'RUNNING' || result.status === 'QUEUED'" class="generation-progress"><span class="progress-dot"></span>{{ t('generation.resultProgress') }}</p>
-          <p v-if="result.errorMessage" class="generation-error">{{ result.errorMessage }}</p>
+          <p v-if="result.errorMessage" class="generation-error">{{ failureReason(result.errorMessage) }}</p>
           <div v-if="outputs.length" class="result-grid">
             <article v-for="(output, index) in outputs" :key="output.value + index" class="result-card">
               <el-image v-if="output.mediaType === 'image'" class="result-media" :src="outputSource(output)" :alt="outputCaption(output, index)" fit="contain" preview-teleported />
@@ -208,6 +208,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import http, { showHttpError } from '../api/http'
+import { generationFailureReasonKey } from '../utils/generationFailure.js
 
 const { t } = useI18n()
 const router = useRouter()
@@ -276,6 +277,8 @@ function roleLabel(value) { return t(`generation.roles.${value}`, value.replaceA
 function statusType(status) { return status === 'SUCCEEDED' ? 'success' : status === 'FAILED' || status === 'CANCELLED' ? 'danger' : 'warning' }
 /** 将后端状态本地化，避免页面直接展示英文枚举。 */
 function statusLabel(status) { return t(`generation.status.${status}`, status || 'UNKNOWN') }
+/** 将任务失败码转换为当前语言的说明，未知码仍展示原始稳定码便于排查。 */
+function failureReason(code) { const value = String(code || '').trim(); const key = generationFailureReasonKey(value); return value ? t(key || 'generation.failureReasons.UNKNOWN', key ? undefined : value) : '' }
 /** 统一处理 URL 和 Base64 图片输出，结果卡片只负责展示。 */
 function outputSource(output) { return output.kind === 'base64' ? `data:image/png;base64,${output.value}` : output.value }
 /** 为没有名称的结果生成稳定的可读标题。 */
@@ -481,6 +484,7 @@ onMounted(loadModels)
 .history-item-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-item-copy strong { font-size: 12px; font-weight: 650; }
 .history-item-copy small { color: var(--el-text-color-secondary); font-size: 11px; }
+.history-item-copy .history-item-error { color: var(--el-color-danger); }
 
 .generation-main { min-width: 0; }
 .generation-canvas { display: grid; gap: 14px; min-width: 0; }

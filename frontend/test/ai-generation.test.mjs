@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { generationFailureReasonKey } from '../src/utils/generationFailure.js'
 
 const source = readFileSync(new URL('../src/views/AiGenerationView.vue', import.meta.url), 'utf8')
 const zhLocale = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
@@ -125,4 +126,17 @@ test('AI 生成 workspace uses a canvas layout instead of a flat form stack', ()
   assert.match(source, /\.generation-input-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.18fr\) minmax\(300px, \.82fr\)/)
   assert.match(source, /\.generation-sidebar \{ position: sticky/)
   assert.match(source, /\.generation-actions \{ display: flex[\s\S]*border: 1px solid/)
+})
+
+
+/** 历史失败任务必须直接显示失败原因，未知稳定码保留原值供排查。 */
+test('AI 生成 history exposes localized failure reasons', () => {
+  assert.equal(generationFailureReasonKey('PROVIDER_FAILED'), 'generation.failureReasons.PROVIDER_FAILED')
+  assert.equal(generationFailureReasonKey(' GENERATION_TIMEOUT '), 'generation.failureReasons.GENERATION_TIMEOUT')
+  assert.equal(generationFailureReasonKey('NEW_PROVIDER_CODE'), '')
+  assert.match(source, /v-if="task\.errorMessage" class="history-item-error"/)
+  assert.match(source, /failureReason\(task\.errorMessage\)/)
+  assert.match(source, /failureReason\(result\.errorMessage\)/)
+  assert.match(zhLocale, /failureReasons: \{[^}]*PROVIDER_FAILED: '供应商返回失败'/)
+  assert.match(enLocale, /failureReasons: \{[^}]*PROVIDER_FAILED: 'Provider reported a failure'/)
 })
