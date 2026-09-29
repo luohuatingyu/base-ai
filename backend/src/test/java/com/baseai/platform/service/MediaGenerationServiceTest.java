@@ -159,6 +159,15 @@ class MediaGenerationServiceTest {
             "prompt", null, "INVALID", List.of(), Map.of())));
     }
 
+    /** 图片和视频模式不能互相接受对方的供应商任务模式。 */
+    @Test
+    void rejectsCrossMediaGenerationModes() {
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "prompt", null, "TEXT_TO_VIDEO", List.of(), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(
+            "video_model", 1L, "prompt", null, "TEXT_TO_IMAGE", List.of(), Map.of())));
+    }
+
     /** 文本、图片和视频分别校验解码后最大字节数，覆盖临界值与超限值。 */
     @ParameterizedTest
     @CsvSource({"TEXT,text/plain,1048576", "IMAGE,image/png,10485760", "VIDEO,video/mp4,6291456"})
