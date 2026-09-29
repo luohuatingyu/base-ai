@@ -19,6 +19,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.sql.Statement;
 import java.time.Duration;
@@ -276,7 +277,9 @@ public class MediaGenerationService {
             String statusPath = com.baseai.platform.modeltype.ArkMediaProtocol.supports(profile(candidate))
                 ? "/contents/generations/tasks/" + remoteId : modelTypeRegistry.generationStatusPath(type, remoteId);
             if (statusPath == null) throw new BusinessException("llm.modelTypeUnsupported");
-            return client.get().uri(URI.create(base + statusPath))
+            String operationPath = com.baseai.platform.modeltype.ArkMediaProtocol.supports(profile(candidate)) && "video_model".equals(type)
+                ? "/contents/generations/tasks" : modelTypeRegistry.generationPath(type);
+            return client.get().uri(endpointUri(base, statusPath, operationPath))
                 .headers(headers -> headers.setBearerAuth(key)).retrieve().body(JsonNode.class);
         }
         String path = com.baseai.platform.modeltype.ArkMediaProtocol.supports(profile(candidate)) && "video_model".equals(type)
@@ -286,13 +289,47 @@ public class MediaGenerationService {
             ? ArkMediaProtocol.request(type, candidate.model(), profile(candidate), request.prompt(), inputPayload(request.inputs()), request.options())
             : protocolRegistry.request(type, candidate.model(), request.prompt(), normalizedMode(request), inputPayload(request.inputs()), request.options());
         if (body.isEmpty()) throw new BusinessException("llm.modelTypeUnsupported");
-        return client.post().uri(URI.create(base + path))
+        return client.post().uri(endpointUri(base, path))
             .contentType(MediaType.APPLICATION_JSON).headers(headers -> headers.setBearerAuth(key)).body(body)
             .exchange((httpRequest, response) -> {
                 if (!response.getStatusCode().is2xxSuccessful()) throw new IllegalStateException("Provider request failed");
                 if (Boolean.TRUE.equals(body.get("stream"))) return readImageStream(response.getBody());
                 return mapper.readTree(response.getBody());
             });
+    }
+
+    /** 将供应商根地址与协议路径拼接；若管理员已填写完整接口地址则避免重复追加路径。 */
+    private URI endpointUri(String base, String path) {
+        return endpointUri(base, path, null);
+    }
+
+    /** 在查询异步任务时剥离已配置的生成接口路径，切换到同一 API 根下的状态接口。 */
+    private URI endpointUri(String base, String path, String operationPath) {
+        URI configured = URI.create(base);
+        String currentPath = configured.getPath() == null ? "" : configured.getPath().replaceAll("/+$", "");
+        String requiredPath = path.startsWith("/") ? path : "/" + path;
+        String configuredOperationPath = operationPath == null || operationPath.isBlank() ? "" : operationPath.startsWith("/") ? operationPath : "/" + operationPath;
+        if (!configuredOperationPath.isBlank() && currentPath.endsWith(configuredOperationPath)
+            && !requiredPath.equals(configuredOperationPath) && !requiredPath.startsWith(configuredOperationPath + "/")) {
+            currentPath = currentPath.substring(0, currentPath.length() - configuredOperationPath.length());
+        }
+        int overlap = pathOverlap(currentPath, requiredPath);
+        String targetPath = currentPath + requiredPath.substring(overlap);
+        try {
+            return new URI(configured.getScheme(), configured.getRawAuthority(), targetPath,
+                configured.getRawQuery(), null);
+        } catch (URISyntaxException exception) {
+            throw new IllegalArgumentException("Invalid provider endpoint", exception);
+        }
+    }
+
+    /** 计算已配置地址尾部与协议路径前缀的最大重叠长度，支持轮询地址只追加任务 ID。 */
+    private int pathOverlap(String currentPath, String requiredPath) {
+        int maximum = Math.min(currentPath.length(), requiredPath.length());
+        for (int length = maximum; length > 0; length--) {
+            if (currentPath.endsWith(requiredPath.substring(0, length))) return length;
+        }
+        return 0;
     }
 
     /** 将平台输入转换为协议层可扩展的媒体字段，避免服务直接拼装供应商 JSON。 */

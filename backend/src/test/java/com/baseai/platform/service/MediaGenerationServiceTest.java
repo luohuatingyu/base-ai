@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.net.URI;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Method;
@@ -236,11 +237,48 @@ class MediaGenerationServiceTest {
         assertEquals(1, arrayOutputs.size());
     }
 
+    /** 供应商地址既可填写 API 根地址，也可填写完整媒体接口地址，最终请求路径不能重复。 */
+    @Test
+    void resolvesConfiguredMediaEndpointWithoutDuplicatingProtocolPath() throws Exception {
+        Method method = MediaGenerationService.class.getDeclaredMethod("endpointUri", String.class, String.class);
+        method.setAccessible(true);
+        Method statusMethod = MediaGenerationService.class.getDeclaredMethod("endpointUri", String.class, String.class, String.class);
+        statusMethod.setAccessible(true);
+        assertEquals("https://ark.example/api/v3/images/generations",
+            invokeEndpoint(method, "https://ark.example/api/v3", "/images/generations").toString());
+        assertEquals("https://ark.example/api/v3/images/generations",
+            invokeEndpoint(method, "https://ark.example/api/v3/images/generations", "/images/generations").toString());
+        assertEquals("https://ark.example/api/v3/contents/generations/tasks/task-1",
+            invokeEndpoint(statusMethod, "https://ark.example/api/v3/contents/generations/tasks", "/contents/generations/tasks/task-1", "/contents/generations/tasks").toString());
+        assertEquals("https://generic.example/v1/videos/task-1",
+            invokeEndpoint(statusMethod, "https://generic.example/v1/videos/generations", "/videos/task-1", "/videos/generations").toString());
+        assertEquals("https://ark.example/api/v3/images/generations?tenant=demo",
+            invokeEndpoint(method, "https://ark.example/api/v3/images/generations?tenant=demo", "/images/generations").toString());
+    }
+
     /** 通过反射只测试纯校验分支，避免为边界测试伪造数据库和供应商调用。 */
     private void validate(MediaGenerationService.GenerateRequest request) throws Exception {
         var method = MediaGenerationService.class.getDeclaredMethod("validate", MediaGenerationService.GenerateRequest.class);
         method.setAccessible(true);
         try { method.invoke(service, request); }
+        catch (java.lang.reflect.InvocationTargetException exception) {
+            if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw exception;
+        }
+    }
+
+    /** 调用供应商地址解析方法并还原反射异常，保持 URL 断言可读。 */
+    private URI invokeEndpoint(Method method, String base, String path) throws Exception {
+        return invokeEndpoint(method, base, path, null);
+    }
+
+    /** 调用带生成接口路径的异步状态地址解析，验证完整供应商地址可切换到状态接口。 */
+    private URI invokeEndpoint(Method method, String base, String path, String operationPath) throws Exception {
+        try {
+            return operationPath == null
+                ? (URI) method.invoke(service, base, path)
+                : (URI) method.invoke(service, base, path, operationPath);
+        }
         catch (java.lang.reflect.InvocationTargetException exception) {
             if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
             throw exception;
