@@ -11006,3 +11006,36 @@ Commit: `e9c9b8b`
 - 覆盖方舟完整提交地址、异步任务 ID、视频状态查询地址、首尾帧协议回归及前端视频工作台回归。
 - 本次未执行真实供应商首尾帧生成：对话附件未映射为工作区文件，且真实任务需要当前环境的可用供应商密钥；应在界面重新提交两张图片确认任务返回 ID 后进入轮询。
 - Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理后应重新执行 Compose 健康检查。
+## 方舟视频首尾帧临时素材 URL（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `8c8db31`
+- 提交说明：Expose temporary media URLs for Ark video inputs；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 浏览器上传的图片、视频和音频 Data URL 在调用方舟 Seedance 前转换为带随机令牌的短期公网 URL；已有公网 URL 和草稿任务 ID 保持不变。
+- 新增公开临时素材读取接口，默认 20 分钟过期、单素材 50 MiB、总内存 128 MiB，响应禁止缓存；前端代理转发公开 Host 和协议，首帧/尾帧角色继续由方舟协议层保留。
+- 未新增依赖、数据库迁移或配置项。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 首尾帧文件在提交方舟任务前变为可访问 URL | `MediaAssetServiceTest.materializesDataUrlAsReadableTemporaryAsset` 验证 Data URL 生成临时地址、可按令牌读取字节和 MIME | 正常、集成边界 | 通过 |
+| 已有 URL、草稿任务 ID 和帧角色保持兼容 | `MediaAssetServiceTest.preservesExistingReferencesAndRejectsInvalidOrigin`、`ArkMediaProtocolTest.mapsSeedanceMultimodalContent` 验证引用不重复存储且首尾帧角色正确映射 | 兼容、回归 | 通过 |
+| 临时地址来源和读取边界安全可控 | `MediaAssetServiceTest` 验证非法来源拒绝、无效令牌返回空；控制器路径公开读取且不依赖登录拦截器 | 异常、安全、权限 | 通过 |
+| 前端代理提供后端生成公网地址所需的来源信息 | `frontend-server.test.mjs` E2E 验证 `X-Forwarded-Host` 和 `X-Forwarded-Proto` | 正常、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -q -Dtest=MediaAssetServiceTest,MediaGenerationServiceTest,ArkMediaProtocolTest test -B`：通过。
+- 同一 Maven 容器执行 `mvn test -B`：后端 **1052/1052 通过**，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：lint、typecheck、覆盖测试 **680/680 通过**；覆盖率行 98.18%、分支 81.86%、函数 95.83%；生产构建及 E2E **3/3 通过**。
+- `docker compose up --build -d`：镜像构建成功，后端 Maven **1052/1052 通过**，前端生产构建成功；启动受既有 `baseai-local-docker-socket-proxy` unhealthy 阻断。
+- `docker compose up -d --no-deps frontend`：前端容器已启动；后端因当前 Compose 未提供可解析的 `mysql` 服务而反复重启，无法进行运行环境 API 验证。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 已覆盖临时素材生成、令牌读取、过期/非法输入边界、供应商协议首尾帧角色和前端来源头转发。
+- 方舟供应商必须能从公网访问平台域名；本地 `localhost`、内网地址或仅容器网络地址不能用于真实视频提交。部署时应通过公网 HTTPS 域名访问前端，并让反向代理保留正确的 Host/协议。
+- 修复 Docker Socket Proxy 健康检查并提供可用 MySQL 后，重新启动完整 Compose，再用两张首尾帧图片执行一次真实 Seedance 提交和状态轮询回归。
