@@ -118,8 +118,11 @@ public final class ArkGenerationCapabilities {
             if (normalized.equals("TRANSPARENT_IMAGE")) { options.put("background", "transparent"); options.put("output_format", "png"); }
             if (normalized.endsWith("GROUP")) options.put("sequential_image_generation", "auto");
             if (!text && !Boolean.TRUE.equals(options.get("layer_decomposition"))) invalid();
-            if (normalized.startsWith("TEXT_TO_") && images != 0 || Set.of("IMAGE_TEXT_TO_IMAGE", "IMAGE_TO_GROUP", "LAYER_DECOMPOSITION", "TRANSPARENT_IMAGE", "INTERACTIVE_EDIT").contains(normalized) && images != 1
-                || normalized.startsWith("MULTI_IMAGE") && images < 2) invalid();
+            if (modes.contains(normalized)) {
+                if (Set.of("TEXT_TO_IMAGE", "TEXT_TO_GROUP").contains(normalized) && images != 0
+                    || Set.of("IMAGE_TEXT_TO_IMAGE", "IMAGE_TO_GROUP", "LAYER_DECOMPOSITION", "TRANSPARENT_IMAGE", "INTERACTIVE_EDIT").contains(normalized) && images != 1
+                    || Set.of("MULTI_IMAGE_FUSION", "MULTI_IMAGE_TO_GROUP").contains(normalized) && images < 2) invalid();
+            }
             if (Boolean.TRUE.equals(options.get("layer_decomposition")) && images != 1) invalid();
             if ("transparent".equals(options.get("background")) && (images != 1 || "jpeg".equals(options.get("output_format")))) invalid();
             if (options.get("sequential_image_generation_options") instanceof Map<?, ?> group) {
@@ -140,15 +143,28 @@ public final class ArkGenerationCapabilities {
                     default -> false;
                 }) invalid();
             }
-            if (normalized.equals("TEXT_TO_VIDEO") && images + videos + audio + tasks != 0 || !text && images + videos + audio + tasks == 0) invalid();
-            if (normalized.equals("IMAGE_TO_VIDEO") && (first != 1 || images != 1)
-                || normalized.equals("FIRST_LAST_FRAME_TO_VIDEO") && (first != 1 || last != 1)
-                || normalized.equals("REFERENCE_IMAGE_TO_VIDEO") && (images < 1 || frames || videos + audio > 0)
-                || Set.of("VIDEO_TO_VIDEO", "EDIT_VIDEO", "EXTEND_VIDEO").contains(normalized) && (videos < 1 || frames)
-                || normalized.equals("IMAGE_VIDEO_AUDIO_TO_VIDEO") && (images + videos + audio == 0 || frames)
-                || normalized.equals("STORYBOARD_TO_VIDEO") && (images + videos + audio < 1 || frames)
-                || normalized.equals("ONE_CLICK_VIDEO") && (images + videos < 1 || frames)
-                || normalized.equals("VIDEO_TRANSITION") && (videos < 2 || frames)) invalid();
+            if (!text && images + videos + audio + tasks == 0) invalid();
+            if (modes.contains(normalized)) {
+                if (Set.of("TEXT_TO_VIDEO", "DRAFT_VIDEO").contains(normalized)
+                    && images + videos + audio + tasks != 0) invalid();
+                if (normalized.equals("IMAGE_TO_VIDEO")
+                    && (images != 1 || first != 1 || videos + audio + tasks != 0 || !allRole(values, "IMAGE", "first_frame"))) invalid();
+                if (normalized.equals("FIRST_LAST_FRAME_TO_VIDEO")
+                    && (first != 1 || last != 1 || videos + audio + tasks != 0
+                        || !allRole(values, "IMAGE", "first_frame", "last_frame"))) invalid();
+                if (normalized.equals("REFERENCE_IMAGE_TO_VIDEO")
+                    && (images < 1 || frames || videos + audio + tasks > 0 || !allRole(values, "IMAGE", "reference_image"))) invalid();
+                if (Set.of("VIDEO_TO_VIDEO", "EDIT_VIDEO", "EXTEND_VIDEO").contains(normalized)
+                    && (videos < 1 || images + audio + tasks > 0 || frames || !allRole(values, "VIDEO", "reference_video"))) invalid();
+                if (normalized.equals("IMAGE_VIDEO_AUDIO_TO_VIDEO")
+                    && (images + videos + audio == 0 || frames || tasks > 0 || !allReferenceRoles(values))) invalid();
+                if (normalized.equals("STORYBOARD_TO_VIDEO")
+                    && (images + videos + audio < 1 || frames || tasks > 0 || !allReferenceRoles(values))) invalid();
+                if (normalized.equals("ONE_CLICK_VIDEO")
+                    && (images + videos < 1 || frames || tasks > 0 || !allReferenceRoles(values))) invalid();
+                if (normalized.equals("VIDEO_TRANSITION")
+                    && (videos < 2 || images + audio + tasks > 0 || frames || !allRole(values, "VIDEO", "reference_video"))) invalid();
+            }
             if (frames && !modes.contains(last > 0 ? "FIRST_LAST_FRAME_TO_VIDEO" : "IMAGE_TO_VIDEO")) invalid();
             if (normalized.equals("DRAFT_VIDEO")) options.put("draft", true);
             if (normalized.equals("DRAFT_TO_VIDEO")) {
@@ -191,6 +207,21 @@ public final class ArkGenerationCapabilities {
     private static long count(List<Map<String, Object>> inputs, String kind) { return inputs.stream().filter(v -> kind.equals(v.get("kind"))).count(); }
     /** 首尾帧角色必须唯一，不能与参考素材混用。 */
     private static long roleCount(List<Map<String, Object>> inputs, String role) { return inputs.stream().filter(v -> role.equals(v.get("role"))).count(); }
+    /** 要求同一类素材全部使用指定角色，避免供应商将模式识别成其他任务。 */
+    private static boolean allRole(List<Map<String, Object>> inputs, String kind, String... roles) {
+        Set<String> accepted = Set.of(roles);
+        return inputs.stream().filter(v -> kind.equals(v.get("kind"))).allMatch(v -> accepted.contains(v.get("role")));
+    }
+    /** 多模态参考模式只接受供应商定义的 reference_* 角色。 */
+    private static boolean allReferenceRoles(List<Map<String, Object>> inputs) {
+        return inputs.stream().filter(v -> Set.of("IMAGE", "VIDEO", "AUDIO").contains(v.get("kind")))
+            .allMatch(v -> switch (String.valueOf(v.get("kind"))) {
+                case "IMAGE" -> "reference_image".equals(v.get("role"));
+                case "VIDEO" -> "reference_video".equals(v.get("role"));
+                case "AUDIO" -> "reference_audio".equals(v.get("role"));
+                default -> false;
+            });
+    }
     /** 声明有界整数参数。 */
     private static Map<String, Object> number(int min, int max) { return Map.of("type", "integer", "min", min, "max", max); }
     /** 声明受控枚举参数。 */
