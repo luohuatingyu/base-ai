@@ -227,11 +227,11 @@ class MediaGenerationServiceTest {
         Method parser = MediaGenerationService.class.getDeclaredMethod("providerRequestException", int.class, String.class);
         parser.setAccessible(true);
         Object failure = parser.invoke(service, 404,
-            "{\"error\":{\"code\":\"InvalidEndpointOrModel.NotFound\",\"message\":\"model|not found\\nplease check\",\"api_key\":\"secret-key\"}}");
+            "{\"error\":{\"code\":\"InvalidEndpointOrModel.NotFound\",\"message\":\"api_key=secret-key model|not found\\nplease check\",\"api_key\":\"secret-key\"}}");
         Method message = failure.getClass().getDeclaredMethod("failureMessage");
         message.setAccessible(true);
         String value = (String) message.invoke(failure);
-        assertEquals("PROVIDER_REQUEST_FAILED|HTTP_404|InvalidEndpointOrModel.NotFound|model not found please check", value);
+        assertEquals("PROVIDER_REQUEST_FAILED|HTTP_404|InvalidEndpointOrModel.NotFound|api_key=<redacted> model not found please check", value);
         assertFalse(value.contains("secret-key"));
     }
 

@@ -356,6 +356,7 @@ public class MediaGenerationService {
     /** 统一压缩供应商文本并移除分隔符与控制字符，保证错误记录可安全解析。 */
     private String cleanProviderText(String value, int limit, String fallback) {
         String cleaned = value == null ? "" : value.replaceAll("[\\r\\n\\t|]", " ").replaceAll("\\s+", " ").trim();
+        cleaned = cleaned.replaceAll("(?i)(api[-_ ]?key|authorization|bearer|token|secret)(\\s*[:=]\\s*)[^\\s,;]+", "$1$2<redacted>");
         if (cleaned.isBlank()) cleaned = fallback;
         return cleaned.length() <= limit ? cleaned : cleaned.substring(0, limit);
     }
