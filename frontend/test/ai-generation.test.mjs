@@ -100,3 +100,18 @@ test('AI 生成 workspace uses selectable sizes and grouped output settings', ()
   assert.match(source, /output-setting-group-common/)
   assert.match(source, /options: requestOptions\.value/)
 })
+
+/** 整页视觉需要保持主次层级、交互反馈和窄屏布局，避免样式回退为无层次的表单堆叠。 */
+test('AI 生成 workspace keeps full-page visual hierarchy and responsive states', () => {
+  assert.match(source, /\.generation-hero::before/)
+  assert.match(source, /\.generation-layout \{ display: grid/)
+  assert.match(source, /\.generation-sidebar \{ display: flex/)
+  assert.match(source, /\.composer-card \{/)
+  assert.match(source, /\.asset-dropzone:focus-within/)
+  assert.match(source, /\.generation-history-item:focus-visible/)
+  assert.match(source, /\.result-card:hover/)
+  assert.match(source, /\.result-empty \{[\s\S]*border: 1px dashed/)
+  assert.match(source, /@media \(max-width: 1000px\)/)
+  assert.match(source, /@media \(max-width: 780px\)/)
+  assert.match(source, /@media \(max-width: 560px\)/)
+})
