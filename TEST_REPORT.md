@@ -1,5 +1,38 @@
 # 最近分支覆盖测试报告
 
+## 管理员编辑供应商时回显 API Key（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `ce4766d`
+- 提交说明：Echo provider keys for administrators；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 系统管理员编辑已有模型供应商时自动回显已保存 API Key；非管理员即使拥有供应商编辑权限也不请求明文 Key，继续显示空输入。
+- 复用现有管理员权限接口，未修改后端、数据库或其他敏感凭据流程。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 管理员编辑已有供应商时回显全部 Key | `frontend/test/platform-api-keys.test.mjs` 的“模型供应商向管理员直接显示明文 Key，管理员编辑时回显”检查管理员条件、`loadKeys` 和逐行回显 | 正常、权限 | 通过 |
+| 非管理员编辑不读取明文 | 同一契约测试检查回显逻辑绑定 `row?.id && auth.isAdmin`；非管理员路径保持空行 | 权限、安全 | 通过 |
+| 空 Key 和关闭窗口行为保持安全 | `toApiKeyRows` 保留可填写空行，既有 `@closed="clearKeys"` 清理查看窗口内存 | 边界、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/platform-api-keys.test.mjs`：**10/10 通过**。
+- `cd frontend && npx eslint src/views/ModelProvidersView.vue`：通过。
+- `cd frontend && npx vue-tsc --noEmit -p jsconfig.json`：通过。
+- `cd frontend && npm test`：未完成；工作区既有 `frontend/src/views/AiGenerationView.vue` 存在 `vue/no-parsing-error` 未闭合标签错误（6 处），与本次文件无关。
+- `docker compose up --build -d`：全部镜像构建成功；启动阶段因 Adapter Manager 检测到当前 Docker Desktop 不是 rootless daemon 而 unhealthy，整栈命令退出。该环境限制与之前报告一致。
+- `git diff --check`：通过。
+
+### 已知问题、重测触发与回滚
+
+- 修复其他工作区文件的 Vue 模板语法后，应重新执行完整 `npm test`；切换到 rootless Docker context 后，应重新执行 Compose 整栈健康检查。
+- 本次未调用真实外部模型供应商，未输出或写入真实 API Key。
+- 后续修改供应商密钥展示、权限或接口时，应重跑前端完整套件及 Compose 重建；涉及后端业务代码时同时重跑完整 Maven 套件。
+- 回滚代码可执行 `git revert ce4766d`；不涉及数据库迁移。
+
 ## 模型供应商查看 API Key 移除二次密码（2026-09-29）
 
 ### Git 基准、范围与交付状态
