@@ -4,7 +4,7 @@
 
 ### Git 基准、范围与交付状态
 
-Commit: `7619c8c`
+Commit: `1db76e5`
 - 提交说明：Show AI generation failure reasons in history；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
 - 任务历史条目直接显示失败或取消原因；稳定失败码提供中英文文案，未知码保留原始值；结果区复用同一映射。后端接口、数据库和生成状态逻辑未修改。
 
