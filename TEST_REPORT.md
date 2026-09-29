@@ -1,5 +1,44 @@
 # 最近分支覆盖测试报告
 
+## AI 对话与 AI 生成模式拆分（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `bc0ca28`
+- 提交说明：Split AI chat and generation modes；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- AI 对话页聚焦文本/多模态对话，AI 生成页独立承载图片和视频生成；新增生成权限、导航、路由、任务查询、取消和删除接口。
+- 按 Ark 能力档案支持 Seedream 4.0/4.5/5.0 lite/pro/flash 与 Seedance 1.0/1.5/2.0/2.5；图片覆盖文生图、图文生图、多图融合、组图、局部重绘、扩图、透明背景和图层拆分，视频覆盖文生视频、图生视频、首尾帧、参考视频、视频编辑、延长、草稿和音频等模式。
+- 模型配置页新增 generation profile；V47 为已有 AI 对话角色补充 AI 生成菜单权限。未新增第三方依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| AI 对话与 AI 生成入口独立，普通聊天不显示生成控件 | `frontend/test/ai-generation.test.mjs` 页面契约、`chat-interaction.test.mjs` 聊天回归；路由和导航权限检查 | 正常、兼容、回归 | 通过 |
+| 图片生成覆盖文生图、图文生图、多图融合、组图和编辑能力 | `ArkGenerationCapabilitiesTest` 能力档案及选项校验；`MediaGenerationServiceTest` 请求准备、输入边界和任务状态 | 正常、边界、异常 | 通过 |
+| 视频生成覆盖文生视频、图生视频、参考视频、首尾帧、编辑、延长、草稿和音频 | `ArkGenerationCapabilitiesTest` Seedance 档案分支；生成请求校验、取消和轮询测试 | 正常、边界、异常、恢复 | 通过 |
+| 未登录/越权、非法模型组合和草稿归属得到拒绝 | Controller 权限注解、服务层能力/归属校验测试；前端仅按能力目录提交选项 | 安全、异常 | 通过 |
+| 既有模型管理、聊天接口和默认行为保持兼容 | Backend 完整 Maven、Frontend 完整 npm、E2E 和构建验证 | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm ... mvn -o -B -Dtest=ArkGenerationCapabilitiesTest,ArkMediaProtocolTest,MediaGenerationServiceTest,LlmManagementServiceTest test`：**76/76 通过，失败 0、错误 0、跳过 0**。
+- 同一 Docker Maven 环境执行完整 `mvn -o -B test`：**1034/1034 通过，失败 0、错误 0、跳过 0**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **659/659**，生产构建及 E2E **3/3** 通过；覆盖率行 98.24%、分支 82.06%、函数 95.74%。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- `docker compose up --build -d`：9 个镜像完成构建，后端镜像阶段完整测试 **1034/1034** 通过；启动阶段因已有 `baseai-local-docker-socket-proxy` 健康检查持续返回 HTTP 503，命令退出 1。该失败不是端口占用，未停止其他容器。
+- 当前 Backend、Python Worker、Document Parser 和 Outbound Gateway 可运行；Adapter Manager 受 Socket Proxy 依赖阻断。修复该代理健康检查后应重新执行整栈启动和健康检查。
+
+### 已知问题、重测触发与回滚
+
+- 未使用真实 Ark 凭据执行供应商图片/视频请求；本次验证覆盖能力矩阵、请求结构、权限、任务状态和前端交互。供应商联调仍需在配置有效 Endpoint/API Key 后执行。
+- 外部供应商的异步任务时延、产物 URL 有效期及具体错误码未在本地环境验证。
+- 修改能力档案、媒体协议、生成任务、模型配置或生成页面时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert bc0ca28`；V47 数据库迁移需按项目迁移回滚流程处理。
+
 ## 图片与视频生成统一多模态输入（2026-09-28）
 
 ### Git 基准、范围与交付状态
