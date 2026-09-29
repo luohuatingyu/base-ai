@@ -1,5 +1,37 @@
 # 最近分支覆盖测试报告
 
+## AI 生成工作台组件布局重构（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `ab6ec17`
+- 提交说明：Restructure AI generation workspace layout；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 将提示词提升为主编辑区，素材与输出参数改为桌面双栏，模型与历史保持左侧控制栏，结果独立为预览画布，底部操作区单独突出。
+- 移动端回退为模型、提示词、素材、参数、生成、结果的单列顺序；未修改生成请求、能力判断、素材角色、轮询、后端接口、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 页面从平面表单变为清晰的工作台布局 | `frontend/test/ai-generation.test.mjs` 的 `AI 生成 workspace uses a canvas layout instead of a flat form stack` 检查 canvas、双栏输入区、提示词底栏和独立操作区 | 正常、兼容 | 通过 |
+| 桌面端控制栏、创作区和结果预览层级清晰 | 同一契约测试检查 sticky 控制栏、prompt、素材/参数双栏和结果区结构；既有业务契约继续覆盖模型和输出逻辑 | 正常、回归 | 通过 |
+| 移动端保持可操作顺序和可读性 | 样式断点契约覆盖 1000px、780px、560px，生产构建验证模板可打包 | 响应式、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/ai-generation.test.mjs`：**11/11 通过**。
+- `cd frontend && npx eslint src/views/AiGenerationView.vue test/ai-generation.test.mjs`：通过。
+- `cd frontend && npx vue-tsc --noEmit -p jsconfig.json`：通过。
+- `cd frontend && npm run build`：生产构建通过；仅有既有 runtime-config、依赖注释和 chunk 大小提示。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 **669/669 通过**；生产构建及 E2E **3/3 通过**。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 本次只修改 AI 生成页模板、样式契约测试和测试报告，未修改 `backend/src/main/java/`，不触发后端 Maven 自动重测条件。
+- 当前工作区另有并行的媒体生成后端、能力提示和失败原因改动，未纳入本次提交；它们已保留在未提交状态。
+- 后续若继续调整媒体能力或结果业务逻辑，应重新执行后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+
 ## AI 生成工作台整页视觉样式优化（2026-09-29）
 
 ### Git 基准、范围与交付状态
