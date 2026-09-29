@@ -1,3 +1,32 @@
+## 管理员勾选类型作为媒体能力权威（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `6f18e57`
+- 提交说明：Honor configured media output types；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 模型目录以管理员勾选的 `model_type` 为准，不再用生成画像反向过滤图片或视频能力。画像与勾选类型不一致时，仍返回对应类型的完整模式和参数目录，并按请求类型选择校验与请求参数。
+- 文生视频、文生图等模式继续遵守各自素材输入规则；未新增依赖、数据库迁移或外部配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 勾选图片类型后始终出现在图片模型目录 | `MediaGenerationServiceTest.arkDirectoryHonorsConfiguredOutputTypes` 验证 Seedance 画像同时勾选图片和视频时返回两类目录 | 正常、兼容、回归 | 通过 |
+| 勾选类型对应的模式选项可用 | 同一测试验证两类目录均包含非空模式能力；配置画像不匹配时使用对应类型的能力模板 | 边界、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=MediaGenerationServiceTest#arkDirectoryHonorsConfiguredOutputTypes test`：**1/1 通过**。
+- 同一 Maven 容器执行完整 `mvn -B -ntp test`：**1046/1046 通过**，失败 0、错误 0、跳过 0。
+- `docker compose up --build -d`：全部镜像构建成功，后端镜像构建阶段 Maven **1046/1046 通过**；启动仍受既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用，后端和前端容器已启动。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 覆盖媒体模型目录、图片/视频类型映射及已有媒体生成回归测试；前端媒体模式输入限制测试此前已通过，未改动前端代码。
+- 当前配置的供应商端点是否实际接受跨画像请求仍需真实 API 联调；本次按用户要求不在目录层依据画像隐藏管理员勾选的能力。
+- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理或切换 Docker context 后，应重新执行 compose 健康检查。
+
 ## Seedream/Seedance 生成协议与能力限制修复（2026-09-29）
 
 ### Git 基准、范围与交付状态
@@ -10785,31 +10814,3 @@ Commit: `6b8c2de`
 
 - 当前数据库中没有 Seedream 图片模型，只有误配置为图片类型的 Seedance 视频模型；修复后图片目录会显示为空并提示配置图片模型，这是正确行为。需要在模型管理中添加 Seedream 4.0/4.5/5.0 模型并选择 `image_model`。
 - 获得有效供应商 API Key 后，应执行一次真实 Seedream 图片请求验证供应商响应。
-## 管理员勾选类型作为媒体能力权威（2026-09-29）
-
-### Git 基准、范围与交付状态
-
-Commit: `6f18e57`
-- 提交说明：Honor configured media output types；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
-- 模型目录以管理员勾选的 `model_type` 为准，不再用生成画像反向过滤图片或视频能力。画像与勾选类型不一致时，仍返回对应类型的完整模式和参数目录，并按请求类型选择校验与请求参数。
-- 文生视频、文生图等模式继续遵守各自素材输入规则；未新增依赖、数据库迁移或外部配置。
-
-### 验收标准—测试用例映射
-
-| 验收标准 | 测试用例与预期 | 场景 | 结果 |
-| --- | --- | --- | --- |
-| 勾选图片类型后始终出现在图片模型目录 | `MediaGenerationServiceTest.arkDirectoryHonorsConfiguredOutputTypes` 验证 Seedance 画像同时勾选图片和视频时返回两类目录 | 正常、兼容、回归 | 通过 |
-| 勾选类型对应的模式选项可用 | 同一测试验证两类目录均包含非空模式能力；配置画像不匹配时使用对应类型的能力模板 | 边界、回归 | 通过 |
-
-### 实际测试命令与结果
-
-- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=MediaGenerationServiceTest#arkDirectoryHonorsConfiguredOutputTypes test`：**1/1 通过**。
-- 同一 Maven 容器执行完整 `mvn -B -ntp test`：**1046/1046 通过**，失败 0、错误 0、跳过 0。
-- `docker compose up --build -d`：全部镜像构建成功，后端镜像构建阶段 Maven **1046/1046 通过**；启动仍受既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用，后端和前端容器已启动。
-- `git diff --check`：通过。
-
-### 测试覆盖范围、已知问题与下次建议
-
-- 覆盖媒体模型目录、图片/视频类型映射及已有媒体生成回归测试；前端媒体模式输入限制测试此前已通过，未改动前端代码。
-- 当前配置的供应商端点是否实际接受跨画像请求仍需真实 API 联调；本次按用户要求不在目录层依据画像隐藏管理员勾选的能力。
-- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理或切换 Docker context 后，应重新执行 compose 健康检查。
