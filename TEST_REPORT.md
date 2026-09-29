@@ -10760,3 +10760,28 @@ Commit: `93368ee`
 
 - 当前环境未配置可用供应商 API Key，仍未执行真实 Seedream 请求；获得有效配置后应验证文生图、组图、多图融合和图层拆分真实响应。
 - Docker Socket Proxy 健康检查问题仍阻断整栈自动启动；修复代理后重新检查所有容器健康状态。
+## 修复图片目录空能力模式（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `6b8c2de`
+- 提交说明：Filter media directory by Ark output type；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 方舟模型目录现在按能力画像的实际输出类型过滤，Seedance 视频模型即使误配置了 `image_model` 也不会出现在图片目录中并产生空模式下拉。未新增依赖、数据库迁移或外部配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 视频画像不生成空图片能力项 | `MediaGenerationServiceTest.arkDirectoryOnlyExposesProfileOutputType`；Seedance 画像只出现在 `video_model` | 正常、边界、回归 | 通过 |
+| 通用图片和视频模型目录保持兼容 | `MediaGenerationServiceTest.generationModelDirectoryIsTypeSpecific`；非方舟模型继续按配置类型展开 | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=MediaGenerationServiceTest#arkDirectoryOnlyExposesProfileOutputType test`：**1/1 通过**。
+- `docker compose up --build -d`：全部镜像构建成功，后端构建阶段完整测试 **1046/1046 通过**；启动阶段仍因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用，backend/frontend 已完成重建。
+- `git diff --check`：通过。
+
+### 已知问题与下次测试建议
+
+- 当前数据库中没有 Seedream 图片模型，只有误配置为图片类型的 Seedance 视频模型；修复后图片目录会显示为空并提示配置图片模型，这是正确行为。需要在模型管理中添加 Seedream 4.0/4.5/5.0 模型并选择 `image_model`。
+- 获得有效供应商 API Key 后，应执行一次真实 Seedream 图片请求验证供应商响应。
