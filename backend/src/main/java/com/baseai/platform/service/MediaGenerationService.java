@@ -82,8 +82,16 @@ public class MediaGenerationService {
             .flatMap(item -> item.getSupportedModelTypes().stream()
                 .filter(type -> modelTypeRegistry.supports(type, LlmOperation.IMAGE_GENERATION)
                     || modelTypeRegistry.supports(type, LlmOperation.VIDEO_GENERATION))
+                .filter(type -> mediaTypeMatchesArkProfile(item, type))
                 .map(type -> mediaModelOption(item, type, providers.get(item.getProviderId()))))
             .toList();
+    }
+
+    /** 方舟模型的输出类型由能力画像决定，误配的图片或视频类型不生成空能力目录项。 */
+    private boolean mediaTypeMatchesArkProfile(com.baseai.platform.domain.LlmModel model, String type) {
+        String configuredProfile = modelProfile(model.getGenerationProfile(), model.getModelName());
+        if (!ArkMediaProtocol.supports(configuredProfile)) return true;
+        return type.equals(ArkMediaProtocol.capabilities(configuredProfile).get("type"));
     }
 
     /** 将一个模型配置展开为指定输出类型的媒体目录项。 */
