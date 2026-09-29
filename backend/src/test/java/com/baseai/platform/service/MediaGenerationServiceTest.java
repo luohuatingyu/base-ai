@@ -80,6 +80,20 @@ class MediaGenerationServiceTest {
             .map(item -> item.name() + ":" + item.modelType()).toList());
     }
 
+    /** 方舟视频画像即使误配了图片类型，也不能生成空能力的图片目录项。 */
+    @Test
+    void arkDirectoryOnlyExposesProfileOutputType() {
+        when(management.providers()).thenReturn(List.of(new LlmManagementService.ProviderView(
+            2L, "provider", "Provider", "https://provider.example", "******", 4, "PROVIDER", 60,
+            "reasoning_effort", true)));
+        var seedance = new com.baseai.platform.domain.LlmModel();
+        seedance.setProviderId(2L); seedance.setName("seedance"); seedance.setModelName("doubao-seedance-2-0-mini-260615");
+        seedance.setGenerationProfile("seedance-2.0-mini"); seedance.setEnabled(true);
+        seedance.setSupportedModelTypes(List.of("image_model", "video_model"));
+        assertEquals(List.of("video_model"), service.models().stream().filter(item -> "seedance".equals(item.name()))
+            .map(MediaGenerationService.ModelOption::modelType).toList());
+    }
+
     /** 图片模型支持无附件提示词，也支持文本、图片和视频输入组合。 */
     @Test
     void acceptsImageGenerationModesAndInputs() throws Exception {
