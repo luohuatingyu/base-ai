@@ -56,6 +56,8 @@ Commit: `ab6ec17`
 - `cd frontend && npm run build`：生产构建通过；仅有既有 runtime-config、依赖注释和 chunk 大小提示。
 - `cd frontend && npm test`：Lint、类型检查、覆盖测试 **669/669 通过**；生产构建及 E2E **3/3 通过**。
 - `git diff --check`：通过。
+- `docker compose --progress plain up --build -d`：全部镜像构建成功；启动阶段因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用或本次前端改动错误。
+- `docker compose up -d --no-deps frontend`：前端镜像重新启动并 healthy；AI 生成页面 HTTP 200，`/health` 返回 `{"status":"UP"}`。
 
 ### 测试覆盖范围、已知问题与下次建议
 
