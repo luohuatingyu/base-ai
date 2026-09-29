@@ -1,5 +1,40 @@
 # 最近分支覆盖测试报告
 
+## 修复组合媒体模型更新的 profile 校验（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `4065a29`
+- 提交说明：Allow combined media profiles on model update；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 修复带有单一 Seedance/Seedream profile 的历史模型更新组合 `image_model`、`video_model` 时被错误拒绝的问题；profile 仍必须有效，且类型必须覆盖声明集合中的至少一个生成类型。
+- 生成+聊天、视觉或向量能力混合，以及 profile 类型完全不匹配的配置仍会被拒绝。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| Seedance 2.0 Mini 组合模型可更新 | `LlmManagementServiceTest.updatesCombinedGenerationModelWithVideoProfile` 使用该模型标识和历史视频 profile 更新为图片/视频组合并保存 | 正常、回归 | 通过 |
+| 错误 profile 不得进入模型配置 | `LlmManagementServiceTest.rejectsCombinedGenerationModelWithMismatchedProfile` 拒绝类型不匹配 profile | 异常、安全 | 通过 |
+| 既有组合能力和其他模块不回退 | 完整 Maven 测试套件及 Compose 镜像内测试 | 兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9-eclipse-temurin-21 mvn -B -Dtest=LlmManagementServiceTest test`：**55/55 通过**。
+- 同一 Docker Maven 环境执行完整 `mvn -B test`：**1039/1039 通过，失败 0、错误 0、跳过 0**。
+- `docker compose up --build -d`：后端镜像阶段 **1039/1039 通过**，9 个镜像构建成功。
+- `git diff --check`：通过。
+
+### 构建与运行验证
+
+- Compose 启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查失败而退出，非端口占用问题；Backend、Document Parser、Python Worker 和 Outbound Gateway 已启动/健康，Adapter Manager 受该依赖阻断。
+
+### 已知问题、重测触发与回滚
+
+- 未使用真实 Ark API Key 执行供应商请求；仍需配置有效供应商后联调图片和视频入口。
+- 修复 Docker Socket Proxy 健康检查后，应重新执行 `docker compose up --build -d` 和整栈健康检查。
+- 修改模型类型校验或媒体能力 profile 时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 4065a29`；不涉及数据库迁移。
+
 ## 组合媒体模型目录展开（2026-09-29）
 
 ### Git 基准、范围与交付状态
