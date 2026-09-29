@@ -298,7 +298,8 @@ public class MediaGenerationService {
             ? ArkMediaProtocol.request(type, candidate.model(), profile(candidate), request.prompt(), inputPayload(request.inputs()), request.options())
             : protocolRegistry.request(type, candidate.model(), request.prompt(), normalizedMode(request), inputPayload(request.inputs()), request.options());
         if (body.isEmpty()) throw new BusinessException("llm.modelTypeUnsupported");
-        return client.post().uri(endpointUri(base, path))
+        // 提交接口同样支持管理员填写完整生成地址，避免再次追加协议路径导致供应商请求超时。
+        return client.post().uri(endpointUri(base, path, path))
             .contentType(MediaType.APPLICATION_JSON).headers(headers -> headers.setBearerAuth(key)).body(body)
             .exchange((httpRequest, response) -> {
                 if (!response.getStatusCode().is2xxSuccessful()) {

@@ -274,6 +274,8 @@ class MediaGenerationServiceTest {
             invokeEndpoint(method, "https://ark.example/api/v3/images/generations", "/images/generations").toString());
         assertEquals("https://ark.example/api/v3/contents/generations/tasks/task-1",
             invokeEndpoint(statusMethod, "https://ark.example/api/v3/contents/generations/tasks", "/contents/generations/tasks/task-1", "/contents/generations/tasks").toString());
+        assertEquals("https://ark.example/api/v3/contents/generations/tasks",
+            invokeEndpoint(statusMethod, "https://ark.example/api/v3/contents/generations/tasks", "/contents/generations/tasks", "/contents/generations/tasks").toString());
         assertEquals("https://generic.example/v1/videos/task-1",
             invokeEndpoint(statusMethod, "https://generic.example/v1/videos/generations", "/videos/task-1", "/videos/generations").toString());
         assertEquals("https://ark.example/api/v3/images/generations?tenant=demo",
