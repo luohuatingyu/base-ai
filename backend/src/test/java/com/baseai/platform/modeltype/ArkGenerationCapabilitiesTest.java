@@ -81,6 +81,24 @@ class ArkGenerationCapabilitiesTest {
             List.of(input("VIDEO", "reference_video")), Map.of("duration", 5)));
     }
 
+    /** 文生模式只接受提示词，不能因为前端残留素材而把请求变成参考生成。 */
+    @Test
+    void rejectsAssetsForPromptOnlyModes() {
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "TEXT_TO_VIDEO", "cat", List.of(), Map.of()));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "TEXT_TO_VIDEO", "cat", List.of(input("IMAGE", "reference_image")), Map.of()));
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "DRAFT_VIDEO", "cat", List.of(), Map.of()));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "DRAFT_VIDEO", "cat", List.of(input("VIDEO", "reference_video")), Map.of()));
+    }
+
+    /** 图生视频使用首帧角色，参考图模式不能混入首尾帧角色。 */
+    @Test
+    void validatesVideoAssetRolesByMode() {
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "IMAGE_TO_VIDEO", "animate", List.of(input("IMAGE", "first_frame")), Map.of()));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260128", "video_model", "IMAGE_TO_VIDEO", "animate", List.of(input("IMAGE", "reference_image")), Map.of()));
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "REFERENCE_IMAGE_TO_VIDEO", "animate", List.of(input("IMAGE", "reference_image")), Map.of()));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "REFERENCE_IMAGE_TO_VIDEO", "animate", List.of(input("IMAGE", "first_frame")), Map.of()));
+    }
+
     /** 构造协议层输入，内容本身由服务层另行验证。 */
     private static Map<String, Object> input(String kind, String role) { return Map.of("kind", kind, "role", role, "data", "data:image/png;base64,YQ=="); }
 }
