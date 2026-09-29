@@ -40,6 +40,7 @@ public class MediaGenerationService {
     private final ObjectMapper mapper;
     private final LlmModelTypeRegistry modelTypeRegistry;
     private final MediaGenerationProtocolRegistry protocolRegistry;
+    private final MediaAssetService mediaAssets;
     private static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
     private static final int ARK_MAX_IMAGE_BYTES = 30 * 1024 * 1024;
     private static final int MAX_TEXT_BYTES = 1024 * 1024;
@@ -57,20 +58,22 @@ public class MediaGenerationService {
     public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
                                   LlmModelTypeRegistry modelTypeRegistry,
-                                  MediaGenerationProtocolRegistry protocolRegistry) {
+                                  MediaGenerationProtocolRegistry protocolRegistry,
+                                  MediaAssetService mediaAssets) {
         this.jdbc = jdbc;
         this.management = management;
         this.usage = usage;
         this.mapper = mapper;
         this.modelTypeRegistry = modelTypeRegistry;
         this.protocolRegistry = protocolRegistry;
+        this.mediaAssets = mediaAssets;
     }
 
     /** 兼容已注入模型类型注册表的调用方。 */
     public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
                                   LlmModelTypeRegistry modelTypeRegistry) {
-        this(jdbc, management, usage, mapper, modelTypeRegistry, new MediaGenerationProtocolRegistry());
+        this(jdbc, management, usage, mapper, modelTypeRegistry, new MediaGenerationProtocolRegistry(), new MediaAssetService());
     }
 
     /** 兼容既有单元测试构造方式。 */
@@ -116,7 +119,7 @@ public class MediaGenerationService {
         Long owner = AuthContext.require().id();
         var candidate = request == null ? null : candidate(request.modelId(), request.modelType());
         validate(request, candidate);
-        request = preparedRequest(request, candidate);
+        request = preparedRequest(request, candidate, publicOrigin());
         requireConversation(owner, request.conversationId());
         String usageId = usage.start(LlmUsageService.Start.current(null, owner, request.conversationId(),
             modelTypeRegistry.supports(request.modelType(), LlmOperation.IMAGE_GENERATION)
@@ -185,7 +188,7 @@ public class MediaGenerationService {
     private static String profile(LlmManagementService.WorkerCandidate candidate) { return modelProfile(candidate.generationProfile(), candidate.model()); }
 
     /** 在登记用量前验证模式并规范请求；样片只允许引用当前用户同模型已完成的任务。 */
-    private GenerateRequest preparedRequest(GenerateRequest request, LlmManagementService.WorkerCandidate candidate) {
+    private GenerateRequest preparedRequest(GenerateRequest request, LlmManagementService.WorkerCandidate candidate, String publicOrigin) {
         if (!ArkMediaProtocol.supports(profile(candidate))) return request;
         List<MediaInput> inputs = request.inputs() == null ? List.of() : request.inputs();
         if ("DRAFT_TO_VIDEO".equals(normalizedMode(request))) {
@@ -204,10 +207,26 @@ public class MediaGenerationService {
         String effectiveProfile = configuredProfile;
         if (!request.modelType().equals(ArkMediaProtocol.capabilities(configuredProfile).get("type")))
             effectiveProfile = "image_model".equals(request.modelType()) ? "seedream-4.5" : "seedance-2.0";
+        if (ArkMediaProtocol.supports(profile(candidate))) inputs = mediaAssets.materialize(inputs, publicOrigin);
         Map<String, Object> options = com.baseai.platform.modeltype.ArkGenerationCapabilities.options(effectiveProfile, request.modelType(), normalizedMode(request), request.prompt(), inputPayload(inputs), request.options());
         // 提前构造一次供应商协议，保证错误地址和未知参数不会产生计费记录。
         ArkMediaProtocol.request(request.modelType(), candidate.model(), profile(candidate), request.prompt(), inputPayload(inputs), options);
         return new GenerateRequest(request.modelType(), request.modelId(), request.prompt(), request.conversationId(), normalizedMode(request), inputs, options);
+    }
+
+    /** 从反向代理转发头解析供应商可访问的平台来源地址。 */
+    private String publicOrigin() {
+        try {
+            var attributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (!(attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servlet)) return null;
+            var request = servlet.getRequest();
+            String origin = request.getHeader("Origin");
+            if (origin != null && !origin.isBlank()) return origin;
+            String host = request.getHeader("X-Forwarded-Host");
+            String proto = request.getHeader("X-Forwarded-Proto");
+            if (host != null && !host.isBlank()) return (proto == null || proto.isBlank() ? request.getScheme() : proto) + "://" + host;
+            return request.getScheme() + "://" + request.getServerName() + (request.getServerPort() > 0 && request.getServerPort() != 80 && request.getServerPort() != 443 ? ":" + request.getServerPort() : "");
+        } catch (RuntimeException ignored) { return null; }
     }
 
     /** 消费方舟图片 SSE，保留成功图片及逐图错误，断流不能伪装为完整成功。 */

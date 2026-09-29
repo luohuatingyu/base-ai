@@ -22,6 +22,8 @@ test('frontend forwards SSE incrementally and closes upstream on disconnect', as
     assert.equal(request.method, 'POST')
     assert.equal(request.headers['x-csrf-token'], 'test-csrf')
     assert.equal(request.headers['x-forwarded-for'], '127.0.0.1')
+    assert.equal(request.headers['x-forwarded-host'], `127.0.0.1:${frontendPort}`)
+    assert.equal(request.headers['x-forwarded-proto'], 'http')
     response.writeHead(200, { 'content-type': 'text/event-stream' })
     response.write('data: {"type":"delta","content":"你好"}\n\n')
     response.on('close', upstreamClosed)
