@@ -2,11 +2,11 @@
 
 ### Git 基准、范围与交付状态
 
-Commit: `526febd`
+Commit: `390951d`
 - 提交说明：Expose provider generation error details；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
 - 供应商返回非 2xx 时保留 HTTP 状态、供应商错误码和安全错误消息；网络错误按超时或连接失败分类；用量记录继续使用稳定错误码。
 - 前端兼容历史错误码，并在媒体生成历史和结果弹窗显示供应商状态、错误码和具体详情。
-- 错误正文限制长度并过滤控制字符和分隔符，不保存 API Key、提示词或完整供应商响应；未新增依赖、数据库迁移或配置。
+- 错误正文限制长度并过滤控制字符和分隔符，额外脱敏常见 API Key、Authorization、Token 和 Secret 文本，不保存提示词或完整供应商响应；未新增依赖、数据库迁移或配置。
 
 ### 验收标准—测试用例映射
 
@@ -21,6 +21,7 @@ Commit: `526febd`
 
 - `docker compose up --build -d`：镜像构建成功；后端 Maven 完整套件 **1049/1049 通过**，失败 0、错误 0、跳过 0；前端生产构建成功。整栈启动随后受既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
 - `docker compose up -d --no-deps backend frontend`：成功启动，Backend healthy，Frontend 启动成功。
+- 同一 Compose 构建在凭据脱敏补丁后再次执行：后端 Maven **1049/1049 通过**，镜像构建成功；启动仍只受既有 Docker Socket Proxy unhealthy 依赖阻断。
 - `cd frontend && npm test`：lint、typecheck、覆盖测试 **676/676 通过**；覆盖率行 **98.25%**、分支 **82.03%**、函数 **95.77%**；生产构建及 E2E **3/3 通过**。
 - `cd frontend && node --test test/ai-generation.test.mjs`：**18/18 通过**。
 - `git diff --check`：通过。
