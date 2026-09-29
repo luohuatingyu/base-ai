@@ -90,6 +90,7 @@ class MediaGenerationServiceTest {
         seedance.setProviderId(2L); seedance.setName("seedance"); seedance.setModelName("doubao-seedance-2-0-mini-260615");
         seedance.setGenerationProfile("seedance-2.0-mini"); seedance.setEnabled(true);
         seedance.setSupportedModelTypes(List.of("image_model", "video_model"));
+        when(management.models()).thenReturn(List.of(seedance));
         assertEquals(List.of("video_model"), service.models().stream().filter(item -> "seedance".equals(item.name()))
             .map(MediaGenerationService.ModelOption::modelType).toList());
     }
