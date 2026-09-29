@@ -108,12 +108,12 @@
               <div><span class="card-eyebrow">{{ t('generation.assetsKicker') }}</span><h3>{{ t('generation.assets') }}</h3></div>
               <span class="asset-count" :class="{ 'is-full': inputs.length >= (capability.totalLimit || 0) }">{{ inputs.length }}/{{ capability.totalLimit || 0 }}</span>
             </div>
-            <label class="asset-dropzone" :class="{ 'is-disabled': busy || inputs.length >= (capability.totalLimit || 0) }" @dragover.prevent @drop.prevent="onDrop">
-              <input ref="filePicker" type="file" hidden multiple :accept="accept" :disabled="busy || inputs.length >= (capability.totalLimit || 0)" @change="onFiles" />
+            <label class="asset-dropzone" :class="{ 'is-disabled': assetsDisabled }" @dragover.prevent @drop.prevent="onDrop">
+              <input ref="filePicker" type="file" hidden multiple :accept="accept" :disabled="assetsDisabled" @change="onFiles" />
               <span class="dropzone-icon">＋</span>
               <strong>{{ t('generation.dropAssets') }}</strong>
-              <small>{{ t('generation.assetHint') }}</small>
-              <el-button plain size="small" :disabled="busy || inputs.length >= (capability.totalLimit || 0)" @click.prevent="filePicker?.click()">{{ t('generation.addAsset') }}</el-button>
+              <small>{{ assetsAllowed ? t('generation.assetHint') : t('generation.modeNoAssets') }}</small>
+              <el-button plain size="small" :disabled="assetsDisabled" @click.prevent="filePicker?.click()">{{ t('generation.addAsset') }}</el-button>
             </label>
             <div v-if="inputs.length" class="asset-list">
               <div v-for="(input, index) in inputs" :key="input.dataUrl + index" class="asset-item">
@@ -150,15 +150,21 @@
               </section>
               <section v-if="type === 'video_model'" class="output-setting-group output-setting-group-media">
                 <div class="output-setting-heading"><span class="output-setting-icon">▶</span><div><strong>{{ t('generation.videoOutput') }}</strong><small>{{ t('generation.videoOutputHint') }}</small></div></div>
-                <div class="output-setting-fields">
-                  <el-form-item :label="t('generation.resolution')"><el-select v-model="options.resolution" :disabled="draftMode"><el-option v-for="value in resolutionOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
-                  <el-form-item :label="t('generation.ratio')"><el-select v-model="options.ratio" :disabled="lockedRatio"><el-option v-for="value in ratioOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
-                  <el-form-item v-if="!lockedVideoSettings" :label="t('generation.duration')"><el-input-number v-model="options.duration" :min="durationMin" :max="durationMax" /></el-form-item>
-                  <el-form-item v-if="lockedVideoSettings" :label="t('generation.duration')"><el-input :model-value="lockedDurationLabel" disabled /></el-form-item>
-                  <el-form-item v-if="capability.options?.output_format" :label="t('generation.outputFormat')"><el-select v-model="options.output_format"><el-option v-for="value in outputFormatOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
-                  <el-form-item v-if="capability.options?.return_last_frame" :label="t('generation.returnLastFrame')"><el-switch v-model="options.return_last_frame" /></el-form-item>
-                  <el-form-item v-if="capability.features?.audio && !draftToVideo" :label="t('generation.generateAudio')"><el-switch v-model="options.generate_audio" /></el-form-item>
-                  <el-form-item v-if="mode === 'DRAFT_VIDEO'" :label="t('generation.draft')"><el-switch v-model="options.draft" /></el-form-item>
+                <div class="output-setting-fields video-output-fields">
+                  <div class="video-output-row video-output-specs">
+                    <el-form-item :label="t('generation.resolution')"><el-select v-model="options.resolution" :disabled="draftMode"><el-option v-for="value in resolutionOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+                    <el-form-item :label="t('generation.ratio')"><el-select v-model="options.ratio" :disabled="lockedRatio"><el-option v-for="value in ratioOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+                    <el-form-item v-if="!lockedVideoSettings" :label="t('generation.duration')"><el-input-number v-model="options.duration" :min="durationMin" :max="durationMax" /></el-form-item>
+                    <el-form-item v-if="lockedVideoSettings" :label="t('generation.duration')"><el-input :model-value="lockedDurationLabel" disabled /></el-form-item>
+                  </div>
+                  <div v-if="capability.options?.return_last_frame || (capability.features?.audio && !draftToVideo)" class="video-output-row video-output-toggles">
+                    <el-form-item v-if="capability.options?.return_last_frame" :label="t('generation.returnLastFrame')"><el-switch v-model="options.return_last_frame" /></el-form-item>
+                    <el-form-item v-if="capability.features?.audio && !draftToVideo" :label="t('generation.generateAudio')"><el-switch v-model="options.generate_audio" /></el-form-item>
+                  </div>
+                  <div v-if="capability.options?.output_format || mode === 'DRAFT_VIDEO'" class="video-output-row video-output-extra">
+                    <el-form-item v-if="capability.options?.output_format" :label="t('generation.outputFormat')"><el-select v-model="options.output_format"><el-option v-for="value in outputFormatOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
+                    <el-form-item v-if="mode === 'DRAFT_VIDEO'" :label="t('generation.draft')"><el-switch v-model="options.draft" /></el-form-item>
+                  </div>
                 </div>
               </section>
               <section class="output-setting-group output-setting-group-common">
@@ -266,9 +272,29 @@ const groupOutput = ref(false)
 const transparent = ref(false)
 const options = reactive({ size: '2K', response_format: 'url', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: 'opaque', output_format: 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false })
 const modelsForType = computed(() => models.value.filter(item => item.modelType === type.value))
-const selectedModel = computed(() => models.value.find(item => item.id === modelId.value))
-const accept = computed(() => type.value === 'image_model' ? 'image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,text/plain,text/markdown,.txt,.md' : 'image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,.mp3,.wav')
-const canSubmit = computed(() => !busy.value && !!modelId.value && !!mode.value && (!!prompt.value.trim() || inputs.value.length > 0))
+const selectedModel = computed(() => models.value.find(item => item.id === modelId.value && item.modelType === type.value))
+/** 每个生成模式声明可接受的素材类型和数量，避免上传素材改变任务语义。 */
+const modeInputPolicy = computed(() => {
+  const common = {
+    TEXT_TO_IMAGE: { kinds: [], max: 0 }, TEXT_TO_GROUP: { kinds: [], max: 0 },
+    IMAGE_TEXT_TO_IMAGE: { kinds: ['IMAGE'], max: 1 }, IMAGE_TO_GROUP: { kinds: ['IMAGE'], max: 1 },
+    MULTI_IMAGE_FUSION: { kinds: ['IMAGE'], max: 14 }, MULTI_IMAGE_TO_GROUP: { kinds: ['IMAGE'], max: 14 },
+    LAYER_DECOMPOSITION: { kinds: ['IMAGE'], max: 1 }, INTERACTIVE_EDIT: { kinds: ['IMAGE'], max: 1 }, TRANSPARENT_IMAGE: { kinds: ['IMAGE'], max: 1 },
+    TEXT_TO_VIDEO: { kinds: [], max: 0 }, IMAGE_TO_VIDEO: { kinds: ['IMAGE'], max: 1 }, FIRST_LAST_FRAME_TO_VIDEO: { kinds: ['IMAGE'], max: 2 },
+    REFERENCE_IMAGE_TO_VIDEO: { kinds: ['IMAGE'], max: 9 }, VIDEO_TO_VIDEO: { kinds: ['VIDEO'], max: 3 },
+    IMAGE_VIDEO_AUDIO_TO_VIDEO: { kinds: ['IMAGE', 'VIDEO', 'AUDIO'], max: 12 }, STORYBOARD_TO_VIDEO: { kinds: ['IMAGE', 'VIDEO', 'AUDIO'], max: 12 },
+    ONE_CLICK_VIDEO: { kinds: ['IMAGE', 'VIDEO'], max: 12 }, VIDEO_TRANSITION: { kinds: ['VIDEO'], max: 3 },
+    EDIT_VIDEO: { kinds: ['VIDEO'], max: 3 }, EXTEND_VIDEO: { kinds: ['VIDEO'], max: 3 }, DRAFT_VIDEO: { kinds: [], max: 0 }, DRAFT_TO_VIDEO: { kinds: ['TASK'], max: 1 }
+  }
+  return common[mode.value] || (type.value === 'image_model' ? { kinds: ['IMAGE'], max: 14 } : { kinds: ['IMAGE', 'VIDEO', 'AUDIO'], max: capability.value.totalLimit || 0 })
+})
+const assetsAllowed = computed(() => modeInputPolicy.value.kinds.length > 0)
+const assetsDisabled = computed(() => busy.value || !assetsAllowed.value || inputs.value.length >= Math.min(capability.value.totalLimit || 0, modeInputPolicy.value.max))
+const accept = computed(() => {
+  const formats = { IMAGE: 'image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif', VIDEO: 'video/mp4,video/webm,video/quicktime', AUDIO: 'audio/mpeg,audio/wav,.mp3,.wav', TASK: '' }
+  return modeInputPolicy.value.kinds.map(kind => formats[kind]).filter(Boolean).join(',')
+})
+const canSubmit = computed(() => !busy.value && !!modelId.value && !!mode.value && (!!prompt.value.trim() || inputs.value.length > 0) && (assetsAllowed.value || inputs.value.length === 0))
 const outputs = computed(() => result.value?.outputJson?.outputs || [])
 const historyOutputs = computed(() => selectedHistoryTask.value?.outputJson?.outputs || [])
 const draftMode = computed(() => mode.value === 'DRAFT_VIDEO')
@@ -338,7 +364,10 @@ const requestOptions = computed(() => {
 /** 将后端模式编码转换为用户可理解的生成方式。 */
 function modeLabel(value) { return t(`generation.modes.${value}`, value.replaceAll('_', ' ')) }
 /** 根据素材类型限定方舟内容角色，首尾帧不能用于音视频素材。 */
-function rolesFor(kind) { return kind === 'IMAGE' ? ['reference_image', 'first_frame', 'last_frame'] : kind === 'VIDEO' ? ['reference_video'] : ['reference_audio'] }
+function rolesFor(kind) {
+  if (kind === 'IMAGE') return mode.value === 'IMAGE_TO_VIDEO' ? ['first_frame'] : mode.value === 'FIRST_LAST_FRAME_TO_VIDEO' ? ['first_frame', 'last_frame'] : type.value === 'video_model' ? ['reference_image'] : []
+  return kind === 'VIDEO' ? ['reference_video'] : ['reference_audio']
+}
 /** 将角色编码本地化。 */
 function roleLabel(value) { return t(`generation.roles.${value}`, value.replaceAll('_', ' ')) }
 /** 将任务状态映射为 Element Plus 标签样式，统一历史和结果反馈。 */
@@ -364,7 +393,17 @@ function onModelChange() {
 /** 切换图片或视频时只显示同类模型并清理不兼容素材。 */
 function onTypeChange() { modelId.value = modelsForType.value[0]?.id || null; inputs.value = []; result.value = null; onModelChange(); loadHistory() }
 /** 切换模式时清除旧角色，避免角色与任务类型混用。 */
-function onModeChange() { inputs.value.forEach(input => { input.role = type.value === 'video_model' ? (mode.value.includes('FRAME') ? '' : input.role) : '' }); syncModeOptions() }
+function onModeChange() { reconcileInputsForMode(); syncModeOptions() }
+/** 按新模式清理不兼容素材，并为首帧、尾帧和参考素材设置唯一角色。 */
+function reconcileInputsForMode() {
+  const policy = modeInputPolicy.value
+  if (!assetsAllowed.value) { inputs.value = []; return }
+  inputs.value = inputs.value.filter(input => policy.kinds.includes(input.kind)).slice(0, policy.max)
+  if (mode.value === 'IMAGE_TO_VIDEO') inputs.value.forEach(input => { input.role = 'first_frame' })
+  else if (mode.value === 'FIRST_LAST_FRAME_TO_VIDEO') inputs.value.forEach((input, index) => { input.role = index === 0 ? 'first_frame' : 'last_frame' })
+  else if (type.value === 'video_model') inputs.value.forEach(input => { input.role = input.kind === 'IMAGE' ? 'reference_image' : input.kind === 'VIDEO' ? 'reference_video' : input.kind === 'AUDIO' ? 'reference_audio' : '' })
+  else inputs.value.forEach(input => { input.role = '' })
+}
 /** 根据组图开关同步供应商参数。 */
 function syncGroupOptions(value) { options.sequential_image_generation = value ? 'auto' : 'disabled' }
 /** 透明背景要求 PNG，关闭时恢复默认不透明。 */
@@ -389,15 +428,16 @@ async function onFiles(event) {
   for (const file of files) {
     const kind = file.type.startsWith('image/') ? 'IMAGE' : file.type.startsWith('video/') ? 'VIDEO' : file.type.startsWith('audio/') ? 'AUDIO' : file.type.startsWith('text/') || /\.(txt|md)$/i.test(file.name) ? 'TEXT' : ''
     const max = kind === 'IMAGE' ? capability.value.imageMaxBytes : kind === 'VIDEO' ? capability.value.videoMaxBytes : capability.value.audioMaxBytes
-    if (!kind || file.size > max || inputs.value.length >= capability.value.totalLimit) { ElMessage.warning(t('generation.fileRejected')); continue }
+    const policy = modeInputPolicy.value
+    if (!policy.kinds.includes(kind) || file.size > max || inputs.value.length >= Math.min(capability.value.totalLimit || 0, policy.max)) { ElMessage.warning(t('generation.fileRejected')); continue }
     try {
-      const role = type.value !== 'video_model' || kind === 'TEXT' ? '' : kind === 'IMAGE' ? 'reference_image' : kind === 'VIDEO' ? 'reference_video' : 'reference_audio'
+      const role = mode.value === 'IMAGE_TO_VIDEO' && kind === 'IMAGE' ? 'first_frame' : mode.value === 'FIRST_LAST_FRAME_TO_VIDEO' && kind === 'IMAGE' ? (inputs.value.some(input => input.role === 'first_frame') ? 'last_frame' : 'first_frame') : type.value !== 'video_model' || kind === 'TEXT' ? '' : kind === 'IMAGE' ? 'reference_image' : kind === 'VIDEO' ? 'reference_video' : 'reference_audio'
       inputs.value.push({ kind, fileName: file.name, contentType: file.type || (kind === 'TEXT' ? 'text/plain' : ''), dataUrl: await readFile(file), role })
     } catch (cause) { showHttpError(cause, 'generation.fileReadFailed') }
   }
 }
 /** 处理拖拽文件并复用上传校验逻辑。 */
-function onDrop(event) { onFiles(event) }
+function onDrop(event) { if (!assetsDisabled.value) onFiles(event) }
 /** 删除已选素材。 */
 function removeInput(index) { inputs.value.splice(index, 1) }
 /** 加入历史样片任务作为正式视频的唯一输入。 */
@@ -639,6 +679,12 @@ onMounted(loadModels)
 .output-setting-fields :deep(.el-input__wrapper),
 .output-setting-fields :deep(.el-input-number .el-input__wrapper) { min-height: 30px; border-radius: 7px; }
 .output-setting-fields :deep(.el-switch) { height: 30px; }
+.video-output-fields { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.generation-options.is-video .video-output-fields { grid-template-columns: 1fr; }
+.video-output-row { display: grid; align-items: end; gap: 8px 9px; min-width: 0; }
+.video-output-specs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.video-output-toggles,
+.video-output-extra { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .generation-hint { margin: 12px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.55; }
 .generation-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 0; padding: 13px 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; background: var(--el-fill-color-light); }
 .submit-hint { flex: 1; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.45; }
@@ -683,6 +729,8 @@ onMounted(loadModels)
   .generation-input-grid { grid-template-columns: 1fr; }
   .output-setting-fields,
   .generation-options.is-video .output-setting-fields { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+  .generation-options.is-video .video-output-fields { grid-template-columns: 1fr; }
+  .video-output-specs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 780px) {
@@ -718,6 +766,9 @@ onMounted(loadModels)
   .output-setting-group { grid-template-columns: 1fr; }
   .output-setting-fields,
   .generation-options.is-video .output-setting-fields { grid-template-columns: 1fr; }
+  .video-output-specs,
+  .video-output-toggles,
+  .video-output-extra { grid-template-columns: 1fr; }
   .generation-actions { align-items: stretch; flex-wrap: wrap; }
   .submit-hint { flex-basis: 100%; }
   .generation-actions .el-button { flex: 1; }
