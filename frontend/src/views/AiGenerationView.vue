@@ -208,7 +208,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import http, { showHttpError } from '../api/http'
-import { generationFailureReasonKey } from '../utils/generationFailure.js
+import { generationFailureReasonKey } from '../utils/generationFailure.js'
 
 const { t } = useI18n()
 const router = useRouter()
