@@ -8,15 +8,28 @@
         <el-radio-button value="video_model">{{ t('generation.video') }}</el-radio-button>
       </el-radio-group>
     </div>
+    <details class="generation-guide" open>
+      <summary>{{ t('generation.guideTitle') }}</summary>
+      <ol>
+        <li>{{ t('generation.guideStepModel') }}</li>
+        <li>{{ t('generation.guideStepPrompt') }}</li>
+        <li>{{ t('generation.guideStepAssets') }}</li>
+        <li>{{ t('generation.guideStepResult') }}</li>
+      </ol>
+      <p>{{ t('generation.guideTip') }}</p>
+    </details>
     <div v-if="error" class="generation-error" role="alert">{{ error }}</div>
     <div class="generation-layout">
       <aside class="generation-sidebar">
         <el-form label-position="top" size="small">
           <el-form-item :label="t('generation.model')">
-            <el-select v-model="modelId" filterable @change="onModelChange">
+            <el-select v-model="modelId" filterable :disabled="!modelsForType.length || busy" @change="onModelChange">
               <el-option v-for="model in modelsForType" :key="model.id" :label="`${model.name} · ${model.modelName}`" :value="model.id" />
             </el-select>
-            <p v-if="!modelsForType.length" class="generation-empty">{{ t('generation.noModels') }}</p>
+            <div v-if="!modelsForType.length" class="generation-empty">
+              <p>{{ t('generation.noModels') }}</p>
+              <el-button text type="primary" size="small" @click="goModelManagement">{{ t('generation.openModels') }}</el-button>
+            </div>
           </el-form-item>
           <el-form-item v-if="capability.modes?.length" :label="t('generation.mode')">
             <el-select v-model="mode" @change="onModeChange">
@@ -95,9 +108,11 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import http, { showHttpError } from '../api/http'
 
 const { t } = useI18n()
+const router = useRouter()
 const type = ref('image_model')
 const models = ref([])
 const modelId = ref(null)
@@ -163,6 +178,8 @@ function onModelChange() {
   const item = selectedModel.value
   capability.value = item?.capabilities || { modes: [], features: {}, options: {}, totalLimit: 0 }
   mode.value = capability.value.modes?.[0] || ''
+  groupOutput.value = false
+  transparent.value = false
   resetOptions()
   syncModeOptions()
 }
@@ -183,7 +200,9 @@ function syncModeOptions() {
   if (extendVideo.value || mode.value.includes('FRAME')) { options.ratio = 'adaptive'; if (extendVideo.value) options.output_format = 'mov' }
 }
 /** 清空当前草稿和结果。 */
-function reset() { prompt.value = ''; inputs.value = []; result.value = null; error.value = ''; resetOptions() }
+function reset() { prompt.value = ''; inputs.value = []; result.value = null; error.value = ''; groupOutput.value = false; transparent.value = false; resetOptions() }
+/** 当当前输出类型没有模型时跳转到模型管理，避免用户停留在不可操作的空表单。 */
+function goModelManagement() { router.push('/models') }
 /** 读取文件并转换为后端接受的 Data URL。 */
 function readFile(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file) }) }
 /** 校验文件类型和大小，防止浏览器提交超出模型能力的素材。 */
@@ -217,12 +236,23 @@ async function loadHistory() { try { history.value = ((await http.get('/ai/gener
 /** 从历史记录恢复展示结果。 */
 function selectHistory(task) { result.value = task }
 /** 加载可用模型目录。 */
-async function loadModels() { try { models.value = (await http.get('/ai/generation/models')).data || []; onTypeChange() } catch (cause) { error.value = t('generation.modelsFailed'); showHttpError(cause, 'generation.modelsFailed') } }
+async function loadModels() {
+  try {
+    models.value = (await http.get('/ai/generation/models')).data || []
+    const firstAvailableType = ['image_model', 'video_model'].find(value => models.value.some(item => item.modelType === value))
+    if (firstAvailableType) type.value = firstAvailableType
+    onTypeChange()
+  } catch (cause) { error.value = t('generation.modelsFailed'); showHttpError(cause, 'generation.modelsFailed') }
+}
 onMounted(loadModels)
 </script>
 
 <style scoped>
 .generation-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; min-height: 620px; }
+.generation-guide { margin: 16px 0; padding: 12px 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-light); color: var(--el-text-color-regular); }
+.generation-guide summary { cursor: pointer; font-weight: 600; color: var(--el-text-color-primary); }
+.generation-guide ol { margin: 10px 0 6px 20px; padding: 0; line-height: 1.7; }
+.generation-guide p { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .generation-sidebar { border-right: 1px solid var(--el-border-color-lighter); padding-right: 18px; }
 .capability-card { display: grid; gap: 6px; padding: 12px; margin: 12px 0 22px; background: var(--el-fill-color-light); border-radius: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
 .history-heading, .asset-heading, .result-heading { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
@@ -242,6 +272,7 @@ onMounted(loadModels)
 .result-grid :deep(.el-image), .result-grid video { width: 100%; height: 220px; object-fit: contain; background: var(--el-fill-color-light); }
 .generation-error { margin: 10px 0; color: var(--el-color-danger); }
 .generation-empty, .generation-hint { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.generation-empty p { margin: 0 0 2px; }
 @media (max-width: 900px) { .generation-layout { grid-template-columns: 1fr; } .generation-sidebar { border-right: 0; border-bottom: 1px solid var(--el-border-color-lighter); padding: 0 0 16px; } .generation-options { grid-template-columns: repeat(2, minmax(140px, 1fr)); } }
 @media (max-width: 560px) { .generation-options { grid-template-columns: 1fr; } }
 </style>

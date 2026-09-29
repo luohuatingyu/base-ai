@@ -39,3 +39,21 @@ test('AI 生成 page handles Ark locked and extended video modes', () => {
   assert.match(source, /delete result\.sequential_image_generation_options/)
   assert.match(source, /generation\.editLockedDuration/)
 })
+
+/** 仅配置视频模型时页面必须自动进入可用类型，并为完全空目录提供管理入口和使用说明。 */
+test('AI 生成 page guides setup and selects an available type', () => {
+  assert.match(source, /firstAvailableType = \['image_model', 'video_model'\]/)
+  assert.match(source, /models\.value\.some\(item => item\.modelType === value\)/)
+  assert.match(source, /goModelManagement\(\)/)
+  assert.match(source, /generation\.guideTitle/)
+  assert.match(source, /generation\.openModels/)
+  assert.match(zhLocale, /guideStepModel/)
+  assert.match(zhLocale, /guideStepAssets/)
+})
+
+/** 切换模型和清空表单必须重置只对当前能力有效的开关。 */
+test('AI 生成 page clears capability-specific toggles when selection changes', () => {
+  assert.match(source, /groupOutput\.value = false/)
+  assert.match(source, /transparent\.value = false/)
+  assert.match(source, /function reset\(\).*groupOutput\.value = false.*transparent\.value = false/s)
+})
