@@ -104,7 +104,13 @@ async function load() {
 }
 /** 打开新增或编辑窗口，并回显模型支持类型。 */
 function open(row) {
-  Object.assign(form, row ? { ...row, supportedModelTypes: normalizeTypes(row) } : { id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: modelTypes.value.length ? [modelTypes.value[0].value] : ['text_model'], capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true })
+  const values = row ? {
+    id: row.id, code: row.code, name: row.name, providerId: row.providerId, modelName: row.modelName,
+    supportedModelTypes: normalizeTypes(row), capabilityLevel: row.capabilityLevel, thinkingLevels: row.thinkingLevels, enabled: row.enabled
+  } : {
+    id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: modelTypes.value.length ? [modelTypes.value[0].value] : ['text_model'], capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true
+  }
+  Object.assign(form, values)
   Object.assign(thinkingMapping, Object.fromEntries(thinkingLevels.map(level => [level, ''])), parseThinkingMappings(form.thinkingLevels))
   visible.value = true
 }

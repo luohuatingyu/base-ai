@@ -59,7 +59,7 @@ class MediaGenerationServiceTest {
             "video_model", 1L, "video", null, Map.of("endpoint", "/internal"))));
     }
 
-    /** 生成模型目录只返回单一生成类型，不能把视觉或混合模型误展示为生成模型。 */
+    /** 生成模型目录按输出类型展开组合模型，不能把视觉模型误展示为生成模型。 */
     @Test
     void generationModelDirectoryIsTypeSpecific() {
         when(management.providers()).thenReturn(List.of(new LlmManagementService.ProviderView(
@@ -75,7 +75,8 @@ class MediaGenerationServiceTest {
         text.setProviderId(2L); text.setName("text"); text.setModelName("deepseek-chat");
         text.setEnabled(true); text.setSupportedModelTypes(List.of("text_model"));
         when(management.models()).thenReturn(List.of(image, mixed, text));
-        assertEquals(List.of("image"), service.models().stream().map(MediaGenerationService.ModelOption::name).toList());
+        assertEquals(List.of("image:image_model", "mixed:image_model", "mixed:video_model"), service.models().stream()
+            .map(item -> item.name() + ":" + item.modelType()).toList());
     }
 
     /** 图片模型支持无附件提示词，也支持文本、图片和视频输入组合。 */

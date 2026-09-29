@@ -73,19 +73,25 @@ public class MediaGenerationService {
         this(jdbc, management, usage, mapper, new LlmModelTypeRegistry());
     }
 
-    /** 返回启用且只声明一种生成能力的模型，不向浏览器暴露供应商密钥。 */
+    /** 返回启用且声明图片或视频能力的模型；组合模型按输出类型展开，不向浏览器暴露供应商密钥。 */
     public List<ModelOption> models() {
         var providers = management.providers().stream().filter(LlmManagementService.ProviderView::enabled)
             .collect(java.util.stream.Collectors.toMap(LlmManagementService.ProviderView::id, item -> item));
         return management.models().stream()
             .filter(item -> Boolean.TRUE.equals(item.getEnabled()) && providers.containsKey(item.getProviderId()))
-            .filter(item -> item.getSupportedModelTypes().size() == 1
-                && (modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.IMAGE_GENERATION)
-                    || modelTypeRegistry.supports(item.getSupportedModelTypes().get(0), LlmOperation.VIDEO_GENERATION)))
-            .map(item -> new ModelOption(item.getId(), item.getName(), item.getModelName(), item.getSupportedModelTypes().get(0),
-                providers.get(item.getProviderId()).code(), providers.get(item.getProviderId()).name(),
-                ArkMediaProtocol.supports(modelProfile(item.getGenerationProfile(), item.getModelName())) ? "ARK" : "GENERIC",
-                ArkMediaProtocol.supports(modelProfile(item.getGenerationProfile(), item.getModelName())) ? ArkMediaProtocol.capabilities(modelProfile(item.getGenerationProfile(), item.getModelName())) : Map.of())).toList();
+            .flatMap(item -> item.getSupportedModelTypes().stream()
+                .filter(type -> modelTypeRegistry.supports(type, LlmOperation.IMAGE_GENERATION)
+                    || modelTypeRegistry.supports(type, LlmOperation.VIDEO_GENERATION))
+                .map(type -> mediaModelOption(item, type, providers.get(item.getProviderId()))))
+            .toList();
+    }
+
+    /** 将一个模型配置展开为指定输出类型的媒体目录项。 */
+    private ModelOption mediaModelOption(com.baseai.platform.domain.LlmModel model, String type, LlmManagementService.ProviderView provider) {
+        String configuredProfile = modelProfile(model.getGenerationProfile(), model.getModelName());
+        Map<String, Object> capabilities = ArkMediaProtocol.supports(configuredProfile) ? ArkMediaProtocol.capabilities(configuredProfile) : Map.of();
+        boolean ark = !capabilities.isEmpty() && type.equals(capabilities.get("type"));
+        return new ModelOption(model.getId(), model.getName(), model.getModelName(), type, provider.code(), provider.name(), ark ? "ARK" : "GENERIC", ark ? capabilities : Map.of());
     }
 
     /** 校验归属和模型后创建一次调用；失败重试必须由用户重新提交并产生新的任务及用量。 */
@@ -564,14 +570,14 @@ public class MediaGenerationService {
     /** 返回历史请求的默认模式。 */
     private String defaultMode(String modelType) { return "video_model".equals(modelType) ? "TEXT_TO_VIDEO" : "TEXT_TO_IMAGE"; }
 
-    /** 拒绝历史混合类型配置，图片与视频不能通过篡改参数互相调用。 */
+    /** 校验模型声明了请求的图片或视频生成能力，防止通过参数篡改互相调用。 */
     private LlmManagementService.WorkerCandidate candidate(Long modelId, String type) {
         var route = management.resolveModel(modelId, type, false, null);
         if (route == null || route.candidates() == null || route.candidates().size() != 1) throw new BusinessException("llm.modelTypeUnsupported");
         var candidate = route.candidates().get(0);
         boolean supported = modelTypeRegistry.supports(type, LlmOperation.IMAGE_GENERATION)
             || modelTypeRegistry.supports(type, LlmOperation.VIDEO_GENERATION);
-        if (!supported || candidate == null || !List.of(type).equals(candidate.supportedModelTypes()) || candidate.apiKeys() == null || candidate.apiKeys().isEmpty())
+        if (!supported || candidate == null || candidate.supportedModelTypes() == null || !candidate.supportedModelTypes().contains(type) || candidate.apiKeys() == null || candidate.apiKeys().isEmpty())
             throw new BusinessException("llm.modelTypeUnsupported");
         return candidate;
     }

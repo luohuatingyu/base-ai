@@ -195,6 +195,7 @@ for (const type of ['image_model', 'video_model']) {
     assert.equal(state.modelTypeDisabled('image_model'), false)
     assert.equal(state.modelTypeDisabled('video_model'), false)
     assert.equal(state.modelTypeDisabled('text_model'), true)
+    assert.equal(Object.hasOwn(state.form, 'generationProfile'), false)
   })
   test(type + ': 模型测试显示未接入提示且不发送聊天请求', () => {
     const { state, requests, warnings } = modelEditor()
