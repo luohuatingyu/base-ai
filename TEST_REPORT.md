@@ -41,7 +41,7 @@ Commit: `ce1c746`
 
 ### Git 基准、范围与交付状态
 
-Commit: `1db76e5`
+Commit: `5da70df`
 - 提交说明：Show AI generation failure reasons in history；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
 - 任务历史条目直接显示失败或取消原因；稳定失败码提供中英文文案，未知码保留原始值；结果区复用同一映射。后端接口、数据库和生成状态逻辑未修改。
 
@@ -58,7 +58,7 @@ Commit: `1db76e5`
 - `cd frontend && node --test test/ai-generation.test.mjs`：**13/13 通过**。
 - `cd frontend && npx eslint src/views/AiGenerationView.vue src/utils/generationFailure.js test/ai-generation.test.mjs`：通过。
 - `cd frontend && npx vue-tsc --noEmit -p jsconfig.json`：通过。
-- `cd frontend && npm test`：Lint、类型检查、覆盖测试 **670/670 通过**；覆盖率行 **98.25%**、分支 **82.04%**、函数 **95.76%**；生产构建及 E2E **3/3 通过**。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 **672/672 通过**；覆盖率行 **98.25%**、分支 **82.04%**、函数 **95.76%**；生产构建及 E2E **3/3 通过**。
 - `docker compose up --build -d`：全部镜像构建成功；后端镜像构建阶段完整 Maven **1041/1041 通过**。整栈启动因既有 `docker-socket-proxy` unhealthy 依赖失败，非端口占用；随后 `docker compose up -d --no-deps frontend` 成功。
 - `git diff --check`：通过。
 
