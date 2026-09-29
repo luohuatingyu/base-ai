@@ -1,5 +1,37 @@
 # 最近分支覆盖测试报告
 
+## 模型供应商查看 API Key 移除二次密码（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `007d501`
+- 提交说明：Remove provider API key reauthentication；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 模型供应商查看 Key 继续要求系统管理员身份和 `ai:model:provider:update` 权限，但点击“查看 Key”不再重复输入当前密码；响应继续禁止缓存，前端关闭窗口时清理明文。编辑供应商仍不自动回显 Key，留空保存继续保留原密钥。
+- 平台 API Key 和邮件凭据的二次密码校验未修改。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 管理员点击“查看 Key”后直接显示明文 | `frontend/test/platform-api-keys.test.mjs` 的“模型供应商向管理员直接显示明文 Key”检查不再调用 `requestRevealPassword`，仍通过 POST 加载密钥 | 正常、权限 | 通过 |
+| 编辑供应商不自动回显或泄漏已保存密钥 | 同一前端契约测试检查 `open` 只初始化空输入行；关闭查看弹窗清理 `keysContent` | 安全、回归 | 通过 |
+| 服务端保留权限边界和无缓存响应 | `LlmManagementControllerTest.providerApiKeysRequiresUpdatePermission` 检查更新权限、POST 和 `captureRequest=false`；`LlmManagementServiceTest` 保留管理员校验回归 | 权限、安全、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && npm test -- --runInBand test/platform-api-keys.test.mjs`：lint、类型检查、覆盖测试 **661/661 通过**；生产构建通过；E2E **13/13 通过**。命令中的额外参数被 npm 透传并产生既有 CLI 警告，不影响结果。
+- `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=LlmManagementControllerTest,LlmManagementServiceTest test`：**59/59 通过**。
+- 同一 Docker Maven 环境执行 `mvn -B -ntp test`：**1039/1039 通过，失败 0、错误 0、跳过 0**。
+- `git diff --check`：通过。
+- `docker compose up --build -d`：镜像构建成功；首次启动因 `.env` 的旧 Docker Socket 路径导致 `docker-socket-proxy` 返回 503。临时覆写为当前 Docker Desktop Socket 后，代理健康，但 Adapter Manager 因 Docker Desktop 不满足 rootless Docker 要求而无法健康启动。
+
+### 已知问题、重测触发与回滚
+
+- 当前 Compose 运行环境不是项目要求的 rootless Docker daemon，Adapter Manager 无法启动；Backend、Frontend、Document Parser、Python Worker、Outbound Gateway 和 Docker Socket Proxy 已构建/运行。需切换到 rootless Docker context 后重新执行整栈启动验证。
+- 未调用真实外部模型供应商，未暴露或写入真实 API Key。
+- 后续修改供应商密钥接口、管理员权限或敏感凭据展示策略时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 007d501`；不涉及数据库迁移。
+
 ## AI 生成页面可用性与使用引导（2026-09-29）
 
 ### Git 基准、范围与交付状态
