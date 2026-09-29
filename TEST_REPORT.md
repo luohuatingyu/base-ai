@@ -10702,3 +10702,35 @@ Commit: e4589863626fb2d5e7975d6a4795d5b8babcf32d
 
 - 本次未联调真实图片或视频供应商，仅验证地址选择、协议路径和安全校验；接入具体供应商时需用其凭据执行端到端生成和轮询。
 - 后续修改供应商字段、媒体协议、迁移或调用路由时，需重新执行后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+## 图片与视频模式素材类型隔离（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `b2a5bfb`
+- 提交说明：Limit advanced modes to video models；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 图片和视频模型按“模型 ID + 输出类型”读取能力；文生模式禁止上传素材，图生视频自动使用首帧，首尾帧、参考图、参考视频、转场和样片模式分别限制素材类型、数量与角色；后端同步拒绝跨类型模式及残留素材。未新增依赖、数据库迁移或外部配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片和视频模式不会串用 | `ai-generation.test.mjs` 的 `AI 生成 page restricts assets by generation mode`；同 ID 模型按当前输出类型读取能力 | 正常、兼容、回归 | 通过 |
+| 文生图、文生视频和样片模式禁止素材 | `ArkGenerationCapabilitiesTest.rejectsAssetsForPromptOnlyModes`；输入素材时返回业务校验错误 | 边界、异常、安全 | 通过 |
+| 视频模式按素材类型和角色校验 | `ArkGenerationCapabilitiesTest.validatesVideoAssetRolesByMode`；图生视频只接受首帧，参考图模式拒绝首尾帧 | 正常、异常、兼容 | 通过 |
+| 后端拒绝跨媒体生成模式 | `MediaGenerationServiceTest.rejectsCrossMediaGenerationModes`；图片请求拒绝视频模式，视频请求拒绝图片模式 | 异常、安全、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=ArkGenerationCapabilitiesTest,MediaGenerationServiceTest test`：**25/25 通过**。
+- 同一 Maven 容器执行完整 `mvn -B -ntp test`：**1044/1044 通过**，失败 0、错误 0、跳过 0。
+- `cd frontend && node --test test/ai-generation.test.mjs test/ai-video-form.test.mjs test/ai-video-navigation.test.mjs`：**98/98 通过**。
+- `cd frontend && npm test`：**全部通过**；覆盖测试 **673/673 通过**，行覆盖率 **98.25%**、分支覆盖率 **82.04%**、函数覆盖率 **95.76%**；生产构建及 E2E **3/3 通过**。
+- `cd frontend && npm run lint`、`npm run typecheck`：均通过。
+- `docker compose up --build -d`：全部镜像构建成功，后端镜像构建阶段完整 Maven 测试 **1044/1044 通过**；启动阶段因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用，但 backend/frontend 容器已完成重建并启动。
+- `git diff --check`：通过。
+
+### 已知问题与下次测试建议
+
+- 当前环境没有可用的供应商 API Key，未完成真实 Seedream/Seedance 请求；获得有效配置后，应分别验证文生图、图生视频、首尾帧和参考视频任务。
+- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理健康状态后，应重新执行 `docker compose up --build -d` 并检查全部容器健康状态。
+- 测试报告基准点在下一次业务代码变更后需要重新执行完整后端测试，并更新本报告。
