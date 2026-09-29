@@ -30,6 +30,19 @@ test('AI 生成 page keeps image and video generation controls', () => {
   assert.match(source, /poll\(result\.id\)/)
 })
 
+/** 每种模式必须声明可接受的素材类型，文生模式不得因残留上传素材改变任务语义。 */
+test('AI 生成 page restricts assets by generation mode', () => {
+  assert.match(source, /const modeInputPolicy = computed\(\(\) => \{/)
+  assert.match(source, /TEXT_TO_VIDEO: \{ kinds: \[\], max: 0 \}/)
+  assert.match(source, /TEXT_TO_IMAGE: \{ kinds: \[\], max: 0 \}/)
+  assert.match(source, /IMAGE_TO_VIDEO: \{ kinds: \['IMAGE'\], max: 1 \}/)
+  assert.match(source, /FIRST_LAST_FRAME_TO_VIDEO: \{ kinds: \['IMAGE'\], max: 2 \}/)
+  assert.match(source, /VIDEO_TRANSITION: \{ kinds: \['VIDEO'\], max: 2 \}/)
+  assert.match(source, /:disabled="assetsDisabled"/)
+  assert.match(source, /function reconcileInputsForMode\(\)/)
+  assert.match(source, /if \(!assetsAllowed\.value\) inputs\.value = \[\]/)
+})
+
 /** 所有已声明的视频任务必须在前端生成与方舟一致的锁定参数。 */
 test('AI 生成 page handles Ark locked and extended video modes', () => {
   assert.match(zhLocale, /STORYBOARD_TO_VIDEO/)
@@ -106,6 +119,15 @@ test('AI 生成 workspace uses selectable sizes and grouped output settings', ()
   assert.match(enLocale, /mediaOptions: 'Generation options'/)
   assert.match(source, /output-setting-group-common/)
   assert.match(source, /options: requestOptions\.value/)
+})
+
+/** 视频输出规格和开关必须按需求分行，避免返回尾帧与生成声音挤在规格选择中。 */
+test('AI 生成 video output groups specs and toggles into separate rows', () => {
+  assert.match(source, /class="output-setting-fields video-output-fields"/)
+  assert.match(source, /class="video-output-row video-output-specs"[\s\S]*generation\.resolution[\s\S]*generation\.ratio[\s\S]*generation\.duration[\s\S]*<\/div>/)
+  assert.match(source, /class="video-output-row video-output-toggles"[\s\S]*generation\.returnLastFrame[\s\S]*generation\.generateAudio[\s\S]*<\/div>/)
+  assert.match(source, /\.video-output-specs \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/)
+  assert.match(source, /\.video-output-toggles,\n\.video-output-extra \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/)
 })
 
 /** 模型、模式和图片/视频输出设置必须使用紧凑网格，避免窄列堆叠出大块空白。 */
