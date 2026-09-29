@@ -85,6 +85,7 @@
       </aside>
 
       <main class="generation-main">
+        <div class="generation-canvas">
         <el-form label-position="top" @submit.prevent="submit">
           <section class="composer-card">
             <div class="section-title-row">
@@ -94,8 +95,13 @@
             <el-form-item>
               <el-input v-model="prompt" class="prompt-input" type="textarea" :rows="6" :placeholder="t('generation.promptPlaceholder')" />
             </el-form-item>
+            <div class="prompt-footer">
+              <span class="prompt-state"><span class="prompt-state-dot"></span>{{ type === 'image_model' ? t('generation.image') : t('generation.video') }}</span>
+              <span>{{ t('generation.submitHint') }}</span>
+            </div>
           </section>
 
+          <div class="generation-input-grid">
           <section class="asset-section">
             <div class="section-title-row">
               <div><span class="card-eyebrow">{{ t('generation.assetsKicker') }}</span><h3>{{ t('generation.assets') }}</h3></div>
@@ -161,6 +167,7 @@
             </div>
             <p v-if="lockedVideoSettings" class="generation-hint">{{ t('generation.lockedSettings') }}</p>
           </section>
+          </div>
 
           <div class="generation-actions">
             <span class="submit-hint">{{ t('generation.submitHint') }}</span>
@@ -189,6 +196,7 @@
           <div v-if="result.outputJson?.errors?.length" class="generation-error generation-alert">{{ t('generation.partialFailure', { count: result.outputJson.errors.length }) }}</div>
           <el-button v-if="result.status === 'RUNNING' || result.status === 'QUEUED'" text @click="poll(result.id)">{{ t('generation.refresh') }}</el-button>
         </section>
+        </div>
       </main>
     </div>
   </div>
@@ -437,8 +445,8 @@ onMounted(loadModels)
 .generation-guide p { margin: 7px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.55; }
 .generation-alert { padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--el-color-danger) 30%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--el-color-danger) 7%, var(--el-bg-color)); }
 
-.generation-layout { display: grid; grid-template-columns: 286px minmax(0, 1fr); gap: 20px; min-height: 620px; }
-.generation-sidebar { display: flex; min-width: 0; flex-direction: column; gap: 14px; }
+.generation-layout { display: grid; grid-template-columns: 292px minmax(0, 1fr); gap: 22px; min-height: 620px; align-items: start; }
+.generation-sidebar { position: sticky; top: 0; display: flex; min-width: 0; flex-direction: column; gap: 14px; }
 .setup-card,
 .history-card,
 .composer-card,
@@ -475,10 +483,11 @@ onMounted(loadModels)
 .history-item-copy small { color: var(--el-text-color-secondary); font-size: 11px; }
 
 .generation-main { min-width: 0; }
+.generation-canvas { display: grid; gap: 14px; min-width: 0; }
 .composer-card,
 .asset-section,
 .options-section { padding: 19px; }
-.composer-card { border-color: color-mix(in srgb, var(--el-color-primary) 16%, var(--el-border-color-lighter)); background: linear-gradient(145deg, color-mix(in srgb, var(--el-color-primary) 3%, var(--el-bg-color)), var(--el-bg-color) 50%); }
+.composer-card { border-color: color-mix(in srgb, var(--el-color-primary) 22%, var(--el-border-color-lighter)); background: linear-gradient(145deg, color-mix(in srgb, var(--el-color-primary) 5%, var(--el-bg-color)), var(--el-bg-color) 50%); }
 .composer-card h3,
 .asset-section h3,
 .options-section h3,
@@ -488,9 +497,14 @@ onMounted(loadModels)
 .prompt-input :deep(.el-textarea__inner) { min-height: 150px !important; padding: 15px 16px; border: 1px solid var(--el-border-color); border-radius: 11px; background: color-mix(in srgb, var(--el-fill-color-light) 70%, var(--el-bg-color)); box-shadow: inset 0 1px 2px rgb(31 48 82 / 3%); line-height: 1.7; transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease; }
 .prompt-input :deep(.el-textarea__inner:hover) { border-color: var(--el-color-primary-light-5); }
 .prompt-input :deep(.el-textarea__inner:focus) { border-color: var(--el-color-primary); background: var(--el-bg-color); box-shadow: 0 0 0 3px var(--el-color-primary-light-9); }
-.asset-section,
-.options-section,
-.generation-result { margin-top: 14px; }
+.prompt-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; color: var(--el-text-color-secondary); font-size: 11px; }
+.prompt-state { display: inline-flex; align-items: center; gap: 7px; color: var(--el-text-color-primary); font-weight: 700; }
+.prompt-state-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--el-color-primary); box-shadow: 0 0 0 4px var(--el-color-primary-light-9); }
+.generation-input-grid { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(300px, .82fr); gap: 14px; align-items: stretch; }
+.generation-input-grid .asset-section,
+.generation-input-grid .options-section { min-width: 0; margin-top: 0; }
+.generation-input-grid .options-section { background: color-mix(in srgb, var(--el-fill-color-light) 34%, var(--el-bg-color)); }
+.generation-result { margin-top: 0; }
 .asset-count { min-width: 48px; padding: 5px 9px; border: 1px solid var(--el-color-primary-light-8); border-radius: 999px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-size: 12px; font-weight: 700; text-align: center; }
 .asset-count.is-full { border-color: var(--el-color-warning-light-8); background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
 .asset-dropzone { display: grid; justify-items: center; gap: 6px; min-height: 148px; margin-top: 15px; padding: 24px 16px; border: 1px dashed color-mix(in srgb, var(--el-color-primary) 52%, var(--el-border-color)); border-radius: 12px; background: linear-gradient(145deg, var(--el-color-primary-light-9), color-mix(in srgb, var(--el-color-primary) 3%, var(--el-bg-color))); color: var(--el-text-color-secondary); text-align: center; cursor: pointer; transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease, transform .2s ease; }
@@ -534,11 +548,11 @@ onMounted(loadModels)
 .output-setting-fields :deep(.el-form-item) { margin-bottom: 0; }
 .output-setting-fields :deep(.el-form-item__label) { color: var(--el-text-color-secondary); font-size: 11px; font-weight: 650; }
 .generation-hint { margin: 12px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.55; }
-.generation-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 16px; padding: 2px 2px 0; }
+.generation-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 0; padding: 13px 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; background: var(--el-fill-color-light); }
 .submit-hint { flex: 1; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.45; }
 .generation-actions :deep(.el-button--primary) { min-width: 112px; }
 
-.generation-result { padding: 19px; }
+.generation-result { padding: 19px; border-color: color-mix(in srgb, var(--el-color-primary) 18%, var(--el-border-color-lighter)); background: linear-gradient(150deg, var(--el-bg-color), color-mix(in srgb, var(--el-color-primary) 3%, var(--el-bg-color))); }
 .result-heading { align-items: center; }
 .result-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-top: 9px; color: var(--el-text-color-secondary); font-size: 12px; }
 .result-meta span + span::before { content: '·'; margin-right: 14px; color: var(--el-border-color); }
@@ -567,6 +581,7 @@ onMounted(loadModels)
 @media (max-width: 1000px) {
   .generation-panel { padding: 18px; }
   .generation-layout { grid-template-columns: 238px minmax(0, 1fr); gap: 16px; }
+  .generation-input-grid { grid-template-columns: 1fr; }
   .output-setting-fields,
   .generation-options.is-video .output-setting-fields { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
 }
@@ -575,6 +590,7 @@ onMounted(loadModels)
   .generation-hero { align-items: stretch; flex-direction: column; min-height: 0; padding: 24px 22px; }
   .generation-type-switch { align-self: flex-start; }
   .generation-layout { grid-template-columns: 1fr; }
+  .generation-sidebar { position: static; }
   .generation-sidebar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
   .history-card { min-height: 0; }
 }
@@ -589,6 +605,7 @@ onMounted(loadModels)
   .workflow-line { flex-basis: 13px; }
   .generation-guide summary { align-items: flex-start; flex-direction: column; gap: 3px; }
   .generation-sidebar { display: flex; }
+  .prompt-footer { align-items: flex-start; flex-direction: column; gap: 6px; }
   .generation-type-switch { width: 100%; }
   .generation-type-switch :deep(.el-radio-button) { flex: 1; }
   .generation-type-switch :deep(.el-radio-button__inner) { min-width: 0; width: 100%; padding: 10px 8px; }

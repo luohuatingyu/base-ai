@@ -115,3 +115,14 @@ test('AI 生成 workspace keeps full-page visual hierarchy and responsive states
   assert.match(source, /@media \(max-width: 780px\)/)
   assert.match(source, /@media \(max-width: 560px\)/)
 })
+
+/** 工作台布局必须将控制栏、提示词、素材/参数双栏和结果预览分成可识别的区域。 */
+test('AI 生成 workspace uses a canvas layout instead of a flat form stack', () => {
+  assert.match(source, /class="generation-canvas"/)
+  assert.match(source, /class="generation-input-grid"/)
+  assert.match(source, /class="prompt-footer"/)
+  assert.match(source, /\.generation-canvas \{ display: grid/)
+  assert.match(source, /\.generation-input-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.18fr\) minmax\(300px, \.82fr\)/)
+  assert.match(source, /\.generation-sidebar \{ position: sticky/)
+  assert.match(source, /\.generation-actions \{ display: flex[\s\S]*border: 1px solid/)
+})
