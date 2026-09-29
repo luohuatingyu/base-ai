@@ -506,7 +506,9 @@ public class MediaGenerationService {
         if (!"video_model".equals(modelType)) return false;
         return Set.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO").contains(mode)
             || com.baseai.platform.modeltype.ArkGenerationCapabilities.PROFILES.stream()
-                .anyMatch(p -> ((List<?>) ArkMediaProtocol.capabilities(p).get("modes")).contains(mode));
+                .map(ArkMediaProtocol::capabilities)
+                .filter(capabilities -> "video_model".equals(capabilities.get("type")))
+                .anyMatch(capabilities -> ((List<?>) capabilities.get("modes")).contains(mode));
     }
 
     /** 校验文本、图片和视频输入的数量、Data URL 格式和解码后大小，拒绝远程 URL 造成的 SSRF。 */
