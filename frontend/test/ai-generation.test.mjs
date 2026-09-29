@@ -191,7 +191,7 @@ test('AI 生成 submit opens a result dialog instead of an inline preview', () =
   assert.match(source, /@click="poll\(selectedHistoryTask\.id\)"/)
 })
 
-/** 工作台布局必须将控制栏、提示词、素材/参数双栏和结果预览分成可识别的区域。 */
+/** 工作台布局必须将控制栏、提示词和素材/参数双栏分成可识别的区域。 */
 test('AI 生成 workspace uses a canvas layout instead of a flat form stack', () => {
   assert.match(source, /class="generation-canvas"/)
   assert.match(source, /class="generation-input-grid"/)
