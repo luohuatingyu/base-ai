@@ -1,3 +1,39 @@
+## 媒体供应商完整地址拼接修复（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `49e16f8`
+- 提交说明：Fix media endpoint path resolution；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 图片和视频供应商地址现在同时兼容 API 根地址与已包含协议路径的完整地址，避免重复追加生成路径；异步任务查询会在完整生成地址下切换到对应状态地址。
+- 未修改认证规则、数据库结构、前端请求格式或第三方依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 已配置完整图片地址时不重复追加 `/images/generations` | `MediaGenerationServiceTest.resolvesConfiguredMediaEndpointWithoutDuplicatingProtocolPath` 验证完整地址保持不变 | 正常、回归 | 通过 |
+| 配置 API 根地址时仍能拼出图片生成地址 | 同一测试验证根地址加图片协议路径 | 兼容、回归 | 通过 |
+| Ark 视频轮询只追加任务 ID | 同一测试验证 `/contents/generations/tasks` 完整地址生成正确状态 URL | 正常、边界、兼容 | 通过 |
+| 通用视频完整生成地址能切换到状态地址 | 同一测试验证 `/videos/generations` 到 `/videos/{id}` 的路径转换 | 兼容、回归 | 通过 |
+| URL 查询参数保持不变 | 同一测试验证完整图片地址的 query 保留 | 边界、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=MediaGenerationServiceTest#resolvesConfiguredMediaEndpointWithoutDuplicatingProtocolPath test`：**1/1 通过**。
+- 同一 Maven 容器执行媒体相关回归：`-Dtest=MediaGenerationServiceTest,ArkMediaProtocolTest,ArkGenerationCapabilitiesTest,ProviderEndpointTest`：**37/37 通过**。
+- 同一 Maven 容器执行完整后端套件：`mvn -B -ntp test`：**1047/1047 通过**，失败 0、错误 0、跳过 0。
+- `docker compose build backend`：后端镜像构建成功，包含完整 Maven **1047/1047 通过**。
+- `docker compose up -d --no-deps backend`：后端容器应用新镜像并 healthy；`curl http://localhost:8080/health` 返回 HTTP 200 和 `{"status":"UP"}`。
+- `docker compose up --build -d`：已执行；整栈仍受既有 `baseai-local-docker-socket-proxy` unhealthy 和 `adapter-manager` 重启问题影响，非本次代码或端口占用；后端已单独完成重建并启动。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 覆盖媒体生成地址解析、Ark 图片/视频协议、通用供应商端点兼容及现有媒体输入校验。
+- curl 调用仍必须携带登录会话 Cookie；CSRF Token 不能替代登录认证，本次未改变该安全规则。
+- 尚未使用真实供应商 API Key 进行外部生图联调；配置有效凭据后应重新提交一次 `modelId=3` 图片任务，确认供应商返回图片 URL。
+- Docker Socket Proxy 的既有健康检查问题仍需单独修复，修复后应重新执行完整 Compose 健康检查。
+
 ## 管理员勾选类型作为媒体能力权威（2026-09-29）
 
 ### Git 基准、范围与交付状态
