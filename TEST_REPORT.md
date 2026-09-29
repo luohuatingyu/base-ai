@@ -1,5 +1,41 @@
 # 最近分支覆盖测试报告
 
+## AI 生成图片与视频工作台 UI 优化（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `6da98f8`
+- 提交说明：Improve AI generation workspace UI；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- AI 生成页保留 Seedream 图片和 Seedance 视频接口、能力目录、素材角色与异步轮询；重做创作工作台的模式切换、三步流程、提示词、拖拽素材、参数和结果展示。
+- 图片结果使用可预览媒体卡片，视频结果使用播放器；历史任务、运行中、失败和部分失败状态均提供可读反馈。新增中英文文案和响应式布局，没有新增依赖或数据库变更。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 图片和视频入口清晰可切换，工作流层级明确 | `frontend/test/ai-generation.test.mjs` 的 `AI 生成 workspace presents media modes and workflow hierarchy` 检查模式切换、三步流程和中英文文案 | 正常、兼容 | 通过 |
+| 图片和视频输入均支持可发现的素材上传与预览 | 同一文件的 `AI 生成 workspace exposes asset dropzone and result states` 检查拖拽区域、上传处理、结果卡片和异步状态 | 正常、边界、响应式 | 通过 |
+| 图片组图、图层、透明背景及视频首尾帧、音频和锁定参数保持兼容 | 既有 AI 生成契约测试检查 `sequential_image_generation_options`、`layer_decomposition`、`first_frame`、`last_frame`、`generate_audio`、轮询和 Ark 锁定参数 | 回归、兼容 | 通过 |
+| 任务历史和结果状态可识别 | 页面使用本地化状态标签、历史状态卡片、运行中空状态和失败提示；前端完整套件覆盖页面契约及本地化回归 | 异常、恢复、兼容 | 通过 |
+| 移动端布局和生产构建可用 | `npm run build`、前端 E2E 3/3；响应式断点覆盖工作台、素材和结果卡片 | 响应式、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/ai-generation.test.mjs`：**7/7 通过**。
+- `cd frontend && npm test`：lint、类型检查、覆盖测试 **665/665 通过**；覆盖率行 **98.24%**、分支 **82.06%**、函数 **95.74%**；生产构建及 E2E **3/3 通过**。
+- `git diff --check`：通过。
+- `docker compose up --build -d`：9 个镜像全部构建成功；启动阶段因既有 `baseai-local-docker-socket-proxy` unhealthy 导致整栈依赖失败，非端口占用或本次前端改动错误。随后 `docker compose up -d --no-deps frontend` 成功，Frontend healthy；Backend、Document Parser、Python Worker 和 Outbound Gateway healthy。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 本次只修改前端页面、语言资源和前端契约测试，未修改 `backend/src/main/java/`，不触发后端 Maven 自动重测条件。
+- 未调用真实 Seedream/Seedance 供应商；配置有效 API Key 后仍需执行真实图片和视频联调，重点确认外部媒体 URL、异步时延和供应商错误提示。
+- 当前 Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；切换到项目要求的 rootless Docker context 或修复代理后，应重新执行 `docker compose up --build -d` 和健康检查。
+- 后续修改媒体能力、生成协议或后端任务状态时，应重跑后端完整 Maven、前端完整 npm 套件及 Compose 重建。
+- 回滚代码可执行 `git revert 6da98f8`；不涉及数据库迁移。
+
+# 最近分支覆盖测试报告
+
 ## 管理员编辑供应商时回显 API Key（2026-09-29）
 
 ### Git 基准、范围与交付状态
