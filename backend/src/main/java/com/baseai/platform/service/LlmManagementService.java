@@ -622,6 +622,11 @@ public class LlmManagementService {
         if(requestedTypes.stream().anyMatch(LlmModel::isGenerationType) && requestedTypes.size() != 1)
             throw new BusinessException("llm.modelTypeCombinationInvalid");
         model.setSupportedModelTypes(requestedTypes);
+        String profile = command.generationProfile() == null ? model.getGenerationProfile() : command.generationProfile().trim();
+        if (profile != null && !profile.isBlank() && (!com.baseai.platform.modeltype.ArkMediaProtocol.profiles().contains(profile)
+            || !requestedTypes.equals(List.of(com.baseai.platform.modeltype.ArkMediaProtocol.capabilities(profile).get("type")))))
+            throw new BusinessException("llm.generationRequestInvalid");
+        model.setGenerationProfile(profile == null ? "" : profile);
         model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT)); // 默认MIDDLE能力级别
         model.setThinkingLevels(normalizeThinkingLevels(command.thinkingLevels()));
         model.setEnabled(command.enabled()==null||command.enabled()); // 默认启用
@@ -683,7 +688,7 @@ public class LlmManagementService {
         List<String> keys=Arrays.stream(cryptoService.decrypt(provider.getApiKeysEncrypted()).split("[,\\n]")).map(String::trim).filter(value->!value.isBlank()).toList();
         String thinkingValue=thinkingLevel==null?null:thinkingMappings(model.getThinkingLevels()).get(thinkingLevel);
         if(thinkingLevel!=null&&blank(thinkingValue))return null;
-        return new WorkerCandidate(provider.getCode(),endpoint,keys,model.getModelName(),provider.getConcurrencyLimit(),provider.getConcurrencyLevel(),provider.getTimeoutSeconds(),provider.getThinkingParameter(),thinkingValue,model.getSupportedModelTypes());
+        return new WorkerCandidate(provider.getCode(),endpoint,keys,model.getModelName(),provider.getConcurrencyLimit(),provider.getConcurrencyLevel(),provider.getTimeoutSeconds(),provider.getThinkingParameter(),thinkingValue,model.getSupportedModelTypes(),model.getGenerationProfile());
     }
     /**
      * 构建供应商视图对象（内部方法）
@@ -810,13 +815,23 @@ public class LlmManagementService {
         public ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){this(id,code,name,baseUrl,apiKeys,concurrencyLimit,concurrencyLevel,timeoutSeconds,thinkingParameter,enabled,null,null,true,true);}
     }
     public record ProviderApiKeysView(Long id,String apiKeys){}
-    public record ModelCommand(String code,String name,Long providerId,String modelName,List<String> supportedModelTypes,String capabilityLevel,String thinkingLevels,Boolean enabled){}
+    public record ModelCommand(String code,String name,Long providerId,String modelName,List<String> supportedModelTypes,String capabilityLevel,String thinkingLevels,Boolean enabled,String generationProfile){
+        /** 保持既有调用方构造协议兼容，未传画像时保留已有配置。 */
+        public ModelCommand(String code,String name,Long providerId,String modelName,List<String> types,String capability,String thinking,Boolean enabled) {
+            this(code,name,providerId,modelName,types,capability,thinking,enabled,null);
+        }
+    }
     public record RouteCommand(String featureCode,String name,List<Long> providerIds,String capabilityLevel,Boolean enableThinking,String thinkingLevel,Boolean enabled){}
     public record RouteSyncCommand(Long routeId,List<Long> providerIds){}
     public record RouteBatchSyncCommand(List<Long> routeIds){}
     public record RouteView(Long id,String featureCode,String name,List<Long> providerIds,String capabilityLevel,String thinkingLevel,Boolean enableThinking,Boolean enabled){}
     public record RouteSyncView(Long routeId,List<ModelHealthView> results){}
-    public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,@JsonIgnore List<String> supportedModelTypes){}
+    public record WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,@JsonIgnore List<String> supportedModelTypes,@JsonIgnore String generationProfile){
+        /** 兼容历史聊天及通用供应商候选项。 */
+        public WorkerCandidate(String providerCode,String baseUrl,List<String> apiKeys,String model,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,String thinkingValue,List<String> types) {
+            this(providerCode,baseUrl,apiKeys,model,concurrencyLimit,concurrencyLevel,timeoutSeconds,thinkingParameter,thinkingValue,types,"");
+        }
+    }
     public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
     public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
     public record ModelTypeOption(String value,String label){}

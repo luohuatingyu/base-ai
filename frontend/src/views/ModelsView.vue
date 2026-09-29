@@ -29,6 +29,7 @@
         <el-form-item :label="t('models.provider')"><el-select v-model="form.providerId"><el-option v-for="item in providers" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
         <el-form-item :label="t('models.identifier')"><el-input v-model="form.modelName" /></el-form-item>
         <el-form-item :label="t('models.modelType')"><el-checkbox-group v-model="form.supportedModelTypes"><el-checkbox v-for="type in modelTypes" :key="type.value" :label="type.value" :disabled="modelTypeDisabled(type.value)">{{ localizeModelType(type.value, modelTypes, t) }}</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item v-if="form.supportedModelTypes.some(isGenerationType)" :label="t('models.generationProfile')"><el-select v-model="form.generationProfile" clearable filterable><el-option v-for="profile in generationProfiles" :key="profile.profile" :label="profile.profile" :value="profile.profile" /></el-select></el-form-item>
         <el-form-item :label="t('models.capability')"><el-select v-model="form.capabilityLevel"><el-option :label="t('models.low')" value="LOW" /><el-option :label="t('models.middle')" value="MIDDLE" /><el-option :label="t('models.high')" value="HIGH" /></el-select></el-form-item>
         <el-form-item :label="t('models.thinkingLevels')" class="thinking-level-form-item">
           <div class="thinking-mapping-editor">
@@ -67,13 +68,14 @@ const { t } = useI18n()
 const rows = ref([])
 const providers = ref([])
 const modelTypes = ref([])
+const generationProfiles = ref([])
 const visible = ref(false)
 const testVisible = ref(false)
 const testModel = ref(null)
 const testLevels = ref([])
 const testThinkingLevel = ref('')
 const thinkingLevels = THINKING_LEVELS
-const form = reactive({ id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: ['text_model'], capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true })
+const form = reactive({ id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: ['text_model'], generationProfile: '', capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true })
 const thinkingMapping = reactive({})
 
 /** 复制后端返回的模型类型集合，避免编辑状态直接修改列表数据。 */
@@ -95,16 +97,17 @@ function thinkingLevelLabel(level) { return `${t(`models.thinkingLevelLabels.${l
 /** 将后端映射转换为列表使用的有序展示条目。 */
 function mappingEntries(value) { return thinkingMappingEntries(value) }
 async function load() {
-  ;[rows.value, providers.value, modelTypes.value] = await Promise.all([
+  ;[rows.value, providers.value, modelTypes.value, generationProfiles.value] = await Promise.all([
     http.get('/models').then(r => r.data),
     http.get('/models/providers').then(r => r.data),
-    http.get('/models/model-types').then(r => r.data)
+    http.get('/models/model-types').then(r => r.data),
+    http.get('/ai/generation/profiles').then(r => r.data).catch(() => [])
   ])
   rows.value.forEach(row => { row.supportedModelTypes = normalizeTypes(row) })
 }
 /** 打开新增或编辑窗口，并回显模型支持类型。 */
 function open(row) {
-  Object.assign(form, row ? { ...row, supportedModelTypes: normalizeTypes(row) } : { id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: modelTypes.value.length ? [modelTypes.value[0].value] : ['text_model'], capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true })
+  Object.assign(form, row ? { ...row, supportedModelTypes: normalizeTypes(row), generationProfile: row.generationProfile || '' } : { id: null, code: '', name: '', providerId: null, modelName: '', supportedModelTypes: modelTypes.value.length ? [modelTypes.value[0].value] : ['text_model'], generationProfile: '', capabilityLevel: 'MIDDLE', thinkingLevels: '', enabled: true })
   Object.assign(thinkingMapping, Object.fromEntries(thinkingLevels.map(level => [level, ''])), parseThinkingMappings(form.thinkingLevels))
   visible.value = true
 }

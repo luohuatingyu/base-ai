@@ -16,6 +16,8 @@ public class LlmModel {
     @Column(nullable = false, length = 120) private String name;
     @Column(nullable = false) private Long providerId;
     @Column(nullable = false, length = 160) private String modelName;
+    /** 自定义接入点使用显式能力画像；空值按官方模型标识识别。 */
+    @Column(length = 80) private String generationProfile = "";
     /** 模型支持的类型编码集合，使用逗号分隔存放在 model_type 列中。 */
     @Column(name = "model_type", nullable = false, length = 1000) private String supportedModelTypes = "text_model";
     @Column(nullable = false, length = 24) private String capabilityLevel = "MIDDLE";
@@ -31,6 +33,10 @@ public class LlmModel {
     public String getName() { return name; } public void setName(String value) { name=value; }
     public Long getProviderId() { return providerId; } public void setProviderId(Long value) { providerId=value; }
     public String getModelName() { return modelName; } public void setModelName(String value) { modelName=value; }
+    /** 读取媒体生成模型的能力画像。 */
+    public String getGenerationProfile() { return generationProfile; }
+    /** 保存已校验的媒体生成能力画像。 */
+    public void setGenerationProfile(String value) { generationProfile=value; }
     /** 返回规范化且去重后的模型类型编码集合。 */
     @JsonProperty("supportedModelTypes")
     public List<String> getSupportedModelTypes() { return normalizeModelTypes(supportedModelTypes==null?List.of():List.of(supportedModelTypes)); }

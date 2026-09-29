@@ -44,6 +44,18 @@ class ArkMediaProtocolTest {
         assertEquals("720p", request.get("resolution"));
     }
 
+    /** 文本文件和草稿任务分别转换为实际文本与安全任务编号。 */
+    @Test
+    void mapsTextAndDraftTaskInputs() {
+        Map<String, Object> request = ArkMediaProtocol.request("video_model", "doubao-seedance-2-0-260128",
+            "seedance-2.0", null, List.of(
+                input("TEXT", "prompt.txt", "text/plain", "data:text/plain;base64,Y2luZW1hdGlj", null),
+                input("TASK", "task.txt", "text/plain", "draft_task_123", null)), Map.of());
+        List<?> content = (List<?>) request.get("content");
+        assertEquals("cinematic", ((Map<?, ?>) content.get(0)).get("text"));
+        assertEquals("draft_task_123", ((Map<?, ?>) ((Map<?, ?>) content.get(1)).get("draft_task")).get("id"));
+    }
+
     /** 能力目录需要给前端完整的模型差异和参数描述。 */
     @Test
     void exposesCapabilitiesForKnownProfiles() {

@@ -7,7 +7,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist')
 const agentRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), 'agent-dist')
 const port = Number(process.env.PORT || 80)
 const backend = new URL(process.env.BACKEND_URL || 'http://backend:8080')
-const maxRequestBytes = Number(process.env.APP_MAX_REQUEST_BYTES || 20971520)
+const maxRequestBytes = Number(process.env.APP_MAX_REQUEST_BYTES || 67108864)
 const configuredRouteHealthCheckIntervalMs = Number(process.env.LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS || 3600000)
 const platformConfig = {
   code: process.env.APP_PLATFORM_CODE || 'ai-platform',

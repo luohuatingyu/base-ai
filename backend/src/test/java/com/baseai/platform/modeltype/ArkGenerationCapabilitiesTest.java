@@ -1,0 +1,51 @@
+package com.baseai.platform.modeltype;
+
+import com.baseai.platform.common.BusinessException;
+import org.junit.jupiter.api.Test;
+import java.util.List;
+import java.util.Map;
+import static org.junit.jupiter.api.Assertions.*;
+
+/** 验证图片和视频按模型版本开放模式，并拒绝跨模式素材组合。 */
+class ArkGenerationCapabilitiesTest {
+    /** Seedream lite 支持单图、多图和组图，pro 支持图层而不支持组图。 */
+    @Test
+    void describesVersionSpecificImageModes() {
+        var lite = ArkGenerationCapabilities.describe("doubao-seedream-4-5-251128");
+        var pro = ArkGenerationCapabilities.describe("doubao-seedream-5-0-pro-260628");
+        assertTrue(((List<?>) lite.get("modes")).contains("MULTI_IMAGE_TO_GROUP"));
+        assertTrue((Boolean) ((Map<?, ?>) lite.get("features")).get("groups"));
+        assertTrue(((List<?>) pro.get("modes")).contains("LAYER_DECOMPOSITION"));
+        assertFalse(((Map<?, ?>) pro.get("features")).containsKey("groups") && Boolean.TRUE.equals(((Map<?, ?>) pro.get("features")).get("groups")));
+    }
+
+    /** 首尾帧、视频参考和样片模式均由 Seedance 2.5 能力目录声明。 */
+    @Test
+    void describesVersionSpecificVideoModes() {
+        var value = ArkGenerationCapabilities.describe("doubao-seedance-2-5-260628");
+        assertTrue(((List<?>) value.get("modes")).containsAll(List.of("TEXT_TO_VIDEO", "FIRST_LAST_FRAME_TO_VIDEO", "EDIT_VIDEO", "EXTEND_VIDEO", "DRAFT_TO_VIDEO")));
+        assertEquals(2, value.get("durationMin"));
+        assertEquals(50, value.get("totalLimit"));
+    }
+
+    /** 多图融合、组图数量和首尾帧角色必须满足供应商边界。 */
+    @Test
+    void validatesImageAndFrameCombinations() {
+        var images = List.of(input("IMAGE", "reference_image"), input("IMAGE", "reference_image"));
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedream-4-5-251128", "image_model", "MULTI_IMAGE_TO_GROUP", "combine", images, Map.of("sequential_image_generation_options", Map.of("max_images", 3))));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedream-4-5-251128", "image_model", "MULTI_IMAGE_TO_GROUP", "combine", images, Map.of("sequential_image_generation_options", Map.of("max_images", 14))));
+        var frame = List.of(input("IMAGE", "first_frame"), input("IMAGE", "last_frame"));
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2.5", "video_model", "FIRST_LAST_FRAME_TO_VIDEO", "transition", frame, Map.of("ratio", "adaptive", "duration", 5)));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2.5", "video_model", "FIRST_LAST_FRAME_TO_VIDEO", "transition", List.of(input("IMAGE", "last_frame")), Map.of()));
+    }
+
+    /** 非法参数、角色和未经授权的草稿引用在网络调用前被阻止。 */
+    @Test
+    void rejectsUnsafeCombinations() {
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2.5", "video_model", "TEXT_TO_VIDEO", "x", List.of(input("VIDEO", "reference_video")), Map.of("ratio", "bad")));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2.5", "video_model", "DRAFT_TO_VIDEO", "", List.of(input("TASK", "")), Map.of("duration", 5)));
+    }
+
+    /** 构造协议层输入，内容本身由服务层另行验证。 */
+    private static Map<String, Object> input(String kind, String role) { return Map.of("kind", kind, "role", role, "data", "data:image/png;base64,YQ=="); }
+}

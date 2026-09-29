@@ -308,8 +308,8 @@ test('生成上传拒绝空文件、超限文件和 MIME 伪装；读取失败�
   for (const file of [
     { name: 'empty.txt', type: 'text/plain', size: 0 },
     { name: 'large.txt', type: 'text/plain', size: 1024 * 1024 + 1 },
-    { name: 'large.png', type: 'image/png', size: 10 * 1024 * 1024 + 1 },
-    { name: 'large.mp4', type: 'video/mp4', size: 6 * 1024 * 1024 + 1 },
+    { name: 'large.png', type: 'image/png', size: 30 * 1024 * 1024 + 1 },
+    { name: 'large.mp4', type: 'video/mp4', size: 50 * 1024 * 1024 + 1 },
     { name: 'fake.txt', type: 'text/html', size: 1 }
   ]) await state.onGenerationInputSelected({ target: { files: [file], value: '' } })
   assert.equal(state.generationInputs.value.length, 0)

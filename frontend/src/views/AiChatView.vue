@@ -23,7 +23,7 @@
       <el-tab-pane :label="t('chat.conversationTab')" name="conversation">
         <!-- 紧凑模型摘要固定在消息区上方，完整设置通过抽屉展示。 -->
         <div class="model-toolbar">
-          <div class="model-summary"><span class="model-summary-type">{{ generationMode === 'generation' ? localizeModelType(generationType, generationTypes, t) : localizeModelType(modelType, modelTypes, t) }}</span><span class="model-summary-value" :title="generationMode === 'generation' ? (generationModels.find(model => model.id === generationModelId && model.modelType === generationType)?.name || t('chat.selectModel')) : mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider')">{{ generationMode === 'generation' ? (generationModels.find(model => model.id === generationModelId && model.modelType === generationType)?.name || t('chat.selectModel')) : mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider') }}</span></div>
+          <div class="model-summary"><span class="model-summary-type">{{ localizeModelType(modelType, modelTypes, t) }}</span><span class="model-summary-value" :title="mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider')">{{ mode === 'multi' ? (filteredRoutes.find(route => route.featureCode === featureCode)?.name || t('chat.defaultPool')) : providerId ? (currentModels.find(model => model.id === modelId)?.name || t('chat.selectModel')) : t('chat.selectProvider') }}</span></div>
           <el-button size="small" :icon="Setting" aria-haspopup="dialog" :aria-expanded="settingsOpen" @click="settingsOpen = true">{{ t('chat.settings') }}</el-button>
         </div>
 
@@ -88,23 +88,12 @@
         <el-button circle size="small" type="danger" :aria-label="t('chat.removeImage')" @click="removeImage(image)">×</el-button>
       </div>
         </div>
-        <div v-if="generationMode === 'generation' && generationInputs.length" class="pending-generation-inputs">
-          <div v-for="input in generationInputs" :key="input.fileName + input.dataUrl" class="pending-generation-input">
-            <img v-if="input.kind === 'IMAGE'" :src="input.dataUrl" :alt="input.fileName" />
-            <video v-else-if="input.kind === 'VIDEO'" controls muted preload="metadata" :src="input.dataUrl" />
-            <audio v-else-if="input.kind === 'AUDIO'" controls :src="input.dataUrl" />
-            <span v-else class="pending-generation-text" :title="input.fileName">{{ input.fileName }}</span>
-            <el-button circle size="small" type="danger" :aria-label="t('chat.removeGenerationInput')" @click="removeGenerationInput(input)">×</el-button>
-          </div>
-        </div>
         <el-input ref="questionInput" v-model="prompt" class="chat-question-input" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" resize="none" :aria-label="t('chat.placeholder')" :placeholder="t('chat.placeholder')" @keydown.meta.enter.prevent="sendFromKeyboard" @keydown.ctrl.enter.prevent="sendFromKeyboard" />
         <div class="chat-actions">
           <div class="chat-action-buttons">
             <el-button text :icon="Tools" aria-haspopup="dialog" :aria-expanded="toolsOpen" @click="toolsOpen = true">{{ t('chat.tools') }}<span v-if="selectedTools.length"> · {{ selectedTools.length }}</span></el-button>
             <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
             <el-button text :icon="Picture" :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" :title="modelType === 'vision_model' ? t('chat.imageUploadHint') : t('chat.imageVisionOnly')" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
-            <input ref="generationInput" type="file" :accept="generationFileAccept" multiple hidden @change="onGenerationInputSelected" />
-            <el-button v-if="generationMode === 'generation'" text :icon="Picture" :disabled="generationInputs.length >= generationInputLimit" :title="t('chat.generationInputHint')" @click="openGenerationInputPicker">{{ t('chat.uploadGenerationInput') }}</el-button>
             <span class="composer-shortcut">{{ t('chat.shortcutHint') }}</span><el-button v-if="generating" class="stop-button" :icon="VideoPause" @click="stopGeneration">{{ t('chat.stopGeneration') }}</el-button><el-button v-else type="primary" :icon="Top" :disabled="!canSend" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
           </div>
         </div><div class="composer-status" aria-live="polite">{{ optionsLoading ? t('chat.loadingOptions') : serverGenerating && !generating ? t('chat.waitingForSync') : generating ? t('chat.draftHint') : t('chat.composerHint') }}</div>
@@ -134,34 +123,9 @@
         <el-form class="model-settings-form" :inline="true" size="small" :disabled="loading">
           <h3 class="model-section-title">{{ t('chat.modelSelection') }}</h3>
           <div class="model-basic-fields" :class="mode === 'single' ? 'single-model' : 'multi-model'">
-            <el-form-item :label="t('chat.callType')">
-              <el-radio-group v-model="generationMode" @change="onGenerationModeChange"><el-radio-button value="chat">{{ t('chat.chatCall') }}</el-radio-button><el-radio-button value="generation">{{ t('chat.mediaGeneration') }}</el-radio-button></el-radio-group>
-            </el-form-item>
-            <el-form-item v-if="generationMode === 'chat'" :label="t('chat.modelType')">
+            <el-form-item :label="t('chat.modelType')">
               <el-radio-group v-model="modelType" @change="onModelTypeChange"><el-radio-button v-for="type in modelTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, modelTypes, t) }}</el-radio-button></el-radio-group>
             </el-form-item>
-            <el-form-item v-if="generationMode === 'generation'" :label="t('chat.generationType')">
-              <el-radio-group v-model="generationType" @change="onGenerationTypeChange"><el-radio-button v-for="type in generationTypes" :key="type.value" :value="type.value">{{ localizeModelType(type.value, generationTypes, t) }}</el-radio-button></el-radio-group>
-            </el-form-item>
-            <el-form-item v-if="generationMode === 'generation'" :label="t('chat.model')">
-              <el-select v-model="generationModelId" :placeholder="t('chat.selectModel')" filterable><el-option v-for="model in generationModels.filter(item => item.modelType === generationType)" :key="model.id + ':' + model.modelType" :value="model.id" :label="model.name + ' (' + model.modelName + ')'" /></el-select>
-            </el-form-item>
-            <div v-if="generationMode === 'generation' && generationModelId" class="media-generation-options">
-              <h3 class="model-section-title">{{ t('chat.mediaOptions') }}</h3>
-              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaSize')"><el-input v-model="generationOptions.size" placeholder="2K / 2048x2048" /></el-form-item>
-              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaResponseFormat')"><el-select v-model="generationOptions.response_format" clearable><el-option value="url" label="URL" /><el-option value="b64_json" label="Base64" /></el-select></el-form-item>
-              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaGroups')"><el-switch v-model="imageGroupEnabled" /><el-input-number v-if="imageGroupEnabled" v-model="generationOptions.sequential_image_generation_options.max_images" :min="1" :max="15" /></el-form-item>
-              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaStream')"><el-switch v-model="generationOptions.stream" /></el-form-item>
-              <el-form-item v-if="generationType === 'image_model'" :label="t('chat.mediaSeed')"><el-input-number v-model="generationOptions.seed" :min="0" :max="2147483647" controls-position="right" /></el-form-item>
-              <template v-else>
-                <el-form-item :label="t('chat.mediaResolution')"><el-select v-model="generationOptions.resolution" clearable><el-option v-for="value in ['480p','720p','1080p','4k']" :key="value" :value="value" :label="value" /></el-select></el-form-item>
-                <el-form-item :label="t('chat.mediaRatio')"><el-input v-model="generationOptions.ratio" placeholder="16:9" /></el-form-item>
-                <el-form-item :label="t('chat.mediaDuration')"><el-input-number v-model="generationOptions.duration" :min="1" :max="60" controls-position="right" /></el-form-item>
-                <el-form-item :label="t('chat.mediaAudio')"><el-switch v-model="generationOptions.generate_audio" /></el-form-item>
-                <el-form-item :label="t('chat.mediaLastFrame')"><el-switch v-model="generationOptions.return_last_frame" /></el-form-item>
-                <el-form-item :label="t('chat.mediaDraft')"><el-switch v-model="generationOptions.draft" /></el-form-item>
-              </template>
-            </div>
             <div class="mode-field">
               <span class="mode-field-label">{{ t('chat.mode') }}</span>
               <div class="mode-switch" role="radiogroup" :aria-label="t('chat.mode')">
@@ -322,10 +286,10 @@ const generationInputs = ref([])
 const loading = ref(false)
 const MAX_IMAGES = 4
 const MAX_GENERATION_INPUTS = 50
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
-const VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime'])
-const MAX_GENERATION_VIDEO_SIZE = 6 * 1024 * 1024
+const MAX_IMAGE_SIZE = 30 * 1024 * 1024
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff', 'image/gif', 'image/heic', 'image/heif'])
+const VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v'])
+const MAX_GENERATION_VIDEO_SIZE = 50 * 1024 * 1024
 const AUDIO_TYPES = new Set(['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'])
 const MAX_GENERATION_AUDIO_SIZE = 15 * 1024 * 1024
 const MAX_PROMPT_FILE_SIZE = 1024 * 1024
@@ -341,6 +305,7 @@ const generationTypes = [{ value: 'image_model', label: '图片生成模型' }, 
 const generationModels = ref([])
 const generationModelId = ref(null)
 const generationOptions = ref({ sequential_image_generation_options: {} })
+const generationAdvancedOptions = ref('')
 const imageGroupEnabled = ref(false)
 const enableThinking = ref(false)
 const thinkingLevel = ref('MEDIUM')
@@ -357,13 +322,16 @@ const filteredProviders = computed(() => providers.value.filter(provider => prov
 const currentModels = computed(() => (providers.value.find(p => p.id === providerId.value)?.models || []).filter(matchesType))
 const generationModelOptions = computed(() => (Array.isArray(generationModels.value) ? generationModels.value : []).filter(model => model.modelType === generationType.value))
 const generationInputLimit = computed(() => MAX_GENERATION_INPUTS)
-const generationFileAccept = 'text/plain,text/markdown,.txt,.md,image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav'
+const generationFileAccept = 'text/plain,text/markdown,.txt,.md,image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,video/mp4,video/webm,video/quicktime,video/x-m4v,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav'
 const canGenerationSend = computed(() => optionsReady.value && !loading.value && !serverGenerating.value && !!generationModelId.value
   && (!!prompt.value.trim() || generationInputs.value.length > 0))
 
 const canSend = computed(() => generationMode.value === 'generation' ? canGenerationSend.value : optionsReady.value && !loading.value && !serverGenerating.value && !!prompt.value.trim()
   && (mode.value === 'single' ? !!modelId.value : featureCode.value
     ? filteredRoutes.value.some(route => route.featureCode === featureCode.value) : defaultRouteSupportsType.value))
+
+// 生成逻辑已迁移到 AiGenerationView，保留这些兼容绑定供旧会话数据恢复和历史测试使用。
+void [generationTypes, generationFileAccept, onGenerationModeChange, onGenerationTypeChange, openGenerationInputPicker, onGenerationInputSelected, removeGenerationInput]
 
 const toolsLocked = computed(() => loading.value || serverGenerating.value)
 const toolGroups = computed(() => [
@@ -512,6 +480,7 @@ function onGenerationModeChange() {
 function onGenerationTypeChange() {
   if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
   generationOptions.value = { sequential_image_generation_options: {} }
+  generationAdvancedOptions.value = ''
   imageGroupEnabled.value = false
 }
 /** 切换模型来源时只保留当前模式需要的配置，避免隐藏字段继续影响请求。 */
@@ -600,6 +569,7 @@ async function onGenerationInputSelected(event) {
     const maxSize = kind === 'TEXT' ? MAX_PROMPT_FILE_SIZE : kind === 'IMAGE' ? MAX_IMAGE_SIZE : kind === 'VIDEO' ? MAX_GENERATION_VIDEO_SIZE : MAX_GENERATION_AUDIO_SIZE
     if (!kind || !allowed.has(contentType)) { ElMessage.warning(t('chat.generationInputType')); continue }
     if (file.size <= 0 || file.size > maxSize) { ElMessage.warning(t('chat.generationInputSize')); continue }
+    if (generationInputs.value.some(input => input.fileName === file.name && input.contentType === contentType)) { ElMessage.warning(t('chat.generationInputType')); continue }
     try {
       const dataUrl = await readMediaFile(file)
       generationInputs.value.push({ kind, fileName: file.name, contentType, dataUrl: dataUrl.replace(/^data:[^,]*,/, `data:${contentType};base64,`) })
@@ -979,7 +949,15 @@ function normalizedGenerationOptions() {
   const source = { ...generationOptions.value }
   if (imageGroupEnabled.value) source.sequential_image_generation = 'auto'
   else { delete source.sequential_image_generation; delete source.sequential_image_generation_options }
-  return Object.fromEntries(Object.entries(source).filter(([key, value]) => value !== undefined && value !== null && value !== ''))
+  const options = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined && value !== null && value !== ''))
+  if (generationAdvancedOptions.value.trim()) {
+    let advanced
+    try { advanced = JSON.parse(generationAdvancedOptions.value) }
+    catch { throw new Error(t('chat.mediaAdvancedInvalid')) }
+    if (!advanced || Array.isArray(advanced) || typeof advanced !== 'object') throw new Error(t('chat.mediaAdvancedInvalid'))
+    Object.assign(options, advanced)
+  }
+  return options
 }
 </script>
 
