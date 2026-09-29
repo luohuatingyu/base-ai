@@ -201,6 +201,40 @@
         </div>
       </main>
     </div>
+
+    <el-dialog
+      v-model="historyDialogVisible"
+      class="generation-history-dialog"
+      :title="t('generation.history')"
+      width="min(860px, calc(100vw - 32px))"
+      destroy-on-close
+      @closed="clearHistorySelection"
+    >
+      <div v-if="selectedHistoryTask" class="history-dialog-content">
+        <div class="result-heading history-dialog-heading">
+          <div>
+            <span class="card-eyebrow">{{ t('generation.resultKicker') }}</span>
+            <h3>{{ modeLabel(selectedHistoryTask.generationMode || '') }}</h3>
+          </div>
+          <el-tag :type="statusType(selectedHistoryTask.status)" effect="light">{{ statusLabel(selectedHistoryTask.status) }}</el-tag>
+        </div>
+        <div class="result-meta">
+          <span v-if="selectedHistoryTask.modelName">{{ selectedHistoryTask.modelName }}</span>
+          <span v-if="selectedHistoryTask.createdAt">{{ selectedHistoryTask.createdAt }}</span>
+          <span>{{ selectedHistoryTask.inputCount || 0 }} {{ t('generation.assetsShort') }}</span>
+        </div>
+        <p v-if="selectedHistoryTask.errorMessage" class="generation-error generation-alert">{{ failureReason(selectedHistoryTask.errorMessage) }}</p>
+        <div v-if="historyOutputs.length" class="result-grid">
+          <article v-for="(output, index) in historyOutputs" :key="output.value + index" class="result-card">
+            <el-image v-if="output.mediaType === 'image'" class="result-media" :src="outputSource(output)" :alt="outputCaption(output, index)" fit="contain" preview-teleported />
+            <video v-else class="result-media" controls preload="metadata" :src="outputSource(output)" />
+            <div class="result-card-footer"><strong>{{ outputCaption(output, index) }}</strong><small v-if="output.output_format || output.size">{{ output.output_format || '' }}<span v-if="output.output_format && output.size"> · </span>{{ output.size || '' }}</small></div>
+          </article>
+        </div>
+        <div v-else class="result-empty"><span class="result-empty-icon">✦</span><strong>{{ selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED' ? t('generation.resultWaiting') : t('generation.resultEmpty') }}</strong><small>{{ selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED' ? t('generation.resultWaitingHint') : t('generation.resultEmptyHint') }}</small></div>
+        <div v-if="selectedHistoryTask.outputJson?.errors?.length" class="generation-error generation-alert">{{ t('generation.partialFailure', { count: selectedHistoryTask.outputJson.errors.length }) }}</div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -223,6 +257,8 @@ const prompt = ref('')
 const inputs = ref([])
 const history = ref([])
 const result = ref(null)
+const historyDialogVisible = ref(false)
+const selectedHistoryTask = ref(null)
 const busy = ref(false)
 const error = ref('')
 const filePicker = ref(null)
@@ -234,6 +270,7 @@ const selectedModel = computed(() => models.value.find(item => item.id === model
 const accept = computed(() => type.value === 'image_model' ? 'image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,text/plain,text/markdown,.txt,.md' : 'image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,.mp3,.wav')
 const canSubmit = computed(() => !busy.value && !!modelId.value && !!mode.value && (!!prompt.value.trim() || inputs.value.length > 0))
 const outputs = computed(() => result.value?.outputJson?.outputs || [])
+const historyOutputs = computed(() => selectedHistoryTask.value?.outputJson?.outputs || [])
 const draftMode = computed(() => mode.value === 'DRAFT_VIDEO')
 const draftToVideo = computed(() => mode.value === 'DRAFT_TO_VIDEO')
 const editVideo = computed(() => mode.value === 'EDIT_VIDEO')
@@ -376,8 +413,10 @@ async function submit() {
 async function poll(id) { const response = (await http.get(`/ai/generation/${id}`)).data; result.value = response; if (response.status === 'RUNNING' || response.status === 'QUEUED') { await new Promise(resolve => setTimeout(resolve, 1500)); return poll(id) } await loadHistory() }
 /** 查询当前用户可见的历史任务。 */
 async function loadHistory() { try { history.value = ((await http.get('/ai/generation', { params: { type: type.value, page: 0 } })).data.items || []) } catch { history.value = [] } }
-/** 从历史记录恢复展示结果。 */
-function selectHistory(task) { result.value = task }
+/** 打开历史任务详情弹窗，不覆盖当前创作草稿和结果。 */
+function selectHistory(task) { selectedHistoryTask.value = task; historyDialogVisible.value = true }
+/** 关闭历史任务详情后清理选择状态，避免保留大媒体数据。 */
+function clearHistorySelection() { selectedHistoryTask.value = null }
 /** 加载可用模型目录。 */
 async function loadModels() {
   try {
@@ -392,7 +431,7 @@ onMounted(loadModels)
 
 <style scoped>
 .generation-panel {
-  overflow: hidden;
+  overflow: visible;
   padding: 20px;
   background:
     radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--el-color-primary) 7%, transparent), transparent 30%),
@@ -480,7 +519,7 @@ onMounted(loadModels)
 .generation-alert { padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--el-color-danger) 30%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--el-color-danger) 7%, var(--el-bg-color)); }
 
 .generation-layout { display: grid; grid-template-columns: 292px minmax(0, 1fr); gap: 22px; min-height: 620px; align-items: start; }
-.generation-sidebar { position: sticky; top: 0; display: flex; min-width: 0; flex-direction: column; gap: 14px; }
+.generation-sidebar { position: static; display: flex; min-width: 0; flex-direction: column; gap: 14px; }
 .setup-card,
 .history-card,
 .composer-card,
@@ -499,7 +538,7 @@ onMounted(loadModels)
 .capability-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .capability-chip { padding: 4px 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 999px; background: color-mix(in srgb, var(--el-bg-color) 80%, transparent); font-size: 11px; }
 .capability-limits { color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.5; }
-.history-card { flex: 1; min-height: 230px; background: var(--el-fill-color-light); }
+.history-card { min-height: 230px; background: var(--el-fill-color-light); }
 .history-heading,
 .section-title-row,
 .result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -610,6 +649,13 @@ onMounted(loadModels)
 .generation-error { margin: 10px 0; color: var(--el-color-danger); line-height: 1.5; }
 .generation-empty { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .generation-empty p { margin: 0 0 2px; }
+.history-dialog-content { display: grid; gap: 14px; }
+.history-dialog-heading { margin-bottom: 0; }
+.history-dialog-content .result-meta,
+.history-dialog-content .result-grid,
+.history-dialog-content .result-empty { margin-top: 0; }
+.history-dialog-content .generation-alert { margin: 0; }
+:deep(.generation-history-dialog .el-dialog__body) { max-height: none; overflow: visible; }
 
 @keyframes generation-pulse { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
 @keyframes generation-spin { to { transform: rotate(360deg); } }
@@ -626,7 +672,6 @@ onMounted(loadModels)
   .generation-hero { align-items: stretch; flex-direction: column; min-height: 0; padding: 24px 22px; }
   .generation-type-switch { align-self: flex-start; }
   .generation-layout { grid-template-columns: 1fr; }
-  .generation-sidebar { position: static; }
   .generation-sidebar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
   .history-card { min-height: 0; }
 }
