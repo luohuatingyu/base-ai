@@ -618,8 +618,10 @@ public class LlmManagementService {
         if(requestedTypes.isEmpty())throw new BusinessException("llm.modelTypeRequired");
         Set<String> availableTypes=modelTypes().stream().map(ModelTypeOption::value).collect(java.util.stream.Collectors.toSet());
         if(!availableTypes.containsAll(requestedTypes))throw new BusinessException("llm.modelTypeUnavailable");
-        // 图片和视频使用独立生成协议，生成能力不能与聊天、向量或另一种生成能力混合保存。
-        if(requestedTypes.stream().anyMatch(LlmModel::isGenerationType) && requestedTypes.size() != 1)
+        // 图片和视频可以共用一个模型配置，但生成能力不能与聊天、向量能力混合保存。
+        boolean hasGenerationType = requestedTypes.stream().anyMatch(LlmModel::isGenerationType);
+        boolean hasNonGenerationType = requestedTypes.stream().anyMatch(type -> !LlmModel.isGenerationType(type));
+        if(hasGenerationType && hasNonGenerationType)
             throw new BusinessException("llm.modelTypeCombinationInvalid");
         model.setSupportedModelTypes(requestedTypes);
         String profile = command.generationProfile() == null ? model.getGenerationProfile() : command.generationProfile().trim();

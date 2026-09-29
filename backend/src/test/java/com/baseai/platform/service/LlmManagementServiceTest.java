@@ -244,15 +244,28 @@ class LlmManagementServiceTest {
         verify(modelRepository).save(saved);
     }
 
-    /** 图片或视频生成能力不能与聊天、向量或另一种生成能力混合声明。 */
+    /** 图片或视频生成能力不能与聊天、向量能力混合声明。 */
     @ParameterizedTest
-    @CsvSource({"image_model,video_model", "image_model,vision_model", "video_model,text_model"})
+    @CsvSource({"image_model,vision_model", "video_model,text_model"})
     void rejectsMixedGenerationModelTypes(String first, String second) {
         when(providerRepository.findById(1L)).thenReturn(Optional.of(provider("encrypted")));
         BusinessException error = assertThrows(BusinessException.class, () -> service.createModel(
             new LlmManagementService.ModelCommand("MEDIA", "生成模型", 1L, "media-v1", List.of(first, second), "MIDDLE", "", true)));
         assertEquals("llm.modelTypeCombinationInvalid", error.getMessageKey());
         verify(modelRepository, never()).save(any(LlmModel.class));
+    }
+
+    /** 同一模型可以同时声明图片和视频生成能力，供两个媒体入口复用。 */
+    @Test
+    void savesCombinedGenerationModelTypes() {
+        when(providerRepository.findById(1L)).thenReturn(Optional.of(provider("encrypted")));
+        when(modelRepository.save(any(LlmModel.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LlmModel saved = service.createModel(new LlmManagementService.ModelCommand(
+            "MEDIA", "多媒体生成模型", 1L, "media-v1", List.of("image_model", "video_model"), "MIDDLE", "", true));
+
+        assertEquals(List.of("image_model", "video_model"), saved.getSupportedModelTypes());
+        verify(modelRepository).save(saved);
     }
 
     /** 混合配置仍暴露非生成能力，供聊天目录和健康检查使用。 */

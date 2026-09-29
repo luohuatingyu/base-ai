@@ -183,13 +183,13 @@ function modelEditor() {
 }
 
 for (const type of ['image_model', 'video_model']) {
-  test(type + ': 与文本、视觉及另一种生成类型互斥', () => {
+  test(type + ': 可与另一种生成类型组合但不能与聊天类型组合', () => {
     const { state } = modelEditor()
     state.form.supportedModelTypes = []
     assert.equal(state.modelTypeDisabled(type), false)
     state.form.supportedModelTypes = [type]
     for (const candidate of ['image_model', 'video_model', 'text_model', 'vision_model']) {
-      assert.equal(state.modelTypeDisabled(candidate), candidate !== type)
+      assert.equal(state.modelTypeDisabled(candidate), ['text_model', 'vision_model'].includes(candidate))
     }
     state.open({ id: 1, supportedModelTypes: ['image_model', 'video_model'] })
     assert.equal(state.modelTypeDisabled('image_model'), false)
@@ -203,6 +203,11 @@ for (const type of ['image_model', 'video_model']) {
     assert.deepEqual(warnings, [zh('models.generationUnavailable')])
   })
 }
+
+test('模型配置不再要求选择生成能力画像', () => {
+  assert.doesNotMatch(viewSources.ModelsView, /generationProfile/)
+  assert.doesNotMatch(viewSources.ModelsView, /ai\/generation\/profiles/)
+})
 
 test('文本与视觉理解仍可组合选择并调用既有模型测试接口', async () => {
   const { state, requests } = modelEditor()
