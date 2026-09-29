@@ -82,24 +82,27 @@ public class MediaGenerationService {
             .flatMap(item -> item.getSupportedModelTypes().stream()
                 .filter(type -> modelTypeRegistry.supports(type, LlmOperation.IMAGE_GENERATION)
                     || modelTypeRegistry.supports(type, LlmOperation.VIDEO_GENERATION))
-                .filter(type -> mediaTypeMatchesArkProfile(item, type))
                 .map(type -> mediaModelOption(item, type, providers.get(item.getProviderId()))))
             .toList();
-    }
-
-    /** 方舟模型的输出类型由能力画像决定，误配的图片或视频类型不生成空能力目录项。 */
-    private boolean mediaTypeMatchesArkProfile(com.baseai.platform.domain.LlmModel model, String type) {
-        String configuredProfile = modelProfile(model.getGenerationProfile(), model.getModelName());
-        if (!ArkMediaProtocol.supports(configuredProfile)) return true;
-        return type.equals(ArkMediaProtocol.capabilities(configuredProfile).get("type"));
     }
 
     /** 将一个模型配置展开为指定输出类型的媒体目录项。 */
     private ModelOption mediaModelOption(com.baseai.platform.domain.LlmModel model, String type, LlmManagementService.ProviderView provider) {
         String configuredProfile = modelProfile(model.getGenerationProfile(), model.getModelName());
-        Map<String, Object> capabilities = ArkMediaProtocol.supports(configuredProfile) ? ArkMediaProtocol.capabilities(configuredProfile) : Map.of();
-        boolean ark = !capabilities.isEmpty() && type.equals(capabilities.get("type"));
-        return new ModelOption(model.getId(), model.getName(), model.getModelName(), type, provider.code(), provider.name(), ark ? "ARK" : "GENERIC", ark ? capabilities : Map.of());
+        boolean ark = ArkMediaProtocol.supports(configuredProfile);
+        return new ModelOption(model.getId(), model.getName(), model.getModelName(), type, provider.code(), provider.name(),
+            ark ? "ARK" : "GENERIC", ark ? capabilitiesForType(configuredProfile, type) : Map.of());
+    }
+
+    /** 按管理员勾选的输出类型提供能力；画像只用于选择默认参数，不反向覆盖配置。 */
+    private Map<String, Object> capabilitiesForType(String configuredProfile, String type) {
+        Map<String, Object> detected = ArkMediaProtocol.capabilities(configuredProfile);
+        if (type.equals(detected.get("type"))) return detected;
+        String fallbackProfile = "image_model".equals(type) ? "seedream-4.5" : "seedance-2.0";
+        Map<String, Object> fallback = new LinkedHashMap<>(ArkMediaProtocol.capabilities(fallbackProfile));
+        fallback.put("profile", configuredProfile);
+        fallback.put("type", type);
+        return fallback;
     }
 
     /** 校验归属和模型后创建一次调用；失败重试必须由用户重新提交并产生新的任务及用量。 */
@@ -189,7 +192,11 @@ public class MediaGenerationService {
                 return new MediaInput("TASK", input.fileName(), "text/plain", String.valueOf(draft.get("providerTaskId")), "");
             }).toList();
         }
-        Map<String, Object> options = com.baseai.platform.modeltype.ArkGenerationCapabilities.options(profile(candidate), request.modelType(), normalizedMode(request), request.prompt(), inputPayload(inputs), request.options());
+        String configuredProfile = profile(candidate);
+        String effectiveProfile = configuredProfile;
+        if (!request.modelType().equals(ArkMediaProtocol.capabilities(configuredProfile).get("type")))
+            effectiveProfile = "image_model".equals(request.modelType()) ? "seedream-4.5" : "seedance-2.0";
+        Map<String, Object> options = com.baseai.platform.modeltype.ArkGenerationCapabilities.options(effectiveProfile, request.modelType(), normalizedMode(request), request.prompt(), inputPayload(inputs), request.options());
         // 提前构造一次供应商协议，保证错误地址和未知参数不会产生计费记录。
         ArkMediaProtocol.request(request.modelType(), candidate.model(), profile(candidate), request.prompt(), inputPayload(inputs), options);
         return new GenerateRequest(request.modelType(), request.modelId(), request.prompt(), request.conversationId(), normalizedMode(request), inputs, options);
