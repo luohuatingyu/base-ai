@@ -10734,3 +10734,29 @@ Commit: `b2a5bfb`
 - 当前环境没有可用的供应商 API Key，未完成真实 Seedream/Seedance 请求；获得有效配置后，应分别验证文生图、图生视频、首尾帧和参考视频任务。
 - Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理健康状态后，应重新执行 `docker compose up --build -d` 并检查全部容器健康状态。
 - 测试报告基准点在下一次业务代码变更后需要重新执行完整后端测试，并更新本报告。
+## 修复 Seedream 高级图片模式不可用（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `93368ee`
+- 提交说明：Allow all supported Seedream modes；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 修复图片模式白名单过窄导致的请求前校验失败，恢复多图融合、文生组图、单图生组图、多图生组图、图层拆分、交互编辑和透明背景等已声明 Seedream 模式。未新增依赖、数据库迁移或外部配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 所有已声明 Seedream 图片模式可通过服务层校验 | `MediaGenerationServiceTest.acceptsSeedreamImageModes` 覆盖多图融合、文生组图和图层拆分 | 正常、兼容、回归 | 通过 |
+| 图片和视频模式仍保持隔离 | `MediaGenerationServiceTest.rejectsCrossMediaGenerationModes` 保持图片请求拒绝视频模式 | 异常、安全 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=MediaGenerationServiceTest#acceptsSeedreamImageModes test`：**1/1 通过**。
+- 同一 Maven 容器执行完整 `mvn -B -ntp test`：**1045/1045 通过**，失败 0、错误 0、跳过 0。
+- `docker compose up --build -d`：全部镜像构建成功，后端构建阶段完整测试 **1045/1045 通过**；启动阶段因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖失败，非端口占用，backend/frontend 已完成重建并启动。
+- `git diff --check`：通过。
+
+### 已知问题与下次测试建议
+
+- 当前环境未配置可用供应商 API Key，仍未执行真实 Seedream 请求；获得有效配置后应验证文生图、组图、多图融合和图层拆分真实响应。
+- Docker Socket Proxy 健康检查问题仍阻断整栈自动启动；修复代理后重新检查所有容器健康状态。
