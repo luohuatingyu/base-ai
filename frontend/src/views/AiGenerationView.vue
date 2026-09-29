@@ -78,8 +78,8 @@
           </div>
           <div v-if="!history.length" class="history-empty">{{ t('generation.noHistory') }}</div>
           <button v-for="task in history" :key="task.id" class="generation-history-item" @click="selectHistory(task)">
-            <span class="history-item-preview" :class="`history-${task.status?.toLowerCase()}`"><span v-if="task.generationType === 'video_model'">▶</span><span v-else>✦</span></span>
-            <span class="history-item-copy"><strong>{{ modeLabel(task.generationMode || '') }}</strong><small>#{{ task.id }} · {{ task.inputCount || 0 }} {{ t('generation.assetsShort') }}</small><small v-if="task.errorMessage" class="history-item-error">{{ failureReason(task.errorMessage) }}</small></span>
+            <span class="history-item-preview" :class="`history-${task.status?.toLowerCase()}`"><img v-if="outputMediaType(historyPreview(task), task.generationType) === 'image' && historyPreview(task)" :src="outputSource(historyPreview(task), task.generationType)" :alt="historyPreview(task)?.name || modeLabel(task.generationMode || '')" /><span v-else-if="task.generationType === 'video_model'">▶</span><span v-else>✦</span></span>
+            <span class="history-item-copy"><strong>{{ modeLabel(task.generationMode || '') }}</strong><small class="history-item-prompt">{{ promptSummary(task.prompt) }}</small><small>#{{ task.id }} · {{ task.inputCount || 0 }} {{ t('generation.assetsShort') }} · {{ outputCountLabel(task) }}</small><small v-if="task.createdAt" class="history-item-time">{{ task.createdAt }}</small><small v-if="task.errorMessage" class="history-item-error">{{ failureReason(task.errorMessage) }}</small></span>
             <el-tag size="small" :type="statusType(task.status)">{{ statusLabel(task.status) }}</el-tag>
           </button>
         </section>
@@ -212,9 +212,9 @@
         <p v-if="selectedHistoryTask.errorMessage" class="generation-error generation-alert">{{ failureReason(selectedHistoryTask.errorMessage) }}</p>
         <div v-if="historyOutputs.length" class="result-grid">
           <article v-for="(output, index) in historyOutputs" :key="output.value + index" class="result-card">
-            <el-image v-if="output.mediaType === 'image'" class="result-media" :src="outputSource(output)" :alt="outputCaption(output, index)" fit="contain" preview-teleported />
-            <video v-else class="result-media" controls preload="metadata" :src="outputSource(output)" />
-            <div class="result-card-footer"><strong>{{ outputCaption(output, index) }}</strong><small v-if="output.output_format || output.size">{{ output.output_format || '' }}<span v-if="output.output_format && output.size"> · </span>{{ output.size || '' }}</small></div>
+            <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="result-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" fit="contain" preview-teleported />
+            <video v-else class="result-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" />
+            <div class="result-card-footer"><div class="result-card-title"><strong>{{ outputCaption(output, index) }}</strong><el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button></div><small v-if="output.output_format || output.size || outputMimeType(output, selectedHistoryTask.generationType)">{{ output.output_format || outputMimeType(output, selectedHistoryTask.generationType) }}<span v-if="(output.output_format || outputMimeType(output, selectedHistoryTask.generationType)) && output.size"> · </span>{{ output.size || '' }}</small></div>
           </article>
         </div>
         <div v-else class="result-empty"><span class="result-empty-icon">✦</span><strong>{{ selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED' ? t('generation.resultWaiting') : t('generation.resultEmpty') }}</strong><small>{{ selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED' ? t('generation.resultWaitingHint') : t('generation.resultEmptyHint') }}</small></div>
@@ -235,6 +235,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import http, { showHttpError } from '../api/http'
 import { generationFailureReasonKey, parseGenerationFailure } from '../utils/generationFailure.js'
+import { outputFilename, outputMediaType, outputMimeType, outputSource } from '../utils/generationOutput.js'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -252,6 +253,7 @@ const selectedHistoryTask = ref(null)
 const dialogError = ref('')
 const dialogMode = ref('history')
 const busy = ref(false)
+const downloadingOutput = ref('')
 const error = ref('')
 const filePicker = ref(null)
 const groupOutput = ref(false)
@@ -370,10 +372,43 @@ function failureReason(code) {
   const context = [parsed.status, parsed.providerCode].filter(Boolean).join(' · ')
   return `${label}${context ? ` (${context})` : ''}: ${parsed.detail}`
 }
-/** 统一处理 URL 和 Base64 图片输出，结果卡片只负责展示。 */
-function outputSource(output) { return output.kind === 'base64' ? `data:image/png;base64,${output.value}` : output.value }
 /** 为没有名称的结果生成稳定的可读标题。 */
-function outputCaption(output, index) { return output.name || `${output.mediaType === 'image' ? t('generation.image') : t('generation.video')} ${index + 1}` }
+function outputCaption(output, index) { return output.name || `${outputMediaType(output, selectedHistoryTask.value?.generationType) === 'image' ? t('generation.image') : t('generation.video')} ${index + 1}` }
+/** 取历史记录中的首个输出，作为列表缩略图或媒体占位。 */
+function historyPreview(task) { return task?.outputJson?.outputs?.[0] || null }
+/** 截断提示词，保证历史列表的状态和结果信息可见。 */
+function promptSummary(value) { const text = String(value || '').trim(); return text ? (text.length > 72 ? `${text.slice(0, 72)}…` : text) : t('generation.noPrompt') }
+/** 显示任务输出数量，区分尚未生成和已有部分结果。 */
+function outputCountLabel(task) { const count = task?.outputJson?.outputs?.length || 0; return count ? t('generation.outputCount', { count }) : t('generation.noOutput') }
+/** 下载远程或 Base64 媒体；跨域 CDN 禁止 Blob 时回退到签名地址。 */
+async function downloadOutput(output, index) {
+  const task = selectedHistoryTask.value
+  const key = `${task?.id}:${index}`
+  downloadingOutput.value = key
+  try {
+    let blob
+    if (output.kind === 'base64') {
+      const binary = atob(String(output.value || ''))
+      const bytes = Uint8Array.from(binary, character => character.charCodeAt(0))
+      blob = new Blob([bytes], { type: outputMimeType(output, task?.generationType) })
+    } else {
+      const response = await fetch(output.value, { credentials: 'omit' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      blob = await response.blob()
+    }
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = outputFilename(output, index, task?.id, task?.generationType)
+    document.body.append(anchor)
+    anchor.click()
+    anchor.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  } catch {
+    if (output?.value) window.open(outputSource(output, task?.generationType), '_blank', 'noopener,noreferrer')
+    ElMessage.info(t('generation.downloadFallback'))
+  } finally { downloadingOutput.value = '' }
+}
 /** 读取选定模型的能力目录并同步合法模式。 */
 function onModelChange() {
   const item = selectedModel.value
@@ -612,6 +647,7 @@ onMounted(loadModels)
 .generation-history-item:hover { border-radius: 8px; background: var(--el-bg-color); transform: translateX(2px); }
 .generation-history-item:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .history-item-preview { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid var(--el-color-primary-light-8); border-radius: 8px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-size: 12px; }
+.history-item-preview img { display: block; width: 100%; height: 100%; border-radius: 7px; object-fit: cover; }
 .history-item-preview.history-failed,
 .history-item-preview.history-cancelled { border-color: var(--el-color-danger-light-8); background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
 .history-item-copy { display: grid; min-width: 0; gap: 3px; }
@@ -619,6 +655,8 @@ onMounted(loadModels)
 .history-item-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-item-copy strong { font-size: 12px; font-weight: 650; }
 .history-item-copy small { color: var(--el-text-color-secondary); font-size: 11px; }
+.history-item-prompt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item-time { font-size: 10px !important; }
 .history-item-copy .history-item-error { color: var(--el-color-danger); }
 
 .generation-main { min-width: 0; }
@@ -711,6 +749,7 @@ onMounted(loadModels)
 .result-card:hover { border-color: var(--el-color-primary-light-7); box-shadow: 0 10px 22px color-mix(in srgb, #243b68 10%, transparent); transform: translateY(-2px); }
 .result-media { display: block; width: 100%; height: 238px; object-fit: contain; background: var(--el-fill-color); }
 .result-card-footer { display: grid; gap: 3px; padding: 10px 11px; }
+.result-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .result-card-footer strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .result-card-footer small { color: var(--el-text-color-secondary); font-size: 11px; }
 .result-empty { display: grid; justify-items: center; gap: 7px; margin-top: 17px; padding: 44px 16px; border: 1px dashed var(--el-border-color); border-radius: 11px; background: var(--el-fill-color-light); color: var(--el-text-color-secondary); text-align: center; }

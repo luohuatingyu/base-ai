@@ -91,7 +91,8 @@ test('AI 生成 workspace exposes asset dropzone and result states', () => {
   assert.match(source, /result-card/)
   assert.match(source, /resultWaiting/)
   assert.match(source, /function statusType\(status\)/)
-  assert.match(source, /function outputSource\(output\)/)
+  assert.match(source, /from '\.\.\/utils\/generationOutput\.js'/)
+  assert.match(source, /outputSource\(output, selectedHistoryTask\.generationType\)/)
   assert.match(zhLocale, /dropAssets: '拖拽素材到这里'/)
   assert.match(enLocale, /dropAssets: 'Drop assets here'/)
 })
@@ -220,4 +221,16 @@ test('AI 生成 history opens a modal without nested page scrolling', () => {
   assert.doesNotMatch(source, /function selectHistory\(task\) \{ result\.value = task \}/)
   assert.match(source, /\.generation-sidebar \{ position: static/)
   assert.match(source, /:deep\(\.generation-history-dialog \.el-dialog__body\) \{ max-height: none; overflow: visible; \}/)
+})
+
+/** 历史记录必须直接给出提示词、输出数量、缩略图和结果下载入口。 */
+test('AI 生成 history exposes output summaries and download actions', () => {
+  assert.match(source, /historyPreview\(task\)/)
+  assert.match(source, /promptSummary\(task\.prompt\)/)
+  assert.match(source, /outputCountLabel\(task\)/)
+  assert.match(source, /@click\.stop="downloadOutput\(output, index\)"/)
+  assert.match(source, /async function downloadOutput\(output, index\)/)
+  assert.match(source, /outputFilename\(output, index, task\?\.id, task\?\.generationType\)/)
+  assert.match(zhLocale, /download: '下载'/)
+  assert.match(enLocale, /download: 'Download'/)
 })
