@@ -10814,3 +10814,32 @@ Commit: `6b8c2de`
 
 - 当前数据库中没有 Seedream 图片模型，只有误配置为图片类型的 Seedance 视频模型；修复后图片目录会显示为空并提示配置图片模型，这是正确行为。需要在模型管理中添加 Seedream 4.0/4.5/5.0 模型并选择 `image_model`。
 - 获得有效供应商 API Key 后，应执行一次真实 Seedream 图片请求验证供应商响应。
+## AI 生成结果改为弹窗展示（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `5ec84fd`
+- 提交说明：Show generation results in modal；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 生成提交成功、异步轮询完成和提交失败均通过结果弹窗展示；页面正文不再固定渲染输出预览区。任务历史继续保留并复用弹窗查看，生成草稿不会被历史查看覆盖。
+- 未修改后端接口、数据库、依赖或配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 生成结果通过弹窗展示且不出现页面内固定预览 | `frontend/test/ai-generation.test.mjs` 的 `AI 生成 submit opens a result dialog instead of an inline preview` 检查提交后打开弹窗、移除固定结果区及提交异常弹窗 | 正常、异常、回归 | 通过 |
+| 异步任务弹窗显示运行状态并可刷新 | 同一页面的 `poll` 与弹窗刷新按钮检查运行中/排队任务状态同步和再次查询 | 正常、边界、恢复 | 通过 |
+| 任务历史仍可独立查看并保留失败原因 | `AI 生成 history opens a modal without nested page scrolling`、`AI 生成 history exposes localized failure reasons` 检查历史弹窗、错误信息和当前草稿隔离 | 异常、兼容、回归 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && node --test test/ai-generation.test.mjs`：**18/18 通过**。
+- `cd frontend && npm test`：lint、typecheck、覆盖测试 **676/676 通过**；覆盖率行 **98.25%**、分支 **82.04%**、函数 **95.76%**；生产构建及 E2E **3/3 通过**。
+- `docker compose up --build -d`：全部镜像构建成功；前端和后端容器 healthy。整栈启动因既有 `baseai-local-docker-socket-proxy` unhealthy 依赖退出，非端口占用；当前 `docker compose ps` 显示前端和后端仍在运行。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 覆盖提交成功、图片即时结果、视频异步轮询、运行中刷新、提交异常、历史成功/失败任务和弹窗关闭清理；未新增后端业务逻辑。
+- 当前 Docker Socket Proxy 健康检查仍阻断整栈 compose 命令返回成功；修复代理后应重新执行 `docker compose up --build -d` 并检查全服务健康状态。
+- 未执行真实供应商图片/视频生成；配置有效 API Key 后应补一次真实成功和失败任务联调。
