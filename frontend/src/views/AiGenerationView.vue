@@ -531,12 +531,15 @@ onMounted(loadModels)
 .setup-card { background: linear-gradient(160deg, var(--el-bg-color), color-mix(in srgb, var(--el-color-primary) 3%, var(--el-bg-color))); }
 .setup-card .card-eyebrow { margin-bottom: 14px; color: var(--el-text-color-secondary); }
 .setup-form { display: grid; gap: 8px; }
-.setup-field { margin-bottom: 0 !important; padding: 10px 11px 11px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: color-mix(in srgb, var(--el-bg-color) 78%, var(--el-fill-color-light)); }
-.setup-field :deep(.el-form-item__label) { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--el-text-color-secondary); font-size: 11px; font-weight: 700; line-height: 1.3; }
+.setup-field { margin-bottom: 0 !important; padding: 0; }
+.setup-field :deep(.el-form-item__label) { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: var(--el-text-color-secondary); font-size: 11px; font-weight: 700; line-height: 1.3; }
 .setup-field:first-child :deep(.el-form-item__label)::before { content: '◈'; color: var(--el-color-primary); font-size: 12px; }
 .setup-field:nth-child(2) :deep(.el-form-item__label)::before { content: '✦'; color: var(--el-color-primary); font-size: 12px; }
 .setup-field :deep(.el-select) { width: 100%; }
-.setup-field :deep(.el-input__wrapper) { min-height: 34px; border-radius: 8px; box-shadow: 0 0 0 1px var(--el-border-color) inset; }
+.setup-field :deep(.el-select__wrapper) { min-height: 38px; padding: 0 12px; border: 1px solid color-mix(in srgb, var(--el-color-primary) 12%, var(--el-border-color)); border-radius: 10px; background: var(--el-bg-color); box-shadow: 0 3px 10px color-mix(in srgb, #243b68 6%, transparent); transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease; }
+.setup-field :deep(.el-select__wrapper:hover) { border-color: var(--el-color-primary-light-5); background: color-mix(in srgb, var(--el-color-primary) 2%, var(--el-bg-color)); }
+.setup-field :deep(.el-select__wrapper.is-focused) { border-color: var(--el-color-primary); box-shadow: 0 0 0 3px var(--el-color-primary-light-9), 0 5px 12px color-mix(in srgb, var(--el-color-primary) 12%, transparent); }
+.setup-field :deep(.el-select__wrapper.is-disabled) { border-color: var(--el-border-color-lighter); background: var(--el-fill-color-light); box-shadow: none; }
 .setup-field :deep(.el-input__inner) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-select,
 .mode-select { width: 100%; }
