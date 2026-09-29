@@ -85,7 +85,7 @@ test('AI 生成 workspace exposes asset dropzone and result states', () => {
 
 /** 图片生成模式必须始终可发现，能力为空时也要给出明确状态而不是静默隐藏。 */
 test('AI 生成 workspace keeps image mode selection visible', () => {
-  assert.match(source, /<el-form-item :label="t\('generation\.mode'\)">/)
+  assert.match(source, /<el-form-item class="setup-field" :label="t\('generation\.mode'\)">/)
   assert.match(source, /class="mode-select" :disabled="!capability\.modes\?\.length \|\| busy"/)
   assert.match(source, /generation\.modeUnavailable/)
   assert.match(zhLocale, /modeUnavailable: '当前模型未返回可用的生成模式/)
@@ -95,11 +95,25 @@ test('AI 生成 workspace keeps image mode selection visible', () => {
 test('AI 生成 workspace uses selectable sizes and grouped output settings', () => {
   assert.match(source, /const imageSizeOptions = computed\(\(\) => capability\.value\.options\?\.size\?\.enum \|\| \['1K', '2K', '4K'\]\)/)
   assert.match(source, /<el-select v-model="options\.size">/)
-  assert.match(source, /class="output-setting-group"/)
+  assert.match(source, /class="setup-form"/)
+  assert.match(source, /class="setup-field" :label="t\('generation\.model'\)"/)
+  assert.match(source, /class="setup-field" :label="t\('generation\.mode'\)"/)
+  assert.match(source, /class="output-setting-group/)
+  assert.match(source, /class="output-setting-group output-setting-group-media"/)
   assert.match(source, /generation\.imageOutputHint/)
   assert.match(source, /generation\.videoOutputHint/)
   assert.match(source, /output-setting-group-common/)
   assert.match(source, /options: requestOptions\.value/)
+})
+
+/** 模型、模式和图片/视频输出设置必须使用紧凑网格，避免窄列堆叠出大块空白。 */
+test('AI 生成 workspace keeps setup and media options compact', () => {
+  assert.match(source, /\.setup-form \{ display: grid; gap: 8px; \}/)
+  assert.match(source, /\.setup-field \{ margin-bottom: 0 !important;/)
+  assert.match(source, /\.output-setting-group \{ display: grid; grid-template-columns: minmax\(126px, \.62fr\) minmax\(0, 1\.38fr\)/)
+  assert.match(source, /\.output-setting-fields \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(96px, 1fr\)/)
+  assert.match(source, /\.output-setting-fields :deep\(\.el-select\),[\s\S]*\.output-setting-fields :deep\(\.el-input-number\)/)
+  assert.match(source, /\.output-setting-group \{ grid-template-columns: 1fr; \}/)
 })
 
 /** 能力目录的输入数量、时长和模式素材要求必须在当前表单中可见。 */

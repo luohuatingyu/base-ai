@@ -42,8 +42,8 @@
       <aside class="generation-sidebar">
         <section class="setup-card">
           <div class="card-eyebrow">{{ t('generation.setup') }}</div>
-          <el-form label-position="top" size="small">
-            <el-form-item :label="t('generation.model')">
+          <el-form class="setup-form" label-position="top" size="small">
+            <el-form-item class="setup-field" :label="t('generation.model')">
               <el-select v-model="modelId" class="model-select" filterable :disabled="!modelsForType.length || busy" @change="onModelChange">
                 <el-option v-for="model in modelsForType" :key="model.id" :label="`${model.name} · ${model.modelName}`" :value="model.id" />
               </el-select>
@@ -52,7 +52,7 @@
                 <el-button text type="primary" size="small" @click="goModelManagement">{{ t('generation.openModels') }}</el-button>
               </div>
             </el-form-item>
-            <el-form-item :label="t('generation.mode')">
+            <el-form-item class="setup-field" :label="t('generation.mode')">
               <el-select v-model="mode" class="mode-select" :disabled="!capability.modes?.length || busy" @change="onModeChange">
                 <el-option v-for="value in capability.modes" :key="value" :label="modeLabel(value)" :value="value" />
               </el-select>
@@ -138,7 +138,7 @@
           <section class="options-section">
             <div class="section-title-row"><div><span class="card-eyebrow">{{ t('generation.optionsKicker') }}</span><h3>{{ t('generation.mediaOptions') }}</h3></div><span class="section-hint">{{ t('generation.optionsHint') }}</span></div>
             <div class="generation-options" :class="{ 'is-video': type === 'video_model' }">
-              <section v-if="type === 'image_model'" class="output-setting-group">
+              <section v-if="type === 'image_model'" class="output-setting-group output-setting-group-media">
                 <div class="output-setting-heading"><span class="output-setting-icon">✦</span><div><strong>{{ t('generation.imageOutput') }}</strong><small>{{ t('generation.imageOutputHint') }}</small></div></div>
                 <div class="output-setting-fields">
                   <el-form-item :label="t('generation.imageSize')"><el-select v-model="options.size"><el-option v-for="value in imageSizeOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
@@ -148,7 +148,7 @@
                   <el-form-item v-if="capability.features?.transparent" :label="t('generation.transparentBackground')"><el-switch v-model="transparent" @change="syncTransparent" /></el-form-item>
                 </div>
               </section>
-              <section v-if="type === 'video_model'" class="output-setting-group">
+              <section v-if="type === 'video_model'" class="output-setting-group output-setting-group-media">
                 <div class="output-setting-heading"><span class="output-setting-icon">▶</span><div><strong>{{ t('generation.videoOutput') }}</strong><small>{{ t('generation.videoOutputHint') }}</small></div></div>
                 <div class="output-setting-fields">
                   <el-form-item :label="t('generation.resolution')"><el-select v-model="options.resolution" :disabled="draftMode"><el-option v-for="value in resolutionOptions" :key="value" :label="value" :value="value" /></el-select></el-form-item>
@@ -530,6 +530,14 @@ onMounted(loadModels)
 .history-card { padding: 17px; }
 .setup-card { background: linear-gradient(160deg, var(--el-bg-color), color-mix(in srgb, var(--el-color-primary) 3%, var(--el-bg-color))); }
 .setup-card .card-eyebrow { margin-bottom: 14px; color: var(--el-text-color-secondary); }
+.setup-form { display: grid; gap: 8px; }
+.setup-field { margin-bottom: 0 !important; padding: 10px 11px 11px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: color-mix(in srgb, var(--el-bg-color) 78%, var(--el-fill-color-light)); }
+.setup-field :deep(.el-form-item__label) { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--el-text-color-secondary); font-size: 11px; font-weight: 700; line-height: 1.3; }
+.setup-field:first-child :deep(.el-form-item__label)::before { content: '◈'; color: var(--el-color-primary); font-size: 12px; }
+.setup-field:nth-child(2) :deep(.el-form-item__label)::before { content: '✦'; color: var(--el-color-primary); font-size: 12px; }
+.setup-field :deep(.el-select) { width: 100%; }
+.setup-field :deep(.el-input__wrapper) { min-height: 34px; border-radius: 8px; box-shadow: 0 0 0 1px var(--el-border-color) inset; }
+.setup-field :deep(.el-input__inner) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-select,
 .mode-select { width: 100%; }
 .capability-card { display: grid; gap: 10px; margin-top: 3px; padding: 12px; border: 1px solid color-mix(in srgb, var(--el-color-primary) 13%, var(--el-border-color-lighter)); border-radius: 10px; background: linear-gradient(135deg, var(--el-color-primary-light-9), var(--el-fill-color-light)); color: var(--el-text-color-secondary); font-size: 12px; }
@@ -609,19 +617,25 @@ onMounted(loadModels)
 .asset-item .el-button { grid-column: 2; width: 100%; }
 .asset-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 13px; }
 
-.generation-options { display: grid; gap: 12px; margin-top: 17px; }
-.output-setting-group { padding: 15px; border: 1px solid var(--el-border-color-lighter); border-radius: 11px; background: var(--el-fill-color-light); }
+.generation-options { display: grid; gap: 8px; margin-top: 13px; }
+.output-setting-group { display: grid; grid-template-columns: minmax(126px, .62fr) minmax(0, 1.38fr); align-items: start; gap: 12px; padding: 11px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-fill-color-light); }
 .output-setting-group-common { background: var(--el-bg-color); }
-.output-setting-heading { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 13px; }
-.output-setting-icon { display: grid; flex: 0 0 29px; place-items: center; width: 29px; height: 29px; border: 1px solid var(--el-color-primary-light-8); border-radius: 9px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-size: 13px; }
+.output-setting-heading { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.output-setting-icon { display: grid; flex: 0 0 25px; place-items: center; width: 25px; height: 25px; border: 1px solid var(--el-color-primary-light-8); border-radius: 7px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-size: 12px; }
 .output-setting-heading strong,
 .output-setting-heading small { display: block; }
-.output-setting-heading strong { color: var(--el-text-color-primary); font-size: 13px; font-weight: 700; }
-.output-setting-heading small { margin-top: 4px; color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.45; }
-.output-setting-fields { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 13px; }
-.generation-options.is-video .output-setting-fields { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+.output-setting-heading strong { color: var(--el-text-color-primary); font-size: 12px; font-weight: 750; line-height: 1.35; }
+.output-setting-heading small { display: -webkit-box; max-width: 180px; margin-top: 3px; overflow: hidden; color: var(--el-text-color-secondary); font-size: 10px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.output-setting-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); align-items: end; gap: 8px 9px; min-width: 0; }
+.generation-options.is-video .output-setting-fields { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
 .output-setting-fields :deep(.el-form-item) { margin-bottom: 0; }
-.output-setting-fields :deep(.el-form-item__label) { color: var(--el-text-color-secondary); font-size: 11px; font-weight: 650; }
+.output-setting-fields :deep(.el-form-item__label) { margin-bottom: 4px; color: var(--el-text-color-secondary); font-size: 10px; font-weight: 650; line-height: 1.25; }
+.output-setting-fields :deep(.el-select),
+.output-setting-fields :deep(.el-input),
+.output-setting-fields :deep(.el-input-number) { width: 100%; }
+.output-setting-fields :deep(.el-input__wrapper),
+.output-setting-fields :deep(.el-input-number .el-input__wrapper) { min-height: 30px; border-radius: 7px; }
+.output-setting-fields :deep(.el-switch) { height: 30px; }
 .generation-hint { margin: 12px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.55; }
 .generation-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 0; padding: 13px 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; background: var(--el-fill-color-light); }
 .submit-hint { flex: 1; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.45; }
@@ -698,6 +712,7 @@ onMounted(loadModels)
   .history-card { padding: 15px; border-radius: 12px; }
   .section-title-row { display: block; }
   .section-hint { display: block; max-width: none; margin-top: 6px; text-align: left; }
+  .output-setting-group { grid-template-columns: 1fr; }
   .output-setting-fields,
   .generation-options.is-video .output-setting-fields { grid-template-columns: 1fr; }
   .generation-actions { align-items: stretch; flex-wrap: wrap; }
