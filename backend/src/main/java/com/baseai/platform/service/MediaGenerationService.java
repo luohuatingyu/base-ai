@@ -502,11 +502,11 @@ public class MediaGenerationService {
     /** 接受新的多模态模式，并兼容历史图片或视频生成模式。 */
     private boolean validMode(String modelType, String mode) {
         if ("MULTIMODAL".equals(mode)) return true;
-        return "image_model".equals(modelType)
-            ? Set.of("TEXT_TO_IMAGE", "IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE").contains(mode)
-            : "video_model".equals(modelType)
-                && Set.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO").contains(mode)
-            || com.baseai.platform.modeltype.ArkGenerationCapabilities.PROFILES.stream().anyMatch(p -> ((List<?>) ArkMediaProtocol.capabilities(p).get("modes")).contains(mode));
+        if ("image_model".equals(modelType)) return Set.of("TEXT_TO_IMAGE", "IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE").contains(mode);
+        if (!"video_model".equals(modelType)) return false;
+        return Set.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO").contains(mode)
+            || com.baseai.platform.modeltype.ArkGenerationCapabilities.PROFILES.stream()
+                .anyMatch(p -> ((List<?>) ArkMediaProtocol.capabilities(p).get("modes")).contains(mode));
     }
 
     /** 校验文本、图片和视频输入的数量、Data URL 格式和解码后大小，拒绝远程 URL 造成的 SSRF。 */
