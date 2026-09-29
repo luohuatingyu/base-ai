@@ -1,3 +1,35 @@
+## 生成记录展示与下载（2026-09-29）
+
+### Git 基准、范围与交付状态
+
+Commit: `ced98ca`
+- 提交说明：Improve generation history and downloads；分支 `emdash/codex-vlzfy`；测试日期 2026-09-29（Asia/Shanghai）。
+- 生成记录列表增加结果缩略图、提示词摘要、创建时间和输出数量；结果弹窗兼容缺失媒体类型的历史任务。
+- 结果卡片提供图片和视频下载；Base64 使用正确 MIME，跨域 CDN 无法读取时回退打开签名地址。
+- 仅修改前端展示、下载逻辑、文案和测试，未修改数据库、后端接口或供应商协议。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 生成记录展示结果摘要和可识别状态 | `ai-generation.test.mjs` 验证历史记录包含缩略图、提示词摘要和输出数量 | 正常、边界、回归 | 通过 |
+| 历史输出正确区分图片和视频 | `generation-output.test.mjs` 验证显式媒体类型、任务类型兜底和旧记录缺失字段 | 正常、兼容、回归 | 通过 |
+| 图片、视频和 Base64 结果可下载 | `generation-output.test.mjs` 验证 MIME、文件名和 Base64 数据地址；页面测试验证下载按钮和回退逻辑 | 正常、异常、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `cd frontend && npm test`：lint、typecheck、覆盖测试 **680/680 通过**；覆盖率行 **98.18%**、分支 **81.86%**、函数 **95.83%**；生产构建及 E2E **3/3 通过**。
+- `cd frontend && node --test test/ai-generation.test.mjs test/generation-output.test.mjs`：**22/22 通过**。
+- `docker compose up --build -d`：镜像构建成功，前端生产构建成功；整栈启动仍受既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
+- `docker compose up -d --no-deps backend frontend`：成功启动，Backend healthy，Frontend 已启动。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 覆盖历史记录摘要、旧任务输出兼容、图片/视频预览、Base64 MIME、远程 URL 下载、跨域下载回退和中英文文案。
+- 跨域 CDN 禁止浏览器读取时，下载按钮会打开签名 URL，用户可使用浏览器“另存为”；签名 URL 过期后需重新生成或刷新任务结果。
+- Docker Socket Proxy 的既有健康检查问题仍阻断整栈自动启动；修复代理后应重新执行 Compose 健康检查。
+
 ## Seedream 4.x 参数能力对齐（2026-09-29）
 
 ### Git 基准、范围与交付状态
