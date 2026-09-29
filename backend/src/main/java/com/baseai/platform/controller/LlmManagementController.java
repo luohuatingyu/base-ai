@@ -2,7 +2,6 @@ package com.baseai.platform.controller;
 
 import com.baseai.platform.domain.LlmModel;
 import com.baseai.platform.security.RequiredPermission;
-import com.baseai.platform.security.SecretRevealAuthorizationService;
 import com.baseai.platform.service.LlmManagementService;
 import com.baseai.platform.trace.TraceType;
 import org.springframework.http.CacheControl;
@@ -22,22 +21,14 @@ import java.util.Map;
 @RequestMapping("/api/models")
 public class LlmManagementController {
     private final LlmManagementService service;
-    private final SecretRevealAuthorizationService secretRevealAuthorizationService;
-    public LlmManagementController(LlmManagementService service, SecretRevealAuthorizationService secretRevealAuthorizationService){
-        this.service=service;
-        this.secretRevealAuthorizationService=secretRevealAuthorizationService;
-    }
+    public LlmManagementController(LlmManagementService service){this.service=service;}
 
     /** 查询可用的模型供应商。 */
     @GetMapping("/providers") @RequiredPermission("ai:model:provider:list") public List<LlmManagementService.ProviderView> providers(){return service.providers();}
-    /** 经管理员二次密码验证后回查指定供应商的明文 API Key。 */
+    /** 在管理员更新权限范围内回查指定供应商的明文 API Key；响应禁止缓存。 */
     @PostMapping("/providers/{id}/api-keys") @RequiredPermission("ai:model:provider:update")
     @TraceType(value = "LLM_PROVIDER_API_KEYS_REVEAL", captureRequest = false)
-    public ResponseEntity<LlmManagementService.ProviderApiKeysView> providerApiKeys(@PathVariable Long id,
-        @RequestBody SecretRevealAuthorizationService.ReauthenticationCommand command){
-        secretRevealAuthorizationService.requireAdminPassword(command);
-        return noStore(service.providerApiKeys(id));
-    }
+    public ResponseEntity<LlmManagementService.ProviderApiKeysView> providerApiKeys(@PathVariable Long id){return noStore(service.providerApiKeys(id));}
     /** 创建模型供应商。 */
     @PostMapping("/providers") @RequiredPermission("ai:model:provider:create") public LlmManagementService.ProviderView createProvider(@RequestBody LlmManagementService.ProviderCommand command){return service.createProvider(command);}
     /** 更新模型供应商。 */

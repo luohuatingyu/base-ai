@@ -92,9 +92,9 @@ async function load() {
   rows.value = (await http.get('/models/providers')).data
 }
 
-/** 通过当前管理员密码二次验证后读取并规范化指定供应商的 API Key。 */
-async function loadKeys(id, password) {
-  const response = await http.post(`/models/providers/${id}/api-keys`, { password })
+/** 在当前管理员权限范围内读取并规范化指定供应商的 API Key。 */
+async function loadKeys(id) {
+  const response = await http.post(`/models/providers/${id}/api-keys`)
   return normalizeApiKeys(response.data.apiKeys)
 }
 
@@ -115,27 +115,14 @@ function deleteKey(index) {
   keyRows.value.splice(index, 1)
 }
 
-/** 二次验证后查看供应商的明文 API Key，并在关闭窗口时清除内存副本。 */
+/** 在管理员权限范围内查看供应商的明文 API Key，并在关闭窗口时清除内存副本。 */
 async function viewKeys(row) {
   try {
-    const password = await requestRevealPassword()
-    keysContent.value = splitApiKeys(await loadKeys(row.id, password))
+    keysContent.value = splitApiKeys(await loadKeys(row.id))
     keysVisible.value = true
   } catch (error) {
-    if (error !== 'cancel' && error !== 'close') showHttpError(error)
+    showHttpError(error)
   }
-}
-
-/** 弹出当前管理员密码输入框，避免仅凭被劫持会话导出长期凭据。 */
-async function requestRevealPassword() {
-  const { value } = await ElMessageBox.prompt(t('secretReveal.passwordPrompt'), t('secretReveal.title'), {
-    inputType: 'password',
-    inputAttributes: { autocomplete: 'current-password' },
-    inputValidator: value => value?.trim() ? true : t('secretReveal.passwordRequired'),
-    confirmButtonText: t('common.confirm'),
-    cancelButtonText: t('common.cancel')
-  })
-  return value
 }
 
 /** 关闭查看窗口后清除浏览器内存中的供应商 API Key。 */
