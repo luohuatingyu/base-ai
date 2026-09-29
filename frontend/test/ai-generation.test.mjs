@@ -40,7 +40,7 @@ test('AI 生成 page restricts assets by generation mode', () => {
   assert.match(source, /VIDEO_TRANSITION: \{ kinds: \['VIDEO'\], max: 3 \}/)
   assert.match(source, /:disabled="assetsDisabled"/)
   assert.match(source, /function reconcileInputsForMode\(\)/)
-  assert.match(source, /if \(!assetsAllowed\.value\) inputs\.value = \[\]/)
+  assert.match(source, /if \(!assetsAllowed\.value\) \{ inputs\.value = \[\]/)
 })
 
 /** 所有已声明的视频任务必须在前端生成与方舟一致的锁定参数。 */
