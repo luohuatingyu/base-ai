@@ -505,7 +505,7 @@ public class MediaGenerationService {
 
     /** 根据输出字段确定备份 MIME，避免把视频当作 PNG 保存。 */
     private String outputMimeType(Map<String, Object> output, boolean video) {
-        String declared = String.valueOf(output.getOrDefault("mimeType", output.getOrDefault("mediaType", ""))).toLowerCase(Locale.ROOT);
+        String declared = String.valueOf(output.getOrDefault("mimeType", output.getOrDefault("content_type", output.getOrDefault("mediaType", "")))).toLowerCase(Locale.ROOT);
         if (declared.contains("/")) return declared;
         if (declared.contains("video") || video) return "video/mp4";
         return "image/png";

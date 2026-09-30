@@ -32,8 +32,9 @@ public class OssMediaStorageService {
 
     /** 配置完整时启用 OSS；测试和未配置环境继续使用原有临时存储。 */
     public boolean enabled() {
+        String prefix = normalizedPrefix();
         return nonBlank(properties.getEndpoint()) && nonBlank(properties.getAccessKeyId()) && nonBlank(properties.getAccessKeySecret())
-            && nonBlank(properties.getBucketName()) && normalizedPrefix().startsWith("public/");
+            && nonBlank(properties.getBucketName()) && prefix.startsWith("public/") && !prefix.contains("..") && !prefix.startsWith("/");
     }
 
     /** 上传字节并返回仅位于 public 前缀下的公共地址。 */
