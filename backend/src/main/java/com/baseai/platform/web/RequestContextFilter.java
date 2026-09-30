@@ -1,5 +1,7 @@
 package com.baseai.platform.web;
 
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
 import com.baseai.platform.trace.TraceTrackingPolicy;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -57,16 +59,46 @@ public class RequestContextFilter extends OncePerRequestFilter {
 
     /** 在业务执行前记录方法和路径，不采集查询参数、请求头或请求正文。 */
     public void logRequest(HttpServletRequest request) {
-        safeLog("request", () -> log.info("event=http_request method={} path={}",
-            request.getMethod(), request.getRequestURI()));
+        safeLog("request", () -> log.info(
+            "event=http_request method={} path={} remote_addr={} request_id={} trace_id={} user_id={}",
+            request.getMethod(), request.getRequestURI(), remoteAddress(request), contextValue("requestId"),
+            contextValue("traceId"), currentUserId()));
         request.setAttribute(REQUEST_LOGGED_ATTRIBUTE, Boolean.TRUE);
     }
 
     /** 在业务执行后记录状态和耗时，不采集响应头或响应正文。 */
     private void logResponse(HttpServletRequest request, HttpServletResponse response, long durationMs) {
         safeLog("response", () -> log.info(
-            "event=http_response method={} path={} status={} duration_ms={}",
-            request.getMethod(), request.getRequestURI(), response.getStatus(), durationMs));
+            "event=http_response method={} path={} remote_addr={} request_id={} trace_id={} user_id={} "
+                + "status={} outcome={} duration_ms={} error_type={}",
+            request.getMethod(), request.getRequestURI(), remoteAddress(request), contextValue("requestId"),
+            contextValue("traceId"), currentUserId(), response.getStatus(), outcome(response.getStatus()), durationMs,
+            request.getAttribute("baseAi.errorType") == null ? "-" : request.getAttribute("baseAi.errorType")));
+    }
+
+    /** 返回稳定的客户端地址字段，避免空值让日志查询出现多种表示。 */
+    private String remoteAddress(HttpServletRequest request) {
+        String address = request.getRemoteAddr();
+        return address == null || address.isBlank() ? "-" : address;
+    }
+
+    /** 从 MDC 读取跨服务关联字段，未建立上下文时使用统一占位值。 */
+    private String contextValue(String key) {
+        String value = MDC.get(key);
+        return value == null || value.isBlank() ? "-" : value;
+    }
+
+    /** 仅记录用户编号，不记录用户名、凭证或其他身份信息。 */
+    private String currentUserId() {
+        AuthUser user = AuthContext.current();
+        return user == null || user.id() == null ? "-" : String.valueOf(user.id());
+    }
+
+    /** 将 HTTP 状态归类为便于聚合的请求结果。 */
+    private String outcome(int status) {
+        if (status >= 500) return "server_error";
+        if (status >= 400) return "client_error";
+        return "success";
     }
 
     /** 隔离日志记录异常，避免请求或响应日志失败影响接口正常返回。 */
