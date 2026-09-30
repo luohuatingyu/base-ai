@@ -32,6 +32,25 @@ public final class MediaGenerationAgentRegistry {
             .orElseThrow(() -> new IllegalStateException("No media generation strategy"));
     }
 
+    /** 按供应商显式绑定的策略解析媒体 Agent；历史空值才回退到名称推断。 */
+    public MediaGenerationAgentStrategy resolve(String strategyCode, String providerCode, String model, String profile) {
+        if (strategyCode == null || strategyCode.isBlank()) return resolve(providerCode, model, profile);
+        String normalized = normalizeStrategyCode(strategyCode);
+        return strategies.stream().filter(strategy -> normalizeStrategyCode(strategy.id()).equals(normalized)).findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Unknown media generation strategy: " + strategyCode));
+    }
+
+    /** 返回已注册的策略编码，供供应商管理页面选择。 */
+    public List<String> strategyCodes() { return strategies.stream().map(MediaGenerationAgentStrategy::id).toList(); }
+
+    /** 判断模型画像是否属于供应商绑定策略；通用策略允许自定义画像。 */
+    public boolean supportsProfile(String strategyCode, String providerCode, String model, String profile) {
+        if (profile == null || profile.isBlank()) return true;
+        MediaGenerationAgentStrategy strategy = resolve(strategyCode, providerCode, model, profile);
+        if ("GENERIC".equalsIgnoreCase(strategy.id())) return true;
+        return strategy.supports("", "", profile) || strategy.supports(providerCode, model, profile);
+    }
+
     /** 返回策略编码，供模型目录和任务诊断使用。 */
     public String protocol(String providerCode, String model, String profile) {
         return resolve(providerCode, model, profile).id();
@@ -42,6 +61,17 @@ public final class MediaGenerationAgentRegistry {
         return resolve(providerCode, model, profile).capabilities(modelType, model, profile);
     }
 
+    /** 返回供应商显式绑定策略的能力目录。 */
+    public java.util.Map<String, Object> capabilities(String strategyCode, String providerCode, String model,
+                                                      String profile, String modelType) {
+        return resolve(strategyCode, providerCode, model, profile).capabilities(modelType, model, profile);
+    }
+
+    /** 返回供应商显式绑定策略的稳定编码。 */
+    public String protocol(String strategyCode, String providerCode, String model, String profile) {
+        return resolve(strategyCode, providerCode, model, profile).id();
+    }
+
     /** 判断显式生成画像是否属于内置策略，供模型保存校验使用。 */
     public static boolean knownProfile(String profile, String modelType) {
         String value = profile == null ? "" : profile.toLowerCase(java.util.Locale.ROOT).replace('_', '-');
@@ -49,5 +79,10 @@ public final class MediaGenerationAgentRegistry {
         if (value.contains("openai") || value.contains("gpt-image") || value.contains("dall-e") || value.contains("sora")) return true;
         if (value.contains("gemini") || value.contains("google") || value.contains("veo") || value.contains("imagen")) return true;
         return false;
+    }
+
+    /** 规范化供应商策略编码，避免大小写差异造成绑定失效。 */
+    private static String normalizeStrategyCode(String value) {
+        return value == null ? "" : value.trim().toUpperCase(java.util.Locale.ROOT);
     }
 }
