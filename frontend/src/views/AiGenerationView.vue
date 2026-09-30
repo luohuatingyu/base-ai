@@ -18,9 +18,12 @@
       </el-radio-group>
     </div>
 
-    <el-alert v-if="workflowContext.projectId || workflowContext.source" class="generation-context" type="info" show-icon :closable="false">
-      <template #title>{{ t('generation.videoContextTitle') }}</template>
-      <template #default>{{ t('generation.videoContextHint', { source: workflowContext.source || t('generation.videoContextDefault') }) }}</template>
+    <el-alert v-if="workflowContext.projectId || workflowContext.source || workflowContext.scriptId" class="generation-context" type="info" show-icon :closable="false">
+      <template #title>{{ workflowContext.scriptId ? t('generation.scriptContextTitle') : t('generation.videoContextTitle') }}</template>
+      <template #default>
+        {{ t('generation.videoContextHint', { source: workflowContext.source || t('generation.videoContextDefault') }) }}
+        <span v-if="workflowContext.scriptId" class="generation-script-context">{{ t('generation.scriptContextHint', { id: workflowContext.scriptId }) }}</span>
+      </template>
     </el-alert>
 
     <div class="generation-workflow" aria-label="generation workflow">
@@ -560,7 +563,7 @@ function canSaveOutput(output) { return Boolean(projectOutputPayload(output, sel
 /** 把生成结果保存为项目中的视频草稿或场景参考资产。 */
 async function saveOutput(output, index) {
   const task = selectedHistoryTask.value
-  const payload = projectOutputPayload(output, task, workflowContext.value.projectId, index)
+  const payload = projectOutputPayload(output, task, workflowContext.value.projectId, index, workflowContext.value)
   if (!payload) return
   savingOutput.value = `${task.id}:${index}`
   try {
