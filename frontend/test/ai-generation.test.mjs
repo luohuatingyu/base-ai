@@ -234,3 +234,19 @@ test('AI 生成 history exposes output summaries and download actions', () => {
   assert.match(zhLocale, /download: '下载'/)
   assert.match(enLocale, /download: 'Download'/)
 })
+
+/** 单张结果需要居中，多张结果保持网格，图层拆分则按边界拼成可下载的合成预览。 */
+test('AI 生成 history centers single images and composes layer outputs', () => {
+  assert.match(source, /class="history-output-preview"/)
+  assert.match(source, /:class="\{ 'is-single': historyOutputs\.length === 1, 'is-layer-fallback': isLayerPuzzle \}"/)
+  assert.match(source, /\.result-grid\.is-single \{ grid-template-columns: minmax\(0, min\(100%, 520px\)\); justify-content: center; \}/)
+  assert.match(source, /const isLayerPuzzle = computed\(\(\) => selectedHistoryTask\.value\?\.generationMode === 'LAYER_DECOMPOSITION'/)
+  assert.match(source, /const layerPuzzleReady = computed\(\(\) => isLayerPuzzle\.value && historyOutputs\.value\.some\(output => layerBoundingBox\(output\)\)/)
+  assert.match(source, /class="layer-puzzle-board" :style="\{ aspectRatio: layerPuzzleAspectRatio \}"/)
+  assert.match(source, /function layerBoundingBox\(output\)/)
+  assert.match(source, /function layerPuzzlePieceStyle\(output, index\)/)
+  assert.match(source, /zIndex/)
+  assert.match(source, /class="layer-puzzle-list"/)
+  assert.match(source, /downloadOutput\(output, index\)/)
+  assert.match(source, /'is-layer-fallback': isLayerPuzzle/)
+})

@@ -210,12 +210,28 @@
           <span>{{ selectedHistoryTask.inputCount || 0 }} {{ t('generation.assetsShort') }}</span>
         </div>
         <p v-if="selectedHistoryTask.errorMessage" class="generation-error generation-alert">{{ failureReason(selectedHistoryTask.errorMessage) }}</p>
-        <div v-if="historyOutputs.length" class="result-grid">
-          <article v-for="(output, index) in historyOutputs" :key="output.value + index" class="result-card">
-            <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="result-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" fit="contain" preview-teleported />
-            <video v-else class="result-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
-            <div class="result-card-footer"><div class="result-card-title"><strong>{{ outputCaption(output, index) }}</strong><el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button></div><small v-if="output.output_format || output.size || outputMimeType(output, selectedHistoryTask.generationType)">{{ output.output_format || outputMimeType(output, selectedHistoryTask.generationType) }}<span v-if="(output.output_format || outputMimeType(output, selectedHistoryTask.generationType)) && output.size"> · </span>{{ output.size || '' }}</small></div>
-          </article>
+        <div v-if="historyOutputs.length" class="history-output-preview">
+          <div v-if="layerPuzzleReady" class="layer-puzzle">
+            <div class="layer-puzzle-board" :style="{ aspectRatio: layerPuzzleAspectRatio }">
+              <div v-for="(output, index) in historyOutputs" :key="output.value + index" class="layer-puzzle-piece" :style="layerPuzzlePieceStyle(output, index)">
+                <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="layer-puzzle-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" fit="contain" preview-teleported />
+                <video v-else class="layer-puzzle-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
+              </div>
+            </div>
+            <div class="layer-puzzle-list">
+              <div v-for="(output, index) in historyOutputs" :key="`layer-${output.value}-${index}`" class="layer-puzzle-item">
+                <div class="layer-puzzle-item-copy"><strong>{{ outputCaption(output, index) }}</strong><small v-if="output.description">{{ output.description }}</small></div>
+                <el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="result-grid" :class="{ 'is-single': historyOutputs.length === 1, 'is-layer-fallback': isLayerPuzzle }">
+            <article v-for="(output, index) in historyOutputs" :key="output.value + index" class="result-card">
+              <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="result-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" fit="contain" preview-teleported />
+              <video v-else class="result-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
+              <div class="result-card-footer"><div class="result-card-title"><strong>{{ outputCaption(output, index) }}</strong><el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button></div><small v-if="output.output_format || output.size || outputMimeType(output, selectedHistoryTask.generationType)">{{ output.output_format || outputMimeType(output, selectedHistoryTask.generationType) }}<span v-if="(output.output_format || outputMimeType(output, selectedHistoryTask.generationType)) && output.size"> · </span>{{ output.size || '' }}</small></div>
+            </article>
+          </div>
         </div>
         <div v-else class="result-empty"><span class="result-empty-icon">✦</span><strong>{{ selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED' ? t('generation.resultWaiting') : t('generation.resultEmpty') }}</strong><small>{{ selectedHistoryTask.status === 'RUNNING' || selectedHistoryTask.status === 'QUEUED' ? t('generation.resultWaitingHint') : t('generation.resultEmptyHint') }}</small></div>
         <div v-if="selectedHistoryTask.outputJson?.errors?.length" class="generation-error generation-alert">{{ t('generation.partialFailure', { count: selectedHistoryTask.outputJson.errors.length }) }}</div>
@@ -285,6 +301,10 @@ const accept = computed(() => {
 const canSubmit = computed(() => !busy.value && !!modelId.value && !!mode.value && (!!prompt.value.trim() || inputs.value.length > 0) && (assetsAllowed.value || inputs.value.length === 0))
 const dialogTitle = computed(() => t(dialogMode.value === 'result' ? 'generation.result' : 'generation.history'))
 const historyOutputs = computed(() => selectedHistoryTask.value?.outputJson?.outputs || [])
+const isLayerPuzzle = computed(() => selectedHistoryTask.value?.generationMode === 'LAYER_DECOMPOSITION' && historyOutputs.value.length > 1)
+const layerPuzzleReady = computed(() => isLayerPuzzle.value && historyOutputs.value.some(output => layerBoundingBox(output)) && historyOutputs.value.every((output, index) => layerBoundingBox(output) || isBaseLayer(output, index)))
+const layerPuzzleDimensions = computed(() => layerCanvasDimensions(historyOutputs.value))
+const layerPuzzleAspectRatio = computed(() => `${layerPuzzleDimensions.value.width} / ${layerPuzzleDimensions.value.height}`)
 const draftMode = computed(() => mode.value === 'DRAFT_VIDEO')
 const draftToVideo = computed(() => mode.value === 'DRAFT_TO_VIDEO')
 const editVideo = computed(() => mode.value === 'EDIT_VIDEO')
@@ -380,6 +400,53 @@ function historyPreview(task) { return task?.outputJson?.outputs?.[0] || null }
 function promptSummary(value) { const text = String(value || '').trim(); return text ? (text.length > 72 ? `${text.slice(0, 72)}…` : text) : t('generation.noPrompt') }
 /** 显示任务输出数量，区分尚未生成和已有部分结果。 */
 function outputCountLabel(task) { const count = task?.outputJson?.outputs?.length || 0; return count ? t('generation.outputCount', { count }) : t('generation.noOutput') }
+/** 判断图层拆分中的底图，底图通常没有 bounding_box 且位于 z_index 0。 */
+function isBaseLayer(output, index) { return Number(output?.z_index) === 0 || (index === 0 && output?.bounding_box == null) }
+/** 将供应商的 bounding_box 统一为左、上、右、下坐标，兼容 normalized 与 absolute 结构。 */
+function layerBoundingBox(output) {
+  const raw = output?.bounding_box
+  const value = raw?.normalized || raw?.absolute || raw
+  if (Array.isArray(value) && value.length >= 4) {
+    const [left, top, rightOrWidth, bottomOrHeight] = value.map(Number)
+    if (![left, top, rightOrWidth, bottomOrHeight].every(Number.isFinite)) return null
+    const normalized = Array.isArray(raw?.normalized) || value.every(item => item >= 0 && item <= 1)
+    const scale = normalized && value.every(item => item <= 1) ? 1000 : 1
+    return { left: left * scale, top: top * scale, right: rightOrWidth * scale, bottom: bottomOrHeight * scale, normalized }
+  }
+  if (!value || typeof value !== 'object') return null
+  const left = Number(value.left ?? value.x)
+  const top = Number(value.top ?? value.y)
+  const right = Number(value.right ?? (Number.isFinite(Number(value.width)) ? left + Number(value.width) : NaN))
+  const bottom = Number(value.bottom ?? (Number.isFinite(Number(value.height)) ? top + Number(value.height) : NaN))
+  if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) return null
+  const normalized = Boolean(raw?.normalized)
+  const scale = normalized && [left, top, right, bottom].every(item => item >= 0 && item <= 1) ? 1000 : 1
+  return { left: left * scale, top: top * scale, right: right * scale, bottom: bottom * scale, normalized }
+}
+/** 从输出尺寸或图层边界计算拼图画布比例，缺少尺寸时使用边界最大值。 */
+function layerCanvasDimensions(outputs) {
+  const normalized = outputs.map(layerBoundingBox).some(box => box?.normalized)
+  if (normalized) return { width: 1000, height: 1000 }
+  const size = outputs.map(output => String(output?.size || '')).map(value => value.match(/(\d{2,5})\s*[x×]\s*(\d{2,5})/i)).find(Boolean)
+  if (size) return { width: Number(size[1]), height: Number(size[2]) }
+  const boxes = outputs.map(layerBoundingBox).filter(Boolean)
+  return { width: Math.max(1, ...boxes.map(box => box.right)), height: Math.max(1, ...boxes.map(box => box.bottom)) }
+}
+/** 把图层边界转换成画布百分比并按 z_index 排序，底图默认铺满画布。 */
+function layerPuzzlePieceStyle(output, index) {
+  const box = layerBoundingBox(output)
+  const dimensions = layerPuzzleDimensions.value
+  const zIndex = Number.isFinite(Number(output?.z_index)) ? Number(output.z_index) : index
+  if (!box) return { inset: '0', zIndex }
+  const scale = 1
+  return {
+    left: `${(box.left / scale) / dimensions.width * 100}%`,
+    top: `${(box.top / scale) / dimensions.height * 100}%`,
+    width: `${((box.right - box.left) / scale) / dimensions.width * 100}%`,
+    height: `${((box.bottom - box.top) / scale) / dimensions.height * 100}%`,
+    zIndex
+  }
+}
 /** 图片或视频加载失败时只切换一次 OSS 备份，避免失败地址之间循环。 */
 function useOssFallback(event, output, fallbackType) {
   const target = event?.target
@@ -751,7 +818,9 @@ onMounted(loadModels)
 .result-meta span + span::before { content: '·'; margin-right: 14px; color: var(--el-border-color); }
 .generation-progress { display: flex; align-items: center; gap: 8px; margin: 15px 0 0; color: var(--el-color-primary); font-size: 13px; font-weight: 600; }
 .progress-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px var(--el-color-primary-light-9); animation: generation-pulse 1.1s ease-in-out infinite; }
+.history-output-preview { width: 100%; }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-top: 17px; }
+.result-grid.is-single { grid-template-columns: minmax(0, min(100%, 520px)); justify-content: center; }
 .result-card { overflow: hidden; border: 1px solid var(--el-border-color-lighter); border-radius: 11px; background: var(--el-fill-color-light); transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
 .result-card:hover { border-color: var(--el-color-primary-light-7); box-shadow: 0 10px 22px color-mix(in srgb, #243b68 10%, transparent); transform: translateY(-2px); }
 .result-media { display: block; width: 100%; height: 238px; object-fit: contain; background: var(--el-fill-color); }
@@ -765,6 +834,17 @@ onMounted(loadModels)
 .result-empty-icon,
 .loading-spark { color: var(--el-color-primary); font-size: 25px; }
 .loading-spark { animation: generation-spin 1.4s linear infinite; }
+.layer-puzzle { display: grid; gap: 12px; margin-top: 17px; }
+.layer-puzzle-board { position: relative; width: min(100%, 680px); margin: 0 auto; overflow: hidden; border: 1px solid var(--el-border-color); border-radius: 12px; background-color: var(--el-fill-color-light); background-image: linear-gradient(45deg, color-mix(in srgb, var(--el-border-color) 24%, transparent) 25%, transparent 25%, transparent 75%, color-mix(in srgb, var(--el-border-color) 24%, transparent) 75%), linear-gradient(45deg, color-mix(in srgb, var(--el-border-color) 24%, transparent) 25%, transparent 25%, transparent 75%, color-mix(in srgb, var(--el-border-color) 24%, transparent) 75%); background-position: 0 0, 8px 8px; background-size: 16px 16px; }
+.layer-puzzle-piece { position: absolute; overflow: hidden; }
+.layer-puzzle-media { display: block; width: 100%; height: 100%; object-fit: contain; }
+.layer-puzzle-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.layer-puzzle-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 9px; background: var(--el-fill-color-light); }
+.layer-puzzle-item-copy { display: grid; min-width: 0; gap: 2px; }
+.layer-puzzle-item-copy strong,
+.layer-puzzle-item-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer-puzzle-item-copy strong { font-size: 12px; }
+.layer-puzzle-item-copy small { color: var(--el-text-color-secondary); font-size: 11px; }
 .generation-error { margin: 10px 0; color: var(--el-color-danger); line-height: 1.5; }
 .generation-empty { margin: 6px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .generation-empty p { margin: 0 0 2px; }
@@ -772,6 +852,7 @@ onMounted(loadModels)
 .history-dialog-heading { margin-bottom: 0; }
 .history-dialog-content .result-meta,
 .history-dialog-content .result-grid,
+.history-dialog-content .layer-puzzle,
 .history-dialog-content .result-empty { margin-top: 0; }
 .history-dialog-content .generation-alert { margin: 0; }
 :deep(.generation-history-dialog .el-dialog__body) { max-height: none; overflow: visible; }
@@ -828,6 +909,7 @@ onMounted(loadModels)
   .submit-hint { flex-basis: 100%; }
   .generation-actions .el-button { flex: 1; }
   .result-grid { grid-template-columns: 1fr 1fr; gap: 9px; }
+  .result-grid.is-single { grid-template-columns: minmax(0, 1fr); }
   .result-media { height: 170px; }
 }
 </style>
