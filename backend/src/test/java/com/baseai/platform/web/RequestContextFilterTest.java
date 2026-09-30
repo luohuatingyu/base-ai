@@ -133,6 +133,7 @@ class RequestContextFilterTest {
         filter.doFilter(request, response, (wrappedRequest, wrappedResponse) -> {
             MDC.put("traceId", "trace-42");
             filter.logRequest((jakarta.servlet.http.HttpServletRequest) wrappedRequest);
+            wrappedRequest.setAttribute(RequestContextFilter.ERROR_TYPE_ATTRIBUTE, "RateLimitException");
             ((jakarta.servlet.http.HttpServletResponse) wrappedResponse).setStatus(429);
         });
 
@@ -143,7 +144,7 @@ class RequestContextFilterTest {
         assertTrue(messages.stream().anyMatch(message -> message.contains(
             "event=http_response method=POST path=/api/test/metadata remote_addr=192.0.2.42 "
                 + "request_id=request-42 trace_id=trace-42 user_id=7 status=429 outcome=client_error")
-            && message.contains("error_type=-")));
+            && message.contains("error_type=RateLimitException")));
     }
 
     /** 邮件管理接口必须整体排除 HTTP 明细日志，避免密码和收件人泄漏。 */
