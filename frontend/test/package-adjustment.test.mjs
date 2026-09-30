@@ -5,6 +5,7 @@ import test, { before } from 'node:test'
 import { buildTokenWithPlan, formatJwtTimestamp, parseJwtToken } from '../src/utils/jwtToken.js'
 import { buildAccessibleNavigation, localizeMenuName } from '../src/utils/navigation.js'
 import zhCN from '../src/locales/zh-CN.js'
+import enUS from '../src/locales/en-US.js'
 
 const routeSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const viewSource = readFileSync(new URL('../src/views/PackageAdjustmentView.vue', import.meta.url), 'utf8')
@@ -109,4 +110,6 @@ test('套餐调整页面已接入受权限控制的动态导航', () => {
   assert.match(viewSource, /privateKey/)
   assert.equal(localizeMenuName(menus[1], key => key === 'nav.items.packages' ? zhCN.nav.items.packages : key), '套餐管理')
   assert.equal(localizeMenuName(menus[2], key => key === 'nav.items.packageAdjustment' ? zhCN.nav.items.packageAdjustment : key), '套餐调整')
+  assert.equal(localizeMenuName(menus[1], key => key === 'nav.items.packages' ? enUS.nav.items.packages : key), 'Package Management')
+  assert.equal(localizeMenuName(menus[2], key => key === 'nav.items.packageAdjustment' ? enUS.nav.items.packageAdjustment : key), 'Plan Adjustment')
 })
