@@ -3,6 +3,7 @@ package com.baseai.platform.security;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.domain.UserAccount;
 import com.baseai.platform.repository.UserRepository;
+import com.baseai.platform.web.RequestContextFilter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,6 +74,7 @@ class AuthInterceptorTest {
 
         assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), handler));
         assertEquals(AuthenticationType.API_KEY, AuthContext.require().authenticationType());
+        assertEquals(2L, request.getAttribute(RequestContextFilter.USER_ID_ATTRIBUTE));
         verify(sessionService, never()).touch(org.mockito.ArgumentMatchers.any());
     }
 
