@@ -11112,3 +11112,38 @@ Commit: `b8c3af2`
 - 覆盖 OSS 配置边界、输入素材持久化、生成结果备份字段、图片/视频展示回退、前端下载兼容和现有媒体生成回归。
 - 当前环境的 Docker Ubuntu 仓库无法完成 backend runtime 镜像最后一步；已完成的 Maven 和前端测试不受影响。网络恢复后需重新执行 `docker compose up --build -d` 并检查容器健康状态。
 - 真实 OSS 上传尚未执行生产对象验证；部署后建议用一张图片和一个短视频生成任务验证对象、MIME、公共访问和失败回退，并清理测试对象。
+## 生成历史图片布局与图层拼图（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `64819e4`
+- 提交说明：Improve generation history image layout；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 单张历史图片在结果弹窗中居中，多张普通结果保持响应式网格；图层拆分结果读取 `bounding_box` 与 `z_index` 组成拼图画布，缺少可用边界时回退普通网格。
+- 拼图下方保留每个图层的名称、描述和独立下载入口；未修改后端接口、数据库、供应商协议或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 单张图片居中 | `ai-generation.test.mjs` 检查 `is-single` 布局和居中 CSS | 正常、回归 | 通过 |
+| 多张图片使用网格 | 同文件检查自适应网格及窄屏降列规则 | 正常、边界 | 通过 |
+| 图层拆分以拼图形式展示 | 同文件检查图层识别、边界解析、画布比例、绝对定位与 `zIndex` 叠放 | 正常、兼容 | 通过 |
+| 图层边界缺失时仍可查看 | 同文件检查图层拼图不可用时回退 `result-grid` | 异常、兼容 | 通过 |
+| 输出仍可独立下载 | 现有输出下载断言及新增拼图图层下载入口断言 | 正常、回归 | 通过 |
+
+### 实际执行命令与结果
+
+- `cd frontend && npm run lint`：通过。
+- `cd frontend && npm run typecheck`：通过。
+- `cd frontend && node --test test/ai-generation.test.mjs test/generation-output.test.mjs`：24/24 通过。
+- `cd frontend && npm test`：完整前端套件 682/682 通过；覆盖率行 98.18%、分支 81.95%、函数 95.85%；生产构建通过；E2E 3/3 通过。
+- `docker compose up --build -d`：全部镜像构建成功，统一启动因既有 `baseai-local-docker-socket-proxy` 健康检查失败退出，非端口占用。
+- `docker compose up -d --no-deps frontend`：成功；前端容器 healthy，访问 `http://127.0.0.1:8080/` 返回应用 HTML。Backend、Document Parser、Python Worker 仍为 healthy。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖历史结果弹窗的单图、多图、图层拆分、旧数据回退和下载入口；未修改后端业务代码，因此不触发后端全量 Maven 重测。
+- 图层拼图优先使用供应商返回的 `bounding_box.normalized` 或 `absolute` 坐标；缺少图层边界或坐标不完整时保留普通网格，避免遮挡或错误定位。
+- 统一 Compose 启动仍受既有 Docker Socket Proxy unhealthy 状态影响；修复该容器健康检查后应再次执行 `docker compose up --build -d` 验证整栈依赖启动。
+- 重测条件：修改输出元数据解析、历史弹窗布局、媒体下载逻辑或后端输出字段时，应重新执行前端完整套件、E2E 和 Compose 重建。
