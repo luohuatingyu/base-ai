@@ -377,7 +377,7 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import http, { showHttpError } from '../api/http'
-import { createAiVideoResource } from '../api/aiVideo'
+import { createAiVideoResource, promoteAiVideoGeneration } from '../api/aiVideo'
 import { generationFailureReasonKey, parseGenerationFailure } from '../utils/generationFailure.js'
 import { outputFallbackSource, outputFilename, outputMediaType, outputMimeType, outputSource } from '../utils/generationOutput.js'
 import { generationIntent, projectOutputPayload } from '../utils/generationWorkflow.js'
@@ -567,7 +567,15 @@ async function saveOutput(output, index) {
   if (!payload) return
   savingOutput.value = `${task.id}:${index}`
   try {
-    await createAiVideoResource(payload.resource, payload.payload, payload.assetType)
+    if (payload.resource === 'videos') {
+      await promoteAiVideoGeneration({
+        ...payload.payload,
+        generationTaskId: task.id,
+        storyboardId: workflowContext.value.storyboardId || undefined
+      })
+    } else {
+      await createAiVideoResource(payload.resource, payload.payload, payload.assetType)
+    }
     ElMessage.success(t('generation.savedToProject'))
   } catch (cause) {
     showHttpError(cause, 'generation.saveToProjectFailed')

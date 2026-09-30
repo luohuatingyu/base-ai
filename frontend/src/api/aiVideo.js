@@ -15,6 +15,11 @@ export function createAiVideoResource(resource, payload, assetType) {
   return http.post(`/ai-video/${resource}`, payload, { params: assetType ? { assetType } : {} })
 }
 
+/** 将已完成的视频生成任务回填为项目成片。 */
+export function promoteAiVideoGeneration(payload) {
+  return http.post('/ai-video/videos/from-generation', payload)
+}
+
 /** 更新 AI 视频业务资源。 */
 export function updateAiVideoResource(resource, id, payload) {
   return http.put(`/ai-video/${resource}/${id}`, payload)
