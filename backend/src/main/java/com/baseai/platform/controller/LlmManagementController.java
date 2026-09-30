@@ -25,6 +25,8 @@ public class LlmManagementController {
 
     /** 查询可用的模型供应商。 */
     @GetMapping("/providers") @RequiredPermission("ai:model:provider:list") public List<LlmManagementService.ProviderView> providers(){return service.providers();}
+    /** 查询可绑定到供应商的媒体策略编码。 */
+    @GetMapping("/provider-strategies") @RequiredPermission("ai:model:provider:list") public List<String> providerStrategies(){return service.strategyCodes();}
     /** 在管理员更新权限范围内回查指定供应商的明文 API Key；响应禁止缓存。 */
     @PostMapping("/providers/{id}/api-keys") @RequiredPermission("ai:model:provider:update")
     @TraceType(value = "LLM_PROVIDER_API_KEYS_REVEAL", captureRequest = false)

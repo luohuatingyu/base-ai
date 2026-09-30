@@ -5,6 +5,14 @@ server:
     max-http-form-post-size: ${APP_MAX_REQUEST_BYTES:67108864}
     max-swallow-size: ${APP_MAX_REQUEST_BYTES:67108864}
 
+# 生成媒体仅写入 public 前缀；凭据由容器环境注入。
+oss:
+  endpoint: ${OSS_ENDPOINT:}
+  access-key-id: ${OSS_ACCESS_KEY_ID:}
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+  bucket-name: ${OSS_BUCKET_NAME:}
+  prefix: ${OSS_PREFIX:public/}
+
 spring:
   application:
     name: base-ai-backend

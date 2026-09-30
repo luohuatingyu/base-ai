@@ -70,8 +70,8 @@
         </details>
         <div v-if="item.media?.length" class="message-media">
           <template v-for="media in item.media" :key="media.value">
-            <el-image v-if="media.kind === 'image'" :src="media.value" :preview-src-list="item.media.filter(value => value.kind === 'image').map(value => value.value)" fit="contain" preview-teleported />
-            <video v-else controls preload="metadata" :src="media.value" />
+            <el-image v-if="media.kind === 'image'" :src="media.value" :preview-src-list="item.media.filter(value => value.kind === 'image').map(value => value.value)" @error="useMediaFallback($event, media)" fit="contain" preview-teleported />
+            <video v-else controls preload="metadata" :src="media.value" @error="useMediaFallback($event, media)" />
           </template>
         </div>
       </div>
@@ -281,17 +281,10 @@ const workflowTools = ref([])
 const agentToolCodes = ref([])
 const workflowToolCodes = ref([])
 const imageInput = ref(null)
-const generationInput = ref(null)
-const generationInputs = ref([])
 const loading = ref(false)
 const MAX_IMAGES = 4
-const MAX_GENERATION_INPUTS = 50
 const MAX_IMAGE_SIZE = 30 * 1024 * 1024
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff', 'image/gif', 'image/heic', 'image/heif'])
-const VIDEO_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v'])
-const MAX_GENERATION_VIDEO_SIZE = 50 * 1024 * 1024
-const AUDIO_TYPES = new Set(['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'])
-const MAX_GENERATION_AUDIO_SIZE = 15 * 1024 * 1024
 const MAX_PROMPT_FILE_SIZE = 1024 * 1024
 
 // 模型配置
@@ -299,14 +292,6 @@ const mode = ref('multi') // multi=模型池(能力路由) / single=供应商+�
 const featureCode = ref('')
 const modelType = ref('text_model')
 const modelTypes = ref([])
-const generationMode = ref('chat')
-const generationType = ref('image_model')
-const generationTypes = [{ value: 'image_model', label: '图片生成模型' }, { value: 'video_model', label: '视频生成模型' }]
-const generationModels = ref([])
-const generationModelId = ref(null)
-const generationOptions = ref({ sequential_image_generation_options: {} })
-const generationAdvancedOptions = ref('')
-const imageGroupEnabled = ref(false)
 const enableThinking = ref(false)
 const thinkingLevel = ref('MEDIUM')
 const routes = ref([])
@@ -320,18 +305,9 @@ const defaultRouteSupportsType = computed(() => routes.value.some(route => route
 const filteredRoutes = computed(() => routes.value.filter(route => route.featureCode !== 'DEFAULT' && route.supportedModelTypes?.includes(modelType.value)))
 const filteredProviders = computed(() => providers.value.filter(provider => provider.models.some(matchesType)))
 const currentModels = computed(() => (providers.value.find(p => p.id === providerId.value)?.models || []).filter(matchesType))
-const generationModelOptions = computed(() => (Array.isArray(generationModels.value) ? generationModels.value : []).filter(model => model.modelType === generationType.value))
-const generationInputLimit = computed(() => MAX_GENERATION_INPUTS)
-const generationFileAccept = 'text/plain,text/markdown,.txt,.md,image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif,image/heic,image/heif,video/mp4,video/webm,video/quicktime,video/x-m4v,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav'
-const canGenerationSend = computed(() => optionsReady.value && !loading.value && !serverGenerating.value && !!generationModelId.value
-  && (!!prompt.value.trim() || generationInputs.value.length > 0))
-
-const canSend = computed(() => generationMode.value === 'generation' ? canGenerationSend.value : optionsReady.value && !loading.value && !serverGenerating.value && !!prompt.value.trim()
+const canSend = computed(() => optionsReady.value && !loading.value && !serverGenerating.value && !!prompt.value.trim()
   && (mode.value === 'single' ? !!modelId.value : featureCode.value
     ? filteredRoutes.value.some(route => route.featureCode === featureCode.value) : defaultRouteSupportsType.value))
-
-// 生成逻辑已迁移到 AiGenerationView，保留这些兼容绑定供旧会话数据恢复和历史测试使用。
-void [generationTypes, generationFileAccept, onGenerationModeChange, onGenerationTypeChange, openGenerationInputPicker, onGenerationInputSelected, removeGenerationInput]
 
 const toolsLocked = computed(() => loading.value || serverGenerating.value)
 const toolGroups = computed(() => [
@@ -469,20 +445,6 @@ function stopGeneration() {
 function onProviderChange() {
   modelId.value = null
 }
-/** 切换调用类型时清理另一类模型选择，避免媒体参数进入普通聊天请求。 */
-function onGenerationModeChange() {
-  if (generationMode.value === 'generation') {
-    pendingImages.value = []
-    if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
-  } else generationInputs.value = []
-}
-/** 切换图片或视频类型后只保留同类模型。 */
-function onGenerationTypeChange() {
-  if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
-  generationOptions.value = { sequential_image_generation_options: {} }
-  generationAdvancedOptions.value = ''
-  imageGroupEnabled.value = false
-}
 /** 切换模型来源时只保留当前模式需要的配置，避免隐藏字段继续影响请求。 */
 function setMode(nextMode) {
   if (loading.value || mode.value === nextMode) return
@@ -548,50 +510,6 @@ function removeImage(image) {
   pendingImages.value = pendingImages.value.filter(item => item !== image)
 }
 
-/** 打开统一生成输入选择器，支持文本、图片和视频组合。 */
-function openGenerationInputPicker() {
-  if (generationMode.value === 'generation') generationInput.value?.click()
-}
-
-/** 读取文本、图片或视频生成输入并转换为受控 Data URL，避免上传任意远程地址。 */
-async function onGenerationInputSelected(event) {
-  const files = Array.from(event.target.files || [])
-  event.target.value = ''
-  if (generationInputs.value.length + files.length > generationInputLimit.value) {
-    ElMessage.warning(t('chat.generationInputLimit', { count: generationInputLimit.value }))
-    return
-  }
-  for (const file of files) {
-    // 部分浏览器不提供文本文件 MIME，仅在 MIME 缺失时按受控扩展名补齐。
-    const contentType = file.type || (/\.txt$/i.test(file.name) ? 'text/plain' : /\.md$/i.test(file.name) ? 'text/markdown' : '')
-    const kind = contentType.startsWith('text/') ? 'TEXT' : contentType.startsWith('image/') ? 'IMAGE' : contentType.startsWith('video/') ? 'VIDEO' : contentType.startsWith('audio/') ? 'AUDIO' : ''
-    const allowed = kind === 'TEXT' ? new Set(['text/plain', 'text/markdown']) : kind === 'IMAGE' ? IMAGE_TYPES : kind === 'VIDEO' ? VIDEO_TYPES : AUDIO_TYPES
-    const maxSize = kind === 'TEXT' ? MAX_PROMPT_FILE_SIZE : kind === 'IMAGE' ? MAX_IMAGE_SIZE : kind === 'VIDEO' ? MAX_GENERATION_VIDEO_SIZE : MAX_GENERATION_AUDIO_SIZE
-    if (!kind || !allowed.has(contentType)) { ElMessage.warning(t('chat.generationInputType')); continue }
-    if (file.size <= 0 || file.size > maxSize) { ElMessage.warning(t('chat.generationInputSize')); continue }
-    if (generationInputs.value.some(input => input.fileName === file.name && input.contentType === contentType)) { ElMessage.warning(t('chat.generationInputType')); continue }
-    try {
-      const dataUrl = await readMediaFile(file)
-      generationInputs.value.push({ kind, fileName: file.name, contentType, dataUrl: dataUrl.replace(/^data:[^,]*,/, `data:${contentType};base64,`) })
-    } catch { /* readMediaFile 已展示安全错误提示。 */ }
-  }
-}
-
-/** 读取文本、图片或视频文件，统一使用浏览器 Data URL 供协议适配器转换。 */
-function readMediaFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => { ElMessage.error(t('chat.generationInputReadFailed')); reject(reader.error) }
-    reader.readAsDataURL(file)
-  })
-}
-
-/** 从媒体生成草稿移除一个参考文件。 */
-function removeGenerationInput(input) {
-  generationInputs.value = generationInputs.value.filter(item => item !== input)
-}
-
 /** 打开系统文件选择器，读取 Markdown 或纯文本提示词文件。 */
 function openPromptFilePicker() {
   promptFileInput.value?.click()
@@ -655,14 +573,6 @@ async function loadOptions() {
     routes.value = routesRes.data
     providers.value = providersRes.data
     modelTypes.value = typesRes.data
-    try {
-      const generationRes = await http.get('/ai/chat/generation-models')
-      generationModels.value = Array.isArray(generationRes.data) ? generationRes.data : []
-    } catch {
-      // 生成模型目录不可用不影响既有文本/视觉对话。
-      generationModels.value = []
-    }
-    if (!generationModelOptions.value.some(model => model.id === generationModelId.value)) generationModelId.value = generationModelOptions.value[0]?.id || null
     if (!modelTypes.value.some(type => type.value === modelType.value)) modelType.value = modelTypes.value[0]?.value || 'text_model'
     optionsReady.value = true
     const selected = Number(route.query.conversation)
@@ -710,7 +620,6 @@ async function newConversation() {
   messages.value = []
   prompt.value = ''
   pendingImages.value = []
-  generationInputs.value = []
   historyPage.value = 0
   await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
   await refreshHistory()
@@ -746,7 +655,6 @@ async function selectConversation(id) {
     promptFileName.value = ''
     prompt.value = ''
     pendingImages.value = []
-    generationInputs.value = []
     await router.replace({ query: { ...route.query, conversation: String(id) } })
     await scrollToLatest()
     if (serverGenerating.value) scheduleSync(id)
@@ -810,7 +718,6 @@ async function syncGeneration(id) {
 /** 只发送新问题，立即分离当前草稿，避免首个流事件清空下一条输入。 */
 async function send() {
   if (!canSend.value) return
-  if (generationMode.value === 'generation') return sendGeneration()
   const content = prompt.value.trim()
   const draft = prompt.value
   const images = [...pendingImages.value]
@@ -897,73 +804,14 @@ async function send() {
   }
 }
 
-/** 在 AI 对话页发起媒体生成并展示结果；视频任务按后端返回的任务编号轮询。 */
-async function sendGeneration() {
-  const content = prompt.value.trim()
-  const draft = prompt.value
-  const draftInputs = generationInputs.value.map(input => ({ ...input }))
-  const previousLength = messages.value.length
-  loading.value = true
-  pageError.value = ''
-  prompt.value = ''
-  try {
-    if (!conversationId.value) {
-      const created = await http.post('/ai/conversations')
-      conversationId.value = created.data.id
-      await router.replace({ query: { ...route.query, conversation: String(conversationId.value) } })
-    }
-    const user = { role: 'user', content, generationInputs: draftInputs }
-    const assistant = { role: 'assistant', content: '', status: 'GENERATING', media: [] }
-    messages.value.push(user, assistant)
-    await scrollToLatest()
-    let result = await http.post('/ai/chat/generation', {
-      model_type: generationType.value, modelId: generationModelId.value, prompt: content,
-      conversationId: conversationId.value, generationMode: 'MULTIMODAL',
-      inputs: draftInputs, options: normalizedGenerationOptions()
-    })
-    result = result.data
-    while (result.status === 'RUNNING' || result.status === 'QUEUED') {
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      result = (await http.get('/ai/chat/generation/' + result.id)).data
-    }
-    if (result.status !== 'SUCCEEDED') throw new Error(result.errorMessage || 'generation failed')
-    assistant.status = 'COMPLETED'
-    assistant.model = result.modelName
-    assistant.providerCode = result.providerCode
-    assistant.inputTokens = result.inputTokens ?? null
-    assistant.outputTokens = result.outputTokens ?? null
-    assistant.totalTokens = result.totalTokens ?? null
-    assistant.traceId = result.traceId
-    const payload = typeof result.outputJson === 'string' ? JSON.parse(result.outputJson || '{}') : (result.outputJson || {})
-    assistant.media = (payload.outputs || []).map(item => ({ kind: generationType.value === 'image_model' ? 'image' : 'video', value: item.kind === 'base64' ? 'data:image/png;base64,' + item.value : item.value }))
-    generationInputs.value = []
-  } catch (error) {
-    messages.value.splice(previousLength)
-    prompt.value = draft
-    generationInputs.value = draftInputs
-    pageError.value = t('chat.generationFailed')
-    showHttpError(error, 'chat.callFailed')
-  } finally {
-    loading.value = false
-    await refreshHistory()
-  }
+/** 聊天媒体原地址失效时切换到 OSS 备份地址。 */
+function useMediaFallback(event, media) {
+  const target = event?.target
+  if (!target || target.dataset.ossFallback === '1' || !media?.ossUrl || target.src === media.ossUrl) return
+  target.dataset.ossFallback = '1'
+  target.src = media.ossUrl
 }
 
-/** 只提交用户实际填写的方舟参数，空值交给模型默认配置处理。 */
-function normalizedGenerationOptions() {
-  const source = { ...generationOptions.value }
-  if (imageGroupEnabled.value) source.sequential_image_generation = 'auto'
-  else { delete source.sequential_image_generation; delete source.sequential_image_generation_options }
-  const options = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined && value !== null && value !== ''))
-  if (generationAdvancedOptions.value.trim()) {
-    let advanced
-    try { advanced = JSON.parse(generationAdvancedOptions.value) }
-    catch { throw new Error(t('chat.mediaAdvancedInvalid')) }
-    if (!advanced || Array.isArray(advanced) || typeof advanced !== 'object') throw new Error(t('chat.mediaAdvancedInvalid'))
-    Object.assign(options, advanced)
-  }
-  return options
-}
 </script>
 
 <style scoped>

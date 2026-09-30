@@ -55,7 +55,7 @@
         <div class="production-paths">
           <div class="production-paths-head"><div><h4>{{ t('aiVideo.pathsTitle') }}</h4><p>{{ t('aiVideo.pathsHint') }}</p></div><el-tag effect="plain">{{ productionPaths.length }} {{ t('aiVideo.pathsUnit') }}</el-tag></div>
           <div class="production-path-grid">
-            <button v-for="path in productionPaths" :key="path.key" type="button" class="production-path" @click="goTo(path.route, path.mode)">
+            <button v-for="path in productionPaths" :key="path.key" type="button" class="production-path" @click="goTo(path.route, path.mode, path.type, path.generationMode, path.source)">
               <span class="production-path-icon">{{ path.icon }}</span><span><strong>{{ path.title }}</strong><small>{{ path.description }}</small><em>{{ path.next }}</em></span><el-icon><ArrowRight /></el-icon>
             </button>
           </div>
@@ -471,9 +471,9 @@ const guideDelivery = computed(() => [
   { key: 'publish', index: '04', title: t('aiVideo.guide.delivery.publishTitle'), description: t('aiVideo.guide.delivery.publishDescription'), check: t('aiVideo.guide.delivery.publishCheck'), action: t('aiVideo.guide.delivery.publishAction'), path: 'publishes' }
 ])
 const productionPaths = computed(() => [
-  { key: 'text', icon: '文', title: t('aiVideo.paths.textTitle'), description: t('aiVideo.paths.textHint'), next: t('aiVideo.paths.textNext'), route: 'tasks', mode: 'VIDEO' },
-  { key: 'storyboard', icon: '镜', title: t('aiVideo.paths.storyboardTitle'), description: t('aiVideo.paths.storyboardHint'), next: t('aiVideo.paths.storyboardNext'), route: 'renders', mode: 'STORYBOARD' },
-  { key: 'asset', icon: '物', title: t('aiVideo.paths.assetTitle'), description: t('aiVideo.paths.assetHint'), next: t('aiVideo.paths.assetNext'), route: 'tasks', mode: 'IMAGE' },
+  { key: 'text', icon: '文', title: t('aiVideo.paths.textTitle'), description: t('aiVideo.paths.textHint'), next: t('aiVideo.paths.textNext'), route: 'ai-generation', type: 'video_model', generationMode: 'TEXT_TO_VIDEO', source: 'text' },
+  { key: 'storyboard', icon: '镜', title: t('aiVideo.paths.storyboardTitle'), description: t('aiVideo.paths.storyboardHint'), next: t('aiVideo.paths.storyboardNext'), route: 'ai-generation', type: 'video_model', generationMode: 'STORYBOARD_TO_VIDEO', source: 'storyboard' },
+  { key: 'asset', icon: '物', title: t('aiVideo.paths.assetTitle'), description: t('aiVideo.paths.assetHint'), next: t('aiVideo.paths.assetNext'), route: 'ai-generation', type: 'video_model', generationMode: 'REFERENCE_IMAGE_TO_VIDEO', source: 'asset' },
   { key: 'audio', icon: '声', title: t('aiVideo.paths.audioTitle'), description: t('aiVideo.paths.audioHint'), next: t('aiVideo.paths.audioNext'), route: 'tasks', mode: 'TTS' },
   { key: 'template', icon: '模', title: t('aiVideo.paths.templateTitle'), description: t('aiVideo.paths.templateHint'), next: t('aiVideo.paths.templateNext'), route: 'renders', mode: 'TEMPLATE' }
 ])
@@ -485,7 +485,14 @@ function can(action) {
 }
 
 /** 跳转到制作流程中的指定模块。 */
-function goTo(path, mode) {
+function goTo(path, mode, type, generationMode, source) {
+  if (path === 'ai-generation') {
+    const query = { type, mode: generationMode, source }
+    if (route.query.projectId) query.projectId = route.query.projectId
+    if (route.query.storyboardId) query.storyboardId = route.query.storyboardId
+    router.push({ path: '/ai-generation', query })
+    return
+  }
   router.push({ path: `/ai-video/${path}`, query: mode ? { mode } : {} })
 }
 

@@ -8,6 +8,8 @@ public class LlmProvider {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @Column(nullable = false, length = 64) private String code;
     @Column(nullable = false, length = 120) private String name;
+    /** 供应商绑定的协议策略；空值仅用于兼容迁移前的历史配置。 */
+    @Column(name = "strategy_code", length = 32) private String strategyCode;
     @Column(length = 500) private String baseUrl;
     @Column(length = 500) private String imageUrl;
     @Column(length = 500) private String videoUrl;
@@ -24,6 +26,10 @@ public class LlmProvider {
     @Column(nullable = false) private Boolean enabled = true;
     public Long getId() { return id; } public String getCode() { return code; } public void setCode(String value) { code=value; }
     public String getName() { return name; } public void setName(String value) { name=value; }
+    /** 返回供应商绑定的稳定策略编码。 */
+    public String getStrategyCode() { return strategyCode; }
+    /** 保存供应商绑定的稳定策略编码。 */
+    public void setStrategyCode(String value) { strategyCode=value; }
     public String getBaseUrl() { return baseUrl; } public void setBaseUrl(String value) { baseUrl=value; }
     /** 读取和更新图片 URL。 */
     public String getImageUrl() { return imageUrl; } public void setImageUrl(String value) { imageUrl=value; }

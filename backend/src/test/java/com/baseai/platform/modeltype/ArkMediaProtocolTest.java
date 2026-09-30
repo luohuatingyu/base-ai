@@ -80,6 +80,14 @@ class ArkMediaProtocolTest {
             List.of(input("IMAGE", "x", "image/png", "https://cdn.example/x.png", "reference_image")), Map.of("interactive_edit", true)));
     }
 
+    /** Seedance 样片任务必须允许官方 draft 参数通过协议层，避免提交前被误判为未知字段。 */
+    @Test
+    void mapsSeedanceDraftOption() {
+        Map<String, Object> request = ArkMediaProtocol.request("video_model", "doubao-seedance-2-5-260628",
+            "seedance-2.5", "draft", List.of(), Map.of("resolution", "480p", "duration", 5, "draft", true));
+        assertEquals(Boolean.TRUE, request.get("draft"));
+    }
+
     /** 构造测试输入，所有数据值均为明确的 URL 或 Data URL。 */
     private static Map<String, Object> input(String kind, String name, String type, String data, String role) {
         return Map.of("kind", kind, "name", name, "content_type", type, "data", data, "role", role == null ? "" : role);

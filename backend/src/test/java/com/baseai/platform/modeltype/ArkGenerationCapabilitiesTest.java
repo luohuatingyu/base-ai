@@ -19,6 +19,17 @@ class ArkGenerationCapabilitiesTest {
         assertFalse(((Map<?, ?>) pro.get("features")).containsKey("groups") && Boolean.TRUE.equals(((Map<?, ?>) pro.get("features")).get("groups")));
     }
 
+    /** Seedream 4.x 不支持 output_format，旧客户端携带该参数时必须在供应商调用前拒绝。 */
+    @Test
+    void excludesOutputFormatFromSeedream4Capabilities() {
+        var seedream4 = ArkGenerationCapabilities.describe("doubao-seedream-4-0-20260415");
+        var seedream5 = ArkGenerationCapabilities.describe("doubao-seedream-5-0-pro-260628");
+        assertFalse(((Map<?, ?>) seedream4.get("options")).containsKey("output_format"));
+        assertTrue(((Map<?, ?>) seedream5.get("options")).containsKey("output_format"));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options(
+            "doubao-seedream-4-0-20260415", "image_model", "TEXT_TO_IMAGE", "cat", List.of(), Map.of("output_format", "png")));
+    }
+
     /** 首尾帧、视频参考和样片模式均由 Seedance 2.5 能力目录声明。 */
     @Test
     void describesVersionSpecificVideoModes() {
@@ -79,6 +90,24 @@ class ArkGenerationCapabilitiesTest {
             List.of(input("VIDEO", "reference_video"), input("VIDEO", "reference_video")), Map.of("duration", 5)));
         assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "VIDEO_TRANSITION", "transition",
             List.of(input("VIDEO", "reference_video")), Map.of("duration", 5)));
+    }
+
+    /** 文生模式只接受提示词，不能因为前端残留素材而把请求变成参考生成。 */
+    @Test
+    void rejectsAssetsForPromptOnlyModes() {
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "TEXT_TO_VIDEO", "cat", List.of(), Map.of()));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "TEXT_TO_VIDEO", "cat", List.of(input("IMAGE", "reference_image")), Map.of()));
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "DRAFT_VIDEO", "cat", List.of(), Map.of()));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "DRAFT_VIDEO", "cat", List.of(input("VIDEO", "reference_video")), Map.of()));
+    }
+
+    /** 图生视频使用首帧角色，参考图模式不能混入首尾帧角色。 */
+    @Test
+    void validatesVideoAssetRolesByMode() {
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "IMAGE_TO_VIDEO", "animate", List.of(input("IMAGE", "first_frame")), Map.of()));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260128", "video_model", "IMAGE_TO_VIDEO", "animate", List.of(input("IMAGE", "reference_image")), Map.of()));
+        assertDoesNotThrow(() -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "REFERENCE_IMAGE_TO_VIDEO", "animate", List.of(input("IMAGE", "reference_image")), Map.of()));
+        assertThrows(BusinessException.class, () -> ArkGenerationCapabilities.options("doubao-seedance-2-5-260628", "video_model", "REFERENCE_IMAGE_TO_VIDEO", "animate", List.of(input("IMAGE", "first_frame")), Map.of()));
     }
 
     /** 构造协议层输入，内容本身由服务层另行验证。 */

@@ -67,14 +67,14 @@ public class AiChatController {
     }
 
     /** 返回 AI 对话页可调用的图片和视频模型，不与文本对话模型目录混用。 */
-    @GetMapping("/generation-models")
+    @GetMapping("/generation-models") @RequiredPermission("ai:generation:invoke")
     public List<MediaGenerationService.ModelOption> getGenerationModels() {
         if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
         return mediaGenerationService.models();
     }
 
     /** 在 AI 对话入口发起图片或视频生成，并记录统一用量 ID。 */
-    @PostMapping("/generation")
+    @PostMapping("/generation") @RequiredPermission("ai:generation:invoke")
     public Map<String, Object> generate(@RequestBody GenerationRequest request) {
         if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
         if (request == null) return mediaGenerationService.generate(null);
@@ -83,28 +83,28 @@ public class AiChatController {
     }
 
     /** 轮询视频供应商状态并返回当前进度、媒体结果和 Token 元数据。 */
-    @GetMapping("/generation/{id}")
+    @GetMapping("/generation/{id}") @RequiredPermission("ai:generation:invoke")
     public Map<String, Object> generationStatus(@PathVariable long id) {
         if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
         return mediaGenerationService.status(id);
     }
 
     /** 取消当前用户拥有的排队或运行媒体任务。 */
-    @PostMapping("/generation/{id}/cancel")
+    @PostMapping("/generation/{id}/cancel") @RequiredPermission("ai:generation:invoke")
     public Map<String, Object> cancelGeneration(@PathVariable long id) {
         if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
         return mediaGenerationService.cancel(id);
     }
 
     /** 删除当前用户已经结束的媒体任务及其历史记录。 */
-    @DeleteMapping("/generation/{id}")
+    @DeleteMapping("/generation/{id}") @RequiredPermission("ai:generation:invoke")
     public void deleteGeneration(@PathVariable long id) {
         if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
         mediaGenerationService.delete(id);
     }
 
     /** 分页前的会话媒体历史，沿用当前用户权限和任务状态过滤。 */
-    @GetMapping("/generations")
+    @GetMapping("/generations") @RequiredPermission("ai:generation:invoke")
     public List<Map<String, Object>> generationHistory(@RequestParam long conversationId) {
         if (mediaGenerationService == null) throw new IllegalStateException("Media generation service is unavailable");
         return mediaGenerationService.history(conversationId);
@@ -162,7 +162,7 @@ public class AiChatController {
     @GetMapping("/model-types")
     public List<LlmManagementService.ModelTypeOption> getAvailableModelTypes() {
         return llmManagementService.modelTypes().stream()
-            .filter(type -> !com.baseai.platform.domain.LlmModel.isGenerationType(type.value())).toList();
+            .filter(type -> !LlmManagementService.chatModelTypes(List.of(type.value())).isEmpty()).toList();
     }
 
     /** 建立任务上下文并代理一次通用模型对话。 */

@@ -15,13 +15,16 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.net.URI;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -79,6 +82,23 @@ class MediaGenerationServiceTest {
             .map(item -> item.name() + ":" + item.modelType()).toList());
     }
 
+    /** 模型类型勾选是平台配置权威，画像不匹配时仍保留图片和视频两类能力目录。 */
+    @Test
+    void arkDirectoryHonorsConfiguredOutputTypes() {
+        when(management.providers()).thenReturn(List.of(new LlmManagementService.ProviderView(
+            2L, "provider", "Provider", "https://provider.example", "******", 4, "PROVIDER", 60,
+            "reasoning_effort", true)));
+        var seedance = new com.baseai.platform.domain.LlmModel();
+        seedance.setProviderId(2L); seedance.setName("seedance"); seedance.setModelName("doubao-seedance-2-0-mini-260615");
+        seedance.setGenerationProfile("seedance-2.0-mini"); seedance.setEnabled(true);
+        seedance.setSupportedModelTypes(List.of("image_model", "video_model"));
+        when(management.models()).thenReturn(List.of(seedance));
+        var entries = service.models().stream().filter(item -> "seedance".equals(item.name())).toList();
+        assertEquals(List.of("image_model", "video_model"), entries.stream()
+            .map(MediaGenerationService.ModelOption::modelType).toList());
+        assertTrue(entries.stream().allMatch(item -> !item.capabilities().get("modes").toString().equals("[]")));
+    }
+
     /** 图片模型支持无附件提示词，也支持文本、图片和视频输入组合。 */
     @Test
     void acceptsImageGenerationModesAndInputs() throws Exception {
@@ -87,6 +107,18 @@ class MediaGenerationServiceTest {
         var video = videoInput();
         assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "cat", null, "MULTIMODAL", List.of(), Map.of())));
         assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, null, null, "MULTIMODAL", List.of(text, image, video), Map.of())));
+    }
+
+    /** 命中 OpenAI 策略后只接受该策略声明的模式，不能用旧方舟模式绕过能力目录。 */
+    @Test
+    void strategyControlsGenerationModes() throws Exception {
+        var candidate = new LlmManagementService.WorkerCandidate("openai", "https://api.openai.com/v1",
+            List.of("key"), "gpt-image-2", 1, "PROVIDER", 60, "reasoning_effort", "", List.of("image_model"), "");
+        var image = imageInput();
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "cat", null,
+            "IMAGE_TO_IMAGE", List.of(image), Map.of()), candidate));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "cat", null,
+            "IMAGE_TEXT_TO_IMAGE", List.of(image), Map.of()), candidate));
     }
 
     /** 视频模型同样支持文本、图片和视频输入组合，输入类型不再由生成结果类型限制。 */
@@ -158,6 +190,27 @@ class MediaGenerationServiceTest {
             "prompt", null, "INVALID", List.of(), Map.of())));
     }
 
+    /** 图片和视频模式不能互相接受对方的供应商任务模式。 */
+    @Test
+    void rejectsCrossMediaGenerationModes() {
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "prompt", null, "TEXT_TO_VIDEO", List.of(), Map.of())));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest(
+            "video_model", 1L, "prompt", null, "TEXT_TO_IMAGE", List.of(), Map.of())));
+    }
+
+    /** Seedream 的融合、组图和图层模式仍属于图片生成，不能被类型隔离误伤。 */
+    @Test
+    void acceptsSeedreamImageModes() {
+        var image = imageInput();
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "prompt", null, "MULTI_IMAGE_FUSION", List.of(image, image), Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "prompt", null, "TEXT_TO_GROUP", List.of(), Map.of())));
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest(
+            "image_model", 1L, "prompt", null, "LAYER_DECOMPOSITION", List.of(image), Map.of())));
+    }
+
     /** 文本、图片和视频分别校验解码后最大字节数，覆盖临界值与超限值。 */
     @ParameterizedTest
     @CsvSource({"TEXT,text/plain,1048576", "IMAGE,image/png,10485760", "VIDEO,video/mp4,6291456"})
@@ -180,11 +233,101 @@ class MediaGenerationServiceTest {
         assertFalse(result.path("incomplete").asBoolean(false));
     }
 
+    /** 供应商 HTTP 错误保留状态、错误码和消息，但不得把完整响应中的密钥字段写入任务错误。 */
+    @Test
+    void preservesProviderHttpErrorDetailsWithoutSecrets() throws Exception {
+        Method parser = MediaGenerationService.class.getDeclaredMethod("providerRequestException", int.class, String.class);
+        parser.setAccessible(true);
+        Object failure = parser.invoke(service, 404,
+            "{\"error\":{\"code\":\"InvalidEndpointOrModel.NotFound\",\"message\":\"api_key=secret-key model|not found\\nplease check\",\"api_key\":\"secret-key\"}}");
+        Method message = failure.getClass().getDeclaredMethod("failureMessage");
+        message.setAccessible(true);
+        String value = (String) message.invoke(failure);
+        assertEquals("PROVIDER_REQUEST_FAILED|HTTP_404|InvalidEndpointOrModel.NotFound|api_key=<redacted> model not found please check", value);
+        assertFalse(value.contains("secret-key"));
+    }
+
+    /** 用量记录只使用稳定错误码，任务接口仍可展示供应商的具体诊断信息。 */
+    @Test
+    void keepsStableFailureCodeForUsageRecords() throws Exception {
+        Method method = MediaGenerationService.class.getDeclaredMethod("stableFailureCode", String.class);
+        method.setAccessible(true);
+        assertEquals("PROVIDER_REQUEST_FAILED", method.invoke(service,
+            "PROVIDER_REQUEST_FAILED|HTTP_404|InvalidEndpointOrModel.NotFound|model unavailable"));
+        assertEquals("PROVIDER_RESPONSE_INVALID", method.invoke(service, "PROVIDER_RESPONSE_INVALID"));
+    }
+
+    /** Seedance 完成响应的 content 对象或数组都必须提取视频 URL，不能把成功任务标记为无结果。 */
+    @Test
+    void extractsVideoUrlsFromArkContentShapes() throws Exception {
+        Method method = MediaGenerationService.class.getDeclaredMethod("outputs", com.fasterxml.jackson.databind.JsonNode.class, boolean.class);
+        method.setAccessible(true);
+        var objectResponse = new ObjectMapper().readTree("{\"status\":\"succeeded\",\"content\":{\"video_url\":\"https://cdn.example/video.mp4\",\"last_frame_url\":\"https://cdn.example/frame.png\"}}");
+        @SuppressWarnings("unchecked") List<Map<String, Object>> objectOutputs = (List<Map<String, Object>>) method.invoke(service, objectResponse, true);
+        assertEquals(2, objectOutputs.size());
+        assertEquals("video", objectOutputs.get(0).get("mediaType"));
+        assertEquals("image", objectOutputs.get(1).get("mediaType"));
+
+        var arrayResponse = new ObjectMapper().readTree("{\"status\":\"succeeded\",\"content\":[{\"video_url\":\"https://cdn.example/video.mp4\"}]}");
+        @SuppressWarnings("unchecked") List<Map<String, Object>> arrayOutputs = (List<Map<String, Object>>) method.invoke(service, arrayResponse, true);
+        assertEquals(1, arrayOutputs.size());
+    }
+
+    /** 供应商地址既可填写 API 根地址，也可填写完整媒体接口地址，最终请求路径不能重复。 */
+    @Test
+    void resolvesConfiguredMediaEndpointWithoutDuplicatingProtocolPath() throws Exception {
+        Method method = MediaGenerationService.class.getDeclaredMethod("endpointUri", String.class, String.class);
+        method.setAccessible(true);
+        Method statusMethod = MediaGenerationService.class.getDeclaredMethod("endpointUri", String.class, String.class, String.class);
+        statusMethod.setAccessible(true);
+        assertEquals("https://ark.example/api/v3/images/generations",
+            invokeEndpoint(method, "https://ark.example/api/v3", "/images/generations").toString());
+        assertEquals("https://ark.example/api/v3/images/generations",
+            invokeEndpoint(method, "https://ark.example/api/v3/images/generations", "/images/generations").toString());
+        assertEquals("https://ark.example/api/v3/contents/generations/tasks/task-1",
+            invokeEndpoint(statusMethod, "https://ark.example/api/v3/contents/generations/tasks", "/contents/generations/tasks/task-1", "/contents/generations/tasks").toString());
+        assertEquals("https://ark.example/api/v3/contents/generations/tasks",
+            invokeEndpoint(statusMethod, "https://ark.example/api/v3/contents/generations/tasks", "/contents/generations/tasks", "/contents/generations/tasks").toString());
+        assertEquals("https://generic.example/v1/videos/task-1",
+            invokeEndpoint(statusMethod, "https://generic.example/v1/videos/generations", "/videos/task-1", "/videos/generations").toString());
+        assertEquals("https://ark.example/api/v3/images/generations?tenant=demo",
+            invokeEndpoint(method, "https://ark.example/api/v3/images/generations?tenant=demo", "/images/generations").toString());
+    }
+
     /** 通过反射只测试纯校验分支，避免为边界测试伪造数据库和供应商调用。 */
     private void validate(MediaGenerationService.GenerateRequest request) throws Exception {
         var method = MediaGenerationService.class.getDeclaredMethod("validate", MediaGenerationService.GenerateRequest.class);
         method.setAccessible(true);
         try { method.invoke(service, request); }
+        catch (java.lang.reflect.InvocationTargetException exception) {
+            if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw exception;
+        }
+    }
+
+    /** 通过反射调用带供应商候选项的校验分支，验证具体 Agent 的模式约束。 */
+    private void validate(MediaGenerationService.GenerateRequest request, LlmManagementService.WorkerCandidate candidate) throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("validate", MediaGenerationService.GenerateRequest.class, LlmManagementService.WorkerCandidate.class);
+        method.setAccessible(true);
+        try { method.invoke(service, request, candidate); }
+        catch (java.lang.reflect.InvocationTargetException exception) {
+            if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw exception;
+        }
+    }
+
+    /** 调用供应商地址解析方法并还原反射异常，保持 URL 断言可读。 */
+    private URI invokeEndpoint(Method method, String base, String path) throws Exception {
+        return invokeEndpoint(method, base, path, null);
+    }
+
+    /** 调用带生成接口路径的异步状态地址解析，验证完整供应商地址可切换到状态接口。 */
+    private URI invokeEndpoint(Method method, String base, String path, String operationPath) throws Exception {
+        try {
+            return operationPath == null
+                ? (URI) method.invoke(service, base, path)
+                : (URI) method.invoke(service, base, path, operationPath);
+        }
         catch (java.lang.reflect.InvocationTargetException exception) {
             if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
             throw exception;

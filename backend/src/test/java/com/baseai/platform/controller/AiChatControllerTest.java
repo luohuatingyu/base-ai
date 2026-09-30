@@ -3,6 +3,7 @@ package com.baseai.platform.controller;
 import com.baseai.platform.chat.ChatStreamClient;
 import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.LlmManagementService;
+import com.baseai.platform.security.RequiredPermission;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -25,11 +26,23 @@ class AiChatControllerTest {
         when(management.modelTypes()).thenReturn(List.of(
             new LlmManagementService.ModelTypeOption("image_model", "图片生成"),
             new LlmManagementService.ModelTypeOption("video_model", "视频生成"),
+            new LlmManagementService.ModelTypeOption("embedding_model", "向量模型"),
             new LlmManagementService.ModelTypeOption("vision_model", "视觉理解"),
             new LlmManagementService.ModelTypeOption("audio_model", "扩展类型")));
         var controller = new AiChatController(mock(AiChatClient.class), management);
         assertEquals(List.of("vision_model", "audio_model"), controller.getAvailableModelTypes().stream()
             .map(LlmManagementService.ModelTypeOption::value).toList());
+    }
+
+    /** 历史聊天控制器中的媒体兼容入口也必须继承生成权限，不能被聊天权限单独调用。 */
+    @Test
+    void legacyGenerationEndpointsRequireGenerationPermission() {
+        for (String name : List.of("getGenerationModels", "generate", "generationStatus", "cancelGeneration",
+            "deleteGeneration", "generationHistory")) {
+            var method = java.util.Arrays.stream(AiChatController.class.getDeclaredMethods())
+                .filter(item -> item.getName().equals(name)).findFirst().orElseThrow();
+            assertEquals("ai:generation:invoke", method.getAnnotation(RequiredPermission.class).value(), name);
+        }
     }
 
     /** 生成专用路由不可选，混合供应商池仅暴露可聊天的能力。 */

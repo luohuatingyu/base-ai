@@ -13,6 +13,7 @@
     <el-table :data="rows" table-layout="auto">
       <el-table-column prop="code" :label="t('common.code')" min-width="160" />
       <el-table-column prop="name" :label="t('common.name')" min-width="180" />
+      <el-table-column :label="t('providers.strategy')" min-width="170"><template #default="scope"><el-tag size="small" effect="plain"><span class="strategy-label"><ModelStrategyIcon :strategy="scope.row.strategyCode" />{{ strategyLabel(scope.row.strategyCode) }}</span></el-tag></template></el-table-column>
       <el-table-column prop="baseUrl" :label="t('providers.baseUrl')" min-width="300" />
       <el-table-column prop="concurrencyLevel" :label="t('providers.concurrencyLevel')" min-width="180" />
       <el-table-column prop="concurrencyLimit" :label="t('providers.concurrency')" min-width="160" />
@@ -35,6 +36,12 @@
       <el-form label-width="100px">
         <el-form-item :label="t('common.code')"><el-input v-model="form.code" /></el-form-item>
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item :label="t('providers.strategy')"><el-select v-model="form.strategyCode" class="full">
+          <template #label="{ label }"><span class="strategy-label"><ModelStrategyIcon :strategy="form.strategyCode" />{{ label }}</span></template>
+          <el-option v-for="strategy in strategies" :key="strategy" :label="strategyLabel(strategy)" :value="strategy">
+            <span class="strategy-option"><ModelStrategyIcon :strategy="strategy" />{{ strategyLabel(strategy) }}</span>
+          </el-option>
+        </el-select></el-form-item>
         <el-form-item :label="t('providers.baseUrl')"><el-input v-model="form.baseUrl" /></el-form-item>
         <el-form-item :label="t('providers.imageUrl')"><el-input v-model="form.imageUrl" :disabled="form.imageSameAsBase" /><el-checkbox v-model="form.imageSameAsBase">{{ t('providers.sameAsBase') }}</el-checkbox></el-form-item>
         <el-form-item :label="t('providers.videoUrl')"><el-input v-model="form.videoUrl" :disabled="form.videoSameAsImage" :placeholder="videoEndpoint" /><el-checkbox v-model="form.videoSameAsImage">{{ t('providers.sameAsImage') }}</el-checkbox></el-form-item>
@@ -76,11 +83,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
-import { copyApiKey, normalizeApiKeys, serializeApiKeyRows, splitApiKeys } from '../utils/apiKeys'
+import { copyApiKey, normalizeApiKeys, serializeApiKeyRows, splitApiKeys, toApiKeyRows } from '../utils/apiKeys'
+import ModelStrategyIcon from '../components/ModelStrategyIcon.vue'
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
+const strategies = ref([])
 const visible = ref(false)
 const keysVisible = ref(false)
 const keysContent = ref([])
@@ -89,7 +98,9 @@ const form = reactive(defaultForm())
 
 /** 加载模型供应商列表；接口只返回脱敏后的密钥状态。 */
 async function load() {
-  rows.value = (await http.get('/models/providers')).data
+  const [providerResponse, strategyResponse] = await Promise.all([http.get('/models/providers'), http.get('/models/provider-strategies')])
+  rows.value = providerResponse.data
+  strategies.value = strategyResponse.data
 }
 
 /** 在当前管理员权限范围内读取并规范化指定供应商的 API Key。 */
@@ -98,10 +109,17 @@ async function loadKeys(id) {
   return normalizeApiKeys(response.data.apiKeys)
 }
 
-/** 打开编辑窗口时从不自动回读已保存的供应商密钥。 */
-function open(row) {
-  Object.assign(form, defaultForm(), row || {}, { apiKeys: '', imageSameAsBase: row?.imageSameAsBase ?? true, videoSameAsImage: row?.videoSameAsImage ?? true })
+/** 打开编辑窗口；管理员编辑已有供应商时回显密钥，其他情况保持空白。 */
+async function open(row) {
+  Object.assign(form, defaultForm(), row || {}, { apiKeys: '', strategyCode: row?.strategyCode || 'GENERIC', imageSameAsBase: row?.imageSameAsBase ?? true, videoSameAsImage: row?.videoSameAsImage ?? true })
   keyRows.value = ['']
+  if (row?.id && auth.isAdmin) {
+    try {
+      keyRows.value = toApiKeyRows(await loadKeys(row.id))
+    } catch (error) {
+      showHttpError(error)
+    }
+  }
   visible.value = true
 }
 
@@ -162,8 +180,11 @@ async function remove(row) {
 
 /** 创建不含已保存 API Key 的供应商默认表单。 */
 function defaultForm() {
-  return { id: null, code: '', name: '', baseUrl: '', imageUrl: '', videoUrl: '', imageSameAsBase: true, videoSameAsImage: true, apiKeys: '', concurrencyLimit: 4, concurrencyLevel: 'PROVIDER', timeoutSeconds: 60, enabled: true }
+  return { id: null, code: '', name: '', strategyCode: 'GENERIC', baseUrl: '', imageUrl: '', videoUrl: '', imageSameAsBase: true, videoSameAsImage: true, apiKeys: '', concurrencyLimit: 4, concurrencyLevel: 'PROVIDER', timeoutSeconds: 60, enabled: true }
 }
+
+/** 将策略编码转换为当前语言的展示名称。 */
+function strategyLabel(code) { return t(`providers.strategies.${code || 'GENERIC'}`) }
 
 /** 返回联动后的图片和视频地址。 */
 const imageEndpoint = computed(() => form.imageSameAsBase ? form.baseUrl : form.imageUrl)
@@ -173,3 +194,11 @@ function hasProviderEndpoint() { return [form.baseUrl, form.imageUrl, form.video
 
 onMounted(load)
 </script>
+
+<style scoped>
+.strategy-label,
+.strategy-option { display: inline-flex; align-items: center; gap: 7px; }
+.strategy-option { width: 100%; }
+.strategy-label :deep(.model-strategy-icon),
+.strategy-option :deep(.model-strategy-icon) { width: 16px; height: 16px; flex: none; }
+</style>

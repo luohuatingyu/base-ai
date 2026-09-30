@@ -58,6 +58,8 @@ function proxy(request, response) {
     if (allowedHeaders.has(name.toLowerCase())) forwardedHeaders[name] = value
   }
   forwardedHeaders.host = backend.host
+  forwardedHeaders['x-forwarded-host'] = request.headers.host || ''
+  forwardedHeaders['x-forwarded-proto'] = request.socket.encrypted ? 'https' : 'http'
   // 只转发当前 TCP 对端地址，避免把浏览器伪造的 X-Forwarded-For 交给后端。
   forwardedHeaders['x-forwarded-for'] = request.socket.remoteAddress || ''
   const declaredLength = Number(request.headers['content-length'] || 0)

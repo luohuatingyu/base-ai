@@ -5,6 +5,7 @@ import test, { before } from 'node:test'
 import { buildTokenWithPlan, formatJwtTimestamp, parseJwtToken } from '../src/utils/jwtToken.js'
 import { buildAccessibleNavigation, localizeMenuName } from '../src/utils/navigation.js'
 import zhCN from '../src/locales/zh-CN.js'
+import enUS from '../src/locales/en-US.js'
 
 const routeSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const viewSource = readFileSync(new URL('../src/views/PackageAdjustmentView.vue', import.meta.url), 'utf8')
@@ -98,12 +99,17 @@ test('时间戳格式化支持有效值和无效值', () => {
 test('套餐调整页面已接入受权限控制的动态导航', () => {
   const menus = [
     { id: 1, parentId: null, type: 'CATALOG', path: '/ai', permission: 'ai:catalog', name: 'AI 能力', sortOrder: 30 },
-    { id: 2, parentId: 1, type: 'MENU', path: '/package-adjustment', permission: 'ai:package-adjustment:list', name: '套餐调整', sortOrder: 12 }
+    { id: 2, parentId: null, type: 'CATALOG', path: '/packages', permission: 'package:catalog', name: '套餐管理', sortOrder: 50 },
+    { id: 3, parentId: 2, type: 'MENU', path: '/package-adjustment', permission: 'ai:package-adjustment:list', name: '套餐调整', sortOrder: 10 }
   ]
-  const visible = buildAccessibleNavigation(menus, ['/package-adjustment'], permission => permission === 'ai:package-adjustment:list')
-  assert.deepEqual(visible.map(item => item.path), ['/package-adjustment'])
+  const visible = buildAccessibleNavigation(menus, ['/package-adjustment'], permission => ['package:catalog', 'ai:package-adjustment:list'].includes(permission))
+  assert.deepEqual(visible.map(item => item.path), ['/packages'])
+  assert.deepEqual(visible[0].children.map(item => item.path), ['/package-adjustment'])
   assert.match(routeSource, /path: 'package-adjustment'/)
   assert.match(viewSource, /parseJwtToken/)
   assert.match(viewSource, /privateKey/)
-  assert.equal(localizeMenuName(menus[1], key => key === 'nav.items.packageAdjustment' ? zhCN.nav.items.packageAdjustment : key), '套餐调整')
+  assert.equal(localizeMenuName(menus[1], key => key === 'nav.items.packages' ? zhCN.nav.items.packages : key), '套餐管理')
+  assert.equal(localizeMenuName(menus[2], key => key === 'nav.items.packageAdjustment' ? zhCN.nav.items.packageAdjustment : key), '套餐调整')
+  assert.equal(localizeMenuName(menus[1], key => key === 'nav.items.packages' ? enUS.nav.items.packages : key), 'Package Management')
+  assert.equal(localizeMenuName(menus[2], key => key === 'nav.items.packageAdjustment' ? enUS.nav.items.packageAdjustment : key), 'Plan Adjustment')
 })

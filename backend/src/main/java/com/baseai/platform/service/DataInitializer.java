@@ -389,12 +389,16 @@ public class DataInitializer implements ApplicationRunner {
         // ========== AI 视频模块 ==========
         seedAiVideoMenus();
 
+        // ========== 套餐管理模块 ==========
+        Menu packages = menu(null, "套餐管理", "CATALOG", "/packages", null, "Goods",
+            "package:catalog", 50, true);
+        menu(packages.getId(), "套餐调整", "MENU", "/package-adjustment", "PackageAdjustmentView", "Goods",
+            "ai:package-adjustment:list", 10, true);
+
         // ========== AI 能力模块 ==========
         Menu ai = menu(null, "AI 能力", "CATALOG", "/ai", null, "MagicStick", "ai:catalog", 30, true);
         menu(ai.getId(), "AI 对话", "MENU", "/ai-chat", "AiChatView", "ChatDotRound", "ai:chat:invoke", 11, true);
         menu(ai.getId(), "AI 生成", "MENU", "/ai-generation", "AiGenerationView", "Picture", "ai:generation:invoke", 13, true);
-        menu(ai.getId(), "套餐调整", "MENU", "/package-adjustment", "PackageAdjustmentView", "Goods",
-            "ai:package-adjustment:list", 12, true);
         Menu model = menu(ai.getId(), "模型管理", "CATALOG", "/models", null, "Cpu",
             "ai:model:catalog", 20, true);
         seedCrud(model, "模型供应商", "/model-providers", "ModelProvidersView", "Link",
