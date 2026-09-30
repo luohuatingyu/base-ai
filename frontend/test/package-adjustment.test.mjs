@@ -99,7 +99,7 @@ test('时间戳格式化支持有效值和无效值', () => {
 test('套餐调整页面已接入受权限控制的动态导航', () => {
   const menus = [
     { id: 1, parentId: null, type: 'CATALOG', path: '/ai', permission: 'ai:catalog', name: 'AI 能力', sortOrder: 30 },
-    { id: 2, parentId: null, type: 'CATALOG', path: '/packages', permission: 'package:catalog', name: '套餐管理', sortOrder: 15 },
+    { id: 2, parentId: null, type: 'CATALOG', path: '/packages', permission: 'package:catalog', name: '套餐管理', sortOrder: 50 },
     { id: 3, parentId: 2, type: 'MENU', path: '/package-adjustment', permission: 'ai:package-adjustment:list', name: '套餐调整', sortOrder: 10 }
   ]
   const visible = buildAccessibleNavigation(menus, ['/package-adjustment'], permission => ['package:catalog', 'ai:package-adjustment:list'].includes(permission))

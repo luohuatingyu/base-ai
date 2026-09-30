@@ -391,7 +391,7 @@ public class DataInitializer implements ApplicationRunner {
 
         // ========== 套餐管理模块 ==========
         Menu packages = menu(null, "套餐管理", "CATALOG", "/packages", null, "Goods",
-            "package:catalog", 15, true);
+            "package:catalog", 50, true);
         menu(packages.getId(), "套餐调整", "MENU", "/package-adjustment", "PackageAdjustmentView", "Goods",
             "ai:package-adjustment:list", 10, true);
 

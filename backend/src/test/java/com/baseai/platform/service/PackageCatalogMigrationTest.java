@@ -28,7 +28,7 @@ class PackageCatalogMigrationTest {
 
         Long catalogId = jdbc.queryForObject(
             "SELECT id FROM sys_menu WHERE permission='package:catalog'", Long.class);
-        assertEquals("套餐管理|/packages|Goods|15", jdbc.queryForObject("""
+        assertEquals("套餐管理|/packages|Goods|50", jdbc.queryForObject("""
             SELECT CONCAT(name,'|',path,'|',icon,'|',sort_order)
             FROM sys_menu WHERE permission='package:catalog'
             """, String.class));
