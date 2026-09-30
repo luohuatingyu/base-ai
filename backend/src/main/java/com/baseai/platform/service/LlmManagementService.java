@@ -44,6 +44,13 @@ import java.time.LocalDateTime;
 public class LlmManagementService {
     public static final String DEFAULT_ROUTE = "DEFAULT";
     public static final String DEFAULT_ROUTE_NAME = "默认能力路由";
+
+    /** 根据实际返回模型匹配供应商，避免不同调用客户端各自维护相同逻辑。 */
+    public static String providerFor(WorkerRoute route, String model) {
+        if (route == null || model == null) return null;
+        return route.candidates().stream().filter(candidate -> model.equals(candidate.model()))
+            .map(WorkerCandidate::providerCode).findFirst().orElse(null);
+    }
     /** 供应商数据访问接口 */
     private final LlmProviderRepository providerRepository;
 

@@ -251,9 +251,7 @@ public class AiChatClient {
 
     /** 根据实际返回模型匹配供应商，避免把候选列表首项误记为实际使用项。 */
     private String providerFor(LlmManagementService.WorkerRoute route, String model) {
-        if (route == null || model == null) return null;
-        return route.candidates().stream().filter(candidate -> model.equals(candidate.model()))
-            .map(LlmManagementService.WorkerCandidate::providerCode).findFirst().orElse(null);
+        return LlmManagementService.providerFor(route, model);
     }
 
     /** 将内部异常转换为不泄漏供应商响应正文的监控终态。 */

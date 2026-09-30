@@ -89,8 +89,7 @@ public class WorkflowAgentClient {
 
     /** 根据实际模型名称匹配成功的供应商。 */
     private String providerFor(LlmManagementService.WorkerRoute route, String model) {
-        return route.candidates().stream().filter(candidate -> model.equals(candidate.model()))
-            .map(LlmManagementService.WorkerCandidate::providerCode).findFirst().orElse(null);
+        return LlmManagementService.providerFor(route, model);
     }
 
     /** 读取 Worker 返回的可选 Token 字段。 */

@@ -15,6 +15,7 @@ import java.util.Base64;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doAnswer;
 
@@ -70,6 +71,18 @@ class WorkflowServicePublishTest {
         assertEquals("DRAFT", jdbcTemplate.queryForObject("SELECT status FROM workflow_definition WHERE id=1", String.class));
         assertNull(jdbcTemplate.queryForObject("SELECT published_version_id FROM workflow_definition WHERE id=1", Long.class));
         assertEquals(1L, jdbcTemplate.queryForObject("SELECT revision FROM workflow_definition WHERE id=1", Long.class));
+    }
+
+    /** 触发器共用的可执行判断在版本不存在或配置缺失时必须安全返回 false。 */
+    @Test
+    void executableConfigurationHelperReturnsFalseForInvalidVersion() {
+        insertWorkflow("""
+            {"nodes":[{"id":"start","type":"START"},{"id":"http","type":"HTTP","data":{"config":{}}},{"id":"end","type":"END"}],
+             "edges":[{"id":"a","source":"start","target":"http"},{"id":"b","source":"http","target":"end"}]}
+            """, "{}");
+
+        assertTrue(!service.isExecutableConfiguration(10L));
+        assertTrue(!service.isExecutableConfiguration(999L));
     }
 
     /** 模板快照补齐必填字段后发布应原子更新当前版本和状态。 */

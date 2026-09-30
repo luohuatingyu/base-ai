@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
@@ -881,6 +882,21 @@ class LlmManagementServiceTest {
     @CsvSource({"0,HEALTHY", "9999,HEALTHY", "10000,WARNING", "29999,WARNING", "30000,SLOW"})
     void healthStatusUsesRequiredDurationBoundaries(long durationMs, String expected) {
         assertEquals(expected, LlmManagementService.healthStatus(durationMs));
+    }
+
+    /** 供应商匹配公共逻辑应支持成功、未命中和空参数场景。 */
+    @Test
+    void providerForMatchesActualModelAndHandlesMissingInput() {
+        LlmManagementService.WorkerCandidate first = new LlmManagementService.WorkerCandidate(
+            "PROVIDER_A", "https://a.test", List.of(), "model-a", null, null, null, null, null, List.of());
+        LlmManagementService.WorkerCandidate second = new LlmManagementService.WorkerCandidate(
+            "PROVIDER_B", "https://b.test", List.of(), "model-b", null, null, null, null, null, List.of());
+        LlmManagementService.WorkerRoute route = new LlmManagementService.WorkerRoute(List.of(first, second), false, true);
+
+        assertEquals("PROVIDER_B", LlmManagementService.providerFor(route, "model-b"));
+        assertNull(LlmManagementService.providerFor(route, "missing"));
+        assertNull(LlmManagementService.providerFor(null, "model-b"));
+        assertNull(LlmManagementService.providerFor(route, null));
     }
 
     /** 创建用于路由同步测试的路由实体。 */

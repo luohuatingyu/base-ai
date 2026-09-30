@@ -224,6 +224,16 @@ public class WorkflowService {
         validateConnectionSnapshot(version);
     }
 
+    /** 判断已发布版本是否仍满足执行条件，供各类触发器统一复用。 */
+    public boolean isExecutableConfiguration(Long versionId) {
+        try {
+            validateExecutableConfiguration(storedVersion(versionId));
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
     /** 软删除定义但保留历史版本和运行记录。 */
     @Transactional
     public void deleteWorkflow(Long id) {
@@ -415,20 +425,7 @@ public class WorkflowService {
 
     /** 合并不可变模板快照和画布实例覆盖，供触发器扫描及权限校验复用。 */
     private ObjectNode effectiveConfig(JsonNode node, JsonNode snapshot) {
-        ObjectNode result = objectMapper.createObjectNode();
-        if (snapshot.path("config").isObject()) result.setAll((ObjectNode) snapshot.path("config").deepCopy());
-        JsonNode own = node.path("config").isObject() ? node.path("config") : node.path("data").path("config");
-        if (own.isObject()) deepMerge(result, own);
-        return result;
-    }
-
-    /** 递归应用实例配置，避免局部覆盖时丢失模板中的嵌套字段。 */
-    private void deepMerge(ObjectNode target, JsonNode source) {
-        source.fields().forEachRemaining(entry -> {
-            if (entry.getValue().isObject() && target.path(entry.getKey()).isObject()) {
-                deepMerge((ObjectNode) target.path(entry.getKey()), entry.getValue());
-            } else target.set(entry.getKey(), entry.getValue().deepCopy());
-        });
+        return WorkflowNodeConfigDefaults.merge(objectMapper, node, snapshot);
     }
 
     /** 校验画布命令基础字段和图结构。 */

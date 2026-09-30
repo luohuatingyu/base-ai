@@ -3,6 +3,7 @@ package com.baseai.platform.workflow;
 import com.baseai.platform.common.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -19,6 +20,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WorkflowNodeConfigValidatorTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WorkflowNodeConfigValidator validator = new WorkflowNodeConfigValidator(objectMapper);
+
+    /** 公共合并器应递归保留模板字段、应用实例覆盖，并且不修改输入节点。 */
+    @Test
+    void sharedConfigMergePreservesNestedFieldsWithoutMutatingInputs() throws Exception {
+        JsonNode node = json("""
+            {"data":{"config":{"http":{"timeout":10,"headers":{"x":"override"}}}}}
+            """);
+        JsonNode snapshot = json("""
+            {"config":{"http":{"timeout":30,"headers":{"x":"template","y":"keep"}},"method":"GET"}}
+            """);
+
+        ObjectNode merged = WorkflowNodeConfigDefaults.merge(objectMapper, node, snapshot);
+
+        assertEquals(10, merged.path("http").path("timeout").asInt());
+        assertEquals("override", merged.path("http").path("headers").path("x").asText());
+        assertEquals("keep", merged.path("http").path("headers").path("y").asText());
+        assertEquals("template", snapshot.path("config").path("http").path("headers").path("x").asText());
+        assertTrue(!node.path("data").path("config").path("http").path("headers").has("y"));
+    }
 
     /** 模板快照和实例覆盖合并后满足必填配置时应允许发布。 */
     @Test

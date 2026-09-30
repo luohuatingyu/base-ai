@@ -254,9 +254,7 @@ public class ChatStreamClient {
 
     /** 根据实际返回模型匹配供应商，避免把路由首项当成实际调用项。 */
     private String providerFor(LlmManagementService.WorkerRoute route, String model) {
-        if (route == null || model == null) return null;
-        return route.candidates().stream().filter(candidate -> model.equals(candidate.model()))
-            .map(LlmManagementService.WorkerCandidate::providerCode).findFirst().orElse(null);
+        return LlmManagementService.providerFor(route, model);
     }
 
     /** 读取 Worker 事件中的兼容 Token 字段。 */

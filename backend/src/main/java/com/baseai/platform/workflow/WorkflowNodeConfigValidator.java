@@ -222,19 +222,8 @@ public class WorkflowNodeConfigValidator {
 
     /** 合并版本中的模板快照和画布实例覆盖，保持与执行阶段一致。 */
     private ObjectNode effectiveConfig(JsonNode node, JsonNode snapshot) {
-        ObjectNode result = objectMapper.createObjectNode();
-        if (snapshot.path("config").isObject()) result.setAll((ObjectNode) snapshot.path("config").deepCopy());
-        JsonNode own = node.path("config").isObject() ? node.path("config") : node.path("data").path("config");
-        if (own.isObject()) deepMerge(result, own);
-        return WorkflowNodeConfigDefaults.withDefaults(objectMapper, WorkflowGraphValidator.nodeType(node), result);
-    }
-
-    /** 递归合并对象覆盖，避免实例只修改嵌套字段时丢失模板默认值。 */
-    private void deepMerge(ObjectNode target, JsonNode source) {
-        source.fields().forEachRemaining(entry -> {
-            if (entry.getValue().isObject() && target.path(entry.getKey()).isObject()) deepMerge((ObjectNode) target.path(entry.getKey()), entry.getValue());
-            else target.set(entry.getKey(), entry.getValue().deepCopy());
-        });
+        ObjectNode merged = WorkflowNodeConfigDefaults.merge(objectMapper, node, snapshot);
+        return WorkflowNodeConfigDefaults.withDefaults(objectMapper, WorkflowGraphValidator.nodeType(node), merged);
     }
 
     /** 返回节点显示名称，缺省时回退稳定节点 ID。 */

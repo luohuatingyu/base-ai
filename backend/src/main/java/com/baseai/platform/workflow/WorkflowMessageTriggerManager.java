@@ -84,8 +84,9 @@ public class WorkflowMessageTriggerManager {
 
     /** 资源修订失效时停止消费者，重新发布后刷新周期会自动恢复。 */
     private boolean configurationExecutable(WorkflowModels.TriggerDefinition trigger) {
-        try { workflowService.validateExecutableConfiguration(workflowService.storedVersion(trigger.versionId())); return true; }
-        catch (RuntimeException exception) { log.warn("Workflow message trigger disabled until republished: {}", key(trigger)); return false; }
+        if (workflowService.isExecutableConfiguration(trigger.versionId())) return true;
+        log.warn("Workflow message trigger disabled until republished: {}", key(trigger));
+        return false;
     }
 
     /** 根据触发器类型启动后台消费者。 */

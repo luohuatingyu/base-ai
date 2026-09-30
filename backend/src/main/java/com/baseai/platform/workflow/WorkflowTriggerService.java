@@ -62,8 +62,9 @@ public class WorkflowTriggerService {
 
     /** 跳过资源修订失效或配置不完整的触发版本，等待管理员重新发布。 */
     private boolean configurationExecutable(WorkflowModels.TriggerDefinition trigger) {
-        try { workflowService.validateExecutableConfiguration(workflowService.storedVersion(trigger.versionId())); return true; }
-        catch (RuntimeException exception) { log.warn("Workflow trigger disabled until republished: {}", key(trigger)); return false; }
+        if (workflowService.isExecutableConfiguration(trigger.versionId())) return true;
+        log.warn("Workflow trigger disabled until republished: {}", key(trigger));
+        return false;
     }
 
     /** 接收并验证公开 Webhook 请求。 */

@@ -11,6 +11,29 @@ final class WorkflowNodeConfigDefaults {
     /** 工具类不允许实例化。 */
     private WorkflowNodeConfigDefaults() { }
 
+    /** 合并模板快照与节点实例覆盖，返回不共享输入节点的隔离副本。 */
+    static ObjectNode merge(ObjectMapper objectMapper, JsonNode node, JsonNode snapshot) {
+        ObjectNode result = objectMapper.createObjectNode();
+        if (snapshot != null && snapshot.path("config").isObject()) {
+            result.setAll((ObjectNode) snapshot.path("config").deepCopy());
+        }
+        JsonNode own = node == null ? objectMapper.nullNode()
+            : node.path("config").isObject() ? node.path("config") : node.path("data").path("config");
+        if (own.isObject()) deepMerge(result, own);
+        return result;
+    }
+
+    /** 递归合并对象字段，保留未被覆盖的嵌套配置。 */
+    static void deepMerge(ObjectNode target, JsonNode source) {
+        source.fields().forEachRemaining(entry -> {
+            if (entry.getValue().isObject() && target.path(entry.getKey()).isObject()) {
+                deepMerge((ObjectNode) target.path(entry.getKey()), entry.getValue());
+            } else {
+                target.set(entry.getKey(), entry.getValue().deepCopy());
+            }
+        });
+    }
+
     /** 返回原配置与有效默认值合并后的隔离副本，空占位字段不会在此回填。 */
     static ObjectNode withDefaults(ObjectMapper objectMapper, String rawType, JsonNode source) {
         ObjectNode config = objectMapper.createObjectNode();

@@ -1013,20 +1013,8 @@ public class WorkflowExecutionService implements ApplicationRunner {
 
     /** 合并模板默认配置和画布实例覆盖配置。 */
     private ObjectNode nodeConfig(JsonNode node, JsonNode snapshot) {
-        ObjectNode result = objectMapper.createObjectNode();
-        if (snapshot.path("config").isObject()) result.setAll((ObjectNode) snapshot.path("config").deepCopy());
-        JsonNode own = node.path("config").isObject() ? node.path("config") : node.path("data").path("config");
-        if (own.isObject()) deepMerge(result, own);
-        return WorkflowNodeConfigDefaults.withDefaults(objectMapper, WorkflowGraphValidator.nodeType(node), result);
-    }
-
-    /** 递归合并实例配置，确保嵌套 HTTP、Agent 配置可局部覆盖。 */
-    private void deepMerge(ObjectNode target, JsonNode source) {
-        source.fields().forEachRemaining(entry -> {
-            if (entry.getValue().isObject() && target.path(entry.getKey()).isObject()) {
-                deepMerge((ObjectNode) target.path(entry.getKey()), entry.getValue());
-            } else target.set(entry.getKey(), entry.getValue().deepCopy());
-        });
+        ObjectNode merged = WorkflowNodeConfigDefaults.merge(objectMapper, node, snapshot);
+        return WorkflowNodeConfigDefaults.withDefaults(objectMapper, WorkflowGraphValidator.nodeType(node), merged);
     }
 
     /** 根据 JSON Schema 的 required 和基础 type 校验开放输入。 */
