@@ -18,15 +18,15 @@ Commit: `6003978`
 ### 实际执行命令与结果
 
 - `node --test frontend/test/provider-endpoints.test.mjs`：7/7 通过。
-- `npm test --prefix frontend`：首次在本次代码状态完成，Lint、类型检查、覆盖测试 689/689、生产构建和 E2E 3/3 均通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%。
+- `npm test --prefix frontend`：Lint、类型检查、覆盖测试 689/689、生产构建和 E2E 3/3 均通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%。
 - `docker compose up --build -d`：后端构建阶段 Maven 1074/1074 通过；前端镜像构建因并发工作区暂时缺少未由本次任务修改的 `frontend/src/views/DataSyncView.vue` 失败，非本次代码错误。
-- 重跑 `npm test --prefix frontend`：Lint、类型检查和覆盖测试 689/689 通过；生产构建因并发任务引入路由但尚未提供的 `frontend/src/views/AiScriptView.vue` 阻断，E2E 未执行。
+- Compose 重试：后端构建被并发工作区未完成的工作流文件变更阻断（缺少 `WorkflowAdapterLifecycleService`、`WorkflowPluginOAuthService` 等依赖及构造签名不匹配）；与本次前端策略展示改动无关。
 - `git diff --check`：本次提交文件通过。
 
 ### 覆盖范围、已知问题与下次建议
 
 - 覆盖中英文策略标签、六类策略图标映射、未知策略安全回退、供应商页面既有渲染入口和前端回归套件。
-- 工作区并发任务的路由/页面改动造成构建缺失文件；相关任务完成文件提交后应重新执行完整前端套件和 Compose。
+- 工作区并发任务的后端工作流文件删除/重构造成 Compose 编译阻塞；相关任务完成并恢复一致依赖后应重新执行 Compose。前端完整套件已在文件恢复后通过。
 - 策略编码保持稳定，已有供应商记录无需迁移；后续新增策略时应同步增加中英文 locale、图标映射和契约测试。
 
 ## 媒体 OSS 路径、格式与生成日志（2026-09-30）
