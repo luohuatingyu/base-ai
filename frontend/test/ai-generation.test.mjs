@@ -27,7 +27,7 @@ test('AI 生成 page keeps image and video generation controls', () => {
   assert.match(source, /first_frame/)
   assert.match(source, /last_frame/)
   assert.match(source, /generate_audio/)
-  assert.match(source, /poll\(result\.value\.id\)/)
+  assert.match(source, /poll\(selectedHistoryTask\.id\)/)
 })
 
 /** 每种模式必须声明可接受的素材类型，文生模式不得因残留上传素材改变任务语义。 */
@@ -194,10 +194,29 @@ test('AI 生成 history exposes localized failure reasons', () => {
 test('AI 生成 submit opens a result dialog instead of an inline preview', () => {
   assert.doesNotMatch(source, /<section v-if="result" class="generation-result">/)
   assert.match(source, /result\.value = \(await http\.post\('\/ai\/generation', payload\)\)\.data\n\s+openResultDialog\(result\.value\)/)
+  assert.doesNotMatch(source, /openResultDialog\(result\.value\)[\s\S]*poll\(result\.value\.id\)/)
   assert.match(source, /function openResultDialog\(task\) \{ dialogError\.value = ''; dialogMode\.value = 'result'; selectedHistoryTask\.value = task; historyDialogVisible\.value = true \}/)
   assert.match(source, /dialogError\.value = t\('generation\.submitFailed'\)[\s\S]*historyDialogVisible\.value = true/)
   assert.match(source, /v-else-if="dialogError" class="history-dialog-content"/)
   assert.match(source, /@click="poll\(selectedHistoryTask\.id\)"/)
+})
+
+/** 结果弹窗的刷新只能由用户触发一次，不能在查询完成后重新打开或递归轮询。 */
+test('AI 生成 result refresh is manual and single-shot', () => {
+  assert.match(source, /async function poll\(id\) \{[\s\S]*http\.get\(`\/ai\/generation\/\$\{id\}`\)[\s\S]*selectedHistoryTask\.value = response[\s\S]*await loadHistory\(\)[\s\S]*\}/)
+  assert.doesNotMatch(source, /async function poll\(id\) \{[\s\S]*openResultDialog\(response\)/)
+  assert.doesNotMatch(source, /setTimeout\(resolve, 1500\)/)
+})
+
+/** 历史列表仅在存在进行中任务时每 5 秒刷新，并在切换、结束或卸载时清理定时器。 */
+test('AI 生成 history refreshes active tasks every five seconds', () => {
+  assert.match(source, /const HISTORY_REFRESH_INTERVAL_MS = 5000/)
+  assert.match(source, /function isActiveHistoryTask\(task\) \{ return task\?\.status === 'RUNNING' \|\| task\?\.status === 'QUEUED' \}/)
+  assert.match(source, /history\.value\.some\(isActiveHistoryTask\)/)
+  assert.match(source, /window\.setInterval\(\(\) => \{ void loadHistory\(\) \}, HISTORY_REFRESH_INTERVAL_MS\)/)
+  assert.match(source, /function stopHistoryRefresh\(\) \{[\s\S]*window\.clearInterval\(historyRefreshTimer\)/)
+  assert.match(source, /onBeforeUnmount\(stopHistoryRefresh\)/)
+  assert.match(source, /function onTypeChange\(\) \{ stopHistoryRefresh\(\)/)
 })
 
 /** 工作台布局必须将控制栏、提示词和素材/参数双栏分成可识别的区域。 */

@@ -245,7 +245,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -255,6 +255,9 @@ import { outputFallbackSource, outputFilename, outputMediaType, outputMimeType, 
 
 const { t } = useI18n()
 const router = useRouter()
+const HISTORY_REFRESH_INTERVAL_MS = 5000
+let historyRefreshTimer = null
+let historyRefreshInFlight = false
 const type = ref('image_model')
 const models = ref([])
 const modelId = ref(null)
@@ -494,7 +497,7 @@ function onModelChange() {
   syncModeOptions()
 }
 /** 切换图片或视频时只显示同类模型并清理不兼容素材。 */
-function onTypeChange() { modelId.value = modelsForType.value[0]?.id || null; inputs.value = []; result.value = null; onModelChange(); loadHistory() }
+function onTypeChange() { stopHistoryRefresh(); modelId.value = modelsForType.value[0]?.id || null; inputs.value = []; result.value = null; onModelChange(); loadHistory() }
 /** 切换模式时清除旧角色，避免角色与任务类型混用。 */
 function onModeChange() { reconcileInputsForMode(); syncModeOptions() }
 /** 按新模式清理不兼容素材，并为首帧、尾帧和参考素材设置唯一角色。 */
@@ -545,7 +548,7 @@ function onDrop(event) { if (!assetsDisabled.value) onFiles(event) }
 function removeInput(index) { inputs.value.splice(index, 1) }
 /** 加入历史样片任务作为正式视频的唯一输入。 */
 function addDraftTask() { const draft = history.value.find(item => item.modelId === modelId.value && item.status === 'SUCCEEDED' && item.outputJson?.outputs?.length && item.options?.draft); if (draft) inputs.value = [{ kind: 'TASK', fileName: `draft-${draft.id}`, contentType: 'text/plain', dataUrl: String(draft.id), role: '' }]; else ElMessage.warning(t('generation.noDraft')) }
-/** 提交任务并轮询异步视频，图片响应直接完成。 */
+/** 提交任务并只在提交完成时打开一次结果弹窗，进行中的任务交给人工刷新。 */
 async function submit() {
   if (!canSubmit.value) return
   busy.value = true; error.value = ''; dialogError.value = ''; result.value = null
@@ -553,7 +556,6 @@ async function submit() {
   try {
     result.value = (await http.post('/ai/generation', payload)).data
     openResultDialog(result.value)
-    if (result.value.status === 'RUNNING' || result.value.status === 'QUEUED') await poll(result.value.id)
     await loadHistory()
   } catch (cause) {
     error.value = t('generation.submitFailed')
@@ -564,16 +566,38 @@ async function submit() {
     showHttpError(cause, 'generation.submitFailed')
   } finally { busy.value = false }
 }
-/** 查询任务终态，不重新创建任务。 */
+/** 查询一次任务状态，不重新打开结果弹窗或递归轮询。 */
 async function poll(id) {
   const response = (await http.get(`/ai/generation/${id}`)).data
   result.value = response
-  openResultDialog(response)
-  if (response.status === 'RUNNING' || response.status === 'QUEUED') { await new Promise(resolve => setTimeout(resolve, 1500)); return poll(id) }
+  if (historyDialogVisible.value && selectedHistoryTask.value?.id === id) selectedHistoryTask.value = response
   await loadHistory()
 }
-/** 查询当前用户可见的历史任务。 */
-async function loadHistory() { try { history.value = ((await http.get('/ai/generation', { params: { type: type.value, page: 0 } })).data.items || []) } catch { history.value = [] } }
+/** 判断任务是否仍在生成中，供历史列表定时刷新使用。 */
+function isActiveHistoryTask(task) { return task?.status === 'RUNNING' || task?.status === 'QUEUED' }
+/** 停止历史列表定时刷新，避免离开页面后继续请求。 */
+function stopHistoryRefresh() {
+  if (historyRefreshTimer !== null) window.clearInterval(historyRefreshTimer)
+  historyRefreshTimer = null
+}
+/** 根据历史列表状态启停 5 秒刷新，只刷新列表不打开结果弹窗。 */
+function syncHistoryRefresh() {
+  if (history.value.some(isActiveHistoryTask)) {
+    if (historyRefreshTimer === null) historyRefreshTimer = window.setInterval(() => { void loadHistory() }, HISTORY_REFRESH_INTERVAL_MS)
+  } else stopHistoryRefresh()
+}
+/** 查询当前用户可见的历史任务，并按进行中状态维护定时刷新。 */
+async function loadHistory() {
+  if (historyRefreshInFlight) return
+  historyRefreshInFlight = true
+  try {
+    history.value = ((await http.get('/ai/generation', { params: { type: type.value, page: 0 } })).data.items || [])
+    syncHistoryRefresh()
+  } catch {
+    history.value = []
+    stopHistoryRefresh()
+  } finally { historyRefreshInFlight = false }
+}
 /** 打开历史任务详情弹窗，不覆盖当前创作草稿和结果。 */
 function selectHistory(task) { dialogError.value = ''; dialogMode.value = 'history'; selectedHistoryTask.value = task; historyDialogVisible.value = true }
 /** 打开生成结果弹窗，并在轮询时同步弹窗内的任务状态。 */
@@ -590,6 +614,7 @@ async function loadModels() {
   } catch (cause) { error.value = t('generation.modelsFailed'); showHttpError(cause, 'generation.modelsFailed') }
 }
 onMounted(loadModels)
+onBeforeUnmount(stopHistoryRefresh)
 </script>
 
 <style scoped>
