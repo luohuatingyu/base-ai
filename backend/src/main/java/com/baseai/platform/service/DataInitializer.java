@@ -381,9 +381,9 @@ public class DataInitializer implements ApplicationRunner {
         seedCrud(model, "知识库", "/knowledge-bases", "KnowledgeBasesView", "Collection",
             "ai:model:knowledge-base", 24);
 
-        // AI 剧本是独立的创作入口，生成后的剧本仍会写入 AI 视频项目资产。
-        menu(null, "AI剧本", "MENU", "/ai-script", "AiScriptView", "EditPen",
-            "ai:script:invoke", 35, true);
+        // AI 小说是独立的原著创作入口，影视改编剧本仍归属于 AI 视频工作台。
+        menu(null, "AI小说", "MENU", "/ai-novel", "AiScriptView", "EditPen",
+            "ai:novel:invoke", 35, true);
 
         // ========== 自动化模块 ==========
         Menu automation = menu(null, "自动化", "CATALOG", "/automation", null, "Operation",
