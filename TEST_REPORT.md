@@ -11223,7 +11223,7 @@ Commit: `85323fa`
 
 - 绑定范围：供应商保存稳定 `strategyCode`，模型继续保存策略内 `generationProfile`；历史空策略保留兼容推断。
 - 变更范围：供应商实体、管理服务与接口、媒体 Agent 注册表和调用链、MySQL V48 迁移、供应商管理页面及中英文文案。
-- 本次提交：见本次变更相关提交；工作区另有并行产生的媒体/聊天改动，未纳入本次提交。
+- Git 基准点：`f951647`（Update test report for provider strategy binding）；工作区另有并行产生的媒体/聊天改动，未纳入本次提交。
 
 ### 验收标准—测试用例映射
 
@@ -11240,7 +11240,7 @@ Commit: `85323fa`
 - `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：**1066/1066 通过**，失败 0、错误 0、跳过 0。
 - `cd frontend && npm test`：**688/688 通过**；覆盖率行 98.15%、分支 81.93%、函数 95.88%；生产构建和 E2E **3/3 通过**。
 - `docker compose up --build -d`：全部镜像构建成功，后端镜像内 Maven **1066/1066 通过**；启动阶段被既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
-- `git diff --check`：待提交前执行。
+- `git diff --check`：通过。
 
 ### 覆盖范围、已知问题与下次建议
 
