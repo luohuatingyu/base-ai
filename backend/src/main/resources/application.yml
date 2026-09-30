@@ -172,9 +172,6 @@ app:
     webhook-rate-limit-per-minute: ${WORKFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE:60}
     trigger-delivery-retention-days: ${WORKFLOW_TRIGGER_DELIVERY_RETENTION_DAYS:30}
     run-retention-days: ${WORKFLOW_RUN_RETENTION_DAYS:30}
-    url: ${DEPLOYMENT_AGENT_URL:}
-    internal-token: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:}
-    worker-image: ${DATA_SYNC_WORKER_IMAGE:}
 
 resilience4j:
   retry:
