@@ -2,7 +2,7 @@
 
 ### Git 基准、范围与交付状态
 
-Commit: `c17f4b2`
+Commit: `900935e`
 - 提交说明：Remove media generation logic from chat page；本次菜单实现提交为 `b527fab`（Move package adjustment to top-level catalog）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
 - 新增“套餐管理”一级目录，将“套餐调整”作为其子菜单；页面路径 `/package-adjustment` 与页面权限 `ai:package-adjustment:list` 保持不变。
 - 新增 V49 菜单迁移：为存量数据创建/修正 `package:catalog`，移动页面父级，并为已有页面权限的角色补齐目录授权；迁移可重复执行。
