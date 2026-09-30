@@ -11040,3 +11040,35 @@ Commit: `c2c5569`
 - 已覆盖临时素材生成、令牌读取、过期/非法输入边界、供应商协议首尾帧角色和前端来源头转发。
 - 方舟供应商必须能从公网访问平台域名；本地 `localhost`、内网地址或仅容器网络地址不能用于真实视频提交。部署时应通过公网 HTTPS 域名访问前端，并让反向代理保留正确的 Host/协议。
 - 修复 Docker Socket Proxy 健康检查并提供可用 MySQL 后，重新启动完整 Compose，再用两张首尾帧图片执行一次真实 Seedance 提交和状态轮询回归。
+## OSS 媒体备份与展示回退（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `bf06cd5`
+- 提交说明：Harden OSS media paths；前置实现提交 `e49f47c`、测试提交 `bef8799`；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 生成使用的图片、视频和音频 Data URL 在供应商调用前优先写入 OSS `public/ai-generation/input/`；生成图片和视频成功后备份到 `public/ai-generation/output/`。
+- 任务输出保留供应商地址，并记录 `ossUrl` 和备份失败状态；图片、视频历史展示和聊天展示在原地址加载失败时只切换一次 OSS 地址。
+- OSS 凭据仅通过环境变量注入，代码不保存密钥；前缀校验拒绝 private、路径穿越和非 `public/` 目录。未做历史任务补备份，无数据库迁移。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 输入素材和生成结果写入 OSS 公共前缀 | `MediaAssetServiceTest.materializesDataUrlToOssWhenAvailable` 验证输入 Data URL 使用 OSS 地址；`OssMediaStorageServiceTest.requiresCredentialsAndPublicPrefix` 验证凭据和目录限制 | 正常、安全、兼容 | 通过 |
+| OSS 暂时不可用不重复生成 | `MediaGenerationService` 现有任务处理回归覆盖备份异常不改变成功任务；备份错误写入输出项 | 异常、回归 | 通过 |
+| 非法目录和凭据不被启用 | `OssMediaStorageServiceTest.requiresCredentialsAndPublicPrefix` 验证空凭据、`private/` 和 `public/` 边界 | 边界、权限安全 | 通过 |
+| 原供应商地址失败时展示 OSS 内容 | `generation-output.test.mjs` 的 `generation output falls back to OSS backup`，页面的图片/视频 `error` 处理只回退一次 | 正常、异常、兼容 | 通过 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：后端 **1054/1054 通过**，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：lint、typecheck、覆盖测试 **680/680 通过**，生产构建及 E2E **3/3 通过**。
+- `cd frontend && node --test test/generation-output.test.mjs`：**4/4 通过**，包含 OSS 回退测试。
+- `docker compose up --build -d`：后端 Maven **1052/1052 通过**、前端构建成功；最终 backend runtime 镜像阶段因 `ports.ubuntu.com` 的 `universe` 索引持续返回 502/404，未完成整栈启动。不是端口占用问题。
+- `git diff --check`：通过。
+
+### 测试覆盖范围、已知问题与下次建议
+
+- 覆盖 OSS 配置边界、输入素材持久化、生成结果备份字段、图片/视频展示回退、前端下载兼容和现有媒体生成回归。
+- 当前环境的 Docker Ubuntu 仓库无法完成 backend runtime 镜像最后一步；已完成的 Maven 和前端测试不受影响。网络恢复后需重新执行 `docker compose up --build -d` 并检查容器健康状态。
+- 真实 OSS 上传尚未执行生产对象验证；部署后建议用一张图片和一个短视频生成任务验证对象、MIME、公共访问和失败回退，并清理测试对象。
