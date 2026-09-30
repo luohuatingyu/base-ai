@@ -309,6 +309,13 @@ class LlmManagementServiceTest {
             List.of("image_model", "text_model", "video_model", "vision_model")));
     }
 
+    /** 向量能力不能因为历史非生成过滤规则被误暴露到聊天目录。 */
+    @Test
+    void embeddingModelIsExcludedFromChatCapabilities() {
+        assertEquals(List.of("audio_model"), LlmManagementService.chatModelTypes(
+            List.of("embedding_model", "audio_model")));
+    }
+
     /** 没有生成适配器时必须明确拒绝探测，不能误发聊天请求或解密密钥。 */
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"image_model", "video_model"})
