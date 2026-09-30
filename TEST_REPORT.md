@@ -11280,3 +11280,34 @@ Commit: `85323fa`
 - 覆盖供应商显式策略解析、策略画像校验、媒体调用链兼容、管理页面契约和完整前后端回归。
 - 当前 Compose 启动仍受 Docker Socket Proxy 健康检查阻断；修复该容器健康检查后，应再次执行 `docker compose up --build -d` 验证整栈启动和 V48 迁移。
 - 后续新增供应商策略时，只需注册 Agent 并加入策略目录，不应恢复按供应商名称猜测策略的调用逻辑。
+## MiniMax 与 Vidu 图片/视频媒体 Agent 接入（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `3e36b1b`
+- 提交说明：Integrate MiniMax and Vidu media generation；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 新增 MiniMax 图片/视频协议策略，支持图片参考图、海螺视频异步查询和 Bearer 认证。
+- 新增 Vidu 图片/视频协议策略，支持文生图、图生图、文生视频、图生视频、首尾帧、参考图视频、统一任务查询和 Token 认证。
+- 统一媒体服务支持供应商查询参数、异步图片任务、`image_urls` 与 `creations` 输出收集；即梦、Ark、OpenAI、Gemini 的既有策略保持兼容。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| MiniMax/Vidu 被正确路由 | `MediaGenerationAgentStrategyTest.resolvesBuiltInStrategiesAndGenericFallback` 验证策略编码 | 正常、兼容 | 通过 |
+| MiniMax 图片和视频请求使用官方字段 | `mapsMiniMaxImageAndVideoRequests` 验证模型、参考图、水印映射和 `task_id` 查询参数 | 正常、边界 | 通过 |
+| Vidu 按输入角色选择视频接口并使用 Token | `mapsViduGenerationPathsAndAuth` 验证首尾帧路径、认证头和任务查询路径 | 正常、权限安全 | 通过 |
+| 图片异步与多种输出结构可持久化 | `MediaGenerationService` 的异步状态、`image_urls`、`creations` 解析分支由完整套件覆盖 | 异常、回归 | 通过 |
+
+### 实际执行命令与结果
+
+- `docker compose build backend`：后端完整 Maven/Surefire 套件 **1066/1066 通过**，失败 0、错误 0、跳过 0。
+- 同一构建中的 `MediaGenerationAgentStrategyTest`：8/8 通过。
+- `docker compose up --build -d`：镜像构建成功；启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查返回 HTTP 503，继而 `adapter-manager` 的 rootless Docker 校验失败，整栈未完成健康启动；不是端口占用。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖策略路由、官方认证头、图片/视频请求字段、异步查询路径和多供应商结果解析；未执行真实 MiniMax 或 Vidu 计费请求。
+- Docker Socket Proxy 当前返回 503，修复该既有容器后应再次执行 `docker compose up --build -d` 验证整栈依赖。
+- 重测条件：修改媒体策略、生成路径、异步状态或输出解析时，应重新执行后端完整套件和 Compose 重建。
