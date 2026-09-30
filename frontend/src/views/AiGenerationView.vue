@@ -295,7 +295,16 @@
             <div class="layer-puzzle-board" :style="{ aspectRatio: layerPuzzleAspectRatio }">
               <div v-for="(output, index) in historyOutputs" :key="output.value + index" class="layer-puzzle-piece" :style="layerPuzzlePieceStyle(output, index)">
                 <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="layer-puzzle-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" fit="contain" preview-teleported />
-                <video v-else class="layer-puzzle-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
+                <button
+                  v-else
+                  type="button"
+                  class="layer-puzzle-media-trigger"
+                  :aria-label="`${t('generation.previewVideo')} · ${outputCaption(output, index)}`"
+                  @click="openVideoPreview(output, index)"
+                >
+                  <video class="layer-puzzle-media" muted playsinline preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
+                  <span class="video-preview-play" aria-hidden="true">▶</span>
+                </button>
               </div>
             </div>
             <div class="layer-puzzle-list">
@@ -309,7 +318,16 @@
           <div v-else class="result-grid" :class="{ 'is-single': historyOutputs.length === 1, 'is-layer-fallback': isLayerPuzzle }">
             <article v-for="(output, index) in historyOutputs" :key="output.value + index" class="result-card">
               <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="result-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" fit="contain" preview-teleported />
-              <video v-else class="result-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
+              <button
+                v-else
+                type="button"
+                class="result-media-trigger"
+                :aria-label="`${t('generation.previewVideo')} · ${outputCaption(output, index)}`"
+                @click="openVideoPreview(output, index)"
+              >
+                <video class="result-media" muted playsinline preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
+                <span class="video-preview-play" aria-hidden="true">▶</span>
+              </button>
               <div class="result-card-footer"><div class="result-card-title"><strong>{{ outputCaption(output, index) }}</strong><el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button><el-button v-if="canSaveOutput(output)" text type="primary" size="small" :loading="savingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="saveOutput(output, index)">{{ t('generation.saveToProject') }}</el-button></div><small v-if="output.output_format || output.size || outputMimeType(output, selectedHistoryTask.generationType)">{{ output.output_format || outputMimeType(output, selectedHistoryTask.generationType) }}<span v-if="(output.output_format || outputMimeType(output, selectedHistoryTask.generationType)) && output.size"> · </span>{{ output.size || '' }}</small></div>
             </article>
           </div>
@@ -320,6 +338,31 @@
       </div>
       <div v-else-if="dialogError" class="history-dialog-content">
         <p class="generation-error generation-alert">{{ dialogError }}</p>
+      </div>
+    </el-dialog>
+
+    <el-dialog
+      v-model="videoPreviewVisible"
+      class="generation-video-preview-dialog"
+      :title="videoPreviewTitle"
+      width="min(960px, calc(100vw - 32px))"
+      destroy-on-close
+      @closed="clearVideoPreview"
+    >
+      <div v-if="videoPreviewOutput && videoPreviewTask" class="video-preview-content">
+        <video
+          class="video-preview-player"
+          controls
+          autoplay
+          playsinline
+          preload="metadata"
+          :src="outputSource(videoPreviewOutput, videoPreviewTask.generationType)"
+          @error="useOssFallback($event, videoPreviewOutput, videoPreviewTask.generationType)"
+        />
+        <div class="video-preview-meta">
+          <strong>{{ outputCaption(videoPreviewOutput, videoPreviewIndex) }}</strong>
+          <small>{{ outputMimeType(videoPreviewOutput, videoPreviewTask.generationType) }}<span v-if="videoPreviewOutput.size"> · {{ videoPreviewOutput.size }}</span></small>
+        </div>
       </div>
     </el-dialog>
   </div>
@@ -357,6 +400,10 @@ const historyDialogVisible = ref(false)
 const selectedHistoryTask = ref(null)
 const dialogError = ref('')
 const dialogMode = ref('history')
+const videoPreviewVisible = ref(false)
+const videoPreviewOutput = ref(null)
+const videoPreviewTask = ref(null)
+const videoPreviewIndex = ref(0)
 const busy = ref(false)
 const downloadingOutput = ref('')
 const savingOutput = ref('')
@@ -407,6 +454,7 @@ const accept = computed(() => {
 })
 const canSubmit = computed(() => !busy.value && !!modelId.value && !!mode.value && (!!prompt.value.trim() || inputs.value.length > 0) && (assetsAllowed.value || inputs.value.length === 0))
 const dialogTitle = computed(() => t(dialogMode.value === 'result' ? 'generation.result' : 'generation.history'))
+const videoPreviewTitle = computed(() => videoPreviewOutput.value ? `${t('generation.previewVideo')} · ${outputCaption(videoPreviewOutput.value, videoPreviewIndex.value)}` : t('generation.previewVideo'))
 const historyOutputs = computed(() => selectedHistoryTask.value?.outputJson?.outputs || [])
 const isLayerPuzzle = computed(() => selectedHistoryTask.value?.generationMode === 'LAYER_DECOMPOSITION' && historyOutputs.value.length > 1)
 const layerPuzzleReady = computed(() => isLayerPuzzle.value && historyOutputs.value.some(output => layerBoundingBox(output)) && historyOutputs.value.every((output, index) => layerBoundingBox(output) || isBaseLayer(output, index)))
@@ -575,6 +623,20 @@ function useOssFallback(event, output, fallbackType) {
   if (!target || target.dataset.ossFallback === '1' || !output?.ossUrl || target.src === output.ossUrl) return
   target.dataset.ossFallback = '1'
   target.src = outputFallbackSource(output, fallbackType)
+}
+/** 打开视频独立预览弹窗，让点击输出画面即可播放完整视频。 */
+function openVideoPreview(output, index) {
+  if (outputMediaType(output, selectedHistoryTask.value?.generationType) !== 'video') return
+  videoPreviewOutput.value = output
+  videoPreviewTask.value = selectedHistoryTask.value
+  videoPreviewIndex.value = index
+  videoPreviewVisible.value = true
+}
+/** 关闭视频预览后清理媒体引用，避免任务详情关闭后继续保留大对象。 */
+function clearVideoPreview() {
+  videoPreviewOutput.value = null
+  videoPreviewTask.value = null
+  videoPreviewIndex.value = 0
 }
 /** 下载远程或 Base64 媒体；跨域 CDN 禁止 Blob 时回退到签名地址。 */
 async function downloadOutput(output, index) {
@@ -1000,6 +1062,16 @@ onBeforeUnmount(stopHistoryRefresh)
 .result-card { overflow: hidden; border: 1px solid var(--el-border-color-lighter); border-radius: 11px; background: var(--el-fill-color-light); transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
 .result-card:hover { border-color: var(--el-color-primary-light-7); box-shadow: 0 10px 22px color-mix(in srgb, #243b68 10%, transparent); transform: translateY(-2px); }
 .result-media { display: block; width: 100%; height: 238px; object-fit: contain; background: var(--el-fill-color); }
+.result-media-trigger,
+.layer-puzzle-media-trigger { position: relative; display: block; width: 100%; height: 100%; padding: 0; border: 0; background: var(--el-fill-color); color: inherit; cursor: pointer; }
+.result-media-trigger { overflow: hidden; }
+.result-media-trigger:focus-visible,
+.layer-puzzle-media-trigger:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
+.result-media-trigger:hover .video-preview-play,
+.layer-puzzle-media-trigger:hover .video-preview-play,
+.result-media-trigger:focus-visible .video-preview-play,
+.layer-puzzle-media-trigger:focus-visible .video-preview-play { transform: translate(-50%, -50%) scale(1.08); background: var(--el-color-primary); }
+.video-preview-play { position: absolute; top: 50%; left: 50%; display: grid; place-items: center; width: 50px; height: 50px; border: 2px solid rgb(255 255 255 / 82%); border-radius: 50%; background: rgb(16 24 40 / 68%); color: #fff; font-size: 18px; line-height: 1; transform: translate(-50%, -50%); transition: transform .2s ease, background-color .2s ease; pointer-events: none; }
 .result-card-footer { display: grid; gap: 3px; padding: 10px 11px; }
 .result-card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .result-card-footer strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
@@ -1031,6 +1103,11 @@ onBeforeUnmount(stopHistoryRefresh)
 .history-dialog-content .layer-puzzle,
 .history-dialog-content .result-empty { margin-top: 0; }
 .history-dialog-content .generation-alert { margin: 0; }
+.video-preview-content { display: grid; gap: 12px; }
+.video-preview-player { display: block; width: 100%; max-height: min(70vh, 680px); border-radius: 10px; background: #05070b; object-fit: contain; }
+.video-preview-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--el-text-color-primary); }
+.video-preview-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-preview-meta small { flex: 0 0 auto; color: var(--el-text-color-secondary); }
 :deep(.generation-history-dialog .el-dialog__body) { max-height: none; overflow: visible; }
 .model-dialog-content { display: grid; gap: 15px; }
 .model-dialog-intro { display: flex; align-items: center; gap: 11px; padding: 12px 13px; border: 1px solid color-mix(in srgb, var(--el-color-primary) 16%, var(--el-border-color-lighter)); border-radius: 12px; background: linear-gradient(110deg, var(--el-color-primary-light-9), var(--el-bg-color)); }
