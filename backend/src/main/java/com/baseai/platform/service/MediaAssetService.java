@@ -22,6 +22,7 @@ public class MediaAssetService {
     private final OssMediaStorageService oss;
 
     /** 使用 OSS 持久化供应商需要长期读取的输入素材。 */
+    @org.springframework.beans.factory.annotation.Autowired
     public MediaAssetService(OssMediaStorageService oss) { this.oss = oss; }
 
     /** 保持单元测试和未启用 OSS 的兼容构造方式。 */
