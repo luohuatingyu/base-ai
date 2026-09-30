@@ -64,30 +64,13 @@ public class WorkflowService {
             : jdbcTemplate.query(sql, (rs, row) -> mapTemplate(rs), user.id());
     }
 
-    /** 查询指定市场来源下未作废模板的外部键和指纹，不暴露加密配置。 */
-    public Map<String, String> activeMarketplaceTemplateFingerprints(String rawSource) {
-        String source = WorkflowTemplateCatalog.source(rawSource);
-        return jdbcTemplate.query("""
-            SELECT external_key,external_fingerprint FROM workflow_node_template
-            WHERE template_source=? AND external_key IS NOT NULL AND voided=false
-            """, resultSet -> {
-                Map<String, String> fingerprints = new LinkedHashMap<>();
-                while (resultSet.next()) {
-                    String externalKey = resultSet.getString("external_key");
-                    String fingerprint = resultSet.getString("external_fingerprint");
-                    if (externalKey != null && fingerprint != null) fingerprints.put(externalKey, fingerprint);
-                }
-                return Map.copyOf(fingerprints);
-            }, source);
-    }
-
     /** 创建可复用节点模板。 */
     @Transactional
     public WorkflowModels.NodeTemplateView createTemplate(WorkflowModels.NodeTemplateCommand command) {
         validateTemplate(command, false);
         String nodeType = type(command.nodeType());
         String source = WorkflowTemplateCatalog.source(command.source());
-        if (!"SYSTEM".equals(source)) throw new BusinessException("workflow.marketplaceImportRequired");
+        if (!"SYSTEM".equals(source)) throw new BusinessException("workflow.templateSourceInvalid");
         try {
             Long id = insertKey("""
                 INSERT INTO workflow_node_template(code,name,node_type,description,localization_json,config_encrypted,system_template,template_source,functional_category,enabled,created_by)
@@ -106,7 +89,7 @@ public class WorkflowService {
     public WorkflowModels.NodeTemplateView updateTemplate(Long id, WorkflowModels.NodeTemplateCommand command) {
         WorkflowModels.NodeTemplateView existing = templateForManagement(id);
         validateTemplate(command, existing.systemTemplate());
-        boolean identityLocked = existing.systemTemplate() || existing.importedTemplate();
+        boolean identityLocked = existing.systemTemplate();
         String savedCode = identityLocked ? existing.code() : code(command.code());
         String savedType = identityLocked ? existing.nodeType() : type(command.nodeType());
         try {
@@ -114,7 +97,7 @@ public class WorkflowService {
                 UPDATE workflow_node_template SET code=?,name=?,node_type=?,description=?,config_encrypted=?,template_source=?,functional_category=?,enabled=?,updated_at=NOW()
                 WHERE id=? AND voided=false
                 """, savedCode, text(command.name()), savedType, text(command.description()), encryptJson(command.config()),
-                existing.importedTemplate() ? existing.source() : WorkflowTemplateCatalog.updatedSource(command.source(), existing.source()),
+                WorkflowTemplateCatalog.updatedSource(command.source(), existing.source()),
                 WorkflowTemplateCatalog.updatedCategory(command.functionalCategory(), existing.functionalCategory(), savedType),
                 !Boolean.FALSE.equals(command.enabled()), id);
             return template(id);
@@ -129,109 +112,6 @@ public class WorkflowService {
         WorkflowModels.NodeTemplateView existing = templateForManagement(id);
         if (existing.systemTemplate()) throw new BusinessException(409, "workflow.systemTemplateProtected");
         jdbcTemplate.update("UPDATE workflow_node_template SET enabled=false,voided=true,updated_at=NOW() WHERE id=?", id);
-    }
-
-    /** 兼容单项调用，并委托批量事务实现保证一致的版本更新语义。 */
-    @Transactional
-    public WorkflowModels.MarketplaceTemplatePersistence importMarketplaceTemplate(WorkflowModels.MarketplaceTemplateDraft draft) {
-        return importMarketplaceTemplates(List.of(draft), false).get(0);
-    }
-
-    /** 同包指纹重探测后刷新模板展示 Schema，保留实例默认值、连接和执行身份字段。 */
-    @Transactional
-    public void refreshMarketplaceTemplateMetadata(String rawSource, String packageKey,
-                                                    WorkflowPluginWorkerClient.WorkerPackage inspected,
-                                                    Map<String, String> expectedFingerprints) {
-        String source = WorkflowTemplateCatalog.source(rawSource);
-        if (expectedFingerprints == null || expectedFingerprints.isEmpty()) return;
-        for (WorkflowPluginWorkerClient.WorkerComponent component : inspected.components()) {
-            String externalKey = packageKey + "/" + component.externalId();
-            String expectedFingerprint = expectedFingerprints.get(externalKey);
-            if (expectedFingerprint == null) continue;
-            List<MarketplaceTemplateConfig> templates = jdbcTemplate.query("""
-                SELECT id,config_encrypted FROM workflow_node_template
-                WHERE template_source=? AND external_key=? AND external_fingerprint=? AND voided=false
-                """, (rs, row) -> new MarketplaceTemplateConfig(rs.getLong("id"), rs.getString("config_encrypted")),
-                source, marketplaceText(externalKey, 255), expectedFingerprint);
-            for (MarketplaceTemplateConfig template : templates) {
-                JsonNode parsed = decryptJson(template.configEncrypted());
-                if (!parsed.isObject()) continue;
-                ObjectNode config = (ObjectNode) parsed.deepCopy();
-                config.set("parameterSchema", component.schema());
-                config.set("credentialSchema", component.credentialSchema());
-                jdbcTemplate.update("""
-                    UPDATE workflow_node_template SET localization_json=?,config_encrypted=?,updated_at=NOW()
-                    WHERE id=? AND voided=false
-                    """, localizationJson(component.localization()), encryptJson(config), template.id());
-            }
-        }
-    }
-
-    /** 在单一事务中幂等导入市场模板，版本变化必须显式确认后才重置配置。 */
-    @Transactional
-    public List<WorkflowModels.MarketplaceTemplatePersistence> importMarketplaceTemplates(
-        List<WorkflowModels.MarketplaceTemplateDraft> drafts, boolean replaceExisting) {
-        if (drafts == null || drafts.isEmpty()) throw new BusinessException("workflow.marketplaceNodeNotFound");
-        List<WorkflowModels.MarketplaceTemplatePersistence> results = new ArrayList<>();
-        for (WorkflowModels.MarketplaceTemplateDraft draft : drafts) {
-            results.add(importMarketplaceTemplateItem(draft, replaceExisting));
-        }
-        return List.copyOf(results);
-    }
-
-    /** 保存单个已验证市场草稿；仅供批量事务入口调用。 */
-    private WorkflowModels.MarketplaceTemplatePersistence importMarketplaceTemplateItem(
-        WorkflowModels.MarketplaceTemplateDraft draft, boolean replaceExisting) {
-        if (draft == null || draft.externalKey() == null || draft.externalKey().isBlank()) {
-            throw new BusinessException("workflow.marketplaceNodeNotFound");
-        }
-        String source = WorkflowTemplateCatalog.source(draft.source());
-        if ("SYSTEM".equals(source)) throw new BusinessException("workflow.marketplaceSourceInvalid");
-        String nodeType = type(draft.nodeType());
-        String category = WorkflowTemplateCatalog.category(draft.functionalCategory(), nodeType);
-        if (draft.config() != null && !draft.config().isObject()) throw new BusinessException("workflow.templateConfigInvalid");
-        List<MarketplaceExistingTemplate> existing = jdbcTemplate.query("""
-            SELECT id,voided,external_fingerprint FROM workflow_node_template
-            WHERE template_source=? AND external_key=? ORDER BY id LIMIT 1
-            """, (rs, row) -> new MarketplaceExistingTemplate(rs.getLong("id"), rs.getBoolean("voided"),
-                rs.getString("external_fingerprint")), source, marketplaceText(draft.externalKey(), 255));
-        if (!existing.isEmpty()) {
-            MarketplaceExistingTemplate current = existing.get(0);
-            Long id = current.id();
-            boolean changed = current.fingerprint() == null
-                || !current.fingerprint().equalsIgnoreCase(fingerprint(draft.externalFingerprint()));
-            if (!current.voided() && !changed) {
-                jdbcTemplate.update("UPDATE workflow_node_template SET enabled=true,updated_at=NOW() WHERE id=?", id);
-                return new WorkflowModels.MarketplaceTemplatePersistence(id, "ALREADY_IMPORTED");
-            }
-            if (!current.voided() && !replaceExisting) {
-                return new WorkflowModels.MarketplaceTemplatePersistence(id, "UPDATE_AVAILABLE");
-            }
-            jdbcTemplate.update("""
-                UPDATE workflow_node_template SET code=?,name=?,node_type=?,description=?,config_encrypted=?,system_template=false,
-                    localization_json=?,functional_category=?,external_version=?,external_publisher=?,external_fingerprint=?,imported_at=NOW(),
-                    enabled=true,voided=false,created_by=?,updated_at=NOW() WHERE id=?
-                """, code(draft.code()), marketplaceText(draft.name(), 120), nodeType,
-                marketplaceText(draft.description(), 500), encryptJson(draft.config()), localizationJson(draft.localization()), category,
-                marketplaceText(draft.externalVersion(), 64), marketplaceText(draft.externalPublisher(), 120),
-                fingerprint(draft.externalFingerprint()), AuthContext.require().id(), id);
-            return new WorkflowModels.MarketplaceTemplatePersistence(id, current.voided() ? "RESTORED" : "UPDATED");
-        }
-        try {
-            Long id = insertKey("""
-                INSERT INTO workflow_node_template(code,name,node_type,description,config_encrypted,system_template,
-                    localization_json,template_source,functional_category,external_key,external_version,external_publisher,
-                    external_fingerprint,imported_at,enabled,created_by)
-                VALUES (?,?,?,?,?,false,?,?,?,?,?,?,?,NOW(),true,?)
-                """, code(draft.code()), marketplaceText(draft.name(), 120), nodeType,
-                marketplaceText(draft.description(), 500), encryptJson(draft.config()), localizationJson(draft.localization()), source, category,
-                marketplaceText(draft.externalKey(), 255), marketplaceText(draft.externalVersion(), 64),
-                marketplaceText(draft.externalPublisher(), 120), fingerprint(draft.externalFingerprint()),
-                AuthContext.require().id());
-            return new WorkflowModels.MarketplaceTemplatePersistence(id, "CREATED");
-        } catch (DataIntegrityViolationException exception) {
-            throw new BusinessException(409, "workflow.templateCodeExists");
-        }
     }
 
     /** 按 ID 查询单个节点模板。 */
@@ -480,8 +360,6 @@ public class WorkflowService {
                     case "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER" -> Set.of("RABBITMQ");
                     case "IM_NOTIFY", "WEBHOOK_TRIGGER" -> Set.of("WEBHOOK");
                     case "TAVILY_TOOL" -> Set.of("TAVILY");
-                    case "PLUGIN_ACTION", "PLUGIN_TRIGGER", "PLUGIN_MODEL", "PLUGIN_DATASOURCE",
-                         "PLUGIN_AGENT_STRATEGY", "PLUGIN_EXTENSION" -> Set.of("PLUGIN");
                     default -> Set.of();
                 };
                 if (allowed.isEmpty()) throw new BusinessException("workflow.connectionForbidden");
@@ -587,19 +465,11 @@ public class WorkflowService {
 
     /** 映射节点模板并解密默认配置。 */
     private WorkflowModels.NodeTemplateView mapTemplate(ResultSet rs) throws SQLException {
-        String externalKey = rs.getString("external_key");
         return new WorkflowModels.NodeTemplateView(rs.getLong("id"), rs.getString("code"), rs.getString("name"),
             rs.getString("node_type"), rs.getString("description"), decryptJson(rs.getString("config_encrypted")),
             rs.getBoolean("system_template"), rs.getString("template_source"), rs.getString("functional_category"),
-            rs.getBoolean("enabled"), externalKey != null && !externalKey.isBlank(), externalKey,
-            rs.getString("external_version"), rs.getString("external_publisher"), rs.getString("external_fingerprint"),
-            timestamp(rs, "imported_at"), timestamp(rs, "created_at"), timestamp(rs, "updated_at"),
+            rs.getBoolean("enabled"), timestamp(rs, "created_at"), timestamp(rs, "updated_at"),
             parseLocalization(rs.getString("localization_json")));
-    }
-
-    /** 序列化只用于展示的本地化对象。 */
-    private String localizationJson(JsonNode value) {
-        return value != null && value.isObject() ? value.toString() : "{}";
     }
 
     /** 解析可信数据库中的可选本地化对象。 */
@@ -609,18 +479,6 @@ public class WorkflowService {
         return parsed.isObject() ? parsed : objectMapper.createObjectNode();
     }
 
-    /** 截断不可信市场文案以满足数据库列约束。 */
-    private String marketplaceText(String value, int maximum) {
-        String normalized = value == null ? "" : value.trim();
-        return normalized.length() <= maximum ? normalized : normalized.substring(0, maximum);
-    }
-
-    /** 只接受适配器生成的 SHA-256 指纹。 */
-    private String fingerprint(String value) {
-        String normalized = marketplaceText(value, 64).toLowerCase(Locale.ROOT);
-        if (!normalized.matches("[0-9a-f]{64}")) throw new BusinessException("workflow.marketplaceResponseInvalid");
-        return normalized;
-    }
 
     /** 映射工作流定义和当前版本。 */
     private WorkflowModels.WorkflowView mapWorkflow(ResultSet rs) throws SQLException {
@@ -688,7 +546,4 @@ public class WorkflowService {
         return key.longValue();
     }
 
-    /** 保存市场模板当前身份状态，避免读取与更新之间重复查询。 */
-    private record MarketplaceExistingTemplate(Long id, boolean voided, String fingerprint) { }
-    private record MarketplaceTemplateConfig(Long id, String configEncrypted) { }
 }

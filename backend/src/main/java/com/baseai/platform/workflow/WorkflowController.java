@@ -23,24 +23,18 @@ public class WorkflowController {
     private final WorkflowService workflowService;
     private final WorkflowExecutionService executionService;
     private final WorkflowConnectionService connectionService;
-    private final WorkflowNodeMarketplaceService marketplaceService;
-    private final WorkflowAdapterLifecycleService adapterLifecycleService;
     private final LlmManagementService llmManagementService;
     private final MailManagementService mailManagementService;
 
     /** 注入工作流配置和执行服务。 */
     public WorkflowController(WorkflowService workflowService, WorkflowExecutionService executionService,
                               WorkflowConnectionService connectionService,
-                              LlmManagementService llmManagementService, MailManagementService mailManagementService,
-                              WorkflowNodeMarketplaceService marketplaceService,
-                              WorkflowAdapterLifecycleService adapterLifecycleService) {
+                              LlmManagementService llmManagementService, MailManagementService mailManagementService) {
         this.workflowService = workflowService;
         this.executionService = executionService;
         this.connectionService = connectionService;
         this.llmManagementService = llmManagementService;
         this.mailManagementService = mailManagementService;
-        this.marketplaceService = marketplaceService;
-        this.adapterLifecycleService = adapterLifecycleService;
     }
 
     /** 查询可复用节点模板。 */
@@ -53,66 +47,6 @@ public class WorkflowController {
     @RequiredPermission("automation:workflow:node:docs")
     public List<WorkflowModels.NodeTemplateView> nodeDocumentation() { return workflowService.templates(); }
 
-    /** 查询 n8n 与 Dify 适配器的期望开关、容器状态和在途任务数。 */
-    @GetMapping("/adapters")
-    @RequiredPermission("automation:workflow:node:list")
-    public List<WorkflowAdapterLifecycleService.AdapterView> adapters() {
-        return adapterLifecycleService.adapters();
-    }
-
-    /** 从节点管理页按来源启动或停止适配器容器。 */
-    @PutMapping("/adapters/{source}")
-    @RequiredPermission("automation:workflow:adapter:manage")
-    public WorkflowAdapterLifecycleService.AdapterView updateAdapter(
-        @PathVariable String source, @RequestBody AdapterCommand command) {
-        if (command == null || command.enabled() == null) {
-            throw new com.baseai.platform.common.BusinessException("workflow.adapterCommandInvalid");
-        }
-        return adapterLifecycleService.setEnabled(source, command.enabled());
-    }
-
-    /** 代理查询 n8n 或 Dify 官方市场节点目录。 */
-    @GetMapping("/node-marketplaces/{source}/nodes")
-    @RequiredPermission("automation:workflow:node:list")
-    public WorkflowModels.MarketplacePage marketplaceNodes(@PathVariable String source,
-                                                            @RequestParam(defaultValue = "") String query,
-                                                            @RequestParam(defaultValue = "") String category,
-                                                            @RequestParam(defaultValue = "1") int page,
-                                                            @RequestParam(defaultValue = "20") int pageSize,
-                                                            @RequestParam(defaultValue = "false") boolean compatibleOnly) {
-        return marketplaceService.nodes(source, query, category, page, pageSize, compatibleOnly);
-    }
-
-    /** 导入经过服务端白名单重新确认的市场节点。 */
-    @PostMapping("/node-marketplaces/{source}/imports")
-    @RequiredPermission("automation:workflow:node:import")
-    public WorkflowModels.MarketplaceImportResult importMarketplaceNodes(
-        @PathVariable String source, @RequestBody WorkflowModels.MarketplaceImportCommand command) {
-        return marketplaceService.importNodes(source, command);
-    }
-
-    /** 查询已安装市场插件的准入清单。 */
-    @GetMapping("/plugin-admissions")
-    @RequiredPermission("automation:workflow:plugin:admission")
-    public List<WorkflowModels.PluginAdmissionView> pluginAdmissions() {
-        return marketplaceService.pluginAdmissions();
-    }
-
-    /** 保存许可证、外部服务和数据类型，并重置为待审批。 */
-    @PutMapping("/plugin-admissions/{pluginId}")
-    @RequiredPermission("automation:workflow:plugin:admission")
-    public WorkflowModels.PluginAdmissionView updatePluginAdmission(
-        @PathVariable Long pluginId, @RequestBody WorkflowModels.PluginAdmissionCommand command) {
-        return marketplaceService.updatePluginAdmission(pluginId, command);
-    }
-
-    /** 批准或拒绝一份已经补全的插件准入资料。 */
-    @PutMapping("/plugin-admissions/{pluginId}/review")
-    @RequiredPermission("automation:workflow:plugin:admission")
-    public WorkflowModels.PluginAdmissionView reviewPluginAdmission(
-        @PathVariable Long pluginId, @RequestBody WorkflowModels.PluginAdmissionReviewCommand command) {
-        return marketplaceService.reviewPluginAdmission(pluginId, command);
-    }
 
     /** 查询 AI 节点可选择的启用模型，不返回供应商密钥或健康错误。 */
     @GetMapping("/model-options")
@@ -178,9 +112,6 @@ public class WorkflowController {
     @DeleteMapping("/nodes/{id}")
     @RequiredPermission("automation:workflow:node:delete")
     public void deleteTemplate(@PathVariable Long id) { workflowService.deleteTemplate(id); }
-
-    /** 节点管理页提交的适配器目标状态。 */
-    public record AdapterCommand(Boolean enabled) {}
 
     /** 查询工作流画布列表。 */
     @GetMapping("/canvases")
