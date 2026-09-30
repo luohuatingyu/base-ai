@@ -18,6 +18,11 @@
       </el-radio-group>
     </div>
 
+    <el-alert v-if="workflowContext.projectId || workflowContext.source" class="generation-context" type="info" show-icon :closable="false">
+      <template #title>{{ t('generation.videoContextTitle') }}</template>
+      <template #default>{{ t('generation.videoContextHint', { source: workflowContext.source || t('generation.videoContextDefault') }) }}</template>
+    </el-alert>
+
     <div class="generation-workflow" aria-label="generation workflow">
       <div class="workflow-step is-active"><span>1</span>{{ t('generation.workflowPrompt') }}</div>
       <div class="workflow-line"></div>
@@ -222,6 +227,7 @@
               <div v-for="(output, index) in historyOutputs" :key="`layer-${output.value}-${index}`" class="layer-puzzle-item">
                 <div class="layer-puzzle-item-copy"><strong>{{ outputCaption(output, index) }}</strong><small v-if="output.description">{{ output.description }}</small></div>
                 <el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button>
+                <el-button v-if="canSaveOutput(output)" text type="primary" size="small" :loading="savingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="saveOutput(output, index)">{{ t('generation.saveToProject') }}</el-button>
               </div>
             </div>
           </div>
@@ -229,7 +235,7 @@
             <article v-for="(output, index) in historyOutputs" :key="output.value + index" class="result-card">
               <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="result-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" fit="contain" preview-teleported />
               <video v-else class="result-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
-              <div class="result-card-footer"><div class="result-card-title"><strong>{{ outputCaption(output, index) }}</strong><el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button></div><small v-if="output.output_format || output.size || outputMimeType(output, selectedHistoryTask.generationType)">{{ output.output_format || outputMimeType(output, selectedHistoryTask.generationType) }}<span v-if="(output.output_format || outputMimeType(output, selectedHistoryTask.generationType)) && output.size"> · </span>{{ output.size || '' }}</small></div>
+              <div class="result-card-footer"><div class="result-card-title"><strong>{{ outputCaption(output, index) }}</strong><el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button><el-button v-if="canSaveOutput(output)" text type="primary" size="small" :loading="savingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="saveOutput(output, index)">{{ t('generation.saveToProject') }}</el-button></div><small v-if="output.output_format || output.size || outputMimeType(output, selectedHistoryTask.generationType)">{{ output.output_format || outputMimeType(output, selectedHistoryTask.generationType) }}<span v-if="(output.output_format || outputMimeType(output, selectedHistoryTask.generationType)) && output.size"> · </span>{{ output.size || '' }}</small></div>
             </article>
           </div>
         </div>
@@ -248,12 +254,15 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import http, { showHttpError } from '../api/http'
+import { createAiVideoResource } from '../api/aiVideo'
 import { generationFailureReasonKey, parseGenerationFailure } from '../utils/generationFailure.js'
 import { outputFallbackSource, outputFilename, outputMediaType, outputMimeType, outputSource } from '../utils/generationOutput.js'
+import { generationIntent, projectOutputPayload } from '../utils/generationWorkflow.js'
 
 const { t } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const HISTORY_REFRESH_INTERVAL_MS = 5000
 let historyRefreshTimer = null
@@ -273,6 +282,7 @@ const dialogError = ref('')
 const dialogMode = ref('history')
 const busy = ref(false)
 const downloadingOutput = ref('')
+const savingOutput = ref('')
 const error = ref('')
 const filePicker = ref(null)
 const groupOutput = ref(false)
@@ -280,6 +290,7 @@ const transparent = ref(false)
 const options = reactive({ size: '2K', response_format: 'url', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: 'opaque', output_format: 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false })
 const modelsForType = computed(() => models.value.filter(item => item.modelType === type.value))
 const selectedModel = computed(() => models.value.find(item => item.id === modelId.value && item.modelType === type.value))
+const workflowContext = computed(() => generationIntent(route.query))
 /** 每个生成模式声明可接受的素材类型和数量，避免上传素材改变任务语义。 */
 const modeInputPolicy = computed(() => {
   const common = {
@@ -403,6 +414,21 @@ function historyPreview(task) { return task?.outputJson?.outputs?.[0] || null }
 function promptSummary(value) { const text = String(value || '').trim(); return text ? (text.length > 72 ? `${text.slice(0, 72)}…` : text) : t('generation.noPrompt') }
 /** 显示任务输出数量，区分尚未生成和已有部分结果。 */
 function outputCountLabel(task) { const count = task?.outputJson?.outputs?.length || 0; return count ? t('generation.outputCount', { count }) : t('generation.noOutput') }
+/** 判断当前结果是否能安全保存到 AI 视频项目，Base64 结果仍可下载但不写入业务表。 */
+function canSaveOutput(output) { return Boolean(projectOutputPayload(output, selectedHistoryTask.value, workflowContext.value.projectId)) }
+/** 把生成结果保存为项目中的视频草稿或场景参考资产。 */
+async function saveOutput(output, index) {
+  const task = selectedHistoryTask.value
+  const payload = projectOutputPayload(output, task, workflowContext.value.projectId, index)
+  if (!payload) return
+  savingOutput.value = `${task.id}:${index}`
+  try {
+    await createAiVideoResource(payload.resource, payload.payload, payload.assetType)
+    ElMessage.success(t('generation.savedToProject'))
+  } catch (cause) {
+    showHttpError(cause, 'generation.saveToProjectFailed')
+  } finally { savingOutput.value = '' }
+}
 /** 判断图层拆分中的底图，底图通常没有 bounding_box 且位于 z_index 0。 */
 function isBaseLayer(output, index) { return Number(output?.z_index) === 0 || (index === 0 && output?.bounding_box == null) }
 /** 将供应商的 bounding_box 统一为左、上、右、下坐标，兼容 normalized 与 absolute 结构。 */
@@ -498,6 +524,20 @@ function onModelChange() {
 }
 /** 切换图片或视频时只显示同类模型并清理不兼容素材。 */
 function onTypeChange() { stopHistoryRefresh(); modelId.value = modelsForType.value[0]?.id || null; inputs.value = []; result.value = null; onModelChange(); loadHistory() }
+/** 应用 AI 视频入口传来的模型类型、生成模式和提示词，不自动提交任务。 */
+function applyWorkflowContext() {
+  const intent = workflowContext.value
+  if (intent.type && models.value.some(item => item.modelType === intent.type)) {
+    type.value = intent.type
+    modelId.value = modelsForType.value[0]?.id || null
+    inputs.value = []
+    onModelChange()
+    if (intent.mode && capability.value.modes.includes(intent.mode)) mode.value = intent.mode
+    syncModeOptions()
+    loadHistory()
+  }
+  if (intent.prompt) prompt.value = intent.prompt
+}
 /** 切换模式时清除旧角色，避免角色与任务类型混用。 */
 function onModeChange() { reconcileInputsForMode(); syncModeOptions() }
 /** 按新模式清理不兼容素材，并为首帧、尾帧和参考素材设置唯一角色。 */
@@ -611,6 +651,7 @@ async function loadModels() {
     const firstAvailableType = ['image_model', 'video_model'].find(value => models.value.some(item => item.modelType === value))
     if (firstAvailableType) type.value = firstAvailableType
     onTypeChange()
+    applyWorkflowContext()
   } catch (cause) { error.value = t('generation.modelsFailed'); showHttpError(cause, 'generation.modelsFailed') }
 }
 onMounted(loadModels)
