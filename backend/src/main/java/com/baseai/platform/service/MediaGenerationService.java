@@ -76,6 +76,14 @@ public class MediaGenerationService {
         this(jdbc, management, usage, mapper, modelTypeRegistry, new MediaGenerationProtocolRegistry(), new MediaAssetService());
     }
 
+    /** 兼容既有显式注入协议注册表的调用方。 */
+    public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
+                                  LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
+                                  LlmModelTypeRegistry modelTypeRegistry,
+                                  MediaGenerationProtocolRegistry protocolRegistry) {
+        this(jdbc, management, usage, mapper, modelTypeRegistry, protocolRegistry, new MediaAssetService());
+    }
+
     /** 兼容既有单元测试构造方式。 */
     public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper) {
