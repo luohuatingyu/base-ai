@@ -16,7 +16,32 @@ class MediaGenerationAgentStrategyTest {
         assertEquals("ARK", registry.protocol("ark", "doubao-seedream-5-0-pro", ""));
         assertEquals("OPENAI", registry.protocol("openai", "gpt-image-2", ""));
         assertEquals("GEMINI", registry.protocol("google", "veo-3.1-generate-001", ""));
+        assertEquals("MINIMAX", registry.protocol("minimax", "MiniMax-Hailuo-02", ""));
+        assertEquals("VIDU", registry.protocol("vidu", "viduq2", ""));
         assertEquals("GENERIC", registry.protocol("custom", "custom-image", ""));
+    }
+
+    /** MiniMax 图片与视频请求必须使用官方字段并保留任务查询参数。 */
+    @Test
+    void mapsMiniMaxImageAndVideoRequests() {
+        MiniMaxMediaGenerationAgentStrategy strategy = new MiniMaxMediaGenerationAgentStrategy();
+        Map<String, Object> image = strategy.request("image_model", "image-01", "", "poster",
+            List.of(input("IMAGE", "data:image/png;base64,YQ==", "image/png")), Map.of("watermark", false));
+        assertEquals("image-01", image.get("model"));
+        assertTrue(image.containsKey("subject_reference"));
+        assertEquals("false", String.valueOf(image.get("aigc_watermark")));
+        assertEquals(Map.of("task_id", "task-1"), strategy.statusQuery("video_model", "Hailuo", "task-1"));
+    }
+
+    /** Vidu 必须按素材角色选择接口并使用 Token 认证。 */
+    @Test
+    void mapsViduGenerationPathsAndAuth() {
+        ViduMediaGenerationAgentStrategy strategy = new ViduMediaGenerationAgentStrategy();
+        List<Map<String, Object>> frames = List.of(inputWithRole("IMAGE", "data:image/png;base64,YQ==", "image/png", "first_frame"),
+            inputWithRole("IMAGE", "data:image/png;base64,YQ==", "image/png", "last_frame"));
+        assertEquals("/ent/v2/start-end2video", strategy.generationPath("video_model", "viduq2", "", frames, Map.of()));
+        assertEquals("Token key", strategy.authorizationHeader("key"));
+        assertEquals("/ent/v2/tasks/task-1/creations", strategy.statusPath("image_model", "viduq2", "task-1"));
     }
 
     /** 供应商显式绑定后必须优先于供应商编码和模型名称推断策略。 */
@@ -82,5 +107,10 @@ class MediaGenerationAgentStrategyTest {
     /** 构造明确的 Data URL 输入，避免测试依赖外部网络或文件。 */
     private static Map<String, Object> input(String kind, String data, String contentType) {
         return Map.of("kind", kind, "data", data, "content_type", contentType);
+    }
+
+    /** 构造带帧角色的统一输入。 */
+    private static Map<String, Object> inputWithRole(String kind, String data, String contentType, String role) {
+        return Map.of("kind", kind, "data", data, "content_type", contentType, "role", role);
     }
 }

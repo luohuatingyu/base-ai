@@ -9,7 +9,7 @@ import java.util.List;
 public final class MediaGenerationAgentRegistry {
     private final List<MediaGenerationAgentStrategy> strategies;
 
-    /** 注册内置 Ark、OpenAI、Gemini 和通用策略。 */
+    /** 注册内置 Ark、OpenAI、Gemini、MiniMax、Vidu 和通用策略。 */
     public MediaGenerationAgentRegistry() {
         this(new LlmModelTypeRegistry(), new MediaGenerationProtocolRegistry());
     }
@@ -18,7 +18,8 @@ public final class MediaGenerationAgentRegistry {
     public MediaGenerationAgentRegistry(LlmModelTypeRegistry modelTypeRegistry,
                                         MediaGenerationProtocolRegistry protocolRegistry) {
         this(List.of(new ArkMediaGenerationAgentStrategy(), new OpenAiMediaGenerationAgentStrategy(),
-            new GeminiMediaGenerationAgentStrategy(), new GenericMediaGenerationAgentStrategy(modelTypeRegistry, protocolRegistry)));
+            new GeminiMediaGenerationAgentStrategy(), new MiniMaxMediaGenerationAgentStrategy(),
+            new ViduMediaGenerationAgentStrategy(), new GenericMediaGenerationAgentStrategy(modelTypeRegistry, protocolRegistry)));
     }
 
     /** 支持测试注入有序策略列表，最后一个策略应提供兜底行为。 */
@@ -78,6 +79,8 @@ public final class MediaGenerationAgentRegistry {
         if (ArkMediaProtocol.supports(value)) return true;
         if (value.contains("openai") || value.contains("gpt-image") || value.contains("dall-e") || value.contains("sora")) return true;
         if (value.contains("gemini") || value.contains("google") || value.contains("veo") || value.contains("imagen")) return true;
+        if (value.contains("minimax") || value.contains("hailuo") || value.contains("video-01") || value.contains("image-01")) return true;
+        if (value.contains("vidu")) return true;
         return false;
     }
 

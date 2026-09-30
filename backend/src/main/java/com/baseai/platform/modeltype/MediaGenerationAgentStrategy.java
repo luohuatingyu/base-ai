@@ -56,7 +56,7 @@ public interface MediaGenerationAgentStrategy {
     default boolean supportsRemoteInputs() { return false; }
 
     /** 返回单次请求允许的最大输入数；默认由平台统一边界控制。 */
-    default int maxInputs(String modelType, String model, String profile) { return Integer.MAX_VALUE; }
+    default int maxInputs(String modelType, String model, String profile) { return 4; }
 
     /** 返回供应商认证头的完整值；默认使用 Bearer 认证。 */
     default String authorizationHeader(String apiKey) { return "Bearer " + apiKey; }

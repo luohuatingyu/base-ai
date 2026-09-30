@@ -34,7 +34,7 @@ import java.util.*;
 public class MediaGenerationService {
     private static final Set<String> SUCCESS = Set.of("SUCCEEDED", "SUCCESS", "COMPLETED", "DONE");
     private static final Set<String> FAILURE = Set.of("FAILED", "ERROR", "CANCELLED", "CANCELED");
-    private static final Set<String> PENDING = Set.of("QUEUED", "PENDING", "RUNNING", "PROCESSING", "IN_PROGRESS");
+    private static final Set<String> PENDING = Set.of("QUEUED", "PENDING", "RUNNING", "PROCESSING", "IN_PROGRESS", "CREATED", "SUBMITTED");
     private final JdbcTemplate jdbc;
     private final LlmManagementService management;
     private final LlmUsageService usage;
@@ -451,11 +451,15 @@ public class MediaGenerationService {
         if (response == null || !response.isObject()) throw new IllegalArgumentException("Empty response");
         var tokens = tokens(response.path("usage"));
         usage.updateTokens((String) task.get("usageId"), tokens);
-        String status = firstText(response, "status", "task_status", "state").toUpperCase(Locale.ROOT);
-        if (FAILURE.contains(status) || response.hasNonNull("error")) { fail(task, "PROVIDER_FAILED"); return; }
+        JsonNode nestedTask = response.path("task");
+        String status = firstNonBlank(firstText(response, "status", "task_status", "state"),
+            firstText(nestedTask, "status", "task_status", "state")).toUpperCase(Locale.ROOT);
+        JsonNode baseResponse = response.path("base_resp");
+        if (FAILURE.contains(status) || response.hasNonNull("error") || baseResponse.path("status_code").asInt(0) != 0) { fail(task, "PROVIDER_FAILED"); return; }
+        boolean asynchronous = asynchronousTask(task);
         boolean video = "video_model".equals(task.get("generationType"));
         List<Map<String, Object>> outputs = outputs(response, video);
-        if (!outputs.isEmpty() && (!video || SUCCESS.contains(status) || status.isEmpty())) {
+        if (!outputs.isEmpty() && (!asynchronous || SUCCESS.contains(status) || status.isEmpty())) {
             backupOutputs(outputs, task);
             int updated = jdbc.update("UPDATE ai_media_generation_task SET output_json=?,status='SUCCEEDED',progress=100,finished_at=NOW(6),updated_at=NOW(6) WHERE id=? AND status='RUNNING'",
                 json(Map.of("outputs", outputs, "errors", outputErrors(response), "incomplete", response.path("incomplete").asBoolean())), task.get("id"));
@@ -463,13 +467,25 @@ public class MediaGenerationService {
                 (String) task.get("modelName"), true, tokens.inputTokens(), tokens.outputTokens(), tokens.totalTokens(), null, null, Instant.now()));
             return;
         }
-        String remoteId = firstText(response, "id", "task_id", "taskId", "name");
+        String remoteId = firstNonBlank(firstText(response, "id", "task_id", "taskId", "name"),
+            firstText(nestedTask, "id", "task_id", "taskId", "name"));
         if (remoteId.startsWith("operations/")) remoteId = remoteId.substring("operations/".length());
         if (remoteId.isBlank()) remoteId = (String) task.get("providerTaskId");
-        if (!video || SUCCESS.contains(status) || !status.isEmpty() && !PENDING.contains(status)
+        if (!asynchronous || SUCCESS.contains(status) || !status.isEmpty() && !PENDING.contains(status)
             || remoteId == null || !remoteId.matches("[A-Za-z0-9_-]{1,200}")) throw new IllegalArgumentException("Invalid generation response");
-        int progress = Math.max(0, Math.min(99, response.path("progress").asInt(0)));
+        int progress = Math.max(0, Math.min(99, response.path("progress").asInt(nestedTask.path("progress").asInt(0))));
         jdbc.update("UPDATE ai_media_generation_task SET provider_task_id=?,progress=?,updated_at=NOW(6) WHERE id=? AND status='RUNNING'", remoteId, progress, task.get("id"));
+    }
+
+    /** 根据已保存的供应商和模型画像判断图片任务是否需要轮询。 */
+    private boolean asynchronousTask(Map<String, Object> task) {
+        try {
+            MediaGenerationAgentStrategy strategy = agentRegistry.resolve((String) task.get("providerCode"),
+                (String) task.get("modelName"), (String) task.get("modelName"));
+            return strategy.statusPath((String) task.get("generationType"), (String) task.get("modelName"), "pending") != null;
+        } catch (RuntimeException ignored) {
+            return "video_model".equals(task.get("generationType"));
+        }
     }
 
     /** 兼容方舟任务状态字段的历史命名，空值表示响应未携带状态。 */
@@ -530,6 +546,20 @@ public class MediaGenerationService {
             copyOutputMetadata(node, output);
             if (!result.contains(output)) result.add(output);
         }
+        for (String field : List.of("image_urls", "video_urls")) {
+            JsonNode values = node.path(field);
+            if (!values.isArray()) continue;
+            for (JsonNode value : values) {
+                if (!value.isTextual()) continue;
+                URI uri = URI.create(value.asText());
+                if (!Set.of("http", "https").contains(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null)
+                    throw new IllegalArgumentException("Invalid media URL");
+                Map<String, Object> output = new LinkedHashMap<>(Map.of("kind", "url", "value", value.asText(),
+                    "mediaType", field.equals("video_urls") ? "video" : "image"));
+                copyOutputMetadata(node, output);
+                if (!result.contains(output)) result.add(output);
+            }
+        }
         if (!video && node.path("b64_json").isTextual()) {
             String encoded = node.path("b64_json").asText();
             try {
@@ -542,7 +572,7 @@ public class MediaGenerationService {
         }
         collectInlineData(node.get("inline_data"), video, result);
         collectInlineData(node.get("inlineData"), video, result);
-        for (String child : List.of("data", "content", "result", "video", "output")) collectOutputs(node.get(child), video, result, visited);
+        for (String child : List.of("data", "content", "result", "video", "output", "creations")) collectOutputs(node.get(child), video, result, visited);
     }
 
     /** 读取 Gemini inline_data 和 OpenAI 兼容网关的内嵌媒体字段。 */
