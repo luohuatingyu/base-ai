@@ -199,6 +199,26 @@ class MediaGenerationServiceTest {
             "video_model", 1L, "prompt", null, "TEXT_TO_IMAGE", List.of(), Map.of())));
     }
 
+    /** 图片和视频日志只保存可访问的素材 URL，绝不把 Data URL 或素材正文写入任务记录。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"image_model", "video_model"})
+    @SuppressWarnings("unchecked")
+    void storesOnlyMaterialUrlsInGenerationLog(String type) throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("storageRequest", MediaGenerationService.GenerateRequest.class);
+        method.setAccessible(true);
+        var request = new MediaGenerationService.GenerateRequest(type, 1L, "a detailed prompt", null, "MULTIMODAL", List.of(
+            new MediaGenerationService.MediaInput("IMAGE", "remote.png", "image/png", "https://cdn.example/remote.png", "reference_image"),
+            new MediaGenerationService.MediaInput("IMAGE", "inline.png", "image/png", "data:image/png;base64,c2VjcmV0", "reference_image")
+        ), Map.of("size", "2K"));
+
+        Map<String, Object> stored = (Map<String, Object>) method.invoke(service, request);
+
+        assertEquals(List.of("https://cdn.example/remote.png"), stored.get("materialUrls"));
+        assertEquals("MULTIMODAL", stored.get("generationMode"));
+        assertTrue(stored.toString().contains("a detailed prompt") == false);
+        assertTrue(!stored.toString().contains("c2VjcmV0"));
+    }
+
     /** Seedream 的融合、组图和图层模式仍属于图片生成，不能被类型隔离误伤。 */
     @Test
     void acceptsSeedreamImageModes() {
