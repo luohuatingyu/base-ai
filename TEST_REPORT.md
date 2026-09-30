@@ -11010,8 +11010,8 @@ Commit: `e9c9b8b`
 
 ### Git 基准、范围与交付状态
 
-Commit: `8c8db31`
-- 提交说明：Expose temporary media URLs for Ark video inputs；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+Commit: `c2c5569`
+- 提交说明：Preserve media service constructor compatibility；前置功能提交 `8c8db31`；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
 - 浏览器上传的图片、视频和音频 Data URL 在调用方舟 Seedance 前转换为带随机令牌的短期公网 URL；已有公网 URL 和草稿任务 ID 保持不变。
 - 新增公开临时素材读取接口，默认 20 分钟过期、单素材 50 MiB、总内存 128 MiB，响应禁止缓存；前端代理转发公开 Host 和协议，首帧/尾帧角色继续由方舟协议层保留。
 - 未新增依赖、数据库迁移或配置项。
@@ -11032,6 +11032,7 @@ Commit: `8c8db31`
 - `cd frontend && npm test`：lint、typecheck、覆盖测试 **680/680 通过**；覆盖率行 98.18%、分支 81.86%、函数 95.83%；生产构建及 E2E **3/3 通过**。
 - `docker compose up --build -d`：镜像构建成功，后端 Maven **1052/1052 通过**，前端生产构建成功；启动受既有 `baseai-local-docker-socket-proxy` unhealthy 阻断。
 - `docker compose up -d --no-deps frontend`：前端容器已启动；后端因当前 Compose 未提供可解析的 `mysql` 服务而反复重启，无法进行运行环境 API 验证。
+- 为应用兼容构造函数补丁再次执行 `docker compose up --build -d` 两次：后端编译与测试阶段均通过，镜像最终阶段因 `ports.ubuntu.com` 多次返回 502 无法完成；不影响 Maven 和前端测试结果。
 - `git diff --check`：通过。
 
 ### 测试覆盖范围、已知问题与下次建议
