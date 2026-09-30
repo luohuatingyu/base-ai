@@ -1,3 +1,37 @@
+## Flyway V49 校验和与后端启动修复（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `dd372e9`
+- 提交说明：Preserve Flyway migration checksum；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 恢复已执行的 V49 迁移脚本原内容，新增 V50 幂等迁移承载套餐目录排序调整，避免修改历史迁移导致 Flyway 校验和不一致。
+- 更新迁移测试覆盖 V49 升级路径、V50 排序更新和重复执行；未新增依赖、未修改业务接口。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 已执行 V49 的数据库可通过 Flyway 校验 | Compose 后端启动日志验证 50 个迁移全部校验成功，V49 无 checksum mismatch | 兼容、回归 | 通过 |
+| 存量数据库可升级到目录排序 50 | `PackageCatalogMigrationTest` 先执行 V49，再执行 V50，验证目录排序从 15 更新为 50 | 正常、兼容 | 通过 |
+| V50 可安全重复执行 | `PackageCatalogMigrationTest` 重复执行 V50，验证排序稳定且无异常 | 边界、异常恢复 | 通过 |
+| 后端服务恢复可用 | 容器健康检查和 `/api/open/health/ready` 返回 `HTTP 200`、`{"status":"UP"}` | 回归、启动 | 通过 |
+
+### 实际执行命令与结果
+
+- `docker run --rm -v "$PWD":/workspace -w /workspace/backend -v emdash-m2-cache:/root/.m2 maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：后端完整套件 **1068/1068 通过**，失败 0、错误 0、跳过 0。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：全部镜像构建成功，后端镜像构建阶段测试 **1068/1068 通过**；统一启动被既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
+- `docker compose ps -a backend document-parser python-worker docker-socket-proxy`：后端、文档解析器、Python Worker 均 healthy；Socket Proxy 仍 unhealthy。
+- `docker compose exec -T backend curl -fsS -i http://localhost:8080/api/open/health/ready`：`HTTP 200`，响应 `{"status":"UP"}`。
+- 后端启动日志：Flyway `Successfully validated 50 migrations`，成功执行 `V50`，应用启动完成。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖历史迁移校验和兼容、V50 数据升级与幂等性、后端启动和 readiness 健康检查、完整后端回归套件。
+- Compose 整栈命令仍受既有 Docker Socket Proxy 健康检查失败影响；修复该容器后应再次执行 `docker compose up --build -d` 验证整栈依赖启动。
+- 宿主机无 Maven Wrapper 和 Maven 命令，完整测试通过 Docker Maven 3.9.9/JDK 17 执行。
+- 重测条件：修改 V49/V50 迁移、套餐目录排序、Flyway 配置或数据库初始化流程时，应重新执行迁移测试、后端完整套件和 Compose 重建。
+
 ## 合并 emdash/codex-vlzfy 至 master 的回归验证（2026-09-30）
 
 ### Git 基准、范围与交付状态
