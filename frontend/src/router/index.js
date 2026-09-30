@@ -5,6 +5,7 @@ import LoginView from '../views/LoginView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import AiChatView from '../views/AiChatView.vue'
 import AiGenerationView from '../views/AiGenerationView.vue'
+import AiScriptView from '../views/AiScriptView.vue'
 import AiVideoView from '../views/AiVideoView.vue'
 import UsersView from '../views/UsersView.vue'
 import RolesView from '../views/RolesView.vue'
@@ -67,6 +68,7 @@ const router = createRouter({
         { path: 'ai-video/analytics', component: AiVideoView, meta: { permission: 'ai:video:analytics:list', navigable: true, desc: 'aiVideo.sections.analytics.description' } },
         { path: 'ai-chat', component: AiChatView, meta: { permission: 'ai:chat:invoke', navigable: true, desc: 'chat.description' } },
         { path: 'ai-generation', component: AiGenerationView, meta: { permission: 'ai:generation:invoke', navigable: true, desc: 'generation.subtitle' } },
+        { path: 'ai-script', component: AiScriptView, meta: { permission: 'ai:script:invoke', navigable: true, desc: 'aiScript.subtitle' } },
         { path: 'package-adjustment', component: PackageAdjustmentView, meta: { permission: 'ai:package-adjustment:list', navigable: true, desc: 'packageAdjustment.description' } },
         { path: 'users', component: UsersView, meta: { permission: 'system:user:list', navigable: true, desc: 'users.description' } },
         { path: 'roles', component: RolesView, meta: { permission: 'system:role:list', navigable: true, desc: 'roles.description' } },
