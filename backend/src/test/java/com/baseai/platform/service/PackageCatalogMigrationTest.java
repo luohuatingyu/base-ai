@@ -24,11 +24,11 @@ class PackageCatalogMigrationTest {
             "ai:package-adjustment:list", 12);
         jdbc.update("INSERT INTO sys_role_menu VALUES (7,2),(8,1)");
 
-        executeMigration(dataSource);
+        executeMigration(dataSource, "V49__move_package_adjustment_to_package_catalog.sql");
 
         Long catalogId = jdbc.queryForObject(
             "SELECT id FROM sys_menu WHERE permission='package:catalog'", Long.class);
-        assertEquals("套餐管理|/packages|Goods|50", jdbc.queryForObject("""
+        assertEquals("套餐管理|/packages|Goods|15", jdbc.queryForObject("""
             SELECT CONCAT(name,'|',path,'|',icon,'|',sort_order)
             FROM sys_menu WHERE permission='package:catalog'
             """, String.class));
@@ -39,7 +39,7 @@ class PackageCatalogMigrationTest {
         assertEquals(Set.of("package:catalog", "ai:package-adjustment:list"), permissionsForRole(jdbc, 7));
         assertEquals(Set.of("ai:catalog"), permissionsForRole(jdbc, 8));
 
-        executeMigration(dataSource);
+        executeMigration(dataSource, "V49__move_package_adjustment_to_package_catalog.sql");
 
         assertEquals(catalogId, jdbc.queryForObject(
             "SELECT id FROM sys_menu WHERE permission='package:catalog'", Long.class));
@@ -47,6 +47,16 @@ class PackageCatalogMigrationTest {
             "SELECT COUNT(*) FROM sys_menu WHERE permission='package:catalog'", Integer.class));
         assertEquals(2, jdbc.queryForObject(
             "SELECT COUNT(*) FROM sys_role_menu WHERE role_id=7", Integer.class));
+
+        executeMigration(dataSource, "V50__place_package_catalog_after_automation.sql");
+
+        assertEquals(50, jdbc.queryForObject(
+            "SELECT sort_order FROM sys_menu WHERE permission='package:catalog'", Integer.class));
+
+        executeMigration(dataSource, "V50__place_package_catalog_after_automation.sql");
+
+        assertEquals(50, jdbc.queryForObject(
+            "SELECT sort_order FROM sys_menu WHERE permission='package:catalog'", Integer.class));
     }
 
     /** 创建迁移所需的最小菜单和角色授权表。 */
@@ -75,10 +85,10 @@ class PackageCatalogMigrationTest {
             """, id, parentId, name, type, path, permission, sortOrder);
     }
 
-    /** 执行套餐目录迁移脚本。 */
-    private static void executeMigration(DriverManagerDataSource dataSource) {
+    /** 执行指定版本迁移脚本，覆盖升级顺序和重复执行场景。 */
+    private static void executeMigration(DriverManagerDataSource dataSource, String migration) {
         new ResourceDatabasePopulator(new ClassPathResource(
-            "db/migration/mysql/V49__move_package_adjustment_to_package_catalog.sql")).execute(dataSource);
+            "db/migration/mysql/" + migration)).execute(dataSource);
     }
 
     /** 查询角色当前拥有的菜单权限。 */
