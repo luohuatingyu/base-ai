@@ -99,7 +99,7 @@ public class WorkflowConnectionService {
             || existing.enabled() != enabled;
         try {
             jdbcTemplate.update("""
-                UPDATE workflow_connection SET code=?,name=?,connection_type=?,plugin_component_id=?,config_encrypted=?,enabled=?,
+                UPDATE workflow_connection SET code=?,name=?,connection_type=?,config_encrypted=?,enabled=?,
                     security_revision=security_revision+?,vector_status=CASE WHEN ? THEN 'UNKNOWN' ELSE vector_status END,
                     vector_engine=CASE WHEN ? THEN NULL ELSE vector_engine END,vector_version=CASE WHEN ? THEN NULL ELSE vector_version END,
                     vector_checked_at=CASE WHEN ? THEN NULL ELSE vector_checked_at END,vector_error=CASE WHEN ? THEN '' ELSE vector_error END,
