@@ -49,9 +49,23 @@
           <div class="card-eyebrow">{{ t('generation.setup') }}</div>
           <el-form class="setup-form" label-position="top" size="small">
             <el-form-item class="setup-field" :label="t('generation.model')">
-              <el-select v-model="modelId" class="model-select" filterable :disabled="!modelsForType.length || busy" @change="onModelChange">
-                <el-option v-for="model in modelsForType" :key="model.id" :label="`${model.name} · ${model.modelName}`" :value="model.id" />
-              </el-select>
+              <button
+                type="button"
+                class="model-picker-trigger"
+                :class="{ 'is-empty': !selectedModel, 'is-disabled': !modelsForType.length || busy }"
+                :disabled="!modelsForType.length || busy"
+                :aria-label="selectedModel ? `${selectedModel.name || selectedModel.modelName} · ${selectedModel.modelName}` : t('generation.selectModel')"
+                aria-haspopup="dialog"
+                @click="openModelDialog"
+              >
+                <span class="model-picker-icon">{{ type === 'image_model' ? '✦' : '▶' }}</span>
+                <span v-if="selectedModel" class="model-picker-copy">
+                  <strong>{{ selectedModel.name || selectedModel.modelName }}</strong>
+                  <small>{{ selectedModel.providerName || selectedModel.providerCode }} · {{ selectedModel.modelName }}</small>
+                </span>
+                <span v-else class="model-picker-placeholder">{{ t('generation.selectModel') }}</span>
+                <span class="model-picker-chevron" aria-hidden="true">⌄</span>
+              </button>
               <div v-if="!modelsForType.length" class="generation-empty">
                 <p>{{ t('generation.noModels') }}</p>
                 <el-button text type="primary" size="small" @click="goModelManagement">{{ t('generation.openModels') }}</el-button>
@@ -194,6 +208,67 @@
     </div>
 
     <el-dialog
+      v-model="modelDialogVisible"
+      class="generation-model-dialog"
+      :title="t('generation.selectModelTitle')"
+      width="min(760px, calc(100vw - 32px))"
+      destroy-on-close
+      @closed="resetModelSearch"
+    >
+      <div class="model-dialog-content">
+        <div class="model-dialog-intro">
+          <div class="model-dialog-intro-icon">{{ type === 'image_model' ? '✦' : '▶' }}</div>
+          <div>
+            <strong>{{ type === 'image_model' ? t('generation.image') : t('generation.video') }}{{ t('generation.model') }}</strong>
+            <p>{{ t('generation.selectModelHint') }}</p>
+          </div>
+          <el-tag round effect="light">{{ modelsForType.length }}</el-tag>
+        </div>
+        <el-input v-model="modelSearch" clearable class="model-dialog-search" :placeholder="t('generation.searchModels')" :aria-label="t('generation.searchModels')">
+          <template #prefix><span aria-hidden="true">⌕</span></template>
+        </el-input>
+        <div v-if="modelGroups.length" class="model-provider-groups">
+          <section v-for="group in modelGroups" :key="group.key" class="model-provider-group">
+            <div class="model-provider-heading">
+              <span class="model-provider-avatar">{{ group.initial }}</span>
+              <div class="model-provider-copy">
+                <strong>{{ group.name }}</strong>
+                <small v-if="group.code">{{ group.code }}</small>
+              </div>
+              <el-tag size="small" effect="plain">{{ group.models.length }}</el-tag>
+            </div>
+            <div class="model-provider-models">
+              <button
+                v-for="model in group.models"
+                :key="model.id"
+                type="button"
+                class="model-option-card"
+                :class="{ 'is-selected': model.id === modelId }"
+                :aria-pressed="model.id === modelId"
+                @click="selectModel(model)"
+              >
+                <span class="model-option-mark">{{ model.id === modelId ? '✓' : '◇' }}</span>
+                <span class="model-option-copy">
+                  <strong>{{ model.name || model.modelName }}</strong>
+                  <small>{{ model.modelName }}</small>
+                </span>
+                <span v-if="model.capabilities?.profile" class="model-option-profile">{{ model.capabilities.profile }}</span>
+              </button>
+            </div>
+          </section>
+        </div>
+        <div v-else class="model-dialog-empty">
+          <span class="model-dialog-empty-icon">⌕</span>
+          <strong>{{ modelsForType.length ? t('generation.noMatchingModels') : t('generation.noModels') }}</strong>
+          <small v-if="modelsForType.length">{{ t('generation.clearModelSearch') }}</small>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="modelDialogVisible = false">{{ t('common.cancel') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="historyDialogVisible"
       class="generation-history-dialog"
       :title="dialogTitle"
@@ -270,6 +345,8 @@ let historyRefreshInFlight = false
 const type = ref('image_model')
 const models = ref([])
 const modelId = ref(null)
+const modelDialogVisible = ref(false)
+const modelSearch = ref('')
 const capability = ref({ modes: [], features: {}, options: {}, totalLimit: 0 })
 const mode = ref('TEXT_TO_IMAGE')
 const prompt = ref('')
@@ -290,6 +367,22 @@ const transparent = ref(false)
 const options = reactive({ size: '2K', response_format: 'url', sequential_image_generation_options: { max_images: 4 }, layer_decomposition: false, background: 'opaque', output_format: 'png', resolution: '720p', ratio: 'adaptive', duration: 5, generate_audio: true, draft: false, return_last_frame: false, watermark: false })
 const modelsForType = computed(() => models.value.filter(item => item.modelType === type.value))
 const selectedModel = computed(() => models.value.find(item => item.id === modelId.value && item.modelType === type.value))
+const filteredModelsForType = computed(() => {
+  const query = modelSearch.value.trim().toLocaleLowerCase()
+  if (!query) return modelsForType.value
+  return modelsForType.value.filter(item => [item.name, item.modelName, item.providerName, item.providerCode].some(value => String(value || '').toLocaleLowerCase().includes(query)))
+})
+/** 将当前媒体类型的模型按供应商归组，保持选择器与供应商-模型维度一致。 */
+const modelGroups = computed(() => {
+  const groups = new Map()
+  filteredModelsForType.value.forEach(model => {
+    const name = model.providerName || model.providerCode || t('generation.unknownProvider')
+    const key = String(model.providerCode || model.providerName || model.providerId || name)
+    if (!groups.has(key)) groups.set(key, { key, name, code: model.providerCode || '', initial: String(name).trim().slice(0, 1).toUpperCase(), models: [] })
+    groups.get(key).models.push(model)
+  })
+  return Array.from(groups.values())
+})
 const workflowContext = computed(() => generationIntent(route.query))
 /** 每个生成模式声明可接受的素材类型和数量，避免上传素材改变任务语义。 */
 const modeInputPolicy = computed(() => {
@@ -523,7 +616,13 @@ function onModelChange() {
   syncModeOptions()
 }
 /** 切换图片或视频时只显示同类模型并清理不兼容素材。 */
-function onTypeChange() { stopHistoryRefresh(); modelId.value = modelsForType.value[0]?.id || null; inputs.value = []; result.value = null; onModelChange(); loadHistory() }
+function onTypeChange() { stopHistoryRefresh(); modelDialogVisible.value = false; resetModelSearch(); modelId.value = modelsForType.value[0]?.id || null; inputs.value = []; result.value = null; onModelChange(); loadHistory() }
+/** 打开供应商-模型选择弹窗，搜索条件每次从空白开始。 */
+function openModelDialog() { if (!busy.value && modelsForType.value.length) { resetModelSearch(); modelDialogVisible.value = true } }
+/** 选择具体模型并同步其能力配置，避免沿用上一模型的模式和参数。 */
+function selectModel(model) { modelId.value = model.id; onModelChange(); modelDialogVisible.value = false }
+/** 关闭模型弹窗时清理搜索词，确保下一次打开显示完整目录。 */
+function resetModelSearch() { modelSearch.value = '' }
 /** 应用 AI 视频入口传来的模型类型、生成模式和提示词，不自动提交任务。 */
 function applyWorkflowContext() {
   const intent = workflowContext.value
@@ -769,8 +868,19 @@ onBeforeUnmount(stopHistoryRefresh)
 .setup-field :deep(.el-select__wrapper.is-focused) { border-color: var(--el-color-primary); box-shadow: 0 0 0 3px var(--el-color-primary-light-9), 0 5px 12px color-mix(in srgb, var(--el-color-primary) 12%, transparent); }
 .setup-field :deep(.el-select__wrapper.is-disabled) { border-color: var(--el-border-color-lighter); background: var(--el-fill-color-light); box-shadow: none; }
 .setup-field :deep(.el-input__inner) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-select,
 .mode-select { width: 100%; }
+.model-picker-trigger { display: grid; grid-template-columns: 32px minmax(0, 1fr) 18px; align-items: center; gap: 9px; width: 100%; min-height: 52px; padding: 6px 10px 6px 8px; border: 1px solid color-mix(in srgb, var(--el-color-primary) 18%, var(--el-border-color)); border-radius: 11px; background: linear-gradient(135deg, var(--el-bg-color), color-mix(in srgb, var(--el-color-primary) 4%, var(--el-bg-color))); color: var(--el-text-color-primary); text-align: left; cursor: pointer; box-shadow: 0 3px 10px color-mix(in srgb, #243b68 6%, transparent); transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease, background-color .2s ease; }
+.model-picker-trigger:hover { border-color: var(--el-color-primary-light-5); background: linear-gradient(135deg, var(--el-bg-color), color-mix(in srgb, var(--el-color-primary) 8%, var(--el-bg-color))); box-shadow: 0 7px 16px color-mix(in srgb, var(--el-color-primary) 11%, transparent); transform: translateY(-1px); }
+.model-picker-trigger:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.model-picker-trigger.is-disabled { cursor: not-allowed; opacity: .62; transform: none; box-shadow: none; }
+.model-picker-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-size: 14px; font-weight: 800; }
+.model-picker-copy { display: grid; min-width: 0; gap: 3px; }
+.model-picker-copy strong,
+.model-picker-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker-copy strong { font-size: 12px; font-weight: 750; }
+.model-picker-copy small { color: var(--el-text-color-secondary); font-size: 10px; }
+.model-picker-placeholder { overflow: hidden; color: var(--el-text-color-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker-chevron { color: var(--el-color-primary); font-size: 19px; line-height: 1; text-align: center; transform: translateY(-2px); }
 .capability-card { display: grid; gap: 10px; margin-top: 3px; padding: 12px; border: 1px solid color-mix(in srgb, var(--el-color-primary) 13%, var(--el-border-color-lighter)); border-radius: 10px; background: linear-gradient(135deg, var(--el-color-primary-light-9), var(--el-fill-color-light)); color: var(--el-text-color-secondary); font-size: 12px; }
 .capability-title { display: flex; align-items: center; gap: 8px; color: var(--el-text-color-primary); font-weight: 750; }
 .capability-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--el-color-primary); box-shadow: 0 0 0 4px var(--el-color-primary-light-8); }
@@ -922,6 +1032,42 @@ onBeforeUnmount(stopHistoryRefresh)
 .history-dialog-content .result-empty { margin-top: 0; }
 .history-dialog-content .generation-alert { margin: 0; }
 :deep(.generation-history-dialog .el-dialog__body) { max-height: none; overflow: visible; }
+.model-dialog-content { display: grid; gap: 15px; }
+.model-dialog-intro { display: flex; align-items: center; gap: 11px; padding: 12px 13px; border: 1px solid color-mix(in srgb, var(--el-color-primary) 16%, var(--el-border-color-lighter)); border-radius: 12px; background: linear-gradient(110deg, var(--el-color-primary-light-9), var(--el-bg-color)); }
+.model-dialog-intro-icon { display: grid; flex: 0 0 34px; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--el-color-primary); color: #fff; font-size: 15px; box-shadow: 0 5px 12px color-mix(in srgb, var(--el-color-primary) 26%, transparent); }
+.model-dialog-intro strong,
+.model-dialog-intro p { display: block; }
+.model-dialog-intro strong { color: var(--el-text-color-primary); font-size: 13px; }
+.model-dialog-intro p { margin: 3px 0 0; color: var(--el-text-color-secondary); font-size: 11px; line-height: 1.45; }
+.model-dialog-intro .el-tag { margin-left: auto; }
+.model-dialog-search { width: 100%; }
+.model-dialog-search :deep(.el-input__wrapper) { border-radius: 10px; }
+.model-provider-groups { display: grid; gap: 14px; max-height: min(52vh, 500px); padding: 1px 3px 2px 1px; overflow: auto; }
+.model-provider-group { display: grid; gap: 9px; }
+.model-provider-heading { display: flex; align-items: center; gap: 9px; }
+.model-provider-avatar { display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; border: 1px solid var(--el-color-primary-light-7); border-radius: 9px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-size: 12px; font-weight: 800; }
+.model-provider-copy { display: grid; min-width: 0; gap: 1px; }
+.model-provider-copy strong { color: var(--el-text-color-primary); font-size: 13px; }
+.model-provider-copy small { color: var(--el-text-color-secondary); font-size: 10px; }
+.model-provider-heading .el-tag { margin-left: auto; }
+.model-provider-models { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 8px; }
+.model-option-card { display: grid; grid-template-columns: 25px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 10px 11px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-bg-color); color: var(--el-text-color-regular); text-align: left; cursor: pointer; transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease, transform .2s ease; }
+.model-option-card:hover { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); box-shadow: 0 6px 14px color-mix(in srgb, var(--el-color-primary) 10%, transparent); transform: translateY(-1px); }
+.model-option-card:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 1px; }
+.model-option-card.is-selected { border-color: var(--el-color-primary); background: color-mix(in srgb, var(--el-color-primary) 8%, var(--el-bg-color)); box-shadow: 0 0 0 2px var(--el-color-primary-light-9); }
+.model-option-mark { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--el-border-color); border-radius: 8px; color: var(--el-text-color-secondary); font-size: 14px; }
+.model-option-card.is-selected .model-option-mark { border-color: var(--el-color-primary); background: var(--el-color-primary); color: #fff; }
+.model-option-copy { display: grid; min-width: 0; gap: 3px; }
+.model-option-copy strong,
+.model-option-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-option-copy strong { color: var(--el-text-color-primary); font-size: 12px; font-weight: 750; }
+.model-option-copy small { color: var(--el-text-color-secondary); font-size: 10px; }
+.model-option-profile { max-width: 75px; overflow: hidden; color: var(--el-color-primary); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.model-dialog-empty { display: grid; justify-items: center; gap: 6px; padding: 35px 16px; border: 1px dashed var(--el-border-color); border-radius: 11px; background: var(--el-fill-color-light); color: var(--el-text-color-secondary); text-align: center; }
+.model-dialog-empty strong { color: var(--el-text-color-primary); font-size: 13px; }
+.model-dialog-empty small { font-size: 11px; }
+.model-dialog-empty-icon { color: var(--el-color-primary); font-size: 24px; }
+:deep(.generation-model-dialog .el-dialog__body) { padding-top: 4px; }
 
 @keyframes generation-pulse { 0%, 100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
 @keyframes generation-spin { to { transform: rotate(360deg); } }
@@ -977,5 +1123,8 @@ onBeforeUnmount(stopHistoryRefresh)
   .result-grid { grid-template-columns: 1fr 1fr; gap: 9px; }
   .result-grid.is-single { grid-template-columns: minmax(0, 1fr); }
   .result-media { height: 170px; }
+  .model-provider-models { grid-template-columns: 1fr; }
+  .model-option-card { grid-template-columns: 25px minmax(0, 1fr); }
+  .model-option-profile { grid-column: 2; max-width: none; }
 }
 </style>
