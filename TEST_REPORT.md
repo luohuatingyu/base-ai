@@ -11356,9 +11356,9 @@ Commit: `fb0bef0`
 
 ### Git 基准、范围与交付状态
 
-Commit: `a25abd3`
-- 提交说明：Update HTTP log assertions for metadata；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
-- Java Backend 请求日志补充 `request_id`、`trace_id`、`remote_addr`、`user_id`、HTTP 状态、结果分类、耗时和异常类型；异常处理器将异常类型传递给响应日志，限流拒绝日志统一为结构化事件。
+Commit: `b8be336`
+- 提交说明：Test authenticated user log snapshot；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- Java Backend 请求日志补充 `request_id`、`trace_id`、`remote_addr`、`user_id`、HTTP 状态、结果分类、耗时和异常类型；认证拦截器保存用户编号快照，异常处理器将异常类型传递给响应日志，限流拒绝日志统一为结构化事件。
 - Python Worker 请求日志补充认证失败原因、结果分类、耗时、异常类型和取消原因；保留现有 JSON 输出、Trace 传播和敏感信息脱敏。
 - 未修改数据库结构、对外 API、日志保留策略或请求/响应正文采集策略。
 
@@ -11374,9 +11374,9 @@ Commit: `a25abd3`
 
 ### 实际执行命令与结果
 
-- `docker run --rm ... mvn -B -ntp -Dtest=RequestContextFilterTest,TraceIdInterceptorTest,GlobalExceptionHandlerTest,ApiResponseContractTest test`：28/28 通过。
+- `docker run --rm ... mvn -B -ntp -Dtest=RequestContextFilterTest,TraceIdInterceptorTest,GlobalExceptionHandlerTest,AuthInterceptorTest test`：15/15 通过。
 - `docker run --rm ... pytest -q tests/test_trace_context.py`（Python 3.12）：20/20 通过。
-- `docker compose up --build -d`：全部镜像构建成功；启动阶段被既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
+- `docker compose up --build -d`：全部镜像构建成功，包含最新用户 ID 快照代码；启动阶段被既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
 - `docker run --rm ... mvn -B -ntp test`：1068/1068 通过，失败 0、错误 0、跳过 0。
 - `docker run --rm ... pytest -q`（Python 3.12）：91/91 通过。
 - `git diff --check`：通过。
