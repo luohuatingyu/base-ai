@@ -11340,3 +11340,15 @@ Commit: `3e36b1b`
 - 覆盖策略路由、官方认证头、图片/视频请求字段、异步查询路径和多供应商结果解析；未执行真实 MiniMax 或 Vidu 计费请求。
 - Docker Socket Proxy 当前返回 503，修复该既有容器后应再次执行 `docker compose up --build -d` 验证整栈依赖。
 - 重测条件：修改媒体策略、生成路径、异步状态或输出解析时，应重新执行后端完整套件和 Compose 重建。
+## 显式媒体策略绑定的异步轮询兼容（2026-09-30）
+
+### Git 基准与测试结果
+
+Commit: `fb0bef0`
+- 将供应商策略编码写入媒体任务请求元数据，轮询时优先按显式绑定解析，兼容自定义供应商编码下的 MiniMax/Vidu 图片异步任务。
+- `docker compose build backend`：后端完整 Maven/Surefire 套件 **1066/1066 通过**，失败 0、错误 0、跳过 0。
+- `git diff --check`：通过。
+
+### 已知限制
+
+- `docker compose up --build -d` 的整栈健康启动仍受既有 Docker Socket Proxy HTTP 503 与 adapter-manager rootless Docker 校验失败影响；镜像构建和后端测试均已完成。
