@@ -521,8 +521,35 @@ public class MediaGenerationService {
     private String outputMimeType(Map<String, Object> output, boolean video) {
         String declared = String.valueOf(output.getOrDefault("mimeType", output.getOrDefault("content_type", output.getOrDefault("mediaType", "")))).toLowerCase(Locale.ROOT);
         if (declared.contains("/")) return declared;
-        if (declared.contains("video") || video) return "video/mp4";
+        if (declared.contains("audio")) return audioMimeType(output);
+        if (declared.contains("video") || video) return videoMimeType(output);
+        String format = String.valueOf(output.getOrDefault("output_format", output.getOrDefault("format", ""))).toLowerCase(Locale.ROOT).trim();
+        if (Set.of("jpg", "jpeg").contains(format)) return "image/jpeg";
+        if (Set.of("webp", "gif", "png", "bmp", "tiff", "heic", "heif").contains(format)) return "image/" + format;
         return "image/png";
+    }
+
+    /** 将视频输出格式映射为下载时使用的真实 MIME。 */
+    private String videoMimeType(Map<String, Object> output) {
+        return switch (String.valueOf(output.getOrDefault("output_format", output.getOrDefault("format", "mp4"))).toLowerCase(Locale.ROOT).trim()) {
+            case "webm" -> "video/webm";
+            case "mov", "quicktime" -> "video/quicktime";
+            case "m4v" -> "video/x-m4v";
+            default -> "video/mp4";
+        };
+    }
+
+    /** 将音频输出格式映射为下载时使用的真实 MIME。 */
+    private String audioMimeType(Map<String, Object> output) {
+        return switch (String.valueOf(output.getOrDefault("output_format", output.getOrDefault("format", "mp3"))).toLowerCase(Locale.ROOT).trim()) {
+            case "wav" -> "audio/wav";
+            case "ogg" -> "audio/ogg";
+            case "opus" -> "audio/opus";
+            case "aac" -> "audio/aac";
+            case "flac" -> "audio/flac";
+            case "m4a", "mp4" -> "audio/mp4";
+            default -> "audio/mpeg";
+        };
     }
 
     private String firstText(JsonNode node, String... fields) {

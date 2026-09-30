@@ -240,6 +240,16 @@ class MediaGenerationServiceTest {
         assertTrue(!result.containsKey("requestJson"));
     }
 
+    /** 输出缺少完整 MIME 时仍按供应商格式保存图片、视频和音频。 */
+    @Test
+    void resolvesOutputMimeFromFormat() throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("outputMimeType", Map.class, boolean.class);
+        method.setAccessible(true);
+        assertEquals("image/webp", method.invoke(service, Map.of("mediaType", "image", "output_format", "webp"), false));
+        assertEquals("video/quicktime", method.invoke(service, Map.of("mediaType", "video", "output_format", "mov"), true));
+        assertEquals("audio/wav", method.invoke(service, Map.of("mediaType", "audio", "output_format", "wav"), false));
+    }
+
     /** Seedream 的融合、组图和图层模式仍属于图片生成，不能被类型隔离误伤。 */
     @Test
     void acceptsSeedreamImageModes() {
