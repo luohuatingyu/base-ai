@@ -11044,8 +11044,8 @@ Commit: `c2c5569`
 
 ### Git 基准、范围与交付状态
 
-Commit: `8bf2dca`
-- 提交说明：Inject OSS storage into media assets；前置实现提交 `e49f47c`、测试提交 `bef8799`；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+Commit: `b8c3af2`
+- 提交说明：Block private media backup URLs；前置实现提交 `e49f47c`、测试提交 `bef8799`；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
 - 生成使用的图片、视频和音频 Data URL 在供应商调用前优先写入 OSS `public/ai-generation/input/`；生成图片和视频成功后备份到 `public/ai-generation/output/`。
 - 任务输出保留供应商地址，并记录 `ossUrl` 和备份失败状态；图片、视频历史展示和聊天展示在原地址加载失败时只切换一次 OSS 地址。
 - OSS 凭据仅通过环境变量注入，代码不保存密钥；前缀校验拒绝 private、路径穿越和非 `public/` 目录。未做历史任务补备份，无数据库迁移。
@@ -11061,7 +11061,7 @@ Commit: `8bf2dca`
 
 ### 实际测试命令与结果
 
-- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：后端 **1054/1054 通过**（注入构造函数修复后复测），失败 0、错误 0、跳过 0。
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：后端 **1054/1054 通过**（私网 URL 防 SSRF 修复后复测），失败 0、错误 0、跳过 0。
 - `cd frontend && npm test`：lint、typecheck、覆盖测试 **680/680 通过**，生产构建及 E2E **3/3 通过**。
 - `cd frontend && node --test test/generation-output.test.mjs`：**4/4 通过**，包含 OSS 回退测试。
 - `docker compose up --build -d`：后端 Maven **1052/1052 通过**、前端构建成功；最终 backend runtime 镜像阶段因 `ports.ubuntu.com` 的 `universe` 索引持续返回 502/404，未完成整栈启动。不是端口占用问题。
