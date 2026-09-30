@@ -11181,3 +11181,34 @@ Commit: `85323fa`
 - 当前未使用真实 OpenAI 或 Gemini API Key 做外部供应商生成冒烟；需要在部署环境配置对应供应商地址和 API Key 后，再分别执行图片和视频真实调用验证。Gemini 视频能力依赖具体 Veo 模型及账号权限。
 - Docker Socket Proxy 的既有 unhealthy 状态仍阻断整栈自动启动；修复代理健康检查后应再次执行 `docker compose up --build -d` 和整栈健康检查。
 - 重测条件：修改策略匹配、供应商请求字段、轮询路径、媒体输出解析、能力目录或模型保存校验时，应重新执行后端完整套件、前端完整套件和 Compose 重建。
+
+## 供应商层级模型策略绑定（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+- 绑定范围：供应商保存稳定 `strategyCode`，模型继续保存策略内 `generationProfile`；历史空策略保留兼容推断。
+- 变更范围：供应商实体、管理服务与接口、媒体 Agent 注册表和调用链、MySQL V48 迁移、供应商管理页面及中英文文案。
+- 本次提交：见本次变更相关提交；工作区另有并行产生的媒体/聊天改动，未纳入本次提交。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 供应商可显式绑定策略 | `MediaGenerationAgentStrategyTest.explicitProviderStrategyWinsOverLegacyNameInference`；显式编码优先于供应商名和模型名推断 | 正常、兼容 | 通过 |
+| 策略与模型画像不能跨供应商复用 | `MediaGenerationAgentStrategyTest.rejectsProfileFromAnotherProviderStrategy`；跨策略画像被拒绝 | 异常、安全 | 通过 |
+| 供应商管理页保存并展示策略 | `provider-endpoints.test.mjs` 检查策略字段、策略目录接口和本地化标签 | 正常、回归 | 通过 |
+| 策略贯通媒体创建、轮询和能力目录 | `MediaGenerationServiceTest` 媒体回归及完整后端套件 | 正常、兼容、回归 | 通过 |
+| 历史供应商保持可用 | 空策略回退旧推断；旧构造器和旧候选格式兼容测试 | 兼容、回归 | 通过 |
+
+### 实际执行命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v "$HOME/.m2:/root/.m2" -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：**1066/1066 通过**，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：**688/688 通过**；覆盖率行 98.15%、分支 81.93%、函数 95.88%；生产构建和 E2E **3/3 通过**。
+- `docker compose up --build -d`：全部镜像构建成功，后端镜像内 Maven **1066/1066 通过**；启动阶段被既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
+- `git diff --check`：待提交前执行。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖供应商显式策略解析、策略画像校验、媒体调用链兼容、管理页面契约和完整前后端回归。
+- 当前 Compose 启动仍受 Docker Socket Proxy 健康检查阻断；修复该容器健康检查后，应再次执行 `docker compose up --build -d` 验证整栈启动和 V48 迁移。
+- 后续新增供应商策略时，只需注册 Agent 并加入策略目录，不应恢复按供应商名称猜测策略的调用逻辑。
