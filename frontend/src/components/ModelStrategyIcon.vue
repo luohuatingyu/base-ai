@@ -25,10 +25,10 @@ const GENERIC = [
   { kind: 'circle', cx: 5, cy: 18.5, r: 2 }
 ]
 
-/** OpenAI 策略：用对话框表达聊天兼容协议，不复刻品牌标志。 */
+/** OpenAI 策略：用交织的六边形环表达 OpenAI 原生协议。 */
 const OPENAI = [
-  { d: 'M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6a2.5 2.5 0 0 1-2.5 2.5H12l-4.5 4v-4H7.5A2.5 2.5 0 0 1 5 12.5v-6Z' },
-  { d: 'M8.5 9.5h7M8.5 12h4.5' }
+  { d: 'M12 3.5 16.5 6v5L12 13.5 7.5 11V6L12 3.5ZM12 10.5 16.5 13v5L12 20.5 7.5 18v-5L12 10.5Z' },
+  { d: 'M7.5 6 3.5 8.3v5.2l4 2.3M16.5 6l4 2.3v5.2l-4 2.3' }
 ]
 
 /** 火山方舟策略：用上行箭头表达面向生成服务的请求通道。 */
@@ -37,13 +37,23 @@ const ARK = [
   { d: 'M12 5v7.5' }
 ]
 
-/** Gemini 策略：用四向闪光表达多模态生成能力。 */
+/** Gemini 策略：用单个四角星表达 Gemini 原生多模态协议。 */
 const GEMINI = [
-  { d: 'm12 3 1.7 6.3L20 11l-6.3 1.7L12 19l-1.7-6.3L4 11l6.3-1.7L12 3Z' },
-  { d: 'm19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z' }
+  { d: 'M12 2.8 14.9 9.1 21.2 12l-6.3 2.9L12 21.2l-2.9-6.3L2.8 12l6.3-2.9L12 2.8Z', fill: 'currentColor', stroke: 'none' },
+  { d: 'M12 6.5 13.9 10.1 17.5 12l-3.6 1.9L12 17.5l-1.9-3.6L6.5 12l3.6-1.9L12 6.5Z', fill: 'var(--el-bg-color, #fff)', stroke: 'none' }
+]
+
+/** MiniMax 策略：用方框和中心切口表达图像与视频生成。 */
+const MINIMAX = [
+  { d: 'M5 4.5h14v15H5zM8 16l4-8 4 8M9.5 13h5' }
+]
+
+/** Vidu 策略：用 V 形镜头和上方光点表达视频生成。 */
+const VIDU = [
+  { d: 'M4.5 6.5 9.7 17l2.3 2 2.3-2 5.2-10.5M17.5 4.5h.01' }
 ]
 
 /** 策略编码到语义图标的映射；新增或未知策略安全回退为通用图标。 */
-const STRATEGY_ICONS = { GENERIC, OPENAI, ARK, GEMINI }
+const STRATEGY_ICONS = { GENERIC, OPENAI, ARK, GEMINI, MINIMAX, VIDU }
 const paths = computed(() => STRATEGY_ICONS[String(props.strategy || 'GENERIC').toUpperCase()] || GENERIC)
 </script>

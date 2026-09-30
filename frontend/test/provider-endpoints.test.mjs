@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 const source = readFileSync(new URL('../src/views/ModelProvidersView.vue', import.meta.url), 'utf8')
+const iconSource = readFileSync(new URL('../src/components/ModelStrategyIcon.vue', import.meta.url), 'utf8')
+const zhSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
+const enSource = readFileSync(new URL('../src/locales/en-US.js', import.meta.url), 'utf8')
 test('供应商表单包含三种地址和两个同步开关', () => {
   for (const field of ['baseUrl', 'imageUrl', 'videoUrl', 'imageSameAsBase', 'videoSameAsImage']) assert.ok(source.includes('form.' + field))
 })
@@ -15,6 +18,17 @@ test('策略下拉框、已选值和列表标签展示对应图标', () => {
   assert.match(source, /#label="\{ label \}"/)
   assert.match(source, /strategy-option/)
   assert.match(source, /strategy-label/)
+})
+test('内置供应商策略全部有准确的中英文展示名称', () => {
+  for (const code of ['GENERIC', 'OPENAI', 'ARK', 'GEMINI', 'MINIMAX', 'VIDU']) {
+    assert.match(zhSource, new RegExp(`${code}:\\s*'[^']+'`))
+    assert.match(enSource, new RegExp(`${code}:\\s*'[^']+'`))
+  }
+})
+test('品牌策略使用专属图标且未知编码安全回退', () => {
+  for (const code of ['GENERIC', 'OPENAI', 'ARK', 'GEMINI', 'MINIMAX', 'VIDU']) assert.match(iconSource, new RegExp(`const ${code} =`))
+  assert.match(iconSource, /STRATEGY_ICONS = \{ GENERIC, OPENAI, ARK, GEMINI, MINIMAX, VIDU \}/)
+  assert.match(iconSource, /\|\| GENERIC/)
 })
 test('保存前校验至少一个地址及视频同步来源', () => {
   assert.match(source, /hasProviderEndpoint/)
