@@ -11151,8 +11151,8 @@ Commit: `b8c3af2`
 
 ### Git 基准、范围与交付状态
 
-Commit: `e24b747`
-- 提交说明：Expose provider strategy catalog；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+Commit: `85323fa`
+- 提交说明：Add English provider strategy messages；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
 - 将媒体生成处理抽离为 Agent 策略注册表，保留 Ark 和通用协议，并新增 OpenAI、Gemini API-Key 策略。
 - `/api/ai/generation/models` 返回匹配策略的协议标识、模式和参数能力；前端选中具体模型后只展示该模型策略声明的模式。
 - 后端创建和轮询均按匹配策略解析路径、请求体和输出；策略模式校验阻止手工请求绕过能力目录。旧 `/profiles` 入口保留并标记为兼容接口，不参与生成页模式展示。
