@@ -206,7 +206,8 @@ public class LlmManagementService {
 
     /** 聊天目录排除生成能力，仍保留已有动态类型的扩展行为。 */
     public static List<String> chatModelTypes(Collection<String> types){
-        return LlmModel.normalizeModelTypes(types).stream().filter(type->!LlmModel.isGenerationType(type)).toList();
+        return LlmModel.normalizeModelTypes(types).stream()
+            .filter(type -> !LlmModel.isGenerationType(type) && !"embedding_model".equals(type)).toList();
     }
 
     /** 在向聊天 Worker 发送请求前同时检查请求类型与实际候选，防止省略类型绕过隔离。 */
@@ -831,6 +832,11 @@ public class LlmManagementService {
     public record ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled,String imageUrl,String videoUrl,Boolean imageSameAsBase,Boolean videoSameAsImage,String strategyCode){
         /** 兼容已有调用方的旧构造签名。 */
         public ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled){this(code,name,baseUrl,apiKeys,concurrencyLimit,concurrencyLevel,timeoutSeconds,thinkingParameter,enabled,null,null,null,null,null);}
+        /** 兼容已支持图片和视频端点但尚未传入策略编码的调用方。 */
+        public ProviderCommand(String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,
+                               String thinkingParameter,Boolean enabled,String imageUrl,String videoUrl,Boolean imageSameAsBase,Boolean videoSameAsImage) {
+            this(code,name,baseUrl,apiKeys,concurrencyLimit,concurrencyLevel,timeoutSeconds,thinkingParameter,enabled,imageUrl,videoUrl,imageSameAsBase,videoSameAsImage,null);
+        }
     }
     public record ProviderView(Long id,String code,String name,String baseUrl,String apiKeys,Integer concurrencyLimit,String concurrencyLevel,Integer timeoutSeconds,String thinkingParameter,Boolean enabled,String imageUrl,String videoUrl,Boolean imageSameAsBase,Boolean videoSameAsImage,String strategyCode){
         /** 兼容已有测试和调用方的旧视图构造签名。 */
