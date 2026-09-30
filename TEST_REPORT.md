@@ -2,7 +2,7 @@
 
 ### Git基准点
 
-Commit: `6ae8e19`（Clean retired feature localization strings）
+Commit: `bc39ae3`（Rename provider protocols and enrich icons）
 - 分支：`emdash/codex-vlzfy`
 - 测试日期：2026-09-30（Asia/Shanghai）
 
@@ -14,7 +14,7 @@ Commit: `6ae8e19`（Clean retired feature localization strings）
 - `docker compose up --build -d --remove-orphans`：通过；后端 Maven 完整套件 831/831，通过率 100%。
 - `docker compose config --quiet`：通过。
 - Flyway：V51 成功应用，日志显示 `Successfully applied 1 migration ... now at version v51`。
-- `npm test --prefix frontend`：通过；Lint、类型检查、覆盖测试 526/526（行覆盖 95.45%、分支覆盖 85.94%、函数覆盖 90.52%）、生产构建和 E2E 3/3 均通过。
+- `npm test --prefix frontend`：通过；Lint、类型检查、覆盖测试 527/527（行覆盖 95.79%、分支覆盖 85.94%、函数覆盖 90.52%）、生产构建和 E2E 3/3 均通过。
 
 **关键模块测试**：
 - Workflow 节点、连接和权限契约：通过。
