@@ -480,7 +480,13 @@ public class MediaGenerationService {
     /** 根据已保存的供应商和模型画像判断图片任务是否需要轮询。 */
     private boolean asynchronousTask(Map<String, Object> task) {
         try {
-            MediaGenerationAgentStrategy strategy = agentRegistry.resolve((String) task.get("providerCode"),
+            String strategyCode = null;
+            Object requestJson = task.get("requestJson");
+            if (requestJson != null) {
+                try { strategyCode = mapper.readTree(requestJson.toString()).path("strategyCode").asText(null); }
+                catch (java.io.IOException ignored) { /* 使用供应商和模型画像兼容推断。 */ }
+            }
+            MediaGenerationAgentStrategy strategy = agentRegistry.resolve(strategyCode, (String) task.get("providerCode"),
                 (String) task.get("modelName"), (String) task.get("modelName"));
             return strategy.statusPath((String) task.get("generationType"), (String) task.get("modelName"), "pending") != null;
         } catch (RuntimeException ignored) {
@@ -658,7 +664,9 @@ public class MediaGenerationService {
                 """, Statement.RETURN_GENERATED_KEYS);
             statement.setLong(1, owner); statement.setObject(2, request.conversationId()); statement.setLong(3, request.modelId());
             statement.setString(4, request.modelType()); statement.setString(5, candidate.providerCode()); statement.setString(6, candidate.model());
-            statement.setString(7, request.prompt() == null ? "" : request.prompt().trim()); statement.setString(8, json(storageRequest(request))); statement.setString(9, usageId);
+            Map<String, Object> stored = new LinkedHashMap<>(storageRequest(request));
+            stored.put("strategyCode", candidate.strategyCode());
+            statement.setString(7, request.prompt() == null ? "" : request.prompt().trim()); statement.setString(8, json(stored)); statement.setString(9, usageId);
             return statement;
         }, holder);
         return Objects.requireNonNull(holder.getKey()).longValue();
