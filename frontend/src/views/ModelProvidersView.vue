@@ -13,7 +13,7 @@
     <el-table :data="rows" table-layout="auto">
       <el-table-column prop="code" :label="t('common.code')" min-width="160" />
       <el-table-column prop="name" :label="t('common.name')" min-width="180" />
-      <el-table-column :label="t('providers.strategy')" min-width="150"><template #default="scope"><el-tag size="small" effect="plain">{{ strategyLabel(scope.row.strategyCode) }}</el-tag></template></el-table-column>
+      <el-table-column :label="t('providers.strategy')" min-width="170"><template #default="scope"><el-tag size="small" effect="plain"><span class="strategy-label"><ModelStrategyIcon :strategy="scope.row.strategyCode" />{{ strategyLabel(scope.row.strategyCode) }}</span></el-tag></template></el-table-column>
       <el-table-column prop="baseUrl" :label="t('providers.baseUrl')" min-width="300" />
       <el-table-column prop="concurrencyLevel" :label="t('providers.concurrencyLevel')" min-width="180" />
       <el-table-column prop="concurrencyLimit" :label="t('providers.concurrency')" min-width="160" />
@@ -36,7 +36,12 @@
       <el-form label-width="100px">
         <el-form-item :label="t('common.code')"><el-input v-model="form.code" /></el-form-item>
         <el-form-item :label="t('common.name')"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item :label="t('providers.strategy')"><el-select v-model="form.strategyCode" class="full"><el-option v-for="strategy in strategies" :key="strategy" :label="strategyLabel(strategy)" :value="strategy" /></el-select></el-form-item>
+        <el-form-item :label="t('providers.strategy')"><el-select v-model="form.strategyCode" class="full">
+          <template #label="{ label }"><span class="strategy-label"><ModelStrategyIcon :strategy="form.strategyCode" />{{ label }}</span></template>
+          <el-option v-for="strategy in strategies" :key="strategy" :label="strategyLabel(strategy)" :value="strategy">
+            <span class="strategy-option"><ModelStrategyIcon :strategy="strategy" />{{ strategyLabel(strategy) }}</span>
+          </el-option>
+        </el-select></el-form-item>
         <el-form-item :label="t('providers.baseUrl')"><el-input v-model="form.baseUrl" /></el-form-item>
         <el-form-item :label="t('providers.imageUrl')"><el-input v-model="form.imageUrl" :disabled="form.imageSameAsBase" /><el-checkbox v-model="form.imageSameAsBase">{{ t('providers.sameAsBase') }}</el-checkbox></el-form-item>
         <el-form-item :label="t('providers.videoUrl')"><el-input v-model="form.videoUrl" :disabled="form.videoSameAsImage" :placeholder="videoEndpoint" /><el-checkbox v-model="form.videoSameAsImage">{{ t('providers.sameAsImage') }}</el-checkbox></el-form-item>
@@ -79,6 +84,7 @@ import { useI18n } from 'vue-i18n'
 import http, { showHttpError } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { copyApiKey, normalizeApiKeys, serializeApiKeyRows, splitApiKeys, toApiKeyRows } from '../utils/apiKeys'
+import ModelStrategyIcon from '../components/ModelStrategyIcon.vue'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -188,3 +194,11 @@ function hasProviderEndpoint() { return [form.baseUrl, form.imageUrl, form.video
 
 onMounted(load)
 </script>
+
+<style scoped>
+.strategy-label,
+.strategy-option { display: inline-flex; align-items: center; gap: 7px; }
+.strategy-option { width: 100%; }
+.strategy-label :deep(.model-strategy-icon),
+.strategy-option :deep(.model-strategy-icon) { width: 16px; height: 16px; flex: none; }
+</style>

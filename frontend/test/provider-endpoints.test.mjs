@@ -10,6 +10,12 @@ test('供应商表单显式绑定模型策略并加载策略目录', () => {
   assert.match(source, /\/models\/provider-strategies/)
   assert.match(source, /providers\.strategies/)
 })
+test('策略下拉框、已选值和列表标签展示对应图标', () => {
+  assert.match(source, /ModelStrategyIcon/)
+  assert.match(source, /#label="\{ label \}"/)
+  assert.match(source, /strategy-option/)
+  assert.match(source, /strategy-label/)
+})
 test('保存前校验至少一个地址及视频同步来源', () => {
   assert.match(source, /hasProviderEndpoint/)
   assert.match(source, /providers\.endpointRequired/)
