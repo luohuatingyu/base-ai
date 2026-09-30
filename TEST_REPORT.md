@@ -1,3 +1,34 @@
+## 媒体 OSS 路径、格式与生成日志（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `42e6456`
+- 提交说明：Update test report for video preview；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- OSS 不再强制使用 `public/` 前缀；输入和生成结果按 `materials/input`、`materials/output` 分类，并按日期、UUID 和真实 MIME 扩展名保存。
+- 图片和视频生成日志只保存素材 HTTP(S) URL、提示词、生成模式和选项，过滤 Data URL、Base64 及素材内容。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| OSS 可使用非 public 前缀并按输入/输出分类 | `OssMediaStorageServiceTest.buildsConfiguredMaterialObjectKeys` 验证 `private/materials/input` 和 `private/materials/output` 路径 | 正常、兼容 | 通过 |
+| 图片、音频和视频使用正确扩展名 | `OssMediaStorageServiceTest.mapsMediaMimeTypesToRealExtensions` 验证 PNG、JPG、MP3、WAV、MP4、WebM，未知 MIME 不上传 | 正常、边界、异常 | 通过 |
+| 图片和视频日志只保存素材 URL | `MediaGenerationServiceTest.storesOnlyMaterialUrlsInGenerationLog` 参数化验证两类任务过滤 Data URL | 安全、容量、回归 | 通过 |
+| 历史接口返回提示词和素材 URL | `MediaGenerationServiceTest.exposesPromptAndMaterialUrlsInHistory` 验证返回 `prompt`、`materialUrls` 并隐藏内部请求 JSON | 正常、兼容 | 通过 |
+
+### 实际执行命令与结果
+
+- `docker run --rm -v "$PWD":/workspace -w /workspace/backend -v emdash-m2-cache:/root/.m2 maven:3.9.9-eclipse-temurin-17 ... mvn -o -B -Dtest=OssMediaStorageServiceTest,MediaGenerationServiceTest test`：29/29 通过。
+- 同一 Maven 容器执行 `mvn -o -B -ntp test`：1073/1073 通过，失败 0、错误 0、跳过 0。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：全部镜像构建成功，后端构建阶段 1073/1073 通过；启动阶段被既有 `baseai-local-docker-socket-proxy` unhealthy 阻断，日志持续返回 Docker API `503`，不是端口占用。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖 OSS 前缀校验、输入/输出对象键、媒体 MIME 扩展名、生成任务日志脱敏、图片/视频历史查询兼容和后端全量回归。
+- Compose 的 Docker Socket Proxy 健康检查仍未恢复，因此前端依赖链未完成整栈 healthy 启动；修复该容器后应再次执行 Compose 启动验证。
+- 日志只记录可用的 HTTP(S) 素材 URL；纯 Data URL 输入不会写入素材 URL，避免把 Base64 写入数据库。
+
 ## 生成视频输出点击预览（2026-09-30）
 
 ### Git 基准、范围与交付状态
