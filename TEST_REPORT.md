@@ -1,3 +1,31 @@
+## 合并 emdash/codex-vlzfy 至 master 的回归验证（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `837d703`
+- 合并提交：`837d703`，将 `emdash/codex-vlzfy` 合并至 `master`；未执行 push。
+- 合并涉及认证拦截器、HTTP 请求上下文日志、套餐目录迁移及对应测试/迁移脚本。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 合并后的后端业务代码无回归 | Docker Maven 完整 `mvn -B -ntp test` | 正常、边界、异常、权限安全、兼容、回归 | 1161/1161 通过 |
+| 认证和请求日志改动保持行为兼容 | `AuthInterceptorTest`、`RequestContextFilterTest` | 权限安全、异常、兼容、回归 | 14/14、5/5 通过 |
+| 套餐目录迁移保持排序和幂等 | `PackageCatalogMigrationTest` | 正常、边界、兼容、异常恢复 | 1/1 通过 |
+
+### 实际测试命令与结果
+
+- `docker compose up --build -d`：在 Compose 插值阶段因缺少必需变量 `APP_PLATFORM_SHORT_NAME` 失败，未进入镜像构建；不是端口占用。
+- `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：1161/1161 通过，失败 0、错误 0、跳过 0。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖合并涉及的后端认证、请求日志、套餐目录迁移及完整后端回归；前端文件未出现在本次合并差异中，沿用已有前端回归结果。
+- Compose 尚未完成镜像构建和整栈健康检查；补齐 `APP_PLATFORM_SHORT_NAME` 及其他部署环境变量后，应重新执行 `docker compose up --build -d` 并检查服务健康状态。
+- 后续修改认证、请求日志或套餐迁移逻辑时，应重新执行后端完整套件和 Compose 重建。
+
 ## master 合并 emdash/codex-vlzfy 最新 Worker 日志提交验证（2026-09-30）
 
 ### Git 基准、范围与交付状态
