@@ -1,6 +1,9 @@
 package com.baseai.platform.web;
 
 import com.baseai.platform.config.PlatformProperties;
+import com.baseai.platform.security.AuthContext;
+import com.baseai.platform.security.AuthUser;
+import com.baseai.platform.security.AuthenticationType;
 import com.baseai.platform.trace.TraceTrackingPolicy;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -15,6 +18,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -40,6 +44,7 @@ class RequestContextFilterTest {
         logger.detachAppender(appender);
         appender.stop();
         MDC.clear();
+        AuthContext.clear();
     }
 
     /** 长文本请求和响应不进入日志，且下游仍可读写完整正文。 */
@@ -114,6 +119,31 @@ class RequestContextFilterTest {
         assertEquals(2, ordered.size());
         assertTrue(ordered.get(0).contains("event=http_request"));
         assertTrue(ordered.get(1).contains("event=http_response"));
+    }
+
+    /** 请求日志必须包含跨服务关联、来源、用户和结果字段，便于按一次请求检索完整链路。 */
+    @Test
+    void includesCorrelationIdentityAndOutcomeMetadata() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/test/metadata");
+        request.addHeader("X-Request-Id", "request-42");
+        request.setRemoteAddr("192.0.2.42");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AuthContext.set(new AuthUser(7L, "operator", Set.of(), Set.of(), AuthenticationType.TOKEN, null, null));
+
+        filter.doFilter(request, response, (wrappedRequest, wrappedResponse) -> {
+            MDC.put("traceId", "trace-42");
+            filter.logRequest((jakarta.servlet.http.HttpServletRequest) wrappedRequest);
+            ((jakarta.servlet.http.HttpServletResponse) wrappedResponse).setStatus(429);
+        });
+
+        var messages = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertTrue(messages.stream().anyMatch(message -> message.contains(
+            "event=http_request method=POST path=/api/test/metadata remote_addr=192.0.2.42 "
+                + "request_id=request-42 trace_id=trace-42 user_id=7")));
+        assertTrue(messages.stream().anyMatch(message -> message.contains(
+            "event=http_response method=POST path=/api/test/metadata remote_addr=192.0.2.42 "
+                + "request_id=request-42 trace_id=trace-42 user_id=7 status=429 outcome=client_error")
+            && message.contains("error_type=-")));
     }
 
     /** 邮件管理接口必须整体排除 HTTP 明细日志，避免密码和收件人泄漏。 */
