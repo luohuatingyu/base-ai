@@ -94,7 +94,8 @@ class WorkflowConnectionTesterTest {
     /** 非向量类型不得触发向量能力写入。 */
     @Test
     void skipsVectorCapabilityForNonVectorTypes() {
-        when(connectionService.ownedForTest(9L)).thenReturn(connection("TAVILY", objectMapper.createObjectNode().put("apiKey", "key")));
+        when(connectionService.ownedForTest(9L)).thenReturn(connection("MYSQL",
+            jdbcConfig("jdbc:h2:mem:non-vector-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1")));
 
         tester.test(9L);
 
