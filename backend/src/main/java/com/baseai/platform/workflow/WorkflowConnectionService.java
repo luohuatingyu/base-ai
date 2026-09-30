@@ -153,20 +153,6 @@ public class WorkflowConnectionService {
         return connection;
     }
 
-    /** 用 OAuth 回调产生的新凭据原子替换同一插件连接的 credentials 子对象。 */
-    @Transactional
-    public void replacePluginCredentials(Long id, Long componentId, JsonNode credentials) {
-        StoredConnection existing = requireOwned(id);
-        if (!"PLUGIN".equals(existing.connectionType()) || existing.config().path("pluginComponentId").asLong() != componentId
-            || credentials == null || !credentials.isObject()) throw new BusinessException("workflow.connectionForbidden");
-        ObjectNode updated = existing.config().deepCopy();
-        updated.set("credentials", credentials.deepCopy());
-        jdbcTemplate.update("""
-            UPDATE workflow_connection SET config_encrypted=?,security_revision=security_revision+1,updated_at=NOW()
-            WHERE id=? AND voided=false
-            """, encrypt(updated), id);
-    }
-
     /** 保存非敏感向量能力探测结果，供连接列表和知识库选择器使用。 */
     public void recordVectorCapability(Long id, String status, String engine, String version, String error) {
         jdbcTemplate.update("""
