@@ -112,9 +112,9 @@ public class MediaGenerationService {
     /** 将一个模型配置展开为指定输出类型的媒体目录项。 */
     private ModelOption mediaModelOption(com.baseai.platform.domain.LlmModel model, String type, LlmManagementService.ProviderView provider) {
         String configuredProfile = modelProfile(model.getGenerationProfile(), model.getModelName());
-        String protocol = agentRegistry.protocol(provider.code(), model.getModelName(), configuredProfile);
+        String protocol = agentRegistry.protocol(provider.strategyCode(), provider.code(), model.getModelName(), configuredProfile);
         return new ModelOption(model.getId(), model.getName(), model.getModelName(), type, provider.code(), provider.name(),
-            protocol, agentRegistry.capabilities(provider.code(), model.getModelName(), configuredProfile, type));
+            protocol, agentRegistry.capabilities(provider.strategyCode(), provider.code(), model.getModelName(), configuredProfile, type));
     }
 
     /** 校验归属和模型后创建一次调用；失败重试必须由用户重新提交并产生新的任务及用量。 */
@@ -189,10 +189,14 @@ public class MediaGenerationService {
     private static String modelProfile(String configured, String model) { return configured == null || configured.isBlank() ? model : configured; }
     /** 为生成候选项解析能力画像，不改变供应商实际 model 字段。 */
     private static String profile(LlmManagementService.WorkerCandidate candidate) { return modelProfile(candidate.generationProfile(), candidate.model()); }
+    /** 按候选携带的供应商绑定策略解析 Agent，历史空值才使用兼容推断。 */
+    private MediaGenerationAgentStrategy resolveStrategy(LlmManagementService.WorkerCandidate candidate) {
+        return agentRegistry.resolve(candidate.strategyCode(), candidate.providerCode(), candidate.model(), profile(candidate));
+    }
 
     /** 在登记用量前验证模式并规范请求；样片只允许引用当前用户同模型已完成的任务。 */
     private GenerateRequest preparedRequest(GenerateRequest request, LlmManagementService.WorkerCandidate candidate, String publicOrigin) {
-        MediaGenerationAgentStrategy strategy = agentRegistry.resolve(candidate.providerCode(), candidate.model(), profile(candidate));
+        MediaGenerationAgentStrategy strategy = resolveStrategy(candidate);
         List<MediaInput> inputs = request.inputs() == null ? List.of() : request.inputs();
         if (strategy.id().equals("ARK") && "DRAFT_TO_VIDEO".equals(normalizedMode(request))) {
             inputs = inputs.stream().map(input -> {
@@ -296,7 +300,7 @@ public class MediaGenerationService {
     /** 固定相对路径并禁止重定向，用户只能传递生成参数，不能更改凭据发送目的地。 */
     private JsonNode invoke(LlmManagementService.WorkerCandidate candidate, GenerateRequest request, String remoteId) {
         String type = request.modelType();
-        MediaGenerationAgentStrategy strategy = agentRegistry.resolve(candidate.providerCode(), candidate.model(), profile(candidate));
+        MediaGenerationAgentStrategy strategy = resolveStrategy(candidate);
         var factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER).build());
         factory.setReadTimeout(Duration.ofSeconds(Math.min(300, Math.max(1, candidate.timeoutSeconds() == null ? 60 : candidate.timeoutSeconds()))));
@@ -677,8 +681,7 @@ public class MediaGenerationService {
     /** 按供应商画像选择输入上限，通用适配器继续保持历史边界。 */
     private void validate(GenerateRequest request, LlmManagementService.WorkerCandidate candidate) {
         String requestedType = request == null ? "" : request.modelType();
-        MediaGenerationAgentStrategy strategy = candidate == null ? null
-            : agentRegistry.resolve(candidate.providerCode(), candidate.model(), profile(candidate));
+        MediaGenerationAgentStrategy strategy = candidate == null ? null : resolveStrategy(candidate);
         boolean generationType = modelTypeRegistry.supports(requestedType, LlmOperation.IMAGE_GENERATION)
             || modelTypeRegistry.supports(requestedType, LlmOperation.VIDEO_GENERATION);
         String mode = request == null ? "" : normalizedMode(request);
@@ -716,7 +719,7 @@ public class MediaGenerationService {
     private boolean validMode(String modelType, String mode, LlmManagementService.WorkerCandidate candidate) {
         if ("MULTIMODAL".equals(mode)) return true;
         if (candidate != null) {
-            MediaGenerationAgentStrategy strategy = agentRegistry.resolve(candidate.providerCode(), candidate.model(), profile(candidate));
+            MediaGenerationAgentStrategy strategy = resolveStrategy(candidate);
             return strategy.supportsMode(modelType, candidate.model(), profile(candidate), mode);
         }
         if ("image_model".equals(modelType)) return Set.of("TEXT_TO_IMAGE", "IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE",
