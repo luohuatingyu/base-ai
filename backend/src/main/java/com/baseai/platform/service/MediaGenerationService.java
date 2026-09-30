@@ -207,7 +207,7 @@ public class MediaGenerationService {
             }).toList();
         }
         if (strategy.supportsRemoteInputs()) inputs = mediaAssets.materialize(inputs, publicOrigin);
-        Map<String, Object> payload = inputPayload(inputs);
+        List<Map<String, Object>> payload = inputPayload(inputs);
         Map<String, Object> options = strategy.normalizeOptions(request.modelType(), candidate.model(), profile(candidate),
             normalizedMode(request), request.prompt(), payload, request.options());
         // 提前构造一次供应商协议，保证错误地址和未知参数不会产生计费记录。
