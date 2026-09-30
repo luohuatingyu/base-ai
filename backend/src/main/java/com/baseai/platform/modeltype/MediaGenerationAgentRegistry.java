@@ -48,7 +48,7 @@ public final class MediaGenerationAgentRegistry {
         if (profile == null || profile.isBlank()) return true;
         MediaGenerationAgentStrategy strategy = resolve(strategyCode, providerCode, model, profile);
         if ("GENERIC".equalsIgnoreCase(strategy.id())) return true;
-        return strategy.supports("", "", profile) || strategy.supports(providerCode, model, profile);
+        return strategy.supports("", "", profile);
     }
 
     /** 返回策略编码，供模型目录和任务诊断使用。 */
