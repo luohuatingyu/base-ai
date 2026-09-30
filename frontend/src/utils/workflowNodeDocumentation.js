@@ -130,12 +130,6 @@ const EN_WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({
   DOCUMENT_EXTRACTOR: pair({ document: 'Example document content' }, { text: 'Example document content', metadata: { fileName: 'example.txt' } })
 })
 
-/** 构造不包含真实市场身份的插件文档示例。 */
-function pluginExample(componentType) {
-  return { pluginComponentId: 1, packageFingerprint: '0'.repeat(64), componentExternalId: 'example',
-    componentType, parameters: {}, parameterSchema: [], credentialSchema: [] }
-}
-
 /** 每个原生节点都使用独立的双语行为、输入、输出和限制说明。 */
 export const WORKFLOW_NODE_DOCUMENTATION = Object.freeze(Object.fromEntries(DOCUMENTED_WORKFLOW_NODE_TYPES.map(nodeType => [nodeType, Object.freeze({
   nodeType,

@@ -153,33 +153,10 @@ export function nodeConfigFields(nodeType, config = undefined) {
   return (NODE_CONFIG_FIELDS[type] || []).map(item => ({ ...item, requirement: nodeConfigFieldRequirement(type, item.key, config) }))
 }
 
-/** 把导入时固定的插件 Schema 转换为嵌套参数字段。 */
-function pluginConfigFields(config = {}) {
-  const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
-  const fields = Array.isArray(value.parameterSchema) ? value.parameterSchema.map(item => {
-    const rawType = String(item?.type || 'string').toLowerCase()
-    const editor = ['number', 'integer'].includes(rawType) ? 'number' : rawType === 'boolean' ? 'boolean'
-      : ['select', 'options'].includes(rawType) ? 'select' : ['paragraph', 'text-area'].includes(rawType) ? 'textarea' : 'text'
-    const options = (Array.isArray(item?.options) ? item.options : []).filter(option =>
-      option && typeof option === 'object' ? option.value !== undefined : option !== undefined).map(option =>
-      option && typeof option === 'object' ? JSON.parse(JSON.stringify(option)) : option)
-    return { key: `parameters.${item?.name || ''}`, editor, defaultValue: item?.default, localization: item?.localization || {},
-      options, requirement: item?.required ? 'required' : '', label: item?.label || item?.name || '',
-      description: item?.description || '', displayOptions: item?.displayOptions || {} }
-  }).filter(item => item.key !== 'parameters.') : []
-  if (Array.isArray(value.credentialSchema) && value.credentialSchema.length) {
-    fields.unshift({ ...field('connectionId', 'connection', null), requirement: 'required' })
-  }
-  return fields
-}
-
 /** 判断字段是否属于当前已选择的节点方案，避免不同方案字段同时造成歧义。 */
 export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
   const type = String(nodeType || '').toUpperCase()
   const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
-    const definition = pluginConfigFields(value).find(item => item.key === key)
-    return matchesDisplayOptions(definition?.displayOptions, value.parameters || {})
-  }
   const modelMode = String(value.modelMode || '').toUpperCase()
   if (['LLM', 'AGENT', 'RAG', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR', 'EMBEDDING'].includes(type)) {
     if (['featureCode', 'modelType'].includes(key)) return modelMode === 'ROUTE'
@@ -237,6 +214,7 @@ export function effectiveNodeConfigDefaultValue(nodeType, key, config = {}) {
 /** 返回标准字段在当前节点中的必填级别。 */
 export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
   const type = String(nodeType || '').toUpperCase()
+  if (PLUGIN_NODE_TYPES.has(type)) return pluginConfigFields(config).find(item => item.key === key)?.requirement || ''
   if (REQUIRED_CONFIG_FIELDS[type]?.includes(key)) return 'required'
   if (!CONDITIONAL_CONFIG_FIELDS[type]?.includes(key)) return ''
   if (config === undefined) return 'conditional'
@@ -323,16 +301,6 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
       requirePositive('connectionId'); break
     case 'EMAIL_SEND': requirePositive('routeId'); requireText('subject'); break
     case 'SCHEDULE_TRIGGER': requireText('cron'); break
-      requirePositive('pluginComponentId'); requireText('packageFingerprint'); requireText('componentExternalId'); requireObject('parameters')
-      for (const definition of Array.isArray(value.parameterSchema) ? value.parameterSchema : []) {
-        if (!definition?.required || !nodeConfigFieldApplicable(type, `parameters.${definition.name}`, value)) continue
-        const fieldValue = value.parameters?.[definition.name]
-        if (fieldValue === undefined || fieldValue === null || (typeof fieldValue === 'string' && !fieldValue.trim())) {
-          missing.push(`parameters.${definition.name}`)
-        }
-      }
-      if (Array.isArray(value.credentialSchema) && value.credentialSchema.length) requirePositive('connectionId')
-      break
     default: break
   }
   if (type === 'SQL_QUERY') requireText('query')
@@ -465,7 +433,6 @@ function redisArgumentMinimum(command) {
 /** 返回由专用交互维护、不应出现在附加参数中的字段。 */
 export function hiddenConfigKeys(nodeType) {
   const type = String(nodeType || '').toUpperCase()
-    'componentType', 'parameterSchema', 'credentialSchema', 'parameters']
   return ['ITERATION', 'LOOP'].includes(type) ? ['bodyGraph'] : []
 }
 
