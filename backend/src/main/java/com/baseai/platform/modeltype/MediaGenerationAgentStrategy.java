@@ -14,11 +14,20 @@ public interface MediaGenerationAgentStrategy {
     /** 返回创建图片或视频任务的相对路径。 */
     String generationPath(String modelType, String model);
 
+    /** 按输入素材选择供应商专用创建路径；默认复用模型类型路径。 */
+    default String generationPath(String modelType, String model, String prompt,
+                                  List<Map<String, Object>> inputs, Map<String, Object> options) {
+        return generationPath(modelType, model);
+    }
+
     /** 返回异步任务查询路径；同步模型返回 null。 */
     String statusPath(String modelType, String model, String remoteId);
 
     /** 返回创建接口路径，用于从已配置的完整地址切换到状态地址。 */
     String operationPath(String modelType, String model);
+
+    /** 返回异步查询请求的供应商专用查询参数。 */
+    default Map<String, String> statusQuery(String modelType, String model, String remoteId) { return Map.of(); }
 
     /** 把平台统一输入转换为供应商请求正文。 */
     Map<String, Object> request(String modelType, String model, String profile, String prompt,
@@ -45,4 +54,10 @@ public interface MediaGenerationAgentStrategy {
 
     /** 返回该策略是否允许直接把远程素材地址交给供应商。 */
     default boolean supportsRemoteInputs() { return false; }
+
+    /** 返回单次请求允许的最大输入数；默认由平台统一边界控制。 */
+    default int maxInputs(String modelType, String model, String profile) { return Integer.MAX_VALUE; }
+
+    /** 返回供应商认证头的完整值；默认使用 Bearer 认证。 */
+    default String authorizationHeader(String apiKey) { return "Bearer " + apiKey; }
 }
