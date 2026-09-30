@@ -1,3 +1,32 @@
+## 套餐目录排序调整（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `e85e0b6`
+- 提交说明：Place package catalog after automation；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- “套餐管理”一级目录排序值调整为 50，自动化目录排序值为 40，因此“套餐调整”位于自动化之后；页面路径、权限和角色授权保持不变。
+- V49 幂等迁移同步修正存量目录排序，未新增依赖或改变套餐页面业务接口。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 套餐目录位于自动化之后 | `package-adjustment.test.mjs` 验证套餐管理排序值为 50 且位于自动化之后 | 正常、回归 | 通过 |
+| 存量菜单迁移后排序一致 | `PackageCatalogMigrationTest` 验证 V49 将新旧目录排序修正为 50，并保持迁移幂等 | 兼容、边界、异常恢复 | 通过 |
+
+### 实际执行命令与结果
+
+- `node --test test/package-adjustment.test.mjs test/navigation.test.mjs`：15/15 通过。
+- `docker run --rm ... mvn -B -ntp -Dtest=PackageCatalogMigrationTest test`：迁移测试 1/1 通过。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：全部镜像构建成功，后端 Maven 完整套件 1066/1066 通过，前端生产构建成功；启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查失败退出，非端口占用。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖初始化菜单排序、V49 存量迁移、迁移幂等性、动态导航和套餐路径/权限兼容。
+- Docker Socket Proxy 健康检查仍未恢复，Compose 未完成整栈健康启动；修复该容器后应再次执行 Compose。
+- 重测条件：修改菜单排序、V49 迁移、导航树裁剪、套餐页面路径或角色授权规则时，应重新执行迁移测试、前端定向测试、后端完整套件和 Compose 重建。
+
 ## AI 聊天与媒体生成模型能力拆分（2026-09-30）
 
 ### Git 基准、范围与交付状态
