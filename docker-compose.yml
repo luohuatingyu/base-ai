@@ -186,85 +186,7 @@ services:
     networks:
       - app-network
 
-  python-worker:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/open/health/ready"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    stop_signal: SIGTERM
-    stop_grace_period: 20s
-    networks:
-      - app-network
-
   # Docker API proxy exposes only the operations required by deployment-agent.
-  docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:0.3.0
-    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-docker-socket-proxy
-    restart: unless-stopped
-    environment:
-      CONTAINERS: 1
-      IMAGES: 1
-      NETWORKS: 1
-      VOLUMES: 1
-      POST: 1
-      EXEC: 1
-      INFO: 1
-      PING: 1
-      VERSION: 1
-      AUTH: 0
-      SECRETS: 0
-      SWARM: 0
-      SYSTEM: 0
-    volumes:
-      - ${DEPLOYMENT_DOCKER_SOCKET:-/run/base-ai-disabled-docker.sock}:/var/run/docker.sock:ro
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2375/_ping >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - deployment-network
-
-  deployment-agent:
-    build:
-      context: ./deployment-agent
-      args:
-        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
-        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
-        GO_IMAGE: golang:1.26.6-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-deployment-agent:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
-    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-deployment-agent
-    restart: unless-stopped
-    mem_limit: ${DEPLOYMENT_AGENT_MEMORY_LIMIT:-256m}
-    cpus: ${DEPLOYMENT_AGENT_CPU_LIMIT:-1.0}
-    pids_limit: ${DEPLOYMENT_AGENT_PIDS_LIMIT:-128}
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    environment:
-      DEPLOYMENT_AGENT_INTERNAL_TOKEN: ${DEPLOYMENT_AGENT_INTERNAL_TOKEN:?Set DEPLOYMENT_AGENT_INTERNAL_TOKEN}
-      DOCKER_HOST: tcp://docker-socket-proxy:2375
-    volumes:
-      - ${DEPLOYMENT_PROJECT_DIR:-.}:/workspace:ro
-    tmpfs:
-      - /tmp:size=32m,mode=1700,uid=10001
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8091/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    depends_on:
-      docker-socket-proxy:
-        condition: service_healthy
-    networks:
-      - app-network
-      - deployment-network
-
   python-worker:
     build:
       context: ./python-worker
@@ -308,7 +230,6 @@ services:
     stop_grace_period: 20s
     networks:
       - app-network
-
 
   frontend:
     build:
@@ -360,8 +281,6 @@ services:
       retries: 10
     networks:
       - app-network
-
-networks:
 
 networks:
   app-network:
