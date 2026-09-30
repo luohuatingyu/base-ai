@@ -19,6 +19,13 @@ public class MediaAssetService {
     private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
     private final Map<String, Asset> assets = new ConcurrentHashMap<>();
     private final AtomicLong totalBytes = new AtomicLong();
+    private final OssMediaStorageService oss;
+
+    /** 使用 OSS 持久化供应商需要长期读取的输入素材。 */
+    public MediaAssetService(OssMediaStorageService oss) { this.oss = oss; }
+
+    /** 保持单元测试和未启用 OSS 的兼容构造方式。 */
+    public MediaAssetService() { this.oss = null; }
 
     /** 将 Data URL 素材转换为短期公网 URL；已有公网 URL 或素材 ID 原样保留。 */
     public List<MediaGenerationService.MediaInput> materialize(List<MediaGenerationService.MediaInput> inputs, String publicOrigin) {
@@ -30,8 +37,9 @@ public class MediaAssetService {
                 result.add(input);
                 continue;
             }
+            String durable = oss == null ? null : oss.uploadDataUrl(input.dataUrl(), input.contentType(), "input", input.fileName());
             result.add(new MediaGenerationService.MediaInput(input.kind(), input.fileName(), input.contentType(),
-                store(publicOrigin, input.contentType(), input.dataUrl()), input.role()));
+                durable == null ? store(publicOrigin, input.contentType(), input.dataUrl()) : durable, input.role()));
         }
         return List.copyOf(result);
     }

@@ -70,8 +70,8 @@
         </details>
         <div v-if="item.media?.length" class="message-media">
           <template v-for="media in item.media" :key="media.value">
-            <el-image v-if="media.kind === 'image'" :src="media.value" :preview-src-list="item.media.filter(value => value.kind === 'image').map(value => value.value)" fit="contain" preview-teleported />
-            <video v-else controls preload="metadata" :src="media.value" />
+            <el-image v-if="media.kind === 'image'" :src="media.value" :preview-src-list="item.media.filter(value => value.kind === 'image').map(value => value.value)" @error="useMediaFallback($event, media)" fit="contain" preview-teleported />
+            <video v-else controls preload="metadata" :src="media.value" @error="useMediaFallback($event, media)" />
           </template>
         </div>
       </div>
@@ -930,7 +930,7 @@ async function sendGeneration() {
     assistant.totalTokens = result.totalTokens ?? null
     assistant.traceId = result.traceId
     const payload = typeof result.outputJson === 'string' ? JSON.parse(result.outputJson || '{}') : (result.outputJson || {})
-    assistant.media = (payload.outputs || []).map(item => ({ kind: generationType.value === 'image_model' ? 'image' : 'video', value: item.kind === 'base64' ? 'data:image/png;base64,' + item.value : item.value }))
+    assistant.media = (payload.outputs || []).map(item => ({ kind: item.mediaType === 'image' || generationType.value === 'image_model' ? 'image' : 'video', value: item.kind === 'base64' ? `data:${item.mimeType || 'image/png'};base64,${item.value}` : item.value, ossUrl: item.ossUrl || '' }))
     generationInputs.value = []
   } catch (error) {
     messages.value.splice(previousLength)
@@ -942,6 +942,14 @@ async function sendGeneration() {
     loading.value = false
     await refreshHistory()
   }
+}
+
+/** 聊天媒体原地址失效时切换到 OSS 备份地址。 */
+function useMediaFallback(event, media) {
+  const target = event?.target
+  if (!target || target.dataset.ossFallback === '1' || !media?.ossUrl || target.src === media.ossUrl) return
+  target.dataset.ossFallback = '1'
+  target.src = media.ossUrl
 }
 
 /** 只提交用户实际填写的方舟参数，空值交给模型默认配置处理。 */

@@ -24,6 +24,12 @@ export function outputSource(output, fallbackType = 'image_model') {
   return output?.value || ''
 }
 
+/** 原始供应商地址加载失败时切换到 OSS 备份地址。 */
+export function outputFallbackSource(output, fallbackType = 'image_model') {
+  if (output?.ossUrl) return output.ossUrl
+  return outputSource(output, fallbackType)
+}
+
 /** 为历史记录生成安全且可读的下载文件名。 */
 export function outputFilename(output, index, taskId, fallbackType = 'image_model') {
   const rawName = String(output?.name || '').trim().replace(/[\\/:*?"<>|]/g, '_')

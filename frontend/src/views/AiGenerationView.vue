@@ -212,8 +212,8 @@
         <p v-if="selectedHistoryTask.errorMessage" class="generation-error generation-alert">{{ failureReason(selectedHistoryTask.errorMessage) }}</p>
         <div v-if="historyOutputs.length" class="result-grid">
           <article v-for="(output, index) in historyOutputs" :key="output.value + index" class="result-card">
-            <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="result-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" fit="contain" preview-teleported />
-            <video v-else class="result-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" />
+            <el-image v-if="outputMediaType(output, selectedHistoryTask.generationType) === 'image'" class="result-media" :src="outputSource(output, selectedHistoryTask.generationType)" :alt="outputCaption(output, index)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" fit="contain" preview-teleported />
+            <video v-else class="result-media" controls preload="metadata" :src="outputSource(output, selectedHistoryTask.generationType)" @error="useOssFallback($event, output, selectedHistoryTask.generationType)" />
             <div class="result-card-footer"><div class="result-card-title"><strong>{{ outputCaption(output, index) }}</strong><el-button text size="small" :loading="downloadingOutput === `${selectedHistoryTask.id}:${index}`" @click.stop="downloadOutput(output, index)">{{ t('generation.download') }}</el-button></div><small v-if="output.output_format || output.size || outputMimeType(output, selectedHistoryTask.generationType)">{{ output.output_format || outputMimeType(output, selectedHistoryTask.generationType) }}<span v-if="(output.output_format || outputMimeType(output, selectedHistoryTask.generationType)) && output.size"> · </span>{{ output.size || '' }}</small></div>
           </article>
         </div>
@@ -235,7 +235,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import http, { showHttpError } from '../api/http'
 import { generationFailureReasonKey, parseGenerationFailure } from '../utils/generationFailure.js'
-import { outputFilename, outputMediaType, outputMimeType, outputSource } from '../utils/generationOutput.js'
+import { outputFallbackSource, outputFilename, outputMediaType, outputMimeType, outputSource } from '../utils/generationOutput.js'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -380,6 +380,13 @@ function historyPreview(task) { return task?.outputJson?.outputs?.[0] || null }
 function promptSummary(value) { const text = String(value || '').trim(); return text ? (text.length > 72 ? `${text.slice(0, 72)}…` : text) : t('generation.noPrompt') }
 /** 显示任务输出数量，区分尚未生成和已有部分结果。 */
 function outputCountLabel(task) { const count = task?.outputJson?.outputs?.length || 0; return count ? t('generation.outputCount', { count }) : t('generation.noOutput') }
+/** 图片或视频加载失败时只切换一次 OSS 备份，避免失败地址之间循环。 */
+function useOssFallback(event, output, fallbackType) {
+  const target = event?.target
+  if (!target || target.dataset.ossFallback === '1' || !output?.ossUrl || target.src === output.ossUrl) return
+  target.dataset.ossFallback = '1'
+  target.src = outputFallbackSource(output, fallbackType)
+}
 /** 下载远程或 Base64 媒体；跨域 CDN 禁止 Blob 时回退到签名地址。 */
 async function downloadOutput(output, index) {
   const task = selectedHistoryTask.value

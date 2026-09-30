@@ -41,6 +41,7 @@ public class MediaGenerationService {
     private final LlmModelTypeRegistry modelTypeRegistry;
     private final MediaGenerationProtocolRegistry protocolRegistry;
     private final MediaAssetService mediaAssets;
+    private final OssMediaStorageService oss;
     private static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
     private static final int ARK_MAX_IMAGE_BYTES = 30 * 1024 * 1024;
     private static final int MAX_TEXT_BYTES = 1024 * 1024;
@@ -59,7 +60,8 @@ public class MediaGenerationService {
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
                                   LlmModelTypeRegistry modelTypeRegistry,
                                   MediaGenerationProtocolRegistry protocolRegistry,
-                                  MediaAssetService mediaAssets) {
+                                  MediaAssetService mediaAssets,
+                                  OssMediaStorageService oss) {
         this.jdbc = jdbc;
         this.management = management;
         this.usage = usage;
@@ -67,13 +69,14 @@ public class MediaGenerationService {
         this.modelTypeRegistry = modelTypeRegistry;
         this.protocolRegistry = protocolRegistry;
         this.mediaAssets = mediaAssets;
+        this.oss = oss;
     }
 
     /** 兼容已注入模型类型注册表的调用方。 */
     public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
                                   LlmModelTypeRegistry modelTypeRegistry) {
-        this(jdbc, management, usage, mapper, modelTypeRegistry, new MediaGenerationProtocolRegistry(), new MediaAssetService());
+        this(jdbc, management, usage, mapper, modelTypeRegistry, new MediaGenerationProtocolRegistry(), new MediaAssetService(), null);
     }
 
     /** 兼容既有显式注入协议注册表的调用方。 */
@@ -81,7 +84,7 @@ public class MediaGenerationService {
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
                                   LlmModelTypeRegistry modelTypeRegistry,
                                   MediaGenerationProtocolRegistry protocolRegistry) {
-        this(jdbc, management, usage, mapper, modelTypeRegistry, protocolRegistry, new MediaAssetService());
+        this(jdbc, management, usage, mapper, modelTypeRegistry, protocolRegistry, new MediaAssetService(), null);
     }
 
     /** 兼容既有单元测试构造方式。 */
@@ -462,6 +465,7 @@ public class MediaGenerationService {
         boolean video = "video_model".equals(task.get("generationType"));
         List<Map<String, Object>> outputs = outputs(response, video);
         if (!outputs.isEmpty() && (!video || SUCCESS.contains(status) || status.isEmpty())) {
+            backupOutputs(outputs, task);
             int updated = jdbc.update("UPDATE ai_media_generation_task SET output_json=?,status='SUCCEEDED',progress=100,finished_at=NOW(6),updated_at=NOW(6) WHERE id=? AND status='RUNNING'",
                 json(Map.of("outputs", outputs, "errors", outputErrors(response), "incomplete", response.path("incomplete").asBoolean())), task.get("id"));
             if (updated > 0) usage.finish((String) task.get("usageId"), new LlmUsageService.Completion("SUCCESS", (String) task.get("providerCode"),
@@ -477,6 +481,36 @@ public class MediaGenerationService {
     }
 
     /** 兼容方舟任务状态字段的历史命名，空值表示响应未携带状态。 */
+    /** 为成功结果创建 OSS 备份；备份异常只记录在输出项，不影响已完成的生成任务。 */
+    private void backupOutputs(List<Map<String, Object>> outputs, Map<String, Object> task) {
+        if (oss == null || !oss.enabled()) return;
+        String taskId = String.valueOf(task.get("id"));
+        boolean video = "video_model".equals(task.get("generationType"));
+        for (Map<String, Object> output : outputs) {
+            try {
+                String value = String.valueOf(output.get("value"));
+                String contentType = outputMimeType(output, video);
+                String backup;
+                if ("base64".equals(output.get("kind"))) {
+                    backup = oss.uploadDataUrl("data:" + contentType + ";base64," + value, contentType, "output", taskId);
+                } else {
+                    OssMediaStorageService.Downloaded downloaded = oss.download(value, contentType);
+                    backup = oss.upload(downloaded.bytes(), downloaded.contentType(), "output", taskId);
+                }
+                if (backup != null) output.put("ossUrl", backup);
+                else output.put("ossBackupError", "OSS_BACKUP_UNAVAILABLE");
+            } catch (Exception exception) { output.put("ossBackupError", "OSS_BACKUP_FAILED"); }
+        }
+    }
+
+    /** 根据输出字段确定备份 MIME，避免把视频当作 PNG 保存。 */
+    private String outputMimeType(Map<String, Object> output, boolean video) {
+        String declared = String.valueOf(output.getOrDefault("mimeType", output.getOrDefault("mediaType", ""))).toLowerCase(Locale.ROOT);
+        if (declared.contains("/")) return declared;
+        if (declared.contains("video") || video) return "video/mp4";
+        return "image/png";
+    }
+
     private String firstText(JsonNode node, String... fields) {
         for (String field : fields) if (node.path(field).isTextual()) return node.path(field).asText();
         return "";
@@ -519,7 +553,7 @@ public class MediaGenerationService {
 
     /** 保留图层位置、层级、名称和格式，支持生成页还原结果语义。 */
     private void copyOutputMetadata(JsonNode node, Map<String, Object> output) {
-        for (String field : List.of("name", "description", "z_index", "bounding_box", "size", "output_format"))
+        for (String field : List.of("name", "description", "z_index", "bounding_box", "size", "output_format", "mimeType", "content_type"))
             if (node.hasNonNull(field)) output.put(field, mapper.convertValue(node.get(field), Object.class));
     }
     /** 提取逐图失败的稳定错误码，不暴露供应商响应正文。 */
