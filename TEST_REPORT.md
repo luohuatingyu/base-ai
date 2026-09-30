@@ -11,10 +11,10 @@ Commit: `6ae8e19`（Clean retired feature localization strings）
 **变更范围**：移除 Dify/n8n 插件生态、部署代理编排服务、数据同步和服务器管理代码及菜单；新增 V51 破坏性数据库迁移，删除历史表、字段和菜单数据。
 
 **测试执行结果**：
-- `docker compose up --build -d --remove-orphans`：通过；后端 Maven 完整套件 828/828，通过率 100%。
+- `docker compose up --build -d --remove-orphans`：通过；后端 Maven 完整套件 831/831，通过率 100%。
 - `docker compose config --quiet`：通过。
 - Flyway：V51 成功应用，日志显示 `Successfully applied 1 migration ... now at version v51`。
-- `npm test --prefix frontend`：此前已通过，覆盖测试 689/689、生产构建通过、E2E 3/3 通过。
+- `npm test --prefix frontend`：通过；Lint、类型检查、覆盖测试 526/526（行覆盖 95.45%、分支覆盖 85.94%、函数覆盖 90.52%）、生产构建和 E2E 3/3 均通过。
 
 **关键模块测试**：
 - Workflow 节点、连接和权限契约：通过。
