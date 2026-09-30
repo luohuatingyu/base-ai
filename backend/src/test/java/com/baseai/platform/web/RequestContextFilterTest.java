@@ -71,7 +71,7 @@ class RequestContextFilterTest {
         String logs = appender.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", (left, right) -> left + right);
         assertTrue(logs.contains("event=http_request method=POST path=/api/test/body"));
         assertTrue(logs.contains("event=http_response method=POST path=/api/test/body remote_addr="));
-        assertTrue(logs.contains("status=200"));
+        assertTrue(logs.contains("status=200 outcome=success"));
         assertFalse(logs.contains(secret));
         assertFalse(logs.contains("query-secret"));
         assertFalse(logs.contains("header-secret"));
@@ -96,7 +96,7 @@ class RequestContextFilterTest {
         String logs = appender.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", (left, right) -> left + right);
         assertTrue(logs.contains("event=http_request method=POST path=/api/test/image"));
         assertTrue(logs.contains("event=http_response method=POST path=/api/test/image remote_addr="));
-        assertTrue(logs.contains("status=200"));
+        assertTrue(logs.contains("status=200 outcome=success"));
         assertFalse(logs.contains("request_headers"));
         assertFalse(logs.contains("response_headers"));
     }

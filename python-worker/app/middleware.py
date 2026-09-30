@@ -89,22 +89,33 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
         tracked = request_path.startswith("/llm/") and request_path != "/llm/chat/stream"
         heartbeat_task = None
         status_code = 500
+        error_type = "-"
+        failure_reason = "-"
         try:
             if not self._host_allowed(request):
                 status_code = 400
-                logger.warning("event=worker_host_rejected method=%s path=%s", request.method, request_path)
+                error_type = "InvalidHost"
+                failure_reason = "invalid_host"
+                logger.warning("event=worker_host_rejected method=%s path=%s reason=%s",
+                               request.method, request_path, failure_reason)
                 return JSONResponse(status_code=400, content={"detail": "请求 Host 无效"})
             if request_path != "/health":
                 query = request.scope.get("query_string", b"")
                 target = request_path + ("?" + query.decode("ascii") if query else "")
                 if not self.verifier.has_headers(request.headers):
                     status_code = 401
-                    logger.warning("event=worker_auth_rejected method=%s path=%s", request.method, request_path)
+                    error_type = "AuthenticationError"
+                    failure_reason = "missing_signature"
+                    logger.warning("event=worker_auth_rejected method=%s path=%s reason=%s",
+                                   request.method, request_path, failure_reason)
                     return JSONResponse(status_code=401, content={"detail": "内部签名缺失"})
                 body = await request.body()
                 if not self.verifier.verify(request.method, target, body, request.headers):
                     status_code = 401
-                    logger.warning("event=worker_auth_rejected method=%s path=%s", request.method, request_path)
+                    error_type = "AuthenticationError"
+                    failure_reason = "invalid_signature"
+                    logger.warning("event=worker_auth_rejected method=%s path=%s reason=%s",
+                                   request.method, request_path, failure_reason)
                     return JSONResponse(status_code=401, content={"detail": "内部签名无效"})
             if tracked:
                 await self.registry.register(python_trace_id, asyncio.current_task())
@@ -119,22 +130,31 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
             return response
         except asyncio.CancelledError:
             status_code = 499
+            error_type = "CancelledError"
+            failure_reason = "request_cancelled"
             if tracked:
                 await self.reporter.report(python_trace_id, "CANCELLED", "任务已取消")
-            logger.warning("event=worker_request_cancelled method=%s path=%s", request.method, request_path)
+            logger.warning("event=worker_request_cancelled method=%s path=%s reason=%s",
+                           request.method, request_path, failure_reason)
             raise
         except Exception as exception:
+            error_type = type(exception).__name__
+            failure_reason = "unhandled_exception"
             if tracked:
                 await self.reporter.report(python_trace_id, "FAILED", str(exception))
-            logger.exception("event=worker_request_failed method=%s path=%s", request.method, request_path)
+            logger.exception("event=worker_request_failed method=%s path=%s error_type=%s",
+                             request.method, request_path, error_type)
             raise
         finally:
             await stop_heartbeat(heartbeat_task)
             if tracked:
                 await self.registry.remove(python_trace_id)
             request_logger = logger.debug if request_path == "/health" else logger.info
-            request_logger("event=worker_http_request method=%s path=%s status=%d duration_ms=%.2f",
-                           request.method, request_path, status_code, (time.perf_counter() - started_at) * 1000)
+            request_logger(
+                "event=worker_http_request method=%s path=%s status=%d outcome=%s duration_ms=%.2f "
+                "error_type=%s reason=%s",
+                request.method, request_path, status_code, self.outcome(status_code),
+                (time.perf_counter() - started_at) * 1000, error_type, failure_reason)
             reset_context(context_token)
 
     def _host_allowed(self, request: Request) -> bool:
@@ -151,3 +171,11 @@ class InternalAuthMiddleware(BaseHTTPMiddleware):
     def _identifier(self, value: str | None, fallback: str) -> str:
         """校验跨服务标识，避免超长或控制字符污染日志。"""
         return value if value and IDENTIFIER_PATTERN.fullmatch(value) else fallback
+
+    def outcome(self, status_code: int) -> str:
+        """将 HTTP 状态归类为稳定的日志聚合字段。"""
+        if status_code >= 500:
+            return "server_error"
+        if status_code >= 400:
+            return "client_error"
+        return "success"
