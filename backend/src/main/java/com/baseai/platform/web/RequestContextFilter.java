@@ -21,6 +21,7 @@ public class RequestContextFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(RequestContextFilter.class);
     private static final int MAX_REQUEST_ID_LENGTH = 64;
     private static final String REQUEST_LOGGED_ATTRIBUTE = RequestContextFilter.class.getName() + ".requestLogged";
+    public static final String ERROR_TYPE_ATTRIBUTE = RequestContextFilter.class.getName() + ".errorType";
     private final TraceTrackingPolicy trackingPolicy;
 
     /** 注入统一追踪排除策略。 */
@@ -73,7 +74,7 @@ public class RequestContextFilter extends OncePerRequestFilter {
                 + "status={} outcome={} duration_ms={} error_type={}",
             request.getMethod(), request.getRequestURI(), remoteAddress(request), contextValue("requestId"),
             contextValue("traceId"), currentUserId(), response.getStatus(), outcome(response.getStatus()), durationMs,
-            request.getAttribute("baseAi.errorType") == null ? "-" : request.getAttribute("baseAi.errorType")));
+            request.getAttribute(ERROR_TYPE_ATTRIBUTE) == null ? "-" : request.getAttribute(ERROR_TYPE_ATTRIBUTE)));
     }
 
     /** 返回稳定的客户端地址字段，避免空值让日志查询出现多种表示。 */
