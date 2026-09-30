@@ -412,7 +412,7 @@ async function downloadOutput(output, index) {
     anchor.remove()
     setTimeout(() => URL.revokeObjectURL(url), 0)
   } catch {
-    if (output?.value) window.open(outputSource(output, task?.generationType), '_blank', 'noopener,noreferrer')
+    if (output?.value || output?.ossUrl) window.open(outputFallbackSource(output, task?.generationType), '_blank', 'noopener,noreferrer')
     ElMessage.info(t('generation.downloadFallback'))
   } finally { downloadingOutput.value = '' }
 }
