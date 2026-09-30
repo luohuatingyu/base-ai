@@ -11515,3 +11515,35 @@ Commit: `b8be336`
 - Compose 镜像已成功包含本次代码，但 Docker Socket Proxy 健康检查持续失败，且现有数据库的 Flyway V49 校验和与本地迁移不一致，整栈健康启动未完成；修复代理并按数据库迁移流程处理校验和后应重新执行 Compose 健康检查。
 - Go 服务仍保留原有日志格式，不在本次确认范围内；若需要跨 Go 服务统一字段，应单独评估协议和日志采集兼容性。
 - 重测条件：修改请求上下文、异常处理、限流逻辑、Python Worker 中间件或日志字段时，应重新执行 Java/Python 定向测试、两端完整测试和 Compose 重建。
+
+## AI 剧本与 AI 视频工作流（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `f092bb7`
+- 提交说明：AI 剧本入口、剧本生成接口与视频工作流联动；测试日期 2026-09-30（Asia/Shanghai）。
+- 菜单顺序调整为“AI能力 → AI剧本 → AI视频 → 自动化”。
+- 新增 AI 剧本工作区与 `/api/ai/script/generate` 接口，支持剧本生成、分镜保存及一键带上下文进入 AI 视频生成。
+- AI 视频入口增加“从 AI 剧本开始”，AI 生成页显示剧本上下文并将剧本编号写入视频产物描述。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 菜单按 AI能力、AI剧本、AI视频、自动化排序 | `ai-script.test.mjs` 检查菜单排序值、路由和导航权限映射 | 正常、兼容、回归 | 通过 |
+| AI 剧本可生成结构化剧本并保存分镜 | `AiScriptControllerTest` 检查权限与 POST 合约；`ai-script.test.mjs` 检查 JSON/fenced JSON 解析、请求边界和分镜 payload | 正常、边界、异常、权限 | 通过 |
+| AI 剧本可驱动 AI 视频生成 | `ai-script.test.mjs` 检查脚本路由、视频工作区入口和生成上下文；`ai-video-generation-path.test.mjs` 回归生成路径 | 正常、兼容、回归 | 通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-script.test.mjs frontend/test/ai-video-generation-path.test.mjs frontend/test/ai-video-navigation.test.mjs frontend/test/ai-generation.test.mjs`：43/43 通过。
+- `cd frontend && npm test`：完整前端套件 693/693 通过，Lint、类型检查、覆盖测试、生产构建和 E2E 均通过。
+- 在本需求稳定提交 `db8a636` 的隔离工作树执行 `docker build --target build .../backend`：Maven/Surefire 完整套件 1075/1075 通过，失败 0、错误 0、跳过 0；`AiScriptControllerTest` 通过。
+- 当前工作区执行 `docker compose up --build -d`：因并发退役功能清理使 Compose 引用的 `deployment-agent` 构建目录暂时不存在而未能准备完整上下文；不是端口占用。
+- 当前工作区直接后端构建：被并发清理提交遗留的 `DataInitializer`、`SystemConfigurationService`、`WorkflowNodeTypes` 语法错误阻断；该错误不在 AI 剧本变更范围内。
+
+### 覆盖范围、已知问题与下次建议
+
+- 已覆盖菜单权限、剧本请求边界、结构化响应解析、分镜持久化 payload、AI 视频上下文传递、中英文文案和既有 AI 视频回归路径。
+- 当前分支存在并发任务留下的后端语法错误及 Compose 缺失构建上下文；相关清理完成后，应在最终分支重新执行 `docker compose up --build -d` 与 `mvn test -B`。
+- 重测条件：修改剧本接口、视频上下文、菜单权限、剧本分镜模型或 AI 生成路由时，应重新执行前端完整套件与后端完整套件。
