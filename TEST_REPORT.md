@@ -1,3 +1,36 @@
+## master 合并 emdash/codex-vlzfy 最新提交及日志回归验证（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `1ec7deb`
+- 合并提交：`4090841`，源分支尖端：`5d532e9`；随后修正请求日志测试断言并提交 `1ec7deb`；分支 `master`；未执行 push。
+- 合并新增结构化 HTTP 错误日志、限流拒绝日志、生成模型选择器和相关中英文界面；修复测试断言以覆盖新增元数据字段。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 结构化日志变更无后端回归 | Docker Maven 完整 `mvn -B -ntp test` | 正常、异常、权限安全、兼容、回归 | 1161/1161 通过 |
+| HTTP 请求/响应日志保留元数据且不记录正文 | `RequestContextFilterTest` | 正常、边界、安全、回归 | 5/5 通过 |
+| 生成模型选择器和前端资源无回归 | `npm test` | 正常、响应式、国际化、回归 | 覆盖 706/706、E2E 3/3、浏览器 18/18 通过 |
+| Python Worker 协议无回归 | Python 3.12 容器执行 `pytest -q tests` | 正常、异常、兼容、回归 | 90/90 通过 |
+
+### 实际测试命令与结果
+
+- 首次合并后 Docker Maven 全量测试为 1159/1161，通过失败 2 项：`RequestContextFilterTest.omitsCompleteTextBodiesWithoutChangingRequestOrResponse`、`skipsImageBodies`；原因是日志新增 `remote_addr/request_id/trace_id/user_id` 字段后，旧断言仍要求 path 后直接出现 status。未修改业务逻辑回避测试。
+- 修正断言后，`docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=RequestContextFilterTest test`：5/5 通过。
+- 同一 Docker Maven 环境执行完整 `mvn -B -ntp test`：1161/1161 通过，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 706/706 通过，生产构建通过，E2E 3/3 通过，浏览器 18/18 通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%。
+- `docker run --rm -v "$PWD/python-worker:/workspace" -w /workspace python:3.12-slim sh -c 'pip install --disable-pip-version-check -q -r requirements-dev.in && python -m pytest -q tests'`：90/90 通过。
+- `docker compose up --build -d`：仍在插值阶段因缺少必需变量 `APP_PLATFORM_SHORT_NAME` 失败，未进入镜像构建，不是端口占用。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖结构化 HTTP 日志、错误类型/限流日志、生成模型选择器、前端构建和浏览器回归，以及 Python Worker 协议。
+- Compose 尚未完成镜像构建和整栈健康检查；补齐 `APP_PLATFORM_SHORT_NAME` 及其他部署环境变量后，应重新执行 `docker compose up --build -d` 并检查服务健康状态。
+- 后续修改日志字段、异常处理、生成模型选择器或后端业务代码时，应重新执行对应完整套件并更新本报告基准点。
+
 ## master 合并 emdash/codex-vlzfy 验证（2026-09-30）
 
 ### Git 基准、范围与交付状态
