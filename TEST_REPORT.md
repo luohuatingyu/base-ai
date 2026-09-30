@@ -11376,7 +11376,7 @@ Commit: `b8be336`
 
 - `docker run --rm ... mvn -B -ntp -Dtest=RequestContextFilterTest,TraceIdInterceptorTest,GlobalExceptionHandlerTest,AuthInterceptorTest test`：15/15 通过。
 - `docker run --rm ... pytest -q tests/test_trace_context.py`（Python 3.12）：20/20 通过。
-- `docker compose up --build -d`：全部镜像构建成功，包含最新用户 ID 快照代码；启动阶段被既有 `baseai-local-docker-socket-proxy` unhealthy 依赖阻断，非端口占用。
+- `docker compose up --build -d`：全部镜像构建成功，包含最新用户 ID 快照代码；启动阶段受既有 `baseai-local-docker-socket-proxy` unhealthy（`/_ping` 返回 503）和现有 MySQL Flyway V49 校验和不一致影响，非端口占用。
 - `docker run --rm ... mvn -B -ntp test`：1068/1068 通过，失败 0、错误 0、跳过 0。
 - `docker run --rm ... pytest -q`（Python 3.12）：91/91 通过。
 - `git diff --check`：通过。
@@ -11384,6 +11384,6 @@ Commit: `b8be336`
 ### 覆盖范围、已知限制与下次建议
 
 - 覆盖 Java 请求生命周期、认证用户关联、错误类型传递、限流拒绝和 Python Worker 认证/取消/异常请求日志；保留现有 Trace 持久化与脱敏行为。
-- Compose 镜像已成功包含本次代码，但 Docker Socket Proxy 健康检查持续失败，整栈健康启动未完成；修复该既有依赖后应重新执行 Compose 健康检查。
+- Compose 镜像已成功包含本次代码，但 Docker Socket Proxy 健康检查持续失败，且现有数据库的 Flyway V49 校验和与本地迁移不一致，整栈健康启动未完成；修复代理并按数据库迁移流程处理校验和后应重新执行 Compose 健康检查。
 - Go 服务仍保留原有日志格式，不在本次确认范围内；若需要跨 Go 服务统一字段，应单独评估协议和日志采集兼容性。
 - 重测条件：修改请求上下文、异常处理、限流逻辑、Python Worker 中间件或日志字段时，应重新执行 Java/Python 定向测试、两端完整测试和 Compose 重建。
