@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证 OSS 仅接受 public 前缀，避免把媒体写入未授权目录。 */
+/** 验证 OSS 前缀和媒体对象格式，避免把媒体写入错误目录或错误扩展名。 */
 class OssMediaStorageServiceTest {
     /** 缺少凭据或前缀不在 public 下时禁用持久化。 */
     @Test

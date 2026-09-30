@@ -699,9 +699,13 @@ public class MediaGenerationService {
             if (request != null) {
                 JsonNode node = mapper.readTree(request.toString());
                 result.put("generationMode", node.path("generationMode").asText(defaultMode((String) result.get("generationType"))));
-                result.put("inputCount", node.path("inputs").isArray() ? node.path("inputs").size() : 0);
+                result.put("inputCount", node.path("inputCount").asInt(node.path("materialUrls").isArray() ? node.path("materialUrls").size() : 0));
+                result.put("materialUrls", node.path("materialUrls").isArray() ? node.path("materialUrls") : mapper.createArrayNode());
                 result.put("options", node.path("options"));
-            } else result.put("generationMode", defaultMode((String) result.get("generationType")));
+            } else {
+                result.put("generationMode", defaultMode((String) result.get("generationType")));
+                result.put("materialUrls", mapper.createArrayNode());
+            }
         } catch (Exception exception) { throw new IllegalStateException("Invalid stored media request", exception); }
         return result;
     }
@@ -828,16 +832,22 @@ public class MediaGenerationService {
         return false;
     }
 
-    /** 任务只保存输入元数据，避免数据库持久化大段 Base64；供应商调用使用当前请求内容。 */
+    /** 任务只保存素材 URL，避免数据库持久化大段 Base64 或素材元数据；供应商调用使用当前请求内容。 */
     private Map<String, Object> storageRequest(GenerateRequest request) {
-        List<Map<String, Object>> metadata = (request.inputs() == null ? List.<MediaInput>of() : request.inputs()).stream().map(input -> {
-            Map<String, Object> value = new LinkedHashMap<>();
-            value.put("kind", input.kind()); value.put("name", input.fileName()); value.put("contentType", input.contentType());
-            value.put("role", input.role());
-            value.put("bytes", input.dataUrl() == null ? 0 : Math.max(0, (input.dataUrl().length() - input.dataUrl().indexOf(',') - 1) * 3 / 4));
-            return value;
-        }).toList();
-        return Map.of("generationMode", normalizedMode(request), "inputs", metadata, "options", request.options() == null ? Map.of() : request.options());
+        List<MediaInput> inputs = request.inputs() == null ? List.of() : request.inputs();
+        List<String> materialUrls = inputs.stream().map(MediaInput::dataUrl).filter(this::isHttpUrl).toList();
+        return Map.of("generationMode", normalizedMode(request), "inputCount", inputs.size(), "materialUrls", materialUrls,
+            "options", request.options() == null ? Map.of() : request.options());
+    }
+
+    /** 仅允许把 HTTP(S) 素材引用写入日志，过滤 Data URL、Base64 和其他本地引用。 */
+    private boolean isHttpUrl(String value) {
+        if (value == null || value.isBlank()) return false;
+        try {
+            URI uri = URI.create(value);
+            return Set.of("http", "https").contains(String.valueOf(uri.getScheme()).toLowerCase(Locale.ROOT))
+                && uri.getHost() != null && uri.getUserInfo() == null;
+        } catch (IllegalArgumentException exception) { return false; }
     }
 
     /** 返回历史请求的默认模式。 */
