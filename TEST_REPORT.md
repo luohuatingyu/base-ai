@@ -1,3 +1,35 @@
+## 生成视频输出点击预览（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `c587033`
+- 提交说明：Add video output preview dialog；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 历史任务中的视频输出现在提供可访问的点击区域，点击后打开独立视频预览弹窗，保留原生播放控制、自动播放和 OSS 地址回退；下载、保存、图片预览和图层输出保持兼容。
+- 仅修改前端页面、本地化文案和前端契约测试，未修改后端业务代码、接口、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 点击视频输出内容可打开预览 | `ai-generation.test.mjs` 的 `AI 生成 history opens a playable video preview from output media` 检查视频媒体按钮、预览弹窗和 `openVideoPreview` 绑定 | 正常、响应式、可访问性 | 通过 |
+| 预览弹窗可播放视频 | 同一测试检查 `controls`、`autoplay`、`playsinline`、媒体地址和 OSS 回退处理 | 正常、异常恢复、兼容 | 通过 |
+| 下载和保存入口保持独立 | 同一测试及既有历史输出断言检查 `@click.stop` 与下载文件名逻辑 | 回归、兼容 | 通过 |
+| 图片、图层和双语文案不回归 | 既有历史输出/图层契约测试及中英文 `previewVideo` 文案断言 | 回归、国际化 | 通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-generation.test.mjs`：24/24 通过。
+- `npm test --prefix frontend`：Lint、类型检查、覆盖测试 687/687 通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%；生产构建通过；E2E 3/3 通过。
+- `docker compose up --build -d`：全部镜像构建成功；构建阶段后端 Maven 完整套件 1072/1072 通过，前端生产构建成功；前端、后端、Python Worker、文档解析器和出站网关启动并健康。
+- `docker compose up -d`：前端容器保持 healthy；`adapter-manager` 因宿主 rootless Docker verification failed 持续重启，依赖链未完全健康，非端口占用。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖历史视频输出的点击入口、独立播放弹窗、键盘焦点样式、视频媒体类型判断、OSS 回退、下载/保存事件隔离、图层视频和中英文文案。
+- Compose 的 `adapter-manager` 仍受宿主 rootless Docker 验证失败影响；修复该运行时依赖后应再次执行 `docker compose up --build -d` 验证整栈健康。
+- 重测条件：修改生成历史媒体结构、输出媒体类型解析、视频预览弹窗、下载/保存逻辑或本地化文案时，应重新执行前端完整套件和 Compose 重建。
+
 ## Flyway V49 校验和与后端启动修复（2026-09-30）
 
 ### Git 基准、范围与交付状态
