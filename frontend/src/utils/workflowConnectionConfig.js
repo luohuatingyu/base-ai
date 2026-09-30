@@ -97,7 +97,7 @@ export const CONNECTION_CATEGORIES = [
   { key: 'OBJECT_STORAGE', types: ['S3', 'OSS'] },
   { key: 'MESSAGE_QUEUE', types: ['KAFKA', 'RABBITMQ'] },
   { key: 'WEBHOOK', types: ['WEBHOOK'] },
-  { key: 'OTHER', types: ['TAVILY', 'PLUGIN'] }
+  { key: 'OTHER', types: ['TAVILY'] }
 ]
 
 const CONNECTION_CATEGORY_STYLE = { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#475569' }
@@ -106,7 +106,7 @@ const CONNECTION_TYPE_SURFACE = { backgroundColor: '#ffffff', borderColor: '#dbe
 const CONNECTION_TYPE_COLORS = {
   MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31', OSS: '#FF6A00',
   KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00B3FF',
-  ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569': '#475569'
+  ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569'
 }
 
 /** 返回指定连接类型的标准字段。 */
