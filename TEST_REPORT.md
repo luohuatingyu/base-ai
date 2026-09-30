@@ -11147,3 +11147,37 @@ Commit: `b8c3af2`
 - 覆盖 OSS 配置边界、输入素材持久化、生成结果备份字段、图片/视频展示回退、前端下载兼容和现有媒体生成回归。
 - 当前环境的 Docker Ubuntu 仓库无法完成 backend runtime 镜像最后一步；已完成的 Maven 和前端测试不受影响。网络恢复后需重新执行 `docker compose up --build -d` 并检查容器健康状态。
 - 真实 OSS 上传尚未执行生产对象验证；部署后建议用一张图片和一个短视频生成任务验证对象、MIME、公共访问和失败回退，并清理测试对象。
+## OpenAI 与 Gemini 媒体 Agent 策略接入（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `e24b747`
+- 提交说明：Expose provider strategy catalog；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 将媒体生成处理抽离为 Agent 策略注册表，保留 Ark 和通用协议，并新增 OpenAI、Gemini API-Key 策略。
+- `/api/ai/generation/models` 返回匹配策略的协议标识、模式和参数能力；前端选中具体模型后只展示该模型策略声明的模式。
+- 后端创建和轮询均按匹配策略解析路径、请求体和输出；策略模式校验阻止手工请求绕过能力目录。旧 `/profiles` 入口保留并标记为兼容接口，不参与生成页模式展示。
+- 未新增依赖、数据库迁移或 OAuth 配置；本次按确认范围使用 API Key 接入。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| OpenAI、Gemini、Ark 和通用模型按画像匹配 Agent 策略 | `MediaGenerationAgentStrategyTest.resolvesBuiltInStrategiesAndGenericFallback` 验证策略解析 | 正常、兼容 | 通过 |
+| OpenAI 图片/视频请求映射和 Gemini 多模态请求映射正确 | `MediaGenerationAgentStrategyTest.mapsOpenAiImageAndVideoRequests`、`mapsGeminiMultimodalRequest` 验证模型字段、参考输入、contents/parts 和异步路径 | 正常、边界 | 通过 |
+| 生成模式展示和服务端校验与具体策略能力一致 | `MediaGenerationServiceTest.strategyControlsGenerationModes` 验证 OpenAI 仅接受其声明模式；`ai-generation.test.mjs` 验证页面使用 `capability.modes` 和模型切换同步能力 | 正常、异常、兼容 | 通过 |
+| 输出兼容供应商 URL、Base64 和 Gemini inline_data | `MediaGenerationAgentStrategyTest.exposesCapabilitiesAndRejectsUnknownMode` 及媒体生成回归测试验证能力和输出解析 | 正常、异常、回归 | 通过 |
+
+### 实际执行命令与结果
+
+- `docker run --rm -v "$PWD/backend:/app" -v "$HOME/.m2:/root/.m2" -w /app maven:3.9-eclipse-temurin-21 mvn -B -Dtest=MediaGenerationAgentStrategyTest,MediaGenerationServiceTest test`：27/27 通过。
+- 同上容器执行 `mvn -B test`：完整后端套件 **1059/1059 通过**，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：lint、typecheck、覆盖测试 **684/684 通过**；覆盖率行 98.18%、分支 81.95%、函数 95.85%；生产构建成功；E2E 3/3 通过。
+- `docker compose up --build -d`：全部镜像构建成功，后端 Maven 构建和前端生产构建成功；启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查持续返回 HTTP 503，依赖检查失败退出，非端口占用。后端和文档解析容器已启动并 healthy。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖策略选择、能力目录、模式前后端一致性、OpenAI/Gemini 请求形态、异步任务路径、输出字段兼容、输入边界和现有媒体生成回归。
+- 当前未使用真实 OpenAI 或 Gemini API Key 做外部供应商生成冒烟；需要在部署环境配置对应供应商地址和 API Key 后，再分别执行图片和视频真实调用验证。Gemini 视频能力依赖具体 Veo 模型及账号权限。
+- Docker Socket Proxy 的既有 unhealthy 状态仍阻断整栈自动启动；修复代理健康检查后应再次执行 `docker compose up --build -d` 和整栈健康检查。
+- 重测条件：修改策略匹配、供应商请求字段、轮询路径、媒体输出解析、能力目录或模型保存校验时，应重新执行后端完整套件、前端完整套件和 Compose 重建。
