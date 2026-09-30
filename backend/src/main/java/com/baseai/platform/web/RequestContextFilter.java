@@ -22,6 +22,7 @@ public class RequestContextFilter extends OncePerRequestFilter {
     private static final int MAX_REQUEST_ID_LENGTH = 64;
     private static final String REQUEST_LOGGED_ATTRIBUTE = RequestContextFilter.class.getName() + ".requestLogged";
     public static final String ERROR_TYPE_ATTRIBUTE = RequestContextFilter.class.getName() + ".errorType";
+    public static final String USER_ID_ATTRIBUTE = RequestContextFilter.class.getName() + ".userId";
     private final TraceTrackingPolicy trackingPolicy;
 
     /** 注入统一追踪排除策略。 */
@@ -63,7 +64,7 @@ public class RequestContextFilter extends OncePerRequestFilter {
         safeLog("request", () -> log.info(
             "event=http_request method={} path={} remote_addr={} request_id={} trace_id={} user_id={}",
             request.getMethod(), request.getRequestURI(), remoteAddress(request), contextValue("requestId"),
-            contextValue("traceId"), currentUserId()));
+            contextValue("traceId"), currentUserId(request)));
         request.setAttribute(REQUEST_LOGGED_ATTRIBUTE, Boolean.TRUE);
     }
 
@@ -73,7 +74,7 @@ public class RequestContextFilter extends OncePerRequestFilter {
             "event=http_response method={} path={} remote_addr={} request_id={} trace_id={} user_id={} "
                 + "status={} outcome={} duration_ms={} error_type={}",
             request.getMethod(), request.getRequestURI(), remoteAddress(request), contextValue("requestId"),
-            contextValue("traceId"), currentUserId(), response.getStatus(), outcome(response.getStatus()), durationMs,
+            contextValue("traceId"), currentUserId(request), response.getStatus(), outcome(response.getStatus()), durationMs,
             request.getAttribute(ERROR_TYPE_ATTRIBUTE) == null ? "-" : request.getAttribute(ERROR_TYPE_ATTRIBUTE)));
     }
 
@@ -90,9 +91,11 @@ public class RequestContextFilter extends OncePerRequestFilter {
     }
 
     /** 仅记录用户编号，不记录用户名、凭证或其他身份信息。 */
-    private String currentUserId() {
+    private String currentUserId(HttpServletRequest request) {
         AuthUser user = AuthContext.current();
-        return user == null || user.id() == null ? "-" : String.valueOf(user.id());
+        if (user != null && user.id() != null) return String.valueOf(user.id());
+        Object userId = request.getAttribute(USER_ID_ATTRIBUTE);
+        return userId == null ? "-" : String.valueOf(userId);
     }
 
     /** 将 HTTP 状态归类为便于聚合的请求结果。 */

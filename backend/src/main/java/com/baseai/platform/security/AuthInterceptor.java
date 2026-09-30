@@ -2,6 +2,7 @@ package com.baseai.platform.security;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.domain.UserAccount;
+import com.baseai.platform.web.RequestContextFilter;
 import com.baseai.platform.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -36,6 +37,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         AuthContext.clear();
         AuthUser authUser = resolveAuthUser(request, handler);
         AuthContext.set(authUser);
+        request.setAttribute(RequestContextFilter.USER_ID_ATTRIBUTE, authUser.id());
         RequiredPermission required = resolvePermission(handler);
         if (required != null && !authUser.hasPermission(required.value())) throw BusinessException.forbidden("auth.permissionDenied");
         return true;
