@@ -1,3 +1,41 @@
+## 退役插件生态、部署代理、数据同步与服务器管理（2026-09-30）
+
+### Git基准点
+
+Commit: `736e145`（Remove retired feature configuration）
+- 分支：`emdash/codex-vlzfy`
+- 测试日期：2026-09-30（Asia/Shanghai）
+
+### 本次变更测试结果
+
+**变更范围**：移除 Dify/n8n 插件生态、部署代理编排服务、数据同步和服务器管理代码及菜单；新增 V51 破坏性数据库迁移，删除历史表、字段和菜单数据。
+
+**测试执行结果**：
+- `docker compose up --build -d --remove-orphans`：通过；后端 Maven 完整套件 828/828，通过率 100%。
+- `docker compose config --quiet`：通过。
+- Flyway：V51 成功应用，日志显示 `Successfully applied 1 migration ... now at version v51`。
+- `npm test --prefix frontend`：此前已通过，覆盖测试 689/689、生产构建通过、E2E 3/3 通过。
+
+**关键模块测试**：
+- Workflow 节点、连接和权限契约：通过。
+- DataInitializer 与系统配置：通过。
+- Device Agent 保留功能回归：通过。
+- 数据库迁移：通过实际 MySQL 启动应用验证。
+
+### 重测触发条件
+
+修改 `backend/src/main/java/` 业务代码、Domain、Repository、Service、Controller 或影响业务逻辑的核心配置时，重新执行 `mvn test -B` 并更新本报告。
+
+### 已知问题
+
+- 历史迁移文件仍保留旧表定义，作为 Flyway 不可变历史；V51 负责在现有数据库中执行破坏性清理。
+- 前端构建仍有既有的大体积 chunk 和 runtime-config 警告，不影响构建结果。
+
+### 下次测试建议
+
+- 在新环境执行一次从空库到 V51 的完整 Flyway 链路。
+- 在备份副本上核对删除表、字段及菜单历史数据的数量。
+
 ## 供应商模型策略名称与图标修正（2026-09-30）
 
 ### Git 基准、范围与交付状态
