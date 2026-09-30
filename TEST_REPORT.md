@@ -1,3 +1,43 @@
+## OSS 运行环境更新与真实上传核验（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `795d3ffa669f25d58c060290bc2f510cf5333443`
+- 提交说明：Use OSS fallback for media downloads；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。此基准是实际构建、测试和部署的代码版本，本节随后单独提交。
+- 问题复现：工作区 `.env` 和 Compose 已配置 OSS，但旧后端容器没有 OSS 环境变量，运行包缺少 `OssMediaStorageService`，其 `MediaAssetService` 未调用 OSS。
+- 使用上述代码版本重建并替换后端容器；容器恢复 healthy，四项 OSS 必需变量已注入，前缀为 `public/`。
+- 本地、已被 Git 忽略的 `.env` 中 `APP_IMAGE_REVISION` 更新为上述已验证版本，避免下次启动后端时重新使用旧标签；凭据未修改、未纳入提交。未修改业务代码、依赖或仓库配置。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 层级、前置条件与输入 | 预期结果 | 场景与实际结果 |
+| --- | --- | --- | --- |
+| 后端运行包含 OSS 的版本且配置已生效 | 部署核验；已有 `.env`；读取 Compose 配置与 `docker inspect`，只输出配置存在性 | 镜像版本一致、必需变量存在、后端 healthy | 回归：通过；初始旧容器不满足条件，更新后满足 |
+| 真实输入素材上传到 OSS | 集成；使用运行容器的环境和 `/app/app.jar`；临时 Java 核验程序调用 `MediaAssetService.materialize`，输入 68 字节 PNG Data URL | 返回 `public/ai-generation/input/` 下的 OSS 地址 | 正常：通过；非 Mock 上传 |
+| 生成请求使用上传后的 OSS 地址 | 协议集成；把上一项结果传给运行包的 `ArkMediaProtocol.request` | Seedream 的 `image`、Seedance 的 `content[].image_url.url` 等于上传结果 | 兼容：两项均通过；未发送计费生成请求 |
+| 模型可匿名读取原始图片内容 | 外部存储集成；对上一项 OSS 地址执行不含认证的 HTTPS GET | HTTP 200、`image/png`、字节和 SHA-256 与输入一致 | 正常：通过；SHA-256 为 `bc436ace0f591aef23f57e7d4976a7dc570bc98dab4e4cf7774141068cfb4362` |
+| 更新后平台入口可用 | HTTP 冒烟；使用现有本地管理员登录，再查询生成模型目录 | 登录和目录查询均 HTTP 200，返回 ARK 图片及视频模型 | 回归：通过；随后请求退出登录 |
+| 测试不遗留临时素材 | 清理核验；只删除本次创建的测试对象和本地临时文件 | OSS 删除成功、本地临时目录不存在、工作区无临时文件 | 副作用：通过 |
+
+### 实际执行命令与结果
+
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：后端构建阶段实际执行 `mvn -B -ntp package`，Surefire 完整套件 **1054/1054 通过**，失败 0、错误 0、跳过 0，通过率 100%。包含媒体素材、OSS 配置、生成服务和方舟协议相关测试；没有将单纯编译视作测试。
+- 同一次整栈构建的前端生产构建成功；整栈命令最终失败：`python-worker` 的 Debian `gzip` 下载返回 HTTP 502，连带取消尚未完成的其他构建阶段，未完成整栈更新。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose build backend`：成功，复用刚刚完成且测试通过的 Maven 构建层。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up -d --no-deps backend`：成功替换后端；`docker compose ps backend frontend` 显示两者均 healthy，前端继续使用原运行容器。
+- 临时核验通过 `docker run --rm --pull=never` 使用已有 Maven/JDK 17 镜像，提取运行包后执行 `java -cp "BOOT-INF/classes:BOOT-INF/lib/*" /probe/OssProbe.java`：退出码 0，真实上传、两个模型协议字段、匿名下载、内容一致性、OSS 测试对象删除全部通过。配置从容器读取并在内存传递，未把密钥写入临时源文件。
+- 内存 Node 脚本执行 `POST /api/auth/login` 和 `GET /api/ai/generation/models`：均 HTTP 200；返回模型 2（Seedance）与模型 3（Seedream），协议均为 ARK。
+- `.env` 版本更新后再次执行 Compose 配置与运行镜像比较：一致；`git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 本次验证的是已有 OSS 实现的部署修复，技术栈为 Docker Compose、Java 17/Spring Boot、阿里云 OSS SDK；没有修改业务逻辑。未重新运行前端完整测试、Python 测试或覆盖率统计，不声称覆盖率发生变化。
+- 用户提供的雪景图尚无可读取的本机原文件路径，因此采用临时 PNG 验证真实上传链路；没有完成该雪景原图逐字节验证，也没有发起真实模型生成。补充原文件后可按相同方法复核，并用一次实际生成验证供应商端读取结果。
+- 真实匿名读取仅证明本次对象在核验时可公开访问，不代表所有历史对象或未来 Bucket 权限变化后的状态。
+- 整栈重建仍受外部 Debian 下载 502 影响；已独立恢复本次需要的后端服务，其他服务未全部更新。网络恢复后应重新执行整栈构建与健康检查。
+- 本次临时目录 `/var/folders/tq/11gy5zgj2_b26v80lvy92fm40000gn/T/oss-runtime-check-ueBN1h`、其中的运行包副本和 Java 程序均已清理；对应 OSS 测试对象已删除。
+- 重测条件：修改 OSS 配置、素材上传或方舟协议代码、替换运行镜像、变更 Bucket 访问权限时，应重复配置核验和真实上传/匿名读取；业务代码变更按项目规则重新运行完整后端套件。
+
 ## 生成记录展示与下载（2026-09-29）
 
 ### Git 基准、范围与交付状态
