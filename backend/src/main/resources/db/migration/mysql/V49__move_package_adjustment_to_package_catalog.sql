@@ -1,12 +1,12 @@
 -- 将套餐调整迁移到独立的一级套餐管理目录，并保留页面权限编码。
 INSERT INTO sys_menu(parent_id,name,type,path,component,icon,permission,sort_order,visible,enabled,created_at,updated_at)
-SELECT NULL,'套餐管理','CATALOG','/packages',NULL,'Goods','package:catalog',50,TRUE,TRUE,
+SELECT NULL,'套餐管理','CATALOG','/packages',NULL,'Goods','package:catalog',15,TRUE,TRUE,
        CURRENT_TIMESTAMP(6),CURRENT_TIMESTAMP(6)
 WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE permission='package:catalog');
 
 -- 固定目录属性，支持从部分执行状态安全恢复。
 UPDATE sys_menu SET parent_id=NULL,name='套餐管理',type='CATALOG',path='/packages',component=NULL,
-    icon='Goods',sort_order=50,visible=TRUE,enabled=TRUE
+    icon='Goods',sort_order=15,visible=TRUE,enabled=TRUE
 WHERE permission='package:catalog';
 
 -- 页面继续使用原路径和权限，已有前端书签与授权保持兼容。

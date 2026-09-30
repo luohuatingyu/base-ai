@@ -11824,3 +11824,38 @@ Commit: `fb0bef0`
 ### 已知限制
 
 - `docker compose up --build -d` 的整栈健康启动仍受既有 Docker Socket Proxy HTTP 503 与 adapter-manager rootless Docker 校验失败影响；镜像构建和后端测试均已完成。
+## Java Backend 与 Python Worker 日志内容调优（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `b8be336`
+- 提交说明：Test authenticated user log snapshot；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- Java Backend 请求日志补充 `request_id`、`trace_id`、`remote_addr`、`user_id`、HTTP 状态、结果分类、耗时和异常类型；认证拦截器保存用户编号快照，异常处理器将异常类型传递给响应日志，限流拒绝日志统一为结构化事件。
+- Python Worker 请求日志补充认证失败原因、结果分类、耗时、异常类型和取消原因；保留现有 JSON 输出、Trace 传播和敏感信息脱敏。
+- 未修改数据库结构、对外 API、日志保留策略或请求/响应正文采集策略。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| Java 请求日志可按请求和用户关联 | `RequestContextFilterTest.includesCorrelationIdentityAndOutcomeMetadata` 验证 request/trace ID、来源 IP、用户 ID、状态和结果分类 | 正常、回归 | 通过 |
+| Java 错误响应包含异常类别且不记录正文 | `RequestContextFilterTest` 验证 `error_type`；`GlobalExceptionHandlerTest.recordsHandledExceptionTypeForRequestLogs` 验证异常类型传递；原有正文脱敏断言继续通过 | 异常、安全、兼容 | 通过 |
+| Java 限流拒绝日志可检索 | `RateLimitAspectTest` 回归验证限流分支仍返回业务错误；日志改为 `event=rate_limit_rejected` 及限流元数据 | 异常、回归 | 通过 |
+| Python Worker 记录认证原因和请求结果 | `test_worker_logs_auth_reason_and_request_outcome` 验证签名缺失、401、`client_error`、异常类型和原因字段 | 权限安全、异常 | 通过 |
+| 跨服务 Trace 字段和敏感信息保护保持不变 | `test_structured_and_shipped_logs_only_use_trace_fields`、`test_shipped_logs_redact_credentials_from_message_and_exception` 及全量回归测试通过 | 安全、兼容、回归 | 通过 |
+
+### 实际执行命令与结果
+
+- `docker run --rm ... mvn -B -ntp -Dtest=RequestContextFilterTest,TraceIdInterceptorTest,GlobalExceptionHandlerTest,AuthInterceptorTest test`：15/15 通过。
+- `docker run --rm ... pytest -q tests/test_trace_context.py`（Python 3.12）：20/20 通过。
+- `docker compose up --build -d`：全部镜像构建成功，包含最新用户 ID 快照代码；启动阶段受既有 `baseai-local-docker-socket-proxy` unhealthy（`/_ping` 返回 503）和现有 MySQL Flyway V49 校验和不一致影响，非端口占用。
+- `docker run --rm ... mvn -B -ntp test`：1068/1068 通过，失败 0、错误 0、跳过 0。
+- `docker run --rm ... pytest -q`（Python 3.12）：91/91 通过。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖 Java 请求生命周期、认证用户关联、错误类型传递、限流拒绝和 Python Worker 认证/取消/异常请求日志；保留现有 Trace 持久化与脱敏行为。
+- Compose 镜像已成功包含本次代码，但 Docker Socket Proxy 健康检查持续失败，且现有数据库的 Flyway V49 校验和与本地迁移不一致，整栈健康启动未完成；修复代理并按数据库迁移流程处理校验和后应重新执行 Compose 健康检查。
+- Go 服务仍保留原有日志格式，不在本次确认范围内；若需要跨 Go 服务统一字段，应单独评估协议和日志采集兼容性。
+- 重测条件：修改请求上下文、异常处理、限流逻辑、Python Worker 中间件或日志字段时，应重新执行 Java/Python 定向测试、两端完整测试和 Compose 重建。
