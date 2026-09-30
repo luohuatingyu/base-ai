@@ -1,3 +1,33 @@
+## master 合并 emdash/codex-vlzfy 最新 Worker 日志提交验证（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `4376b68`
+- 合并提交：`4376b68`，源分支尖端：`a25abd3`；分支 `master`；未执行 push。
+- 合并 Python Worker 请求日志 outcome、错误上下文和对应测试；`RequestContextFilterTest` 冲突按新增元数据与 outcome 断言合并。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| Worker 日志改动无协议回归 | Python 3.12 容器执行完整 `pytest -q tests` | 正常、异常、兼容、回归 | 91/91 通过 |
+| HTTP 请求日志断言覆盖新增字段 | `RequestContextFilterTest` | 正常、边界、安全、回归 | 5/5 通过 |
+| 已合并后端与前端代码保持全量回归通过 | 前一合并验证的 Docker Maven 与前端完整套件 | 后端回归、前端回归 | 后端 1161/1161；前端覆盖 706/706、E2E 3/3、浏览器 18/18 |
+
+### 实际测试命令与结果
+
+- `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=RequestContextFilterTest test`：5/5 通过。
+- `docker run --rm -v "$PWD/python-worker:/workspace" -w /workspace python:3.12-slim sh -c 'pip install --disable-pip-version-check -q -r requirements-dev.in && python -m pytest -q tests'`：91/91 通过。
+- 本次最新提交未修改 Java 业务代码或前端代码；最近一次完整验证仍为后端 1161/1161、前端覆盖 706/706、E2E 3/3、浏览器 18/18。
+- `docker compose up --build -d`：仍在插值阶段因缺少必需变量 `APP_PLATFORM_SHORT_NAME` 失败，未进入镜像构建，不是端口占用。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖 Worker 请求结果日志、错误类型上下文、HTTP 日志字段和既有后端/前端回归。
+- Compose 尚未完成镜像构建和整栈健康检查；补齐 `APP_PLATFORM_SHORT_NAME` 及其他部署环境变量后，应重新执行 `docker compose up --build -d` 并检查服务健康状态。
+- 后续修改 Worker 日志、HTTP 日志或相关异常处理时，应重新执行 Python 完整套件、后端日志定向测试，并按业务代码变更规则更新全量报告。
+
 ## master 合并 emdash/codex-vlzfy 最新提交及日志回归验证（2026-09-30）
 
 ### Git 基准、范围与交付状态
