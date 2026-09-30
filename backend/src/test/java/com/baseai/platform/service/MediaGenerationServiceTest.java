@@ -219,6 +219,27 @@ class MediaGenerationServiceTest {
         assertTrue(!stored.toString().contains("c2VjcmV0"));
     }
 
+    /** 历史任务接口返回提示词和素材 URL，但不泄露内部 request_json 或 Data URL。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void exposesPromptAndMaterialUrlsInHistory() throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("publicTask", Map.class);
+        method.setAccessible(true);
+        var task = new java.util.LinkedHashMap<String, Object>();
+        task.put("id", 7L);
+        task.put("generationType", "video_model");
+        task.put("prompt", "camera moves through a rainy city");
+        task.put("outputJson", "{\"outputs\":[]}");
+        task.put("requestJson", "{\"generationMode\":\"IMAGE_TO_VIDEO\",\"inputCount\":1,\"materialUrls\":[\"https://cdn.example/frame.png\"],\"options\":{\"duration\":5}}");
+
+        Map<String, Object> result = (Map<String, Object>) method.invoke(service, task);
+
+        assertEquals("camera moves through a rainy city", result.get("prompt"));
+        assertEquals("[\"https://cdn.example/frame.png\"]", result.get("materialUrls").toString());
+        assertEquals(1, result.get("inputCount"));
+        assertTrue(!result.containsKey("requestJson"));
+    }
+
     /** Seedream 的融合、组图和图层模式仍属于图片生成，不能被类型隔离误伤。 */
     @Test
     void acceptsSeedreamImageModes() {
