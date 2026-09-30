@@ -33,8 +33,6 @@ import DataSourcesView from '../views/DataSourcesView.vue'
 import KnowledgeBasesView from '../views/KnowledgeBasesView.vue'
 import RagRetrievalDebugView from '../views/RagRetrievalDebugView.vue'
 import WorkflowNodeDocsView from '../views/WorkflowNodeDocsView.vue'
-import DataSyncView from '../views/DataSyncView.vue'
-import ServersView from '../views/ServersView.vue'
 import DeviceAgentsView from '../views/DeviceAgentsView.vue'
 import DeviceAgentGuideView from '../views/DeviceAgentGuideView.vue'
 import DeviceAgentOnboardingView from '../views/DeviceAgentOnboardingView.vue'
@@ -89,8 +87,6 @@ const router = createRouter({
         { path: 'knowledge-bases/:knowledgeBaseId/debug', component: RagRetrievalDebugView, props: true, meta: { permission: 'ai:model:knowledge-base:list', desc: 'RAG 检索调试台' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'operations:task:view', navigable: true, desc: 'tasks.description' } },
         { path: 'data-sources', component: DataSourcesView, meta: { permission: 'operations:data-source:list', navigable: true, desc: 'dataSources.description' } },
-        { path: 'data-sync', component: DataSyncView, meta: { permission: 'operations:data-sync:list', navigable: true, desc: 'dataSync.description' } },
-        { path: 'servers', component: ServersView, meta: { permission: 'operations:server:list', navigable: true, desc: 'servers.description' } },
         { path: 'api-keys', component: ApiKeysView, meta: { permission: 'system:api-key:list', navigable: true, desc: 'apiKeys.description' } },
         { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
         { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } },

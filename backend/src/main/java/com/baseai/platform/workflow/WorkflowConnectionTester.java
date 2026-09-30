@@ -66,7 +66,6 @@ public class WorkflowConnectionTester {
                 case "RABBITMQ" -> testRabbit(connection.config());
                 case "WEBHOOK" -> testWebhook(connection.config());
                 case "TAVILY" -> testTavily(connection.config());
-                case "PLUGIN" -> testPlugin(connection.config());
                 case "QDRANT", "MILVUS", "ELASTICSEARCH" -> { /* 向量探测同时验证连通性。 */ }
                 default -> throw new BusinessException("workflow.connectionTypeInvalid");
             }
@@ -106,13 +105,6 @@ public class WorkflowConnectionTester {
     /** 序列化留存指标，失败时退化为空对象。 */
     private String jsonInfo(Map<String, Object> info) {
         try { return objectMapper.writeValueAsString(info); } catch (Exception exception) { return "{}"; }
-    }
-
-    /** 确认插件连接具备固定组件身份和结构化凭据；实际调用仍在节点执行时校验。 */
-    private void testPlugin(JsonNode config) {
-        if (config.path("pluginComponentId").asLong() <= 0 || !config.path("credentials").isObject()) {
-            throw new BusinessException("workflow.connectionInvalid");
-        }
     }
 
     /** 使用只读查询验证 JDBC 连接并采集版本与活动连接数指标。 */

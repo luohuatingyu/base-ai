@@ -28,7 +28,7 @@ import java.util.Set;
 public class WorkflowConnectionService {
     private static final String MASK = "******";
     private static final Set<String> TYPES = Set.of("MYSQL", "POSTGRESQL", "REDIS", "S3", "OSS", "KAFKA", "RABBITMQ", "WEBHOOK", "TAVILY",
-        "QDRANT", "MILVUS", "ELASTICSEARCH", "PLUGIN");
+        "QDRANT", "MILVUS", "ELASTICSEARCH");
     private static final Set<String> SECRET_FIELDS = Set.of(
         "password", "secret", "secretkey", "accesskey", "token", "apikey", "saslpassword", "privatekey"
     );
@@ -75,9 +75,9 @@ public class WorkflowConnectionService {
         networkPolicy.validate(connectionType, command.config());
         try {
             jdbcTemplate.update("""
-                INSERT INTO workflow_connection(code,name,connection_type,plugin_component_id,config_encrypted,owner_user_id,enabled)
+                INSERT INTO workflow_connection(code,name,connection_type,config_encrypted,owner_user_id,enabled)
                 VALUES (?,?,?,?,?,?,?)
-                """, code(command.code()), text(command.name()), connectionType, pluginComponentId(connectionType, command.config()),
+                """, code(command.code()), text(command.name()), connectionType,
                 encrypt(command.config()), AuthContext.require().id(), !Boolean.FALSE.equals(command.enabled()));
             Long id = jdbcTemplate.queryForObject("SELECT id FROM workflow_connection WHERE code=?", Long.class, code(command.code()));
             return view(id);
@@ -105,7 +105,7 @@ public class WorkflowConnectionService {
                     vector_checked_at=CASE WHEN ? THEN NULL ELSE vector_checked_at END,vector_error=CASE WHEN ? THEN '' ELSE vector_error END,
                     updated_at=NOW()
                 WHERE id=? AND voided=false
-                """, code(command.code()), text(command.name()), connectionType, pluginComponentId(connectionType, merged), encrypt(merged),
+                """, code(command.code()), text(command.name()), connectionType, encrypt(merged),
                 enabled, securityChanged ? 1 : 0, securityChanged, securityChanged, securityChanged, securityChanged, securityChanged, id);
             return view(id);
         } catch (DataIntegrityViolationException exception) {
@@ -219,10 +219,6 @@ public class WorkflowConnectionService {
         if ("MILVUS".equals(connectionType) && command.config().path("token").asText("").isBlank()) {
             throw new BusinessException("workflow.connectionInvalid");
         }
-        if ("PLUGIN".equals(connectionType) && (command.config().path("pluginComponentId").asLong() <= 0
-            || !command.config().path("credentials").isObject())) {
-            throw new BusinessException("workflow.connectionInvalid");
-        }
     }
 
     /** 递归保留更新命令中的脱敏字段原值。 */
@@ -289,11 +285,6 @@ public class WorkflowConnectionService {
         String normalized = text(value).toUpperCase(Locale.ROOT);
         if (!TYPES.contains(normalized)) throw new BusinessException("workflow.connectionTypeInvalid");
         return normalized;
-    }
-
-    /** 只为插件连接固化组件外键，其他连接保持空值。 */
-    private Long pluginComponentId(String connectionType, JsonNode config) {
-        return "PLUGIN".equals(connectionType) ? config.path("pluginComponentId").asLong() : null;
     }
 
     /** 规范可选文本。 */

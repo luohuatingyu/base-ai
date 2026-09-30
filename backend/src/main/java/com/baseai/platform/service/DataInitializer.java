@@ -16,7 +16,6 @@ import com.baseai.platform.repository.DepartmentRepository;
 import com.baseai.platform.repository.RoleRepository;
 import com.baseai.platform.repository.UserRepository;
 import com.baseai.platform.security.PasswordPolicy;
-import com.baseai.platform.workflow.WorkflowAdapterLifecycleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -151,7 +150,6 @@ public class DataInitializer implements ApplicationRunner {
         seedModelTypes();
 
         // 初始化默认关闭的插件适配器开关，仅允许节点管理专用接口切换。
-        seedWorkflowAdapterSettings();
 
         // 获取所有菜单，用于分配给管理员角色
         List<Menu> menus = menuRepository.findAll();
@@ -205,8 +203,6 @@ public class DataInitializer implements ApplicationRunner {
         menus.stream().filter(menu -> "operations:catalog".equals(menu.getPermission())
             || "automation:catalog".equals(menu.getPermission())
             || menu.getPermission() != null && (menu.getPermission().startsWith("operations:data-source:")
-            || menu.getPermission().startsWith("operations:data-sync:")
-            || (menu.getPermission().startsWith("operations:server:") && !"operations:server:shell".equals(menu.getPermission()))
             || menu.getPermission().startsWith("automation:device-agent:"))).forEach(permissions::add);
         operations.setMenus(permissions);
         operations.setDescription("系统内置数据源、数据同步、服务器与自动化设备 Agent 运维角色");
@@ -328,29 +324,6 @@ public class DataInitializer implements ApplicationRunner {
         seedModelType("video_model","视频生成模型",50);
     }
 
-    /** 初始化两个系统托管适配器开关，已有期望状态不会被应用重启覆盖。 */
-    private void seedWorkflowAdapterSettings() {
-        seedWorkflowAdapterSetting(WorkflowAdapterLifecycleService.N8N_SETTING_KEY, "n8n 适配服务", 10);
-        seedWorkflowAdapterSetting(WorkflowAdapterLifecycleService.DIFY_SETTING_KEY, "Dify 适配服务", 20);
-    }
-
-    /** 仅在缺失时默认关闭，并持续保护适配器参数的固定身份元数据。 */
-    private void seedWorkflowAdapterSetting(String key, String name, int sortOrder) {
-        SystemSetting setting = systemSettingRepository.findByConfigKey(key).orElseGet(() -> {
-            SystemSetting created = new SystemSetting();
-            created.setConfigValue("false");
-            return created;
-        });
-        setting.setGroupCode("workflow-adapter");
-        setting.setConfigKey(key);
-        setting.setName(name);
-        setting.setSensitive(false);
-        setting.setEnabled(true);
-        setting.setSortOrder(sortOrder);
-        setting.setSystemManaged(true);
-        systemSettingRepository.save(setting);
-    }
-
     /** 仅在缺失时写入内置模型类型，保留管理员对已有字典项的调整。 */
     private void seedModelType(String value,String label,int sortOrder) {
         if(dictionaryDataRepository.findByTypeCodeOrderBySortOrderAscIdAsc("llm_model_type").stream()
@@ -452,11 +425,8 @@ public class DataInitializer implements ApplicationRunner {
             "automation:workflow:node:update", 212, false);
         menu(node.getId(), "删除节点模板", "BUTTON", null, null, null,
             "automation:workflow:node:delete", 213, false);
-        menu(node.getId(), "导入市场节点", "BUTTON", null, null, null,
             "automation:workflow:node:import", 214, false);
-        menu(node.getId(), "管理插件适配服务", "BUTTON", null, null, null,
             "automation:workflow:adapter:manage", 215, false);
-        menu(node.getId(), "审批市场插件", "BUTTON", null, null, null,
             "automation:workflow:plugin:admission", 216, false);
         Menu canvas = menu(workflow.getId(), "画布管理", "MENU", "/workflow/canvases", "WorkflowCanvasView", "Connection",
             "automation:workflow:canvas:list", 23, true);
@@ -485,25 +455,16 @@ public class DataInitializer implements ApplicationRunner {
         Menu dataSync = seedCrud(operations, "数据同步", "/data-sync", "DataSyncView", "Refresh",
             "operations:data-sync", 12);
         menu(dataSync.getId(), "预览同步结构", "BUTTON", null, null, null,
-            "operations:data-sync:preview", 124, false);
         menu(dataSync.getId(), "执行同步", "BUTTON", null, null, null,
-            "operations:data-sync:run", 125, false);
         menu(dataSync.getId(), "取消同步", "BUTTON", null, null, null,
-            "operations:data-sync:cancel", 126, false);
         menu(dataSync.getId(), "查看同步日志", "BUTTON", null, null, null,
-            "operations:data-sync:logs", 127, false);
         Menu servers = seedCrud(operations, "服务器管理", "/servers", "ServersView", "Monitor",
             "operations:server", 13);
         menu(servers.getId(), "测试服务器", "BUTTON", null, null, null,
-            "operations:server:test", 134, false);
         menu(servers.getId(), "执行部署", "BUTTON", null, null, null,
-            "operations:server:deploy", 135, false);
         menu(servers.getId(), "部署回滚", "BUTTON", null, null, null,
-            "operations:server:rollback", 136, false);
         menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null,
-            "operations:server:logs", 137, false);
         menu(servers.getId(), "SSH 终端", "BUTTON", null, null, null,
-            "operations:server:shell", 138, false);
         // 邮件属于运维范畴，归入运维管理并排在服务器管理之后、监控审计之前。
         Menu mail = menu(operations.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
             "system:mail:catalog", 15, true);

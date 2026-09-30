@@ -6,7 +6,6 @@ import com.baseai.platform.workflow.WorkflowConnectionTester;
 import com.baseai.platform.workflow.WorkflowModels;
 import com.baseai.platform.workflow.WorkflowNodeMarketplaceService;
 import com.baseai.platform.workflow.WorkflowPluginOAuthService;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -40,7 +39,7 @@ public class DataSourceController {
     private final WorkflowPluginOAuthService pluginOAuthService;
     private final ObjectStorageService objectStorageService;
 
-    /** 注入受管连接、连通性测试、插件目录、OAuth 和对象存储服务。 */
+    /** 注入受管连接、连通性测试、对象存储服务。 */
     public DataSourceController(WorkflowConnectionService connectionService,
                                 WorkflowConnectionTester connectionTester,
                                 WorkflowNodeMarketplaceService marketplaceService,
@@ -73,7 +72,7 @@ public class DataSourceController {
         return connectionService.update(id, command);
     }
 
-    /** 删除未被工作流版本或有效同步计划引用的数据源。 */
+    /** 删除未被工作流版本引用的数据源。 */
     @DeleteMapping("/{id}")
     @RequiredPermission("operations:data-source:delete")
     public void delete(@PathVariable Long id) { connectionService.delete(id); }

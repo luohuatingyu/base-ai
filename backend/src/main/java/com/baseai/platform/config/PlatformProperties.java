@@ -408,26 +408,6 @@ public class PlatformProperties {
         private int webhookRateLimitPerMinute = 60;
         private int triggerDeliveryRetentionDays = 30;
         private int runRetentionDays = 30;
-        private String marketplaceN8nUrl = "https://n8n.io";
-        private String marketplaceN8nApiUrl = "https://api.n8n.io";
-        private String marketplaceNpmRegistryUrl = "https://registry.npmjs.org";
-        private String marketplaceDifyUrl = "https://marketplace.dify.ai";
-        private int marketplaceTimeoutSeconds = 8;
-        private int marketplaceCacheSeconds = 300;
-        private int marketplaceMaxPackageBytes = 5 * 1024 * 1024;
-        private int marketplaceMaxUnpackedBytes = 10 * 1024 * 1024;
-        private int marketplaceMaxPackageFiles = 512;
-        private String difyPluginWorkerUrl = "http://dify-plugin-worker:8101";
-        private String n8nPluginWorkerUrl = "http://n8n-plugin-worker:8102";
-        private String difyPluginWorkerInternalToken = "";
-        private String n8nPluginWorkerInternalToken = "";
-        private String adapterManagerUrl = "http://adapter-manager:8090";
-        private String adapterManagerInternalToken = "";
-        private int pluginWorkerTimeoutSeconds = 240;
-        private int marketplaceProbeConcurrency = 4;
-        private int marketplaceProbeQueueCapacity = 100;
-        private int marketplaceProbeMaxAttempts = 3;
-        private int marketplaceProbeRetentionHours = 168;
         /** 读取执行线程数量。 */
         public int getExecutorPoolSize() { return executorPoolSize; }
         /** 设置执行线程数量。 */
@@ -492,85 +472,5 @@ public class PlatformProperties {
         public int getRunRetentionDays() { return runRetentionDays; }
         /** 设置工作流运行及节点日志保留天数。 */
         public void setRunRetentionDays(int value) { runRetentionDays = value; }
-        /** 读取 n8n 官方市场根地址。 */
-        public String getMarketplaceN8nUrl() { return marketplaceN8nUrl; }
-        /** 设置 n8n 官方市场根地址。 */
-        public void setMarketplaceN8nUrl(String value) { marketplaceN8nUrl = value; }
-        /** 读取 n8n 认证社区节点 API 根地址。 */
-        public String getMarketplaceN8nApiUrl() { return marketplaceN8nApiUrl; }
-        /** 设置 n8n 认证社区节点 API 根地址。 */
-        public void setMarketplaceN8nApiUrl(String value) { marketplaceN8nApiUrl = value; }
-        /** 读取只允许下载 npm 插件包的注册表根地址。 */
-        public String getMarketplaceNpmRegistryUrl() { return marketplaceNpmRegistryUrl; }
-        /** 设置只允许下载 npm 插件包的注册表根地址。 */
-        public void setMarketplaceNpmRegistryUrl(String value) { marketplaceNpmRegistryUrl = value; }
-        /** 读取 Dify 官方市场根地址。 */
-        public String getMarketplaceDifyUrl() { return marketplaceDifyUrl; }
-        /** 设置 Dify 官方市场根地址。 */
-        public void setMarketplaceDifyUrl(String value) { marketplaceDifyUrl = value; }
-        /** 读取市场请求超时秒数。 */
-        public int getMarketplaceTimeoutSeconds() { return marketplaceTimeoutSeconds; }
-        /** 设置市场请求超时秒数。 */
-        public void setMarketplaceTimeoutSeconds(int value) { marketplaceTimeoutSeconds = value; }
-        /** 读取市场目录缓存秒数。 */
-        public int getMarketplaceCacheSeconds() { return marketplaceCacheSeconds; }
-        /** 设置市场目录缓存秒数。 */
-        public void setMarketplaceCacheSeconds(int value) { marketplaceCacheSeconds = value; }
-        /** 读取 Dify 插件压缩包字节上限。 */
-        public int getMarketplaceMaxPackageBytes() { return marketplaceMaxPackageBytes; }
-        /** 设置 Dify 插件压缩包字节上限。 */
-        public void setMarketplaceMaxPackageBytes(int value) { marketplaceMaxPackageBytes = value; }
-        /** 读取 Dify 插件解压后字节上限。 */
-        public int getMarketplaceMaxUnpackedBytes() { return marketplaceMaxUnpackedBytes; }
-        /** 设置 Dify 插件解压后字节上限。 */
-        public void setMarketplaceMaxUnpackedBytes(int value) { marketplaceMaxUnpackedBytes = value; }
-        /** 读取 Dify 插件压缩包文件数量上限。 */
-        public int getMarketplaceMaxPackageFiles() { return marketplaceMaxPackageFiles; }
-        /** 设置 Dify 插件压缩包文件数量上限。 */
-        public void setMarketplaceMaxPackageFiles(int value) { marketplaceMaxPackageFiles = value; }
-        /** 读取 Base AI 自研 Dify ABI Worker 地址。 */
-        public String getDifyPluginWorkerUrl() { return difyPluginWorkerUrl; }
-        /** 设置 Base AI 自研 Dify ABI Worker 地址。 */
-        public void setDifyPluginWorkerUrl(String value) { difyPluginWorkerUrl = value; }
-        /** 读取 Base AI 自研 n8n ABI Worker 地址。 */
-        public String getN8nPluginWorkerUrl() { return n8nPluginWorkerUrl; }
-        /** 设置 Base AI 自研 n8n ABI Worker 地址。 */
-        public void setN8nPluginWorkerUrl(String value) { n8nPluginWorkerUrl = value; }
-        /** 读取 Dify Worker 独立内部鉴权令牌。 */
-        public String getDifyPluginWorkerInternalToken() { return difyPluginWorkerInternalToken; }
-        /** 设置 Dify Worker 独立内部鉴权令牌。 */
-        public void setDifyPluginWorkerInternalToken(String value) { difyPluginWorkerInternalToken = value; }
-        /** 读取 n8n Worker 独立内部鉴权令牌。 */
-        public String getN8nPluginWorkerInternalToken() { return n8nPluginWorkerInternalToken; }
-        /** 设置 n8n Worker 独立内部鉴权令牌。 */
-        public void setN8nPluginWorkerInternalToken(String value) { n8nPluginWorkerInternalToken = value; }
-        /** 读取按需启停插件 Worker 的隔离控制服务地址。 */
-        public String getAdapterManagerUrl() { return adapterManagerUrl; }
-        /** 设置按需启停插件 Worker 的隔离控制服务地址。 */
-        public void setAdapterManagerUrl(String value) { adapterManagerUrl = value; }
-        /** 读取隔离控制服务内部鉴权令牌。 */
-        public String getAdapterManagerInternalToken() { return adapterManagerInternalToken; }
-        /** 设置隔离控制服务内部鉴权令牌。 */
-        public void setAdapterManagerInternalToken(String value) { adapterManagerInternalToken = value; }
-        /** 读取插件 Worker 探测与调用硬超时秒数。 */
-        public int getPluginWorkerTimeoutSeconds() { return pluginWorkerTimeoutSeconds; }
-        /** 设置插件 Worker 探测与调用硬超时秒数。 */
-        public void setPluginWorkerTimeoutSeconds(int value) { pluginWorkerTimeoutSeconds = value; }
-        /** 读取市场插件后台探测并发数。 */
-        public int getMarketplaceProbeConcurrency() { return marketplaceProbeConcurrency; }
-        /** 设置市场插件后台探测并发数。 */
-        public void setMarketplaceProbeConcurrency(int value) { marketplaceProbeConcurrency = value; }
-        /** 读取后台探测线程池的有界等待容量。 */
-        public int getMarketplaceProbeQueueCapacity() { return marketplaceProbeQueueCapacity; }
-        /** 设置后台探测线程池的有界等待容量。 */
-        public void setMarketplaceProbeQueueCapacity(int value) { marketplaceProbeQueueCapacity = value; }
-        /** 读取单个固定版本允许的最大探测次数。 */
-        public int getMarketplaceProbeMaxAttempts() { return marketplaceProbeMaxAttempts; }
-        /** 设置单个固定版本允许的最大探测次数。 */
-        public void setMarketplaceProbeMaxAttempts(int value) { marketplaceProbeMaxAttempts = value; }
-        /** 读取未安装探测包的缓存保留小时数。 */
-        public int getMarketplaceProbeRetentionHours() { return marketplaceProbeRetentionHours; }
-        /** 设置未安装探测包的缓存保留小时数。 */
-        public void setMarketplaceProbeRetentionHours(int value) { marketplaceProbeRetentionHours = value; }
     }
 }

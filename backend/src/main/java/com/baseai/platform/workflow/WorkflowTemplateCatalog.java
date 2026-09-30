@@ -2,10 +2,8 @@ package com.baseai.platform.workflow;
 
 import com.baseai.platform.common.BusinessException;
 
-import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /** 统一维护节点模板来源、功能分类及原生节点默认分类。 */
 public final class WorkflowTemplateCatalog {
@@ -78,60 +76,17 @@ public final class WorkflowTemplateCatalog {
     public static String defaultCategory(String nodeType) {
         return switch (normalize(nodeType)) {
             case "START", "END" -> "BASIC";
-            case "LLM", "AGENT", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT", "RAG", "KNOWLEDGE_RETRIEVAL", "EMBEDDING", "PLUGIN_MODEL", "PLUGIN_AGENT_STRATEGY" -> "AI";
+            case "LLM", "AGENT", "QUESTION_CLASSIFIER", "PARAMETER_EXTRACTOR", "STRUCTURED_OUTPUT", "RAG", "KNOWLEDGE_RETRIEVAL", "EMBEDDING" -> "AI";
             case "CONDITION", "SWITCH", "ITERATION", "LOOP", "MERGE", "SUB_WORKFLOW", "WAIT" -> "FLOW_CONTROL";
             case "SET_VARIABLE", "JSON_PARSE", "JSON_VALIDATE", "TRANSFORM", "FILTER", "SORT", "AGGREGATE" -> "DATA_TRANSFORM";
             case "TEMPLATE", "CSV", "DOCUMENT_EXTRACTOR" -> "TEXT_DOCUMENT";
-            case "HTTP", "TAVILY_TOOL", "PLUGIN_ACTION", "PLUGIN_EXTENSION" -> "NETWORK_API";
-            case "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER", "PLUGIN_TRIGGER" -> "TRIGGER";
+            case "HTTP", "TAVILY_TOOL" -> "NETWORK_API";
+            case "WEBHOOK_TRIGGER", "SCHEDULE_TRIGGER" -> "TRIGGER";
             case "EMAIL_SEND", "IM_NOTIFY" -> "NOTIFICATION";
-            case "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT", "KNOWLEDGE_UPSERT", "PLUGIN_DATASOURCE" -> "DATA_STORAGE";
+            case "SQL_QUERY", "REDIS_COMMAND", "S3_OBJECT", "KNOWLEDGE_UPSERT" -> "DATA_STORAGE";
             case "KAFKA_PUBLISH", "KAFKA_TRIGGER", "RABBITMQ_PUBLISH", "RABBITMQ_TRIGGER" -> "MESSAGE_QUEUE";
             default -> "BASIC";
         };
-    }
-
-    /** 根据插件技术类型和可信市场文案推导实际功能分类，未知动作安全回退到基础节点。 */
-    public static String marketplaceCategory(String componentType, String... metadata) {
-        String type = normalize(componentType).replace('-', '_');
-        String fixed = switch (type) {
-            case "TRIGGER" -> "TRIGGER";
-            case "MODEL", "AGENT_STRATEGY" -> "AI";
-            case "DATASOURCE" -> "DATA_STORAGE";
-            default -> "";
-        };
-        if (!fixed.isBlank()) return fixed;
-        String text = semanticText(metadata);
-        if (containsAny(text, MESSAGE_QUEUE_TERMS)) return "MESSAGE_QUEUE";
-        if (containsAny(text, NOTIFICATION_TERMS)) return "NOTIFICATION";
-        if (containsAny(text, DATA_STORAGE_TERMS)) return "DATA_STORAGE";
-        if (containsAny(text, TEXT_DOCUMENT_TERMS)) return "TEXT_DOCUMENT";
-        if (containsAny(text, DATA_TRANSFORM_TERMS)) return "DATA_TRANSFORM";
-        if (containsAny(text, AI_TERMS)) return "AI";
-        if (containsAny(text, NETWORK_API_TERMS)) return "NETWORK_API";
-        return "BASIC";
-    }
-
-    /** 合并市场身份与说明，并统一分隔符以支持稳定的大小写无关匹配。 */
-    private static String semanticText(String... metadata) {
-        if (metadata == null || metadata.length == 0) return "";
-        return Arrays.stream(metadata).filter(value -> value != null && !value.isBlank())
-            .map(value -> value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ").trim())
-            .filter(value -> !value.isBlank()).collect(Collectors.joining(" "));
-    }
-
-    /** 匹配高可信能力词；短英文词要求独立成词，避免把普通单词误判为技术缩写。 */
-    private static boolean containsAny(String text, String... terms) {
-        String padded = " " + text + " ";
-        for (String term : terms) {
-            String normalized = term.toLowerCase(Locale.ROOT);
-            if (normalized.length() <= 3 && normalized.chars().allMatch(character -> character < 128)) {
-                if (padded.contains(" " + normalized + " ")) return true;
-            } else if (text.contains(normalized)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** 使用稳定英文大写编码比较模板目录枚举。 */
