@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.net.InetAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -64,6 +65,7 @@ public class OssMediaStorageService {
         URI uri = URI.create(value == null ? "" : value);
         if (!java.util.Set.of("http", "https").contains(String.valueOf(uri.getScheme()).toLowerCase(Locale.ROOT)) || uri.getHost() == null || uri.getUserInfo() != null)
             throw new IOException("media URL is not public HTTP(S)");
+        for (InetAddress address : InetAddress.getAllByName(uri.getHost())) if (restricted(address)) throw new IOException("media URL targets a private address");
         HttpResponse<byte[]> response = httpClient.send(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(30)).GET().build(), HttpResponse.BodyHandlers.ofByteArray());
         if (response.statusCode() / 100 != 2 || response.body().length == 0 || response.body().length > MAX_BYTES) throw new IOException("media download failed");
         String contentType = response.headers().firstValue("content-type").orElse(fallbackContentType);
@@ -77,5 +79,13 @@ public class OssMediaStorageService {
     private static boolean nonBlank(String value) { return value != null && !value.isBlank(); }
     private static String safe(String value) { return String.valueOf(value).replaceAll("[^A-Za-z0-9_-]", "_"); }
     private static String extension(String contentType) { return contentType != null && contentType.toLowerCase(Locale.ROOT).contains("video") ? ".mp4" : ".bin"; }
+    /** 拒绝回环、私网、链路本地和组播地址，避免供应商结果触发 SSRF。 */
+    private static boolean restricted(InetAddress address) {
+        byte[] bytes = address.getAddress();
+        boolean uniqueLocalIpv6 = bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
+        boolean sharedIpv4 = bytes.length == 4 && (bytes[0] & 0xff) == 100 && (bytes[1] & 0xc0) == 64;
+        return address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+            || address.isSiteLocalAddress() || address.isMulticastAddress() || uniqueLocalIpv6 || sharedIpv4;
+    }
     public record Downloaded(byte[] bytes, String contentType) {}
 }
