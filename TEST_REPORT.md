@@ -2,7 +2,7 @@
 
 ### Git基准点
 
-Commit: `736e145`（Remove retired feature configuration）
+Commit: `6ae8e19`（Clean retired feature localization strings）
 - 分支：`emdash/codex-vlzfy`
 - 测试日期：2026-09-30（Asia/Shanghai）
 
