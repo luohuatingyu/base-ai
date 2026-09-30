@@ -283,7 +283,7 @@ const selectedModel = computed(() => models.value.find(item => item.id === model
 /** 每个生成模式声明可接受的素材类型和数量，避免上传素材改变任务语义。 */
 const modeInputPolicy = computed(() => {
   const common = {
-    TEXT_TO_IMAGE: { kinds: [], max: 0 }, TEXT_TO_GROUP: { kinds: [], max: 0 },
+    TEXT_TO_IMAGE: { kinds: [], max: 0 }, IMAGE_TO_IMAGE: { kinds: ['IMAGE'], max: 1 }, TEXT_TO_GROUP: { kinds: [], max: 0 },
     IMAGE_TEXT_TO_IMAGE: { kinds: ['IMAGE'], max: 1 }, IMAGE_TO_GROUP: { kinds: ['IMAGE'], max: 1 },
     MULTI_IMAGE_FUSION: { kinds: ['IMAGE'], max: 14 }, MULTI_IMAGE_TO_GROUP: { kinds: ['IMAGE'], max: 14 },
     LAYER_DECOMPOSITION: { kinds: ['IMAGE'], max: 1 }, INTERACTIVE_EDIT: { kinds: ['IMAGE'], max: 1 }, TRANSPARENT_IMAGE: { kinds: ['IMAGE'], max: 1 },

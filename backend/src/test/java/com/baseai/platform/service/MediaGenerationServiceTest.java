@@ -109,6 +109,18 @@ class MediaGenerationServiceTest {
         assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, null, null, "MULTIMODAL", List.of(text, image, video), Map.of())));
     }
 
+    /** 命中 OpenAI 策略后只接受该策略声明的模式，不能用旧方舟模式绕过能力目录。 */
+    @Test
+    void strategyControlsGenerationModes() throws Exception {
+        var candidate = new LlmManagementService.WorkerCandidate("openai", "https://api.openai.com/v1",
+            List.of("key"), "gpt-image-2", 1, "PROVIDER", 60, "reasoning_effort", "", List.of("image_model"), "");
+        var image = imageInput();
+        assertDoesNotThrow(() -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "cat", null,
+            "IMAGE_TO_IMAGE", List.of(image), Map.of()), candidate));
+        assertThrows(BusinessException.class, () -> validate(new MediaGenerationService.GenerateRequest("image_model", 1L, "cat", null,
+            "IMAGE_TEXT_TO_IMAGE", List.of(image), Map.of()), candidate));
+    }
+
     /** 视频模型同样支持文本、图片和视频输入组合，输入类型不再由生成结果类型限制。 */
     @Test
     void acceptsVideoImageOrVideoInputs() throws Exception {
@@ -287,6 +299,17 @@ class MediaGenerationServiceTest {
         var method = MediaGenerationService.class.getDeclaredMethod("validate", MediaGenerationService.GenerateRequest.class);
         method.setAccessible(true);
         try { method.invoke(service, request); }
+        catch (java.lang.reflect.InvocationTargetException exception) {
+            if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
+            throw exception;
+        }
+    }
+
+    /** 通过反射调用带供应商候选项的校验分支，验证具体 Agent 的模式约束。 */
+    private void validate(MediaGenerationService.GenerateRequest request, LlmManagementService.WorkerCandidate candidate) throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("validate", MediaGenerationService.GenerateRequest.class, LlmManagementService.WorkerCandidate.class);
+        method.setAccessible(true);
+        try { method.invoke(service, request, candidate); }
         catch (java.lang.reflect.InvocationTargetException exception) {
             if (exception.getCause() instanceof RuntimeException runtime) throw runtime;
             throw exception;

@@ -27,7 +27,10 @@ public class AiGenerationController {
     @PostMapping("/{id}/cancel") public Map<String, Object> cancel(@PathVariable long id) { return service.cancel(id); }
     /** 只允许删除已结束的当前用户任务。 */
     @DeleteMapping("/{id}") public void delete(@PathVariable long id) { service.delete(id); }
-    /** 模型管理员配置自定义接入点时获取可选能力画像。 */
+    /**
+     * 模型管理员配置自定义接入点时获取历史能力画像；生成页不使用此全局列表，模式来自具体模型策略。
+     */
+    @Deprecated
     @GetMapping("/profiles") @RequiredPermission("ai:model:model:list")
     public List<Map<String, Object>> profiles() { return ArkMediaProtocol.profiles().stream().map(ArkMediaProtocol::capabilities).toList(); }
 }
