@@ -452,19 +452,6 @@ public class DataInitializer implements ApplicationRunner {
             "operations:data-source", 11);
         menu(dataSources.getId(), "测试数据源", "BUTTON", null, null, null,
             "operations:data-source:test", 115, false);
-        Menu dataSync = seedCrud(operations, "数据同步", "/data-sync", "DataSyncView", "Refresh",
-            "operations:data-sync", 12);
-        menu(dataSync.getId(), "预览同步结构", "BUTTON", null, null, null,
-        menu(dataSync.getId(), "执行同步", "BUTTON", null, null, null,
-        menu(dataSync.getId(), "取消同步", "BUTTON", null, null, null,
-        menu(dataSync.getId(), "查看同步日志", "BUTTON", null, null, null,
-        Menu servers = seedCrud(operations, "服务器管理", "/servers", "ServersView", "Monitor",
-            "operations:server", 13);
-        menu(servers.getId(), "测试服务器", "BUTTON", null, null, null,
-        menu(servers.getId(), "执行部署", "BUTTON", null, null, null,
-        menu(servers.getId(), "部署回滚", "BUTTON", null, null, null,
-        menu(servers.getId(), "查看部署日志", "BUTTON", null, null, null,
-        menu(servers.getId(), "SSH 终端", "BUTTON", null, null, null,
         // 邮件属于运维范畴，归入运维管理并排在服务器管理之后、监控审计之前。
         Menu mail = menu(operations.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
             "system:mail:catalog", 15, true);

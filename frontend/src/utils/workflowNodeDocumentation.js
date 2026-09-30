@@ -7,8 +7,6 @@ export const DOCUMENTED_WORKFLOW_NODE_TYPES = Object.freeze([
   'SORT', 'AGGREGATE', 'CSV', 'QUESTION_CLASSIFIER', 'PARAMETER_EXTRACTOR', 'STRUCTURED_OUTPUT',
   'DOCUMENT_EXTRACTOR', 'WEBHOOK_TRIGGER', 'SCHEDULE_TRIGGER', 'EMAIL_SEND', 'IM_NOTIFY', 'SQL_QUERY',
   'REDIS_COMMAND', 'S3_OBJECT', 'KAFKA_PUBLISH', 'KAFKA_TRIGGER', 'RABBITMQ_PUBLISH', 'RABBITMQ_TRIGGER',
-  'TAVILY_TOOL', 'KNOWLEDGE_RETRIEVAL', 'KNOWLEDGE_UPSERT', 'PLUGIN_ACTION', 'PLUGIN_TRIGGER',
-  'PLUGIN_MODEL', 'PLUGIN_DATASOURCE', 'PLUGIN_AGENT_STRATEGY', 'PLUGIN_EXTENSION'
 ])
 
 /** 为每种原生节点提供可执行配置示例中的关键业务参数。 */
@@ -50,9 +48,6 @@ const WORKFLOW_NODE_EXAMPLE_OVERRIDES = Object.freeze({
   RABBITMQ_PUBLISH: { connectionId: 1, destinationMode: 'EXCHANGE', exchange: 'order.events', routingKey: 'order.updated', value: '{{input}}' },
   RABBITMQ_TRIGGER: { connectionId: 1, queue: 'order.workflow', exchange: 'order.events', routingKey: 'order.created' },
   TAVILY_TOOL: { connectionId: 1, operation: 'SEARCH', query: '{{input.query}}', searchDepth: 'basic', maxResults: 5 },
-  PLUGIN_ACTION: pluginExample('ACTION'), PLUGIN_TRIGGER: pluginExample('TRIGGER'),
-  PLUGIN_MODEL: pluginExample('MODEL'), PLUGIN_DATASOURCE: pluginExample('DATASOURCE'),
-  PLUGIN_AGENT_STRATEGY: pluginExample('AGENT_STRATEGY'), PLUGIN_EXTENSION: pluginExample('EXTENSION')
 })
 
 const EN_WORKFLOW_NODE_EXAMPLE_OVERRIDES = Object.freeze({
@@ -116,12 +111,6 @@ const WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({
   RABBITMQ_PUBLISH: pair({ orderId: 'ORD-1001', status: 'CREATED' }, { published: true, exchange: 'order.events' }),
   RABBITMQ_TRIGGER: pair({ queue: 'order.workflow', value: { orderId: 'ORD-1001' } }, { queue: 'order.workflow', value: { orderId: 'ORD-1001' } }),
   TAVILY_TOOL: pair({ query: 'Base AI workflow' }, { httpStatus: 200, durationMs: 310, json: { results: [{ title: 'Example result', url: 'https://example.com' }] } }),
-  PLUGIN_ACTION: pair({ query: 'example' }, { result: 'plugin action output' }),
-  PLUGIN_TRIGGER: pair({ event: 'example.created' }, { event: 'example.created' }),
-  PLUGIN_MODEL: pair({ messages: [{ role: 'user', content: 'hello' }] }, { content: 'model output' }),
-  PLUGIN_DATASOURCE: pair({ cursor: null }, { records: [{ id: 'example' }] }),
-  PLUGIN_AGENT_STRATEGY: pair({ task: 'complete the request' }, { content: 'strategy output', toolCalls: [] }),
-  PLUGIN_EXTENSION: pair({ callback: 'example' }, { handled: true })
 })
 
 const EN_WORKFLOW_NODE_IO_EXAMPLES = Object.freeze({

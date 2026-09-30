@@ -99,8 +99,6 @@ export const NODE_CONFIG_FIELDS = {
     field('query', 'text', '{{input.query}}'), field('searchDepth', 'select', 'basic', ['basic', 'advanced', 'fast', 'ultra-fast']),
     field('maxResults', 'number', 5), field('urls', 'text', '{{input.urls}}'),
     field('extractDepth', 'select', 'basic', ['basic', 'advanced']), field('format', 'select', 'markdown', ['markdown', 'text'])],
-  PLUGIN_ACTION: [], PLUGIN_TRIGGER: [], PLUGIN_MODEL: [], PLUGIN_DATASOURCE: [],
-  PLUGIN_AGENT_STRATEGY: [], PLUGIN_EXTENSION: []
 }
 
 const COMMON_EXECUTION_FIELDS = [
@@ -124,10 +122,7 @@ const NODE_CONNECTION_TYPES = {
   KAFKA_PUBLISH: ['KAFKA'], KAFKA_TRIGGER: ['KAFKA'],
   RABBITMQ_PUBLISH: ['RABBITMQ'], RABBITMQ_TRIGGER: ['RABBITMQ'],
   IM_NOTIFY: ['WEBHOOK'], WEBHOOK_TRIGGER: ['WEBHOOK'], TAVILY_TOOL: ['TAVILY'],
-  PLUGIN_ACTION: ['PLUGIN'], PLUGIN_TRIGGER: ['PLUGIN'], PLUGIN_MODEL: ['PLUGIN'],
-  PLUGIN_DATASOURCE: ['PLUGIN'], PLUGIN_AGENT_STRATEGY: ['PLUGIN'], PLUGIN_EXTENSION: ['PLUGIN']
 }
-const PLUGIN_NODE_TYPES = new Set(['PLUGIN_ACTION', 'PLUGIN_TRIGGER', 'PLUGIN_MODEL', 'PLUGIN_DATASOURCE', 'PLUGIN_AGENT_STRATEGY', 'PLUGIN_EXTENSION'])
 const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
 const REQUIRED_CONFIG_FIELDS = {
   LLM: ['modelMode', 'prompt'], HTTP: ['method', 'url'], AGENT: ['modelMode', 'prompt', 'tools'], RAG: ['knowledgeBaseId', 'query', 'topK', 'scoreThreshold', 'modelMode'], EMBEDDING: ['modelMode', 'input'],
@@ -155,7 +150,6 @@ function field(key, editor, defaultValue, options = []) { return { key, editor, 
 /** 返回节点类型支持的标准配置字段，并附加必填展示元数据。 */
 export function nodeConfigFields(nodeType, config = undefined) {
   const type = String(nodeType || '').toUpperCase()
-  if (PLUGIN_NODE_TYPES.has(type)) return pluginConfigFields(config)
   return (NODE_CONFIG_FIELDS[type] || []).map(item => ({ ...item, requirement: nodeConfigFieldRequirement(type, item.key, config) }))
 }
 
@@ -183,7 +177,6 @@ function pluginConfigFields(config = {}) {
 export function nodeConfigFieldApplicable(nodeType, key, config = {}) {
   const type = String(nodeType || '').toUpperCase()
   const value = config && typeof config === 'object' && !Array.isArray(config) ? config : {}
-  if (PLUGIN_NODE_TYPES.has(type) && key.startsWith('parameters.')) {
     const definition = pluginConfigFields(value).find(item => item.key === key)
     return matchesDisplayOptions(definition?.displayOptions, value.parameters || {})
   }
@@ -244,7 +237,6 @@ export function effectiveNodeConfigDefaultValue(nodeType, key, config = {}) {
 /** 返回标准字段在当前节点中的必填级别。 */
 export function nodeConfigFieldRequirement(nodeType, key, config = undefined) {
   const type = String(nodeType || '').toUpperCase()
-  if (PLUGIN_NODE_TYPES.has(type)) return pluginConfigFields(config).find(item => item.key === key)?.requirement || ''
   if (REQUIRED_CONFIG_FIELDS[type]?.includes(key)) return 'required'
   if (!CONDITIONAL_CONFIG_FIELDS[type]?.includes(key)) return ''
   if (config === undefined) return 'conditional'
@@ -331,8 +323,6 @@ export function missingNodeConfigRequirements(nodeType, config = {}) {
       requirePositive('connectionId'); break
     case 'EMAIL_SEND': requirePositive('routeId'); requireText('subject'); break
     case 'SCHEDULE_TRIGGER': requireText('cron'); break
-    case 'PLUGIN_ACTION': case 'PLUGIN_TRIGGER': case 'PLUGIN_MODEL': case 'PLUGIN_DATASOURCE':
-    case 'PLUGIN_AGENT_STRATEGY': case 'PLUGIN_EXTENSION':
       requirePositive('pluginComponentId'); requireText('packageFingerprint'); requireText('componentExternalId'); requireObject('parameters')
       for (const definition of Array.isArray(value.parameterSchema) ? value.parameterSchema : []) {
         if (!definition?.required || !nodeConfigFieldApplicable(type, `parameters.${definition.name}`, value)) continue
@@ -459,8 +449,6 @@ function withValidDefaults(nodeType, config) {
     case 'CSV': setDefault('operation', 'PARSE'); break
     case 'KAFKA_PUBLISH': case 'RABBITMQ_PUBLISH': setDefault('value', null); break
     case 'TAVILY_TOOL': setDefault('searchDepth', 'basic'); setDefault('maxResults', 5); setDefault('extractDepth', 'basic'); setDefault('format', 'markdown'); break
-    case 'PLUGIN_ACTION': case 'PLUGIN_TRIGGER': case 'PLUGIN_MODEL': case 'PLUGIN_DATASOURCE':
-    case 'PLUGIN_AGENT_STRATEGY': case 'PLUGIN_EXTENSION': setDefault('parameters', {}); break
     default: break
   }
   return value
@@ -477,7 +465,6 @@ function redisArgumentMinimum(command) {
 /** 返回由专用交互维护、不应出现在附加参数中的字段。 */
 export function hiddenConfigKeys(nodeType) {
   const type = String(nodeType || '').toUpperCase()
-  if (PLUGIN_NODE_TYPES.has(type)) return ['pluginComponentId', 'packageFingerprint', 'componentExternalId',
     'componentType', 'parameterSchema', 'credentialSchema', 'parameters']
   return ['ITERATION', 'LOOP'].includes(type) ? ['bodyGraph'] : []
 }
