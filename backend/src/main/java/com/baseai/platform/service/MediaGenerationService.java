@@ -2,8 +2,9 @@ package com.baseai.platform.service;
 
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.modeltype.LlmModelTypeRegistry;
-import com.baseai.platform.modeltype.ArkMediaProtocol;
 import com.baseai.platform.modeltype.LlmOperation;
+import com.baseai.platform.modeltype.MediaGenerationAgentRegistry;
+import com.baseai.platform.modeltype.MediaGenerationAgentStrategy;
 import com.baseai.platform.modeltype.MediaGenerationProtocolRegistry;
 import com.baseai.platform.security.AuthContext;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -39,7 +40,7 @@ public class MediaGenerationService {
     private final LlmUsageService usage;
     private final ObjectMapper mapper;
     private final LlmModelTypeRegistry modelTypeRegistry;
-    private final MediaGenerationProtocolRegistry protocolRegistry;
+    private final MediaGenerationAgentRegistry agentRegistry;
     private final MediaAssetService mediaAssets;
     private final OssMediaStorageService oss;
     private static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -59,7 +60,7 @@ public class MediaGenerationService {
     public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
                                   LlmModelTypeRegistry modelTypeRegistry,
-                                  MediaGenerationProtocolRegistry protocolRegistry,
+                                  MediaGenerationAgentRegistry agentRegistry,
                                   MediaAssetService mediaAssets,
                                   OssMediaStorageService oss) {
         this.jdbc = jdbc;
@@ -67,7 +68,7 @@ public class MediaGenerationService {
         this.usage = usage;
         this.mapper = mapper;
         this.modelTypeRegistry = modelTypeRegistry;
-        this.protocolRegistry = protocolRegistry;
+        this.agentRegistry = agentRegistry;
         this.mediaAssets = mediaAssets;
         this.oss = oss;
     }
@@ -76,7 +77,8 @@ public class MediaGenerationService {
     public MediaGenerationService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc,
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
                                   LlmModelTypeRegistry modelTypeRegistry) {
-        this(jdbc, management, usage, mapper, modelTypeRegistry, new MediaGenerationProtocolRegistry(), new MediaAssetService(), null);
+        this(jdbc, management, usage, mapper, modelTypeRegistry,
+            new MediaGenerationAgentRegistry(modelTypeRegistry, new MediaGenerationProtocolRegistry()), new MediaAssetService(), null);
     }
 
     /** 兼容既有显式注入协议注册表的调用方。 */
@@ -84,7 +86,8 @@ public class MediaGenerationService {
                                   LlmManagementService management, LlmUsageService usage, ObjectMapper mapper,
                                   LlmModelTypeRegistry modelTypeRegistry,
                                   MediaGenerationProtocolRegistry protocolRegistry) {
-        this(jdbc, management, usage, mapper, modelTypeRegistry, protocolRegistry, new MediaAssetService(), null);
+        this(jdbc, management, usage, mapper, modelTypeRegistry,
+            new MediaGenerationAgentRegistry(modelTypeRegistry, protocolRegistry), new MediaAssetService(), null);
     }
 
     /** 兼容既有单元测试构造方式。 */
@@ -109,20 +112,9 @@ public class MediaGenerationService {
     /** 将一个模型配置展开为指定输出类型的媒体目录项。 */
     private ModelOption mediaModelOption(com.baseai.platform.domain.LlmModel model, String type, LlmManagementService.ProviderView provider) {
         String configuredProfile = modelProfile(model.getGenerationProfile(), model.getModelName());
-        boolean ark = ArkMediaProtocol.supports(configuredProfile);
+        String protocol = agentRegistry.protocol(provider.code(), model.getModelName(), configuredProfile);
         return new ModelOption(model.getId(), model.getName(), model.getModelName(), type, provider.code(), provider.name(),
-            ark ? "ARK" : "GENERIC", ark ? capabilitiesForType(configuredProfile, type) : Map.of());
-    }
-
-    /** 按管理员勾选的输出类型提供能力；画像只用于选择默认参数，不反向覆盖配置。 */
-    private Map<String, Object> capabilitiesForType(String configuredProfile, String type) {
-        Map<String, Object> detected = ArkMediaProtocol.capabilities(configuredProfile);
-        if (type.equals(detected.get("type"))) return detected;
-        String fallbackProfile = "image_model".equals(type) ? "seedream-4.5" : "seedance-2.0";
-        Map<String, Object> fallback = new LinkedHashMap<>(ArkMediaProtocol.capabilities(fallbackProfile));
-        fallback.put("profile", configuredProfile);
-        fallback.put("type", type);
-        return fallback;
+            protocol, agentRegistry.capabilities(provider.code(), model.getModelName(), configuredProfile, type));
     }
 
     /** 校验归属和模型后创建一次调用；失败重试必须由用户重新提交并产生新的任务及用量。 */
@@ -200,9 +192,9 @@ public class MediaGenerationService {
 
     /** 在登记用量前验证模式并规范请求；样片只允许引用当前用户同模型已完成的任务。 */
     private GenerateRequest preparedRequest(GenerateRequest request, LlmManagementService.WorkerCandidate candidate, String publicOrigin) {
-        if (!ArkMediaProtocol.supports(profile(candidate))) return request;
+        MediaGenerationAgentStrategy strategy = agentRegistry.resolve(candidate.providerCode(), candidate.model(), profile(candidate));
         List<MediaInput> inputs = request.inputs() == null ? List.of() : request.inputs();
-        if ("DRAFT_TO_VIDEO".equals(normalizedMode(request))) {
+        if (strategy.id().equals("ARK") && "DRAFT_TO_VIDEO".equals(normalizedMode(request))) {
             inputs = inputs.stream().map(input -> {
                 if (!"TASK".equals(input.kind()) || !input.dataUrl().matches("[0-9]{1,18}")) throw new BusinessException("llm.generationRequestInvalid");
                 var draft = task(Long.parseLong(input.dataUrl()), AuthContext.require().id());
@@ -214,14 +206,12 @@ public class MediaGenerationService {
                 return new MediaInput("TASK", input.fileName(), "text/plain", String.valueOf(draft.get("providerTaskId")), "");
             }).toList();
         }
-        String configuredProfile = profile(candidate);
-        String effectiveProfile = configuredProfile;
-        if (!request.modelType().equals(ArkMediaProtocol.capabilities(configuredProfile).get("type")))
-            effectiveProfile = "image_model".equals(request.modelType()) ? "seedream-4.5" : "seedance-2.0";
-        if (ArkMediaProtocol.supports(profile(candidate))) inputs = mediaAssets.materialize(inputs, publicOrigin);
-        Map<String, Object> options = com.baseai.platform.modeltype.ArkGenerationCapabilities.options(effectiveProfile, request.modelType(), normalizedMode(request), request.prompt(), inputPayload(inputs), request.options());
+        if (strategy.supportsRemoteInputs()) inputs = mediaAssets.materialize(inputs, publicOrigin);
+        Map<String, Object> payload = inputPayload(inputs);
+        Map<String, Object> options = strategy.normalizeOptions(request.modelType(), candidate.model(), profile(candidate),
+            normalizedMode(request), request.prompt(), payload, request.options());
         // 提前构造一次供应商协议，保证错误地址和未知参数不会产生计费记录。
-        ArkMediaProtocol.request(request.modelType(), candidate.model(), profile(candidate), request.prompt(), inputPayload(inputs), options);
+        strategy.request(request.modelType(), candidate.model(), profile(candidate), request.prompt(), payload, options);
         return new GenerateRequest(request.modelType(), request.modelId(), request.prompt(), request.conversationId(), normalizedMode(request), inputs, options);
     }
 
@@ -306,6 +296,7 @@ public class MediaGenerationService {
     /** 固定相对路径并禁止重定向，用户只能传递生成参数，不能更改凭据发送目的地。 */
     private JsonNode invoke(LlmManagementService.WorkerCandidate candidate, GenerateRequest request, String remoteId) {
         String type = request.modelType();
+        MediaGenerationAgentStrategy strategy = agentRegistry.resolve(candidate.providerCode(), candidate.model(), profile(candidate));
         var factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER).build());
         factory.setReadTimeout(Duration.ofSeconds(Math.min(300, Math.max(1, candidate.timeoutSeconds() == null ? 60 : candidate.timeoutSeconds()))));
@@ -313,20 +304,16 @@ public class MediaGenerationService {
         String base = candidate.baseUrl().replaceAll("/+$", "");
         String key = candidate.apiKeys().get(0);
         if (remoteId != null) {
-            String statusPath = com.baseai.platform.modeltype.ArkMediaProtocol.supports(profile(candidate))
-                ? "/contents/generations/tasks/" + remoteId : modelTypeRegistry.generationStatusPath(type, remoteId);
+            String statusPath = strategy.statusPath(type, candidate.model(), remoteId);
             if (statusPath == null) throw new BusinessException("llm.modelTypeUnsupported");
-            String operationPath = com.baseai.platform.modeltype.ArkMediaProtocol.supports(profile(candidate)) && "video_model".equals(type)
-                ? "/contents/generations/tasks" : modelTypeRegistry.generationPath(type);
+            String operationPath = strategy.operationPath(type, candidate.model());
             return client.get().uri(endpointUri(base, statusPath, operationPath))
                 .headers(headers -> headers.setBearerAuth(key)).retrieve().body(JsonNode.class);
         }
-        String path = com.baseai.platform.modeltype.ArkMediaProtocol.supports(profile(candidate)) && "video_model".equals(type)
-            ? "/contents/generations/tasks" : modelTypeRegistry.generationPath(type);
+        String path = strategy.generationPath(type, candidate.model());
         if (path == null) throw new BusinessException("llm.modelTypeUnsupported");
-        Map<String, Object> body = ArkMediaProtocol.supports(profile(candidate))
-            ? ArkMediaProtocol.request(type, candidate.model(), profile(candidate), request.prompt(), inputPayload(request.inputs()), request.options())
-            : protocolRegistry.request(type, candidate.model(), request.prompt(), normalizedMode(request), inputPayload(request.inputs()), request.options());
+        Map<String, Object> body = strategy.request(type, candidate.model(), profile(candidate), request.prompt(),
+            inputPayload(request.inputs()), request.options());
         if (body.isEmpty()) throw new BusinessException("llm.modelTypeUnsupported");
         // 提交接口同样支持管理员填写完整生成地址，避免再次追加协议路径导致供应商请求超时。
         return client.post().uri(endpointUri(base, path, path))
@@ -672,6 +659,8 @@ public class MediaGenerationService {
     /** 按供应商画像选择输入上限，通用适配器继续保持历史边界。 */
     private void validate(GenerateRequest request, LlmManagementService.WorkerCandidate candidate) {
         String requestedType = request == null ? "" : request.modelType();
+        MediaGenerationAgentStrategy strategy = candidate == null ? null
+            : agentRegistry.resolve(candidate.providerCode(), candidate.model(), profile(candidate));
         boolean generationType = modelTypeRegistry.supports(requestedType, LlmOperation.IMAGE_GENERATION)
             || modelTypeRegistry.supports(requestedType, LlmOperation.VIDEO_GENERATION);
         String mode = request == null ? "" : normalizedMode(request);
@@ -681,8 +670,8 @@ public class MediaGenerationService {
             || request.modelId() == null || request.modelId() <= 0
             || ((prompt == null || prompt.isBlank()) && !hasInputs) || prompt != null && prompt.length() > 100000
             || request.conversationId() != null && request.conversationId() <= 0) throw new BusinessException("llm.generationRequestInvalid");
-        if (!validMode(request.modelType(), mode)) throw new BusinessException("llm.generationRequestInvalid");
-        validateInputs(request.inputs(), candidate != null && com.baseai.platform.modeltype.ArkMediaProtocol.supports(profile(candidate)));
+        if (!validMode(request.modelType(), mode, candidate)) throw new BusinessException("llm.generationRequestInvalid");
+        validateInputs(request.inputs(), strategy != null && strategy.supportsRemoteInputs());
         Map<String, Object> options = request.options() == null ? Map.of() : request.options();
         Set<String> allowed = Set.of("size", "quality", "style", "n", "response_format", "sequential_image_generation",
             "sequential_image_generation_options", "stream", "tools", "background", "output_format", "watermark", "seed",
@@ -694,7 +683,7 @@ public class MediaGenerationService {
         for (String field : List.of("n", "duration", "fps")) if (options.containsKey(field)) {
             JsonNode number = mapper.valueToTree(options.get(field));
             int max = field.equals("n") ? 15 : field.equals("duration") ? 60 : 240;
-            if (!number.isIntegralNumber() || !number.canConvertToInt() || (number.intValue() < 1 && !(candidate != null && ArkMediaProtocol.supports(profile(candidate)) && field.equals("duration") && number.intValue() == -1)) || number.intValue() > max)
+            if (!number.isIntegralNumber() || !number.canConvertToInt() || (number.intValue() < 1 && !(strategy != null && strategy.allowsSpecialDuration() && field.equals("duration") && number.intValue() == -1)) || number.intValue() > max)
                 throw new BusinessException("llm.generationRequestInvalid");
         }
     }
@@ -706,17 +695,16 @@ public class MediaGenerationService {
     }
 
     /** 接受新的多模态模式，并兼容历史图片或视频生成模式。 */
-    private boolean validMode(String modelType, String mode) {
+    private boolean validMode(String modelType, String mode, LlmManagementService.WorkerCandidate candidate) {
         if ("MULTIMODAL".equals(mode)) return true;
         if ("image_model".equals(modelType)) return Set.of("TEXT_TO_IMAGE", "IMAGE_TO_IMAGE", "IMAGE_TEXT_TO_IMAGE",
             "MULTI_IMAGE_FUSION", "TEXT_TO_GROUP", "IMAGE_TO_GROUP", "MULTI_IMAGE_TO_GROUP",
             "LAYER_DECOMPOSITION", "INTERACTIVE_EDIT", "TRANSPARENT_IMAGE").contains(mode);
         if (!"video_model".equals(modelType)) return false;
-        return Set.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO").contains(mode)
-            || com.baseai.platform.modeltype.ArkGenerationCapabilities.PROFILES.stream()
-                .map(ArkMediaProtocol::capabilities)
-                .filter(capabilities -> "video_model".equals(capabilities.get("type")))
-                .anyMatch(capabilities -> ((List<?>) capabilities.get("modes")).contains(mode));
+        if (Set.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO", "VIDEO_TO_VIDEO").contains(mode)) return true;
+        if (candidate == null) return false;
+        return agentRegistry.resolve(candidate.providerCode(), candidate.model(), profile(candidate))
+            .supportsMode(modelType, candidate.model(), profile(candidate), mode);
     }
 
     /** 校验文本、图片和视频输入的数量、Data URL 格式和解码后大小，拒绝远程 URL 造成的 SSRF。 */

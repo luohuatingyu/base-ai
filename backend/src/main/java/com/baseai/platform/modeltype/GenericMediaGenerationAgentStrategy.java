@@ -44,4 +44,9 @@ public final class GenericMediaGenerationAgentStrategy implements MediaGeneratio
             "label", model, "modes", "video_model".equals(modelType)
                 ? List.of("TEXT_TO_VIDEO", "IMAGE_TO_VIDEO") : List.of("TEXT_TO_IMAGE", "IMAGE_TO_IMAGE"));
     }
+
+    /** 通用协议没有供应商专用选项清理逻辑。 */
+    @Override public boolean supportsMode(String modelType, String model, String profile, String mode) {
+        return "MULTIMODAL".equals(mode) || MediaGenerationAgentStrategy.super.supportsMode(modelType, model, profile, mode);
+    }
 }

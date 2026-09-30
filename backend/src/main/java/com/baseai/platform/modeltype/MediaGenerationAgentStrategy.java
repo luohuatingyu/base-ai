@@ -27,6 +27,22 @@ public interface MediaGenerationAgentStrategy {
     /** 返回供前端渲染的能力目录。 */
     Map<String, Object> capabilities(String modelType, String model, String profile);
 
+    /** 规范化供应商专用选项；默认保留平台已校验的选项。 */
+    default Map<String, Object> normalizeOptions(String modelType, String model, String profile, String mode,
+                                                  String prompt, List<Map<String, Object>> inputs,
+                                                  Map<String, Object> options) {
+        return options == null ? Map.of() : options;
+    }
+
+    /** 判断模型画像是否声明了指定生成模式。 */
+    default boolean supportsMode(String modelType, String model, String profile, String mode) {
+        Object modes = capabilities(modelType, model, profile).get("modes");
+        return modes instanceof List<?> values && values.contains(mode);
+    }
+
+    /** 判断策略是否允许使用 Ark 的特殊负数时长。 */
+    default boolean allowsSpecialDuration() { return false; }
+
     /** 返回该策略是否允许直接把远程素材地址交给供应商。 */
     default boolean supportsRemoteInputs() { return false; }
 }

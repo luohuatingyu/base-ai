@@ -35,6 +35,23 @@ public final class ArkMediaGenerationAgentStrategy implements MediaGenerationAge
         return ArkMediaProtocol.request(modelType, model, profile, prompt, inputs, options);
     }
 
+    /** 使用方舟能力档案清理和校验模式专用选项。 */
+    @Override public Map<String, Object> normalizeOptions(String modelType, String model, String profile, String mode,
+                                                          String prompt, List<Map<String, Object>> inputs,
+                                                          Map<String, Object> options) {
+        String effective = profile == null || profile.isBlank() ? model : profile;
+        return ArkGenerationCapabilities.options(effective, modelType, mode, prompt, inputs, options);
+    }
+
+    /** 方舟扩展能力档案包含标准目录之外的生成模式。 */
+    @Override public boolean supportsMode(String modelType, String model, String profile, String mode) {
+        Object modes = capabilities(modelType, model, profile).get("modes");
+        return modes instanceof List<?> values && values.contains(mode);
+    }
+
+    /** 方舟样片能力使用 -1 表示沿用默认时长。 */
+    @Override public boolean allowsSpecialDuration() { return true; }
+
     /** 返回方舟模型的细粒度能力目录。 */
     @Override public Map<String, Object> capabilities(String modelType, String model, String profile) {
         Map<String, Object> detected = ArkMediaProtocol.capabilities(profile == null || profile.isBlank() ? model : profile);

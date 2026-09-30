@@ -7,6 +7,7 @@ import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.domain.*;
 import com.baseai.platform.modeltype.LlmModelTypeRegistry;
 import com.baseai.platform.modeltype.LlmOperation;
+import com.baseai.platform.modeltype.MediaGenerationAgentRegistry;
 import com.baseai.platform.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.http.MediaType;
@@ -625,11 +626,13 @@ public class LlmManagementService {
             throw new BusinessException("llm.modelTypeCombinationInvalid");
         model.setSupportedModelTypes(requestedTypes);
         String profile = command.generationProfile() == null ? model.getGenerationProfile() : command.generationProfile().trim();
-        // 组合媒体模型可以复用单一方舟 profile；实际生成时仍按请求类型再次校验 profile 能力。
-        String profileType = profile == null || profile.isBlank() ? "" : String.valueOf(com.baseai.platform.modeltype.ArkMediaProtocol.capabilities(profile).get("type"));
-        if (profile != null && !profile.isBlank() && (!com.baseai.platform.modeltype.ArkMediaProtocol.profiles().contains(profile)
-            || !requestedTypes.contains(profileType)))
-            throw new BusinessException("llm.generationRequestInvalid");
+        // 组合媒体模型可以复用同一供应商画像；实际生成时仍按策略再次校验输出类型。
+        if (profile != null && !profile.isBlank()) {
+            boolean known = MediaGenerationAgentRegistry.knownProfile(profile, requestedTypes.toString());
+            boolean ark = com.baseai.platform.modeltype.ArkMediaProtocol.profiles().contains(profile);
+            String profileType = ark ? String.valueOf(com.baseai.platform.modeltype.ArkMediaProtocol.capabilities(profile).get("type")) : "";
+            if (!known || ark && !requestedTypes.contains(profileType)) throw new BusinessException("llm.generationRequestInvalid");
+        }
         model.setGenerationProfile(profile == null ? "" : profile);
         model.setCapabilityLevel(blank(command.capabilityLevel())?"MIDDLE":command.capabilityLevel().toUpperCase(Locale.ROOT)); // 默认MIDDLE能力级别
         model.setThinkingLevels(normalizeThinkingLevels(command.thinkingLevels()));
