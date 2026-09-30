@@ -1,3 +1,34 @@
+## master 合并 emdash/codex-vlzfy 验证（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `5588d56`
+- 提交说明：Merge emdash/codex-vlzfy into master；分支 `master`；测试日期 2026-09-30（Asia/Shanghai）。
+- 本地 master 已合并当前 `emdash/codex-vlzfy` 尖端；冲突仅发生在 `TEST_REPORT.md`，双方测试历史均保留；未执行 push。
+- 合并包含媒体生成策略、素材存储、套餐目录迁移、AI 生成工作台及相关后端、前端和测试变更。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 合并后的后端业务代码无回归 | Docker Maven 完整 `mvn -B -ntp test` | 正常、边界、异常、权限安全、兼容、回归 | 1159/1159 通过 |
+| 合并后的前端行为和构建无回归 | `npm test`：Lint、类型检查、覆盖、生产构建、E2E、浏览器 | 正常、响应式、异常、权限、回归 | 覆盖 705/705、E2E 3/3、浏览器 18/18 通过 |
+| Python Worker 协议无回归 | Python 3.12 容器执行 `pytest -q tests` | 正常、异常、兼容、回归 | 90/90 通过 |
+
+### 实际测试命令与结果
+
+- `docker compose up --build -d`：未进入构建，Compose 插值阶段因缺少必需变量 `APP_PLATFORM_SHORT_NAME` 失败；不是端口占用。
+- `docker run --rm -v "$PWD/backend:/workspace" -v base-ai-maven-cache:/root/.m2 -w /workspace maven:3.9.9-eclipse-temurin-17 mvn -B -ntp test`：1159/1159 通过，失败 0、错误 0、跳过 0。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 705/705 通过，生产构建通过，E2E 3/3 通过，浏览器 18/18 通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%。
+- `docker run --rm -v "$PWD/python-worker:/workspace" -w /workspace python:3.12-slim sh -c 'pip install --disable-pip-version-check -q -r requirements-dev.in && python -m pytest -q tests'`：90/90 通过。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖合并涉及的后端媒体生成/素材/策略/迁移逻辑、前端 AI 生成与聊天交互、Python Worker 协议，以及安全和兼容回归。
+- Compose 尚未完成镜像构建和整栈健康检查；补齐 `APP_PLATFORM_SHORT_NAME` 及其他部署环境变量后，应重新执行 `docker compose up --build -d` 并检查服务健康状态。
+- 后续修改后端业务代码、核心配置、媒体协议或前端生成/聊天流程时，应重新执行对应完整套件并更新本报告基准点。
+
 ## 套餐目录排序调整（2026-09-30）
 
 ### Git 基准、范围与交付状态
