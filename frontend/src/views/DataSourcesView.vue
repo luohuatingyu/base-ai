@@ -62,8 +62,6 @@
             <el-button v-if="auth.hasPermission('operations:data-source:test')" link type="info" @click="openStatus(row)">
               {{ t('dataSources.statusTitle') }}
             </el-button>
-            <el-button v-if="row.connectionType === 'PLUGIN' && auth.hasPermission('operations:data-source:update')"
-                       link type="warning" @click="oauth(row)">{{ t('dataSources.oauth') }}</el-button>
             <el-button v-if="auth.hasPermission('operations:data-source:update')" link type="primary" @click="open(row)">
               {{ t('common.edit') }}</el-button>
             <el-button v-if="auth.hasPermission('operations:data-source:delete')" link type="danger" @click="remove(row)">
@@ -167,15 +165,6 @@
                 </div>
               </section>
 
-              <section v-if="form.connectionType === 'PLUGIN'" class="connection-form-card" :class="{ 'has-error': pluginComponentError }">
-                <div class="connection-form-card-head"><span class="connection-form-card-kicker">02</span><div><h3>{{ t('workflowConnections.pluginComponent') }}</h3><p>{{ t('workflowConnections.pluginComponentHelp') }}</p></div></div>
-                <el-select :model-value="form.config.pluginComponentId" class="full" filterable :placeholder="t('workflowConnections.pluginComponentPlaceholder')"
-                           @change="touchPluginComponent" @update:model-value="selectPluginComponent">
-                  <el-option v-for="component in pluginComponents" :key="component.id" :value="component.id" :label="pluginComponentLabel(component)" />
-                </el-select>
-                <small v-if="pluginComponentError" class="connection-inline-error">{{ pluginComponentError }}</small>
-              </section>
-
               <template v-for="section in configFormSections" :key="section.key">
                 <section v-if="section.kind === 'GROUP'" class="connection-form-card" :class="{ 'connection-form-card--advanced': section.advanced }">
                   <div class="connection-form-card-head"><span class="connection-form-card-kicker">{{ configGroupMarker(section.key) }}</span><div><h3>{{ configGroupLabel(section.key) }}</h3><p>{{ configGroupDescription(section.key) }}</p></div></div>
@@ -254,17 +243,16 @@ import DataSourceTypeIcon from '../components/DataSourceTypeIcon.vue'
 import WorkflowConfigValueEditor from '../components/WorkflowConfigValueEditor.vue'
 import { useAuthStore } from '../stores/auth'
 import { CONFIG_VALUE_TYPES, createConfigValue, isSafeConfigKey } from '../utils/workflowNodeConfig'
-import { localizedMetadataOptionText, localizedMetadataText, metadataOptionValue } from '../utils/workflowTemplateCatalog'
+import { metadataOptionValue } from '../utils/workflowTemplateCatalog'
 import { cloneConnectionConfig, CONNECTION_CATEGORIES, CONNECTION_CONFIG_GROUPS, CONNECTION_TYPES, connectionCategoriesForType,
   connectionCategoryStyle, connectionConfigFields, connectionTypesForCategory, connectionTypeStyle,
   createConnectionConfig, extraConnectionConfigKeys, hasAdvancedConnectionConfig, hasMeaningfulConnectionConfig,
   isConnectionConfigFieldRequired, isConnectionConfigValueEmpty, missingConnectionConfigFields,
   saveConnectionWithOptionalTest } from '../utils/workflowConnectionConfig'
 
-const { t, te, locale } = useI18n()
+const { t, te } = useI18n()
 const auth = useAuthStore()
 const rows = ref([]), visible = ref(false)
-const pluginComponents = ref([])
 const connectionCategories = CONNECTION_CATEGORIES
 const connectionTypes = CONNECTION_TYPES
 const form = reactive(emptyForm())
@@ -275,16 +263,14 @@ const statusVisible = ref(false), statusLoading = ref(false), statusRow = ref(nu
 const editorStep = ref('TYPE'), selectionCategory = ref(CONNECTION_CATEGORIES[0].key), selectionType = ref('')
 const advancedOpen = ref(false), focusedFieldKey = ref(''), validationAttempted = ref(false), saving = ref(false)
 const touchedFields = reactive(new Set()), touchedIdentityFields = reactive(new Set())
-const touchedPluginComponent = ref(false), saveTestState = ref(null)
+const saveTestState = ref(null)
 const AUTO_DETECT_KEY = 'dataSources.autoDetect', AUTO_DETECT_INTERVAL_KEY = 'dataSources.autoDetectInterval'
 const AUTO_DETECT_INTERVALS = [30, 60, 120]
 /** 自动检测默认关闭，用户可切换为按固定间隔轮询。 */
 const autoDetect = ref(localStorage.getItem(AUTO_DETECT_KEY) === 'true')
 const autoDetectInterval = ref(Number(localStorage.getItem(AUTO_DETECT_INTERVAL_KEY)) || 30)
 let autoDetectTimer = null
-const selectedPluginComponent = computed(() => pluginComponents.value.find(item => item.id === Number(form.config.pluginComponentId)))
-const configFields = computed(() => form.connectionType === 'PLUGIN' ? pluginCredentialFields(selectedPluginComponent.value)
-  : connectionConfigFields(form.connectionType))
+const configFields = computed(() => connectionConfigFields(form.connectionType))
 /** 按固定语义顺序整理参数字段，空分组不占据表单空间。 */
 const configFieldGroups = computed(() => CONNECTION_CONFIG_GROUPS.map(key => ({
   key, fields: configFields.value.filter(field => (field.group || 'AUTH') === key)
@@ -298,13 +284,12 @@ const configFormSections = computed(() => {
 const customKeys = computed(() => extraConnectionConfigKeys(form.config, form.connectionType))
 const availableConnectionTypes = computed(() => connectionTypesForCategory(selectionCategory.value))
 const focusedField = computed(() => configFields.value.find(field => field.key === focusedFieldKey.value) || null)
-/** 汇总基础信息、插件组件和参数字段，驱动右侧填写清单。 */
+/** 汇总基础信息和参数字段，驱动右侧填写清单。 */
 const assistantChecklist = computed(() => {
   const items = [
     { key: 'identity:code', label: t('common.code'), required: true, completed: validConnectionCode(form.code) },
     { key: 'identity:name', label: t('common.name'), required: true, completed: Boolean(form.name.trim()) }
   ]
-  if (form.connectionType === 'PLUGIN') items.push({ key: 'plugin:component', label: t('workflowConnections.pluginComponent'), required: true, completed: Boolean(selectedPluginComponent.value) })
   return items.concat(configFields.value.map(field => ({
     key: `config:${field.key}`, label: fieldLabel(field.key), required: fieldRequired(field), completed: configFieldConfigured(field)
   })))
@@ -316,8 +301,6 @@ const requiredProgress = computed(() => {
   return { completed, total: requiredItems.length, percentage: requiredItems.length ? Math.round(completed / requiredItems.length * 100) : 100 }
 })
 const advancedConfiguredCount = computed(() => configFields.value.filter(field => ['SCOPE', 'BEHAVIOR'].includes(field.group) && configFieldConfigured(field)).length + customKeys.value.length)
-const pluginComponentError = computed(() => form.connectionType === 'PLUGIN' && !selectedPluginComponent.value
-  && (validationAttempted.value || touchedPluginComponent.value) ? t('workflowConnections.fieldRequiredInline') : '')
 const saveActionLabel = computed(() => auth.hasPermission('operations:data-source:test') ? t('workflowConnections.saveAndTest') : t('common.save'))
 /** 按首选分类分组并保持分类定义顺序，空分类不展示。 */
 const groupedRows = computed(() => CONNECTION_CATEGORIES.map(category => ({
@@ -338,10 +321,8 @@ const isVectorType = computed(() => statusData.value?.vectorSupported !== undefi
 
 /** 加载当前用户可见的脱敏连接。 */
 async function load() {
-  const [connections, components] = await Promise.all([
-    http.get('/data-sources'), http.get('/data-sources/plugin-component-options')
-  ])
-  rows.value = connections.data || []; pluginComponents.value = components.data || []
+  const { data } = await http.get('/data-sources')
+  rows.value = data || []
 }
 /** 打开连接编辑器并保留服务端脱敏占位符。 */
 function open(row) {
@@ -396,7 +377,7 @@ async function applyTypeSelection() {
 }
 /** 切换类型时使用安全默认配置。 */
 function resetConfig(type) {
-  form.config = type === 'PLUGIN' ? { pluginComponentId: null, credentials: {} } : createConnectionConfig(type)
+  form.config = createConnectionConfig(type)
   advancedOpen.value = false; clearDrafts()
 }
 /** 创建或更新结构化连接配置；有权限时在持久化成功后继续检测。 */
@@ -480,25 +461,6 @@ watch([autoDetect, autoDetectInterval], () => {
   if (autoDetect.value) autoDetectTimer = setInterval(() => { if (!document.hidden) testAll() }, autoDetectInterval.value * 1000)
 })
 onBeforeUnmount(() => clearInterval(autoDetectTimer))
-/** 启动插件提供的 OAuth 生命周期并跳转到经过后端校验的授权地址。 */
-async function oauth(row) {
-  try {
-    const redirectUri = `${window.location.origin}${window.location.pathname}`
-    const { data } = await http.post(`/data-sources/${row.id}/oauth/authorize`, { redirectUri })
-    window.location.assign(data.authorizationUrl)
-  } catch (error) { showHttpError(error, 'dataSources.oauthFailed') }
-}
-/** 在连接页面消费授权方回传的一次性 code/state，并清理浏览器地址。 */
-async function completeOAuthCallback() {
-  const query = new URLSearchParams(window.location.search)
-  const code = query.get('code'), state = query.get('state')
-  if (!code || !state) return
-  try {
-    await http.post('/data-sources/plugin-oauth/callback', { code, state })
-    ElMessage.success(t('dataSources.oauthConnected'))
-  } catch (error) { showHttpError(error, 'dataSources.oauthFailed') }
-  finally { window.history.replaceState({}, '', window.location.pathname) }
-}
 /** 将向量能力状态映射为稳定标签颜色。 */
 function vectorStatusType(status) { return status === 'SUPPORTED' ? 'success' : status === 'UNSUPPORTED' ? 'danger' : 'info' }
 /** 返回连接类型的首选分类，兼容没有分类字段的历史连接。 */
@@ -506,9 +468,9 @@ function preferredCategory(connectionType) { return connectionCategoriesForType(
 /** 返回本地化分类名称。 */
 function categoryLabel(category) { return t(`workflowConnections.categories.${category || 'OTHER'}`) }
 /** 返回本地化连接类型名称。 */
-function typeLabel(type) { return t(`workflowConnections.types.${type || 'PLUGIN'}`) }
+function typeLabel(type) { return t(`workflowConnections.types.${type || 'OTHER'}`) }
 /** 返回当前连接类型的用途和关键配置提示。 */
-function connectionTypeGuide(type) { return t(`workflowConnections.typeGuides.${type || 'PLUGIN'}`) }
+function connectionTypeGuide(type) { return t(`workflowConnections.typeGuides.${type || 'OTHER'}`) }
 /** 返回参数分组标题。 */
 function configGroupLabel(group) { return t(`workflowConnections.configGroups.${group}.label`) }
 /** 返回参数分组说明。 */
@@ -535,9 +497,9 @@ function fieldDescription(key) {
 function fieldPlaceholder(field) {
   return field.placeholder || t('workflowConnections.fieldPlaceholder', { field: fieldLabel(field.key) })
 }
-/** 判断标准字段或插件动态字段在当前状态下是否必填。 */
+/** 判断标准字段在当前状态下是否必填。 */
 function fieldRequired(field) {
-  return form.connectionType === 'PLUGIN' ? Boolean(field.required) : isConnectionConfigFieldRequired(field, form.config)
+  return isConnectionConfigFieldRequired(field, form.config)
 }
 /** 返回必填、条件必填或选填标识。 */
 function fieldRequirementLabel(field) {
@@ -547,8 +509,8 @@ function fieldRequirementLabel(field) {
 /** 汇总类型卡片上的参数总数和固定必填数。 */
 function connectionTypeFieldSummary(type) {
   const fields = connectionConfigFields(type)
-  const required = fields.filter(field => field.required).length + (type === 'PLUGIN' ? 1 : 0)
-  return t('workflowConnections.parameterSummary', { count: fields.length + (type === 'PLUGIN' ? 1 : 0), required })
+  const required = fields.filter(field => field.required).length
+  return t('workflowConnections.parameterSummary', { count: fields.length, required })
 }
 /** 返回核心分组和高级分组的稳定视觉编号。 */
 function configGroupMarker(group) { return { CONNECTION: '02', AUTH: '03', SCOPE: 'A1', BEHAVIOR: 'A2' }[group] || '•' }
@@ -581,8 +543,6 @@ function configFieldError(field) {
 function focusConfigField(field) { focusedFieldKey.value = field.key }
 /** 记录参数字段已被操作。 */
 function touchConfigField(key) { touchedFields.add(key) }
-/** 记录插件组件已被选择或离开。 */
-function touchPluginComponent() { touchedPluginComponent.value = true }
 /** 根据编辑器类型生成可复制理解的配置示例。 */
 function fieldExample(field) {
   if (field.editor === 'boolean') return t('workflowConnections.booleanExample')
@@ -590,17 +550,14 @@ function fieldExample(field) {
   if (field.editor === 'select') return field.options.map(connectionOptionLabel).join(' / ')
   return fieldPlaceholder(field)
 }
-/** 保存前统一执行基础、插件和条件参数校验，并定位首个缺失参数。 */
+/** 保存前统一执行基础和条件参数校验，并定位首个缺失参数。 */
 function validateEditor() {
   validationAttempted.value = true; normalizeCode()
-  if (!form.code || !form.name.trim() || !form.connectionCategory || !form.connectionType
-    || form.connectionType === 'PLUGIN' && !selectedPluginComponent.value) {
+  if (!form.code || !form.name.trim() || !form.connectionCategory || !form.connectionType) {
     ElMessage.warning(t('workflowConnections.required')); return false
   }
   if (!validConnectionCode(form.code)) { ElMessage.warning(t('workflowConnections.codeInvalid')); return false }
-  const missingFields = form.connectionType === 'PLUGIN'
-    ? configFields.value.filter(field => field.required && isConnectionConfigValueEmpty(configFieldValue(field.key))).map(field => field.key)
-    : missingConnectionConfigFields(form.connectionType, form.config)
+  const missingFields = missingConnectionConfigFields(form.connectionType, form.config)
   if (!missingFields.length) return true
   const firstMissingField = configFields.value.find(field => field.key === missingFields[0])
   if (firstMissingField && ['SCOPE', 'BEHAVIOR'].includes(firstMissingField.group)) advancedOpen.value = true
@@ -610,44 +567,19 @@ function validateEditor() {
 }
 /** 清理上一次打开或切换类型产生的校验状态。 */
 function clearValidation() {
-  validationAttempted.value = false; touchedFields.clear(); touchedIdentityFields.clear(); touchedPluginComponent.value = false
+  validationAttempted.value = false; touchedFields.clear(); touchedIdentityFields.clear()
 }
 /** 返回内置枚举选项的可读名称，空值统一展示为不设置。 */
 function connectionOptionLabel(option) {
-  if (form.connectionType === 'PLUGIN') return pluginOptionLabel(option)
   const value = metadataOptionValue(option)
   return value === '' ? t('workflowConnections.notSet') : value
 }
 /** 更新一个标准或自定义配置字段。 */
 function setConfigField(key, value) {
-  form.config = form.connectionType === 'PLUGIN'
-    ? { ...form.config, credentials: { ...(form.config.credentials || {}), [key]: value } }
-    : { ...form.config, [key]: value }
+  form.config = { ...form.config, [key]: value }
 }
-/** 返回普通连接字段或插件嵌套凭据值。 */
-function configFieldValue(key) { return form.connectionType === 'PLUGIN' ? form.config.credentials?.[key] : form.config[key] }
-/** 选择插件组件并按凭据 Schema 重置非敏感默认值。 */
-function selectPluginComponent(id) {
-  const component = pluginComponents.value.find(item => item.id === Number(id))
-  const credentials = Object.fromEntries((component?.credentialSchema || []).filter(item => item.default !== null && item.default !== undefined)
-    .map(item => [item.name, item.default]))
-  form.config = { pluginComponentId: Number(id), credentials }
-}
-/** 把插件凭据 Schema 转换为受控连接字段。 */
-function pluginCredentialFields(component) {
-  return (component?.credentialSchema || []).filter(item => String(item.type || '').toLowerCase() !== 'hidden')
-    .map(item => ({ key: item.name, label: localizedMetadataText(item, 'label', locale.value, item.label || item.name), required: Boolean(item.required),
-    description: localizedMetadataText(item, 'description', locale.value, item.description), editor: item.secret ? 'password' : item.type === 'boolean' ? 'boolean'
-      : ['select', 'options'].includes(String(item.type || '').toLowerCase()) ? 'select' : 'text',
-    options: Array.isArray(item.options) ? item.options : [], group: 'AUTH', wide: true }))
-}
-/** 返回插件凭据枚举项的当前语言名称，同时保持提交值不变。 */
-function pluginOptionLabel(option) {
-  const value = metadataOptionValue(option)
-  return value === '' ? t('workflowConnections.notSet') : localizedMetadataOptionText(option, locale.value, value)
-}
-/** 生成包含来源、包和版本的插件组件标签。 */
-function pluginComponentLabel(component) { return `${localizedMetadataText(component, 'name', locale.value, component.name)} · ${component.source}/${component.packageKey}@${component.packageVersion}` }
+/** 返回普通连接字段值。 */
+function configFieldValue(key) { return form.config[key] }
 /** 保存前将编码规范为后端接受的大写格式。 */
 function normalizeCode() { form.code = form.code.trim().toUpperCase() }
 /** 返回对象型配置的键值列表。 */
@@ -676,7 +608,7 @@ function removeCustomField(key) { const next = { ...form.config }; delete next[k
 function clearDrafts() { mapDraft.key = ''; mapDraft.value = ''; mapError.value = ''; customKey.value = ''; customType.value = 'string'; customError.value = '' }
 /** 创建空连接表单。 */
 function emptyForm() { return { id: null, code: '', name: '', connectionCategory: '', connectionType: '', config: {}, enabled: true } }
-onMounted(async () => { await completeOAuthCallback(); await load() })
+onMounted(load)
 </script>
 
 <style scoped>

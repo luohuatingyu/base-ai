@@ -1,4 +1,4 @@
-export const WORKFLOW_TEMPLATE_SOURCES = ['SYSTEM', 'N8N', 'DIFY']
+export const WORKFLOW_TEMPLATE_SOURCES = ['SYSTEM']
 
 export const WORKFLOW_TEMPLATE_CATEGORIES = [
   'BASIC', 'AI', 'FLOW_CONTROL', 'DATA_TRANSFORM', 'TEXT_DOCUMENT',
@@ -65,7 +65,7 @@ export function metadataOptionValue(option) {
   return option && typeof option === 'object' && !Array.isArray(option) ? option.value : option
 }
 
-/** 返回动态枚举项的当前语言名称，兼容 Dify 与 n8n 的声明格式。 */
+/** 返回动态枚举项的当前语言名称。 */
 export function localizedMetadataOptionText(option, locale, fallback = '') {
   if (!option || typeof option !== 'object' || Array.isArray(option)) return String(option ?? fallback ?? '')
   const rawLabel = option.label
@@ -136,29 +136,6 @@ export function localizedTemplateText(template, field, translate, hasTranslation
   if (!localized) return original
   const declared = new Set(SUPPORTED_LOCALES.map(locale => localizedMetadataText(template, field, locale, '')))
   return declared.has(original) ? localized : original
-}
-
-/** 返回市场条目的可信说明，n8n 官方缺失说明时仅回退到已验证的原生能力文案。 */
-export function marketplaceItemDescription(item, source, translate, hasTranslation) {
-  const officialDescription = String(item?.description || '').trim()
-  if (officialDescription) return officialDescription
-  const normalizedSource = String(source || '').toUpperCase()
-  const nodeType = String(item?.targetNodeType || '').toUpperCase()
-  const nativeDescriptionKey = `workflowCatalog.templates.${nodeType}.description`
-  if (normalizedSource === 'N8N' && item?.compatible && nodeType && hasTranslation(nativeDescriptionKey)) {
-    return translate(nativeDescriptionKey)
-  }
-  const fallbackKey = normalizedSource === 'N8N'
-    ? 'workflowNodes.n8nDescriptionUnavailable' : 'workflowNodes.noDescription'
-  return translate(fallbackKey)
-}
-
-/** 将市场适配器的技术节点类型转换为当前语言的原生能力名称。 */
-export function marketplaceNodeTypeLabel(item, translate, hasTranslation) {
-  const nodeType = String(item?.targetNodeType || '').toUpperCase()
-  if (!nodeType) return ''
-  const key = `workflowCatalog.templates.${nodeType}.name`
-  return hasTranslation(key) ? translate(key) : nodeType
 }
 
 /** 按固定功能顺序对模板分组，并可按需保留停用模板。 */

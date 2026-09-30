@@ -425,9 +425,6 @@ public class DataInitializer implements ApplicationRunner {
             "automation:workflow:node:update", 212, false);
         menu(node.getId(), "删除节点模板", "BUTTON", null, null, null,
             "automation:workflow:node:delete", 213, false);
-            "automation:workflow:node:import", 214, false);
-            "automation:workflow:adapter:manage", 215, false);
-            "automation:workflow:plugin:admission", 216, false);
         Menu canvas = menu(workflow.getId(), "画布管理", "MENU", "/workflow/canvases", "WorkflowCanvasView", "Connection",
             "automation:workflow:canvas:list", 23, true);
         menu(canvas.getId(), "新增工作流", "BUTTON", null, null, null,

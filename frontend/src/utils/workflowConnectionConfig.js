@@ -78,7 +78,6 @@ export const CONNECTION_CONFIG_FIELDS = {
     field('password', 'password', '', { group: 'AUTH' }),
     field('apiKey', 'password', '', { group: 'AUTH' })
   ],
-  PLUGIN: []
 }
 
 export const CONNECTION_CONFIG_GROUPS = ['CONNECTION', 'AUTH', 'SCOPE', 'BEHAVIOR']
@@ -98,7 +97,7 @@ export const CONNECTION_CATEGORIES = [
   { key: 'OBJECT_STORAGE', types: ['S3', 'OSS'] },
   { key: 'MESSAGE_QUEUE', types: ['KAFKA', 'RABBITMQ'] },
   { key: 'WEBHOOK', types: ['WEBHOOK'] },
-  { key: 'OTHER', types: ['TAVILY', 'PLUGIN'] }
+  { key: 'OTHER', types: ['TAVILY'] }
 ]
 
 const CONNECTION_CATEGORY_STYLE = { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#475569' }
@@ -107,7 +106,7 @@ const CONNECTION_TYPE_SURFACE = { backgroundColor: '#ffffff', borderColor: '#dbe
 const CONNECTION_TYPE_COLORS = {
   MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31', OSS: '#FF6A00',
   KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00B3FF',
-  ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
+  ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569'
 }
 
 /** 返回指定连接类型的标准字段。 */
@@ -137,11 +136,6 @@ export function isConnectionConfigValueEmpty(value) {
 /** 判断当前连接是否已填写过非默认内容，用于切换类型前保护用户输入。 */
 export function hasMeaningfulConnectionConfig(connectionType, config = {}) {
   const normalizedType = String(connectionType || '').toUpperCase()
-  if (normalizedType === 'PLUGIN') {
-    const credentials = config?.credentials && typeof config.credentials === 'object' ? config.credentials : {}
-    return Number(config?.pluginComponentId) > 0 || Object.values(credentials).some(value => !isConnectionConfigValueEmpty(value))
-      || extraConnectionConfigKeys(config, normalizedType).some(key => !isDeepEmpty(config[key]))
-  }
   const defaults = connectionConfigDefaults(normalizedType)
   return Object.entries(config || {}).some(([key, value]) => {
     if (!(key in defaults)) return !isDeepEmpty(value)
@@ -211,9 +205,6 @@ export function extraConnectionConfigKeys(config, connectionType) {
   const normalizedType = String(connectionType || '').toUpperCase()
   const standardKeys = new Set(connectionConfigFields(normalizedType).map(item => item.key))
   for (const key of LEGACY_CONNECTION_CONFIG_FIELDS[normalizedType] || []) standardKeys.add(key)
-  if (normalizedType === 'PLUGIN') {
-    standardKeys.add('pluginComponentId'); standardKeys.add('credentials')
-  }
   return Object.keys(config || {}).filter(key => !standardKeys.has(key))
 }
 

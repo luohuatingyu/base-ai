@@ -130,22 +130,17 @@ const ELASTICSEARCH = [
   { fill: '#95C63D', stroke: 'none', transform: 'scale(.09375)', d: 'M167.784 219.852c5.432 4.18 11.91 6.478 18.596 6.478 16.925 0 30.924-13.79 30.924-30.924 0-3.761-.627-7.314-1.88-10.657l-39.073-9.193-8.567 44.296z' },
   { fill: '#176655', stroke: 'none', transform: 'scale(.09375)', d: 'M175.724 165.317l43.043 10.03c17.551-5.85 29.67-22.566 29.67-40.954 0-17.97-11.074-33.849-27.79-40.326l-56.415 49.311 11.492 21.94z' }
 ]
-/** Plugin：插块。 */
-const PLUGIN = [
-  { d: 'M9 4h3v2.2a1.8 1.8 0 1 0 0 3.6V12h2.2a1.8 1.8 0 1 1 3.6 0H20v3h-2.2a1.8 1.8 0 1 0-3.6 0H12v2.2a1.8 1.8 0 1 1-3.6 0H4V12h2.2a1.8 1.8 0 1 0 0-3.6H4V5h5V4Z' }
-]
-
 /** 连接分类到语义图标的映射，分类图标不借用具体产品图标。 */
 const CATEGORY_ICONS = { DATABASE, VECTOR_DATABASE, CACHE, OBJECT_STORAGE, MESSAGE_QUEUE, WEBHOOK, OTHER }
 
-/** 连接类型到产品图标的映射，未知类型回退为通用插块。 */
+/** 连接类型到产品图标的映射，未知类型回退为通用连接图标。 */
 const TYPE_ICONS = { MYSQL, POSTGRESQL, REDIS, S3, OSS, KAFKA, RABBITMQ,
-  WEBHOOK: WEBHOOK_CONNECTION, TAVILY, QDRANT, MILVUS, ELASTICSEARCH, PLUGIN }
+  WEBHOOK: WEBHOOK_CONNECTION, TAVILY, QDRANT, MILVUS, ELASTICSEARCH }
 
 /** 分类优先使用分类语义图标，否则按具体连接类型选择产品图标。 */
 const paths = computed(() => {
   const category = String(props.category || '').toUpperCase()
   if (category) return CATEGORY_ICONS[category] || OTHER
-  return TYPE_ICONS[String(props.type || '').toUpperCase()] || PLUGIN
+  return TYPE_ICONS[String(props.type || '').toUpperCase()] || OTHER
 })
 </script>

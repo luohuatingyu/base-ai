@@ -11,7 +11,7 @@ const navigationSource = readFileSync(new URL('../src/utils/navigation.js', impo
 const globalStyles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
 
 test('数据源管理页面覆盖全部受管连接和安全占位符', () => {
-  for (const type of ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH', 'PLUGIN']) {
+  for (const type of ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH']) {
     assert.ok(CONNECTION_TYPES.includes(type), type)
   }
   assert.match(viewSource, /\/data-sources/)
