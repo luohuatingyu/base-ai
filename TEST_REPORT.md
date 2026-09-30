@@ -1,3 +1,38 @@
+## 套餐调整迁移至独立一级目录（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `c17f4b2`
+- 提交说明：Remove media generation logic from chat page；本次菜单实现提交为 `b527fab`（Move package adjustment to top-level catalog）；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 新增“套餐管理”一级目录，将“套餐调整”作为其子菜单；页面路径 `/package-adjustment` 与页面权限 `ai:package-adjustment:list` 保持不变。
+- 新增 V49 菜单迁移：为存量数据创建/修正 `package:catalog`，移动页面父级，并为已有页面权限的角色补齐目录授权；迁移可重复执行。
+- 前端新增中英文目录名称映射；未新增依赖，未改变套餐 JWT 解析、签发或页面接口行为。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 套餐调整显示在新的一级目录下 | `PackageCatalogMigrationTest` 验证页面父级为 `package:catalog`；`package-adjustment.test.mjs` 验证动态导航树为“套餐管理 → 套餐调整” | 正常、回归 | 通过 |
+| 存量菜单和角色授权兼容 | `PackageCatalogMigrationTest` 验证原页面权限/路径保留、已有角色补齐目录权限、无关角色不增加授权 | 兼容、权限安全 | 通过 |
+| 迁移可安全重试 | `PackageCatalogMigrationTest` 连续执行 V49，验证目录 ID 唯一且角色关系不重复 | 边界、异常恢复 | 通过 |
+| 中英文导航名称正确 | `package-adjustment.test.mjs` 验证“套餐管理/Package Management”和“套餐调整/Plan Adjustment”映射 | 正常、兼容 | 通过 |
+
+### 实际执行命令与结果
+
+- `node --test test/package-adjustment.test.mjs test/navigation.test.mjs`：15/15 通过。
+- `docker run --rm ... mvn -B -ntp -Dtest=PackageCatalogMigrationTest test`：迁移测试 1/1 通过。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：全部镜像构建成功；后端 Maven 完整套件 1066/1066 通过，前端生产构建成功；启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查失败退出，非端口占用。
+- `cd frontend && npm test`：Lint、类型检查、覆盖测试 684/684 通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%；生产构建通过；E2E 3/3 通过。
+- 首次单独后端构建曾报告 `MediaGenerationAgentStrategyTest` 1 个失败，随后在完整 Compose 构建中重跑为 1066/1066 通过；该失败来自并发工作区中的既有媒体生成改动，与本次菜单变更无关。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知限制与下次建议
+
+- 覆盖菜单初始化、MySQL V49 存量迁移、角色目录授权补齐、迁移幂等性、前端动态导航、路径/权限兼容和中英文文案。
+- Compose 镜像已构建并包含本次代码；Docker Socket Proxy 健康检查未恢复，因此未能完成整栈容器健康验证。修复该容器后应再次执行 `docker compose up --build -d`。
+- 当前目录名称按需求歧义采用“套餐管理”；如需改为其他业务名称，只需同步后端菜单名称和前端两种语言资源。
+- 重测条件：修改菜单权限、V49 迁移、导航树裁剪、套餐页面路径或角色授权规则时，应重新执行后端完整套件、迁移测试、前端完整套件和 Compose 重建。
+
 ## 生成历史图片布局与图层拼图（2026-09-30）
 
 ### Git 基准、范围与交付状态
