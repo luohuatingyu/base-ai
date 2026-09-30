@@ -184,118 +184,12 @@ services:
     stop_signal: SIGTERM
     stop_grace_period: 20s
     networks:
-      - app-network
-
-  # Docker API proxy exposes only the operations required by deployment-agent.
-  python-worker:
-    build:
-      context: ./python-worker
-      args:
-        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
-        PYTHON_IMAGE: python:3.12-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
-        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
-    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-python-worker
-    restart: unless-stopped
-    # 为模型供应商域名提供外部解析，避免宿主 Docker 未配置上游 DNS 时调用失败。
-    dns:
-      - 223.5.5.5
-      - 1.1.1.1
-    mem_limit: ${PYTHON_WORKER_MEMORY_LIMIT:-1g}
-    cpus: ${PYTHON_WORKER_CPU_LIMIT:-2.0}
-    pids_limit: ${PYTHON_WORKER_PIDS_LIMIT:-256}
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    environment:
-      BACKEND_URL: http://backend:8080
-      PYTHON_WORKER_INTERNAL_TOKEN: ${PYTHON_WORKER_INTERNAL_TOKEN:?Set PYTHON_WORKER_INTERNAL_TOKEN}
-      PYTHON_WORKER_INSTANCE_ID: ${PYTHON_WORKER_INSTANCE_ID:-python-worker-1}
-      APP_PLATFORM_NAME_EN: ${APP_PLATFORM_NAME_EN:-AI Platform}
-      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
-      LLM_LOG_CONTENT: ${LLM_LOG_CONTENT:-false}
-      WORKER_MAX_REQUEST_BYTES: ${WORKER_MAX_REQUEST_BYTES:-67108864}
-      LLM_RESPONSE_MAX_BYTES: ${LLM_RESPONSE_MAX_BYTES:-10485760}
-      TRACE_LOG_PERSIST_LEVEL: ${TRACE_LOG_PERSIST_LEVEL:-INFO}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    stop_signal: SIGTERM
-    stop_grace_period: 20s
-    networks:
-      - app-network
-
-  frontend:
-    build:
-      context: ./frontend
-      additional_contexts:
-        agent-src: ./device-agent
-      args:
-        APP_IMAGE_REVISION: ${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
-        NODE_IMAGE: node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
-        ALPINE_MIRROR: ${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}
-        AGENT_RUNTIME_BUNDLE: ${AGENT_RUNTIME_BUNDLE:-true}
-        AGENT_PYTHON_VERSION: ${AGENT_PYTHON_VERSION:-3.12.8}
-        AGENT_PYTHON_TAG: ${AGENT_PYTHON_TAG:-20250106}
-        AGENT_PYTHON_BASE_URL: ${AGENT_PYTHON_BASE_URL:-https://github.com/astral-sh/python-build-standalone/releases/download}
-        AGENT_NODE_VERSION: ${AGENT_NODE_VERSION:-22.22.0}
-        AGENT_NODE_BASE_URL: ${AGENT_NODE_BASE_URL:-https://nodejs.org/dist}
-        AGENT_APPIUM_SPEC: ${AGENT_APPIUM_SPEC:-appium@3.7.0}
-        AGENT_XCUITEST_SPEC: ${AGENT_XCUITEST_SPEC:-xcuitest@12.11.1}
-    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend:${APP_IMAGE_REVISION:?Set APP_IMAGE_REVISION to Git commit}
-    container_name: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-frontend
-    restart: unless-stopped
-    mem_limit: ${FRONTEND_MEMORY_LIMIT:-256m}
-    cpus: ${FRONTEND_CPU_LIMIT:-1.0}
-    pids_limit: ${FRONTEND_PIDS_LIMIT:-128}
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    logging: *default-logging
-    depends_on:
-      backend:
-        condition: service_healthy
-    environment:
-      BACKEND_URL: ${FRONTEND_BACKEND_URL:-http://backend:8080}
-      APP_PLATFORM_CODE: ${APP_PLATFORM_CODE:-ai-platform}
-      APP_PLATFORM_NAME_EN: ${APP_PLATFORM_NAME_EN:-AI Platform}
-      APP_PLATFORM_NAME_ZH: ${APP_PLATFORM_NAME_ZH:-AI平台}
-      APP_PLATFORM_SHORT_NAME: ${APP_PLATFORM_SHORT_NAME:-AI}
-      APP_DEFAULT_LOCALE: ${APP_DEFAULT_LOCALE:-en-US}
-      LLM_ROUTE_HEALTH_CHECK_ENABLED: ${LLM_ROUTE_HEALTH_CHECK_ENABLED:-true}
-      LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS: ${LLM_ROUTE_HEALTH_CHECK_INTERVAL_MS:-3600000}
-      PORT: 8080
-    ports:
-      - "${HTTP_PORT:-80}:8080"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-    networks:
-      - app-network
-
-networks:
   app-network:
     driver: bridge
     ipam:
       config:
         - subnet: ${APP_NETWORK_SUBNET:-172.30.0.0/24}
-  outbound-network:
-    driver: bridge
-    internal: true
-    driver: bridge
-    internal: true
 
 volumes:
-  adapter-control:
-  adapter-broker-control:
   bootstrap-secrets:
   document-parser-control:

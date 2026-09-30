@@ -5,7 +5,6 @@ import com.baseai.platform.workflow.WorkflowConnectionService;
 import com.baseai.platform.workflow.WorkflowConnectionTester;
 import com.baseai.platform.workflow.WorkflowModels;
 import com.baseai.platform.workflow.WorkflowNodeMarketplaceService;
-import com.baseai.platform.workflow.WorkflowPluginOAuthService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -36,19 +35,16 @@ public class DataSourceController {
     private final WorkflowConnectionService connectionService;
     private final WorkflowConnectionTester connectionTester;
     private final WorkflowNodeMarketplaceService marketplaceService;
-    private final WorkflowPluginOAuthService pluginOAuthService;
     private final ObjectStorageService objectStorageService;
 
     /** 注入受管连接、连通性测试、对象存储服务。 */
     public DataSourceController(WorkflowConnectionService connectionService,
                                 WorkflowConnectionTester connectionTester,
                                 WorkflowNodeMarketplaceService marketplaceService,
-                                WorkflowPluginOAuthService pluginOAuthService,
                                 ObjectStorageService objectStorageService) {
         this.connectionService = connectionService;
         this.connectionTester = connectionTester;
         this.marketplaceService = marketplaceService;
-        this.pluginOAuthService = pluginOAuthService;
         this.objectStorageService = objectStorageService;
     }
 
