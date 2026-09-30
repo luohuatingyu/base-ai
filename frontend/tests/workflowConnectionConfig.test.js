@@ -27,8 +27,8 @@ import {
 const viewSource = readFileSync(new URL('../src/views/DataSourcesView.vue', import.meta.url), 'utf8')
 const iconSource = readFileSync(new URL('../src/components/DataSourceTypeIcon.vue', import.meta.url), 'utf8')
 
-test('十三类连接均提供类型化标准字段和安全默认值', () => {
-  assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'OSS', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH', 'PLUGIN'])
+test('十二类连接均提供类型化标准字段和安全默认值', () => {
+  assert.deepEqual(CONNECTION_TYPES, ['MYSQL', 'POSTGRESQL', 'REDIS', 'S3', 'OSS', 'KAFKA', 'RABBITMQ', 'WEBHOOK', 'TAVILY', 'QDRANT', 'MILVUS', 'ELASTICSEARCH'])
   assert.deepEqual(connectionConfigFields('MYSQL').map(field => field.key), ['url', 'username', 'password', 'allowWrite'])
   assert.deepEqual(connectionConfigFields('REDIS').map(field => field.key), ['uri', 'keyPrefix', 'allowWrite'])
   assert.deepEqual(connectionConfigFields('S3').map(field => field.key), ['endpoint', 'region', 'bucket', 'accessKey', 'secretKey', 'keyPrefix', 'allowDelete', 'pathStyle'])
@@ -45,7 +45,6 @@ test('十三类连接均提供类型化标准字段和安全默认值', () => {
   assert.equal(connectionConfigDefaults('S3').pathStyle, true)
   assert.equal(connectionConfigDefaults('OSS').allowDelete, false)
   assert.deepEqual(connectionConfigDefaults('WEBHOOK').headers, {})
-  assert.deepEqual(connectionConfigFields('PLUGIN'), [])
 })
 
 test('连接字段按用途分组并提供必填、条件必填和示例元数据', () => {
@@ -86,8 +85,6 @@ test('类型切换保护区分安全默认值、实际输入和历史敏感配�
   assert.equal(hasMeaningfulConnectionConfig('MYSQL', createConnectionConfig('MYSQL')), false)
   assert.equal(hasMeaningfulConnectionConfig('MYSQL', createConnectionConfig('MYSQL', { url: 'jdbc:mysql://db/app' })), true)
   assert.equal(hasMeaningfulConnectionConfig('WEBHOOK', createConnectionConfig('WEBHOOK', { secret: '******' })), true)
-  assert.equal(hasMeaningfulConnectionConfig('PLUGIN', { pluginComponentId: null, credentials: {} }), false)
-  assert.equal(hasMeaningfulConnectionConfig('PLUGIN', { pluginComponentId: 8, credentials: {} }), true)
 })
 
 test('高级选项仅在偏离默认值或存在自定义参数时自动展开', () => {
@@ -170,7 +167,7 @@ test('分类使用中性色且连接类型遵循外部常规品牌色', () => {
   const expectedTypeColors = {
     MYSQL: '#4479A1', POSTGRESQL: '#4169E1', REDIS: '#FF4438', S3: '#569A31', OSS: '#FF6A00',
     KAFKA: '#231F20', RABBITMQ: '#FF6600', QDRANT: '#DC244C', MILVUS: '#00B3FF',
-    ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569', PLUGIN: '#475569'
+    ELASTICSEARCH: '#005571', WEBHOOK: '#475569', TAVILY: '#475569'
   }
 
   assert.deepEqual(connectionCategoryStyle('DATABASE'), neutralCategoryStyle)
@@ -265,12 +262,11 @@ test('数据源页面使用两步向导、配置助手和高级选项形成明�
   assert.doesNotMatch(viewSource, /configText|JSON\.parse|type="textarea"/)
   assert.doesNotMatch(zhCN.workflowConnections.config, /JSON/i)
   assert.doesNotMatch(enUS.workflowConnections.config, /JSON/i)
-  assert.match(viewSource, /plugin-component-options/)
-  assert.match(viewSource, /pluginCredentialFields/)
+  assert.doesNotMatch(viewSource, /plugin-component-options/)
+  assert.doesNotMatch(viewSource, /pluginCredentialFields/)
   assert.match(viewSource, /field\.required/)
-  assert.match(viewSource, /configFields\.value\.filter\(field => field\.required/)
-  assert.match(viewSource, /oauth\/authorize/)
-  assert.match(viewSource, /plugin-oauth\/callback/)
+  assert.doesNotMatch(viewSource, /oauth\/authorize/)
+  assert.doesNotMatch(viewSource, /plugin-oauth\/callback/)
   assert.match(viewSource, /availableConnectionTypes/)
   assert.doesNotMatch(viewSource, /v-model="form\.connectionCategory"/)
   assert.doesNotMatch(viewSource, /@change="selectCategory"/)

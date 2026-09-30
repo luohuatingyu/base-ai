@@ -136,11 +136,6 @@ function withTemplateDisplayMetadata(graph) {
       ? template.localization : node.data?.localization || {}
     node.data = { ...(node.data || {}), defaultLabel: node.data?.defaultLabel || template.name,
       localization: templateLocalization, systemTemplate: template.systemTemplate }
-    if (template.importedTemplate && node.data.config && typeof node.data.config === 'object') {
-      node.data.config = { ...node.data.config,
-        parameterSchema: cloneWorkflowData(template.config?.parameterSchema || node.data.config.parameterSchema || []),
-        credentialSchema: cloneWorkflowData(template.config?.credentialSchema || node.data.config.credentialSchema || []) }
-    }
   })
   return next
 }

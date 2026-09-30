@@ -1280,6 +1280,19 @@ export default {
       "doneHint": "功能开关已生效，可返回 Agent 管理页查看在线状态与诊断详情"
     }
   },
+  workflowNodes: {
+  "title": "节点管理",
+  "description": "按功能类型维护可复用的原生节点模板。",
+  "add": "新增节点模板",
+  "source": "节点来源",
+  "category": "功能类型",
+  "noDescription": "暂无节点说明",
+  "emptyGroup": "当前来源和功能类型下暂无节点",
+  "edit": "编辑节点模板",
+  "requiredHint": "编码、名称、节点类型、节点来源和功能类型为必填项；默认配置可由工作流实例补充，发布前会统一校验。",
+  "defaultConfig": "默认配置",
+  "required": "请填写节点模板编码、名称、节点类型、来源和功能类型"
+},
   workflowConnections: {
     title: '连接配置', description: '按数据库、向量数据库、缓存、对象存储、消息队列、Webhook 和其他类型管理工作流连接。', add: '新增连接', edit: '编辑连接',
     category: '连接分类', connectionType: '连接类型', selectCategory: '请先选择连接分类', selectConnectionType: '请选择连接类型',

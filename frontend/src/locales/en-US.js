@@ -1254,6 +1254,19 @@ export default {
       "doneHint": "Feature switches are in effect; return to Agent Management to check online status and diagnostics"
     }
   },
+  workflowNodes: {
+  "title": "Node Management",
+  "description": "Maintain reusable native node templates by function type.",
+  "add": "Add Node Template",
+  "source": "Node Source",
+  "category": "Function Type",
+  "noDescription": "No node description",
+  "emptyGroup": "No nodes match the current source and function type",
+  "edit": "Edit Node Template",
+  "requiredHint": "Code, name, node type, source, and function type are required. Default configuration may be completed by workflow instances and is validated before publishing.",
+  "defaultConfig": "Default Configuration",
+  "required": "Enter the node template code, name, node type, source, and function type"
+},
   workflowConnections: {
     title: 'Connections', description: 'Manage workflow connections by database, vector database, cache, object storage, message queue, Webhook, and other categories.', add: 'Add Connection', edit: 'Edit Connection',
     category: 'Connection Category', connectionType: 'Connection Type', selectCategory: 'Select a connection category first', selectConnectionType: 'Select a connection type',

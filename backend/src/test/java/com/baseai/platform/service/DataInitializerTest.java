@@ -13,7 +13,6 @@ import com.baseai.platform.repository.MenuRepository;
 import com.baseai.platform.repository.RoleRepository;
 import com.baseai.platform.repository.SystemSettingRepository;
 import com.baseai.platform.repository.UserRepository;
-import com.baseai.platform.workflow.WorkflowAdapterLifecycleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -296,9 +295,9 @@ class DataInitializerTest {
         assertFalse(permissions.contains("system:menu:manage"));
     }
 
-    /** 内置运维角色保留设备 Agent 权限，并获得承载该页面的自动化目录权限。 */
+    /** 内置运维角色只保留当前仍可用的数据源和设备 Agent 权限。 */
     @Test
-    void seedsOperationsRoleWithSynchronizationAndDeploymentPermissions() {
+    void seedsOperationsRoleWithActivePermissions() {
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
 
         initializer.run(null);
@@ -310,11 +309,11 @@ class DataInitializerTest {
         assertEquals("SELF", operations.getDataScope());
         assertTrue(permissions.containsAll(Set.of("operations:catalog", "automation:catalog",
             "operations:data-source:list",
-            "operations:data-source:create", "operations:data-source:test", "operations:data-sync:list",
-            "operations:data-sync:run", "operations:server:list", "operations:server:deploy",
-            "operations:server:rollback", "automation:device-agent:list",
+            "operations:data-source:create", "operations:data-source:test", "automation:device-agent:list",
             "automation:device-agent:create", "automation:device-agent:update",
             "automation:device-agent:delete", "automation:device-agent:execute")));
+        assertFalse(permissions.contains("operations:data-sync:list"));
+        assertFalse(permissions.contains("operations:server:list"));
         assertFalse(permissions.contains("operations:monitoring:catalog"));
         assertFalse(permissions.contains("operations:server:shell"));
         assertFalse(permissions.contains("system:user:list"));
@@ -353,8 +352,6 @@ class DataInitializerTest {
         assertEquals(system.getId(), organization.getParentId());
         assertEquals(operations.getId(), mail.getParentId());
         assertEquals(operations.getId(), menusByPermission.get("operations:data-source:list").getParentId());
-        assertEquals(operations.getId(), menusByPermission.get("operations:data-sync:list").getParentId());
-        assertEquals(operations.getId(), menusByPermission.get("operations:server:list").getParentId());
         assertEquals(automation.getId(), menusByPermission.get("automation:device-agent:list").getParentId());
         assertEquals(monitoring.getId(), menusByPermission.get("operations:session:list").getParentId());
         assertEquals(monitoring.getId(), menusByPermission.get("operations:audit:operation:list").getParentId());
@@ -384,28 +381,8 @@ class DataInitializerTest {
         assertFalse(menusByPermission.containsKey("automation:workflow:connection:list"));
         assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
             menusByPermission.get("automation:workflow:node:update").getParentId());
-        assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
-            menusByPermission.get("automation:workflow:adapter:manage").getParentId());
-        assertEquals(menusByPermission.get("automation:workflow:node:list").getId(),
-            menusByPermission.get("automation:workflow:plugin:admission").getParentId());
         assertEquals(menusByPermission.get("automation:workflow:canvas:list").getId(),
             menusByPermission.get("automation:workflow:canvas:execute").getParentId());
-    }
-
-    /** 首次启动必须创建两个默认关闭且不可由通用参数页面修改的适配器开关。 */
-    @Test
-    void seedsDisabledSystemManagedAdapterSettings() {
-        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(existingAdmin("existing-hash")));
-
-        initializer.run(null);
-
-        ArgumentCaptor<SystemSetting> captor = ArgumentCaptor.forClass(SystemSetting.class);
-        verify(systemSettingRepository, atLeastOnce()).save(captor.capture());
-        Map<String, SystemSetting> settings = captor.getAllValues().stream()
-            .collect(Collectors.toMap(SystemSetting::getConfigKey, Function.identity()));
-        assertEquals("false", settings.get(WorkflowAdapterLifecycleService.N8N_SETTING_KEY).getConfigValue());
-        assertEquals("false", settings.get(WorkflowAdapterLifecycleService.DIFY_SETTING_KEY).getConfigValue());
-        assertTrue(settings.values().stream().allMatch(SystemSetting::getSystemManaged));
     }
 
     /** 创建满足启动安全校验的测试配置。 */

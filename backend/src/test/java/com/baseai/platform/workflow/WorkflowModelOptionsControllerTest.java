@@ -3,8 +3,6 @@ package com.baseai.platform.workflow;
 import com.baseai.platform.security.RequiredPermission;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -56,40 +54,4 @@ class WorkflowModelOptionsControllerTest {
         }
     }
 
-    /** 市场浏览复用查看权限，导入必须使用独立权限。 */
-    @Test
-    void marketplaceEndpointsUseSeparatedPermissions() throws Exception {
-        Method list = WorkflowController.class.getMethod("marketplaceNodes", String.class, String.class,
-            String.class, int.class, int.class, boolean.class);
-        Method imports = WorkflowController.class.getMethod("importMarketplaceNodes", String.class,
-            WorkflowModels.MarketplaceImportCommand.class);
-
-        assertArrayEquals(new String[]{"/node-marketplaces/{source}/nodes"}, list.getAnnotation(GetMapping.class).value());
-        assertEquals("automation:workflow:node:list", list.getAnnotation(RequiredPermission.class).value());
-        assertArrayEquals(new String[]{"/node-marketplaces/{source}/imports"}, imports.getAnnotation(PostMapping.class).value());
-        assertEquals("automation:workflow:node:import", imports.getAnnotation(RequiredPermission.class).value());
-    }
-
-    /** 适配器状态复用只读权限，容器启停必须使用独立管理权限。 */
-    @Test
-    void adapterEndpointsUseSeparatedPermissions() throws Exception {
-        Method list = WorkflowController.class.getMethod("adapters");
-        Method update = WorkflowController.class.getMethod("updateAdapter", String.class,
-            WorkflowController.AdapterCommand.class);
-
-        assertArrayEquals(new String[]{"/adapters"}, list.getAnnotation(GetMapping.class).value());
-        assertEquals("automation:workflow:node:list", list.getAnnotation(RequiredPermission.class).value());
-        assertArrayEquals(new String[]{"/adapters/{source}"}, update.getAnnotation(PutMapping.class).value());
-        assertEquals("automation:workflow:adapter:manage", update.getAnnotation(RequiredPermission.class).value());
-    }
-
-    /** 插件准入查询、维护与审批必须统一使用独立高权限。 */
-    @Test
-    void pluginAdmissionEndpointsUseDedicatedPermission() throws Exception {
-        for (Method method : new Method[]{WorkflowController.class.getMethod("pluginAdmissions"),
-            WorkflowController.class.getMethod("updatePluginAdmission", Long.class, WorkflowModels.PluginAdmissionCommand.class),
-            WorkflowController.class.getMethod("reviewPluginAdmission", Long.class, WorkflowModels.PluginAdmissionReviewCommand.class)}) {
-            assertEquals("automation:workflow:plugin:admission", method.getAnnotation(RequiredPermission.class).value());
-        }
-    }
 }

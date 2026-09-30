@@ -264,4 +264,24 @@ class WorkflowSchemaResourceTest {
         assertTrue(!schema.contains("DROP "));
         assertTrue(!schema.contains("DELETE "));
     }
+
+    /** V51 必须删除已退役插件、部署、服务器管理和数据同步的表、字段及历史菜单数据。 */
+    @Test
+    void removesRetiredFeatureSchemaAndHistory() throws Exception {
+        String schema = new ClassPathResource("db/migration/mysql/V51__remove_plugin_deployment_and_data_sync.sql")
+            .getContentAsString(StandardCharsets.UTF_8);
+
+        for (String table : new String[]{"workflow_plugin_oauth_state", "workflow_plugin_trigger_subscription",
+            "workflow_marketplace_component", "workflow_marketplace_plugin_probe", "workflow_plugin_admission",
+            "workflow_marketplace_plugin", "data_sync_run_table", "data_sync_run", "deployment_run",
+            "data_sync_plan", "managed_server", "server_credential"}) {
+            assertTrue(schema.contains("DROP TABLE IF EXISTS " + table), table);
+        }
+        for (String column : new String[]{"plugin_component_id", "external_key", "external_version",
+            "external_publisher", "external_fingerprint", "imported_at"}) {
+            assertTrue(schema.contains("DROP COLUMN " + column), column);
+        }
+        assertTrue(schema.contains("DELETE FROM workflow_node_template WHERE template_source IN ('N8N','DIFY')"));
+        assertTrue(schema.contains("DELETE FROM sys_menu"));
+    }
 }

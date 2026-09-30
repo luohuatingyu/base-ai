@@ -39,23 +39,6 @@ class DataSourceControllerTest {
         }
     }
 
-    /** 插件组件和 OAuth 生命周期必须归属数据源权限，不再依赖工作流维护权限。 */
-    @Test
-    void protectsPluginDataSourceLifecycle() throws Exception {
-        Method options = DataSourceController.class.getMethod("pluginComponentOptions");
-        Method authorize = DataSourceController.class.getMethod("authorizePlugin", Long.class,
-            WorkflowModels.PluginOAuthAuthorizeCommand.class);
-        Method callback = DataSourceController.class.getMethod("pluginOAuthCallback",
-            WorkflowModels.PluginOAuthCallbackCommand.class);
-
-        assertArrayEquals(new String[]{"/plugin-component-options"}, options.getAnnotation(GetMapping.class).value());
-        assertEquals("operations:data-source:list", options.getAnnotation(RequiredPermission.class).value());
-        assertArrayEquals(new String[]{"/{id}/oauth/authorize"}, authorize.getAnnotation(PostMapping.class).value());
-        assertEquals("operations:data-source:update", authorize.getAnnotation(RequiredPermission.class).value());
-        assertArrayEquals(new String[]{"/plugin-oauth/callback"}, callback.getAnnotation(PostMapping.class).value());
-        assertEquals("operations:data-source:update", callback.getAnnotation(RequiredPermission.class).value());
-    }
-
     /** CRUD 方法必须保持预期 HTTP 动词，避免前端迁移后命中错误接口。 */
     @Test
     void keepsCrudHttpMethodContracts() throws Exception {

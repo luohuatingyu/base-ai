@@ -29,22 +29,14 @@ test('全部原生节点都有不重复的完整双语说明',()=>{
 
 test('系统、导入和自建模板复用原生文档并保留模板元数据',()=>{
   const {translate,has}=translator(enUS)
-  const doc=workflowNodeDocument({nodeType:'RAG',name:'Imported RAG',description:'custom',source:'DIFY',functionalCategory:'AI',externalVersion:'1.0',externalPublisher:'vendor',config:{topK:3}},translate,has)
-  assert.equal(doc.name,'Imported RAG');assert.equal(doc.source,'DIFY');assert.match(doc.behavior,/Retrieves knowledge chunks/)
+  const doc=workflowNodeDocument({nodeType:'RAG',name:'Imported RAG',description:'custom',source:'SYSTEM',functionalCategory:'AI',externalVersion:'1.0',externalPublisher:'vendor',config:{topK:3}},translate,has)
+  assert.equal(doc.name,'Imported RAG');assert.equal(doc.source,'SYSTEM');assert.match(doc.behavior,/Retrieves knowledge chunks/)
   assert.equal(doc.externalVersion,'1.0');assert.equal(doc.externalPublisher,'vendor');assert.match(doc.example,/"topK": 3/)
   assert.equal(workflowNodeDocument({nodeType:'UNKNOWN'},translate,has),null)
 })
 
-test('英文节点文档使用英文示例且动态插件字段按当前语言展示',()=>{
+test('英文节点文档使用英文示例且动态字段按当前语言展示',()=>{
   const {translate,has}=translator(enUS)
-  const doc=workflowNodeDocument({nodeType:'PLUGIN_ACTION',source:'DIFY',config:{parameterSchema:[{
-    name:'mode',label:'模式',description:'执行模式',type:'options',required:true,
-    localization:{label:{'zh-CN':'模式','en-US':'Mode'},description:{'zh-CN':'执行模式','en-US':'Execution mode'}},
-    options:[{value:'basic',label:'基础',localization:{label:{'zh-CN':'基础','en-US':'Basic'}}}]
-  }]}},translate,has,'en-US')
-  const mode=doc.fields.find(field=>field.key==='parameters.mode')
-  assert.equal(mode.localization.label['en-US'],'Mode')
-  assert.equal(mode.options[0].localization.label['en-US'],'Basic')
   for(const type of WORKFLOW_NODE_TYPES){
     const localized=workflowNodeDocument({nodeType:type},translate,has,'en-US')
     assert.doesNotMatch(`${localized.example}${localized.inputExample}${localized.outputExample}`,/[\u3400-\u9fff]/,type)

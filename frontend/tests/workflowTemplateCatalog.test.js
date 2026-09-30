@@ -6,8 +6,8 @@ import zhCN from '../src/locales/zh-CN.js'
 import { WORKFLOW_NODE_TYPES } from '../src/utils/workflowNodeConfig.js'
 import {
   defaultTemplateCategory, filterWorkflowTemplates, groupWorkflowTemplates, localizedTemplateText,
-  localizedMetadataOptionText, localizedMetadataText, localizedWorkflowNodeLabel, marketplaceItemDescription,
-  marketplaceNodeTypeLabel, metadataOptionValue,
+  localizedMetadataOptionText, localizedMetadataText, localizedWorkflowNodeLabel,
+  metadataOptionValue,
   normalizeTemplateMetadata, systemTemplateTranslationKey,
   workflowTemplateCategoryStyle,
   WORKFLOW_TEMPLATE_CATEGORIES, WORKFLOW_TEMPLATE_SOURCES
@@ -34,7 +34,7 @@ function contrastRatio(foreground, background) {
 }
 
 test('全部原生节点属于受控功能分类', () => {
-  assert.deepEqual(WORKFLOW_TEMPLATE_SOURCES, ['SYSTEM', 'N8N', 'DIFY'])
+  assert.deepEqual(WORKFLOW_TEMPLATE_SOURCES, ['SYSTEM'])
   for (const nodeType of WORKFLOW_NODE_TYPES) {
     assert.ok(WORKFLOW_TEMPLATE_CATEGORIES.includes(defaultTemplateCategory(nodeType)), nodeType)
   }
@@ -55,7 +55,7 @@ test('迁移前模板兼容系统来源并按节点类型推导分类', () => {
     normalizeTemplateMetadata({ id: 1, nodeType: 'LLM' }),
     { id: 1, nodeType: 'LLM', source: 'SYSTEM', functionalCategory: 'AI' }
   )
-  assert.equal(normalizeTemplateMetadata({ nodeType: 'HTTP', source: 'dify', functionalCategory: 'trigger' }).source, 'DIFY')
+  assert.equal(normalizeTemplateMetadata({ nodeType: 'HTTP', source: 'external', functionalCategory: 'trigger' }).source, 'SYSTEM')
   assert.equal(normalizeTemplateMetadata({ nodeType: 'HTTP', source: 'unknown', functionalCategory: 'unknown' }).functionalCategory, 'NETWORK_API')
 })
 
@@ -81,7 +81,7 @@ test('系统节点按当前语言展示且自定义或缺失词条安全回退�
   assert.equal(systemTemplateTranslationKey(systemStart, 'code'), '')
 })
 
-test('画布默认节点和 Dify 多语言元数据按当前语言展示且保留自定义名称', () => {
+test('画布默认节点多语言元数据按当前语言展示且保留自定义名称', () => {
   const zh = localeAccessors(zhCN)
   const en = localeAccessors(enUS)
   const localization = {
@@ -92,7 +92,7 @@ test('画布默认节点和 Dify 多语言元数据按当前语言展示且保�
   assert.equal(localizedWorkflowNodeLabel({ nodeType: 'START', label: 'START' }, 'zh-CN', zh.translate, zh.hasTranslation), '开始')
   assert.equal(localizedWorkflowNodeLabel({ nodeType: 'START', label: '开始' }, 'en-US', en.translate, en.hasTranslation), 'Start')
   assert.equal(localizedWorkflowNodeLabel({ nodeType: 'START', label: '自定义入口' }, 'en-US', en.translate, en.hasTranslation), '自定义入口')
-  assert.equal(localizedWorkflowNodeLabel({ nodeType: 'PLUGIN_ACTION', label: '添加日程参会人', localization,
+  assert.equal(localizedWorkflowNodeLabel({ nodeType: 'HTTP', label: '添加日程参会人', localization,
     defaultLabel: '添加日程参会人' }, 'en-US', en.translate, en.hasTranslation), 'Add Event Attendees')
   assert.equal(localizedMetadataText({ localization }, 'name', 'en-US', 'fallback'), 'Add Event Attendees')
   assert.equal(localizedMetadataText({ localization }, 'description', 'zh-CN', 'fallback'), '添加参会人')
@@ -109,25 +109,11 @@ test('动态选项按当前语言展示但始终提交稳定值', () => {
   assert.equal(localizedMetadataOptionText('raw', 'en-US'), 'raw')
 })
 
-test('市场说明优先使用官方内容并为 n8n 缺失说明提供可信本地回退', () => {
-  const zh = localeAccessors(zhCN)
-  const official = { description: 'Official description', compatible: true, targetNodeType: 'REDIS_COMMAND' }
-  const compatibleN8n = { description: '', compatible: true, targetNodeType: 'REDIS_COMMAND' }
-  const unsupportedN8n = { description: '', compatible: false, targetNodeType: '' }
-
-  assert.equal(marketplaceItemDescription(official, 'N8N', zh.translate, zh.hasTranslation), 'Official description')
-  assert.equal(marketplaceItemDescription(compatibleN8n, 'N8N', zh.translate, zh.hasTranslation),
-    zhCN.workflowCatalog.templates.REDIS_COMMAND.description)
-  assert.equal(marketplaceItemDescription(unsupportedN8n, 'N8N', zh.translate, zh.hasTranslation),
-    zhCN.workflowNodes.n8nDescriptionUnavailable)
-  assert.equal(marketplaceNodeTypeLabel(compatibleN8n, zh.translate, zh.hasTranslation),
-    zhCN.workflowCatalog.templates.REDIS_COMMAND.name)
-})
 
 test('功能分组保持固定顺序并默认隐藏停用节点', () => {
   const templates = [
-    { id: 1, nodeType: 'HTTP', enabled: true, source: 'N8N' },
-    { id: 2, nodeType: 'LLM', enabled: true, source: 'DIFY' },
+    { id: 1, nodeType: 'HTTP', enabled: true, source: 'SYSTEM' },
+    { id: 2, nodeType: 'LLM', enabled: true, source: 'SYSTEM' },
     { id: 3, nodeType: 'START', enabled: false, source: 'SYSTEM', systemTemplate: true }
   ]
   assert.deepEqual(groupWorkflowTemplates(templates).map(group => group.category), ['AI', 'NETWORK_API'])
@@ -138,12 +124,12 @@ test('必选来源和功能类型共同过滤节点并可按需保留停用节�
   const templates = [
     { id: 1, nodeType: 'LLM', enabled: true, source: 'SYSTEM', functionalCategory: 'AI' },
     { id: 2, nodeType: 'LLM', enabled: false, source: 'SYSTEM', functionalCategory: 'AI' },
-    { id: 3, nodeType: 'LLM', enabled: true, source: 'DIFY', functionalCategory: 'AI' },
+    { id: 3, nodeType: 'HTTP', enabled: true, source: 'SYSTEM', functionalCategory: 'NETWORK_API' },
     { id: 4, nodeType: 'HTTP', enabled: true, source: 'SYSTEM', functionalCategory: 'NETWORK_API' }
   ]
   assert.deepEqual(filterWorkflowTemplates(templates, 'SYSTEM', 'AI').map(template => template.id), [1])
   assert.deepEqual(filterWorkflowTemplates(templates, 'SYSTEM', 'AI', true).map(template => template.id), [1, 2])
-  assert.deepEqual(filterWorkflowTemplates(templates, 'N8N', 'AI'), [])
+  assert.deepEqual(filterWorkflowTemplates(templates, 'SYSTEM', 'NETWORK_API').map(template => template.id), [3, 4])
   assert.deepEqual(filterWorkflowTemplates(templates, '', 'AI'), [])
   assert.deepEqual(filterWorkflowTemplates(templates, 'SYSTEM', ''), [])
 })
@@ -175,102 +161,6 @@ test('节点管理使用必选来源和功能类型级联标签并校验表单�
   assert.match(nodeManagementSource, /WORKFLOW_TEMPLATE_CATEGORIES/)
 })
 
-test('节点来源切换后系统使用新增入口且外部来源使用官方市场导入', () => {
-  assert.match(nodeManagementSource, /selectedSource === 'SYSTEM'[^>]*automation:workflow:node:create/)
-  assert.match(nodeManagementSource, /selectedSource !== 'SYSTEM'[^>]*automation:workflow:node:import/)
-  assert.match(nodeManagementSource, /openMarketplace/)
-  assert.match(nodeManagementSource, /\/workflow\/node-marketplaces\/\$\{selectedSource\.value\}\/nodes/)
-  assert.match(nodeManagementSource, /\/workflow\/node-marketplaces\/\$\{selectedSource\.value\}\/imports/)
-})
-
-test('市场目录全量可浏览但只有原生兼容节点可以选中导入', () => {
-  assert.match(nodeManagementSource, /v-model="compatibleOnly"/)
-  assert.match(nodeManagementSource, /:disabled="!item\.compatible \|\| item\.imported"/)
-  assert.match(nodeManagementSource, /item\.actions\?\.length/)
-  assert.match(nodeManagementSource, /:disabled="!action\.compatible \|\| action\.imported"/)
-  assert.match(nodeManagementSource, /compatibilityLevel === 'NATIVE_SUBSET'/)
-  assert.match(nodeManagementSource, /item\.incompatibilityReason/)
-  assert.match(nodeManagementSource, /externalIds:\s*\[\.\.\.selectedMarketplaceIds\.value\]/)
-  assert.match(nodeManagementSource, /marketplaceHint/)
-})
-
-test('市场中完整导入的插件和能力显示已导入且不可重复选择', () => {
-  assert.equal(zhCN.workflowNodes.imported, '已导入')
-  assert.equal(enUS.workflowNodes.imported, 'Imported')
-  assert.match(nodeManagementSource, /item\.imported[^\n]*workflowNodes\.imported/)
-  assert.match(nodeManagementSource, /:disabled="!item\.compatible \|\| item\.imported"/)
-  assert.match(nodeManagementSource, /:disabled="!action\.compatible \|\| action\.imported"/)
-  assert.match(nodeManagementSource, /action\.imported[^\n]*workflowNodes\.imported/)
-  assert.match(nodeManagementSource, /!item\.imported/)
-  assert.match(nodeManagementSource, /!action\.imported/)
-})
-
-test('市场插件失败原因提供安全且可理解的双语提示', () => {
-  for (const reason of ['PACKAGE_SIZE_LIMIT', 'PACKAGE_CONTENT_LIMIT', 'PACKAGE_DEPENDENCY_REJECTED',
-    'PACKAGE_ARCHIVE_INVALID', 'ROUTING_UNSUPPORTED', 'PLUGIN_ABI_UNSUPPORTED', 'DEPENDENCY_UNAVAILABLE']) {
-    assert.ok(zhCN.workflowNodes.incompatibility[reason])
-    assert.ok(enUS.workflowNodes.incompatibility[reason])
-  }
-})
-
-test('市场页面自动轮询异步探测且导入不负责触发探测', () => {
-  assert.match(nodeManagementSource, /data\?\.probePending/)
-  assert.match(nodeManagementSource, /scheduleMarketplacePolling/)
-  assert.match(nodeManagementSource, /window\.setTimeout\(\(\) => loadMarketplace\(\), 2000\)/)
-  assert.match(nodeManagementSource, /@closed="stopMarketplacePolling"/)
-  assert.match(nodeManagementSource, /onBeforeUnmount\(stopMarketplacePolling\)/)
-  assert.match(nodeManagementSource, /\['NOT_PROBED', 'QUEUED', 'PROBING'\]/)
-  assert.doesNotMatch(nodeManagementSource, /probeRequired/)
-})
-
-test('市场卡片约束长标题描述和能力项且不覆盖相邻卡片', () => {
-  assert.match(nodeManagementSource, /\.marketplace-card\s*\{[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/)
-  assert.match(nodeManagementSource, /\.marketplace-card-head\s*\{[^}]*min-width:\s*0;/)
-  assert.match(nodeManagementSource, /\.marketplace-card-head[^}]*\.el-checkbox__label[^}]*overflow-wrap:\s*anywhere;/)
-  assert.match(nodeManagementSource, /\.marketplace-card p\s*\{[^}]*overflow-wrap:\s*anywhere;/)
-  assert.match(nodeManagementSource, /\.marketplace-actions[^}]*\.el-checkbox__label[^}]*min-width:\s*0;[^}]*white-space:\s*normal;/)
-})
-
-test('Dify 与 n8n 市场使用来源化响应式网格并把可导入能力展示为独立分区', () => {
-  assert.match(nodeManagementSource, /'marketplace-grid--n8n':\s*selectedSource === 'N8N'/)
-  assert.match(nodeManagementSource, /'marketplace-grid--dify':\s*selectedSource === 'DIFY'/)
-  assert.match(nodeManagementSource, /class="marketplace-source-mark"/)
-  assert.match(nodeManagementSource, /class="marketplace-card-description"/)
-  assert.match(nodeManagementSource, /class="marketplace-actions-head"/)
-  assert.match(nodeManagementSource, /class="marketplace-action-list"/)
-  assert.match(nodeManagementSource, /workflowNodes\.marketplaceCapabilities/)
-  assert.match(nodeManagementSource, /\.marketplace-grid--n8n\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/)
-  assert.match(nodeManagementSource, /\.marketplace-grid--dify\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
-  assert.match(nodeManagementSource, /@media\s*\(max-width:\s*880px\)[\s\S]*?\.marketplace-grid--n8n\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
-  assert.match(nodeManagementSource, /@media\s*\(max-width:\s*600px\)[\s\S]*?\.marketplace-grid--dify\s*\{[^}]*grid-template-columns:\s*1fr/)
-})
-
-test('市场卡片展示来源色以及清晰的选中、探测和不可用状态', () => {
-  assert.match(nodeManagementSource, /selected:\s*marketplaceItemSelected\(item\)/)
-  assert.match(nodeManagementSource, /probing:\s*isProbePending\(item\)/)
-  assert.match(nodeManagementSource, /\.marketplace-card--n8n\s*\{[^}]*--marketplace-accent:\s*#ea4b35;/)
-  assert.match(nodeManagementSource, /\.marketplace-card--dify\s*\{[^}]*--marketplace-accent:\s*#6750d8;/)
-  assert.match(nodeManagementSource, /\.marketplace-card\.selected\s*\{[^}]*border-color:\s*var\(--marketplace-accent\);/)
-  assert.match(nodeManagementSource, /\.marketplace-card\.unsupported\s*\{[^}]*box-shadow:\s*none;/)
-  assert.match(nodeManagementSource, /\.marketplace-action-list\s*\{[^}]*overflow-y:\s*auto;/)
-  assert.match(nodeManagementSource, /\.marketplace-actions[^}]*\.el-checkbox\.is-checked/)
-})
-
-test('市场卡片重置复选框组的零字号行高并保持插件文字分层可读', () => {
-  assert.match(nodeManagementSource, /\.marketplace-card\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*1\.5;/)
-  assert.match(nodeManagementSource, /\.marketplace-card-identity strong\s*\{[^}]*font-size:\s*14px;[^}]*line-height:\s*1\.5;/)
-  assert.match(nodeManagementSource, /\.marketplace-card-identity > strong\s*\{[^}]*display:\s*-webkit-box;[^}]*-webkit-line-clamp:\s*2;/)
-  assert.match(nodeManagementSource, /\.marketplace-actions-head strong\s*\{[^}]*line-height:\s*1\.4;/)
-  assert.match(nodeManagementSource, /\.marketplace-actions-head small\s*\{[^}]*line-height:\s*1\.4;/)
-})
-
-test('市场导入模板锁定外部身份但继续使用原生配置编辑器', () => {
-  assert.match(nodeManagementSource, /form\.systemTemplate \|\| form\.importedTemplate/)
-  assert.match(nodeManagementSource, /:disabled="form\.importedTemplate \|\| !form\.id"/)
-  assert.match(nodeManagementSource, /WorkflowNodeConfigEditor/)
-  assert.match(nodeManagementSource, /importedTemplate:\s*false/)
-})
-
 test('节点管理卡片仅展示当前语言的功能文案并隐藏技术编码和节点类型', () => {
   assert.match(nodeManagementSource, /templateIcon\(row\)/)
   assert.match(nodeManagementSource, /templateText\(row, 'name'\)/)
@@ -285,8 +175,6 @@ test('画布菜单复用功能类型图标配色并把分类保存到新节点',
   assert.match(graphEditorSource, /:style="workflowTemplateCategoryStyle\(template\.functionalCategory, template\.nodeType\)"/)
   assert.match(graphEditorSource, /functionalCategory:\s*template\.functionalCategory/)
   assert.match(graphEditorSource, /localization:\s*template\.localization/)
-  assert.match(graphEditorSource, /template\.importedTemplate[\s\S]*parameterSchema:\s*cloneWorkflowData\(template\.config\?\.parameterSchema/)
-  assert.match(graphEditorSource, /credentialSchema:\s*cloneWorkflowData\(template\.config\?\.credentialSchema/)
 })
 
 test('节点来源位于顶部且功能类型在节点列表左侧展示', () => {
