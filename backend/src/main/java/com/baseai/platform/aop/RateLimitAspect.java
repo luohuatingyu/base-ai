@@ -66,7 +66,10 @@ public class RateLimitAspect {
                 }
             });
         } catch (io.github.resilience4j.ratelimiter.RequestNotPermitted e) {
-            logger.warn("Rate limit exceeded for key: {}", key);
+            logger.warn(
+                "event=rate_limit_rejected method={} limit_type={} limit={} period={} unit={} error_type={}",
+                joinPoint.getSignature().toShortString(), rateLimit.limitType(), rateLimit.limit(), rateLimit.period(),
+                rateLimit.timeUnit(), "RequestNotPermitted");
             throw new BusinessException("rate.limit.exceeded", "请求过于频繁，请稍后再试");
         }
     }

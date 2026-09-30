@@ -67,6 +67,21 @@ test('AI 生成 page guides setup and selects an available type', () => {
   assert.match(zhLocale, /guideStepAssets/)
 })
 
+/** 生成模型入口使用弹窗按供应商归组，避免长下拉列表难以识别供应商和模型关系。 */
+test('AI 生成 model picker groups providers inside a searchable dialog', () => {
+  assert.doesNotMatch(source, /class="model-select"/)
+  assert.match(source, /class="model-picker-trigger"/)
+  assert.match(source, /class="generation-model-dialog"/)
+  assert.match(source, /const modelGroups = computed\(\(\) => \{/)
+  assert.match(source, /providerName/)
+  assert.match(source, /class="model-provider-group"/)
+  assert.match(source, /class="model-option-card"/)
+  assert.match(source, /function selectModel\(model\) \{ modelId\.value = model\.id; onModelChange\(\); modelDialogVisible\.value = false \}/)
+  assert.match(source, /modelSearch/)
+  assert.match(zhLocale, /selectModelTitle: '选择生成模型'/)
+  assert.match(enLocale, /selectModelTitle: 'Select generation model'/)
+})
+
 /** 切换模型和清空表单必须重置只对当前能力有效的开关。 */
 test('AI 生成 page clears capability-specific toggles when selection changes', () => {
   assert.match(source, /groupOutput\.value = false/)
