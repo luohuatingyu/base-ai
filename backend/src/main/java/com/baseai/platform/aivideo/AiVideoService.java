@@ -3,6 +3,8 @@ package com.baseai.platform.aivideo;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -31,11 +33,19 @@ public class AiVideoService {
     private static final Set<String> TASK_STATUSES = Set.of("QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED");
     private static final Set<String> REVIEW_STATUSES = Set.of("PENDING", "APPROVED", "REJECTED");
     private static final Set<String> PUBLISH_STATUSES = Set.of("DRAFT", "PUBLISHING", "PUBLISHED", "FAILED");
+    private static final Set<String> VIDEO_STATUSES = Set.of("DRAFT", "PREVIEW", "REVIEW", "PUBLISHED");
     private final JdbcTemplate jdbc;
+    private final ObjectMapper mapper;
 
     /** 注入系统 MySQL 查询模板。 */
     public AiVideoService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc) {
+        this(jdbc, new ObjectMapper());
+    }
+
+    /** 注入 JSON 编解码器，用于校验媒体生成任务的结构化输出。 */
+    public AiVideoService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc, ObjectMapper mapper) {
         this.jdbc = jdbc;
+        this.mapper = mapper;
     }
 
     /** 返回当前用户可见的工作台统计。 */
@@ -144,6 +154,38 @@ public class AiVideoService {
         };
     }
 
+    /** 将已完成的视频生成任务安全回填为项目成片，保留项目和分镜来源。 */
+    @Transactional
+    public Map<String, Object> promoteGeneration(Map<String, Object> payload) {
+        AuthUser user = AuthContext.require();
+        long generationTaskId = requiredLong(payload, "generationTaskId");
+        long projectId = requiredLong(payload, "projectId");
+        requireOwned("projects", projectId);
+        Map<String, Object> task = generationTask(generationTaskId, user.id());
+        if (!"SUCCEEDED".equals(task.get("status")) || !"video_model".equals(task.get("generationType"))) {
+            throw new BusinessException("aiVideo.generationNotSucceeded");
+        }
+        String mediaUrl = mediaUrl(payload, "mediaUrl");
+        if (!outputContainsUrl(task.get("outputJson"), mediaUrl)) throw new BusinessException("aiVideo.generationOutputNotFound");
+        Long storyboardId = optionalLong(payload, "storyboardId");
+        if (storyboardId != null) requireStoryboard(projectId, storyboardId);
+        Integer duplicate = jdbc.queryForObject("SELECT COUNT(*) FROM ai_video_video WHERE project_id=? AND media_url=?", Integer.class, projectId, mediaUrl);
+        if (duplicate != null && duplicate > 0) throw new BusinessException("aiVideo.generationAlreadyLinked");
+        String source = "AI generation task #" + generationTaskId + (storyboardId == null ? "" : ", storyboard #" + storyboardId);
+        String prompt = text(task, "prompt", 800);
+        String description = source + (prompt == null ? "" : "\n" + prompt);
+        Map<String, Object> video = new LinkedHashMap<>();
+        video.put("projectId", projectId);
+        video.put("title", required(payload, "title", 200));
+        video.put("version", integer(payload, "version", 1, 1, 10000));
+        video.put("status", value(payload, "status", "DRAFT"));
+        video.put("mediaUrl", mediaUrl);
+        video.put("coverUrl", text(payload, "coverUrl", 500));
+        video.put("durationMs", integer(payload, "durationMs", 0, 0, 36000000));
+        video.put("description", description.length() > 1000 ? description.substring(0, 1000) : description);
+        return insertVideo(video, user);
+    }
+
     /** 更新指定类型的工作台资源。 */
     @Transactional
     public Map<String, Object> update(String resource, Long id, Map<String, Object> payload) {
@@ -162,12 +204,10 @@ public class AiVideoService {
                 required(payload, "name", 200), text(payload, "prompt", 10000), longValue(payload, "providerRouteId"), text(payload, "inputJson", 20000), id);
             case "renders" -> jdbc.update("UPDATE ai_video_render SET name=?,config_json=?,updated_at=NOW(6) WHERE id=? AND status IN ('QUEUED','FAILED','CANCELLED')",
                 required(payload, "name", 200), text(payload, "configJson", 20000), id);
-            case "videos" -> jdbc.update("UPDATE ai_video_video SET title=?,status=?,media_url=?,cover_url=?,duration_ms=?,description=?,updated_at=NOW(6) WHERE id=?",
-                required(payload, "title", 200), value(payload, "status", "DRAFT"), text(payload, "mediaUrl", 500), text(payload, "coverUrl", 500), integer(payload, "durationMs", 0, 0, 36000000), text(payload, "description", 1000), id);
+            case "videos" -> updateVideo(id, payload);
             case "reviews" -> jdbc.update("UPDATE ai_video_review SET status=?,comment=?,reviewer_user_id=?,reviewed_at=IF(? IN ('APPROVED','REJECTED'),NOW(6),NULL),updated_at=NOW(6) WHERE id=?",
                 enumValue(value(payload, "status", "PENDING"), REVIEW_STATUSES, "aiVideo.reviewStatusInvalid"), text(payload, "comment", 1000), user().id(), value(payload, "status", "PENDING"), id);
-            case "publishes" -> jdbc.update("UPDATE ai_video_publish SET channel=?,status=?,external_id=?,external_url=?,error_message=?,published_at=IF(?='PUBLISHED',NOW(6),NULL),updated_at=NOW(6) WHERE id=?",
-                required(payload, "channel", 64), enumValue(value(payload, "status", "DRAFT"), PUBLISH_STATUSES, "aiVideo.publishStatusInvalid"), text(payload, "externalId", 200), text(payload, "externalUrl", 500), text(payload, "errorMessage", 1000), value(payload, "status", "DRAFT"), id);
+            case "publishes" -> updatePublish(id, payload);
             default -> throw new BusinessException("aiVideo.resourceInvalid");
         }
         return find(normalized, id);
@@ -201,19 +241,24 @@ public class AiVideoService {
     @Transactional
     public Map<String, Object> reviewVideo(Long videoId, Map<String, Object> payload) {
         requireOwned("videos", videoId);
+        requireVideoMedia(videoId);
         Map<String, Object> command = new LinkedHashMap<>(payload == null ? Map.of() : payload);
         command.put("videoId", videoId);
         Long existing = jdbc.query("SELECT id FROM ai_video_review WHERE video_id=? ORDER BY id DESC LIMIT 1",
             rs -> rs.next() ? rs.getLong(1) : null, videoId);
-        if (existing == null) return insertReview(command, user());
-        return update("reviews", existing, command);
+        Map<String, Object> result = existing == null ? insertReview(command, user()) : update("reviews", existing, command);
+        jdbc.update("UPDATE ai_video_video SET status='REVIEW',updated_at=NOW(6) WHERE id=? AND status<>'PUBLISHED'", videoId);
+        return result;
     }
 
     /** 将审核通过的成片标记为已发布，保留渠道和外部编号。 */
     @Transactional
     public Map<String, Object> markPublished(Long id) {
         requireOwned("publishes", id);
+        Long review = jdbc.queryForObject("SELECT COUNT(*) FROM ai_video_publish x JOIN ai_video_video v ON v.id=x.video_id JOIN ai_video_review r ON r.video_id=v.id WHERE x.id=? AND r.status='APPROVED'", Long.class, id);
+        if (review == null || review == 0) throw new BusinessException("aiVideo.reviewRequired");
         jdbc.update("UPDATE ai_video_publish SET status='PUBLISHED',published_at=NOW(6),updated_at=NOW(6) WHERE id=?", id);
+        jdbc.update("UPDATE ai_video_video v JOIN ai_video_publish p ON p.video_id=v.id SET v.status='PUBLISHED',v.updated_at=NOW(6) WHERE p.id=?", id);
         return find("publishes", id);
     }
 
@@ -250,8 +295,11 @@ public class AiVideoService {
     }
 
     private Map<String, Object> insertVideo(Map<String, Object> p, AuthUser user) {
-        long projectId = projectId(p); return insert("INSERT INTO ai_video_video(project_id,render_id,title,version,status,media_url,cover_url,duration_ms,description,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            new Object[]{projectId, longValue(p, "renderId"), required(p, "title", 200), integer(p, "version", 1, 1, 10000), value(p, "status", "DRAFT"), text(p, "mediaUrl", 500), text(p, "coverUrl", 500), integer(p, "durationMs", 0, 0, 36000000), text(p, "description", 1000), user.id()}, "videos");
+        long projectId = projectId(p);
+        String media = text(p, "mediaUrl", 500);
+        if (media != null) media = mediaUrl(Map.of("mediaUrl", media), "mediaUrl");
+        return insert("INSERT INTO ai_video_video(project_id,render_id,title,version,status,media_url,cover_url,duration_ms,description,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            new Object[]{projectId, longValue(p, "renderId"), required(p, "title", 200), integer(p, "version", 1, 1, 10000), videoStatus(p, "status", "DRAFT"), media, text(p, "coverUrl", 500), integer(p, "durationMs", 0, 0, 36000000), text(p, "description", 1000), user.id()}, "videos");
     }
 
     private Map<String, Object> insertReview(Map<String, Object> p, AuthUser user) {
@@ -262,8 +310,104 @@ public class AiVideoService {
 
     private Map<String, Object> insertPublish(Map<String, Object> p, AuthUser user) {
         long videoId = requiredLong(p, "videoId"); requireOwned("videos", videoId);
+        String status = publishStatus(p, "status", "DRAFT");
+        if ("PUBLISHED".equals(status)) requireApprovedReview(videoId);
         return insert("INSERT INTO ai_video_publish(video_id,channel,status,external_id,external_url,error_message,requested_by,published_at) VALUES (?,?,?,?,?,?,?,IF(?='PUBLISHED',NOW(6),NULL))",
-            new Object[]{videoId, required(p, "channel", 64), enumValue(value(p, "status", "DRAFT"), PUBLISH_STATUSES, "aiVideo.publishStatusInvalid"), text(p, "externalId", 200), text(p, "externalUrl", 500), text(p, "errorMessage", 1000), user.id(), value(p, "status", "DRAFT")}, "publishes");
+            new Object[]{videoId, required(p, "channel", 64), status, text(p, "externalId", 200), text(p, "externalUrl", 500), text(p, "errorMessage", 1000), user.id(), status}, "publishes");
+    }
+
+    /** 更新成片时校验状态和媒体地址，避免空成片进入审核或发布阶段。 */
+    private int updateVideo(long id, Map<String, Object> payload) {
+        String status = videoStatus(payload, "status", "DRAFT");
+        String mediaUrl = text(payload, "mediaUrl", 500);
+        if (mediaUrl != null) mediaUrl = mediaUrl(Map.of("mediaUrl", mediaUrl), "mediaUrl");
+        if (Set.of("REVIEW", "PUBLISHED").contains(status) && (mediaUrl == null || mediaUrl.isBlank())) requireVideoMedia(id);
+        return jdbc.update("UPDATE ai_video_video SET title=?,status=?,media_url=?,cover_url=?,duration_ms=?,description=?,updated_at=NOW(6) WHERE id=?",
+            required(payload, "title", 200), status, mediaUrl, text(payload, "coverUrl", 500), integer(payload, "durationMs", 0, 0, 36000000), text(payload, "description", 1000), id);
+    }
+
+    /** 更新发布状态时复用审核约束，防止直接编辑绕过审核流程。 */
+    private int updatePublish(long id, Map<String, Object> payload) {
+        String status = publishStatus(payload, "status", "DRAFT");
+        Long videoId = jdbc.queryForObject("SELECT video_id FROM ai_video_publish WHERE id=?", Long.class, id);
+        if ("PUBLISHED".equals(status) && videoId != null) requireApprovedReview(videoId);
+        return jdbc.update("UPDATE ai_video_publish SET channel=?,status=?,external_id=?,external_url=?,error_message=?,published_at=IF(?='PUBLISHED',NOW(6),NULL),updated_at=NOW(6) WHERE id=?",
+            required(payload, "channel", 64), status, text(payload, "externalId", 200), text(payload, "externalUrl", 500), text(payload, "errorMessage", 1000), status, id);
+    }
+
+    /** 查询已完成的媒体生成任务，未知和越权任务使用相同的资源错误。 */
+    private Map<String, Object> generationTask(long id, long ownerId) {
+        try {
+            return jdbc.queryForMap("SELECT generation_type generationType,status,output_json outputJson,prompt FROM ai_media_generation_task WHERE id=? AND owner_user_id=?", id, ownerId);
+        } catch (org.springframework.dao.EmptyResultDataAccessException exception) {
+            throw BusinessException.notFound("aiVideo.generationTaskNotFound");
+        }
+    }
+
+    /** 确认分镜属于待回填的项目，防止跨项目写入来源信息。 */
+    private void requireStoryboard(long projectId, long storyboardId) {
+        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM ai_video_storyboard WHERE id=? AND project_id=?", Integer.class, storyboardId, projectId);
+        if (count == null || count == 0) throw BusinessException.notFound("aiVideo.resourceNotFound");
+    }
+
+    /** 校验生成结果中确实存在前端请求回填的媒体地址，防止伪造任务结果。 */
+    private boolean outputContainsUrl(Object outputJson, String mediaUrl) {
+        if (outputJson == null) return false;
+        try {
+            JsonNode root = outputJson instanceof JsonNode node ? node : mapper.readTree(String.valueOf(outputJson));
+            return containsUrl(root, mediaUrl);
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
+    /** 递归读取供应商输出中的 value 和 OSS 备份地址。 */
+    private boolean containsUrl(JsonNode node, String mediaUrl) {
+        if (node == null || node.isNull()) return false;
+        if (node.isTextual()) return mediaUrl.equals(node.asText());
+        if (node.isArray()) { for (JsonNode item : node) if (containsUrl(item, mediaUrl)) return true; return false; }
+        if (node.isObject()) { for (JsonNode item : node) if (containsUrl(item, mediaUrl)) return true; }
+        return false;
+    }
+
+    /** 只允许可持久化的 HTTP(S) 媒体地址。 */
+    private String mediaUrl(Map<String, Object> payload, String key) {
+        String value = required(payload, key, 500);
+        try {
+            java.net.URI uri = java.net.URI.create(value);
+            if (!Set.of("http", "https").contains(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null) throw new IllegalArgumentException();
+        } catch (Exception exception) { throw new BusinessException("aiVideo.mediaUrlInvalid"); }
+        return value;
+    }
+
+    /** 校验成片已有媒体地址。 */
+    private void requireVideoMedia(long videoId) {
+        String mediaUrl = jdbc.queryForObject("SELECT media_url FROM ai_video_video WHERE id=?", String.class, videoId);
+        if (mediaUrl == null || mediaUrl.isBlank()) throw new BusinessException("aiVideo.mediaRequired");
+    }
+
+    /** 校验已通过审核后才允许完成发布。 */
+    private void requireApprovedReview(long videoId) {
+        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM ai_video_review WHERE video_id=? AND status='APPROVED'", Integer.class, videoId);
+        if (count == null || count == 0) throw new BusinessException("aiVideo.reviewRequired");
+    }
+
+    /** 读取正数可选关联编号。 */
+    private Long optionalLong(Map<String, Object> payload, String key) {
+        Object value = payload == null ? null : payload.get(key);
+        if (value == null || value.toString().isBlank()) return null;
+        if (!(value instanceof Number) || ((Number) value).longValue() <= 0) throw new BusinessException("aiVideo.numberInvalid", key);
+        return ((Number) value).longValue();
+    }
+
+    /** 校验成片状态枚举。 */
+    private String videoStatus(Map<String, Object> payload, String key, String fallback) {
+        return enumValue(value(payload, key, fallback), VIDEO_STATUSES, "aiVideo.videoStatusInvalid");
+    }
+
+    /** 校验发布状态枚举。 */
+    private String publishStatus(Map<String, Object> payload, String key, String fallback) {
+        return enumValue(value(payload, key, fallback), PUBLISH_STATUSES, "aiVideo.publishStatusInvalid");
     }
 
     private Map<String, Object> insert(String sql, Object[] values, String resource) {
