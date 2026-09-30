@@ -408,6 +408,10 @@ public class DataInitializer implements ApplicationRunner {
         seedCrud(model, "知识库", "/knowledge-bases", "KnowledgeBasesView", "Collection",
             "ai:model:knowledge-base", 24);
 
+        // AI 剧本是独立的创作入口，生成后的剧本仍会写入 AI 视频项目资产。
+        menu(null, "AI剧本", "MENU", "/ai-script", "AiScriptView", "EditPen",
+            "ai:script:invoke", 35, true);
+
         // ========== 自动化模块 ==========
         Menu automation = menu(null, "自动化", "CATALOG", "/automation", null, "Operation",
             "automation:catalog", 40, true);
@@ -559,7 +563,7 @@ public class DataInitializer implements ApplicationRunner {
      * 物品资产单独使用 {@code item} 权限前缀，便于后续配置独立角色授权。</p>
      */
     private void seedAiVideoMenus() {
-        Menu aiVideo = menu(null, "AI视频", "CATALOG", "/ai-video", null, "VideoCamera", "ai:video:catalog", 25, true);
+        Menu aiVideo = menu(null, "AI视频", "CATALOG", "/ai-video", null, "VideoCamera", "ai:video:catalog", 36, true);
         menu(aiVideo.getId(), "工作台首页", "MENU", "/ai-video/dashboard", "AiVideoView", "House",
             "ai:video:dashboard:list", 1, true);
 
