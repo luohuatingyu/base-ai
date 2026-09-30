@@ -2,7 +2,7 @@
 
 ### Git 基准、范围与交付状态
 
-Commit: `e85e0b6`
+Commit: `59396c0`
 - 提交说明：Remove media generation logic from chat page；本次拆分相关代码提交为 `f743748`、`e8fe8bd`、`c17f4b2`；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
 - 聊天页面不再加载或提交媒体生成接口；旧版 `/api/ai/chat/generation*` 方法改用 `ai:generation:invoke` 权限；聊天模型目录排除生成模型和 embedding 模型。
 - 未新增依赖、未修改数据库结构；并发工作区中的供应商策略与视频功能文件不属于本次范围。
@@ -21,14 +21,14 @@ Commit: `e85e0b6`
 - `cd frontend && node --test test/chat-interaction.test.mjs test/ai-generation.test.mjs test/localization.test.mjs`：84/84 通过。
 - `cd frontend && npm test`：Lint、类型检查、覆盖测试 684/684 通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%；生产构建通过；E2E 3/3 通过。
 - `docker compose up --build -d`：全部镜像构建成功；构建阶段后端 Maven 完整套件 1066/1066 通过，前端生产构建成功；启动阶段因既有 `baseai-local-docker-socket-proxy` 健康检查持续返回 503 而退出，非端口占用。
-- `docker run --rm ... mvn -o -B test`：当前工作区独立重跑在测试编译阶段失败，原因是并发供应商/视频改动状态下缺少既有类（如 `BusinessException`、`RequiredPermission` 等），未归因于本次拆分；待并发改动合并稳定后需重跑。
+- `docker run --rm ... mvn -o -B test`：1066/1066 通过（0 失败、0 错误、0 跳过）。首次重跑曾受并发工作区暂时缺失类影响，源码恢复后已完成全量验证。
 - `git diff --check`：通过。
 
 ### 覆盖范围、已知限制与下次建议
 
 - 覆盖后端权限隔离、模型能力目录过滤、前端聊天/生成职责边界和现有生成工作台回归。
 - Compose 镜像已包含本次代码，但 Docker Socket Proxy unhealthy 导致整栈依赖未完成健康启动。
-- 独立 Maven 全量测试受并发工作区缺失类影响；恢复完整源码后应再次执行 `cd backend && mvn test -B`，并重新更新本报告基准点。
+- 后端全量 Maven 验证已通过；若供应商或视频服务继续变更，应在其提交稳定后重跑全量套件。
 - 重测条件：修改聊天/生成权限、模型类型过滤、聊天页面提交逻辑或相关接口时，应重新执行定向后端、前端完整套件、Maven 全量测试和 Compose 重建。
 
 ## 套餐调整迁移至独立一级目录（2026-09-30）
