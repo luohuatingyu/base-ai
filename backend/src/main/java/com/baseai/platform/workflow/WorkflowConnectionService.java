@@ -76,7 +76,7 @@ public class WorkflowConnectionService {
         try {
             jdbcTemplate.update("""
                 INSERT INTO workflow_connection(code,name,connection_type,config_encrypted,owner_user_id,enabled)
-                VALUES (?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?)
                 """, code(command.code()), text(command.name()), connectionType,
                 encrypt(command.config()), AuthContext.require().id(), !Boolean.FALSE.equals(command.enabled()));
             Long id = jdbcTemplate.queryForObject("SELECT id FROM workflow_connection WHERE code=?", Long.class, code(command.code()));

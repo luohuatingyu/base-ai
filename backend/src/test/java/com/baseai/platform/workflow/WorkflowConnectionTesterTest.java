@@ -41,14 +41,6 @@ class WorkflowConnectionTesterTest {
         return new WorkflowConnectionService.StoredConnection(9L, "TEST", "Test", type, config, 7L, true, null, null);
     }
 
-    /** 构造合法插件配置。 */
-    private JsonNode pluginConfig() {
-        var config = objectMapper.createObjectNode();
-        config.put("pluginComponentId", 1L);
-        config.putObject("credentials").put("apiKey", "k");
-        return config;
-    }
-
     /** 构造包含 URL 的 JDBC 配置。 */
     private JsonNode jdbcConfig(String url) {
         var config = objectMapper.createObjectNode();
@@ -56,28 +48,6 @@ class WorkflowConnectionTesterTest {
         config.put("username", "sa");
         config.put("password", "");
         return config;
-    }
-
-    /** 插件连接通过身份校验后必须留存成功结果并返回延迟与指标。 */
-    @Test
-    void recordsSuccessfulTestResultForPluginConnection() {
-        when(connectionService.ownedForTest(9L)).thenReturn(connection("PLUGIN", pluginConfig()));
-
-        Map<String, Object> result = tester.test(9L);
-
-        assertEquals(true, result.get("connected"));
-        assertEquals("PLUGIN", result.get("connectionType"));
-        assertTrue((Integer) result.get("latencyMs") >= 0);
-        verify(connectionService).recordTestResult(eq(9L), eq(true), anyInt(), eq("{}"));
-    }
-
-    /** 插件连接缺少组件身份时必须留存失败结果并抛出业务异常。 */
-    @Test
-    void recordsFailedTestResultForInvalidPluginConnection() {
-        when(connectionService.ownedForTest(9L)).thenReturn(connection("PLUGIN", objectMapper.createObjectNode()));
-
-        assertThrows(BusinessException.class, () -> tester.test(9L));
-        verify(connectionService).recordTestResult(eq(9L), eq(false), anyInt(), anyString());
     }
 
     /** JDBC 连接失败时必须留存失败结果且不写入成功指标。 */
@@ -124,7 +94,7 @@ class WorkflowConnectionTesterTest {
     /** 非向量类型不得触发向量能力写入。 */
     @Test
     void skipsVectorCapabilityForNonVectorTypes() {
-        when(connectionService.ownedForTest(9L)).thenReturn(connection("PLUGIN", pluginConfig()));
+        when(connectionService.ownedForTest(9L)).thenReturn(connection("TAVILY", objectMapper.createObjectNode().put("apiKey", "key")));
 
         tester.test(9L);
 
