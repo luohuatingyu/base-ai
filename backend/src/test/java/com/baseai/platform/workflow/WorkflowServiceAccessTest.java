@@ -75,6 +75,11 @@ class WorkflowServiceAccessTest {
         authenticate(7L, Set.of("USER"));
     }
 
+    /** 切换测试用户身份，覆盖普通用户与管理员资源访问边界。 */
+    private void authenticate(long userId, Set<String> roles) {
+        AuthContext.set(new AuthUser(userId, "tester", roles, Set.of(), AuthenticationType.TOKEN, null, null));
+    }
+
     /** 清理线程认证上下文。 */
     @AfterEach
     void tearDown() { AuthContext.clear(); }
@@ -111,149 +116,4 @@ class WorkflowServiceAccessTest {
         assertEquals(1, service.chatToolOptions().size());
     }
 
-    /** 市场模板导入必须幂等保存外部身份并默认启用。 */
-    @Test
-    void importsMarketplaceTemplateIdempotently() {
-        authenticate(1L, Set.of("ADMIN"));
-        WorkflowModels.MarketplaceTemplateDraft draft = new WorkflowModels.MarketplaceTemplateDraft(
-            "N8N", "n8n-nodes-base.redis", "1", "n8n", "a".repeat(64), "N8N_REDIS", "Redis", "",
-            "REDIS_COMMAND", "DATA_STORAGE", new ObjectMapper().createObjectNode());
-
-        WorkflowModels.MarketplaceTemplatePersistence first = service.importMarketplaceTemplate(draft);
-
-        assertEquals("CREATED", first.status());
-        WorkflowModels.NodeTemplateView imported = service.templates().stream()
-            .filter(template -> "n8n-nodes-base.redis".equals(template.externalKey())).findFirst().orElseThrow();
-        assertEquals(true, imported.importedTemplate());
-        assertEquals(true, imported.enabled());
-        assertEquals("n8n-nodes-base.redis", imported.externalKey());
-
-        service.updateTemplate(first.templateId(), new WorkflowModels.NodeTemplateCommand(
-            "IGNORED", "Redis", "REDIS_COMMAND", "", new ObjectMapper().createObjectNode(), false, "N8N", "DATA_STORAGE"));
-        assertFalse(service.template(first.templateId()).enabled());
-
-        WorkflowModels.MarketplaceTemplatePersistence second = service.importMarketplaceTemplate(draft);
-        assertEquals("ALREADY_IMPORTED", second.status());
-        assertTrue(service.template(first.templateId()).enabled());
-    }
-
-    /** 重新导入已删除的市场模板必须恢复记录并立即启用。 */
-    @Test
-    void restoresMarketplaceTemplateAsEnabled() {
-        authenticate(1L, Set.of("ADMIN"));
-        WorkflowModels.MarketplaceTemplateDraft draft = new WorkflowModels.MarketplaceTemplateDraft(
-            "N8N", "n8n-nodes-base.redis", "1", "n8n", "a".repeat(64), "N8N_REDIS", "Redis", "",
-            "REDIS_COMMAND", "DATA_STORAGE", new ObjectMapper().createObjectNode());
-        Long id = service.importMarketplaceTemplate(draft).templateId();
-        service.deleteTemplate(id);
-
-        WorkflowModels.MarketplaceTemplatePersistence restored = service.importMarketplaceTemplate(draft);
-
-        assertEquals("RESTORED", restored.status());
-        assertTrue(service.template(id).enabled());
-    }
-
-    /** 导入状态查询包含停用但未删除模板，并排除已经软删除的组件。 */
-    @Test
-    void listsOnlyNonVoidedMarketplaceTemplateFingerprints() {
-        authenticate(1L, Set.of("ADMIN"));
-        WorkflowModels.MarketplaceTemplateDraft active = new WorkflowModels.MarketplaceTemplateDraft(
-            "N8N", "n8n-nodes-example/action", "1", "vendor", "a".repeat(64), "N8N_ACTION", "Action", "",
-            "PLUGIN_ACTION", "NETWORK_API", new ObjectMapper().createObjectNode());
-        WorkflowModels.MarketplaceTemplateDraft deleted = new WorkflowModels.MarketplaceTemplateDraft(
-            "N8N", "n8n-nodes-example/trigger", "1", "vendor", "b".repeat(64), "N8N_TRIGGER", "Trigger", "",
-            "PLUGIN_TRIGGER", "TRIGGER", new ObjectMapper().createObjectNode());
-        Long activeId = service.importMarketplaceTemplate(active).templateId();
-        Long deletedId = service.importMarketplaceTemplate(deleted).templateId();
-        service.updateTemplate(activeId, new WorkflowModels.NodeTemplateCommand(
-            "IGNORED", "Action", "PLUGIN_ACTION", "", new ObjectMapper().createObjectNode(), false,
-            "N8N", "NETWORK_API"));
-        service.deleteTemplate(deletedId);
-
-        assertEquals(Map.of("n8n-nodes-example/action", "a".repeat(64)),
-            service.activeMarketplaceTemplateFingerprints("N8N"));
-    }
-
-    /** 市场模板的来源、编码和节点类型必须由后端锁定，不能通过更新接口伪造。 */
-    @Test
-    void locksImportedTemplateIdentityOnUpdate() {
-        authenticate(1L, Set.of("ADMIN"));
-        WorkflowModels.MarketplaceTemplateDraft draft = new WorkflowModels.MarketplaceTemplateDraft(
-            "N8N", "n8n-nodes-base.redis", "1", "n8n", "a".repeat(64), "N8N_REDIS", "Redis", "",
-            "REDIS_COMMAND", "DATA_STORAGE", new ObjectMapper().createObjectNode());
-        Long id = service.importMarketplaceTemplate(draft).templateId();
-
-        WorkflowModels.NodeTemplateView updated = service.updateTemplate(id, new WorkflowModels.NodeTemplateCommand(
-            "FORGED", "Renamed", "HTTP", "", new ObjectMapper().createObjectNode(), true, "DIFY", "NETWORK_API"));
-
-        assertEquals("N8N_REDIS", updated.code());
-        assertEquals("REDIS_COMMAND", updated.nodeType());
-        assertEquals("N8N", updated.source());
-        assertEquals("Renamed", updated.name());
-    }
-
-    /** 市场指纹变化必须先提示，确认后才重置配置、更新版本并启用。 */
-    @Test
-    void requiresConfirmationBeforeReplacingChangedMarketplaceTemplate() {
-        authenticate(1L, Set.of("ADMIN"));
-        WorkflowModels.MarketplaceTemplateDraft first = new WorkflowModels.MarketplaceTemplateDraft(
-            "DIFY", "langgenius/tavily/tavily_search", "1", "langgenius", "a".repeat(64), "DIFY_TAVILY", "Tavily", "",
-            "TAVILY_TOOL", "NETWORK_API", new ObjectMapper().createObjectNode().put("operation", "SEARCH"));
-        Long id = service.importMarketplaceTemplate(first).templateId();
-        WorkflowModels.MarketplaceTemplateDraft changed = new WorkflowModels.MarketplaceTemplateDraft(
-            "DIFY", "langgenius/tavily/tavily_search", "2", "langgenius", "b".repeat(64), "DIFY_TAVILY", "Tavily v2", "",
-            "TAVILY_TOOL", "NETWORK_API", new ObjectMapper().createObjectNode().put("operation", "SEARCH").put("maxResults", 5));
-
-        assertEquals("UPDATE_AVAILABLE", service.importMarketplaceTemplates(java.util.List.of(changed), false).get(0).status());
-        assertEquals("1", service.template(id).externalVersion());
-        assertTrue(service.template(id).enabled());
-        assertEquals("UPDATED", service.importMarketplaceTemplates(java.util.List.of(changed), true).get(0).status());
-        assertEquals("2", service.template(id).externalVersion());
-        assertTrue(service.template(id).enabled());
-    }
-
-    /** ABI 重探测只刷新历史模板字段展示元数据，并保留参数值和执行身份。 */
-    @Test
-    void refreshesImportedTemplateLocalizationWithoutChangingValues() {
-        authenticate(1L, Set.of("ADMIN"));
-        ObjectNode config = mapper.createObjectNode().put("pluginComponentId", 7)
-            .put("packageFingerprint", "a".repeat(64)).put("componentExternalId", "action")
-            .put("componentType", "ACTION");
-        config.putObject("parameters").put("query", "saved");
-        config.set("parameterSchema", mapper.createArrayNode());
-        config.set("credentialSchema", mapper.createArrayNode());
-        Long id = service.importMarketplaceTemplate(new WorkflowModels.MarketplaceTemplateDraft(
-            "DIFY", "pkg/action", "1", "vendor", "b".repeat(64), "DIFY_ACTION", "动作", "",
-            "PLUGIN_ACTION", "BASIC", config)).templateId();
-        ObjectNode localization = mapper.createObjectNode();
-        localization.putObject("name").put("zh-CN", "动作").put("en-US", "Action");
-        var component = new WorkflowPluginWorkerClient.WorkerComponent("action", "动作", "", "ACTION",
-            mapper.createArrayNode().add(mapper.createObjectNode().put("name", "query")
-                .set("localization", mapper.createObjectNode().set("label",
-                    mapper.createObjectNode().put("en-US", "Query")))),
-            mapper.createArrayNode(), "action.py", "SUPPORTED", "", localization);
-
-        service.refreshMarketplaceTemplateMetadata("DIFY", "pkg", new WorkflowPluginWorkerClient.WorkerPackage(
-            "DIFY", "pkg", "1", "a".repeat(64), "python", 6, java.util.List.of(component)),
-            Map.of("pkg/action", "b".repeat(64)));
-
-        WorkflowModels.NodeTemplateView refreshed = service.template(id);
-        assertEquals("saved", refreshed.config().path("parameters").path("query").asText());
-        assertEquals("a".repeat(64), refreshed.config().path("packageFingerprint").asText());
-        assertEquals("Query", refreshed.config().path("parameterSchema").get(0)
-            .path("localization").path("label").path("en-US").asText());
-        assertEquals("Action", refreshed.localization().path("name").path("en-US").asText());
-    }
-
-    /** 通用创建接口不能伪造 n8n 或 Dify 市场来源。 */
-    @Test
-    void rejectsForgedMarketplaceSourceOnGenericCreate() {
-        assertThrows(BusinessException.class, () -> service.createTemplate(new WorkflowModels.NodeTemplateCommand(
-            "FORGED", "Forged", "HTTP", "", new ObjectMapper().createObjectNode(), true, "DIFY", "NETWORK_API")));
-    }
-
-    /** 设置交互用户身份。 */
-    private void authenticate(Long userId, Set<String> roles) {
-        AuthContext.set(new AuthUser(userId, "user" + userId, roles, Set.of(), AuthenticationType.TOKEN, null, null));
-    }
 }

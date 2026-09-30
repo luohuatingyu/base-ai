@@ -7,7 +7,7 @@ import java.util.Set;
 
 /** 统一维护节点模板来源、功能分类及原生节点默认分类。 */
 public final class WorkflowTemplateCatalog {
-    public static final Set<String> SOURCES = Set.of("SYSTEM", "N8N", "DIFY");
+    public static final Set<String> SOURCES = Set.of("SYSTEM");
     public static final Set<String> CATEGORIES = Set.of(
         "BASIC", "AI", "FLOW_CONTROL", "DATA_TRANSFORM", "TEXT_DOCUMENT", "NETWORK_API",
         "TRIGGER", "NOTIFICATION", "DATA_STORAGE", "MESSAGE_QUEUE"
