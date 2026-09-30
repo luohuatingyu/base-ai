@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { outputFilename, outputMediaType, outputMimeType, outputSource } from '../src/utils/generationOutput.js'
+import { outputFallbackSource, outputFilename, outputMediaType, outputMimeType, outputSource } from '../src/utils/generationOutput.js'
 
 /** 历史输出缺少 mediaType 时按任务类型恢复正确的图片或视频展示。 */
 test('generation output infers media type from task fallback', () => {
@@ -21,4 +21,11 @@ test('generation output preserves MIME for preview and download', () => {
 test('generation output creates safe download names', () => {
   assert.equal(outputFilename({ name: '../cover image' }, 1, 3), '.._cover image.png')
   assert.equal(outputFilename({ name: 'clip.webm', mediaType: 'video' }, 0, 3, 'video_model'), 'clip.webm')
+})
+
+/** 原地址失败时使用 OSS 备份，历史记录无备份时保持原地址。 */
+test('generation output falls back to OSS backup', () => {
+  const output = { kind: 'url', value: 'https://provider.example/a.png', ossUrl: 'https://xyzc.example/public/a.png' }
+  assert.equal(outputFallbackSource(output), 'https://xyzc.example/public/a.png')
+  assert.equal(outputFallbackSource({ kind: 'url', value: 'https://provider.example/a.png' }), 'https://provider.example/a.png')
 })

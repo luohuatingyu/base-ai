@@ -14,6 +14,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 验证浏览器素材转换为供应商可访问临时 URL 的业务边界。 */
 class MediaAssetServiceTest {
+    /** 配置启用时输入 Data URL 优先写入 OSS，并把公共地址交给供应商。 */
+    @Test
+    void materializesDataUrlToOssWhenAvailable() {
+        OssMediaStorageService oss = org.mockito.Mockito.mock(OssMediaStorageService.class);
+        org.mockito.Mockito.when(oss.uploadDataUrl("data:image/png;base64,YQ==", "image/png", "input", "first.png"))
+            .thenReturn("https://xyzc.oss-cn-shanghai.aliyuncs.com/public/ai-generation/input/first.png");
+        MediaAssetService service = new MediaAssetService(oss);
+        var input = new MediaGenerationService.MediaInput("IMAGE", "first.png", "image/png", "data:image/png;base64,YQ==", "first_frame");
+        assertEquals("https://xyzc.oss-cn-shanghai.aliyuncs.com/public/ai-generation/input/first.png", service.materialize(List.of(input), "https://media.example").get(0).dataUrl());
+    }
     /** Data URL 会被保存为临时素材，返回地址可按令牌读取并保留 MIME 类型。 */
     @Test
     void materializesDataUrlAsReadableTemporaryAsset() {
