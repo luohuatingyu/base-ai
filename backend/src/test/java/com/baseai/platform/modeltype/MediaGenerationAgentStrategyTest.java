@@ -19,6 +19,24 @@ class MediaGenerationAgentStrategyTest {
         assertEquals("GENERIC", registry.protocol("custom", "custom-image", ""));
     }
 
+    /** 供应商显式绑定后必须优先于供应商编码和模型名称推断策略。 */
+    @Test
+    void explicitProviderStrategyWinsOverLegacyNameInference() {
+        MediaGenerationAgentRegistry registry = new MediaGenerationAgentRegistry();
+        assertEquals("GEMINI", registry.protocol("GEMINI", "custom-provider", "seedream-custom", ""));
+        assertEquals("OPENAI", registry.protocol("OPENAI", "custom-provider", "custom-image", ""));
+        assertThrows(IllegalArgumentException.class,
+            () -> registry.resolve("UNKNOWN", "custom-provider", "custom-image", ""));
+    }
+
+    /** 策略绑定后只接受该供应商支持的模型画像，避免跨供应商复用协议配置。 */
+    @Test
+    void rejectsProfileFromAnotherProviderStrategy() {
+        MediaGenerationAgentRegistry registry = new MediaGenerationAgentRegistry();
+        assertTrue(registry.supportsProfile("ARK", "ark", "custom", "seedream-4.5"));
+        assertFalse(registry.supportsProfile("GEMINI", "google", "custom", "seedream-4.5"));
+    }
+
     /** OpenAI 图片请求必须使用官方模型字段并保留参考图。 */
     @Test
     void mapsOpenAiImageAndVideoRequests() {
