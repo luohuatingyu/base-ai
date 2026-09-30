@@ -165,6 +165,30 @@ def test_internal_signature_binds_body_and_rejects_replay():
     assert called == 1
 
 
+def test_worker_logs_auth_reason_and_request_outcome(caplog):
+    """认证失败日志必须说明原因，并在请求汇总日志中保留结果分类。"""
+    middleware = InternalAuthMiddleware(object(), settings(), registry=object(), reporter=object())
+
+    with caplog.at_level(logging.INFO, logger="app.middleware"):
+        response = asyncio.run(middleware.dispatch(
+            signed_request("/email/send", b"{}", {}),
+            lambda _: Response(status_code=200),
+        ))
+
+    assert response.status_code == 401
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("event=worker_auth_rejected" in message and "reason=missing_signature" in message
+               for message in messages)
+    assert any(
+        "event=worker_http_request" in message
+        and "status=401" in message
+        and "outcome=client_error" in message
+        and "error_type=AuthenticationError" in message
+        and "reason=missing_signature" in message
+        for message in messages
+    )
+
+
 def test_request_size_middleware_rejects_chunked_body_over_limit():
     """即使没有 Content-Length，累计正文超限也必须在进入应用前返回 413。"""
     called = False
