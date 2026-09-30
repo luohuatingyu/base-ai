@@ -459,7 +459,8 @@ public class MediaGenerationService {
                 (String) task.get("modelName"), true, tokens.inputTokens(), tokens.outputTokens(), tokens.totalTokens(), null, null, Instant.now()));
             return;
         }
-        String remoteId = firstText(response, "id", "task_id", "taskId");
+        String remoteId = firstText(response, "id", "task_id", "taskId", "name");
+        if (remoteId.startsWith("operations/")) remoteId = remoteId.substring("operations/".length());
         if (remoteId.isBlank()) remoteId = (String) task.get("providerTaskId");
         if (!video || SUCCESS.contains(status) || !status.isEmpty() && !PENDING.contains(status)
             || remoteId == null || !remoteId.matches("[A-Za-z0-9_-]{1,200}")) throw new IllegalArgumentException("Invalid generation response");
@@ -515,7 +516,7 @@ public class MediaGenerationService {
         if (node == null || node.isNull() || !visited.add(node)) return;
         if (node.isArray()) { node.forEach(item -> collectOutputs(item, video, result, visited)); return; }
         if (!node.isObject()) return;
-        for (String field : List.of("url", "output_url", "video_url", "last_frame_url")) {
+        for (String field : List.of("url", "output_url", "video_url", "last_frame_url", "uri")) {
             JsonNode value = node.path(field);
             if (!value.isTextual()) continue;
             URI uri = URI.create(value.asText());
@@ -535,7 +536,24 @@ public class MediaGenerationService {
             copyOutputMetadata(node, output);
             if (!result.contains(output)) result.add(output);
         }
+        collectInlineData(node.get("inline_data"), video, result);
+        collectInlineData(node.get("inlineData"), video, result);
         for (String child : List.of("data", "content", "result", "video", "output")) collectOutputs(node.get(child), video, result, visited);
+    }
+
+    /** 读取 Gemini inline_data 和 OpenAI 兼容网关的内嵌媒体字段。 */
+    private void collectInlineData(JsonNode node, boolean video, List<Map<String, Object>> result) {
+        if (node == null || !node.isObject()) return;
+        String encoded = firstText(node, "data", "bytesBase64Encoded", "b64_json");
+        if (encoded.isBlank() || video && !node.path("mime_type").asText("").startsWith("video/")) return;
+        try {
+            if (Base64.getDecoder().decode(encoded).length == 0) return;
+        } catch (IllegalArgumentException ignored) { return; }
+        Map<String, Object> output = new LinkedHashMap<>(Map.of("kind", "base64", "value", encoded,
+            "mediaType", video ? "video" : "image"));
+        String mime = firstNonBlank(node.path("mime_type").asText(null), node.path("mimeType").asText(null));
+        if (!mime.isBlank()) output.put("mimeType", mime);
+        if (!result.contains(output)) result.add(output);
     }
 
     /** 保留图层位置、层级、名称和格式，支持生成页还原结果语义。 */
