@@ -26,16 +26,16 @@ test('AI script helpers build bounded requests and storyboard payloads', () => {
   assert.match(scriptVideoPrompt(script), /STORYBOARD|夜航|海雾/)
 })
 
-test('AI script menu and AI video shortcut expose the complete production path', () => {
-  assert.match(initializer, /menu\(null, "AI剧本", "MENU", "\/ai-script"/)
-  assert.match(initializer, /ai:script:invoke.*35/)
+test('AI script menu opens the original-novel workspace and keeps video scripts in AI Video', () => {
+  assert.match(initializer, /menu\(null, "AI剧本", "MENU", "\/ai-novel"/)
+  assert.match(initializer, /ai:novel:invoke.*35/)
   assert.match(initializer, /ai:video:catalog.*36/)
-  assert.match(router, /path: 'ai-script'.*ai:script:invoke/)
-  assert.match(navigation, /ai:script:invoke.*aiScript/)
-  assert.match(view, /http\.post\('\/ai\/script\/generate'/)
-  assert.match(view, /storyboardPayloads/)
-  assert.match(view, /STORYBOARD_TO_VIDEO/)
-  assert.match(videoView, /route: 'ai-script'/)
+  assert.match(router, /path: 'ai-novel'.*ai:novel:invoke/)
+  assert.match(navigation, /ai:novel:invoke.*aiNovel/)
+  assert.match(view, /listAiNovels/)
+  assert.match(view, /runAiNovelWriter/)
+  assert.match(view, /extractAiNovelToVideo/)
+  assert.match(videoView, /route: 'scripts'/)
 })
 
 test('AI script backend endpoint keeps independent permission and structured output contract', () => {

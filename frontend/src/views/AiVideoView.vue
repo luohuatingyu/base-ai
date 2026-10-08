@@ -484,7 +484,7 @@ const guideDelivery = computed(() => [
   { key: 'publish', index: '04', title: t('aiVideo.guide.delivery.publishTitle'), description: t('aiVideo.guide.delivery.publishDescription'), check: t('aiVideo.guide.delivery.publishCheck'), action: t('aiVideo.guide.delivery.publishAction'), path: 'publishes' }
 ])
 const productionPaths = computed(() => [
-  { key: 'script', icon: '剧', title: t('aiVideo.paths.scriptTitle'), description: t('aiVideo.paths.scriptHint'), next: t('aiVideo.paths.scriptNext'), route: 'ai-script', source: 'script' },
+  { key: 'script', icon: '剧', title: t('aiVideo.paths.scriptTitle'), description: t('aiVideo.paths.scriptHint'), next: t('aiVideo.paths.scriptNext'), route: 'scripts', source: 'script' },
   { key: 'text', icon: '文', title: t('aiVideo.paths.textTitle'), description: t('aiVideo.paths.textHint'), next: t('aiVideo.paths.textNext'), route: 'ai-generation', type: 'video_model', generationMode: 'TEXT_TO_VIDEO', source: 'text' },
   { key: 'storyboard', icon: '镜', title: t('aiVideo.paths.storyboardTitle'), description: t('aiVideo.paths.storyboardHint'), next: t('aiVideo.paths.storyboardNext'), route: 'ai-generation', type: 'video_model', generationMode: 'STORYBOARD_TO_VIDEO', source: 'storyboard' },
   { key: 'asset', icon: '物', title: t('aiVideo.paths.assetTitle'), description: t('aiVideo.paths.assetHint'), next: t('aiVideo.paths.assetNext'), route: 'ai-generation', type: 'video_model', generationMode: 'REFERENCE_IMAGE_TO_VIDEO', source: 'asset' },

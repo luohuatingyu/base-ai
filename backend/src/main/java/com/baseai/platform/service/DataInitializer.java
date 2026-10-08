@@ -382,7 +382,7 @@ public class DataInitializer implements ApplicationRunner {
             "ai:model:knowledge-base", 24);
 
         // AI 小说是独立的原著创作入口，影视改编剧本仍归属于 AI 视频工作台。
-        menu(null, "AI小说", "MENU", "/ai-novel", "AiScriptView", "EditPen",
+        menu(null, "AI剧本", "MENU", "/ai-novel", "AiScriptView", "EditPen",
             "ai:novel:invoke", 35, true);
 
         // ========== 自动化模块 ==========

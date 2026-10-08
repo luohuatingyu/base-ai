@@ -30,5 +30,11 @@ export function runAiNovelWriter(novelId, payload) { return http.post(`/ai/novel
 /** 新增人物、世界观或文风参考资料。 */
 export function createAiNovelReference(novelId, payload) { return http.post(`/ai/novels/${novelId}/references`, payload) }
 
+/** 更新人物、世界观、文风或研究资料。 */
+export function updateAiNovelReference(novelId, referenceId, payload) { return http.put(`/ai/novels/${novelId}/references/${referenceId}`, payload) }
+
+/** 删除一条写作参考资料。 */
+export function deleteAiNovelReference(novelId, referenceId) { return http.delete(`/ai/novels/${novelId}/references/${referenceId}`) }
+
 /** 从原著章节提取视频改编剧本。 */
 export function extractAiNovelToVideo(novelId, payload) { return http.post(`/ai/novels/${novelId}/extract-to-video`, payload) }

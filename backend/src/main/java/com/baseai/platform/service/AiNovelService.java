@@ -226,9 +226,16 @@ public class AiNovelService {
         AiChatClient.ChatResult result = client.chat("chat", "text_model",
             List.of(new AiChatClient.Message("system", WRITING_SYSTEM), new AiChatClient.Message("user", userPrompt)),
             0.65D, null, null, null, "AI_NOVEL", user.id(), null);
-        return Map.of("operation", operation, "chapterId", request == null ? null : request.chapterId(),
-            "content", result.content(), "model", result.model(), "inputTokens", result.inputTokens(),
-            "outputTokens", result.outputTokens(), "totalTokens", result.totalTokens());
+        // 大纲生成允许没有章节，不能使用拒绝 null 的 Map.of 返回结果。
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("operation", operation);
+        response.put("chapterId", request == null ? null : request.chapterId());
+        response.put("content", result.content());
+        response.put("model", result.model());
+        response.put("inputTokens", result.inputTokens());
+        response.put("outputTokens", result.outputTokens());
+        response.put("totalTokens", result.totalTokens());
+        return response;
     }
 
     /** 从指定原著章节生成 AI 视频改编剧本、分镜并建立来源关系。 */
@@ -241,8 +248,10 @@ public class AiNovelService {
         if (chapterIds.isEmpty() || chapterIds.size() > 24) throw new BusinessException("aiNovel.chaptersRequired");
         String source = chapterIds.stream().map(id -> chapterContext(novelId, id)).reduce((left, right) -> left + "\n\n" + right).orElse("");
         Map<String, Object> novel = jdbc.queryForObject(NOVEL_SELECT, (rs, row) -> row(rs), novelId);
+        int sceneCount = request.sceneCount() == null ? 6 : request.sceneCount();
+        if (sceneCount < 1 || sceneCount > 24) throw new BusinessException("aiNovel.sceneCountInvalid");
         String prompt = "原著标题：" + value(novel, "title", "") + "\n原著梗概：" + value(novel, "logline", "")
-            + "\n原著章节：\n" + source + "\n请提取为约 " + (request.sceneCount() == null ? 6 : request.sceneCount()) + " 个镜头。";
+            + "\n原著章节：\n" + source + "\n请提取为约 " + sceneCount + " 个镜头。";
         AuthUser user = AuthContext.require();
         AiChatClient.ChatResult result = client.chat("chat", "text_model",
             List.of(new AiChatClient.Message("system", EXTRACTION_SYSTEM), new AiChatClient.Message("user", prompt)),
@@ -410,12 +419,14 @@ public class AiNovelService {
     private String value(Map<String, Object> payload, String key, String fallback) { Object raw = payload == null ? null : payload.get(key); return raw == null ? fallback : String.valueOf(raw); }
     /** 校验枚举字段。 */
     private String enumValue(String raw, Set<String> allowed, String message) { String value = raw == null ? "" : raw.trim().toUpperCase(); if (!allowed.contains(value)) throw new BusinessException(message); return value; }
-    /** 校验整数范围。 */
-    private int integer(Map<String, Object> payload, String key, int fallback, int min, int max) { Object raw = payload == null ? null : payload.get(key); int value = raw instanceof Number ? ((Number) raw).intValue() : fallback; if (value < min || value > max) throw new BusinessException("aiNovel.numberInvalid", key); return value; }
-    /** 读取可空长整数。 */
-    private Long nullableLong(Map<String, Object> payload, String key) { Object raw = payload == null ? null : payload.get(key); return raw instanceof Number && ((Number) raw).longValue() > 0 ? ((Number) raw).longValue() : null; }
-    /** 向预处理语句写入可空长整数。 */
-    private void setNullableLong(PreparedStatement statement, int index, Object raw) throws java.sql.SQLException { if (raw instanceof Number && ((Number) raw).longValue() > 0) statement.setLong(index, ((Number) raw).longValue()); else statement.setObject(index, null); }
+    /** 校验整数范围并拒绝小数或非数字输入。 */
+    private int integer(Map<String, Object> payload, String key, int fallback, int min, int max) { Object raw = payload == null ? null : payload.get(key); int value = integral(raw, fallback, key); if (value < min || value > max) throw new BusinessException("aiNovel.numberInvalid", key); return value; }
+    /** 读取可空长整数并拒绝小数或非法正数。 */
+    private Long nullableLong(Map<String, Object> payload, String key) { Object raw = payload == null ? null : payload.get(key); if (raw == null) return null; long value = integral(raw, 0, key); return value > 0 ? value : null; }
+    /** 向预处理语句写入严格校验后的可空长整数。 */
+    private void setNullableLong(PreparedStatement statement, int index, Object raw) throws java.sql.SQLException { if (raw == null) { statement.setObject(index, null); return; } int value = integral(raw, 0, "parentId"); if (value > 0) statement.setLong(index, value); else statement.setObject(index, null); }
+    /** 将请求中的数字严格转换为整数，避免 1.5 被静默截断。 */
+    private int integral(Object raw, int fallback, String key) { if (raw == null) return fallback; if (!(raw instanceof Number number) || number.doubleValue() != number.longValue()) throw new BusinessException("aiNovel.numberInvalid", key); long value = number.longValue(); if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) throw new BusinessException("aiNovel.numberInvalid", key); return (int) value; }
     /** 从 JSON 数组兼容读取章节 ID。 */
     private List<Long> chapterIds(JsonNode node) { List<Long> result = new ArrayList<>(); if (node != null && node.isArray()) node.forEach(item -> { if (item.isIntegralNumber() && item.asLong() > 0) result.add(item.asLong()); }); return result; }
     /** 限制文本长度，避免提示词和数据库字段超限。 */
