@@ -124,3 +124,20 @@ test('资产说明与新建向导绑定分类数据，窄屏按单列展示', ()
   assert.match(view, /@media \(max-width: 760px\) \{ \.creation-guide-grid \{ grid-template-columns: 1fr;/)
   assert.doesNotMatch(view, /v-html=/)
 })
+
+test('AI视频成片和分镜提供安全的快捷操作', () => {
+  assert.match(view, /function generateStoryboard\(row\)/)
+  assert.match(view, /mode: 'STORYBOARD_TO_VIDEO'/)
+  assert.match(view, /storyboardId: row\.id/)
+  assert.match(view, /function previewVideo\(row\)/)
+  assert.match(view, /safeMediaUrl\(row\?\.mediaUrl\)/)
+  assert.match(view, /function submitQuickReview\(row, status\)/)
+  assert.match(view, /await reviewAiVideo\(row\.id, \{ status \}\)/)
+  assert.match(view, /const canReview = computed\(/)
+  assert.match(view, /onBeforeUnmount\(closeVideoPreview\)/)
+  for (const locale of [zhLocale, enLocale]) {
+    for (const key of ['previewVideo', 'generateStoryboard', 'approveVideo', 'rejectVideo', 'quickReviewSaved']) {
+      assert.match(locale, new RegExp(`${key}:`), key)
+    }
+  }
+})
