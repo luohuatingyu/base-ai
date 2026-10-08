@@ -11685,3 +11685,43 @@ Commit: `102ef1f`（Fix AI video service injection）
 ### 重测触发条件
 
 修改 `backend/src/main/java/` 业务代码、Domain、Repository、Service、Controller 或影响业务逻辑的核心配置时，重新执行 `mvn test -B` 并更新本报告。
+## AI 原著小说工作台首期闭环（2026-10-08）
+
+### Git基准点
+
+Commit: `34cbdd7`（Qualify AI novel database template）
+- 分支：`emdash/codex-vlzfy`
+- 测试日期：2026-10-08（Asia/Shanghai）
+
+### 本次变更测试结果
+
+**变更范围**：一级菜单保留“AI 剧本”，副标题标明“原著小说工作台”；交付单人作品、章节、正文、AI 写作、保存和提取到 AI 视频的完整闭环；AI 视频生产入口继续使用独立的脚本路径。
+
+**测试执行结果**：
+- `node --test frontend/test/ai-novel.test.mjs frontend/test/ai-script.test.mjs`：15/15 通过。
+- `npm test`：前端完整套件 613/613 通过，失败 0、错误 0、跳过 0；行覆盖 98.14%、分支覆盖 81.33%、函数覆盖 96.68%；生产构建通过，E2E 3/3 通过。
+- Docker Maven 执行 `mvn -o -B -ntp -Dtest=AiNovelControllerTest,AiNovelServiceInputTest test`：3/3 通过。
+- Docker Maven 执行 `mvn -o -B -ntp test`：后端完整套件 851/851 通过，失败 0、错误 0、跳过 0。
+- `docker compose up --build -d`：镜像构建成功，构建阶段后端 Maven 851/851 通过；启动后 frontend、backend、document-parser、python-worker 均 healthy。
+- `git diff --check`：通过。
+
+**关键模块测试**：
+- 小说工作台页面及中英文文案：前端定向契约 11/11 通过。
+- AI 小说 Controller 权限和路径：2/2 通过。
+- AI 小说 Service 输入边界：1/1 通过。
+- 前后端完整回归：613/613、851/851 通过。
+
+### 重测触发条件
+
+修改 `backend/src/main/java/` 下的 AI 小说服务、Controller、Domain、Repository 或影响业务逻辑的核心配置时，重新执行后端完整套件并更新本报告；修改小说工作台页面、AI 视频提取入口或相关文案时，重新执行前端完整套件和 Compose 重建。
+
+### 已知问题
+
+- 首期按确认范围实现单人写作闭环，暂未纳入多人协作、版本历史、发布和导出。
+- 前端构建仍有既有的大体积 chunk、runtime-config 和 Vue 测试警告，不影响构建及测试结果。
+- Compose 依赖使用工作区既有的 `mysql`、`redis` 容器；本次验证已启动退出的依赖容器后完成整栈健康启动。
+
+### 下次测试建议
+
+- 在真实 LLM 路由配置下补充 AI 续写、改写和提取分镜的端到端验证。
+- 在新环境执行一次从空库到现有 Flyway 版本的完整迁移和 Compose 启动验证。
