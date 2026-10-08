@@ -255,6 +255,8 @@ public class AiVideoService {
     @Transactional
     public Map<String, Object> markPublished(Long id) {
         requireOwned("publishes", id);
+        String publishStatus = jdbc.queryForObject("SELECT status FROM ai_video_publish WHERE id=?", String.class, id);
+        if ("PUBLISHED".equals(publishStatus)) throw new BusinessException("aiVideo.publishAlreadyCompleted");
         Long videoId = jdbc.queryForObject("SELECT video_id FROM ai_video_publish WHERE id=?", Long.class, id);
         if (videoId == null) throw new BusinessException("aiVideo.resourceNotFound");
         requireApprovedReview(videoId);
