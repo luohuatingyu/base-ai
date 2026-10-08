@@ -281,7 +281,7 @@ class WorkflowSchemaResourceTest {
             "external_publisher", "external_fingerprint", "imported_at"}) {
             assertTrue(schema.contains("DROP COLUMN " + column), column);
         }
-        assertTrue(schema.contains("DELETE FROM workflow_node_template WHERE template_source IN ('N8N', 'DIFY')"));
+        assertTrue(schema.contains("DELETE FROM workflow_node_template WHERE template_source IN ('N8N','DIFY')"));
         assertTrue(schema.contains("DELETE FROM sys_menu"));
     }
 }
