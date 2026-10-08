@@ -427,8 +427,19 @@ public class AiVideoService {
             for (int i = 0; i < values.length; i++) statement.setObject(i + 1, values[i]);
             return statement;
         }, keys);
-        Number key = keys.getKey(); if (key == null) throw new BusinessException("aiVideo.saveFailed");
+        Number key = generatedId(keys); if (key == null) throw new BusinessException("aiVideo.saveFailed");
         return find(resource, key.longValue());
+    }
+
+    /** 从不同数据库返回的生成键集合中稳定提取主键，兼容 H2 返回时间默认值的情况。 */
+    private Number generatedId(KeyHolder keys) {
+        Map<String, Object> values = keys.getKeys();
+        if (values != null) {
+            for (Map.Entry<String, Object> entry : values.entrySet()) {
+                if ("id".equalsIgnoreCase(entry.getKey()) && entry.getValue() instanceof Number number) return number;
+            }
+        }
+        try { return keys.getKey(); } catch (org.springframework.dao.InvalidDataAccessApiUsageException ignored) { return null; }
     }
 
     private Map<String, Object> find(String resource, long id) {
