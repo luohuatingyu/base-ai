@@ -5,6 +5,7 @@ import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -43,6 +44,7 @@ public class AiVideoService {
     }
 
     /** 注入 JSON 编解码器，用于校验媒体生成任务的结构化输出。 */
+    @Autowired
     public AiVideoService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc, ObjectMapper mapper) {
         this.jdbc = jdbc;
         this.mapper = mapper;
