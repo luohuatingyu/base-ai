@@ -11647,3 +11647,41 @@ Commit: `bc39ae3`
 - 覆盖接入协议字段改名、六类协议名称、图标层次和未知编码回退，以及供应商页面现有渲染入口。
 - 构建仍输出既有 runtime-config、第三方注释和大体积 chunk 警告，不影响本次验证结果。
 - 内部协议编码保持稳定；后续新增协议时应同步补充中英文名称、图标映射和契约测试。
+## AI 视频工作台能力完善（2026-10-08）
+
+### Git 基准点
+
+Commit: `102ef1f`（Fix AI video service injection）
+- 分支：`emdash/codex-vlzfy`
+- 测试日期：2026-10-08（Asia/Shanghai）
+- 本次 AI 视频实现提交范围：`6e3087d` 至 `102ef1f`；测试报告将在本节提交后单独提交。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 视频成片可安全预览并在无效地址时拒绝加载 | `frontend/test/ai-video-navigation.test.mjs` 检查预览入口、`safeMediaUrl` 和视频预览对话框 | 正常、边界、安全 | 通过 |
+| 分镜可携带项目、分镜和提示词跳转视频生成 | 同文件检查 `generateStoryboard` 的路由参数和上下文拼装 | 正常、兼容、回归 | 通过 |
+| 审核快捷操作受权限、状态和确认流程约束 | 同文件检查审核权限条件、批准/驳回 API 和成功/失败反馈 | 权限、安全、异常 | 通过 |
+| 生成任务只能回填真实视频输出，且项目/分镜归属有效 | `AiVideoWorkflowTest` 覆盖任务状态、生成类型、视频输出 URL、归属和重复回填 | 正常、边界、异常、安全 | 通过 |
+| 发布必须基于最新批准审核且不能重复发布 | `AiVideoWorkflowTest` 覆盖审核决策、发布状态、重复发布和状态回滚 | 状态冲突、回归、兼容 | 通过 |
+| 服务端构造注入可在 Compose 运行时启动 | `AiVideoWorkflowTest` 与 Maven 完整套件验证服务类；Compose 启动日志验证视频服务注入已通过 | 启动、兼容 | 通过 |
+
+### 测试执行结果
+
+- `node --test frontend/test/ai-video-navigation.test.mjs`：12/12 通过。
+- `npm test`（`frontend/`）：Lint、类型检查、覆盖测试 613/613、生产构建和 E2E 3/3 均通过；行覆盖 98.14%、分支覆盖 81.33%、函数覆盖 96.68%。
+- `docker run --rm -v "$PWD":/workspace -w /workspace/backend -v emdash-m2-cache:/root/.m2 maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=AiVideoWorkflowTest test`：16/16 通过。
+- 同一 Maven 容器执行 `mvn -B -ntp test`：851/851 通过，失败 0、错误 0、跳过 0。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：镜像构建成功，构建阶段后端 851/851 通过；最终启动被工作区并行修改中的 `AiNovelService` 无限定 `JdbcTemplate` 构造参数阻断，Spring 报存在 `mysqlJdbcTemplate` 与 `auditJdbcTemplate` 两个候选 Bean。该文件不属于本次 AI 视频变更。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖视频预览、分镜到视频生成跳转、快捷审核、生成任务回填、审核与发布状态机、权限校验、媒体 URL 校验、重复操作和 H2/MySQL SQL 可移植性。
+- Compose 当前未达到整栈 healthy：并行的 `backend/src/main/java/com/baseai/platform/service/AiNovelService.java` 修改需要给 `JdbcTemplate` 注入增加限定名后重新执行 Compose；本次未修改该文件。
+- 运行期间仅保留现有并行工作区修改；没有生成临时调试文件。
+
+### 重测触发条件
+
+修改 `backend/src/main/java/` 业务代码、Domain、Repository、Service、Controller 或影响业务逻辑的核心配置时，重新执行 `mvn test -B` 并更新本报告。
