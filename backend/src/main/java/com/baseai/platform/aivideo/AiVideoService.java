@@ -255,8 +255,9 @@ public class AiVideoService {
     @Transactional
     public Map<String, Object> markPublished(Long id) {
         requireOwned("publishes", id);
-        Long review = jdbc.queryForObject("SELECT COUNT(*) FROM ai_video_publish x JOIN ai_video_video v ON v.id=x.video_id JOIN ai_video_review r ON r.video_id=v.id WHERE x.id=? AND r.status='APPROVED'", Long.class, id);
-        if (review == null || review == 0) throw new BusinessException("aiVideo.reviewRequired");
+        Long videoId = jdbc.queryForObject("SELECT video_id FROM ai_video_publish WHERE id=?", Long.class, id);
+        if (videoId == null) throw new BusinessException("aiVideo.resourceNotFound");
+        requireApprovedReview(videoId);
         jdbc.update("UPDATE ai_video_publish SET status='PUBLISHED',published_at=NOW(6),updated_at=NOW(6) WHERE id=?", id);
         jdbc.update("UPDATE ai_video_video v JOIN ai_video_publish p ON p.video_id=v.id SET v.status='PUBLISHED',v.updated_at=NOW(6) WHERE p.id=?", id);
         return find("publishes", id);
@@ -298,8 +299,10 @@ public class AiVideoService {
         long projectId = projectId(p);
         String media = text(p, "mediaUrl", 500);
         if (media != null) media = mediaUrl(Map.of("mediaUrl", media), "mediaUrl");
+        String status = videoStatus(p, "status", "DRAFT");
+        if ("PUBLISHED".equals(status)) throw new BusinessException("aiVideo.reviewRequired");
         return insert("INSERT INTO ai_video_video(project_id,render_id,title,version,status,media_url,cover_url,duration_ms,description,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            new Object[]{projectId, longValue(p, "renderId"), required(p, "title", 200), integer(p, "version", 1, 1, 10000), videoStatus(p, "status", "DRAFT"), media, text(p, "coverUrl", 500), integer(p, "durationMs", 0, 0, 36000000), text(p, "description", 1000), user.id()}, "videos");
+            new Object[]{projectId, longValue(p, "renderId"), required(p, "title", 200), integer(p, "version", 1, 1, 10000), status, media, text(p, "coverUrl", 500), integer(p, "durationMs", 0, 0, 36000000), text(p, "description", 1000), user.id()}, "videos");
     }
 
     private Map<String, Object> insertReview(Map<String, Object> p, AuthUser user) {
@@ -319,11 +322,15 @@ public class AiVideoService {
     /** 更新成片时校验状态和媒体地址，避免空成片进入审核或发布阶段。 */
     private int updateVideo(long id, Map<String, Object> payload) {
         String status = videoStatus(payload, "status", "DRAFT");
+        if ("PUBLISHED".equals(status)) throw new BusinessException("aiVideo.reviewRequired");
         String mediaUrl = text(payload, "mediaUrl", 500);
         if (mediaUrl != null) mediaUrl = mediaUrl(Map.of("mediaUrl", mediaUrl), "mediaUrl");
         if (Set.of("REVIEW", "PUBLISHED").contains(status) && (mediaUrl == null || mediaUrl.isBlank())) requireVideoMedia(id);
-        return jdbc.update("UPDATE ai_video_video SET title=?,status=?,media_url=?,cover_url=?,duration_ms=?,description=?,updated_at=NOW(6) WHERE id=?",
+        int updated = jdbc.update("UPDATE ai_video_video SET title=?,status=?,media_url=?,cover_url=?,duration_ms=?,description=?,updated_at=NOW(6) WHERE id=?",
             required(payload, "title", 200), status, mediaUrl, text(payload, "coverUrl", 500), integer(payload, "durationMs", 0, 0, 36000000), text(payload, "description", 1000), id);
+        // 修改已审核成片的内容后，原审核结论不再适用于新版本，必须重新审核。
+        if (updated > 0) jdbc.update("UPDATE ai_video_review SET status='PENDING',reviewed_at=NULL,updated_at=NOW(6) WHERE video_id=? AND status='APPROVED'", id);
+        return updated;
     }
 
     /** 更新发布状态时复用审核约束，防止直接编辑绕过审核流程。 */
@@ -388,16 +395,19 @@ public class AiVideoService {
 
     /** 校验已通过审核后才允许完成发布。 */
     private void requireApprovedReview(long videoId) {
-        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM ai_video_review WHERE video_id=? AND status='APPROVED'", Integer.class, videoId);
-        if (count == null || count == 0) throw new BusinessException("aiVideo.reviewRequired");
+        String status = jdbc.query("SELECT status FROM ai_video_review WHERE video_id=? ORDER BY id DESC LIMIT 1",
+            rs -> rs.next() ? rs.getString(1) : null, videoId);
+        if (!"APPROVED".equals(status)) throw new BusinessException("aiVideo.reviewRequired");
     }
 
     /** 读取正数可选关联编号。 */
     private Long optionalLong(Map<String, Object> payload, String key) {
         Object value = payload == null ? null : payload.get(key);
         if (value == null || value.toString().isBlank()) return null;
-        if (!(value instanceof Number) || ((Number) value).longValue() <= 0) throw new BusinessException("aiVideo.numberInvalid", key);
-        return ((Number) value).longValue();
+        if (!(value instanceof Number)) throw new BusinessException("aiVideo.numberInvalid", key);
+        long result = integralLong((Number) value, key);
+        if (result <= 0) throw new BusinessException("aiVideo.numberInvalid", key);
+        return result;
     }
 
     /** 校验成片状态枚举。 */
@@ -452,12 +462,14 @@ public class AiVideoService {
     }
 
     private long projectId(Map<String, Object> payload) { long id = requiredLong(payload, "projectId"); requireOwned("projects", id); return id; }
-    private long requiredLong(Map<String, Object> p, String key) { Object value = p == null ? null : p.get(key); if (!(value instanceof Number) || ((Number) value).longValue() <= 0) throw new BusinessException("aiVideo.fieldRequired", key); return ((Number) value).longValue(); }
-    private Long longValue(Map<String, Object> p, String key) { Object value = p == null ? null : p.get(key); return value instanceof Number ? ((Number) value).longValue() : null; }
-    private int integer(Map<String, Object> p, String key, int fallback, int min, int max) { Object value = p == null ? null : p.get(key); int result = value instanceof Number ? ((Number) value).intValue() : fallback; if (result < min || result > max) throw new BusinessException("aiVideo.numberInvalid", key); return result; }
+    private long requiredLong(Map<String, Object> p, String key) { Object value = p == null ? null : p.get(key); if (!(value instanceof Number)) throw new BusinessException("aiVideo.fieldRequired", key); long result = integralLong((Number) value, key); if (result <= 0) throw new BusinessException("aiVideo.fieldRequired", key); return result; }
+    private Long longValue(Map<String, Object> p, String key) { Object value = p == null ? null : p.get(key); return value instanceof Number ? integralLong((Number) value, key) : null; }
+    private int integer(Map<String, Object> p, String key, int fallback, int min, int max) { Object value = p == null ? null : p.get(key); long candidate = value instanceof Number ? integralLong((Number) value, key) : fallback; if (candidate < min || candidate > max) throw new BusinessException("aiVideo.numberInvalid", key); return (int) candidate; }
     private String required(Map<String, Object> p, String key, int max) { String value = value(p, key, "").trim(); if (value.isBlank()) throw new BusinessException("aiVideo.fieldRequired", key); if (value.length() > max) throw new BusinessException("aiVideo.fieldTooLong", key, max); return value; }
     private String text(Map<String, Object> p, String key, int max) { String value = value(p, key, ""); return value.length() > max ? value.substring(0, max) : (value.isBlank() ? null : value); }
     private String value(Map<String, Object> p, String key, String fallback) { Object value = p == null ? null : p.get(key); return value == null ? fallback : String.valueOf(value); }
+    /** 只接受可精确表示为 long 的数值，避免 JSON 小数被静默截断为资源编号或时长。 */
+    private long integralLong(Number value, String key) { try { return new java.math.BigDecimal(value.toString()).longValueExact(); } catch (RuntimeException exception) { throw new BusinessException("aiVideo.numberInvalid", key); } }
     private String enumValue(String value, Set<String> allowed, String message) { String normalized = value == null ? "" : value.toUpperCase(); if (!allowed.contains(normalized)) throw new BusinessException(message); return normalized; }
     private String resource(String value) { if (value == null || !RESOURCES.contains(value)) throw new BusinessException("aiVideo.resourceInvalid"); return value; }
     private String table(String resource) { return switch (resource(resource)) { case "projects" -> "ai_video_project"; case "scripts" -> "ai_video_script"; case "storyboards" -> "ai_video_storyboard"; case "assets" -> "ai_video_asset"; case "tasks" -> "ai_video_task"; case "renders" -> "ai_video_render"; case "videos" -> "ai_video_video"; case "reviews" -> "ai_video_review"; case "publishes" -> "ai_video_publish"; default -> throw new BusinessException("aiVideo.resourceInvalid"); }; }
