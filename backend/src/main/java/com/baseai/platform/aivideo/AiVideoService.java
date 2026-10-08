@@ -259,7 +259,7 @@ public class AiVideoService {
         if (videoId == null) throw new BusinessException("aiVideo.resourceNotFound");
         requireApprovedReview(videoId);
         jdbc.update("UPDATE ai_video_publish SET status='PUBLISHED',published_at=NOW(6),updated_at=NOW(6) WHERE id=?", id);
-        jdbc.update("UPDATE ai_video_video v JOIN ai_video_publish p ON p.video_id=v.id SET v.status='PUBLISHED',v.updated_at=NOW(6) WHERE p.id=?", id);
+        jdbc.update("UPDATE ai_video_video SET status='PUBLISHED',updated_at=NOW(6) WHERE id=?", videoId);
         return find("publishes", id);
     }
 
@@ -307,6 +307,7 @@ public class AiVideoService {
 
     private Map<String, Object> insertReview(Map<String, Object> p, AuthUser user) {
         long videoId = requiredLong(p, "videoId"); requireOwned("videos", videoId);
+        requireVideoMedia(videoId);
         String status = enumValue(value(p, "status", "PENDING"), REVIEW_STATUSES, "aiVideo.reviewStatusInvalid");
         LocalDateTime reviewedAt = Set.of("APPROVED", "REJECTED").contains(status) ? LocalDateTime.now() : null;
         return insert("INSERT INTO ai_video_review(video_id,status,comment,reviewer_user_id,reviewed_at) VALUES (?,?,?,?,?)",
@@ -336,6 +337,9 @@ public class AiVideoService {
         if ("PUBLISHED".equals(status)) throw new BusinessException("aiVideo.reviewRequired");
         String mediaUrl = text(payload, "mediaUrl", 500);
         if (mediaUrl != null) mediaUrl = mediaUrl(Map.of("mediaUrl", mediaUrl), "mediaUrl");
+        if ("REVIEW".equals(status) && payload != null && payload.containsKey("mediaUrl") && (mediaUrl == null || mediaUrl.isBlank())) {
+            throw new BusinessException("aiVideo.mediaRequired");
+        }
         if (Set.of("REVIEW", "PUBLISHED").contains(status) && (mediaUrl == null || mediaUrl.isBlank())) requireVideoMedia(id);
         int updated = jdbc.update("UPDATE ai_video_video SET title=?,status=?,media_url=?,cover_url=?,duration_ms=?,description=?,updated_at=NOW(6) WHERE id=?",
             required(payload, "title", 200), status, mediaUrl, text(payload, "coverUrl", 500), integer(payload, "durationMs", 0, 0, 36000000), text(payload, "description", 1000), id);
