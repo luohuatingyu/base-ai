@@ -5,6 +5,7 @@ import com.baseai.platform.security.AuthContext;
 import com.baseai.platform.security.AuthUser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -46,7 +47,7 @@ public class AiNovelService {
     private final ObjectMapper mapper;
 
     /** 注入数据库、文本模型客户端和 JSON 编解码器。 */
-    public AiNovelService(JdbcTemplate jdbc, AiChatClient client, ObjectMapper mapper) {
+    public AiNovelService(@Qualifier("mysqlJdbcTemplate") JdbcTemplate jdbc, AiChatClient client, ObjectMapper mapper) {
         this.jdbc = jdbc;
         this.client = client;
         this.mapper = mapper;
