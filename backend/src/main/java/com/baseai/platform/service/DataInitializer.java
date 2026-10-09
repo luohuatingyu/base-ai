@@ -191,7 +191,7 @@ public class DataInitializer implements ApplicationRunner {
         systemSettingCacheService.applyAll(systemSettingRepository.findAll());
     }
 
-    /** 初始化只管理本人数据源、同步计划、服务器和自动化设备 Agent 的运维角色。 */
+    /** 初始化只管理本人自动化设备 Agent 的运维角色。 */
     private void seedOperationsRole(List<Menu> menus) {
         Role operations = roleRepository.findByCode("OPS").orElseGet(() -> {
             Role role = new Role();
@@ -202,10 +202,9 @@ public class DataInitializer implements ApplicationRunner {
         LinkedHashSet<Menu> permissions = new LinkedHashSet<>(operations.getMenus());
         menus.stream().filter(menu -> "operations:catalog".equals(menu.getPermission())
             || "automation:catalog".equals(menu.getPermission())
-            || menu.getPermission() != null && (menu.getPermission().startsWith("operations:data-source:")
-            || menu.getPermission().startsWith("automation:device-agent:"))).forEach(permissions::add);
+            || menu.getPermission() != null && menu.getPermission().startsWith("automation:device-agent:")).forEach(permissions::add);
         operations.setMenus(permissions);
-        operations.setDescription("系统内置数据源、数据同步、服务器与自动化设备 Agent 运维角色");
+        operations.setDescription("系统内置自动化设备 Agent 运维角色");
         operations.setDataScope("SELF");
         operations.setSortOrder(20);
         operations.setEnabled(true);
@@ -343,10 +342,10 @@ public class DataInitializer implements ApplicationRunner {
      * <p>该方法创建系统的所有菜单项，包括：
      * <ul>
      *   <li>系统管理模块：访问控制、组织、字典和参数</li>
-     *   <li>运维管理模块：数据源、数据同步、服务器、邮件和监控审计</li>
+     *   <li>运维管理模块：邮件和监控审计</li>
      *   <li>AI 视频模块：内容创作、视觉资产、生成任务和发布</li>
-     *   <li>AI 能力模块：AI 对话、模型和知识库</li>
-     *   <li>自动化模块：接口触发、设备 Agent 和工作流</li>
+     *   <li>AI 能力模块：AI 对话和模型</li>
+     *   <li>自动化模块：设备 Agent</li>
      * </ul>
      *
      * <p>菜单类型包括：
@@ -378,8 +377,6 @@ public class DataInitializer implements ApplicationRunner {
             "ai:model:provider", 21);
         seedCrud(model, "模型配置", "/models", "ModelsView", "Cpu", "ai:model:model", 22);
         seedCrud(model, "能力路由", "/model-routes", "ModelRoutesView", "Guide", "ai:model:route", 23);
-        seedCrud(model, "知识库", "/knowledge-bases", "KnowledgeBasesView", "Collection",
-            "ai:model:knowledge-base", 24);
 
         // AI 小说是独立的原著创作入口，影视改编剧本仍归属于 AI 视频工作台。
         menu(null, "AI剧本", "MENU", "/ai-novel", "AiScriptView", "EditPen",
@@ -388,22 +385,6 @@ public class DataInitializer implements ApplicationRunner {
         // ========== 自动化模块 ==========
         Menu automation = menu(null, "自动化", "CATALOG", "/automation", null, "Operation",
             "automation:catalog", 40, true);
-        Menu trigger = menu(automation.getId(), "接口触发", "MENU", "/automation/api-triggers",
-            "ApiTriggerView", "Promotion", "automation:api-trigger:list", 11, true);
-        menu(trigger.getId(), "新增接口触发", "BUTTON", null, null, null,
-            "automation:api-trigger:create", 111, false);
-        menu(trigger.getId(), "更新接口触发", "BUTTON", null, null, null,
-            "automation:api-trigger:update", 112, false);
-        menu(trigger.getId(), "删除接口触发", "BUTTON", null, null, null,
-            "automation:api-trigger:delete", 113, false);
-        menu(trigger.getId(), "执行接口触发", "BUTTON", null, null, null,
-            "automation:api-trigger:trigger", 114, false);
-        menu(trigger.getId(), "接口触发日志", "BUTTON", null, null, null,
-            "automation:api-trigger:logs", 115, false);
-        Menu triggerSecurity = menu(automation.getId(), "接口触发安全配置", "MENU", "/automation/api-trigger-security",
-            "ApiTriggerSecurityView", "Lock", "automation:api-trigger-security:view", 12, true);
-        menu(triggerSecurity.getId(), "更新接口触发安全配置", "BUTTON", null, null, null,
-            "automation:api-trigger-security:update", 121, false);
         // 设备 Agent 的高权限自动化动作与查看、配置和删除权限分离。
         Menu deviceAgents = menu(automation.getId(), "设备 Agent 管理", "MENU", "/automation/device-agents",
             "DeviceAgentsView", "Iphone", "automation:device-agent:list", 13, true);
@@ -415,40 +396,10 @@ public class DataInitializer implements ApplicationRunner {
             "automation:device-agent:delete", 133, false);
         menu(deviceAgents.getId(), "执行设备自动化", "BUTTON", null, null, null,
             "automation:device-agent:execute", 134, false);
-        Menu workflow = menu(automation.getId(), "工作流", "CATALOG", "/workflow", null, "Operation",
-            "automation:workflow:catalog", 20, true);
-        Menu node = menu(workflow.getId(), "节点管理", "MENU", "/workflow/nodes", "WorkflowNodesView", "List",
-            "automation:workflow:node:list", 21, true);
-        menu(node.getId(), "新增节点模板", "BUTTON", null, null, null,
-            "automation:workflow:node:create", 211, false);
-        menu(node.getId(), "更新节点模板", "BUTTON", null, null, null,
-            "automation:workflow:node:update", 212, false);
-        menu(node.getId(), "删除节点模板", "BUTTON", null, null, null,
-            "automation:workflow:node:delete", 213, false);
-        Menu canvas = menu(workflow.getId(), "画布管理", "MENU", "/workflow/canvases", "WorkflowCanvasView", "Connection",
-            "automation:workflow:canvas:list", 23, true);
-        menu(canvas.getId(), "新增工作流", "BUTTON", null, null, null,
-            "automation:workflow:canvas:create", 231, false);
-        menu(canvas.getId(), "更新工作流", "BUTTON", null, null, null,
-            "automation:workflow:canvas:update", 232, false);
-        menu(canvas.getId(), "删除工作流", "BUTTON", null, null, null,
-            "automation:workflow:canvas:delete", 233, false);
-        menu(canvas.getId(), "发布工作流", "BUTTON", null, null, null,
-            "automation:workflow:canvas:publish", 234, false);
-        menu(canvas.getId(), "执行工作流", "BUTTON", null, null, null,
-            "automation:workflow:canvas:execute", 235, false);
-        menu(canvas.getId(), "工作流日志", "BUTTON", null, null, null,
-            "automation:workflow:canvas:logs", 236, false);
-        menu(workflow.getId(), "节点文档", "MENU", "/workflow/node-docs", "WorkflowNodeDocsView", "Document",
-            "automation:workflow:node:docs", 24, true);
 
         // ========== 运维管理模块 ==========
         Menu operations = menu(null, "运维管理", "CATALOG", "/operations", null, "Monitor",
             "operations:catalog", 20, true);
-        Menu dataSources = seedCrud(operations, "数据源管理", "/data-sources", "DataSourcesView", "Link",
-            "operations:data-source", 11);
-        menu(dataSources.getId(), "测试数据源", "BUTTON", null, null, null,
-            "operations:data-source:test", 115, false);
         // 邮件属于运维范畴，归入运维管理并排在服务器管理之后、监控审计之前。
         Menu mail = menu(operations.getId(), "邮件管理", "CATALOG", "/mail", null, "Message",
             "system:mail:catalog", 15, true);

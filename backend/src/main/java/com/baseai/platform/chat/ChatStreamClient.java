@@ -1,17 +1,11 @@
 package com.baseai.platform.chat;
 
-import com.baseai.platform.automation.ApiTriggerModels;
-import com.baseai.platform.automation.ApiTriggerService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.service.AiChatClient;
 import com.baseai.platform.service.LlmManagementService;
 import com.baseai.platform.service.TaskTraceService;
 import com.baseai.platform.service.LlmUsageService;
 import com.baseai.platform.trace.TraceContextHolder;
-import com.baseai.platform.workflow.WorkflowAgentClient;
-import com.baseai.platform.workflow.WorkflowExecutionService;
-import com.baseai.platform.workflow.WorkflowModels;
-import com.baseai.platform.workflow.WorkflowService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -29,11 +23,7 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -52,19 +42,13 @@ public class ChatStreamClient {
     private final ScheduledExecutorService watchdog = Executors.newScheduledThreadPool(2);
     private final Retry retry;
     private final CircuitBreaker circuitBreaker;
-    private final WorkflowAgentClient agentClient;
-    private final WorkflowService workflowService;
-    private final WorkflowExecutionService workflowExecutionService;
-    private final ApiTriggerService apiTriggerService;
     private final LlmUsageService llmUsageService;
 
-    /** 为流式接口设置连接及响应头超时，并注入聊天 Agent 的工作流执行能力。 */
+    /** 为流式接口设置连接及响应头超时。 */
     @Autowired
     public ChatStreamClient(@Qualifier("pythonWorkerRestClient") RestClient client, LlmManagementService management,
                             TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry, 
-                            CircuitBreaker pythonWorkerCircuitBreaker, WorkflowAgentClient agentClient,
-                            WorkflowService workflowService, WorkflowExecutionService workflowExecutionService,
-                            ApiTriggerService apiTriggerService, LlmUsageService llmUsageService) {
+                            CircuitBreaker pythonWorkerCircuitBreaker, LlmUsageService llmUsageService) {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(10)).build());
         factory.setReadTimeout(Duration.ofSeconds(30));
@@ -72,10 +56,6 @@ public class ChatStreamClient {
         this.management = management; this.traces = traces; this.mapper = mapper;
         this.retry = pythonWorkerRetry;
         this.circuitBreaker = pythonWorkerCircuitBreaker;
-        this.agentClient = agentClient;
-        this.workflowService = workflowService;
-        this.workflowExecutionService = workflowExecutionService;
-        this.apiTriggerService = apiTriggerService;
         this.llmUsageService = llmUsageService;
     }
 
@@ -83,27 +63,7 @@ public class ChatStreamClient {
     public ChatStreamClient(@Qualifier("pythonWorkerRestClient") RestClient client, LlmManagementService management,
                             TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry,
                             CircuitBreaker pythonWorkerCircuitBreaker) {
-        this(client, management, traces, mapper, pythonWorkerRetry, pythonWorkerCircuitBreaker,
-            null, null, null, null, null);
-    }
-
-    /** 兼容已有仅注入工作流 Agent 依赖的测试构造方式。 */
-    public ChatStreamClient(@Qualifier("pythonWorkerRestClient") RestClient client, LlmManagementService management,
-                            TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry,
-                            CircuitBreaker pythonWorkerCircuitBreaker, WorkflowAgentClient agentClient,
-                            WorkflowService workflowService, WorkflowExecutionService workflowExecutionService) {
-        this(client, management, traces, mapper, pythonWorkerRetry, pythonWorkerCircuitBreaker,
-            agentClient, workflowService, workflowExecutionService, null, null);
-    }
-
-    /** 兼容已有包含 API 触发器依赖的测试构造方式。 */
-    public ChatStreamClient(@Qualifier("pythonWorkerRestClient") RestClient client, LlmManagementService management,
-                            TaskTraceService traces, ObjectMapper mapper, Retry pythonWorkerRetry,
-                            CircuitBreaker pythonWorkerCircuitBreaker, WorkflowAgentClient agentClient,
-                            WorkflowService workflowService, WorkflowExecutionService workflowExecutionService,
-                            ApiTriggerService apiTriggerService) {
-        this(client, management, traces, mapper, pythonWorkerRetry, pythonWorkerCircuitBreaker,
-            agentClient, workflowService, workflowExecutionService, apiTriggerService, null);
+        this(client, management, traces, mapper, pythonWorkerRetry, pythonWorkerCircuitBreaker, null);
     }
 
     /** 逐事件读取；消费者返回前不会预取下一事件。使用重试和熔断保护。 */
@@ -127,11 +87,6 @@ public class ChatStreamClient {
     /** 执行指定来源和温度的流式调用，保持会话和公开接口共用生命周期。 */
     private void stream(ChatConversationService.Turn turn, EventConsumer consumer, String source, Double temperature) {
         LlmManagementService.requireChatCapabilities(turn.settings().modelType(), null);
-        if (!turn.settings().effectiveAgentToolCodes().isEmpty()
-            || !turn.settings().effectiveWorkflowToolCodes().isEmpty()) {
-            streamAgent(turn, consumer);
-            return;
-        }
         // 路由配置错误不能作为 Worker 故障重试或计入熔断；本轮重试固定使用同一快照。
         var settings = turn.settings();
         String feature = settings.featureCode() == null || settings.featureCode().isBlank() ? "chat" : settings.featureCode();
@@ -281,153 +236,6 @@ public class ChatStreamClient {
 
     /** 流式调用已收到的模型和 Token 统计。 */
     private record TokenUsage(String model, Long inputTokens, Long outputTokens, Long totalTokens) {}
-
-    /** 让模型在独立 Agent 工具和显式工作流工具中循环决策，并把状态作为 SSE 事件返回。 */
-    private void streamAgent(ChatConversationService.Turn turn, EventConsumer consumer) {
-        List<String> agentCodes = turn.settings().effectiveAgentToolCodes();
-        List<String> workflowCodes = turn.settings().effectiveWorkflowToolCodes();
-        if (agentClient == null
-            || !agentCodes.isEmpty() && apiTriggerService == null
-            || !workflowCodes.isEmpty() && (workflowService == null || workflowExecutionService == null)) {
-            throw new BusinessException("chat.agentUnavailable");
-        }
-        Map<String, SelectedTool> availableOptions = new LinkedHashMap<>();
-        if (!agentCodes.isEmpty()) apiTriggerService.agentToolOptions(turn.owner()).forEach(option ->
-            availableOptions.put(option.code(), new SelectedTool(option.code(), option.name(), option.description(),
-                option.inputSchema(), true)));
-        if (!workflowCodes.isEmpty()) workflowService.chatToolOptions().forEach(option ->
-            availableOptions.put(option.code(), new SelectedTool(option.code(), option.name(), option.description(),
-                option.inputSchema(), false)));
-        // 模型返回值不可信：执行目录只包含本轮显式选择并通过目录校验的工具。
-        Map<String, SelectedTool> options = new LinkedHashMap<>();
-        List<WorkflowAgentClient.Tool> tools = new ArrayList<>();
-        for (String code : concat(agentCodes, workflowCodes)) {
-            SelectedTool option = availableOptions.get(code);
-            if (option == null) throw new BusinessException("workflow.agentToolForbidden", code);
-            options.put(code, option);
-            tools.add(new WorkflowAgentClient.Tool(option.code(), option.description(), option.inputSchema()));
-        }
-        if (tools.isEmpty()) throw new BusinessException("workflow.agentToolsRequired");
-
-        var config = mapper.createObjectNode()
-            .put("featureCode", turn.settings().featureCode() == null ? "chat" : turn.settings().featureCode())
-            .put("modelType", turn.settings().modelType())
-            .put("enableThinking", Boolean.TRUE.equals(turn.settings().enableThinking()));
-        if (turn.settings().modelId() != null) config.put("modelId", turn.settings().modelId());
-        if (turn.settings().thinkingLevel() != null) config.put("thinkingLevel", turn.settings().thinkingLevel());
-
-        List<Map<String, Object>> messages = new ArrayList<>();
-        for (AiChatClient.Message message : turn.context()) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("role", message.role());
-            item.put("content", message.content());
-            messages.add(item);
-        }
-        List<Map<String, Object>> toolEvents = new ArrayList<>();
-        String model = "";
-        for (int step = 0; step < 5; step++) {
-            TraceContextHolder.checkpoint();
-            WorkflowAgentClient.AgentStep decision = agentClient.step(config, messages, tools);
-            model = decision.model();
-            if (decision.toolCalls().isEmpty()) {
-                if (decision.content().isBlank()) throw new BusinessException("ai.emptyResponse");
-                emit(consumer, mapper.createObjectNode().put("type", "delta").put("content", decision.content()));
-                var done = mapper.createObjectNode().put("type", "done").put("model", model);
-                done.set("toolCalls", mapper.valueToTree(toolEvents));
-                emit(consumer, done);
-                return;
-            }
-
-            List<Map<String, Object>> rawCalls = new ArrayList<>();
-            for (WorkflowAgentClient.ToolCall call : decision.toolCalls()) {
-                rawCalls.add(Map.of("id", call.id(), "type", "function", "function",
-                    Map.of("name", call.name(), "arguments", call.arguments().toString())));
-            }
-            Map<String, Object> assistant = new LinkedHashMap<>();
-            assistant.put("role", "assistant");
-            assistant.put("content", decision.content());
-            assistant.put("tool_calls", rawCalls);
-            messages.add(assistant);
-
-            for (WorkflowAgentClient.ToolCall call : decision.toolCalls()) {
-                SelectedTool option = options.get(call.name());
-                if (option == null) throw new BusinessException("workflow.agentToolForbidden", call.name());
-                emit(consumer, mapper.createObjectNode().put("type", "agent_tool_start")
-                    .put("toolCallId", call.id()).put("toolName", option.name()).put("toolCode", option.code()));
-                Map<String, Object> event = new LinkedHashMap<>();
-                event.put("toolCallId", call.id());
-                event.put("toolName", option.name());
-                event.put("toolCode", option.code());
-                try {
-                    Map<String, Object> arguments = mapper.convertValue(call.arguments(), Map.class);
-                    JsonNode result;
-                    if (option.agentTool()) {
-                        ApiTriggerModels.ExecutionResult execution = apiTriggerService.executeAgentTool(
-                            turn.owner(), option.code(), call.arguments());
-                        result = mapper.createObjectNode()
-                            .put("httpStatus", execution.httpStatus())
-                            .put("durationMs", execution.durationMs())
-                            .put("responseBody", execution.responseBody());
-                    } else {
-                        WorkflowModels.RunAccepted accepted = workflowExecutionService.startPublished(option.code(), arguments);
-                        result = awaitTool(accepted.runId());
-                    }
-                    String resultText = mapper.writeValueAsString(result == null ? mapper.nullNode() : result);
-                    if (resultText.length() > 100_000) resultText = resultText.substring(0, 100_000) + "…";
-                    messages.add(new LinkedHashMap<>(Map.of("role", "tool", "tool_call_id", call.id(),
-                        "name", call.name(), "content", resultText)));
-                    event.put("success", true);
-                } catch (InterruptedException exception) {
-                    Thread.currentThread().interrupt();
-                    event.put("success", false);
-                    event.put("error", "interrupted");
-                    emit(consumer, toolDone(call, option, false));
-                    throw new BusinessException("chat.agentToolInterrupted");
-                } catch (RuntimeException | IOException exception) {
-                    event.put("success", false);
-                    event.put("error", "failed");
-                    emit(consumer, toolDone(call, option, false));
-                    throw new BusinessException("chat.agentToolFailed");
-                }
-                toolEvents.add(event);
-                emit(consumer, toolDone(call, option, true));
-            }
-        }
-        throw new BusinessException("chat.agentStepLimit");
-    }
-
-    /** 轮询已持久化的工作流运行，确保聊天 Agent 获得真实工具结果。 */
-    private JsonNode awaitTool(String runId) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
-        while (System.nanoTime() < deadline) {
-            TraceContextHolder.checkpoint();
-            WorkflowModels.RunView run = workflowExecutionService.run(runId);
-            if ("SUCCESS".equals(run.status())) return run.output();
-            if (Set.of("FAILED", "CANCELLED").contains(run.status())) throw new BusinessException("chat.agentToolFailed");
-            Thread.sleep(200L);
-        }
-        try { workflowExecutionService.cancel(runId); } catch (RuntimeException ignored) { }
-        throw new BusinessException("chat.agentToolTimeout");
-    }
-
-    /** 构造不包含工具结果正文的状态事件，避免把业务数据写入前端日志。 */
-    private JsonNode toolDone(WorkflowAgentClient.ToolCall call, SelectedTool option,
-                              boolean success) {
-        return mapper.createObjectNode().put("type", "agent_tool_done")
-            .put("toolCallId", call.id()).put("toolName", option.name())
-            .put("toolCode", option.code()).put("success", success);
-    }
-
-    /** 拼接两个独立工具来源，保持模型收到的工具顺序稳定。 */
-    private List<String> concat(List<String> first, List<String> second) {
-        List<String> result = new ArrayList<>(first == null ? List.of() : first);
-        if (second != null) result.addAll(second);
-        return result;
-    }
-
-    /** 统一封装模型可见工具，标记执行器是否进入独立 Agent 工具分支。 */
-    private record SelectedTool(String code, String name, String description, JsonNode inputSchema,
-                                boolean agentTool) {}
 
     /** 将客户端断开转换为流式失败，避免泄漏下游异常文本。 */
     private void emit(EventConsumer consumer, JsonNode event) {

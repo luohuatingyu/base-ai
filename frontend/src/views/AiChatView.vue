@@ -45,14 +45,9 @@
             <span v-else class="pending-generation-text" :title="input.fileName">{{ input.fileName }}</span>
           </template>
         </div>
-        <div v-if="item.toolCalls?.length" class="message-tools" :aria-label="t('chat.toolProgress')" aria-live="polite">
-          <span v-for="tool in item.toolCalls" :key="tool.toolCallId" class="message-tool" :class="{ 'is-running': tool.success === null && item.status === 'GENERATING', 'is-failed': tool.success === false }">
-            <span class="tool-progress-dot" aria-hidden="true" />{{ tool.toolName }} · {{ t('chat.toolStatus.' + toolStatus(tool, item)) }}
-          </span>
-        </div>
         <div class="message-actions">
           <el-button v-if="item.role === 'assistant' && item.content" text size="small" :icon="CopyDocument" @click="copyAnswer(item)">{{ t('chat.copyAnswer') }}</el-button>
-          <el-button v-if="item.role === 'user'" text size="small" :icon="EditPen" :disabled="toolsLocked" @click="restoreQuestion(item)">{{ t('chat.restoreQuestion') }}</el-button>
+          <el-button v-if="item.role === 'user'" text size="small" :icon="EditPen" :disabled="loading || serverGenerating" @click="restoreQuestion(item)">{{ t('chat.restoreQuestion') }}</el-button>
         </div>
         <details v-if="item.role === 'assistant' && hasChatResponseMetadata(item)" class="message-details"><summary>{{ t('chat.responseDetails') }}<el-icon class="disclosure-icon"><ArrowDown /></el-icon></summary>
         <div v-if="item.role === 'assistant' && hasChatResponseMetadata(item)" class="message-metadata">
@@ -79,9 +74,6 @@
         </div>
         <div class="chat-scroll-actions"><el-button v-if="!followLatest && messages.length" round size="small" :icon="Bottom" @click="scrollToLatest">{{ t('chat.backToLatest') }}</el-button></div>
         <div class="chat-composer" :class="{ 'is-busy': generating }">
-        <div v-if="selectedTools.length" class="selected-tools" :aria-label="t('chat.selectedTools')">
-          <el-tag v-for="tool in selectedTools" :key="tool.kind + ':' + tool.code" :closable="!toolsLocked" :title="tool.name" @close="removeTool(tool.kind, tool.code)">{{ tool.name }}</el-tag>
-        </div>
         <div v-if="pendingImages.length" class="pending-images">
       <div v-for="image in pendingImages" :key="image.name + image.dataUrl" class="pending-image">
         <img :src="image.dataUrl" :alt="image.name" />
@@ -91,7 +83,6 @@
         <el-input ref="questionInput" v-model="prompt" class="chat-question-input" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" resize="none" :aria-label="t('chat.placeholder')" :placeholder="t('chat.placeholder')" @keydown.meta.enter.prevent="sendFromKeyboard" @keydown.ctrl.enter.prevent="sendFromKeyboard" />
         <div class="chat-actions">
           <div class="chat-action-buttons">
-            <el-button text :icon="Tools" aria-haspopup="dialog" :aria-expanded="toolsOpen" @click="toolsOpen = true">{{ t('chat.tools') }}<span v-if="selectedTools.length"> · {{ selectedTools.length }}</span></el-button>
             <input ref="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="onImageSelected" />
             <el-button text :icon="Picture" :disabled="modelType !== 'vision_model' || pendingImages.length >= MAX_IMAGES" :title="modelType === 'vision_model' ? t('chat.imageUploadHint') : t('chat.imageVisionOnly')" @click="openImagePicker">{{ t('chat.uploadImage') }}</el-button>
             <span class="composer-shortcut">{{ t('chat.shortcutHint') }}</span><el-button v-if="generating" class="stop-button" :icon="VideoPause" @click="stopGeneration">{{ t('chat.stopGeneration') }}</el-button><el-button v-else type="primary" :icon="Top" :disabled="!canSend" :loading="loading" @click="send">{{ t('chat.send') }}</el-button>
@@ -160,26 +151,6 @@
             </div>
           </div>
           <div class="model-capability-fields">
-            <h3 class="model-section-title">{{ t('chat.toolSettings') }}</h3>
-            <div class="model-capability-grid">
-              <el-form-item :label="t('chat.agentTools')">
-                <el-select v-model="agentToolCodes" multiple collapse-tags collapse-tags-tooltip clearable filterable
-                  :disabled="toolsLocked || !agentTools.length || toolGroups[0].state !== 'ready'" :placeholder="t('chat.agentToolsPlaceholder')">
-                  <el-option v-for="tool in agentTools" :key="tool.code" :value="tool.code"
-                    :label="tool.name + ' (' + tool.code + ')'" />
-                </el-select>
-              </el-form-item>
-              <el-form-item class="workflow-tools-field" :label="t('chat.workflowTools')">
-                <el-select v-model="workflowToolCodes" multiple collapse-tags collapse-tags-tooltip clearable filterable
-                  :disabled="toolsLocked || !workflowTools.length || toolGroups[1].state !== 'ready'" :placeholder="t('chat.workflowToolsPlaceholder')">
-                  <el-option v-for="tool in workflowTools" :key="tool.code" :value="tool.code"
-                    :label="tool.name + ' (' + tool.code + ')'" />
-                </el-select>
-              </el-form-item>
-            </div>
-            <el-button text type="primary" @click="settingsOpen = false; toolsOpen = true">{{ t('chat.browseTools') }}</el-button>
-          </div>
-          <div class="model-capability-fields">
             <h3 class="model-section-title">{{ t('chat.thinkingSettings') }}</h3>
             <div class="model-capability-grid">
               <el-form-item class="thinking-field" :label="t('chat.enableThinking')">
@@ -203,33 +174,13 @@
         </el-form>
       </div>
     </el-drawer>
-    <el-drawer v-model="toolsOpen" class="chat-tools-drawer" :title="t('chat.tools')" size="480px" append-to-body>
-      <p class="tool-picker-hint">{{ t('chat.toolsHint') }}</p>
-      <el-input v-model="toolSearch" clearable :prefix-icon="Search" :placeholder="t('chat.searchTools')" :aria-label="t('chat.searchTools')" />
-      <section v-for="group in toolGroups" :key="group.kind" class="tool-group" :aria-label="group.title">
-        <div class="tool-group-heading"><h3>{{ group.title }}</h3><el-button v-if="group.canManage" text size="small" @click="openToolManagement(group.path)">{{ t('chat.manageTools') }}</el-button></div>
-        <p class="tool-picker-hint">{{ group.description }}</p>
-        <p v-if="group.state === 'loading'" role="status">{{ t('chat.loadingTools') }}</p>
-        <div v-else-if="group.state !== 'ready'" class="tool-directory-error" role="status">
-          <span>{{ t(group.state === 'forbidden' ? 'chat.toolsForbidden' : 'chat.toolsLoadFailed') }}</span>
-          <el-button text type="primary" @click="loadTools(group.kind)">{{ t('chat.retry') }}</el-button>
-        </div>
-        <p v-else-if="!group.options.length" class="tool-picker-hint">{{ t(group.total ? 'chat.noMatchingTools' : 'chat.noConfiguredTools') }}</p>
-        <div v-else class="tool-options">
-          <el-checkbox v-for="tool in group.options" :key="tool.code" class="tool-option" :model-value="group.selected.includes(tool.code)" :disabled="toolsLocked" @change="checked => toggleTool(group.kind, tool.code, checked)">
-            <span class="tool-option-name">{{ tool.name }}</span><span class="tool-option-description">{{ tool.description || tool.code }}</span>
-          </el-checkbox>
-        </div>
-      </section>
-      <template #footer><el-button type="primary" @click="toolsOpen = false">{{ t('chat.finishToolSelection') }}</el-button></template>
-    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Bottom, ChatLineRound, CopyDocument, Delete, EditPen, Picture, Plus, Refresh, Right, Search, Setting, Tools, Top, VideoPause } from '@element-plus/icons-vue'
+import { ArrowDown, Bottom, ChatLineRound, CopyDocument, Delete, EditPen, Picture, Plus, Refresh, Right, Setting, Top, VideoPause } from '@element-plus/icons-vue'
 import http, { showHttpError, chatStreamHeaders } from '../api/http'
 import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
@@ -270,16 +221,8 @@ const promptFileName = ref('')
 const promptFileInput = ref(null)
 const activeTab = ref('conversation')
 const settingsOpen = ref(false)
-const toolsOpen = ref(false)
-const toolSearch = ref('')
-const toolStates = ref({ agent: 'loading', workflow: 'loading' })
-const toolRequests = { agent: 0, workflow: 0 }
 const messages = ref([])
 const pendingImages = ref([])
-const agentTools = ref([])
-const workflowTools = ref([])
-const agentToolCodes = ref([])
-const workflowToolCodes = ref([])
 const imageInput = ref(null)
 const loading = ref(false)
 const MAX_IMAGES = 4
@@ -309,71 +252,6 @@ const canSend = computed(() => optionsReady.value && !loading.value && !serverGe
   && (mode.value === 'single' ? !!modelId.value : featureCode.value
     ? filteredRoutes.value.some(route => route.featureCode === featureCode.value) : defaultRouteSupportsType.value))
 
-const toolsLocked = computed(() => loading.value || serverGenerating.value)
-const toolGroups = computed(() => [
-  { kind: 'agent', title: t('chat.agentTools'), description: t('chat.agentToolsHelp'), options: agentTools.value,
-    selected: agentToolCodes.value, path: '/automation/api-triggers', permission: 'automation:api-trigger:list' },
-  { kind: 'workflow', title: t('chat.workflowTools'), description: t('chat.workflowToolsHelp'), options: workflowTools.value,
-    selected: workflowToolCodes.value, path: '/workflow/canvases', permission: 'automation:workflow:canvas:list' }
-].map(group => ({
-  ...group,
-  total: group.options.length,
-  state: group.kind === 'agent' && !auth.hasPermission('automation:api-trigger:trigger') ? 'forbidden' : toolStates.value[group.kind],
-  canManage: auth.hasPermission(group.permission),
-  options: group.options.filter(tool => [tool.name, tool.description, tool.code].some(value =>
-    String(value || '').toLocaleLowerCase().includes(toolSearch.value.trim().toLocaleLowerCase())))
-})))
-const selectedTools = computed(() => [
-  ...agentToolCodes.value.map(code => ({ kind: 'agent', code, name: agentTools.value.find(tool => tool.code === code)?.name || code })),
-  ...workflowToolCodes.value.map(code => ({ kind: 'workflow', code, name: workflowTools.value.find(tool => tool.code === code)?.name || code }))
-])
-
-/** 工具目录独立加载和重试，错误不会伪装成空目录或阻断普通对话。 */
-async function loadTools(kind) {
-  const request = ++toolRequests[kind]
-  toolStates.value[kind] = 'loading'
-  try {
-    const response = await http.get(kind === 'agent' ? '/ai/conversations/agent-tools' : '/workflow/chat-tools', { silentError: true })
-    if (unmounted || request !== toolRequests[kind]) return
-    const catalog = kind === 'agent' ? agentTools : workflowTools
-    catalog.value = response.data
-    toolStates.value[kind] = 'ready'
-  } catch (error) {
-    if (unmounted || request !== toolRequests[kind]) return
-    toolStates.value[kind] = error.response?.status === 403 ? 'forbidden' : 'error'
-  }
-}
-
-/** 只允许选择可用目录中的工具，并在当前轮发送或同步期间锁定选择。 */
-function toggleTool(kind, code, checked) {
-  if (toolsLocked.value) return
-  const group = toolGroups.value.find(item => item.kind === kind)
-  const catalog = kind === 'agent' ? agentTools.value : workflowTools.value
-  if (!group || group.state !== 'ready' || !catalog.some(tool => tool.code === code)) return
-  const selection = kind === 'agent' ? agentToolCodes : workflowToolCodes
-  selection.value = checked ? [...new Set([...selection.value, code])] : selection.value.filter(value => value !== code)
-}
-
-/** 即使工具已下线也允许移除历史选择，避免不可用工具滞留在下一轮请求中。 */
-function removeTool(kind, code) {
-  if (toolsLocked.value) return
-  const selection = kind === 'agent' ? agentToolCodes : workflowToolCodes
-  selection.value = selection.value.filter(value => value !== code)
-}
-
-/** 管理入口只使用固定的站内路径，并复用现有页面的路由权限校验。 */
-function openToolManagement(path) {
-  toolsOpen.value = false
-  router.push(path)
-}
-
-/** 未收到完成事件的调用在回复终止后显示中断，不推断外部操作已经取消。 */
-function toolStatus(tool, message) {
-  if (tool.success === true) return 'succeeded'
-  if (tool.success === false) return 'failed'
-  return message.status === 'GENERATING' ? 'running' : 'interrupted'
-}
-
 /** 按原文复制回答，剪贴板不可用或权限被拒绝时给出明确反馈。 */
 async function copyAnswer(message) {
   try {
@@ -384,7 +262,7 @@ async function copyAnswer(message) {
 
 /** 恢复原问题及附件但不自动重发，覆盖现有草稿前确认并防止异步确认覆盖新输入。 */
 async function restoreQuestion(message) {
-  if (toolsLocked.value || message.role !== 'user') return
+  if (loading.value || serverGenerating.value || message.role !== 'user') return
   if (message.images?.length && modelType.value !== 'vision_model') {
     ElMessage.warning(t('chat.imageVisionOnly'))
     return
@@ -396,7 +274,7 @@ async function restoreQuestion(message) {
     try { await ElMessageBox.confirm(t('chat.replaceDraftConfirm'), t('chat.restoreQuestion'), { type: 'warning' }) }
     catch { return }
   }
-  if (unmounted || toolsLocked.value || conversationId.value !== id || prompt.value !== draft || pendingImages.value !== images) return
+  if (unmounted || loading.value || serverGenerating.value || conversationId.value !== id || prompt.value !== draft || pendingImages.value !== images) return
   prompt.value = message.content
   pendingImages.value = (message.images || []).map(image => ({ ...image }))
   activeTab.value = 'conversation'
@@ -417,7 +295,7 @@ async function scrollToLatest() {
   if (messagesElement.value) messagesElement.value.scrollTop = messagesElement.value.scrollHeight
 }
 
-watch(() => messages.value.map(item => [item.content, item.status, item.toolCalls?.length]), async () => {
+watch(() => messages.value.map(item => [item.content, item.status]), async () => {
   if (followLatest.value) await scrollToLatest()
 }, { flush: 'post' })
 
@@ -566,8 +444,7 @@ async function loadOptions() {
   pageError.value = ''
   try {
     const [routesRes, providersRes, typesRes] = await Promise.all([
-      http.get('/ai/chat/routes'), http.get('/ai/chat/providers'), http.get('/ai/chat/model-types'),
-      loadTools('agent'), loadTools('workflow')
+      http.get('/ai/chat/routes'), http.get('/ai/chat/providers'), http.get('/ai/chat/model-types')
     ])
     if (unmounted) return
     routes.value = routesRes.data
@@ -649,9 +526,6 @@ async function selectConversation(id) {
     enableThinking.value = Boolean(settings.enableThinking)
     thinkingLevel.value = settings.thinkingLevel || 'MEDIUM'
     systemPrompt.value = settings.systemPrompt || ''
-    agentToolCodes.value = Array.isArray(settings.agentToolCodes) ? settings.agentToolCodes : []
-    workflowToolCodes.value = Array.isArray(settings.workflowToolCodes)
-      ? settings.workflowToolCodes : Array.isArray(settings.toolCodes) ? settings.toolCodes : []
     promptFileName.value = ''
     prompt.value = ''
     pendingImages.value = []
@@ -727,9 +601,7 @@ async function send() {
   }
   const settings = { modelType: modelType.value, featureCode: featureCode.value.trim() || null,
     modelId: mode.value === 'single' ? modelId.value : null,
-    enableThinking: enableThinking.value, thinkingLevel: thinkingLevel.value, systemPrompt: systemPrompt.value,
-    toolCodes: [...workflowToolCodes.value],
-    agentToolCodes: [...agentToolCodes.value], workflowToolCodes: [...workflowToolCodes.value] }
+    enableThinking: enableThinking.value, thinkingLevel: thinkingLevel.value, systemPrompt: systemPrompt.value }
   const userMessage = { role: 'user', content, images }
   let assistant = null
   let started = false
@@ -763,13 +635,6 @@ async function send() {
       if (event.type === 'start') { started = true; assistant.id = event.messageId; assistant.traceId = event.traceId }
       // 路由在首个增量前已确定优先模型，先展示模型；done 事件会覆盖故障切换后的实际模型。
       if (event.type === 'model') Object.assign(assistant, { model: event.model, providerCode: event.providerCode })
-      if (event.type === 'agent_tool_start') assistant.toolCalls = [...(assistant.toolCalls || []), { ...event, success: null }]
-      if (event.type === 'agent_tool_done') {
-        const tools = assistant.toolCalls || []
-        const index = tools.findIndex(tool => tool.toolCallId === event.toolCallId)
-        if (index >= 0) tools[index] = { ...tools[index], ...event }
-        else assistant.toolCalls = [...tools, event]
-      }
       if (event.type === 'delta') assistant.content += event.content
       if (event.type === 'done') Object.assign(assistant, event, { status: 'COMPLETED' })
     })
@@ -965,36 +830,13 @@ summary:focus-visible, .history-title:focus-visible { outline: 2px solid var(--a
 }
 .message-metadata > * { min-width: 0; }
 .message-metadata :deep(.el-link) { font-size: inherit; }
-.message-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.message-tool { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; overflow-wrap: anywhere; padding: 5px 9px; border-radius: 8px; background: var(--el-color-primary-light-9); color: var(--app-primary); font-size: 12px; }
-.tool-progress-dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: currentColor; }
 .message-actions { display: flex; flex-wrap: wrap; margin-top: 6px; }
 .message.user .message-actions { justify-content: flex-end; }
 .message-actions .el-button { margin-left: 0; color: var(--app-muted); }
-.selected-tools { display: flex; flex-wrap: wrap; gap: 6px; max-height: 72px; overflow-y: auto; margin-bottom: 8px; }
-.selected-tools .el-tag { max-width: 100%; }
-.selected-tools :deep(.el-tag__content) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.selected-tools :deep(.el-tag__close) { flex-shrink: 0; }
-.tool-picker-hint { color: var(--app-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-.tool-group { margin-top: 24px; min-width: 0; }
-.tool-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.tool-group-heading h3 { margin: 0; font-size: 14px; }
-.tool-options { display: flex; flex-direction: column; gap: 8px; }
-.tool-option.el-checkbox { display: flex; align-items: flex-start; height: auto; margin: 0; padding: 12px; border: 1px solid var(--app-border); border-radius: 10px; }
-.tool-option.is-checked { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
-.tool-option :deep(.el-checkbox__input) { margin-top: 3px; }
-.tool-option :deep(.el-checkbox__label) { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-.tool-option-name, .tool-option-description { display: block; line-height: 1.5; }
-.tool-option-name { font-weight: 600; }
-.tool-option-description { margin-top: 4px; color: var(--app-muted); font-size: 12px; }
-.tool-directory-error { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--app-muted); }
-.tool-directory-error > span { min-width: 0; overflow-wrap: anywhere; }
 .message-details { margin-top: 10px; color: var(--app-muted); font-size: 12px; }
 .message-details > summary { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .message-details[open] > summary { color: var(--app-primary); }
 .message-details .disclosure-icon { margin-left: 2px; }
-.message-tool.is-running { color: var(--el-color-warning-dark); background: var(--el-color-warning-light-9); }
-.message-tool.is-failed { color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
 
 .message-images,
 .pending-images {

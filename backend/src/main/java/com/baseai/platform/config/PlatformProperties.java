@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * 平台运行配置属性。
  *
  * <p>将 {@code app} 配置树绑定为类型安全的 Java 对象，供数据库、认证、Worker、
- * 日志和 API 触发器等组件共享。</p>
+ * 日志和平台服务共享。</p>
  */
 @ConfigurationProperties(prefix = "app")
 public class PlatformProperties {
@@ -43,10 +43,6 @@ public class PlatformProperties {
     private LlmUsage llmUsage = new LlmUsage();
     /** 追踪切面配置。 */
     private TraceTracking traceTracking = new TraceTracking();
-    /** API 触发器配置。 */
-    private ApiTrigger apiTrigger = new ApiTrigger();
-    /** 工作流执行安全和资源配置。 */
-    private Workflow workflow = new Workflow();
     /** API Key 认证配置。 */
     private ApiKey apiKey = new ApiKey();
     /** HTTP 入口资源限制。 */
@@ -105,12 +101,6 @@ public class PlatformProperties {
     public void setLlmUsage(LlmUsage value) { llmUsage = value; }
     public TraceTracking getTraceTracking() { return traceTracking; }
     public void setTraceTracking(TraceTracking traceTracking) { this.traceTracking = traceTracking; }
-    public ApiTrigger getApiTrigger() { return apiTrigger; }
-    public void setApiTrigger(ApiTrigger apiTrigger) { this.apiTrigger = apiTrigger; }
-    /** 读取工作流资源限制。 */
-    public Workflow getWorkflow() { return workflow; }
-    /** 设置工作流资源限制。 */
-    public void setWorkflow(Workflow workflow) { this.workflow = workflow; }
     public ApiKey getApiKey() { return apiKey; }
     public void setApiKey(ApiKey apiKey) { this.apiKey = apiKey; }
     public ResourceLimits getResourceLimits() { return resourceLimits; }
@@ -361,7 +351,7 @@ public class PlatformProperties {
         private java.util.List<String> excludedMethods = java.util.List.of("GET", "OPTIONS");
         private java.util.List<String> excludedPaths = java.util.List.of(
             "/api/auth/**", "/api/open/**", "/api/internal/**", "/api/system/tasks/**", "/api/mail/**",
-            "/api/workflow-hooks/**"
+            "/api/agent/ios-device/v1/**"
         );
         public java.util.List<String> getExcludedMethods() { return excludedMethods; }
         public void setExcludedMethods(java.util.List<String> excludedMethods) { this.excludedMethods = excludedMethods; }
@@ -369,108 +359,4 @@ public class PlatformProperties {
         public void setExcludedPaths(java.util.List<String> excludedPaths) { this.excludedPaths = excludedPaths; }
     }
 
-    public static class ApiTrigger {
-        private int schedulerPoolSize = 4;
-        private int lockSeconds = 300;
-        private int resultMaxLength = 2000;
-        private int responseMaxBytes = 2 * 1024 * 1024;
-        private int requestBodyMaxBytes = 1024 * 1024;
-        private int metadataMaxLength = 64 * 1024;
-        public int getSchedulerPoolSize() { return schedulerPoolSize; }
-        public void setSchedulerPoolSize(int schedulerPoolSize) { this.schedulerPoolSize = schedulerPoolSize; }
-        public int getLockSeconds() { return lockSeconds; }
-        public void setLockSeconds(int lockSeconds) { this.lockSeconds = lockSeconds; }
-        public int getResultMaxLength() { return resultMaxLength; }
-        public void setResultMaxLength(int resultMaxLength) { this.resultMaxLength = resultMaxLength; }
-        public int getResponseMaxBytes() { return responseMaxBytes; }
-        public void setResponseMaxBytes(int value) { responseMaxBytes = value; }
-        public int getRequestBodyMaxBytes() { return requestBodyMaxBytes; }
-        public void setRequestBodyMaxBytes(int value) { requestBodyMaxBytes = value; }
-        public int getMetadataMaxLength() { return metadataMaxLength; }
-        public void setMetadataMaxLength(int value) { metadataMaxLength = value; }
-    }
-
-    /** 限制画布和执行器资源占用，所有循环和 Agent 调用均有硬上限。 */
-    public static class Workflow {
-        private int executorPoolSize = 4;
-        private int executorQueueCapacity = 400;
-        private int maxNodes = 100;
-        private int maxIterations = 100;
-        private int maxAgentSteps = 20;
-        private int maxRecursionDepth = 5;
-        private int maxPayloadBytes = 1024 * 1024;
-        private int maxWaitSeconds = 3600;
-        private int maxExecutionSteps = 1000;
-        private int maxRunDurationSeconds = 86_400;
-        private long maxRunLogBytes = 10L * 1024 * 1024;
-        private int leaseSeconds = 60;
-        private int webhookMaxBodyBytes = 1024 * 1024;
-        private int webhookRateLimitPerMinute = 60;
-        private int triggerDeliveryRetentionDays = 30;
-        private int runRetentionDays = 30;
-        /** 读取执行线程数量。 */
-        public int getExecutorPoolSize() { return executorPoolSize; }
-        /** 设置执行线程数量。 */
-        public void setExecutorPoolSize(int value) { executorPoolSize = value; }
-        /** 读取执行等待队列容量。 */
-        public int getExecutorQueueCapacity() { return executorQueueCapacity; }
-        /** 设置执行等待队列容量。 */
-        public void setExecutorQueueCapacity(int value) { executorQueueCapacity = value; }
-        /** 读取单层画布节点上限。 */
-        public int getMaxNodes() { return maxNodes; }
-        /** 设置单层画布节点上限。 */
-        public void setMaxNodes(int value) { maxNodes = value; }
-        /** 读取迭代和循环次数上限。 */
-        public int getMaxIterations() { return maxIterations; }
-        /** 设置迭代和循环次数上限。 */
-        public void setMaxIterations(int value) { maxIterations = value; }
-        /** 读取 Agent 决策步数上限。 */
-        public int getMaxAgentSteps() { return maxAgentSteps; }
-        /** 设置 Agent 决策步数上限。 */
-        public void setMaxAgentSteps(int value) { maxAgentSteps = value; }
-        /** 读取子画布和子工作流递归深度上限。 */
-        public int getMaxRecursionDepth() { return maxRecursionDepth; }
-        /** 设置子画布和子工作流递归深度上限。 */
-        public void setMaxRecursionDepth(int value) { maxRecursionDepth = value; }
-        /** 读取输入输出负载字节上限。 */
-        public int getMaxPayloadBytes() { return maxPayloadBytes; }
-        /** 设置输入输出负载字节上限。 */
-        public void setMaxPayloadBytes(int value) { maxPayloadBytes = value; }
-        /** 读取单个等待节点允许的最长秒数。 */
-        public int getMaxWaitSeconds() { return maxWaitSeconds; }
-        /** 设置单个等待节点允许的最长秒数。 */
-        public void setMaxWaitSeconds(int value) { maxWaitSeconds = value; }
-        /** 读取单次运行累计节点执行上限。 */
-        public int getMaxExecutionSteps() { return maxExecutionSteps; }
-        /** 设置单次运行累计节点执行上限。 */
-        public void setMaxExecutionSteps(int value) { maxExecutionSteps = value; }
-        /** 读取单次运行从入队到终态允许的最长秒数。 */
-        public int getMaxRunDurationSeconds() { return maxRunDurationSeconds; }
-        /** 设置单次运行从入队到终态允许的最长秒数。 */
-        public void setMaxRunDurationSeconds(int value) { maxRunDurationSeconds = value; }
-        /** 读取单次运行节点日志明文累计字节上限。 */
-        public long getMaxRunLogBytes() { return maxRunLogBytes; }
-        /** 设置单次运行节点日志明文累计字节上限。 */
-        public void setMaxRunLogBytes(long value) { maxRunLogBytes = value; }
-        /** 读取工作流实例租约秒数。 */
-        public int getLeaseSeconds() { return leaseSeconds; }
-        /** 设置工作流实例租约秒数。 */
-        public void setLeaseSeconds(int value) { leaseSeconds = value; }
-        /** 读取公开 Webhook 正文字节上限。 */
-        public int getWebhookMaxBodyBytes() { return webhookMaxBodyBytes; }
-        /** 设置公开 Webhook 正文字节上限。 */
-        public void setWebhookMaxBodyBytes(int value) { webhookMaxBodyBytes = value; }
-        /** 读取单个 Webhook 每分钟请求上限。 */
-        public int getWebhookRateLimitPerMinute() { return webhookRateLimitPerMinute; }
-        /** 设置单个 Webhook 每分钟请求上限。 */
-        public void setWebhookRateLimitPerMinute(int value) { webhookRateLimitPerMinute = value; }
-        /** 读取触发幂等记录保留天数。 */
-        public int getTriggerDeliveryRetentionDays() { return triggerDeliveryRetentionDays; }
-        /** 设置触发幂等记录保留天数。 */
-        public void setTriggerDeliveryRetentionDays(int value) { triggerDeliveryRetentionDays = value; }
-        /** 读取工作流运行及节点日志保留天数。 */
-        public int getRunRetentionDays() { return runRetentionDays; }
-        /** 设置工作流运行及节点日志保留天数。 */
-        public void setRunRetentionDays(int value) { runRetentionDays = value; }
-    }
 }

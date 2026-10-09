@@ -34,15 +34,12 @@ public class RequestSizeLimitFilter extends OncePerRequestFilter {
     private static final Set<String> BODY_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
     private final int maxRequestBytes;
     private final int authenticationRequestMaxBytes;
-    private final int webhookRequestMaxBytes;
 
-    /** 从统一配置读取全局、认证和公开 Webhook 的正文上限。 */
+    /** 从统一配置读取全局和认证请求的正文上限。 */
     public RequestSizeLimitFilter(PlatformProperties properties) {
         this.maxRequestBytes = positive(properties.getResourceLimits().getRequestMaxBytes(), 20 * 1024 * 1024);
         this.authenticationRequestMaxBytes = bounded(properties.getResourceLimits().getAuthenticationRequestMaxBytes(),
             maxRequestBytes, 64 * 1024);
-        this.webhookRequestMaxBytes = bounded(properties.getWorkflow().getWebhookMaxBodyBytes(), maxRequestBytes,
-            1024 * 1024);
     }
 
     /** 在 JSON 反序列化和业务过滤器之前限制请求体，兼容 Content-Length 与分块传输。 */
@@ -78,7 +75,6 @@ public class RequestSizeLimitFilter extends OncePerRequestFilter {
     private int maximumFor(HttpServletRequest request) {
         String path = request.getRequestURI();
         if (path != null && path.startsWith("/api/auth/")) return authenticationRequestMaxBytes;
-        if (path != null && path.startsWith("/api/workflow-hooks/")) return webhookRequestMaxBytes;
         return maxRequestBytes;
     }
 

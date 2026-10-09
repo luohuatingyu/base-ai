@@ -100,7 +100,7 @@
           <el-input v-model="form.name" maxlength="100" />
         </el-form-item>
         <el-form-item :label="t('apiKeys.owner')">
-          <el-select v-model="form.ownerUserId" filterable style="width: 100%" @change="changeOwner">
+          <el-select v-model="form.ownerUserId" filterable style="width: 100%">
             <el-option v-for="owner in owners" :key="owner.id" :value="owner.id"
               :label="`${owner.displayName} (${owner.username})`" />
           </el-select>
@@ -145,16 +145,6 @@
             </section>
           </div>
         </el-form-item>
-        <el-form-item :label="t('apiKeys.workflows')">
-          <el-select v-model="form.workflowIds" multiple filterable clearable style="width: 100%"
-            :loading="workflowOptionsLoading" :disabled="!form.ownerUserId">
-            <el-option v-for="workflow in workflowOptions" :key="workflow.id" :value="workflow.id"
-              :label="`${workflow.name} (${workflow.code}) · ${workflow.status}`" />
-          </el-select>
-          <div class="form-help">{{ t('apiKeys.workflowsHelp') }}</div>
-          <el-alert v-if="workflowEndpointSelected && !form.workflowIds.length" :title="t('apiKeys.workflowDefaultDeny')"
-            type="warning" :closable="false" show-icon />
-        </el-form-item>
         <el-form-item :label="t('common.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
@@ -188,8 +178,6 @@ const auth = useAuthStore()
 const rows = ref([])
 const owners = ref([])
 const endpoints = ref([])
-const workflowOptions = ref([])
-const workflowOptionsLoading = ref(false)
 const total = ref(0)
 const loading = ref(false)
 const saving = ref(false)
@@ -200,7 +188,6 @@ const expandedUsageSections = ref([])
 const query = reactive({ keyword: '', enabled: null, page: 1, size: 5 })
 const form = reactive(emptyForm())
 const rateLimitTypes = ['SECOND', 'MINUTE', 'HOUR', 'DAY', 'UNLIMITED']
-const workflowEndpointSelected = computed(() => form.endpointCodes.some(code => code === 'workflow.execute' || code === 'workflow.run.read'))
 const endpointGroups = computed(() => {
   const groups = new Map()
   for (const endpoint of endpoints.value) {
@@ -218,7 +205,7 @@ function translateEndpoint(translationKey, endpointCode) {
 
 /** 创建 API Key 编辑表单的默认值。 */
 function emptyForm() {
-  return { id: null, name: '', ownerUserId: null, enabled: true, neverExpires: false, expiresAt: defaultExpiration(), rateLimitType: 'MINUTE', rateLimitCount: 60, endpointCodes: [], allowedCidrsText: '', workflowIds: [] }
+  return { id: null, name: '', ownerUserId: null, enabled: true, neverExpires: false, expiresAt: defaultExpiration(), rateLimitType: 'MINUTE', rateLimitCount: 60, endpointCodes: [], allowedCidrsText: '' }
 }
 
 /** 默认将指定有效期设置为一年后。 */
@@ -253,7 +240,6 @@ async function loadOptions() {
 /** 打开新建窗口。 */
 function openCreate() {
   Object.assign(form, emptyForm())
-  workflowOptions.value = []
   editorVisible.value = true
 }
 
@@ -269,30 +255,9 @@ function openEdit(row) {
     rateLimitType: row.rateLimitType || 'MINUTE',
     rateLimitCount: row.rateLimitCount ?? 60,
     endpointCodes: [...row.endpointCodes],
-    allowedCidrsText: (row.allowedCidrs || []).join('\n'),
-    workflowIds: [...(row.workflowIds || [])]
+    allowedCidrsText: (row.allowedCidrs || []).join('\n')
   })
-  loadWorkflowOptions(row.ownerUserId)
   editorVisible.value = true
-}
-
-/** 切换绑定用户时清空旧所有者授权并加载新所有者工作流。 */
-async function changeOwner(ownerUserId) {
-  form.workflowIds = []
-  await loadWorkflowOptions(ownerUserId)
-}
-
-/** 加载绑定用户拥有的工作流资源选项。 */
-async function loadWorkflowOptions(ownerUserId) {
-  workflowOptions.value = []
-  if (!ownerUserId) return
-  workflowOptionsLoading.value = true
-  try {
-    const { data } = await http.get('/system/api-keys/workflow-options', { params: { ownerUserId } })
-    workflowOptions.value = data || []
-  } finally {
-    workflowOptionsLoading.value = false
-  }
 }
 
 /** 切换永久有效时清理不再使用的过期时间。 */
@@ -316,8 +281,7 @@ async function save() {
       rateLimitType: form.rateLimitType,
       rateLimitCount: form.rateLimitType === 'UNLIMITED' ? null : form.rateLimitCount,
       endpointCodes: form.endpointCodes,
-      allowedCidrs: parseCidrs(),
-      workflowIds: form.workflowIds
+      allowedCidrs: parseCidrs()
     }
     if (form.id) {
       await http.put(`/system/api-keys/${form.id}`, payload)
