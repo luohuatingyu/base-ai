@@ -11,8 +11,6 @@ import UsersView from '../views/UsersView.vue'
 import RolesView from '../views/RolesView.vue'
 import MenusView from '../views/MenusView.vue'
 import TasksView from '../views/TasksView.vue'
-import ApiTriggerView from '../views/ApiTriggerView.vue'
-import ApiTriggerSecurityView from '../views/ApiTriggerSecurityView.vue'
 import DepartmentsView from '../views/DepartmentsView.vue'
 import PositionsView from '../views/PositionsView.vue'
 import DictionariesView from '../views/DictionariesView.vue'
@@ -27,12 +25,6 @@ import ApiKeysView from '../views/ApiKeysView.vue'
 import OpenPlatformView from '../views/OpenPlatformView.vue'
 import MailAccountsView from '../views/MailAccountsView.vue'
 import MailRoutesView from '../views/MailRoutesView.vue'
-import WorkflowNodesView from '../views/WorkflowNodesView.vue'
-import WorkflowCanvasView from '../views/WorkflowCanvasView.vue'
-import DataSourcesView from '../views/DataSourcesView.vue'
-import KnowledgeBasesView from '../views/KnowledgeBasesView.vue'
-import RagRetrievalDebugView from '../views/RagRetrievalDebugView.vue'
-import WorkflowNodeDocsView from '../views/WorkflowNodeDocsView.vue'
 import DeviceAgentsView from '../views/DeviceAgentsView.vue'
 import DeviceAgentGuideView from '../views/DeviceAgentGuideView.vue'
 import DeviceAgentOnboardingView from '../views/DeviceAgentOnboardingView.vue'
@@ -84,19 +76,11 @@ const router = createRouter({
         { path: 'model-providers', component: ModelProvidersView, meta: { permission: 'ai:model:provider:list', navigable: true, desc: 'providers.description' } },
         { path: 'models', component: ModelsView, meta: { permission: 'ai:model:model:list', navigable: true, desc: 'models.description' } },
         { path: 'model-routes', component: ModelRoutesView, meta: { permission: 'ai:model:route:list', navigable: true, desc: 'routes.description' } },
-        { path: 'knowledge-bases', component: KnowledgeBasesView, meta: { permission: 'ai:model:knowledge-base:list', navigable: true, desc: 'knowledgeBases.description' } },
-        { path: 'knowledge-bases/:knowledgeBaseId/debug', component: RagRetrievalDebugView, props: true, meta: { permission: 'ai:model:knowledge-base:list', desc: 'RAG 检索调试台' } },
         { path: 'tasks', component: TasksView, meta: { permission: 'operations:task:view', navigable: true, desc: 'tasks.description' } },
-        { path: 'data-sources', component: DataSourcesView, meta: { permission: 'operations:data-source:list', navigable: true, desc: 'dataSources.description' } },
         { path: 'api-keys', component: ApiKeysView, meta: { permission: 'system:api-key:list', navigable: true, desc: 'apiKeys.description' } },
-        { path: 'automation/api-triggers', component: ApiTriggerView, meta: { permission: 'automation:api-trigger:list', navigable: true, desc: 'apiTrigger.description' } },
-        { path: 'automation/api-trigger-security', component: ApiTriggerSecurityView, meta: { permission: 'automation:api-trigger-security:view', navigable: true, desc: 'apiTriggerSecurity.description' } },
         { path: 'automation/device-agents', component: DeviceAgentsView, meta: { permission: 'automation:device-agent:list', navigable: true, desc: 'deviceAgents.description' } },
         { path: 'automation/device-agents/config-guide', component: DeviceAgentGuideView, meta: { permission: 'automation:device-agent:list', desc: 'deviceAgentGuide.description' } },
         { path: 'automation/device-agents/onboarding', component: DeviceAgentOnboardingView, meta: { permission: 'automation:device-agent:list', desc: 'deviceAgentOnboarding.title' } },
-        { path: 'workflow/nodes', component: WorkflowNodesView, meta: { permission: 'automation:workflow:node:list', navigable: true, desc: 'workflowNodes.description' } },
-        { path: 'workflow/node-docs', component: WorkflowNodeDocsView, meta: { permission: 'automation:workflow:node:docs', navigable: true, desc: 'workflowNodeDocs.description' } },
-        { path: 'workflow/canvases', component: WorkflowCanvasView, meta: { permission: 'automation:workflow:canvas:list', navigable: true, desc: 'workflowCanvas.description' } }
       ]
     }
   ]
