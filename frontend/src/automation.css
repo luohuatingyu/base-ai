@@ -46,15 +46,6 @@
 
 .form-grid .el-form-item { min-width: 0; }
 
-/* 接口触发弹窗：tab 分区控制表单长度，进度页在同一上下文展示任务与日志。 */
-.api-trigger-dialog .el-dialog__body {
-  max-height: calc(92vh - 132px);
-  overflow-y: auto;
-  padding-top: 8px;
-}
-
-.trigger-tabs { min-height: 350px; }
-
 .form-help {
   display: inline-flex;
   align-items: center;
@@ -63,11 +54,6 @@
   color: var(--app-muted);
   font-size: 12px;
   line-height: 20px;
-}
-
-.progress-panel {
-  min-height: 330px;
-  padding-top: 4px;
 }
 
 .progress-toolbar {

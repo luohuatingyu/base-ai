@@ -1,49 +1,4 @@
-/** 构造节点文档的四段稳定说明。 */
-const nodeDoc = (behavior, input, output, limitations) => ({ behavior, input, output, limitations })
-const workflowNodeDocDetails = {
-  START: nodeDoc('接收调用方输入并建立工作流执行上下文。', '手动、API、Webhook、定时或消息触发器提交的结构化参数。', '原样输出工作流 input，供后续节点通过 input 引用。', '开始节点不执行外部操作且无需配置；一个顶层画布只能有一个开始入口。'),
-  END: nodeDoc('解析可选 output 表达式并结束本次工作流。', '上游节点结果以及工作流完整上下文。', '配置 output 时返回解析值，否则返回全部节点输出对象。', '结束节点之后不得继续连线；输出仍受工作流负载上限约束。'),
-  LLM: nodeDoc('通过能力路由或指定模型发送系统提示词和用户提示词。', '解析后的提示词、模型来源、温度和思考参数。', '返回 content、实际模型及输入、输出、总 Token 数。', '模型必须支持所选类型；外部模型可能超时、限流或返回不可靠内容。'),
-  HTTP: nodeDoc('在平台出站安全策略下发送 HTTP 请求。', 'URL、方法、请求头、查询参数、正文和上游表达式。', '返回 httpStatus、durationMs、body；正文为 JSON 时附带 json。', '目标受 SSRF、TLS、响应大小和超时限制；外部副作用不会自动回滚。'),
-  AGENT: nodeDoc('让模型在最大步骤数内选择受控 HTTP 或子工作流工具。', '任务提示词、模型配置及显式工具清单。', '返回 Agent 最终内容和工具调用过程产生的结构化结果。', '工具名称必须唯一；递归深度、步骤数、出站访问和子工作流所有者均受限制。'),
-  RAG: nodeDoc('先检索知识库片段，再将受限上下文交给文本模型生成带引用回答。', '查询文本、当前所有者的知识库、Top-K、阈值和文本模型配置。', '返回 answer、知识库信息、模型和 Token 统计、citations 与 matches。', 'Top-K 为 1–50、阈值为 0–1、上下文最多 20000 字符；检索内容按不可信数据处理。'),
-  EMBEDDING: nodeDoc('通过向量能力路由或指定向量模型转换一个或一组文本。', '单个文本或 1–256 项文本数组，以及向量模型来源。', '返回 embeddings、实际模型、数量 count 和统一维度 dimension。', '每项去除首尾空格后必须为 1–500 字符；高维批量结果可能触发工作流负载上限，向量不得作为原文脱敏替代。'),
-  KNOWLEDGE_RETRIEVAL: nodeDoc('仅执行知识库向量检索，不调用生成模型。', '查询文本、当前所有者的知识库、Top-K 和相似度阈值。', '返回知识库标识、名称、count 和包含片段来源与分数的 matches。', '查询最多 500 字符、Top-K 为 1–50、阈值为 0–1；知识库必须已完成索引且属于工作流所有者。'),
-  KNOWLEDGE_UPSERT: nodeDoc('将文本或 Base64 文档提取、切片、向量化并写入知识库。', '当前所有者的知识库、输入模式、正文、文件名和内容类型。', '返回 documentId、fileName、status 和 chunkCount。', '写入具有外部向量副作用且不能自动回滚；空内容、非法 Base64、超限文件或跨所有者知识库会失败。'),
-  CONDITION: nodeDoc('计算一个结构化条件并选择 true 或 false 分支。', '左值、运算符、可选右值及可引用上下文。', '返回 matched 布尔值，并从同名 true/false 端口继续。', '条件只支持平台运算符；类型不兼容或引用不存在可能导致不匹配。'),
-  ITERATION: nodeDoc('顺序遍历数组并为每个元素执行内嵌子画布。', '数组表达式、最大迭代数和包含开始/结束节点的子画布。', '返回 iterations 和按输入顺序排列的 items 子画布结果。', '输入必须为数组；数量不得超过节点值及平台全局迭代上限，子画布增加递归深度。'),
-  LOOP: nodeDoc('条件为真时重复执行子画布，并传入当前索引和上次输出。', '退出条件、最大迭代数和内嵌子画布。', '返回 iterations 和每轮结果 items。', '达到最大次数仍未退出会失败；子画布深度和总执行步骤受平台限制。'),
-  SWITCH: nodeDoc('按配置顺序匹配多个条件并选择第一个命中分支。', '带 branch 和 condition 的 cases，以及默认分支名。', '返回 matched 和 branch，并从选中的命名端口继续。', '至少配置一个分支且分支名应唯一；全部不匹配时只走默认分支。'),
-  MERGE: nodeDoc('把多个表达式结果合并为数组或对象。', 'values 数组或对象以及 ARRAY/OBJECT 模式。', 'ARRAY 返回数组；OBJECT 按顺序合并对象，后值覆盖同名键。', 'OBJECT 模式只接受对象或对象数组；覆盖同名键不会产生冲突提示。'),
-  SUB_WORKFLOW: nodeDoc('同步调用同一所有者的已发布工作流。', '已发布工作流编码和符合其输入 Schema 的 inputs。', '返回子工作流最终输出，并记录父子运行关系。', '禁止跨所有者调用和递归环；受递归深度、超时及子工作流发布状态限制。'),
-  WAIT: nodeDoc('持久化等待状态，在指定时长后恢复工作流。', 'SECONDS 或 MILLISECONDS 模式及对应正数时长。', '恢复后沿原上下文继续，不产生业务数据输出。', '等待只能用于顶层画布；等待时长和恢复租约受平台限制。'),
-  SET_VARIABLE: nodeDoc('解析 output 配置生成新的结构化值。', '任意 JSON 值及其中的受限上下文表达式。', '返回解析后的值并保留原 JSON 类型。', '不会修改全局变量或上游输出；危险对象键和超大负载会被拒绝。'),
-  TEMPLATE: nodeDoc('替换模板中的受限变量引用生成文本。', '模板文本及可引用的 input、nodes、loop 上下文。', '返回包含 text 字段的对象。', '不执行脚本或任意表达式；不存在的路径按表达式规则处理。'),
-  JSON_PARSE: nodeDoc('将文本解析为 JSON，结构化输入则直接复制。', 'JSON 文本或已有 JSON 值。', '返回解析后的对象、数组或标量。', '非法 JSON 会终止节点；输出仍受工作流负载限制。'),
-  JSON_VALIDATE: nodeDoc('使用平台支持的 JSON Schema 子集校验数据。', '待校验值、schema 和 failOnError 开关。', '返回 valid、原 value 和 errors 列表。', '仅支持常用类型、required、properties、items 和 maxLength；开启 failOnError 时错误会终止流程。'),
-  TRANSFORM: nodeDoc('通过 output 映射重组结构化数据。', '目标 JSON 结构及其中的上下文表达式。', '返回解析后的目标结构。', '不执行自定义代码；缺失引用和结果负载按平台规则处理。'),
-  FILTER: nodeDoc('为数组元素建立 item 上下文并按条件筛选。', '数组 collection 和引用 item/itemIndex 的条件。', '返回保持原顺序的匹配元素数组。', 'collection 必须解析为数组；条件错误会使节点失败。'),
-  SORT: nodeDoc('按可选字段路径稳定排序数组。', '数组 collection、字段 path 和 ASC/DESC 方向。', '返回排序后的深复制数组。', '仅比较标量化值；空值、混合类型和不存在路径可能产生非业务预期顺序。'),
-  AGGREGATE: nodeDoc('对数组执行 COUNT、SUM、AVG、MIN 或 MAX。', '数组 collection、操作类型和可选数值字段 path。', '返回包含 value 的对象。', '除 COUNT 外必须获得非空数值集合；非法数值或空集合会失败。'),
-  CSV: nodeDoc('在带表头 CSV 文本和对象数组之间转换。', 'PARSE 时为 CSV 文本，STRINGIFY 时为对象数组。', 'PARSE 返回对象数组；STRINGIFY 返回 text。', '不支持任意自定义方言；畸形 CSV 或非对象行会失败，仍受负载上限限制。'),
-  QUESTION_CLASSIFIER: nodeDoc('让模型从有限且唯一的分类名中选择一个结果。', '问题文本、至少两个分类和模型配置。', '返回 category，并从同名分类分支继续。', '模型必须返回允许的分类名；无法解析或越界分类会失败。'),
-  PARAMETER_EXTRACTOR: nodeDoc('让模型按 JSON Schema 从文本提取参数。', '输入文本、对象 Schema 和模型配置。', '返回模型生成的 JSON 对象。', '输出必须是对象且包含 required 字段；模型结果无法保证业务真实性。'),
-  STRUCTURED_OUTPUT: nodeDoc('解析文本或 JSON，并强制通过 Schema 校验。', '待解析 value 和平台支持的 JSON Schema。', '返回已校验的结构化值及校验信息。', '非法 JSON 或 Schema 不匹配会失败；Schema 仅支持平台子集。'),
-  DOCUMENT_EXTRACTOR: nodeDoc('从文本或 Base64 文档中提取正文和元数据。', 'TEXT/BASE64 内容、可选文件名和最大字符数。', '返回 text 和 metadata。', '空文件、非法 Base64、不支持格式、超过负载或字符限制会失败；不执行文档内脚本。'),
-  WEBHOOK_TRIGGER: nodeDoc('接收已验证签名和去重后的 Webhook 事件启动工作流。', '受管 Webhook 连接对应的请求载荷和触发元数据。', '原样输出触发输入供后续节点使用。', '只能作为入口；请求大小、签名、频率、事件去重和连接所有权均受限制。'),
-  SCHEDULE_TRIGGER: nodeDoc('按 Cron 和时区生成定时工作流运行。', 'Cron 表达式、IANA 时区及调度触发元数据。', '输出本次调度输入供后续节点使用。', '只能作为入口；非法 Cron/时区会拒绝发布，实际触发受调度器可用性影响。'),
-  EMAIL_SEND: nodeDoc('通过受管邮件路由发送主题和正文。', '邮件路由、单行主题、正文及上下文表达式。', '返回 sent 和 routeCode。', '路由必须可发送；主题禁止换行注入，发送副作用不会随工作流回滚。'),
-  IM_NOTIFY: nodeDoc('通过受管 Webhook 连接发送即时通知。', '连接、正文、内容类型和超时。', '返回 httpStatus、durationMs 和响应 body。', '目标固定于受管连接并受出站策略限制；远端副作用不可回滚。'),
-  SQL_QUERY: nodeDoc('使用参数化预编译语句访问受管 MySQL 或 PostgreSQL。', '连接、单条 SQL、参数、超时和最大行数。', '查询返回 count/rows；写操作返回 updated。', '禁止分号和注释；默认只读，写入需连接授权；最多返回 10000 行。'),
-  REDIS_COMMAND: nodeDoc('执行白名单 Redis 命令并自动应用 Key 前缀。', '连接、GET/SET/DEL/HGET/HSET/LPUSH/RPUSH/LRANGE/PUBLISH 和参数数组。', '返回 value，类型取决于命令。', '写命令需连接授权；命令和参数数量受白名单校验，外部写入不可回滚。'),
-  S3_OBJECT: nodeDoc('在受管 Bucket 和 Key 前缀内执行 GET、PUT、LIST 或 DELETE。', '连接、操作、Bucket、Key/前缀及可选上传内容。', '按操作返回下载内容、对象列表、上传或删除结果。', '不能越过连接限定范围；删除需授权，上传下载受负载上限，副作用不可回滚。'),
-  KAFKA_PUBLISH: nodeDoc('向受管前缀内的 Kafka Topic 发布消息并等待 Broker 确认。', '连接、Topic、可选 Key、消息值和超时。', '返回 topic、partition 和 offset。', 'Topic 必须符合连接前缀；发布成功后不会随工作流回滚。'),
-  KAFKA_TRIGGER: nodeDoc('消费受管 Kafka 消息并以事件启动工作流。', '连接、Topic、消费组和消息载荷。', '原样输出消息触发输入。', '只能作为入口；Topic 范围、事件去重、消费确认和连接所有权受平台控制。'),
-  RABBITMQ_PUBLISH: nodeDoc('向受管 RabbitMQ Exchange 或默认交换机发布并等待确认。', '连接、目的地模式、Exchange/路由键、消息值和超时。', '返回 published 和实际 exchange。', '目的地必须符合连接前缀；确认后的消息不可由工作流回滚。'),
-  RABBITMQ_TRIGGER: nodeDoc('消费受管 RabbitMQ Queue 消息并启动工作流。', '连接、Queue、可选 Exchange/路由键和消息载荷。', '原样输出消息触发输入。', '只能作为入口；Queue 范围、事件去重、确认和连接所有权受平台控制。'),
-  TAVILY_TOOL: nodeDoc('通过加密的受管连接调用 Tavily Search 或 Extract 官方端点。', '连接、操作及对应查询、URL、深度、格式参数。', '返回 httpStatus、durationMs、body，JSON 响应时附带 json。', 'Search 最多 20 条；只允许固定官方 HTTPS 端点，非 2xx、超时或超大响应会失败。'),
-}
-
+/** 本地化消息。 */
 export default {
   app: {
     name: 'AI平台',
@@ -602,7 +557,7 @@ export default {
   menus: { title: '菜单管理', description: '维护目录、页面路由和按钮权限。', add: '新增菜单', edit: '编辑菜单', parent: '上级', catalog: '目录', menu: '菜单', button: '按钮', route: '路由', component: '组件', icon: '图标', permission: '权限编码', visible: '显示', types: { catalog: '目录', menu: '菜单', button: '按钮' }, buttons: { createUser: '新增用户管理', updateUser: '编辑用户管理', deleteUser: '删除用户管理', manageUser: '兼容用户管理', createRole: '新增角色管理', updateRole: '编辑角色管理', deleteRole: '删除角色管理', manageRole: '兼容角色管理', createMenu: '新增菜单管理', updateMenu: '编辑菜单管理', deleteMenu: '删除菜单管理', manageMenu: '兼容菜单管理', createDepartment: '新增部门管理', updateDepartment: '编辑部门管理', deleteDepartment: '删除部门管理', createPosition: '新增岗位管理', updatePosition: '编辑岗位管理', deletePosition: '删除岗位管理', createDictionary: '新增字典管理', updateDictionary: '编辑字典管理', deleteDictionary: '删除字典管理', createSetting: '新增系统参数', updateSetting: '编辑系统参数', deleteSetting: '删除系统参数', forceLogout: '强制下线', manageTask: '任务管理', createApiKey: '新增 API Key', updateApiKey: '更新 API Key', revokeApiKey: '吊销 API Key', rotateApiKey: '轮换 API Key', createProvider: '新增模型供应商', updateProvider: '编辑模型供应商', deleteProvider: '删除模型供应商', createModel: '新增模型配置', updateModel: '编辑模型配置', deleteModel: '删除模型配置', createRoute: '新增能力路由', updateRoute: '编辑能力路由', deleteRoute: '删除能力路由', createTrigger: '新增接口触发', updateTrigger: '更新接口触发', deleteTrigger: '删除接口触发', executeTrigger: '执行接口触发', triggerLogs: '接口触发日志', updateTriggerSecurity: '更新接口触发安全配置' } },
   dictionaries: { title: '字典管理', description: '统一维护系统枚举与展示标签。', addType: '新增类型', addData: '新增数据', selectType: '请选择字典类型', selectTypeHint: '请点击左侧字典类型查看数据', type: '字典类型', data: '字典数据', label: '标签', value: '值' },
   settings: { title: '系统参数', description: '敏感参数加密保存并按权限展示。', add: '新增参数', edit: '编辑参数', group: '分组', key: '参数键', keySearchPlaceholder: '按参数键模糊搜索', value: '参数值', sensitive: '敏感', keepValue: '留空保留原值' },
-  apiTriggerSecurity: { title: '接口触发安全配置', description: '动态控制接口触发器可访问的 Host、回环地址和私有网络，修改后自动生效，无需保存或重启服务。', defaultPolicy: '默认允许 localhost、127.0.0.1 和 ::1 回环地址，无需配置 Host 规则；其他私有网络默认关闭。', allowedHosts: '额外允许的 Host', allowedHostsHelp: '每条规则单独选择匹配类型；前缀和后缀按域名边界匹配，包含为普通字符串包含。', ruleValuePlaceholder: '请输入 Host 匹配值', addRule: '新增 Host 规则', deleteRule: '删除', anyRuleValue: '无需填写，匹配任意 Host', allowLoopback: '允许回环地址', allowLoopbackHelp: '控制 localhost、127.0.0.1、::1 及规则 Host 解析到的回环地址；关闭后即使配置任意 Host 也会拒绝。', allowPrivateNetwork: '允许其他私有网络', allowPrivateNetworkHelp: '控制链路本地、私有网段、IPv6 ULA 和组播地址，不包含回环地址；该开关与任意 Host 独立生效。', anyWarning: '任意 Host 规则不会绕过回环和私有网络开关。', fullAccessConfirm: '当前配置将允许任意 Host、回环地址和其他私有网络，确认应用？', riskTitle: '高风险配置', autoSaveFailed: '自动应用失败，已恢复最近生效的配置', workflowTitle: '工作流连接器出站策略', workflowDescription: '数据库、Redis、S3、Kafka 和 RabbitMQ 使用独立白名单。', workflowImportedNotice: '升级时仅将已有连接目标一次性导入为精确 Host；后续新增目标仍须明确放行。', allowedCidrs: '允许的私有 IP 与 CIDR', allowedCidrsPlaceholder: '每行一个 IP 或 CIDR，例如 172.20.0.10 或 10.0.0.0/24', allowedCidrsHelp: '私有、回环、链路本地、ULA 和组播地址除 Host 规则外还必须命中此列表。', workflowAnyWarning: '任意 Host 属于高风险规则，只应临时使用。', workflowAnyConfirm: '任意 Host 会显著扩大连接器出站范围，确认保存该工作流网络策略？', workflowSaveFailed: '工作流连接器网络策略保存失败', autoSaveStatus: { saved: '修改后自动生效', saving: '正在应用…', error: '自动应用失败' }, ruleTypes: { EXACT: '精确匹配', PREFIX: '前缀匹配', SUFFIX: '后缀匹配', CONTAINS: '包含匹配', ANY: '任意 Host' } },
+
   secretReveal: { title: '验证管理员密码', passwordPrompt: '请输入当前管理员密码后查看敏感凭据。', passwordRequired: '请输入当前管理员密码' },
   apiKeys: { title: 'API Key 管理', description: '为外部系统创建无需登录 Token 的机器凭证，并限制可调用接口、来源 IP 和请求频率。', add: '新增 API Key', edit: '编辑 API Key', keyword: '名称或 Key 前缀', keyPrefix: 'Key 前缀', owner: '绑定用户', expiration: '有效期', expirationType: '有效期类型', scheduledExpiration: '指定有效期', neverExpires: '永久有效', neverExpiresWarning: '永久有效的 API Key 不会自动过期，请务必限制开放接口、来源 IP 和调用频率。', neverExpiresConfirm: '该 API Key 将永久有效，确认保存？', expiresAt: '过期时间', selectExpiresAt: '请选择未来时间', endpoints: '开放 API', workflows: '允许的工作流', workflowsHelp: '只能选择绑定用户拥有的工作流；开放接口权限和此白名单必须同时允许才能执行。', workflowDefaultDeny: '当前未选择工作流，默认拒绝工作流执行和运行结果查询。', allowedIps: 'IP 白名单', allowedIpsPlaceholder: '每行一个 IP 或 CIDR，例如 10.0.0.0/24', allowedIpsHelp: '留空表示不限制来源 IP；支持 IPv4、IPv6 和 CIDR。', rateLimit: '调用频次限制', rateLimitTypes: { SECOND: '每秒', MINUTE: '每分钟', HOUR: '每小时', DAY: '每天', UNLIMITED: '无限制' }, rateLimitUnits: { SECOND: '次/秒', MINUTE: '次/分钟', HOUR: '次/小时', DAY: '次/天' }, lastUsedAt: '最近调用时间', viewKey: '查看 Key', rotate: '轮换', revoke: '吊销', rotateConfirm: '轮换“{name}”后旧 Key 将立即失效，确认继续？', revokeConfirm: '永久吊销“{name}”？该操作不可恢复。', secretNotice: '完整 API Key 使用加密副本保存，仅系统管理员可以查看。', secretTitle: '查看 API Key', secretAdminNotice: '完整 Key 属于敏感凭证，请仅复制到安全的密钥管理系统中。', copy: '复制', copied: 'API Key 已复制', copyFailed: '复制失败，请检查浏览器剪贴板权限。', riskTitle: '高风险配置', endpointNames: { aiChatInvoke: 'AI 对话调用', apiTriggerExecute: '执行接口触发器', workflowExecute: '执行工作流', workflowRunRead: '查询工作流运行' }, endpointGroups: { ai: 'AI 能力', automation: '自动化', workflow: '工作流' }, risk: { NORMAL: '普通', SENSITIVE: '敏感', HIGH: '高风险' } },
   mailAccounts: { title: '邮箱配置', description: '独立维护 SMTP 邮箱账户，密码使用 AES-GCM 加密保存且仅向系统管理员回显。', add: '新增邮箱', edit: '编辑邮箱', code: '邮箱编码', host: 'SMTP 主机', port: '端口', username: '用户名', fromAddress: '发件地址', tlsMode: 'TLS 类型', password: '密码/授权码', keepPassword: '留空保留原密码', required: '请完整填写邮箱配置和密码' },
@@ -610,113 +565,12 @@ export default {
   providers: { title: '模型供应商', description: 'API Key 加密保存，列表仅显示脱敏值，只有系统管理员可查看明文。', add: '新增供应商', edit: '编辑供应商', viewKeys: '查看 Key', addKey: '添加 Key', deleteKey: '删除', keyPlaceholder: '留空保留原 Key，输入内容将替换全部 Key', copyKey: '复制', keyCopied: 'Key 已复制', copyFailed: '复制失败，请检查浏览器剪贴板权限', strategy: '接入协议', strategies: { GENERIC: 'OpenAI 兼容', OPENAI: 'OpenAI', ARK: '火山方舟', GEMINI: 'Google Gemini', MINIMAX: 'MiniMax', VIDU: 'Vidu' }, baseUrl: 'Base URL', imageUrl: '图片 URL', videoUrl: '视频 URL', sameAsBase: '与 Base URL 相同', sameAsImage: '与图片 URL 相同', endpointRequired: 'Base、图片、视频 URL 至少填写一个', syncSourceRequired: '请先填写同步来源 URL 或取消同步', concurrencyLevel: '并发维度', concurrency: '并发数', timeout: '超时秒数', provider: '供应商', apiKeys: 'API Keys', keepKeys: '留空保留原密钥；多个密钥用逗号或换行分隔', multipleKeys: '多个密钥用逗号或换行分隔' },
   models: { title: '模型配置', description: '维护供应商下的模型标识、能力和思考等级映射。', add: '新增模型', edit: '编辑模型', provider: '供应商', identifier: '模型标识', modelType: '模型类型', capability: '能力', text: '文本', vision: '视觉', low: '低', middle: '中', high: '高', generationProfile: '生成能力画像', thinkingLevels: '思考等级映射', thinkingPlaceholder: '例如 EXTRA_HIGH=xhigh, LOW=low', thinkingValuePlaceholder: '请输入供应商值', thinkingMappingHelp: '填写供应商实际接收的思考等级值；留空表示该模型不支持此等级。', standardThinkingLevel: '标准思考等级', providerThinkingValue: '供应商值', thinkingLevelLabels: { LOW: '低', MEDIUM: '中', HIGH: '高', EXTRA_HIGH: '超高', MAX: '最高', ULTRA: '极致' }, noThinking: '不启用思考', test: '测试', connected: '连接成功，耗时 {duration}ms', generationTypeHint: '图片和视频生成模型必须分别配置；文本、视觉和向量能力可按模型实际支持情况组合。', generationUnavailable: '图片和视频生成模型不能使用聊天测试接口，请在 AI 对话中使用媒体生成功能。', types: { text_model: '文本模型', vision_model: '视觉模型', embedding_model: '向量模型', image_model: '图片生成模型', video_model: '视频生成模型' } },
   routes: { title: '能力路由', description: '按供应商池、能力和思考等级筛选模型。', add: '新增路由', edit: '编辑路由', autoSyncEnabledNotice: '定时同步已开启，每 {interval} 自动同步一次，服务启动时也会同步一次。编辑后可等待定时同步，或手动点击“同步”立即生效。', autoSyncDisabledNotice: '定时同步当前已关闭。编辑能力路由后，请手动点击“同步”，同步完成后配置才会生效。', intervalUnits: { day: '{count}天', hour: '{count}小时', minute: '{count}分钟', second: '{count}秒' }, featureCode: '功能编码', candidates: '候选模型', providerPool: '供应商池', thinking: '思考模式', thinkingLevel: '思考等级', example: '例如 chat', sync: '同步', syncRoute: '同步路由「{name}」', syncRoutes: '同步路由', selectFeatureCodes: '请选择需要同步的功能编码', syncScopeHint: '将分别测试所选路由已配置的全部模型供应，并把数据库中的最新路由配置同步到内存。', startSync: '开始同步', syncingRoute: '正在同步功能编码 {code}…', waitingSync: '等待开始同步', syncCompleted: '同步完成', syncPartialCompleted: '同步完成，其中 {count} 个能力路由失败', syncDuration: '耗时 {duration}ms', syncFailed: '同步失败', noModelsToSync: '当前路由未配置模型供应，已同步成功', removeModelProvider: '删除当前模型供应', removeProviderConfirm: '确认从能力路由「{route}」删除供应商「{provider}」及其全部模型供应？供应商和模型主数据不会删除。', providerRemoved: '当前模型供应已删除', default: '默认能力路由' },
-  apiTrigger: { title: '接口触发', description: '配置保存于 PostgreSQL，正式执行同步进入 MySQL 任务调度。', add: '新增配置', nameOrDescription: '名称或描述', enabledStatus: '启用状态', manualOnly: '仅手动', latestResult: '最近结果', execute: '执行', logs: '日志', disable: '停用', void: '作废', edit: '编辑接口触发', addTrigger: '新增接口触发', basic: '基础配置', business: '业务接口', auth: '令牌获取', authEnabled: '前置认证', authHelp: '启用后显示“令牌获取”页，调用业务接口前先获取 Token。', cronPlaceholder: '留空仅手动执行', httpMethod: 'HTTP 方法', timeoutSeconds: '超时秒数', targetUrl: '目标 URL', targetUrlPlaceholder: '请先在接口触发安全配置中允许目标 Host', headers: '请求头 JSON', queryParams: '查询参数 JSON', requestBody: '请求体', authMethod: '认证方法', authType: '认证类型', authUrl: '认证 URL', authBody: '认证请求体', tokenPath: 'Token 路径', tokenHeader: 'Token 请求头', tokenPrefix: 'Token 前缀', progress: '查进度', traceReturned: '目标接口返回的 Trace ID', traceHelp: '临时测试或正式执行返回 traceId 后自动显示，无需手工输入。', refreshProgress: '刷新进度与日志', noTrace: '目标接口响应中尚未识别到 Trace ID', pythonTask: 'Python 子任务', workerEndpoint: 'Worker 接口', unifiedLogs: '统一链路日志', entries: '{count} 条', noLogs: '暂无链路日志', level: '级别', source: '来源', logger: '记录器', content: '内容', temporaryTest: '临时测试', result: '调用结果', http: 'HTTP', duration: '耗时', executionLogs: '执行日志', trigger: '触发', summary: '结果摘要', save: '保存', testFailed: '测试失败', executeFailed: '执行失败', progressFailed: '任务进度与日志查询失败', disableConfirm: '确认停用 {name}？', voidConfirm: '作废后不再显示 {name}，是否继续？', voidTitle: '作废配置' },
-  knowledgeBases: {
-    title: '知识库', description: '使用经过向量能力验证的外部 PostgreSQL pgvector、Qdrant、Milvus 或 Elasticsearch 建立检索知识库。',
-    add: '新增知识库', edit: '编辑知识库', required: '请填写编码、名称并选择已验证连接和向量模型', connectionHint: '只有执行连接测试后确认支持向量的连接才能保存；未验证和不支持状态会被后端拒绝。',
-    directory: '知识库目录', totalResults: '共 {count} 个结果', searchPlaceholder: '搜索编码、名称或说明', allStatuses: '全部状态', allStores: '全部向量存储', loadFailed: '知识库加载失败', retry: '重新加载', noResults: '没有符合筛选条件的知识库', empty: '还没有知识库', selectHint: '从左侧选择一个知识库查看配置和文档', readOnly: '只读', noDescription: '暂无说明',
-    summary: { totalBases: '知识库总数', enabledBases: '已启用', documents: '文档总数', failedDocuments: '失败文档' },
-    storageType: '向量存储', resourceMode: '资源模式', dimension: '向量维度', vectorConnection: '外部向量连接', embeddingModel: '向量模型', managed: '平台管理', existing: '绑定预建资源', resourceName: '表 / Collection / Index', distance: '距离算法', chunkSize: '切片字符数', chunkOverlap: '重叠字符数', chunkConfig: '切片 / 重叠字符数', configuration: '知识库配置', configurationHint: '索引身份配置在存在文档时保持锁定，其他配置可继续维护。', createdAt: '创建时间', updatedAt: '更新时间', owner: '所有者',
-    documents: '文档维护', documentsHint: '筛选索引结果、查看失败原因，并维护当前知识库文档。', documentCount: '{count} 个文档', failedCount: '{count} 个失败', documentsReady: '就绪文档', upload: '选择文件', uploadHint: '最大 10 MB；正文由服务端提取、加密切片并批量向量化。', disabledUploadHint: '知识库已停用，启用后才能继续上传和索引文档。', deleteSelected: '删除选中（{count}）', documentSearch: '搜索文件名', allDocumentStatuses: '全部文档状态', fileName: '文件名', contentType: '内容类型', chunks: '切片数', failureReason: '失败原因', noDocuments: '暂无文档，请选择文件建立索引', noDocumentResults: '没有符合筛选条件的文档', documentsFailed: '文档列表加载失败', indexed: '文档索引完成',
-    immutableHint: '当前知识库已有文档。连接、资源、向量模型和距离算法需清空文档后才能更改。', noVectorConnections: '没有已通过向量能力测试的可用连接，请先到连接配置完成测试。', noEmbeddingModels: '没有已启用的向量模型，请先完成模型配置。', resourcesFailed: '连接或模型资源加载失败', statusUpdated: '知识库状态已更新', deleteBaseConfirm: '删除「{name}」将同步清理平台管理的向量资源或平台写入的向量，是否继续？',
-    uploadTitle: '上传到「{name}」', fileSize: '大小', uploadProgress: '已处理 {completed}/{total}，成功 {success}，失败 {failed}', startUpload: '开始上传', retryFailed: '重试失败项', uploadCompleted: '{count} 个文档索引完成', uploadCompletedWithFailures: '上传完成：成功 {success}，失败 {failed}',
-    batchDeleteConfirm: '确认删除选中的 {count} 个文档及其向量？此操作不可撤销。', batchDeleted: '已删除 {count} 个文档', batchResult: '批量删除结果', batchDeletePartial: '成功 {success} 个，失败 {failed} 个；失败文档已保留。',
-    storageTypes: { PGVECTOR: 'PostgreSQL pgvector', QDRANT: 'Qdrant', MILVUS: 'Milvus', ELASTICSEARCH: 'Elasticsearch' },
-    documentStatuses: { READY: '已就绪', FAILED: '失败', INDEXING: '索引中' },
-    uploadStatuses: { PENDING: '待上传', UPLOADING: '上传中', SUCCESS: '成功', FAILED: '失败', REJECTED: '已拒绝' },
-    uploadRejections: { TOO_MANY: '单批最多选择 20 个文件', EMPTY: '空文件不能上传', TOO_LARGE: '文件超过 10 MB' },
-    validation: { codeRequired: '请输入知识库编码', codeFormat: '编码须以字母开头，可使用 2–80 位字母、数字、下划线或连字符', nameRequired: '请输入知识库名称', connectionRequired: '请选择已验证的向量连接', modelRequired: '请选择向量模型', resourceName: '资源名须以小写字母开头，可使用 3–120 位小写字母、数字或下划线', chunkSize: '切片字符数须为 50–500', chunkOverlap: '重叠字符数须不小于 0 且小于切片字符数' },
-    documentErrors: { disabled: '知识库已停用', vectorConnectionUnverified: '向量连接尚未验证', vectorStoreUnsupported: '不支持该向量存储', vectorStoreUnavailable: '向量存储不可用或认证失败', vectorResourceInvalid: '向量资源不存在或结构不兼容', vectorDimensionInvalid: '向量维度无效', vectorDimensionMismatch: '向量维度不一致', vectorMetricMismatch: '距离算法不一致', vectorWriteFailed: '向量写入或删除失败', resourceNameInvalid: '外部资源名称无效', documentEmpty: '文档为空或未提取到正文', documentTooLarge: '文档超过大小限制', documentInvalid: '文档无法解析', documentExists: '知识库中已存在相同文档', documentNotFound: '文档不存在', indexFailed: '文档索引失败', embeddingInputInvalid: '向量化输入无效', embeddingResponseInvalid: '向量模型响应无效', unknown: '索引处理失败，请重试或检查服务日志' }
-  },
-  workflowNodeDocs: {
-    title: '节点文档', handbook: 'WORKFLOW HANDBOOK', guideTitle: '节点使用手册',
-    description: '从适用场景、配置方法到输入输出示例和故障排查，统一查看系统和自定义模板的完整使用说明。',
-    catalogOverview: '文档目录概览', templates: '模板', nodeTypes: '节点类型', matches: '当前结果', directory: '节点目录', directoryHint: '选择节点查看完整说明',
-    search: '搜索名称、类型、分类或说明', source: '来源', category: '功能分类', publisher: '发布者', version: '外部版本', onThisPage: '本页章节',
-    overview: '功能概览', overviewHint: '了解节点的执行方式、接收数据和返回结果。', behavior: '执行行为', input: '输入', output: '输出',
-    quickStart: '快速上手', quickStartHint: '按照准备、配置和验证三个步骤完成节点接入。', prerequisites: '使用前准备', inputReference: '读取工作流输入', outputReference: '读取上游节点输出',
-    configuration: '配置项', configurationHint: '仅展示当前配置方案实际生效的字段；条件必填状态会随方案变化。',
-    modelCompatibility: '模型兼容性', modelCompatibilityHint: '仅返回平台已验证与当前节点执行协议兼容的类型、路由和模型。', modelProtocol: '执行协议', recommendedModelType: '推荐类型', allowedModelTypes: '允许类型', modelSources: '模型来源', filteringRule: '筛选规则', knownCompatibleOnly: '未适配的字典扩展类型不会出现在节点候选中', routeAndDirect: '模型路由 / 指定模型', protocols: { CHAT: '对话生成', EMBEDDINGS: '文本向量化' },
-    field: '字段', fieldName: '名称', fieldType: '类型', defaultValue: '示例默认值', options: '可选值', requirement: '要求', optional: '可选', none: '无', listSeparator: '、',
-    noConfiguration: '该节点无需配置', noConfigurationHint: '连接节点并提供符合说明的输入后即可使用。',
-    examples: '数据与配置示例', examplesHint: '示例仅用于说明数据结构，资源编号、地址和业务值请替换为实际配置。', inputExample: '输入示例', outputExample: '输出示例', example: '配置示例',
-    troubleshooting: '故障排查', troubleshootingHint: '优先核对配置、运行日志和变量引用，再结合节点限制定位问题。', limitations: '异常、安全与限制',
-    empty: '暂无节点文档', noResults: '没有匹配的节点文档', unsupported: '该模板尚无可用的原生节点说明', loadFailed: '节点文档加载失败，请稍后重试', loadFailedHint: '请检查网络连接和节点文档访问权限，然后重新加载。',
-    genericBehavior: '{nodeType} 按平台原生节点契约解析配置、执行并输出结构化结果。', genericInput: '上游节点输出、工作流输入以及配置中引用的上下文变量。', genericOutput: '供下游节点引用的结构化执行结果。', defaultLimitations: '执行受工作流权限、负载、超时、重试和出站安全策略限制；外部副作用无法由工作流自动回滚。',
-    steps: {
-      addTitle: '添加并连接节点', addDescription: '在工作流画布添加该节点，并从上游节点连接所需数据。',
-      configureTitle: '完成必要配置', configureDescription: '填写并检查必填项：{fields}。其余字段可按业务需要调整。', noConfigurationDescription: '当前节点没有必填配置，确认输入和连线符合节点约定即可。',
-      verifyTitle: '调试并引用结果', verifyDescription: '先使用测试数据运行，检查节点日志和输出结构，再由下游节点引用需要的字段。'
-    },
-    prerequisiteItems: { none: '无需预先创建资源', model: '可用模型或能力路由', knowledgeBase: '已完成索引的知识库', connection: '已验证的连接配置', mailRoute: '可发送的邮件路由', workflow: '已发布的子工作流', subgraph: '包含开始与结束节点的子画布' },
-    troubleshootingItems: {
-      configurationTitle: '发布时提示配置不完整', configurationDescription: '检查当前方案下的必填字段：{fields}。资源选择项还需确认资源已启用且属于当前用户。',
-      executionTitle: '节点运行失败或超时', executionDescription: '查看运行日志中的节点错误，确认外部服务可用、连接测试通过，并核对超时、重试和负载限制。',
-      outputTitle: '下游没有取得预期数据', outputDescription: '先在运行详情核对实际输出，再检查节点编码和字段路径；变量引用区分工作流 input 与 nodes 输出。'
-    },
-    editors: { text: '单行文本', textarea: '多行文本', number: '数字', boolean: '布尔值', select: '选择项', generic: 'JSON 值', condition: '条件', modelType: '兼容模型类型', modelRoute: '模型路由', model: '指定模型', connection: '连接', mailRoute: '邮件路由', knowledgeBase: '知识库' },
-    editorDescriptions: { text: '填写“{field}”使用的文本值，可按字段约定引用上下文变量。', textarea: '填写“{field}”使用的多行内容，可按字段约定引用上下文变量。', number: '设置“{field}”使用的数值，并遵守节点说明中的取值范围。', boolean: '控制是否启用“{field}”对应的行为。', select: '从可选值中选择“{field}”的执行方案。', generic: '使用有效 JSON 配置“{field}”，其中的字符串值可以引用上下文变量。', condition: '配置左值、运算符和可选右值，决定条件是否匹配。', modelRoute: '选择平台中已启用的能力路由。', model: '选择平台中已启用且能力匹配的具体模型。', connection: '选择已创建、启用并通过验证的受管连接。', mailRoute: '选择已启用且具备发送能力的邮件路由。', knowledgeBase: '选择当前用户拥有且已完成索引的知识库。' },
-    fieldDescriptions: {
-      modelMode: '选择通过能力路由自动匹配模型，或直接指定一个具体模型。', featureCode: '选择包含当前节点兼容模型类型的业务能力路由。', modelType: '从动态模型类型字典中选择平台已验证与当前节点协议兼容的能力。', modelId: '直接调用与当前节点执行协议兼容的启用模型。', temperature: '控制生成结果的随机性，数值越高结果通常越发散。', enableThinking: '控制模型是否使用受支持的思考模式。', thinkingLevel: '指定思考模式的强度，实际可用等级取决于模型映射。', systemPrompt: '定义模型应遵循的角色、边界和全局指令。', prompt: '发送给模型的主要任务内容，可引用工作流上下文。',
-      knowledgeBaseId: '选择检索或写入目标知识库，运行时会校验所有权和索引状态。', connectionId: '选择节点访问外部服务时使用的受管连接，不会向文档暴露凭据。', routeId: '选择用于发送邮件的受管路由及其账户和收件人策略。', workflowCode: '填写同一所有者下已发布子工作流的唯一编码。',
-      condition: '配置左值、运算符和右值，表达式解析后决定执行分支或筛选结果。', collection: '提供要遍历、筛选、排序或聚合的数组值。', maxIterations: '限制最多执行次数，防止异常输入导致无限或超量运行。', schema: '使用平台支持的 JSON Schema 子集描述期望的数据结构。', operation: '选择当前节点需要执行的具体操作。', inputMode: '选择直接提供文本还是提供 Base64 编码内容。', contentMode: '选择上传内容使用普通文本还是 Base64 编码。',
-      maxAttempts: '设置节点失败时包含首次执行在内的最大尝试次数。', retryDelayMillis: '设置相邻两次重试之间的等待毫秒数。', onError: '决定最终失败时终止流程、继续执行或进入错误分支。', timeoutSeconds: '限制单次外部调用等待时间，超时后按失败策略处理。', tools: '定义 Agent 可以调用的受控工具清单及各工具配置。', output: '定义节点最终返回的数据结构，可引用当前工作流上下文。', cron: '使用 Cron 表达式定义调度时间。', zoneId: '使用 IANA 时区名称解释 Cron 表达式。', query: '填写查询内容或语句，可按节点约定引用上游数据。', content: '填写要发送、提取、写入或上传的正文内容。', base64: '填写不带 Data URL 前缀的有效 Base64 内容。'
-    },
-    nodes: workflowNodeDocDetails
-  },
+
+
+
   tavilyConfig: { fields: { connectionId: 'Tavily 连接', operation: '操作类型', query: '搜索问题', searchDepth: '搜索深度', maxResults: '最大结果数', urls: '待提取网址', extractDepth: '提取深度', format: '内容格式' }, options: { operation: { SEARCH: '搜索', EXTRACT: '网页提取' }, searchDepth: { basic: '基础', advanced: '高级', fast: '快速', 'ultra-fast': '极速' }, extractDepth: { basic: '基础', advanced: '高级' }, format: { markdown: 'Markdown', text: '纯文本' } } },
-  workflowCatalog: {
-    sources: { SYSTEM: '系统' },
-    categories: { BASIC: '基础节点', AI: 'AI 能力', FLOW_CONTROL: '流程控制', DATA_TRANSFORM: '数据转换', TEXT_DOCUMENT: '文本与文档', NETWORK_API: '网络与接口', TRIGGER: '触发器', NOTIFICATION: '通知与通信', DATA_STORAGE: '数据库、缓存与存储', MESSAGE_QUEUE: '消息队列' },
-    templates: {
-      START: { name: '开始', description: '定义工作流输入并启动执行' },
-      END: { name: '结束', description: '汇总工作流输出并结束执行' },
-      LLM: { name: '大语言模型', description: '调用平台模型路由生成内容' },
-      RAG: { name: '知识库问答', description: '检索知识库上下文并调用文本模型生成带引用回答' },
-      EMBEDDING: { name: '文本向量化', description: '通过向量路由或指定模型转换单个文本或文本数组' },
-      KNOWLEDGE_RETRIEVAL: { name: '知识库检索', description: '检索知识库并返回匹配片段、来源和分数' },
-      KNOWLEDGE_UPSERT: { name: '知识库入库', description: '将文本或文档提取、切片并写入知识库' },
-      HTTP: { name: '网络请求', description: '按安全策略调用网络接口' },
-      AGENT: { name: '智能体', description: '由模型选择并调用受控工具' },
-      CONDITION: { name: '条件分支', description: '按结构化条件选择执行分支' },
-      ITERATION: { name: '数组迭代', description: '顺序遍历数组并执行子画布' },
-      LOOP: { name: '条件循环', description: '在次数上限内按条件执行子画布' },
-      SWITCH: { name: '多路分支', description: '按顺序匹配多个结构化条件' },
-      MERGE: { name: '结果合并', description: '合并多个上游节点结果' },
-      SUB_WORKFLOW: { name: '子工作流', description: '确定性调用已发布工作流' },
-      WAIT: { name: '等待', description: '等待指定时长后继续执行' },
-      SET_VARIABLE: { name: '变量设置', description: '生成新的结构化变量值' },
-      TEMPLATE: { name: '文本模板', description: '使用受限变量引用生成文本' },
-      JSON_PARSE: { name: 'JSON 解析', description: '将文本解析为 JSON 数据' },
-      JSON_VALIDATE: { name: 'JSON 校验', description: '使用 JSON Schema 校验数据' },
-      TRANSFORM: { name: '对象转换', description: '映射和重组结构化数据' },
-      FILTER: { name: '数组过滤', description: '按结构化条件过滤数组元素' },
-      SORT: { name: '数组排序', description: '按字段路径稳定排序数组' },
-      AGGREGATE: { name: '数组聚合', description: '执行计数、求和、平均和极值聚合' },
-      CSV: { name: 'CSV 转换', description: '在 CSV 文本与对象数组之间转换' },
-      QUESTION_CLASSIFIER: { name: '问题分类', description: '使用模型从有限分类中选择结果' },
-      PARAMETER_EXTRACTOR: { name: '参数提取', description: '使用模型提取结构化参数' },
-      STRUCTURED_OUTPUT: { name: '结构化输出', description: '解析并校验结构化输出' },
-      DOCUMENT_EXTRACTOR: { name: '文档提取', description: '从常用文档格式提取正文和元数据' },
-      WEBHOOK_TRIGGER: { name: 'Webhook 触发', description: '通过签名 Webhook 启动工作流' },
-      SCHEDULE_TRIGGER: { name: '定时触发', description: '按 Cron 表达式启动工作流' },
-      EMAIL_SEND: { name: '邮件发送', description: '使用受管邮件路由发送邮件' },
-      IM_NOTIFY: { name: '即时通知', description: '向受控通知 Webhook 发送消息' },
-      SQL_QUERY: { name: '数据库查询', description: '参数化访问受管 MySQL 或 PostgreSQL' },
-      REDIS_COMMAND: { name: 'Redis 操作', description: '执行受限 Redis 命令' },
-      S3_OBJECT: { name: '对象存储', description: '访问受管 S3 兼容对象存储' },
-      KAFKA_PUBLISH: { name: 'Kafka 发布', description: '向受管 Kafka Topic 发布消息' },
-      KAFKA_TRIGGER: { name: 'Kafka 触发', description: '消费 Kafka 消息并启动工作流' },
-      RABBITMQ_PUBLISH: { name: 'RabbitMQ 发布', description: '向受管 RabbitMQ Exchange 发布消息' },
-      RABBITMQ_TRIGGER: { name: 'RabbitMQ 触发', description: '消费 RabbitMQ 消息并启动工作流' },
-      TAVILY_TOOL: { name: 'Tavily 工具', description: '通过加密连接执行 Tavily 搜索或网页提取' },
-    }
-  },
-  dataSources: {
-    title: '数据源管理', description: '统一维护数据库、向量数据库、缓存、对象存储、消息队列、Webhook、搜索服务。', add: '新增数据源', edit: '编辑数据源', test: '测试连接', connected: '连接成功', testFailed: '连接测试失败', vectorUnsupported: '连接成功，但当前实例不支持所需向量能力',
-    statusTitle: '状态详情', statusOk: '正常', statusFailed: '连接异常', statusUnknown: '未检测', lastTestAt: '最近检测', notTested: '尚未检测', detectAll: '全部检测', autoDetect: '自动检测', empty: '暂无数据源',
-    infoLabels: { version: '版本', activeConnections: '活动连接数', usedMemory: '内存使用', connectedClients: '客户端连接', vectorEngine: '向量引擎', vectorVersion: '向量版本', reason: '原因' }
-  },
+
+
   "deviceAgents": {
     "operationSpeed": {
       "title": "速度档位",
@@ -1281,53 +1135,10 @@ export default {
       "doneHint": "功能开关已生效，可返回 Agent 管理页查看在线状态与诊断详情"
     }
   },
-  workflowNodes: {
-  "title": "节点管理",
-  "description": "按功能类型维护可复用的原生节点模板。",
-  "add": "新增节点模板",
-  "source": "节点来源",
-  "category": "功能类型",
-  "noDescription": "暂无节点说明",
-  "emptyGroup": "当前来源和功能类型下暂无节点",
-  "edit": "编辑节点模板",
-  "requiredHint": "编码、名称、节点类型、节点来源和功能类型为必填项；默认配置可由工作流实例补充，发布前会统一校验。",
-  "defaultConfig": "默认配置",
-  "required": "请填写节点模板编码、名称、节点类型、来源和功能类型"
-},
-  workflowConnections: {
-    title: '连接配置', description: '按数据库、向量数据库、缓存、对象存储、消息队列、Webhook 和其他类型管理工作流连接。', add: '新增连接', edit: '编辑连接',
-    category: '连接分类', connectionType: '连接类型', selectCategory: '请先选择连接分类', selectConnectionType: '请选择连接类型',
-    wizardProgress: '新增数据源步骤', chooseStep: '选择类型', chooseStepHelp: '确定数据源能力', configureStep: '填写配置', configureStepHelp: '完成参数并检测',
-    chooseEyebrow: '步骤 1 · 数据源类型', chooseTitle: '选择要连接的数据源', chooseDescription: '先按用途筛选，再选择具体产品。下一步只展示该类型真正支持的参数和配置建议。', typeTotal: '共 {count} 种类型', parameterSummary: '{count} 个参数 · {required} 个必填',
-    categories: { DATABASE: '数据库', VECTOR_DATABASE: '向量数据库', CACHE: '缓存', OBJECT_STORAGE: '对象存储', MESSAGE_QUEUE: '消息队列', WEBHOOK: 'Webhook', OTHER: '其他' },
-    types: { MYSQL: 'MySQL', POSTGRESQL: 'PostgreSQL', REDIS: 'Redis', S3: 'S3', OSS: 'OSS', KAFKA: 'Kafka', RABBITMQ: 'RabbitMQ', WEBHOOK: 'Webhook', TAVILY: 'Tavily', QDRANT: 'Qdrant', MILVUS: 'Milvus', ELASTICSEARCH: 'Elasticsearch' },
-    typeGuides: { MYSQL: '使用 JDBC 地址连接 MySQL；账号至少需要读取目标库，只有工作流或数据同步确需写入时才开启写权限。', POSTGRESQL: '使用 JDBC 地址连接 PostgreSQL；作为向量库时需预先安装 pgvector，托管资源还需要建表和写入权限。', REDIS: '使用 redis:// 或 rediss:// URI；键前缀会自动加到工作流访问的 Key 或频道前。', S3: '连接 AWS S3 或兼容对象存储；存储桶与键前缀共同限定工作流可访问范围。', OSS: '连接阿里云 OSS；Endpoint 与 Bucket 必填，区域可从 Endpoint 推导。', KAFKA: '填写一个或多个 Broker；选择 SASL 协议后还需配置认证机制、用户名和密码。', RABBITMQ: '使用 amqp:// 或 amqps:// URI；Exchange 和 Queue 前缀分别约束发布与消费范围。', WEBHOOK: '配置工作流通知的目标地址、正式请求方法和无副作用的连接测试方法。', TAVILY: '连接固定的 Tavily 官方 API，只需填写具有可用额度的 API Key。', QDRANT: '连接 Qdrant HTTP API；启用认证的实例还需填写 API Key。', MILVUS: '通过 Milvus v2 REST API 连接实例；Token 支持云端 Token 或 username:password 格式。', ELASTICSEARCH: '连接支持 dense_vector 的 Elasticsearch；可使用 API Key 或用户名密码认证。' },
-    config: '连接参数', configHelp: '按用途分组填写连接参数；必填项未完成时不会提交。', securityTitle: '凭据安全', securityNotice: '密码和 Token 使用 AES-GCM 加密；列表只返回脱敏值，节点仅保存连接 ID。', maskHelp: '编辑已有连接时保留 ****** 可继续使用原密钥。',
-    configGroups: { CONNECTION: { label: '连接信息', description: '服务地址与目标资源' }, AUTH: { label: '认证信息', description: '账号、密钥与安全协议' }, SCOPE: { label: '访问范围', description: '最小权限与命名空间限制' }, BEHAVIOR: { label: '行为选项', description: '请求方式与兼容设置' } },
-    identityTitle: '基本信息', identityHelp: '定义数据源在工作流和管理列表中的唯一身份。', codePlaceholder: '例如 MAIN_MYSQL', namePlaceholder: '例如 生产环境 MySQL', codeHelp: '2–80 位，以字母开头，仅支持字母、数字、下划线和连字符，保存时自动转为大写。', nameHelp: '使用能区分环境和用途的名称，例如“生产只读 MySQL”。', statusHelp: '停用后保留配置，但不能被新的工作流执行使用。', codeInvalid: '编码格式不正确，请按提示填写', configRequired: '请填写必填参数：{fields}', fieldSeparator: '、', requiredField: '必填', optionalField: '选填', conditionalRequired: '条件必填', fieldRequiredInline: '此项为必填', fieldPlaceholder: '请输入{field}', sensitiveOption: '敏感权限',
-    requiredProgress: '必填进度', configAssistant: '配置助手', progressHelp: '必填条件会随安全协议和安全策略实时变化。', configurationGuide: '配置说明', fieldGuide: '当前字段', formatExample: '格式示例', parameterChecklist: '参数清单', booleanExample: '关闭（默认）/ 开启', keyValueExample: 'Authorization: Bearer ******', riskHelp: '该选项会扩大数据源权限范围，请遵循最小权限原则。',
-    advancedTitle: '高级选项', advancedHelp: '访问范围、行为开关和兼容性自定义参数。', configuredCount: '已配置 {count}', expandAdvanced: '展开', collapseAdvanced: '收起', changeType: '更换类型', changeTypeConfirm: '确认更换数据源类型', changeTypeWarning: '更换类型会清空当前类型的连接参数，编码和名称会继续保留。是否继续？', continueConfigure: '继续配置',
-    saveAndTest: '保存并检测', savedAndTested: '数据源已保存并通过连接检测', savedTestFailedTitle: '数据源已保存，但连接检测失败', savedTestFailedDescription: '配置已经持久化。请根据错误检查地址、凭据和网络策略，修改后可再次保存并检测。',
-    customTitle: '自定义参数', customHelp: '通过键值卡片维护标准字段之外的兼容配置，支持选择值类型和嵌套结构。', customKey: '参数名称', customValue: '参数值', addCustom: '添加自定义参数', invalidCustomKey: '请输入有效且安全的参数名称', duplicateCustomKey: '参数名称已存在', notSet: '不设置',
-    test: '测试', connected: '连接成功', testFailed: '连接测试失败', required: '请填写编码、名称并选择连接分类和类型', vectorCapability: '向量能力', vectorUnsupported: '连接可达，但未通过向量能力校验', vectorStatuses: { UNKNOWN: '未验证', SUPPORTED: '支持向量', UNSUPPORTED: '不支持向量' },
-    fields: { url: '连接地址', username: '用户名', password: '密码', allowWrite: '允许写入', uri: '连接 URI', keyPrefix: '键前缀', endpoint: '服务端点', region: '区域', accessKey: 'Access Key', secretKey: 'Secret Key', bucket: '存储桶', pathStyle: '路径样式访问', allowDelete: '允许删除', bootstrapServers: 'Bootstrap Servers', topicPrefix: 'Topic 前缀', securityProtocol: '安全协议', saslMechanism: 'SASL 机制', exchangePrefix: 'Exchange 前缀', queuePrefix: 'Queue 前缀', method: '请求方法', testMethod: '测试方法', headers: '请求头', secret: '签名密钥', apiKey: 'API Key', token: 'Token', database: '数据库', product: '产品标识' },
-    fieldDescriptions: { url: '填写完整 JDBC 地址或 HTTP(S) 服务根地址，不要使用示例域名。', username: '连接服务使用的账号；服务允许匿名访问时可留空。', password: '连接服务使用的密码，编辑时可保留脱敏值。', allowWrite: '允许数据库或 Redis 节点执行受控写操作，默认关闭。', uri: '填写包含协议、主机、端口及可选凭据的完整连接 URI。', keyPrefix: '工作流访问 Redis Key 或频道时自动追加的限定前缀。', endpoint: 'S3 兼容服务地址；直接使用 AWS S3 时留空。', region: '对象存储服务所在区域，例如 us-east-1；OSS 可从 Endpoint 推导。', accessKey: '对象存储访问凭据标识。', secretKey: '对象存储访问密钥。', bucket: '工作流只能访问此存储桶。', pathStyle: '兼容 MinIO 等需要 /bucket/key 地址形式的服务。', allowDelete: '允许删除限定存储桶和键前缀内的对象，默认关闭。', bootstrapServers: 'Kafka Broker 地址，多个地址使用英文逗号分隔。', topicPrefix: '工作流只能发布或消费此前缀开头的 Topic。', securityProtocol: 'Kafka 传输与认证协议；无额外配置时可不设置。', saslMechanism: '选择 SASL 协议时必填，并与 Broker 认证配置一致。', exchangePrefix: '工作流只能向此前缀开头的 Exchange 发布消息。', queuePrefix: '工作流只能消费此前缀开头的 Queue。', method: '工作流正式调用 Webhook 时使用的方法。', testMethod: '连接测试会实际发出此方法，建议选择 GET 等无副作用方法。', headers: '维护随 Webhook 请求发送的固定请求头，例如 Authorization。', secret: '旧版保留字段，当前不会用于 Webhook 自动签名。', apiKey: '服务 API Key，使用 AES-GCM 加密保存并仅以脱敏值返回。', token: 'Milvus 云端 Token 或 username:password 凭据。', database: 'Milvus 数据库名称，默认使用 default。', product: '固定为 Elasticsearch，用于选择正确的 API Key 认证头。' }
-  },
-  workflowCanvas: { title: '画布管理', description: '在画布空白处右键选择节点，通过连线和版本发布构建可运行工作流。', workflows: '工作流', search: '搜索工作流', add: '新增工作流', required: '请填写工作流编码和名称', empty: '请选择或创建工作流', palette: '节点模板', nodeMenu: '添加节点', categories: '节点功能分类', noTemplates: '暂无可用节点模板', properties: '节点属性', nodeConfig: '实例配置', editSubgraph: '编辑子画布', subgraph: '循环子画布', deleteNode: '删除节点', deleteEdgeHint: '点击删除连线', undo: '撤销', redo: '重做', maximize: '最大化', restore: '还原', fullscreen: '全屏', exitFullscreen: '退出全屏', fullscreenFailed: '无法切换全屏模式', publish: '发布', published: '工作流已发布', run: '运行', start: '开始运行', cancel: '取消运行', logs: '运行日志', runId: '运行 ID', version: '版本', inputSchema: '输入 Schema JSON', invalidJson: '请输入有效 JSON', invalidGraph: '画布校验失败：{error}', iteration: '迭代路径', graphErrors: { graphInvalid: '画布结构无效', nodeLimit: '节点数量超出限制', nodeIdInvalid: '节点 ID 缺失或重复', boundaryInvalid: '必须且只能有一个入口，并至少有一个结束节点', edgeMissing: '连线缺少有效的起点或终点', cycle: '画布不允许形成循环' }, statuses: { DRAFT: '草稿', PUBLISHED: '已发布', QUEUED: '排队中', RUNNING: '运行中', WAITING: '等待中', SUCCESS: '成功', FAILED: '失败', FAILED_CONTINUED: '失败后继续', CANCELLED: '已取消' } },
-  workflowConfig: {
-    visualHint: '点击字段标题可展开或收起配置值；非必填字段需先启用再编辑，禁用后不写入配置。', configured: '已配置', disabled: '未启用', defaultValue: '使用默认值', defaultPreview: '默认值：{value}', notConfigured: '未配置', required: '必填', conditional: '条件必填', requiredMissing: '缺少必填配置', enableField: '启用该字段', clearField: '清除该字段配置', expandValue: '显示', collapseValue: '隐藏',
-    requiredHint: '模板可以暂时留空，但工作流发布前需补充：{fields}', fieldSeparator: '、',
-    noStandardFields: '该节点没有标准字段，可在下方添加附加参数', extraTitle: '附加参数', extraDescription: '维护标准字段之外的自定义配置，支持对象和数组嵌套。',
-    customParameter: '自定义参数', removeParameter: '删除参数', parameterName: '参数名称', addParameter: '添加参数', addItem: '添加数组项',
-    invalidParameterName: '请输入有效且安全的参数名称', duplicateParameter: '参数名称已存在', nullValue: '当前值为空', depthLimit: '嵌套层级已达到可视化编辑上限，原数据将保持不变。',
-    conditionLeft: '左值，例如 {{input.status}}', standardParameterDescription: '标准配置字段：{key}', selectModelType: '请选择兼容模型类型', noCompatibleModelTypes: '当前节点暂无已验证兼容的模型类型', modelTypeOptionsFailed: '模型类型加载失败，请稍后重试', selectModel: '请选择模型', noCompatibleModels: '当前节点暂无兼容模型', modelOptionsFailed: '模型列表加载失败，请稍后重试', selectModelRoute: '请选择模型路由', noModelRoutes: '暂无兼容模型路由', routeOptionsFailed: '模型路由列表加载失败，请稍后重试', selectMailRoute: '请选择邮件路由', noMailRoutes: '暂无可用邮件路由', mailRouteOptionsFailed: '邮件路由列表加载失败，请稍后重试', selectConnection: '请选择连接配置', noCompatibleConnections: '暂无匹配当前节点类型的连接', connectionOptionsFailed: '连接列表加载失败，请稍后重试',
-    selectKnowledgeBase: '请选择知识库', noKnowledgeBases: '暂无可用知识库', knowledgeBaseOptionsFailed: '知识库列表加载失败，请稍后重试',
-    valueTypes: { string: '文本', number: '数字', boolean: '布尔', null: '空值', object: '对象', array: '数组' },
-    operators: { EQ: '等于', NE: '不等于', GT: '大于', GTE: '大于等于', LT: '小于', LTE: '小于等于', CONTAINS: '包含', EXISTS: '存在', EMPTY: '为空' },
-    fieldLabels: { modelMode: '模型来源方案', featureCode: '功能编码', modelType: '模型类型', modelId: '指定模型', temperature: '温度', enableThinking: '启用思考', thinkingLevel: '思考等级', systemPrompt: '系统提示词', prompt: '用户提示词', knowledgeBaseId: '知识库', topK: '召回数量', scoreThreshold: '相似度阈值', promptTemplate: '提示词模板', name: '请求名称', method: '请求方法', url: '请求地址', headers: '请求头', queryParams: '查询参数', body: '请求正文', contentType: '内容类型', timeoutSeconds: '超时秒数', maxSteps: '最大步骤数', tools: '可用工具', condition: '判断条件', collection: '数据集合', maxIterations: '最大迭代次数', output: '输出值', cases: '分支列表', defaultBranch: '默认分支', values: '待合并值', mode: '合并模式', workflowCode: '工作流编码', inputs: '输入参数', durationMode: '等待时长单位', seconds: '等待秒数', milliseconds: '等待毫秒数', template: '文本模板', value: '数据值', schema: '数据结构', failOnError: '校验失败时终止', path: '字段路径', direction: '排序方向', operation: '操作类型', input: '输入内容', categories: '分类列表', inputMode: '文档输入方案', contentMode: '上传内容方案', content: '内容', base64: 'Base64 内容', fileName: '文件名', maxCharacters: '最大字符数', bodyGraph: '子画布', cron: 'Cron 表达式', zoneId: '时区', routeId: '邮件路由', subject: '主题', connectionId: '连接配置', query: '查询语句', parameters: '查询参数', maxRows: '最大返回行数', command: '命令', arguments: '命令参数', bucket: '存储桶', key: '对象键', prefix: '对象前缀', maxKeys: '最大对象数', topic: '主题', groupId: '消费组', destinationMode: 'RabbitMQ 目的地方案', exchange: '交换机', routingKey: '路由键', queue: '队列', maxAttempts: '最大尝试次数', retryDelayMillis: '重试间隔（毫秒）', onError: '失败策略' },
-    requirementLabels: { contentOrBase64: '内容或 Base64 内容', rabbitDestination: '交换机或路由键' },
-    options: { modelMode: { ROUTE: '模型路由', DIRECT: '指定模型' }, modelType: { text_model: '文本模型', vision_model: '视觉模型', embedding_model: '向量模型' }, durationMode: { SECONDS: '秒', MILLISECONDS: '毫秒' }, inputMode: { TEXT: '文本内容', BASE64: 'Base64 内容' }, contentMode: { TEXT: '文本内容', BASE64: 'Base64 内容' }, destinationMode: { EXCHANGE: '指定交换机', DEFAULT_EXCHANGE: '默认交换机' }, onError: { FAIL: '终止工作流', CONTINUE: '继续执行', BRANCH: '进入错误分支' } }
-  },
+
+
+
+
   pagination: {
     total: '共 {total} 条',
     pageSize: '每页',
