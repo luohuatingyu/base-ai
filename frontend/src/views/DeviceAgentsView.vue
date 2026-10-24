@@ -1052,6 +1052,7 @@ import {
   detectSelfSignedDeployment, isPrivateOrigin
 } from '../utils/deviceAgentInstallCommand'
 import { createRegistryStatusPoller } from '../utils/deviceAgentRegistryPoller'
+import { usePairingIdentity } from '../utils/deviceAgentPairing'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -1341,8 +1342,8 @@ const pairingForm = reactive({
 const pairingFormOriginalBackendUrl = ref('')
 const pairingCode = ref(null)
 const pairingExpiresIn = ref(600)
-const identitySuggestionLoading = ref(false)
 let pairingTimer = null
+const { identitySuggestionLoading, generatePairingIdentity } = usePairingIdentity(http, pairingForm, t)
 
 // 自签名探测结果：平台确实暴露内部根证书时才自动开启开关，避免生成指向 404 的 --ca-file
 const selfSignedDetected = ref(false)
@@ -2269,21 +2270,6 @@ const handleReissueFromIdaDialog = () => {
   const agentId = idaConfigForm.agentId
   idaConfigDialogVisible.value = false
   handleReissuePairing({ agentId })
-}
-
-/** 请求服务端生成同源的 Agent ID 与短码名称，并允许管理员继续编辑。 */
-const generatePairingIdentity = async () => {
-  identitySuggestionLoading.value = true
-  try {
-    const response = await http.get('/automation/device-agents/pairing/identity-suggestion')
-    pairingForm.agentId = response.data.agentId
-    pairingForm.deviceName = response.data.deviceName
-    ElMessage.success(t('deviceAgents.agentIdentityGenerated'))
-  } catch (error) {
-    showHttpError(error, 'deviceAgents.agentIdentityGenerateError')
-  } finally {
-    identitySuggestionLoading.value = false
-  }
 }
 
 /** 创建前在页面侧拦截空身份；后端仍执行同一校验，防止绕过页面直接调用。 */

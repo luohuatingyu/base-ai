@@ -5,6 +5,8 @@ import enUS from '../src/locales/en-US.js'
 import zhCN from '../src/locales/zh-CN.js'
 
 const view = readFileSync(new URL('../src/views/DeviceAgentsView.vue', import.meta.url), 'utf8')
+const onboarding = readFileSync(new URL('../src/views/DeviceAgentOnboardingView.vue', import.meta.url), 'utf8')
+const pairingUtility = readFileSync(new URL('../src/utils/deviceAgentPairing.js', import.meta.url), 'utf8')
 const router = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const navigation = readFileSync(new URL('../src/utils/navigation.js', import.meta.url), 'utf8')
 const zhLocaleSource = readFileSync(new URL('../src/locales/zh-CN.js', import.meta.url), 'utf8')
@@ -63,6 +65,14 @@ test('device Agent UI uses IDA as the iOS Device Automation abbreviation', () =>
 
 test('device Agent page contains no business automation endpoints', () => {
   assert.doesNotMatch(view, /\/accounts|\/friends|\/tasks\/execute|wecom/i)
+})
+
+test('device Agent pairing identity uses one shared implementation', () => {
+  assert.match(view, /utils\/deviceAgentPairing/)
+  assert.match(onboarding, /utils\/deviceAgentPairing/)
+  assert.match(pairingUtility, /identity-suggestion/)
+  assert.doesNotMatch(view, /http\.get\(['"]\/automation\/device-agents\/pairing\/identity-suggestion/)
+  assert.doesNotMatch(onboarding, /http\.get\(['"]\/automation\/device-agents\/pairing\/identity-suggestion/)
 })
 
 test('device Agent distribution is self-contained with pinned automation runtimes', () => {

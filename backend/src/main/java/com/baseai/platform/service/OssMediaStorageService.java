@@ -15,12 +15,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.Base64;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
-/** 将媒体写入 OSS 的 public 前缀，并提供有限大小的供应商结果下载。 */
+/** 将输入和生成结果写入可配置的 OSS 前缀，并提供有限大小的供应商结果下载。 */
 @Service
 @EnableConfigurationProperties(OssProperties.class)
 public class OssMediaStorageService {
@@ -35,13 +35,15 @@ public class OssMediaStorageService {
     public boolean enabled() {
         String prefix = normalizedPrefix();
         return nonBlank(properties.getEndpoint()) && nonBlank(properties.getAccessKeyId()) && nonBlank(properties.getAccessKeySecret())
-            && nonBlank(properties.getBucketName()) && prefix.startsWith("public/") && !prefix.contains("..") && !prefix.startsWith("/");
+            && nonBlank(properties.getBucketName()) && !prefix.contains("..") && !prefix.startsWith("/") && !prefix.contains("\\");
     }
 
-    /** 上传字节并返回仅位于 public 前缀下的公共地址。 */
+    /** 上传字节并返回配置前缀下的对象地址。 */
     public String upload(byte[] bytes, String contentType, String category, String taskId) {
         if (!enabled() || bytes == null || bytes.length == 0 || bytes.length > MAX_BYTES) return null;
-        String key = normalizedPrefix() + "ai-generation/" + safe(category) + "/" + safe(taskId) + "/" + UUID.randomUUID() + extension(contentType);
+        String extension = extensionFor(contentType);
+        if (extension == null) return null;
+        String key = objectKey(normalizedPrefix(), contentType, category, taskId);
         OSS client = new OSSClientBuilder().build(normalizedEndpoint(), properties.getAccessKeyId(), properties.getAccessKeySecret());
         try {
             ObjectMetadata metadata = new ObjectMetadata();
@@ -78,7 +80,49 @@ public class OssMediaStorageService {
     private String normalizedPrefix() { String value = properties.getPrefix() == null ? "public/" : properties.getPrefix().trim(); return value.endsWith("/") ? value : value + "/"; }
     private static boolean nonBlank(String value) { return value != null && !value.isBlank(); }
     private static String safe(String value) { return String.valueOf(value).replaceAll("[^A-Za-z0-9_-]", "_"); }
-    private static String extension(String contentType) { return contentType != null && contentType.toLowerCase(Locale.ROOT).contains("video") ? ".mp4" : ".bin"; }
+    /** 根据真实 MIME 类型返回可打开的文件扩展名，未知类型不允许伪装成 bin 文件。 */
+    static String extensionFor(String contentType) {
+        if (contentType == null || contentType.isBlank()) return null;
+        String mime = contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return switch (mime) {
+            case "image/png" -> ".png";
+            case "image/jpeg", "image/jpg" -> ".jpg";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            case "image/bmp" -> ".bmp";
+            case "image/tiff" -> ".tif";
+            case "image/heic" -> ".heic";
+            case "image/heif" -> ".heif";
+            case "video/mp4" -> ".mp4";
+            case "video/webm" -> ".webm";
+            case "video/quicktime" -> ".mov";
+            case "video/x-m4v" -> ".m4v";
+            case "video/mpeg" -> ".mpeg";
+            case "audio/mpeg", "audio/mp3" -> ".mp3";
+            case "audio/wav", "audio/x-wav" -> ".wav";
+            case "audio/ogg" -> ".ogg";
+            case "audio/opus" -> ".opus";
+            case "audio/aac" -> ".aac";
+            case "audio/flac" -> ".flac";
+            case "audio/mp4", "audio/x-m4a" -> ".m4a";
+            default -> null;
+        };
+    }
+
+    /** 构造输入或输出对象键，按类别和日期分层，避免原文件名污染路径。 */
+    static String objectKey(String prefix, String contentType, String category, String taskId) {
+        String extension = extensionFor(contentType);
+        if (extension == null) return null;
+        LocalDate today = LocalDate.now();
+        return normalizePrefix(prefix) + "materials/" + safe(category) + "/"
+            + today.getYear() + "/" + String.format(Locale.ROOT, "%02d", today.getMonthValue()) + "/"
+            + String.format(Locale.ROOT, "%02d", today.getDayOfMonth()) + "/" + UUID.randomUUID() + extension;
+    }
+
+    private static String normalizePrefix(String value) {
+        String prefix = value == null || value.isBlank() ? "public/" : value.trim();
+        return prefix.endsWith("/") ? prefix : prefix + "/";
+    }
     /** 拒绝回环、私网、链路本地和组播地址，避免供应商结果触发 SSRF。 */
     private static boolean restricted(InetAddress address) {
         byte[] bytes = address.getAddress();

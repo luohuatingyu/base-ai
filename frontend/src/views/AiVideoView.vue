@@ -144,6 +144,7 @@
         <el-table-column v-for="column in columns" :key="column.key" :prop="column.key" :label="column.label" :min-width="column.width || 140" show-overflow-tooltip>
           <template #default="scope">
             <el-tag v-if="column.key === 'status'" size="small" effect="plain">{{ statusLabel(scope.row.status) }}</el-tag>
+            <el-button v-else-if="current.resource === 'videos' && column.key === 'mediaUrl' && safeMediaUrl(scope.row.mediaUrl)" link type="primary" @click="previewVideo(scope.row)">{{ t('aiVideo.previewVideo') }}</el-button>
             <span v-else>{{ displayValue(scope.row[column.key]) }}</span>
           </template>
         </el-table-column>
@@ -153,6 +154,10 @@
               <el-button v-if="can('update')" link type="primary" @click="openEdit(scope.row)">{{ t('common.edit') }}</el-button>
               <el-button v-if="current.resource === 'tasks' && ['QUEUED', 'RUNNING'].includes(scope.row.status)" link type="warning" @click="cancelTask(scope.row)">{{ t('aiVideo.cancelTask') }}</el-button>
               <el-button v-if="current.resource === 'tasks' && ['FAILED', 'CANCELLED'].includes(scope.row.status)" link type="primary" @click="retryTask(scope.row)">{{ t('aiVideo.retryTask') }}</el-button>
+              <el-button v-if="current.resource === 'storyboards' && can('update')" link type="primary" @click="generateStoryboard(scope.row)">{{ t('aiVideo.generateStoryboard') }}</el-button>
+              <el-button v-if="current.resource === 'videos' && safeMediaUrl(scope.row.mediaUrl)" link type="primary" @click="previewVideo(scope.row)">{{ t('aiVideo.previewVideo') }}</el-button>
+              <el-button v-if="current.resource === 'videos' && canReview && scope.row.status !== 'PUBLISHED'" link type="success" @click="submitQuickReview(scope.row, 'APPROVED')">{{ t('aiVideo.approveVideo') }}</el-button>
+              <el-button v-if="current.resource === 'videos' && canReview && scope.row.status !== 'PUBLISHED'" link type="warning" @click="submitQuickReview(scope.row, 'REJECTED')">{{ t('aiVideo.rejectVideo') }}</el-button>
               <el-button v-if="current.resource === 'publishes' && scope.row.status !== 'PUBLISHED'" link type="success" @click="completePublish(scope.row)">{{ t('aiVideo.completePublish') }}</el-button>
               <el-button v-if="can('delete')" link type="danger" @click="remove(scope.row)">{{ t('common.delete') }}</el-button>
             </div>
@@ -234,11 +239,15 @@
         <div class="editor-footer"><span>{{ t('aiVideo.editor.requiredHint') }}</span><div><el-button :disabled="saving" @click="closeEditor()">{{ t('common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="save">{{ editingId ? t('common.save') : t('aiVideo.editor.create') }}</el-button></div></div>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="videoPreviewVisible" :title="videoPreviewTitle" width="min(960px, 94vw)" destroy-on-close @closed="closeVideoPreview">
+      <video v-if="videoPreviewUrl" class="ai-video-preview-player" controls autoplay playsinline preload="metadata" :src="videoPreviewUrl" @error="closeVideoPreview" />
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -247,7 +256,7 @@ import { assetAttributes, configurationKey, parseConfiguration, updateConfigurat
 import { useAuthStore } from '../stores/auth'
 import {
   cancelAiVideoTask, completeAiVideoPublish, createAiVideoResource, deleteAiVideoResource,
-  getAiVideoOverview, listAiVideoResource, retryAiVideoTask, updateAiVideoResource
+  getAiVideoOverview, listAiVideoResource, retryAiVideoTask, reviewAiVideo, updateAiVideoResource
 } from '../api/aiVideo'
 
 const { t } = useI18n()
@@ -271,6 +280,9 @@ const form = reactive({})
 const advancedOpen = ref(false)
 const previewField = ref('')
 const saveError = ref('')
+const videoPreviewVisible = ref(false)
+const videoPreviewUrl = ref('')
+const videoPreviewTitle = ref('')
 let initialForm = ''
 
 // 路由兼容测试保留 items: 'items' 这一业务路径标识；接口分类仍使用 ITEM 枚举。
@@ -304,6 +316,7 @@ const isDashboard = computed(() => sectionKey.value === 'dashboard')
 const isAnalytics = computed(() => sectionKey.value === 'analytics')
 const current = computed(() => modules[sectionKey.value] || modules.projects)
 const isTaskModule = computed(() => current.value.resource === 'tasks')
+const canReview = computed(() => auth.isAdmin || auth.hasPermission('ai:video:review:create'))
 const assetType = computed(() => assetTypes[sectionKey.value] || '')
 const assetTypeLabel = computed(() => assetType.value ? t(`aiVideo.sections.${sectionKey.value}.title`) : '')
 const section = computed(() => ({ title: t(`aiVideo.sections.${sectionKey.value}.title`), description: t(`aiVideo.sections.${sectionKey.value}.description`) }))
@@ -471,6 +484,7 @@ const guideDelivery = computed(() => [
   { key: 'publish', index: '04', title: t('aiVideo.guide.delivery.publishTitle'), description: t('aiVideo.guide.delivery.publishDescription'), check: t('aiVideo.guide.delivery.publishCheck'), action: t('aiVideo.guide.delivery.publishAction'), path: 'publishes' }
 ])
 const productionPaths = computed(() => [
+  { key: 'script', icon: '剧', title: t('aiVideo.paths.scriptTitle'), description: t('aiVideo.paths.scriptHint'), next: t('aiVideo.paths.scriptNext'), route: 'scripts', source: 'script' },
   { key: 'text', icon: '文', title: t('aiVideo.paths.textTitle'), description: t('aiVideo.paths.textHint'), next: t('aiVideo.paths.textNext'), route: 'ai-generation', type: 'video_model', generationMode: 'TEXT_TO_VIDEO', source: 'text' },
   { key: 'storyboard', icon: '镜', title: t('aiVideo.paths.storyboardTitle'), description: t('aiVideo.paths.storyboardHint'), next: t('aiVideo.paths.storyboardNext'), route: 'ai-generation', type: 'video_model', generationMode: 'STORYBOARD_TO_VIDEO', source: 'storyboard' },
   { key: 'asset', icon: '物', title: t('aiVideo.paths.assetTitle'), description: t('aiVideo.paths.assetHint'), next: t('aiVideo.paths.assetNext'), route: 'ai-generation', type: 'video_model', generationMode: 'REFERENCE_IMAGE_TO_VIDEO', source: 'asset' },
@@ -486,6 +500,11 @@ function can(action) {
 
 /** 跳转到制作流程中的指定模块。 */
 function goTo(path, mode, type, generationMode, source) {
+  if (path === 'ai-script') {
+    const query = route.query.projectId ? { projectId: route.query.projectId } : {}
+    router.push({ path: '/ai-script', query })
+    return
+  }
   if (path === 'ai-generation') {
     const query = { type, mode: generationMode, source }
     if (route.query.projectId) query.projectId = route.query.projectId
@@ -494,6 +513,65 @@ function goTo(path, mode, type, generationMode, source) {
     return
   }
   router.push({ path: `/ai-video/${path}`, query: mode ? { mode } : {} })
+}
+
+/** 将分镜字段整理成生成页可直接使用的提示词，并保留项目与分镜上下文。 */
+function generateStoryboard(row) {
+  if (!row?.id) return
+  const prompt = [
+    row.sceneDescription,
+    row.dialogue ? `对白：${row.dialogue}` : '',
+    row.narration ? `旁白：${row.narration}` : '',
+    row.camera ? `机位：${row.camera}` : '',
+    row.durationMs ? `镜头时长：${row.durationMs}ms` : ''
+  ].filter(Boolean).join('\n')
+  const query = {
+    type: 'video_model',
+    mode: 'STORYBOARD_TO_VIDEO',
+    source: 'storyboard',
+    projectId: row.projectId,
+    storyboardId: row.id
+  }
+  if (prompt) query.prompt = prompt
+  router.push({ path: '/ai-generation', query })
+}
+
+/** 打开安全的视频预览地址，拒绝脚本协议和协议相对地址。 */
+function previewVideo(row) {
+  const url = safeMediaUrl(row?.mediaUrl)
+  if (!url) {
+    ElMessage.warning(t('aiVideo.editor.previewFailed'))
+    return
+  }
+  videoPreviewUrl.value = url
+  videoPreviewTitle.value = `${row.title || t('aiVideo.sections.videos.title')} · ${t('aiVideo.previewVideo')}`
+  videoPreviewVisible.value = true
+}
+
+/** 清理视频预览状态，避免关闭弹窗后继续持有媒体地址。 */
+function closeVideoPreview() {
+  videoPreviewVisible.value = false
+  videoPreviewUrl.value = ''
+  videoPreviewTitle.value = ''
+}
+
+/** 为成片提供带权限检查的快速审核入口，并刷新审核后的成片状态。 */
+async function submitQuickReview(row, status) {
+  if (!canReview.value || !row?.id) return
+  const approved = status === 'APPROVED'
+  try {
+    await ElMessageBox.confirm(
+      t(approved ? 'aiVideo.quickReviewApproveConfirm' : 'aiVideo.quickReviewRejectConfirm'),
+      t(approved ? 'aiVideo.approveVideo' : 'aiVideo.rejectVideo'),
+      { type: approved ? 'success' : 'warning' }
+    )
+    await reviewAiVideo(row.id, { status })
+    await load()
+    ElMessage.success(t('aiVideo.quickReviewSaved'))
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(t('aiVideo.quickReviewFailed'))
+  }
 }
 
 /** 判断当前页面是否允许读取项目选择项。 */
@@ -666,6 +744,7 @@ function taskDescription(row) { return row.errorMessage || row.prompt || t('aiVi
 watch(() => route.path, () => { dialogVisible.value = false })
 watch(() => route.fullPath, () => { resetFilters(); load() })
 onMounted(load)
+onBeforeUnmount(closeVideoPreview)
 </script>
 
 <style scoped>
@@ -708,6 +787,7 @@ onMounted(load)
 .editor-preview { width: 100%; margin-top: 10px; }
 .editor-preview img, .editor-preview video { display: block; max-width: 100%; max-height: 220px; border-radius: 8px; }
 .editor-preview audio { width: 100%; }
+.ai-video-preview-player { display: block; width: 100%; max-height: min(70vh, 680px); border-radius: 10px; background: #05070b; object-fit: contain; }
 .editor-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .editor-footer > span { color: var(--app-muted); font-size: 12px; }
 .editor-alert { margin-bottom: 16px; }

@@ -44,6 +44,13 @@ import java.time.LocalDateTime;
 public class LlmManagementService {
     public static final String DEFAULT_ROUTE = "DEFAULT";
     public static final String DEFAULT_ROUTE_NAME = "默认能力路由";
+
+    /** 根据实际返回模型匹配供应商，避免不同调用客户端各自维护相同逻辑。 */
+    public static String providerFor(WorkerRoute route, String model) {
+        if (route == null || model == null) return null;
+        return route.candidates().stream().filter(candidate -> model.equals(candidate.model()))
+            .map(WorkerCandidate::providerCode).findFirst().orElse(null);
+    }
     /** 供应商数据访问接口 */
     private final LlmProviderRepository providerRepository;
 
@@ -161,48 +168,6 @@ public class LlmManagementService {
      * @return 模型配置列表，按ID升序排列
      */
     public List<LlmModel> models(){return modelRepository.findAll().stream().sorted(Comparator.comparing(LlmModel::getId)).toList();}
-
-    /** 查询工作流配置可选择的启用模型，并仅返回下拉展示所需的非敏感字段。 */
-    public List<WorkflowModelOption> workflowModelOptions(){return workflowModelOptions(Set.of(),"");}
-
-    /** 按节点允许类型和可选模型类型筛选工作流指定模型候选。 */
-    public List<WorkflowModelOption> workflowModelOptions(Collection<String> allowedTypes,String modelType){
-        Set<String> allowed=new LinkedHashSet<>(LlmModel.normalizeModelTypes(allowedTypes));String requested=normalizedModelType(modelType);
-        Map<Long,LlmProvider> providers=providerRepository.findAll().stream()
-            .filter(provider->Boolean.TRUE.equals(provider.getEnabled()))
-            .collect(java.util.stream.Collectors.toMap(LlmProvider::getId,provider->provider));
-        return modelRepository.findAll().stream()
-            .filter(model->Boolean.TRUE.equals(model.getEnabled())&&providers.containsKey(model.getProviderId()))
-            .filter(model->matchesWorkflowTypes(model.getSupportedModelTypes(),allowed,requested))
-            .sorted(Comparator.comparing(LlmModel::getId))
-            .map(model->new WorkflowModelOption(model.getId(),model.getName(),model.getModelName(),
-                providers.get(model.getProviderId()).getName(),model.getSupportedModelTypes()))
-            .toList();
-    }
-
-    /** 查询工作流配置可选择的启用模型路由，并仅返回功能编码下拉所需字段。 */
-    public List<WorkflowRouteOption> workflowRouteOptions(){return workflowRouteOptions(Set.of(),"");}
-
-    /** 按节点允许类型和可选模型类型筛选包含真实候选能力的模型路由。 */
-    public List<WorkflowRouteOption> workflowRouteOptions(Collection<String> allowedTypes,String modelType){
-        Set<String> allowed=new LinkedHashSet<>(LlmModel.normalizeModelTypes(allowedTypes));String requested=normalizedModelType(modelType);
-        return routeRepository.findAll().stream()
-            .filter(route->Boolean.TRUE.equals(route.getEnabled()))
-            .sorted(Comparator.comparing(LlmRoute::getFeatureCode))
-            .map(route->new WorkflowRouteOption(route.getId(),route.getFeatureCode(),route.getName(),routeModelTypes(route.getFeatureCode())))
-            .filter(route->matchesWorkflowTypes(route.supportedModelTypes(),allowed,requested))
-            .toList();
-    }
-
-    /** 判断候选声明是否命中节点允许集合和用户已选择的具体类型。 */
-    private boolean matchesWorkflowTypes(Collection<String> supportedTypes,Set<String> allowed,String requested){
-        Set<String> supported=new LinkedHashSet<>(LlmModel.normalizeModelTypes(supportedTypes));
-        if(!requested.isBlank()&&!supported.contains(requested))return false;
-        return allowed.isEmpty()||supported.stream().anyMatch(allowed::contains);
-    }
-
-    /** 规范可选的单个模型类型查询参数。 */
-    private String normalizedModelType(String value){return LlmModel.normalizeModelTypes(List.of(value==null?"":value)).stream().findFirst().orElse("");}
 
     /** 聊天目录排除生成能力，仍保留已有动态类型的扩展行为。 */
     public static List<String> chatModelTypes(Collection<String> types){
@@ -867,7 +832,5 @@ public class LlmManagementService {
     public record WorkerRoute(List<WorkerCandidate> candidates,Boolean enableThinking,boolean routeConfigured){}
     public record ModelHealthView(Long modelId,Long providerId,String modelName,String status,Long durationMs,String error){}
     public record ModelTypeOption(String value,String label){}
-    public record WorkflowModelOption(Long id,String name,String modelName,String providerName,List<String> supportedModelTypes){}
-    public record WorkflowRouteOption(Long id,String featureCode,String name,List<String> supportedModelTypes){}
     private record ModelSyncKey(Long modelId,boolean enableThinking,String thinkingLevel){}
 }

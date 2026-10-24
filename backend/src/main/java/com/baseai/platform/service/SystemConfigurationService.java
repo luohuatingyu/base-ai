@@ -1,8 +1,5 @@
 package com.baseai.platform.service;
 
-import com.baseai.platform.automation.ApiTriggerSecurityConfigurationService;
-import com.baseai.platform.workflow.WorkflowNetworkSecurityService;
-import com.baseai.platform.workflow.WorkflowAdapterLifecycleService;
 import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
@@ -111,9 +108,6 @@ public class SystemConfigurationService {
     /** 查询并整理可展示的系统参数，统一全量读取和分页查询的排序规则。 */
     private List<SystemSetting> sortedSettings() {
         return settingRepository.findAll().stream()
-            .filter(item -> !ApiTriggerSecurityConfigurationService.isReservedKey(item.getConfigKey())
-                && !WorkflowNetworkSecurityService.isReservedKey(item.getConfigKey())
-                && !WorkflowAdapterLifecycleService.isReservedKey(item.getConfigKey()))
             .sorted(Comparator.comparing(SystemSetting::getGroupCode)
                 .thenComparing(SystemSetting::getSortOrder, Comparator.nullsFirst(Integer::compareTo))
                 .thenComparing(SystemSetting::getConfigKey))
@@ -132,7 +126,6 @@ public class SystemConfigurationService {
      */
     @Transactional
     public SettingView createSetting(SettingCommand command) {
-        rejectReservedKey(command.configKey());
         // 检查参数键是否已存在
         if (settingRepository.findByConfigKey(require(command.configKey(), "setting.keyRequired")).isPresent()) throw new BusinessException("setting.keyExists");
         return saveSetting(new SystemSetting(), command);
@@ -152,8 +145,6 @@ public class SystemConfigurationService {
     @Transactional
     public SettingView updateSetting(Long id, SettingCommand command) {
         SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("setting.notFound"));
-        rejectReservedKey(setting.getConfigKey());
-        rejectReservedKey(command.configKey());
         rejectSystemManagedMetadata(setting, command);
         return saveSetting(setting, command);
     }
@@ -169,7 +160,6 @@ public class SystemConfigurationService {
     @Transactional
     public void deleteSetting(Long id) {
         SystemSetting setting = settingRepository.findById(id).orElseThrow(() -> BusinessException.notFound("setting.notFound"));
-        rejectReservedKey(setting.getConfigKey());
         if (Boolean.TRUE.equals(setting.getSystemManaged())) throw BusinessException.forbidden("setting.systemManaged");
         String configKey = setting.getConfigKey();
         SystemSettingCacheService.CacheSnapshot previousCache = cacheService.snapshot(configKey);
@@ -472,15 +462,6 @@ public class SystemConfigurationService {
     private String require(String value, String messageKey) {
         if (blank(value)) throw new BusinessException(messageKey);
         return value.trim();
-    }
-
-    /** 阻止通用系统参数入口修改接口触发专用安全配置。 */
-    private void rejectReservedKey(String key) {
-        if (ApiTriggerSecurityConfigurationService.isReservedKey(key == null ? null : key.trim())
-            || WorkflowNetworkSecurityService.isReservedKey(key == null ? null : key.trim())
-            || WorkflowAdapterLifecycleService.isReservedKey(key == null ? null : key.trim())) {
-            throw BusinessException.forbidden("apiTrigger.securityDedicatedPageOnly");
-        }
     }
 
     /** 系统托管参数只允许修改值和启用状态，防止初始化身份被篡改。 */

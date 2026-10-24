@@ -13,7 +13,8 @@ export function generationIntent(query = {}) {
   const mode = MEDIA_MODES.has(String(query.mode || '').toUpperCase()) ? String(query.mode).toUpperCase() : ''
   const projectId = Number(query.projectId)
   const storyboardId = Number(query.storyboardId)
-  return {
+  const scriptId = Number(query.scriptId)
+  const result = {
     type,
     mode,
     prompt: typeof query.prompt === 'string' ? query.prompt.slice(0, 100000) : '',
@@ -21,6 +22,8 @@ export function generationIntent(query = {}) {
     storyboardId: Number.isInteger(storyboardId) && storyboardId > 0 ? storyboardId : null,
     source: typeof query.source === 'string' ? query.source.slice(0, 40) : ''
   }
+  if (Number.isInteger(scriptId) && scriptId > 0) result.scriptId = scriptId
+  return result
 }
 
 /** 只有可持久化的 HTTP(S) 地址才能写入视频工作台，避免保存 Base64 或危险协议。 */
@@ -35,15 +38,17 @@ export function persistableMediaUrl(value) {
 }
 
 /** 把生成输出转换为工作台的视频草稿或可复用图片资产。 */
-export function projectOutputPayload(output, task, projectId, index = 0) {
+export function projectOutputPayload(output, task, projectId, index = 0, context = {}) {
   const mediaUrl = persistableMediaUrl(output?.ossUrl) || persistableMediaUrl(output?.value)
   if (!mediaUrl || !Number.isInteger(Number(projectId)) || Number(projectId) <= 0) return null
   const video = task?.generationType === 'video_model'
   const name = output?.name || `${video ? 'Generated video' : 'Generated image'} ${index + 1}`
   if (video) {
+    const scriptReference = Number.isInteger(Number(context?.scriptId)) && Number(context.scriptId) > 0
+      ? `Script #${Number(context.scriptId)}\n` : ''
     return {
       resource: 'videos',
-      payload: { projectId: Number(projectId), title: name, version: 1, status: 'DRAFT', mediaUrl, durationMs: 0, description: task?.prompt || '' }
+      payload: { projectId: Number(projectId), title: name, version: 1, status: 'DRAFT', mediaUrl, durationMs: 0, description: `${scriptReference}${task?.prompt || ''}` }
     }
   }
   return {

@@ -199,6 +199,57 @@ class MediaGenerationServiceTest {
             "video_model", 1L, "prompt", null, "TEXT_TO_IMAGE", List.of(), Map.of())));
     }
 
+    /** 图片和视频日志只保存可访问的素材 URL，绝不把 Data URL 或素材正文写入任务记录。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"image_model", "video_model"})
+    @SuppressWarnings("unchecked")
+    void storesOnlyMaterialUrlsInGenerationLog(String type) throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("storageRequest", MediaGenerationService.GenerateRequest.class);
+        method.setAccessible(true);
+        var request = new MediaGenerationService.GenerateRequest(type, 1L, "a detailed prompt", null, "MULTIMODAL", List.of(
+            new MediaGenerationService.MediaInput("IMAGE", "remote.png", "image/png", "https://cdn.example/remote.png", "reference_image"),
+            new MediaGenerationService.MediaInput("IMAGE", "inline.png", "image/png", "data:image/png;base64,c2VjcmV0", "reference_image")
+        ), Map.of("size", "2K"));
+
+        Map<String, Object> stored = (Map<String, Object>) method.invoke(service, request);
+
+        assertEquals(List.of("https://cdn.example/remote.png"), stored.get("materialUrls"));
+        assertEquals("MULTIMODAL", stored.get("generationMode"));
+        assertTrue(stored.toString().contains("a detailed prompt") == false);
+        assertTrue(!stored.toString().contains("c2VjcmV0"));
+    }
+
+    /** 历史任务接口返回提示词和素材 URL，但不泄露内部 request_json 或 Data URL。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void exposesPromptAndMaterialUrlsInHistory() throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("publicTask", Map.class);
+        method.setAccessible(true);
+        var task = new java.util.LinkedHashMap<String, Object>();
+        task.put("id", 7L);
+        task.put("generationType", "video_model");
+        task.put("prompt", "camera moves through a rainy city");
+        task.put("outputJson", "{\"outputs\":[]}");
+        task.put("requestJson", "{\"generationMode\":\"IMAGE_TO_VIDEO\",\"inputCount\":1,\"materialUrls\":[\"https://cdn.example/frame.png\"],\"options\":{\"duration\":5}}");
+
+        Map<String, Object> result = (Map<String, Object>) method.invoke(service, task);
+
+        assertEquals("camera moves through a rainy city", result.get("prompt"));
+        assertEquals("[\"https://cdn.example/frame.png\"]", result.get("materialUrls").toString());
+        assertEquals(1, result.get("inputCount"));
+        assertTrue(!result.containsKey("requestJson"));
+    }
+
+    /** 输出缺少完整 MIME 时仍按供应商格式保存图片、视频和音频。 */
+    @Test
+    void resolvesOutputMimeFromFormat() throws Exception {
+        var method = MediaGenerationService.class.getDeclaredMethod("outputMimeType", Map.class, boolean.class);
+        method.setAccessible(true);
+        assertEquals("image/webp", method.invoke(service, Map.of("mediaType", "image", "output_format", "webp"), false));
+        assertEquals("video/quicktime", method.invoke(service, Map.of("mediaType", "video", "output_format", "mov"), true));
+        assertEquals("audio/wav", method.invoke(service, Map.of("mediaType", "audio", "output_format", "wav"), false));
+    }
+
     /** Seedream 的融合、组图和图层模式仍属于图片生成，不能被类型隔离误伤。 */
     @Test
     void acceptsSeedreamImageModes() {

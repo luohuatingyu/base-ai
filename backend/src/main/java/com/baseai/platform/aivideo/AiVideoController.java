@@ -42,6 +42,13 @@ public class AiVideoController {
         return service.create(resource, payload, assetType);
     }
 
+    /** 将已完成的独立视频生成任务回填为当前项目的成片。 */
+    @PostMapping("/videos/from-generation")
+    @RequiredPermission("ai:video:video:create")
+    public Map<String, Object> promoteGeneration(@RequestBody Map<String, Object> payload) {
+        return service.promoteGeneration(payload);
+    }
+
     /** 更新工作台资源。 */
     @PutMapping("/{resource}/{id}")
     @RequiredPermission("ai:video:dashboard:list")

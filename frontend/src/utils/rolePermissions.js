@@ -1,12 +1,5 @@
 import { buildTree } from './tree.js'
 
-const DATA_SOURCE_LIST_PERMISSION = 'operations:data-source:list'
-const DATA_SOURCE_MAINTENANCE_PERMISSIONS = new Set([
-  'operations:data-source:create',
-  'operations:data-source:update',
-  'operations:data-source:delete'
-])
-
 /** 将角色权限菜单转换为包含本地化标签的树节点。 */
 export function buildRolePermissionTree(menus, labelResolver) {
   /** 递归补充树节点展示标签，同时保留后端权限字段。 */
@@ -56,18 +49,6 @@ function descendantIds(nodeId, menus) {
   return descendants
 }
 
-/** 数据源查看权限存在时补齐固定维护按钮及其合法上级。 */
-function applyPermissionImplications(menus, nodes, selected) {
-  const canListDataSources = (menus || []).some(item => selected.has(item.id)
-    && item.permission === DATA_SOURCE_LIST_PERMISSION)
-  if (!canListDataSources) return
-  for (const item of menus || []) {
-    if (!DATA_SOURCE_MAINTENANCE_PERMISSIONS.has(item.permission)) continue
-    selected.add(item.id)
-    ancestorsOf(item, nodes).forEach(ancestor => selected.add(ancestor.id))
-  }
-}
-
 /** 规范化历史角色权限，为页面和合法按钮补齐全部上级节点。 */
 export function normalizeRolePermissionIds(menus, selectedIds) {
   const nodes = new Map((menus || []).map(item => [item.id, item]))
@@ -80,7 +61,6 @@ export function normalizeRolePermissionIds(menus, selectedIds) {
     selected.add(node.id)
     if (node.type === 'MENU' || node.type === 'BUTTON') ancestors.forEach(item => selected.add(item.id))
   }
-  applyPermissionImplications(menus, nodes, selected)
   return orderedIds(menus, selected)
 }
 
@@ -112,6 +92,5 @@ export function updateRolePermissionSelection(menus, selectedIds, changedId, che
     }
   }
 
-  applyPermissionImplications(menus, nodes, selected)
   return orderedIds(menus, selected)
 }

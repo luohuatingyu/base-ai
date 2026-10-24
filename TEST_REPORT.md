@@ -12,6 +12,140 @@ Commit: `11cb83a`
 - 后端完整 Maven 套件：1161/1161 通过，失败 0、错误 0、跳过 0。
 - `git diff --check`：通过。
 
+## 退役插件生态、部署代理、数据同步与服务器管理（2026-09-30）
+
+### Git基准点
+
+Commit: `bc39ae3`（Rename provider protocols and enrich icons）
+- 分支：`emdash/codex-vlzfy`
+- 测试日期：2026-09-30（Asia/Shanghai）
+
+### 本次变更测试结果
+
+**变更范围**：移除 Dify/n8n 插件生态、部署代理编排服务、数据同步和服务器管理代码及菜单；新增 V51 破坏性数据库迁移，删除历史表、字段和菜单数据。
+
+**测试执行结果**：
+- `docker compose up --build -d --remove-orphans`：通过；后端 Maven 完整套件 831/831，通过率 100%。
+- `docker compose config --quiet`：通过。
+- Flyway：V51 成功应用，日志显示 `Successfully applied 1 migration ... now at version v51`。
+- `npm test --prefix frontend`：通过；Lint、类型检查、覆盖测试 527/527（行覆盖 95.79%、分支覆盖 85.94%、函数覆盖 90.52%）、生产构建和 E2E 3/3 均通过。
+
+**关键模块测试**：
+- Workflow 节点、连接和权限契约：通过。
+- DataInitializer 与系统配置：通过。
+- Device Agent 保留功能回归：通过。
+- 数据库迁移：通过实际 MySQL 启动应用验证。
+
+### 重测触发条件
+
+修改 `backend/src/main/java/` 业务代码、Domain、Repository、Service、Controller 或影响业务逻辑的核心配置时，重新执行 `mvn test -B` 并更新本报告。
+
+### 已知问题
+
+- 历史迁移文件仍保留旧表定义，作为 Flyway 不可变历史；V51 负责在现有数据库中执行破坏性清理。
+- 前端构建仍有既有的大体积 chunk 和 runtime-config 警告，不影响构建结果。
+
+### 下次测试建议
+
+- 在新环境执行一次从空库到 V51 的完整 Flyway 链路。
+- 在备份副本上核对删除表、字段及菜单历史数据的数量。
+
+## 供应商模型策略名称与图标修正（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `6003978`
+- 提交说明：Improve model strategy labels and icons；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 策略展示名称改为协议语义更明确的中英文名称，补齐 `MINIMAX` 和 `VIDU`，并为六类内置策略提供专属图标；策略编码、后端协议和供应商接口保持不变。
+- 仅修改前端组件、本地化文案和前端契约测试；未修改后端业务代码、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 六类内置策略均显示准确的中英文名称 | `provider-endpoints.test.mjs` 的“内置供应商策略全部有准确的中英文展示名称”逐项检查 `GENERIC`、`OPENAI`、`ARK`、`GEMINI`、`MINIMAX`、`VIDU` | 正常、国际化、兼容 | 通过 |
+| 六类策略使用专属图标且未知编码安全回退 | 同文件“品牌策略使用专属图标且未知编码安全回退”检查六个图标定义、完整映射和通用回退 | 正常、边界、兼容 | 通过 |
+| 策略下拉、选中值和列表标签继续展示图标 | 既有“策略下拉框、已选值和列表标签展示对应图标”检查页面绑定和渲染入口 | 回归、可用性 | 通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/provider-endpoints.test.mjs`：7/7 通过。
+- `npm test --prefix frontend`：Lint、类型检查、覆盖测试 689/689、生产构建和 E2E 3/3 均通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%。
+- `docker compose up --build -d`：后端构建阶段 Maven 1074/1074 通过；前端镜像构建因并发工作区暂时缺少未由本次任务修改的 `frontend/src/views/DataSyncView.vue` 失败，非本次代码错误。
+- Compose 重试：后端构建被并发工作区未完成的工作流文件变更阻断（缺少 `WorkflowAdapterLifecycleService`、`WorkflowPluginOAuthService` 等依赖及构造签名不匹配）；与本次前端策略展示改动无关。
+- 最终 Compose 重试：后端编译完成但并发工作流改动导致 Maven 837 个测试中 6 个失败、10 个错误，前端镜像未进入启动阶段；失败集中在工作流连接类型、节点默认配置和连接表结构，不涉及本次前端策略展示改动。
+- `git diff --check`：本次提交文件通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖中英文策略标签、六类策略图标映射、未知策略安全回退、供应商页面既有渲染入口和前端回归套件。
+- 工作区并发任务的后端工作流文件删除/重构造成 Compose 编译阻塞；相关任务完成并恢复一致依赖后应重新执行 Compose。前端完整套件已在文件恢复后通过。
+- Compose 的后端工作流回归失败仍需并发任务完成后修复并重跑；本次策略名称/图标定向测试和前端完整套件均已通过。
+- 策略编码保持稳定，已有供应商记录无需迁移；后续新增策略时应同步增加中英文 locale、图标映射和契约测试。
+
+## 媒体 OSS 路径、格式与生成日志（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `42e6456`
+- 提交说明：Update test report for video preview；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- OSS 不再强制使用 `public/` 前缀；输入和生成结果按 `materials/input`、`materials/output` 分类，并按日期、UUID 和真实 MIME 扩展名保存。
+- 图片和视频生成日志只保存素材 HTTP(S) URL、提示词、生成模式和选项，过滤 Data URL、Base64 及素材内容。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| OSS 可使用非 public 前缀并按输入/输出分类 | `OssMediaStorageServiceTest.buildsConfiguredMaterialObjectKeys` 验证 `private/materials/input` 和 `private/materials/output` 路径 | 正常、兼容 | 通过 |
+| 图片、音频和视频使用正确扩展名 | `OssMediaStorageServiceTest.mapsMediaMimeTypesToRealExtensions` 验证 PNG、JPG、MP3、WAV、MP4、WebM，未知 MIME 不上传 | 正常、边界、异常 | 通过 |
+| 图片和视频日志只保存素材 URL | `MediaGenerationServiceTest.storesOnlyMaterialUrlsInGenerationLog` 参数化验证两类任务过滤 Data URL | 安全、容量、回归 | 通过 |
+| 历史接口返回提示词和素材 URL | `MediaGenerationServiceTest.exposesPromptAndMaterialUrlsInHistory` 验证返回 `prompt`、`materialUrls` 并隐藏内部请求 JSON | 正常、兼容 | 通过 |
+
+### 实际执行命令与结果
+
+- `docker run --rm -v "$PWD":/workspace -w /workspace/backend -v emdash-m2-cache:/root/.m2 maven:3.9.9-eclipse-temurin-17 ... mvn -o -B -Dtest=OssMediaStorageServiceTest,MediaGenerationServiceTest test`：29/29 通过。
+- 同一 Maven 容器执行 `mvn -o -B -ntp test`：1073/1073 通过，失败 0、错误 0、跳过 0。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：全部镜像构建成功，后端构建阶段 1073/1073 通过；启动阶段被既有 `baseai-local-docker-socket-proxy` unhealthy 阻断，日志持续返回 Docker API `503`，不是端口占用。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖 OSS 前缀校验、输入/输出对象键、媒体 MIME 扩展名、生成任务日志脱敏、图片/视频历史查询兼容和后端全量回归。
+- Compose 的 Docker Socket Proxy 健康检查仍未恢复，因此前端依赖链未完成整栈 healthy 启动；修复该容器后应再次执行 Compose 启动验证。
+- 日志只记录可用的 HTTP(S) 素材 URL；纯 Data URL 输入不会写入素材 URL，避免把 Base64 写入数据库。
+
+## 生成视频输出点击预览（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `c587033`
+- 提交说明：Add video output preview dialog；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 历史任务中的视频输出现在提供可访问的点击区域，点击后打开独立视频预览弹窗，保留原生播放控制、自动播放和 OSS 地址回退；下载、保存、图片预览和图层输出保持兼容。
+- 仅修改前端页面、本地化文案和前端契约测试，未修改后端业务代码、接口、数据库或依赖。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 点击视频输出内容可打开预览 | `ai-generation.test.mjs` 的 `AI 生成 history opens a playable video preview from output media` 检查视频媒体按钮、预览弹窗和 `openVideoPreview` 绑定 | 正常、响应式、可访问性 | 通过 |
+| 预览弹窗可播放视频 | 同一测试检查 `controls`、`autoplay`、`playsinline`、媒体地址和 OSS 回退处理 | 正常、异常恢复、兼容 | 通过 |
+| 下载和保存入口保持独立 | 同一测试及既有历史输出断言检查 `@click.stop` 与下载文件名逻辑 | 回归、兼容 | 通过 |
+| 图片、图层和双语文案不回归 | 既有历史输出/图层契约测试及中英文 `previewVideo` 文案断言 | 回归、国际化 | 通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-generation.test.mjs`：24/24 通过。
+- `npm test --prefix frontend`：Lint、类型检查、覆盖测试 687/687 通过；覆盖率行 98.15%、分支 81.93%、函数 95.88%；生产构建通过；E2E 3/3 通过。
+- `docker compose up --build -d`：全部镜像构建成功；构建阶段后端 Maven 完整套件 1072/1072 通过，前端生产构建成功；前端、后端、Python Worker、文档解析器和出站网关启动并健康。
+- `docker compose up -d`：前端容器保持 healthy；`adapter-manager` 因宿主 rootless Docker verification failed 持续重启，依赖链未完全健康，非端口占用。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖历史视频输出的点击入口、独立播放弹窗、键盘焦点样式、视频媒体类型判断、OSS 回退、下载/保存事件隔离、图层视频和中英文文案。
+- Compose 的 `adapter-manager` 仍受宿主 rootless Docker 验证失败影响；修复该运行时依赖后应再次执行 `docker compose up --build -d` 验证整栈健康。
+- 重测条件：修改生成历史媒体结构、输出媒体类型解析、视频预览弹窗、下载/保存逻辑或本地化文案时，应重新执行前端完整套件和 Compose 重建。
+
 ## Flyway V49 校验和与后端启动修复（2026-09-30）
 
 ### Git 基准、范围与交付状态
@@ -11935,3 +12069,173 @@ Commit: `b8be336`
 - Compose 镜像已成功包含本次代码，但 Docker Socket Proxy 健康检查持续失败，且现有数据库的 Flyway V49 校验和与本地迁移不一致，整栈健康启动未完成；修复代理并按数据库迁移流程处理校验和后应重新执行 Compose 健康检查。
 - Go 服务仍保留原有日志格式，不在本次确认范围内；若需要跨 Go 服务统一字段，应单独评估协议和日志采集兼容性。
 - 重测条件：修改请求上下文、异常处理、限流逻辑、Python Worker 中间件或日志字段时，应重新执行 Java/Python 定向测试、两端完整测试和 Compose 重建。
+
+## AI 剧本与 AI 视频工作流（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `f092bb7`
+- 提交说明：AI 剧本入口、剧本生成接口与视频工作流联动；测试日期 2026-09-30（Asia/Shanghai）。
+- 菜单顺序调整为“AI能力 → AI剧本 → AI视频 → 自动化”。
+- 新增 AI 剧本工作区与 `/api/ai/script/generate` 接口，支持剧本生成、分镜保存及一键带上下文进入 AI 视频生成。
+- AI 视频入口增加“从 AI 剧本开始”，AI 生成页显示剧本上下文并将剧本编号写入视频产物描述。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 菜单按 AI能力、AI剧本、AI视频、自动化排序 | `ai-script.test.mjs` 检查菜单排序值、路由和导航权限映射 | 正常、兼容、回归 | 通过 |
+| AI 剧本可生成结构化剧本并保存分镜 | `AiScriptControllerTest` 检查权限与 POST 合约；`ai-script.test.mjs` 检查 JSON/fenced JSON 解析、请求边界和分镜 payload | 正常、边界、异常、权限 | 通过 |
+| AI 剧本可驱动 AI 视频生成 | `ai-script.test.mjs` 检查脚本路由、视频工作区入口和生成上下文；`ai-video-generation-path.test.mjs` 回归生成路径 | 正常、兼容、回归 | 通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/ai-script.test.mjs frontend/test/ai-video-generation-path.test.mjs frontend/test/ai-video-navigation.test.mjs frontend/test/ai-generation.test.mjs`：43/43 通过。
+- `cd frontend && npm test`：完整前端套件 693/693 通过，Lint、类型检查、覆盖测试、生产构建和 E2E 均通过。
+- 在本需求稳定提交 `db8a636` 的隔离工作树执行 `docker build --target build .../backend`：Maven/Surefire 完整套件 1075/1075 通过，失败 0、错误 0、跳过 0；`AiScriptControllerTest` 通过。
+- 当前工作区执行 `docker compose up --build -d`：因并发退役功能清理使 Compose 引用的 `deployment-agent` 构建目录暂时不存在而未能准备完整上下文；不是端口占用。
+- 当前工作区直接后端构建：被并发清理提交遗留的 `DataInitializer`、`SystemConfigurationService`、`WorkflowNodeTypes` 语法错误阻断；该错误不在 AI 剧本变更范围内。
+
+### 覆盖范围、已知问题与下次建议
+
+- 已覆盖菜单权限、剧本请求边界、结构化响应解析、分镜持久化 payload、AI 视频上下文传递、中英文文案和既有 AI 视频回归路径。
+- 当前分支存在并发任务留下的后端语法错误及 Compose 缺失构建上下文；相关清理完成后，应在最终分支重新执行 `docker compose up --build -d` 与 `mvn test -B`。
+- 重测条件：修改剧本接口、视频上下文、菜单权限、剧本分镜模型或 AI 生成路由时，应重新执行前端完整套件与后端完整套件。
+
+## 重复逻辑公共化（2026-09-30）
+
+### Git基准点
+
+Commit: `cda6173`（Deduplicate shared workflow and agent logic）
+- 分支：`emdash/codex-vlzfy`
+- 测试日期：2026-09-30（Asia/Shanghai）
+
+### 本次变更测试结果
+
+**变更范围**：统一工作流节点配置快照合并、触发器版本可执行判断、LLM 路由供应商匹配和 Device Agent 配对身份生成逻辑；保留兼容接口别名和旧媒体生成入口。
+
+**测试执行结果**：
+- 后端定向测试：115/115 通过，失败 0、错误 0、跳过 0。
+- 后端完整测试：831/831 通过，失败 0、错误 0、跳过 0。
+- 前端完整测试：526/526 通过；Lint、类型检查、覆盖测试通过，行覆盖 95.45%、分支覆盖 85.94%、函数覆盖 90.52%；生产构建和 E2E 3/3 通过。
+- `docker compose up --build -d`：镜像构建完成，backend、frontend、document-parser、python-worker 均 healthy。
+- `git diff --check`：通过。
+
+**关键模块测试**：
+- Workflow 配置合并与发布校验：通过。
+- Workflow 触发器和执行回归：通过。
+- LLM 路由供应商匹配：通过。
+- Device Agent 前端共享配对逻辑：定向测试 6/6 通过。
+
+### 已知问题与下次建议
+
+- 本次未合并 `timestamp`、`truncate`、JSON 序列化等低复杂度工具函数；它们没有重复业务状态机，后续只有在跨模块行为需要统一时再抽取。
+- 当前工作区仍有其他未提交的业务和测试文件变更，未纳入本次提交。
+- 修改工作流配置合并、触发器可执行判断、LLM 路由候选结构或 Agent 配对入口时，应重新执行后端完整测试、前端完整测试和 Compose 重建。
+## 供应商接入协议命名与图标样式优化（2026-09-30）
+
+### Git 基准、范围与交付状态
+
+Commit: `bc39ae3`
+- 提交说明：Rename provider protocols and enrich icons；分支 `emdash/codex-vlzfy`；测试日期 2026-09-30（Asia/Shanghai）。
+- 页面字段由“模型策略 / Model Strategy”改为“接入协议 / Integration Protocol”，选项名称改为简洁的协议名称；内部 `strategyCode`、接口路径和数据库字段保持不变。
+- 六类协议图标增加外框、层次、细节和高光，保留未知编码回退通用图标的兼容行为。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 页面不再使用“模型策略”，中英文名称准确 | `provider-endpoints.test.mjs` 的“接入协议名称保持准确且选项语义简洁”检查中英文字段名、OpenAI 兼容名称及旧名称不存在 | 正常、国际化、兼容 | 通过 |
+| 下拉框、已选值和列表标签保持协议图标展示 | 同文件“协议下拉框、已选值和列表标签展示对应图标”验证三个渲染入口 | 回归、可用性 | 通过 |
+| 图标具有足够视觉层次且未知协议安全回退 | 同文件“接入协议使用有层次的品牌图标且未知编码安全回退”检查六类映射、描边宽度、不透明度、背景留白和回退逻辑 | 正常、边界、兼容 | 通过 |
+
+### 实际执行命令与结果
+
+- `node --test frontend/test/provider-endpoints.test.mjs`：8/8 通过。
+- `npm test --prefix frontend`：Lint、类型检查、覆盖测试 527/527、生产构建和 E2E 3/3 均通过；全文件覆盖率行 95.79%、分支 85.94%、函数 90.52%。
+- `docker compose up --build -d`：四个镜像构建成功；后端 Maven 831/831 通过；后端、文档解析器、Python Worker 和前端容器均成功启动，后端与依赖健康检查通过。
+- `git diff --check`：本次修改文件通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖接入协议字段改名、六类协议名称、图标层次和未知编码回退，以及供应商页面现有渲染入口。
+- 构建仍输出既有 runtime-config、第三方注释和大体积 chunk 警告，不影响本次验证结果。
+- 内部协议编码保持稳定；后续新增协议时应同步补充中英文名称、图标映射和契约测试。
+## AI 视频工作台能力完善（2026-10-08）
+
+### Git 基准点
+
+Commit: `102ef1f`（Fix AI video service injection）
+- 分支：`emdash/codex-vlzfy`
+- 测试日期：2026-10-08（Asia/Shanghai）
+- 本次 AI 视频实现提交范围：`6e3087d` 至 `102ef1f`；测试报告将在本节提交后单独提交。
+
+### 验收标准—测试用例映射
+
+| 验收标准 | 测试用例与预期 | 场景 | 结果 |
+| --- | --- | --- | --- |
+| 视频成片可安全预览并在无效地址时拒绝加载 | `frontend/test/ai-video-navigation.test.mjs` 检查预览入口、`safeMediaUrl` 和视频预览对话框 | 正常、边界、安全 | 通过 |
+| 分镜可携带项目、分镜和提示词跳转视频生成 | 同文件检查 `generateStoryboard` 的路由参数和上下文拼装 | 正常、兼容、回归 | 通过 |
+| 审核快捷操作受权限、状态和确认流程约束 | 同文件检查审核权限条件、批准/驳回 API 和成功/失败反馈 | 权限、安全、异常 | 通过 |
+| 生成任务只能回填真实视频输出，且项目/分镜归属有效 | `AiVideoWorkflowTest` 覆盖任务状态、生成类型、视频输出 URL、归属和重复回填 | 正常、边界、异常、安全 | 通过 |
+| 发布必须基于最新批准审核且不能重复发布 | `AiVideoWorkflowTest` 覆盖审核决策、发布状态、重复发布和状态回滚 | 状态冲突、回归、兼容 | 通过 |
+| 服务端构造注入可在 Compose 运行时启动 | `AiVideoWorkflowTest` 与 Maven 完整套件验证服务类；Compose 启动日志验证视频服务注入已通过 | 启动、兼容 | 通过 |
+
+### 测试执行结果
+
+- `node --test frontend/test/ai-video-navigation.test.mjs`：12/12 通过。
+- `npm test`（`frontend/`）：Lint、类型检查、覆盖测试 613/613、生产构建和 E2E 3/3 均通过；行覆盖 98.14%、分支覆盖 81.33%、函数覆盖 96.68%。
+- `docker run --rm -v "$PWD":/workspace -w /workspace/backend -v emdash-m2-cache:/root/.m2 maven:3.9.9-eclipse-temurin-17 mvn -B -ntp -Dtest=AiVideoWorkflowTest test`：16/16 通过。
+- 同一 Maven 容器执行 `mvn -B -ntp test`：851/851 通过，失败 0、错误 0、跳过 0。
+- `APP_IMAGE_REVISION=$(git rev-parse HEAD) docker compose up --build -d`：镜像构建成功，构建阶段后端 851/851 通过；最终启动被工作区并行修改中的 `AiNovelService` 无限定 `JdbcTemplate` 构造参数阻断，Spring 报存在 `mysqlJdbcTemplate` 与 `auditJdbcTemplate` 两个候选 Bean。该文件不属于本次 AI 视频变更。
+- `git diff --check`：通过。
+
+### 覆盖范围、已知问题与下次建议
+
+- 覆盖视频预览、分镜到视频生成跳转、快捷审核、生成任务回填、审核与发布状态机、权限校验、媒体 URL 校验、重复操作和 H2/MySQL SQL 可移植性。
+- Compose 当前未达到整栈 healthy：并行的 `backend/src/main/java/com/baseai/platform/service/AiNovelService.java` 修改需要给 `JdbcTemplate` 注入增加限定名后重新执行 Compose；本次未修改该文件。
+- 运行期间仅保留现有并行工作区修改；没有生成临时调试文件。
+
+### 重测触发条件
+
+修改 `backend/src/main/java/` 业务代码、Domain、Repository、Service、Controller 或影响业务逻辑的核心配置时，重新执行 `mvn test -B` 并更新本报告。
+## AI 原著小说工作台首期闭环（2026-10-08）
+
+### Git基准点
+
+Commit: `34cbdd7`（Qualify AI novel database template）
+- 分支：`emdash/codex-vlzfy`
+- 测试日期：2026-10-08（Asia/Shanghai）
+
+### 本次变更测试结果
+
+**变更范围**：一级菜单保留“AI 剧本”，副标题标明“原著小说工作台”；交付单人作品、章节、正文、AI 写作、保存和提取到 AI 视频的完整闭环；AI 视频生产入口继续使用独立的脚本路径。
+
+**测试执行结果**：
+- `node --test frontend/test/ai-novel.test.mjs frontend/test/ai-script.test.mjs`：15/15 通过。
+- `npm test`：前端完整套件 613/613 通过，失败 0、错误 0、跳过 0；行覆盖 98.14%、分支覆盖 81.33%、函数覆盖 96.68%；生产构建通过，E2E 3/3 通过。
+- Docker Maven 执行 `mvn -o -B -ntp -Dtest=AiNovelControllerTest,AiNovelServiceInputTest test`：3/3 通过。
+- Docker Maven 执行 `mvn -o -B -ntp test`：后端完整套件 851/851 通过，失败 0、错误 0、跳过 0。
+- `docker compose up --build -d`：镜像构建成功，构建阶段后端 Maven 851/851 通过；启动后 frontend、backend、document-parser、python-worker 均 healthy。
+- `git diff --check`：通过。
+
+**关键模块测试**：
+- 小说工作台页面及中英文文案：前端定向契约 11/11 通过。
+- AI 小说 Controller 权限和路径：2/2 通过。
+- AI 小说 Service 输入边界：1/1 通过。
+- 前后端完整回归：613/613、851/851 通过。
+
+### 重测触发条件
+
+修改 `backend/src/main/java/` 下的 AI 小说服务、Controller、Domain、Repository 或影响业务逻辑的核心配置时，重新执行后端完整套件并更新本报告；修改小说工作台页面、AI 视频提取入口或相关文案时，重新执行前端完整套件和 Compose 重建。
+
+### 已知问题
+
+- 首期按确认范围实现单人写作闭环，暂未纳入多人协作、版本历史、发布和导出。
+- 前端构建仍有既有的大体积 chunk、runtime-config 和 Vue 测试警告，不影响构建及测试结果。
+- Compose 依赖使用工作区既有的 `mysql`、`redis` 容器；本次验证已启动退出的依赖容器后完成整栈健康启动。
+
+### 下次测试建议
+
+- 在真实 LLM 路由配置下补充 AI 续写、改写和提取分镜的端到端验证。
+- 在新环境执行一次从空库到现有 Flyway 版本的完整迁移和 Compose 启动验证。

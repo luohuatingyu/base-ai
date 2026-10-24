@@ -270,6 +270,23 @@ test('AI 生成 history exposes output summaries and download actions', () => {
   assert.match(enLocale, /download: 'Download'/)
 })
 
+/** 视频输出卡片点击画面必须打开独立预览，下载和保存按钮继续阻止冒泡。 */
+test('AI 生成 history opens a playable video preview from output media', () => {
+  assert.match(source, /class="result-media-trigger"/)
+  assert.match(source, /class="layer-puzzle-media-trigger"/)
+  assert.match(source, /@click="openVideoPreview\(output, index\)"/)
+  assert.match(source, /const videoPreviewVisible = ref\(false\)/)
+  assert.match(source, /v-model="videoPreviewVisible"/)
+  assert.match(source, /class="generation-video-preview-dialog"/)
+  assert.match(source, /class="video-preview-player"[\s\S]*controls[\s\S]*autoplay[\s\S]*playsinline/)
+  assert.match(source, /function openVideoPreview\(output, index\)/)
+  assert.match(source, /outputMediaType\(output, selectedHistoryTask\.value\?\.generationType\) !== 'video'/)
+  assert.match(source, /@click\.stop="downloadOutput\(output, index\)"/)
+  assert.match(source, /@click\.stop="saveOutput\(output, index\)"/)
+  assert.match(zhLocale, /previewVideo: '预览视频'/)
+  assert.match(enLocale, /previewVideo: 'Preview video'/)
+})
+
 /** 单张结果需要居中，多张结果保持网格，图层拆分则按边界拼成可下载的合成预览。 */
 test('AI 生成 history centers single images and composes layer outputs', () => {
   assert.match(source, /class="history-output-preview"/)

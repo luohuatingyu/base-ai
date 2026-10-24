@@ -275,6 +275,7 @@ import { appConfig, resolvePlatformBaseUrl } from '../config'
 import http, { showHttpError } from '../api/http'
 import { buildInstallCommand, detectSelfSignedDeployment, isPrivateOrigin } from '../utils/deviceAgentInstallCommand'
 import { buildDetectedIdaConfigPayload, loadExistingIdaConfig } from '../utils/deviceAgentIdaConfig'
+import { usePairingIdentity } from '../utils/deviceAgentPairing'
 import { useAuthStore } from '../stores/auth'
 
 const { t } = useI18n()
@@ -302,7 +303,6 @@ const pairingForm = reactive({
   agentId: '', deviceName: '', backendUrl: '', selfSigned: false, npmRegistry: ''
 })
 const pairingLoading = ref(false)
-const identitySuggestionLoading = ref(false)
 const pairingCode = ref(null)
 const pairingExpiresIn = ref(600)
 const agentId = ref('')
@@ -311,6 +311,7 @@ let pairingTimer = null
 // 第 4 步起的每个请求都要拼进 agentId：为空时会打到 /device-agents//... 这类路径上，
 // 后端匹配不到路由，页面只表现为点了没反应。统一用这个开关禁用下发入口
 const agentReady = computed(() => Boolean(agentId.value))
+const { identitySuggestionLoading, generatePairingIdentity } = usePairingIdentity(http, pairingForm, t)
 
 // —— 已配对实例复用 ——
 // 向导原本只服务全新配对：agentId 仅在 createPairing 成功后才有值，已经装好并配对过的 Mac
@@ -402,21 +403,6 @@ const installCommand = computed(() => buildInstallCommand({
   selfSigned: pairingForm.selfSigned,
   npmRegistry: pairingForm.npmRegistry
 }))
-
-/** 请求服务端生成同源的 Agent ID 与短码名称，生成后仍可按现场命名规则编辑。 */
-const generatePairingIdentity = async () => {
-  identitySuggestionLoading.value = true
-  try {
-    const response = await http.get('/automation/device-agents/pairing/identity-suggestion')
-    pairingForm.agentId = response.data.agentId
-    pairingForm.deviceName = response.data.deviceName
-    ElMessage.success(t('deviceAgents.agentIdentityGenerated'))
-  } catch (error) {
-    showHttpError(error, 'deviceAgents.agentIdentityGenerateError')
-  } finally {
-    identitySuggestionLoading.value = false
-  }
-}
 
 /** 创建前在页面侧拦截空身份；后端仍会重复校验，防止直接调用绕过。 */
 const createPairing = async () => {
