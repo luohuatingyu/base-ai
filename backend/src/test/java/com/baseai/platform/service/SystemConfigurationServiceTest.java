@@ -1,6 +1,5 @@
 package com.baseai.platform.service;
 
-import com.baseai.platform.automation.ApiTriggerSecurityConfigurationService;
 import com.baseai.platform.automation.ConfigCryptoService;
 import com.baseai.platform.common.BusinessException;
 import com.baseai.platform.config.PlatformProperties;
@@ -54,43 +53,6 @@ class SystemConfigurationServiceTest {
     @org.junit.jupiter.api.AfterEach
     void tearDown() {
         AuthContext.clear();
-    }
-
-    /** 通用系统参数列表不得展示接口触发页面专用的安全配置键。 */
-    @Test
-    void settingsHideApiTriggerSecurityKeys() {
-        SystemSetting reserved = setting(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY);
-        SystemSetting normal = setting("system.timezone");
-        when(settingRepository.findAll()).thenReturn(List.of(reserved, normal));
-
-        List<SystemConfigurationService.SettingView> settings = service.settings();
-
-        assertEquals(List.of("system.timezone"), settings.stream().map(SystemConfigurationService.SettingView::configKey).toList());
-    }
-
-    /** 通用创建入口不得绕过专用页面写入保留键。 */
-    @Test
-    void createSettingRejectsApiTriggerSecurityKeys() {
-        SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
-            "api-trigger", ApiTriggerSecurityConfigurationService.HOST_RULES_KEY,
-            "Host 规则", "[]", false, true);
-
-        assertThrows(BusinessException.class, () -> service.createSetting(command));
-        verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());
-    }
-
-    /** 通用更新和删除入口不得修改已经存在的专用安全配置。 */
-    @Test
-    void updateAndDeleteRejectApiTriggerSecuritySettings() {
-        SystemSetting reserved = setting(ApiTriggerSecurityConfigurationService.HOST_RULES_KEY);
-        when(settingRepository.findById(7L)).thenReturn(Optional.of(reserved));
-        SystemConfigurationService.SettingCommand command = new SystemConfigurationService.SettingCommand(
-            "api-trigger", "normal.key", "普通参数", "value", false, true);
-
-        assertThrows(BusinessException.class, () -> service.updateSetting(7L, command));
-        assertThrows(BusinessException.class, () -> service.deleteSetting(7L));
-        verify(settingRepository, never()).save(org.mockito.ArgumentMatchers.any());
-        verify(settingRepository, never()).delete(org.mockito.ArgumentMatchers.any());
     }
 
     /** 系统参数支持按 Key 模糊过滤、稳定排序和分页边界归一化。 */

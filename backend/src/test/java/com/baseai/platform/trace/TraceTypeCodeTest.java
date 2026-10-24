@@ -1,8 +1,5 @@
 package com.baseai.platform.trace;
 
-import com.baseai.platform.automation.ApiTriggerController;
-import com.baseai.platform.automation.ApiTriggerSecurityConfigurationController;
-import com.baseai.platform.automation.ApiTriggerTrackedExecutionService;
 import com.baseai.platform.controller.AiChatController;
 import com.baseai.platform.controller.ApiKeyManagementController;
 import com.baseai.platform.controller.LlmManagementController;
@@ -27,10 +24,7 @@ class TraceTypeCodeTest {
                 AiChatController.class,
                 ApiKeyManagementController.class,
                 LlmManagementController.class,
-                MailManagementController.class,
-                ApiTriggerController.class,
-                ApiTriggerSecurityConfigurationController.class,
-                ApiTriggerTrackedExecutionService.class
+                MailManagementController.class
             })
             .flatMap(type -> Arrays.stream(type.getDeclaredMethods()))
             .map(method -> method.getAnnotation(TraceType.class))
@@ -40,14 +34,6 @@ class TraceTypeCodeTest {
 
         assertEquals(Set.of(
             "AI_CHAT",
-            "API_TRIGGER_CREATE",
-            "API_TRIGGER_UPDATE",
-            "API_TRIGGER_DISABLE",
-            "API_TRIGGER_VOID",
-            "API_TRIGGER_EXECUTE",
-            "API_TRIGGER_CRON",
-            "API_TRIGGER_TEST",
-            "API_TRIGGER_SECURITY_UPDATE",
             "API_KEY_CREATE",
             "API_KEY_ROTATE",
             "API_KEY_SECRET_REVEAL",
@@ -77,11 +63,5 @@ class TraceTypeCodeTest {
         assertTrue(chat.authenticationTriggerEntry());
         assertEquals("WEB_UI", TraceTrackingAspect.resolveTriggerEntry(chat, webUser));
         assertEquals("API_KEY", TraceTrackingAspect.resolveTriggerEntry(chat, apiUser));
-
-        TraceType fixed = Arrays.stream(ApiTriggerController.class.getDeclaredMethods())
-            .map(method -> method.getAnnotation(TraceType.class))
-            .filter(annotation -> annotation != null && "API_TRIGGER_EXECUTE".equals(annotation.value()))
-            .findFirst().orElseThrow();
-        assertEquals("MANUAL", TraceTrackingAspect.resolveTriggerEntry(fixed, apiUser));
     }
 }

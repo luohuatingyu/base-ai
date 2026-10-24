@@ -89,18 +89,18 @@ class ApiKeyManagementServiceTest {
     /** 工作流白名单只保存绑定用户拥有的资源，空集合保持默认拒绝。 */
     @Test
     void validatesWorkflowAllowlistOwnership() {
-        when(endpointCatalog.contains("workflow.execute")).thenReturn(true);
+        when(endpointCatalog.contains("ai.chat.invoke")).thenReturn(true);
         when(repository.save(any(ApiKeyCredential.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(10L), eq(2L))).thenReturn(1);
-        ApiKeyManagementService.ApiKeyCommand allowed = new ApiKeyManagementService.ApiKeyCommand("workflow", 2L, true,
-            true, null, ApiKeyRateLimitType.MINUTE, 60, Set.of("workflow.execute"), Set.of(), Set.of(10L));
+        ApiKeyManagementService.ApiKeyCommand allowed = new ApiKeyManagementService.ApiKeyCommand("normal", 2L, true,
+            true, null, ApiKeyRateLimitType.MINUTE, 60, Set.of(), Set.of(), Set.of(10L));
 
         ApiKeyManagementService.CreatedApiKey created = service.create(allowed);
 
         assertEquals(Set.of(10L), created.item().workflowIds());
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(11L), eq(2L))).thenReturn(0);
-        ApiKeyManagementService.ApiKeyCommand forbidden = new ApiKeyManagementService.ApiKeyCommand("workflow", 2L, true,
-            true, null, ApiKeyRateLimitType.MINUTE, 60, Set.of("workflow.execute"), Set.of(), Set.of(11L));
+        ApiKeyManagementService.ApiKeyCommand forbidden = new ApiKeyManagementService.ApiKeyCommand("normal", 2L, true,
+            true, null, ApiKeyRateLimitType.MINUTE, 60, Set.of(), Set.of(), Set.of(11L));
         assertEquals("apiKey.workflowForbidden", assertThrows(BusinessException.class, () -> service.create(forbidden)).getMessageKey());
     }
 

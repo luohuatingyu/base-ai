@@ -1,9 +1,6 @@
 package com.baseai.platform.security;
 
-import com.baseai.platform.automation.ApiTriggerController;
 import com.baseai.platform.controller.AiChatController;
-import com.baseai.platform.workflow.WorkflowModels;
-import com.baseai.platform.workflow.WorkflowOpenController;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,16 +27,10 @@ class ApiKeyEndpointCatalogServiceTest {
     void catalogsDocumentedApiKeyEndpoints() throws Exception {
         Map<RequestMappingInfo, HandlerMethod> handlers = new LinkedHashMap<>();
         handlers.put(mapping("/api/ai/chat"), handler(AiChatController.class, "chat", AiChatController.ChatRequest.class));
-        handlers.put(mapping("/api/automation/api-triggers/{id}/trigger"),
-            handler(ApiTriggerController.class, "trigger", Long.class));
-        handlers.put(mapping("/api/workflows/{code}/runs"),
-            handler(WorkflowOpenController.class, "execute", String.class, WorkflowModels.RunCommand.class));
-        handlers.put(mapping("/api/workflows/runs/{runId}", RequestMethod.GET),
-            handler(WorkflowOpenController.class, "result", String.class));
 
         List<ApiKeyEndpointCatalogService.EndpointView> endpoints = service(handlers).catalog();
 
-        assertEquals(List.of("ai.chat.invoke", "automation.api-trigger.execute", "workflow.execute", "workflow.run.read"),
+        assertEquals(List.of("ai.chat.invoke"),
             endpoints.stream().map(ApiKeyEndpointCatalogService.EndpointView::code).toList());
         ApiKeyEndpointCatalogService.EndpointView chat = endpoints.get(0);
         assertEquals("openPlatform.endpointDescriptions.aiChatInvoke", chat.descriptionKey());
@@ -51,14 +42,6 @@ class ApiKeyEndpointCatalogServiceTest {
         assertTrue(chat.responseExample().contains("\"traceId\": \"trace-id\""));
         assertFalse(java.util.Arrays.stream(AiChatController.ChatResponse.class.getRecordComponents())
             .anyMatch(component -> component.getName().equals("traceId")));
-        ApiKeyEndpointCatalogService.EndpointView trigger = endpoints.get(1);
-        assertEquals("id", trigger.pathParameters().get(0).name());
-        assertEquals("automation:api-trigger:trigger", trigger.permission());
-        ApiKeyEndpointCatalogService.EndpointView workflow = endpoints.get(2);
-        assertEquals("code", workflow.pathParameters().get(0).name());
-        assertEquals("automation:workflow:canvas:execute", workflow.permission());
-        assertTrue(workflow.requestFields().stream().anyMatch(field -> field.name().equals("inputs") && field.required()));
-        assertEquals("automation:workflow:canvas:logs", endpoints.get(3).permission());
     }
 
     /** 枚举元数据应与示例值一并公开给开放平台页面。 */

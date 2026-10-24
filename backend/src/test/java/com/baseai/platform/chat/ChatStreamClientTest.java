@@ -80,8 +80,7 @@ class ChatStreamClientTest {
         Retry retry = Retry.of("test", RetryConfig.custom().maxAttempts(3).retryExceptions(Exception.class)
             .ignoreExceptions(IllegalStateException.class).build());
         client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build(),
-            management, traces, new ObjectMapper(), retry, CircuitBreaker.ofDefaults("test"),
-            null, null, null, null, usage);
+            management, traces, new ObjectMapper(), retry, CircuitBreaker.ofDefaults("test"), usage);
     }
 
     /** 回收测试 HTTP 服务器及后台超时调度器。 */
@@ -222,7 +221,7 @@ class ChatStreamClientTest {
         client.close();
         client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1:" + server.getAddress().getPort()).build(),
             management, traces, new ObjectMapper(), retry(), CircuitBreaker.ofDefaults("trace-test"),
-            null, null, null, null, new LlmUsageService(jdbc));
+            new LlmUsageService(jdbc));
         return jdbc;
     }
 
@@ -241,141 +240,6 @@ class ChatStreamClientTest {
         return new TraceContext(traceId, 7L, "AI_CHAT", "WEB_UI", runtime.token(), runtime);
     }
 
-    /** Agent 模式先执行授权工作流，再把工具结果交给模型并输出最终回答。 */
-    @Test void executesAuthorizedWorkflowToolBeforeFinalAnswer() {
-        var agent = mock(com.baseai.platform.workflow.WorkflowAgentClient.class);
-        var workflows = mock(com.baseai.platform.workflow.WorkflowService.class);
-        var executions = mock(com.baseai.platform.workflow.WorkflowExecutionService.class);
-        var mapper = new ObjectMapper();
-        var option = new com.baseai.platform.workflow.WorkflowModels.ChatToolOption("ORDERS", "查询订单",
-            "查询订单状态", mapper.createObjectNode().put("type", "object"));
-        when(workflows.chatToolOptions()).thenReturn(List.of(option));
-        when(agent.step(any(), anyList(), anyList()))
-            .thenReturn(new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("", List.of(
-                new com.baseai.platform.workflow.WorkflowAgentClient.ToolCall("call-1", "ORDERS",
-                    mapper.createObjectNode().put("id", "A-1"))), "agent-model"))
-            .thenReturn(new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("订单已完成", List.of(), "agent-model"));
-        when(executions.startPublished(eq("ORDERS"), anyMap()))
-            .thenReturn(new com.baseai.platform.workflow.WorkflowModels.RunAccepted("run-1", "QUEUED"));
-        when(executions.run("run-1")).thenReturn(new com.baseai.platform.workflow.WorkflowModels.RunView(
-            "run-1", 1L, "ORDERS", 1, null, null, "CHAT_AGENT", "SUCCESS",
-            mapper.createObjectNode(), mapper.createObjectNode().put("status", "done"), null, 1L, null,
-            false, null, null, null, List.of()));
-
-        client.close();
-        client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1").build(),
-            mock(LlmManagementService.class), traces, mapper, retry(), CircuitBreaker.ofDefaults("agent-test"),
-            agent, workflows, executions);
-        List<String> events = new ArrayList<>();
-        client.stream(new ChatConversationService.Turn(1L, 1L, 2L,
-            List.of(new AiChatClient.Message("user", "查询订单")),
-            new ChatConversationService.Settings("text_model", "chat", null, false, "MEDIUM", "", List.of("ORDERS"))),
-            event -> events.add(event.path("type").asText()));
-        assertEquals(List.of("agent_tool_start", "agent_tool_done", "delta", "done"), events);
-        verify(executions).startPublished(eq("ORDERS"), anyMap());
-        verify(agent, times(2)).step(any(), anyList(), anyList());
-    }
-
-    /** 独立 Agent 工具只走接口工具执行器，不会被错误转发为工作流运行。 */
-    @Test void executesIndependentAgentToolWithoutWorkflow() {
-        var agent = mock(com.baseai.platform.workflow.WorkflowAgentClient.class);
-        var apiTools = mock(com.baseai.platform.automation.ApiTriggerService.class);
-        var mapper = new ObjectMapper();
-        var option = new ChatAgentToolOption("HTTP_TRIGGER_7", "查询服务", "调用已配置接口",
-            mapper.createObjectNode().put("type", "object"));
-        when(apiTools.agentToolOptions(1L)).thenReturn(List.of(option));
-        when(agent.step(any(), anyList(), anyList()))
-            .thenReturn(new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("", List.of(
-                new com.baseai.platform.workflow.WorkflowAgentClient.ToolCall("call-1", "HTTP_TRIGGER_7",
-                    mapper.createObjectNode().put("orderId", "A-1"))), "agent-model"))
-            .thenReturn(new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("接口已返回", List.of(), "agent-model"));
-        when(apiTools.executeAgentTool(eq(1L), eq("HTTP_TRIGGER_7"), any()))
-            .thenReturn(new com.baseai.platform.automation.ApiTriggerModels.ExecutionResult(200, 18, "{\"ok\":true}"));
-
-        client.close();
-        client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1").build(),
-            mock(LlmManagementService.class), traces, mapper, retry(), CircuitBreaker.ofDefaults("agent-http-test"),
-            agent, null, null, apiTools);
-        List<String> events = new ArrayList<>();
-        client.stream(new ChatConversationService.Turn(1L, 1L, 2L,
-            List.of(new AiChatClient.Message("user", "查询")),
-            new ChatConversationService.Settings("text_model", "chat", null, false, "MEDIUM", "",
-                List.of(), List.of("HTTP_TRIGGER_7"), List.of())),
-            event -> events.add(event.path("type").asText()));
-        assertEquals(List.of("agent_tool_start", "agent_tool_done", "delta", "done"), events);
-        verify(apiTools).executeAgentTool(eq(1L), eq("HTTP_TRIGGER_7"), any());
-    }
-
-    /** 模型请求未选择或未知工具时直接拒绝，不产生工具启动事件或执行副作用。 */
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"HTTP_TRIGGER_8", "UNSELECTED_WORKFLOW", "UNKNOWN"})
-    void rejectsModelCallsOutsideSelectedTools(String returnedCode) {
-        var agent = mock(com.baseai.platform.workflow.WorkflowAgentClient.class);
-        var apiTools = mock(com.baseai.platform.automation.ApiTriggerService.class);
-        var workflows = mock(com.baseai.platform.workflow.WorkflowService.class);
-        var executions = mock(com.baseai.platform.workflow.WorkflowExecutionService.class);
-        var mapper = new ObjectMapper();
-        var schema = mapper.createObjectNode().put("type", "object");
-        when(apiTools.agentToolOptions(1L)).thenReturn(List.of(
-            new ChatAgentToolOption("HTTP_TRIGGER_7", "选中接口", "接口", schema),
-            new ChatAgentToolOption("HTTP_TRIGGER_8", "未选接口", "接口", schema)));
-        when(workflows.chatToolOptions()).thenReturn(List.of(
-            new com.baseai.platform.workflow.WorkflowModels.ChatToolOption("SELECTED_WORKFLOW", "选中工作流", "工作流", schema),
-            new com.baseai.platform.workflow.WorkflowModels.ChatToolOption("UNSELECTED_WORKFLOW", "未选工作流", "工作流", schema)));
-        when(agent.step(any(), anyList(), anyList())).thenReturn(
-            new com.baseai.platform.workflow.WorkflowAgentClient.AgentStep("", List.of(
-                new com.baseai.platform.workflow.WorkflowAgentClient.ToolCall("call-1", returnedCode,
-                    mapper.createObjectNode())), "agent-model"));
-        client.close();
-        client = new ChatStreamClient(RestClient.builder().baseUrl("http://127.0.0.1").build(),
-            mock(LlmManagementService.class), traces, mapper, retry(), CircuitBreaker.ofDefaults("selection-test"),
-            agent, workflows, executions, apiTools);
-        List<String> events = new ArrayList<>();
-
-        var exception = assertThrows(com.baseai.platform.common.BusinessException.class, () -> client.stream(
-            new ChatConversationService.Turn(1L, 1L, 2L, List.of(new AiChatClient.Message("user", "查询")),
-                new ChatConversationService.Settings("text_model", "chat", null, false, "MEDIUM", "",
-                    List.of(), List.of("HTTP_TRIGGER_7"), List.of("SELECTED_WORKFLOW"))),
-            event -> events.add(event.path("type").asText())));
-
-        assertEquals("workflow.agentToolForbidden", exception.getMessageKey());
-        assertTrue(events.isEmpty());
-        verify(apiTools, never()).executeAgentTool(anyLong(), anyString(), any());
-        verifyNoInteractions(executions);
-    }
-
-    /** 首段之后的协议错误不能重试，避免重复内容和模型副作用。 */
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {
-        "data: {\"type\":\"error\"}\n\n", "data: null\n\n", "data: {}\n\n", "data: {broken\n\n"
-    })
-    void malformedEventAfterDeltaNeverRetries(String invalid) {
-        response = invalid;
-        withoutRoutedModelEvent();
-        List<String> deltas = new ArrayList<>();
-        assertThrows(RuntimeException.class, () -> client.stream(turn(), event -> {
-            deltas.add(event.path("content").asText()); delivered.countDown();
-        }));
-        assertEquals(List.of("你好"), deltas);
-        assertEquals(1, requests);
-        verify(traces, never()).updatePython(anyString(), eq("SUCCESS"), any(), any());
-        verify(traces).updatePython(anyString(), eq("FAILED"), isNull(), eq("Stream interrupted"));
-    }
-
-    /** 首段之前的无效 HTTP 响应按重试配置处理且不产生输出。 */
-    @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(ints = {503, 200})
-    void rejectsInvalidResponseBeforeAnyDelta(int httpStatus) {
-        status = httpStatus; contentType = "application/json"; sendDelta = false; response = "{}";
-        withoutRoutedModelEvent();
-        List<String> events = new ArrayList<>();
-        assertThrows(RuntimeException.class, () -> client.stream(turn(), event -> events.add(event.toString())));
-        assertTrue(events.isEmpty());
-        assertEquals(3, requests);
-        verify(traces, times(3)).updatePython(anyString(), eq("FAILED"), isNull(), eq("Stream interrupted"));
-    }
-
-    /** 单模型选择使用模型路由，未指定思考参数时保留路由默认值。 */
     @Test
     void resolvesSelectedModelAndDefaultThinking() {
         when(management.resolveModel(7L, "text_model", false, "HIGH"))

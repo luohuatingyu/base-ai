@@ -128,7 +128,7 @@ class DatabaseListPaginationTest {
         ApiKeyCredential second = key("match-second", "second", true);
         second.getEndpointCodes().addAll(Set.of("chat", "workflow"));
         second.getAllowedCidrs().addAll(Set.of("127.0.0.1/32", "10.0.0.0/8"));
-        second.getWorkflowIds().addAll(Set.of(3L, 7L));
+        second.getWorkflowIds().addAll(Set.of());
         key("match-third", "third", true);
         key("match-revoked", "revoked", true).setRevokedAt(Instant.now());
         key("match-disabled", "disabled", false);

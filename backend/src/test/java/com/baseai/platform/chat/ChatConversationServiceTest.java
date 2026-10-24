@@ -165,21 +165,6 @@ class ChatConversationServiceTest {
         assertEquals(0, messages.count());
     }
 
-    /** Agent 工具编码必须去重并受数量边界约束，避免模型获得未授权工具。 */
-    @Test void rejectsInvalidAgentToolSelection() {
-        Long id = service.create(1L).id();
-        var duplicate = new ChatConversationService.Settings("text_model", "chat", null, false, "LOW", "",
-            List.of("ORDERS", "ORDERS"));
-        var request = new ChatConversationService.SendRequest("agent-duplicate", mapper.valueToTree("query"), duplicate);
-        assertEquals("chat.invalidInput", assertThrows(BusinessException.class, () -> service.begin(1L, id, request)).getMessageKey());
-
-        var tooMany = new ChatConversationService.Settings("text_model", "chat", null, false, "LOW", "",
-            java.util.stream.IntStream.range(0, 11).mapToObj(index -> "TOOL_" + index).toList());
-        var oversized = new ChatConversationService.SendRequest("agent-too-many", mapper.valueToTree("query"), tooMany);
-        assertEquals("chat.invalidInput", assertThrows(BusinessException.class, () -> service.begin(1L, id, oversized)).getMessageKey());
-        assertEquals(0, messages.count());
-    }
-
     /** 输入最大值可保存，超过 Worker 历史上限时明确拒绝而不写入失败轮次。 */
     @Test void enforcesContextBoundary() {
         Long id = service.create(1L).id();
@@ -250,7 +235,7 @@ class ChatConversationServiceTest {
             org.mockito.ArgumentMatchers.eq("CONVERSATION"), org.mockito.ArgumentMatchers.eq(1L),
             org.mockito.ArgumentMatchers.any()))
             .thenReturn(new com.baseai.platform.service.AiChatClient.ChatResult("一次性回答", "test-model", 4, 5, 9));
-        var controller = new ChatConversationController(service, streamClient, mapper, null, chatClient);
+        var controller = new ChatConversationController(service, streamClient, mapper, chatClient);
         var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
         com.baseai.platform.security.AuthContext.set(new com.baseai.platform.security.AuthUser(1L, "user", Set.of(), Set.of("ai:chat:invoke"),
             com.baseai.platform.security.AuthenticationType.TOKEN, null, null));
@@ -282,7 +267,7 @@ class ChatConversationServiceTest {
             org.mockito.ArgumentMatchers.eq("CONVERSATION"), org.mockito.ArgumentMatchers.eq(1L),
             org.mockito.ArgumentMatchers.any()))
             .thenThrow(new IllegalStateException("provider-secret"));
-        var controller = new ChatConversationController(service, streamClient, mapper, null, chatClient);
+        var controller = new ChatConversationController(service, streamClient, mapper, chatClient);
         var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
         com.baseai.platform.security.AuthContext.set(new com.baseai.platform.security.AuthUser(1L, "user", Set.of(), Set.of("ai:chat:invoke"),
             com.baseai.platform.security.AuthenticationType.TOKEN, null, null));

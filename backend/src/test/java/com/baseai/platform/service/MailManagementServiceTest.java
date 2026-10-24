@@ -162,7 +162,6 @@ class MailManagementServiceTest {
         when(accountRepository.findById(enabledAccount.getId())).thenReturn(Optional.of(enabledAccount));
         when(accountRepository.findById(disabledAccount.getId())).thenReturn(Optional.of(disabledAccount));
 
-        List<MailManagementService.RouteOption> options = service.workflowRouteOptions();
 
         assertThat(options).containsExactly(new MailManagementService.RouteOption(21L, "ORDER", "通知路由"));
         assertThat(options.get(0).toString()).doesNotContain("ops@example.com");
