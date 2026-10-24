@@ -172,16 +172,6 @@ test('配置加载失败可以重试，恢复前禁止发送', async t => {
   assert.equal(state.pageError.value, '')
 })
 
-test('无工具权限时仍能加载模型并发送普通对话', async t => {
-  const { state } = await createChat(t, { http: { get: async url => {
-    if (url === '/workflow/chat-tools' || url === '/ai/conversations/agent-tools') throw new Error('forbidden')
-    return { data: url === '/ai/conversations' ? { items: [], total: 0 } : url === '/ai/chat/routes' ? [{ featureCode: 'DEFAULT', supportedModelTypes: ['text_model'] }] : [] }
-  } } })
-  state.prompt.value = '问题'
-  assert.equal(state.canSend.value, true)
-  assert.equal(state.agentTools.value.length, 0)
-})
-
 test('401 响应仍然跳转登录，空白、重复提交与无效模型均不会发请求', async t => {
   let calls = 0
   const { state, requests } = await createChat(t, { fetch: async () => { calls++; return new Response('{}', { status: 401 }) } })
@@ -221,15 +211,6 @@ test('切换会话失败不会丢失当前消息和草稿', async t => {
   assert.equal(state.prompt.value, '保留草稿')
   assert.equal(state.messages.value[0].content, '当前回答')
   assert.ok(state.pageError.value)
-})
-
-test('工具运行态不会误报失败，辅助详情默认折叠且输入保留键盘快捷键', () => {
-  assert.match(source, /tool\.success === null/)
-  assert.match(source, /<details v-if="item\.role === 'assistant'.*class="message-details"/)
-  assert.match(source, /@keydown\.meta\.enter\.prevent=/)
-  assert.match(source, /@keydown\.ctrl\.enter\.prevent=/)
-  assert.match(source, /aria-live="polite"/)
-  assert.match(source, /:disabled="!canSend"/)
 })
 
 test('聊天页面不再加载或提交媒体生成接口', async t => {
@@ -288,8 +269,6 @@ for (const mode of ['multi', 'single']) {
     }
     state.enableThinking.value = true
     state.thinkingLevel.value = 'HIGH'
-    state.agentToolCodes.value = ['HTTP_TRIGGER_7']
-    state.workflowToolCodes.value = ['WORKFLOW_1']
     state.settingsOpen.value = false
     await vue.nextTick()
     state.settingsOpen.value = true
@@ -308,113 +287,6 @@ for (const mode of ['multi', 'single']) {
     assert.equal(submitted.settings.modelId, mode === 'single' ? 34 : null)
     assert.equal(submitted.settings.enableThinking, true)
     assert.equal(submitted.settings.thinkingLevel, 'HIGH')
-    assert.deepEqual(submitted.settings.agentToolCodes, ['HTTP_TRIGGER_7'])
-    assert.deepEqual(submitted.settings.workflowToolCodes, ['WORKFLOW_1'])
-  })
-}
-
-test('Agent 工具和工作流工具使用独立目录与请求字段', () => {
-  assert.match(source, /v-model="agentToolCodes"/)
-  assert.match(source, /v-model="workflowToolCodes"/)
-  assert.match(source, /\/ai\/conversations\/agent-tools/)
-  assert.match(source, /\/workflow\/chat-tools/)
-  assert.match(source, /agentToolCodes: \[\.\.\.agentToolCodes\.value\]/)
-  assert.match(source, /workflowToolCodes: \[\.\.\.workflowToolCodes\.value\]/)
-})
-
-test('从会话工具端点加载已配置的 Agent 工具，地址错误不能被空列表掩盖', async t => {
-  const option = { code: 'HTTP_TRIGGER_7', name: '查询服务', description: '查询订单', inputSchema: { type: 'object' } }
-  const { state, http, requests } = await createChat(t)
-  const originalGet = http.get
-  http.get = async url => {
-    if (url === '/ai/conversations/agent-tools') { requests.push(url); return { data: [option] } }
-    if (url.endsWith('/agent-tools')) throw new Error('404 Not Found')
-    return originalGet(url)
-  }
-  await state.loadOptions()
-  assert.deepEqual(state.agentTools.value, [option])
-  assert.ok(requests.includes('/ai/conversations/agent-tools'))
-})
-
-test('工具按名称、用途和编码搜索，选中及移除后提交独立字段', async t => {
-  let submitted
-  const { state } = await createChat(t, { hasPermission: () => true, fetch: async (_url, options) => {
-    submitted = JSON.parse(options.body)
-    return streamResponse([{ type: 'start', messageId: 2 }, { type: 'done' }])
-  } })
-  state.agentTools.value = [{ code: 'HTTP_TRIGGER_7', name: '订单', description: '查询库存' }]
-  state.workflowTools.value = [{ code: 'WORKFLOW_1', name: '周报', description: '汇总数据' }]
-  for (const query of ['订单', '库存', 'http_trigger_7']) {
-    state.toolSearch.value = query
-    assert.deepEqual(state.toolGroups.value[0].options.map(tool => tool.code), ['HTTP_TRIGGER_7'])
-    assert.equal(state.toolGroups.value[1].options.length, 0)
-  }
-  state.toolSearch.value = '无匹配'
-  assert.equal(state.toolGroups.value[0].options.length, 0)
-  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
-  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
-  state.toggleTool('workflow', 'WORKFLOW_1', true)
-  assert.equal(state.selectedTools.value.length, 2)
-  state.removeTool('workflow', 'WORKFLOW_1')
-  state.prompt.value = '查订单'
-  await state.send()
-  assert.deepEqual(submitted.settings.agentToolCodes, ['HTTP_TRIGGER_7'])
-  assert.deepEqual(submitted.settings.workflowToolCodes, [])
-  assert.deepEqual(submitted.settings.toolCodes, [])
-})
-
-for (const status of [403, 500]) {
-  test(`工具目录 ${status} 与空目录区分，独立重试不丢失草稿和已选工具`, async t => {
-    const { state, http } = await createChat(t, { hasPermission: () => true })
-    state.prompt.value = '保留草稿'
-    state.agentToolCodes.value = ['HTTP_TRIGGER_7']
-    http.get = async () => { throw { response: { status } } }
-    await state.loadTools('agent')
-    assert.equal(state.toolStates.value.agent, status === 403 ? 'forbidden' : 'error')
-    assert.equal(state.canSend.value, true)
-    assert.equal(state.selectedTools.value[0].name, 'HTTP_TRIGGER_7')
-    http.get = async () => ({ data: [] })
-    await state.loadTools('agent')
-    assert.equal(state.toolStates.value.agent, 'ready')
-    assert.equal(state.toolGroups.value[0].options.length, 0)
-    assert.equal(state.prompt.value, '保留草稿')
-    assert.deepEqual(state.agentToolCodes.value, ['HTTP_TRIGGER_7'])
-  })
-}
-
-test('工具选择锁定覆盖发送和服务端同步，拒绝未知及无权限工具', async t => {
-  const { state } = await createChat(t)
-  state.agentTools.value = [{ code: 'HTTP_TRIGGER_7', name: '订单' }]
-  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
-  assert.deepEqual(state.agentToolCodes.value, [])
-  state.workflowTools.value = [{ code: 'WORKFLOW_1', name: '周报' }]
-  state.toggleTool('workflow', 'unknown', true)
-  assert.deepEqual(state.workflowToolCodes.value, [])
-  state.workflowToolCodes.value = ['WORKFLOW_1']
-  for (const flag of ['loading', 'serverGenerating']) {
-    state[flag].value = true
-    state.removeTool('workflow', 'WORKFLOW_1')
-    state.toggleTool('workflow', 'WORKFLOW_1', false)
-    assert.deepEqual(state.workflowToolCodes.value, ['WORKFLOW_1'])
-    state[flag].value = false
-  }
-  state.removeTool('workflow', 'WORKFLOW_1')
-  assert.deepEqual(state.workflowToolCodes.value, [])
-})
-
-for (const success of [true, false, null]) {
-  test(`工具事件在回复旁显示终态 ${success}，中断后不再显示运行中`, async t => {
-    const events = [{ type: 'start', messageId: 2 }, { type: 'agent_tool_start', toolCallId: 'call-1', toolName: '查询' }]
-    if (success !== null) events.push({ type: 'agent_tool_done', toolCallId: 'call-1', toolName: '查询', success })
-    if (success === true) events.push({ type: 'done' })
-    const { state } = await createChat(t, { fetch: async () => streamResponse(events) })
-    state.prompt.value = '查询'
-    await state.send()
-    const message = state.messages.value.at(-1)
-    assert.equal(message.toolCalls.length, 1)
-    assert.equal(state.toolStatus(message.toolCalls[0], message), success === null ? 'interrupted' : success ? 'succeeded' : 'failed')
-    assert.equal(state.toolStatus({ success: null }, { status: 'GENERATING' }), 'running')
-    assert.ok(source.indexOf('class="message-tools"') < source.indexOf('class="message-details"'))
   })
 }
 
@@ -460,54 +332,6 @@ test('恢复图片问题要求视觉模型，并保留图片附件和输入焦�
   await state.restoreQuestion(original)
   assert.deepEqual(state.pendingImages.value, original.images)
   assert.equal(focused, true)
-})
-
-test('较早工具目录请求晚返回不会覆盖最新重试结果', async t => {
-  const { state, http } = await createChat(t, { hasPermission: () => true })
-  let release
-  http.get = () => new Promise(resolve => { release = resolve })
-  const earlier = state.loadTools('agent')
-  assert.equal(state.toolStates.value.agent, 'loading')
-  http.get = async () => ({ data: [{ code: 'HTTP_TRIGGER_8', name: '新工具' }] })
-  await state.loadTools('agent')
-  release({ data: [{ code: 'HTTP_TRIGGER_7', name: '旧工具' }] })
-  await earlier
-  assert.deepEqual(state.agentTools.value.map(tool => tool.code), ['HTTP_TRIGGER_8'])
-})
-
-test('两类工具都可取消选择，目录失败时不能新增选择，管理入口遵守权限', async t => {
-  const { state, requests } = await createChat(t, { hasPermission: permission => permission === 'automation:api-trigger:trigger' })
-  state.agentTools.value = [{ code: 'HTTP_TRIGGER_7' }]
-  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
-  state.toggleTool('agent', 'HTTP_TRIGGER_7', false)
-  assert.deepEqual(state.agentToolCodes.value, [])
-  state.workflowTools.value = [{ code: 'WORKFLOW_1' }]
-  state.toggleTool('workflow', 'WORKFLOW_1', true)
-  state.toggleTool('workflow', 'WORKFLOW_1', false)
-  assert.deepEqual(state.workflowToolCodes.value, [])
-  state.toolStates.value.agent = 'error'
-  state.toggleTool('agent', 'HTTP_TRIGGER_7', true)
-  assert.deepEqual(state.agentToolCodes.value, [])
-  assert.equal(state.toolGroups.value.some(group => group.canManage), false)
-  state.toolsOpen.value = true
-  state.openToolManagement('/automation/api-triggers')
-  assert.equal(state.toolsOpen.value, false)
-  assert.equal(requests.at(-1), '/automation/api-triggers')
-})
-
-test('同步服务端终态保留已收到的工具事件，刷新历史可恢复已完成工具', async t => {
-  const { state, detail } = await createChat(t)
-  state.conversationId.value = 1
-  state.serverGenerating.value = true
-  state.messages.value = [{ id: 2, role: 'assistant', content: '部分回答', status: 'INTERRUPTED', toolCalls: [{ toolCallId: 'c', success: null }] }]
-  detail.messages = [{ id: 2, role: 'assistant', content: '部分回答', status: 'INTERRUPTED', metadata: {} }]
-  await state.syncGeneration(1)
-  assert.equal(state.messages.value[0].toolCalls.length, 1)
-  assert.equal(state.toolStatus(state.messages.value[0].toolCalls[0], state.messages.value[0]), 'interrupted')
-  detail.messages[0].metadata.toolCalls = [{ toolCallId: 'c', success: true }]
-  detail.messages[0].status = 'COMPLETED'
-  await state.selectConversation(1)
-  assert.equal(state.toolStatus(state.messages.value[0].toolCalls[0], state.messages.value[0]), 'succeeded')
 })
 
 for (const condition of ['busy', 'assistant', 'switched', 'imageDraft']) {

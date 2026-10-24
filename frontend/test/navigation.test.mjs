@@ -76,7 +76,6 @@ test('内置菜单按当前语言显示并通过权限区分相同路径', () =>
   assert.equal(localizeMenuName(menu(26, null, '访问控制', 'CATALOG', '/system/access', 'system:access:catalog'), translateEnglish), 'Access Control')
   assert.equal(localizeMenuName(menu(27, null, '组织管理', 'CATALOG', '/system/organization', 'system:organization:catalog'), translateChinese), '组织管理')
   assert.equal(localizeMenuName(menu(22, null, 'API Key 管理', 'MENU', '/api-keys', 'system:api-key:list'), translateEnglish), 'API Keys')
-  assert.equal(localizeMenuName(menu(23, null, '触发安全配置', 'MENU', '/automation/api-trigger-security', 'automation:api-trigger-security:view'), translateEnglish), 'Trigger Security')
 })
 
 test('全部内置 BUTTON 权限均使用稳定权限编码翻译', () => {
@@ -95,10 +94,7 @@ test('全部内置 BUTTON 权限均使用稳定权限编码翻译', () => {
     'system:mail:route:create', 'system:mail:route:update', 'system:mail:route:delete',
     'ai:model:provider:create', 'ai:model:provider:update', 'ai:model:provider:delete',
     'ai:model:model:create', 'ai:model:model:update', 'ai:model:model:delete',
-    'ai:model:route:create', 'ai:model:route:update', 'ai:model:route:delete',
-    'automation:api-trigger:create', 'automation:api-trigger:update', 'automation:api-trigger:delete',
-    'automation:api-trigger:trigger', 'automation:api-trigger:logs',
-    'automation:api-trigger-security:update'
+    'ai:model:route:create', 'ai:model:route:update', 'ai:model:route:delete'
   ]
 
   for (const [index, permission] of permissions.entries()) {

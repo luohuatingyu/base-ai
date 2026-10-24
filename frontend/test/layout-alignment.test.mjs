@@ -17,7 +17,6 @@ const enLocaleSource = readFileSync(new URL('../src/locales/en-US.js', import.me
 const menuNodeSource = readFileSync(new URL('../src/components/MenuNode.vue', import.meta.url), 'utf8')
 const menusViewSource = readFileSync(new URL('../src/views/MenusView.vue', import.meta.url), 'utf8')
 const actionColumnCases = [
-  ['ApiTriggerView.vue', 380, 1],
   ['ApiKeysView.vue', 320, 1],
   ['MailAccountsView.vue', 180, 1],
   ['MailRoutesView.vue', 180, 1],
@@ -141,12 +140,8 @@ test('会话双栏继承剩余高度且历史列表独立滚动', () => {
   assert.doesNotMatch(chatViewSource, /\.chat-tabs\s*:deep\(\.el-tabs__content\)\s*\{[^}]*overflow:\s*visible/)
 })
 
-test('聊天工具与消息操作允许窄屏换行，长工具名称不会撑破输入区', () => {
+test('聊天输入按钮允许窄屏换行，长消息操作不会撑破输入区', () => {
   assertDeclarations(chatViewSource, '.chat-action-buttons', [/flex-wrap:\s*wrap/])
-  assertDeclarations(chatViewSource, '.selected-tools', [/flex-wrap:\s*wrap/, /max-height:/, /overflow-y:\s*auto/])
-  assertDeclarations(chatViewSource, '.selected-tools :deep(.el-tag__content)', [/min-width:\s*0/, /text-overflow:\s*ellipsis/])
-  assertDeclarations(chatViewSource, '.tool-option :deep(.el-checkbox__label)', [/white-space:\s*normal/, /overflow-wrap:\s*anywhere/])
-  assertDeclarations(chatViewSource, '.message-tool', [/max-width:\s*100%/, /overflow-wrap:\s*anywhere/])
 })
 
 test('配置通过独立抽屉展示，窄屏历史可收拢且长消息元信息可以换行', () => {
@@ -162,7 +157,7 @@ test('模型设置脱离聊天布局，桌面双列且窄屏单列，配置本�
   assert.ok(chatViewSource.indexOf('<el-drawer') > chatViewSource.indexOf('</el-tabs>'))
   assert.match(drawer, /class="chat-settings-drawer"/)
   assert.match(drawer, /size="600px"/)
-  for (const field of ['modelType', 'providerId', 'modelId', 'featureCode', 'agentToolCodes', 'workflowToolCodes', 'enableThinking', 'thinkingLevel']) {
+  for (const field of ['modelType', 'providerId', 'modelId', 'featureCode', 'enableThinking', 'thinkingLevel']) {
     assert.ok(drawer.includes(`v-model="${field}"`), `抽屉缺少设置：${field}`)
   }
   assert.doesNotMatch(declarations(chatViewSource, '.model-config'), /max-height|overflow/)
